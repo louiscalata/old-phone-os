@@ -30,7 +30,7 @@ class TestDoneHonest(unittest.TestCase):
     def test_messages_are_plain_and_exact(self):
         src = self.poll_src
         self.assertIn('Dry run finished. No services or tools were installed. Personal choices are still saved.', src)
-        self.assertIn('Your choices are saved, but Old Phone OS cannot start on its own here. See the README, section Quickstart, to start it by hand.', src)
+        self.assertIn('Your choices are saved, but Old Phone OS Interface cannot start on its own here. See the README, section Quickstart, to start it by hand.', src)
         self.assertIn('S.dry_run', src)
         self.assertNotIn('innerHTML', src)
 

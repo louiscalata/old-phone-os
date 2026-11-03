@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Third-party notices
 
-Old Phone OS is GPL-3.0-or-later (see LICENSE).
+Old Phone OS Interface is GPL-3.0-or-later (see LICENSE).
 
 ## Code
 

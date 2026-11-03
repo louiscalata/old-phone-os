@@ -48,7 +48,7 @@ class TestJudgeSetupDryRun(unittest.TestCase):
                 "Dry run finished. Nothing was configured or started.",
             )
             self.assertIn("would write", out.getvalue())
-            self.assertNotIn("Old Phone OS is set up", out.getvalue())
+            self.assertNotIn("Old Phone OS Interface is set up", out.getvalue())
             self.assertNotIn("Open it at", out.getvalue())
             self.assertNotIn("http://", out.getvalue())
             self.assertEqual(list(home.iterdir()), [])

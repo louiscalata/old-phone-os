@@ -64,10 +64,10 @@ class TestGRouteBudget(unittest.TestCase):
     def test_ask_reaches_third_route_after_two_timeouts(self):
         self.run_slow_routes("ask")
 
-    def test_even_a_single_route_is_capped_at_sixty_seconds(self):
+    def test_a_single_route_gets_the_whole_remaining_budget(self):
         with mock.patch.object(muse.time, "monotonic", return_value=0):
             attempts = list(muse._attempts([muse.glimmer_route({})], {}, 115))
-        self.assertEqual(attempts[0][1], 60)
+        self.assertEqual(attempts[0][1], 115)
 
     def test_ask_error_names_the_last_failed_route(self):
         with mock.patch.object(muse, "ask", side_effect=muse.MuseError("down")):
@@ -122,7 +122,7 @@ class TestIProbe(unittest.TestCase):
             with self.subTest(choice=choice):
                 opener = lambda *a, **k: io.BytesIO(json.dumps({"choices": [choice]}).encode())
                 self.assertEqual(muse.probe(env={}, opener=opener),
-                                 {"answered": False, "error": "bad response"})
+                                 {"answered": False, "error": "empty reply", "latency_s": mock.ANY, "finish_reason": None, "reply_model": None})
 
     def test_probe_uses_the_ask_token_budget_and_reasoning_effort(self):
         payloads = []
@@ -132,7 +132,7 @@ class TestIProbe(unittest.TestCase):
             return response("OK")
 
         muse.ask(muse.glimmer_route({}), "Reply with OK.", env={}, opener=opener)
-        self.assertEqual(muse.probe(env={}, opener=opener), {"answered": True})
+        self.assertEqual(muse.probe(env={}, opener=opener), {"answered": True, "latency_s": mock.ANY, "reply": "OK", "finish_reason": None, "reply_model": None})
         self.assertEqual(payloads[1]["max_tokens"], payloads[0]["max_tokens"])
         self.assertEqual(payloads[1].get("reasoning_effort"), payloads[0]["reasoning_effort"])
 
@@ -165,8 +165,8 @@ class TestJAdvisorObjects(AdvisorFixture):
                 self.assertIn("email", decision.deferred)
                 self.assertEqual(adv.down_until, 0)
 
-    def test_first_defer_list_can_be_empty(self):
-        adv = self.advisor('{"defer":[]} {"defer":["email"]}', spawn=lambda fn: fn())
+    def test_last_defer_list_wins_even_when_empty(self):
+        adv = self.advisor('{"defer":["email"]} {"defer":[]}', spawn=lambda fn: fn())
         adv(self.STATE, DEFAULT_TASKS)
         self.assertIn("email", adv(self.STATE, DEFAULT_TASKS).allowed)
         self.assertEqual(len(adv.cache), 1)
@@ -321,7 +321,7 @@ class TestOWhyFallback(unittest.TestCase):
                     "Nothing is paused; calls and messages remain on."):
             with self.subTest(why=why), mock.patch.object(muse, "ask", side_effect=muse.MuseError("down")):
                 result = muse.explain({"why_paused": why}, muse.glimmer_route({}), env={})
-                self.assertEqual(result["text"], why)
+                self.assertEqual(result["text"], why + " Calls, messages and alarms always stay on.")
                 self.assertFalse(result["ok"])
                 self.assertEqual(result["engine"], "rules")
 

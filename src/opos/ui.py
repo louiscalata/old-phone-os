@@ -38,7 +38,7 @@ class PhoneApp:
         self.modem = ScreenModem()
         self.ess = Essentials(self.modem)
         root.geometry("360x640")
-        root.title("Old Phone OS")
+        root.title("Old Phone OS Interface")
         self.screen = root.Label if hasattr(root, "Label") else None
         import tkinter as tk
         self.battery = tk.Scale(root, from_=0, to=100, orient="horizontal", label="Battery", command=lambda _v: self.refresh())

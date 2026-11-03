@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Loopback web server for the Old Phone OS first-run setup wizard."""
+"""Loopback web server for the Old Phone OS Interface first-run setup wizard."""
 from __future__ import annotations
 
 import argparse

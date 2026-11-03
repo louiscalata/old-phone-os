@@ -4,6 +4,7 @@ import http.client
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -95,6 +96,16 @@ def _require_http_url(url):
     if scheme in ("http", "https"):
         return url
     raise MuseError("unsupported url scheme")
+def _visible(text):
+    """Keep only visible text: after the last </think> and before any later <think."""
+    text = re.split(r"</think\s*>", text, flags=re.IGNORECASE)[-1]
+    return re.split(r"<think", text, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+def _payload(route, prompt, max_tokens):
+    """Build the helper's chat-completions request body."""
+    payload = {"model": route.model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens + REASONING_HEADROOM if route.key in ("glimmer", "lan") else max_tokens, "temperature": 0.2}
+    if route.key in ("glimmer", "lan"):
+        payload["reasoning_effort"] = "low"
+    return payload
 def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_MAX_TOKENS):
     """POST chat completion and return content."""
     if env is None:
@@ -103,10 +114,7 @@ def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_M
         timeout = timeout_s(env)
     if opener is None:
         opener = _open_no_redirect
-    payload = {"model": route.model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens + REASONING_HEADROOM if route.key in ("glimmer", "lan") else max_tokens, "temperature": 0.2}
-    if route.key in ("glimmer", "lan"):
-        payload["reasoning_effort"] = "low"
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(_payload(route, prompt, max_tokens)).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if route.key == "spark-open":
         try:
@@ -120,14 +128,19 @@ def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_M
         raw = _read_capped(resp)
         obj = json.loads(raw.decode("utf-8"))
         text = obj["choices"][0]["message"]["content"]
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(text, str):
             raise MuseError("empty response")
-        return text.strip()
+        if obj["choices"][0].get("finish_reason") == "length":
+            raise MuseError("cut off at the token budget")
+        text = _visible(text)
+        if not text:
+            raise MuseError("empty response")
+        return text
     except MuseError:
         raise
-    except (OSError, ValueError, KeyError, IndexError, TypeError, RecursionError) as e:
+    except (OSError, ValueError, KeyError, IndexError, TypeError, RecursionError, http.client.HTTPException) as e:
         raise MuseError("request failed") from e
-FACT_KEYS = ("mode", "allowed", "paused", "hours_left", "reserve", "goal_hours", "battery_percent", "battery_health_percent", "usable_percent", "temp_c", "charging", "why_paused", "goal", "goal_met", "time_left")
+FACT_KEYS = ("mode", "allowed", "paused", "hours_left", "reserve", "goal_hours", "battery_percent", "battery_health_percent", "usable_percent", "temp_c", "charging", "why_paused", "goal", "goal_met", "time_left", "paused_by_glimmer")
 HELPER_DEADLINE_S = 115.0  # all route attempts of one Why/Plan/Ask share this; the page waits 125 s.
 def facts(d):
     """Filter dict to allowed fact keys."""
@@ -137,18 +150,41 @@ def _routes(route):
     if isinstance(route, Route):
         return [route]
     return [r for r in route if isinstance(r, Route)]
-EARLY_ROUTE_S = 60  # each route is capped and shares the remaining budget with later routes
+EARLY_ROUTE_S = 60  # each route but the last is capped and shares the remaining budget with later routes
 def _attempts(routes, env, deadline):
-    """Yield (route, timeout) pairs while the shared deadline has time left."""
+    """Yield (route, timeout) pairs while the shared deadline has time left; the last route gets all of it."""
     routes = list(routes)
     for i, r in enumerate(routes):
         left = deadline - time.monotonic()
         if left < 1.0:
             return
-        yield r, min(timeout_s(env), EARLY_ROUTE_S, left / (len(routes) - i))
+        if i == len(routes) - 1:
+            yield r, min(timeout_s(env), left)
+        else:
+            yield r, min(timeout_s(env), EARLY_ROUTE_S, left / (len(routes) - i))
+ALWAYS_ON = frozenset(("call", "calls", "message", "messages", "alarm", "alarms"))
+GLIMMER_NAMES_CAP = 200
+def glimmer_paused(fact_dict):
+    """Names in paused_by_glimmer that are non-empty, also listed in paused, and never calls, messages or alarms."""
+    names = fact_dict.get("paused_by_glimmer")
+    paused = fact_dict.get("paused")
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        return []
+    return [n.strip() for n in names if n.strip() and n.strip().lower() not in ALWAYS_ON and (not isinstance(paused, list) or n in paused)]
+def _join_names(names):
+    """Join whole names up to GLIMMER_NAMES_CAP characters."""
+    shown = []
+    for n in names:
+        if len(", ".join(shown + [n])) > GLIMMER_NAMES_CAP:
+            return ", ".join(shown) + " and other tasks" if shown else "some tasks"
+        shown.append(n)
+    return ", ".join(shown)
 def explain(fact_dict, route, env=None, opener=None):
     """Explain pause using facts via the first route that answers, with a rules fallback."""
     prompt = "In at most two plain sentences for a non-technical phone owner explain why the phone is pausing the listed tasks using only these facts: " + json.dumps(fact_dict) + ". If a why_paused fact is present, it is the reason: restate it in your own plain words. Say calls, messages and alarms are always kept."
+    paused_by_glimmer = glimmer_paused(fact_dict)
+    if paused_by_glimmer:
+        prompt += " If a paused_by_glimmer fact is present, also say that Muse Glimmer chose to pause those tasks."
     deadline = time.monotonic() + HELPER_DEADLINE_S
     for r, timeout in _attempts(_routes(route), env, deadline):
         try:
@@ -156,7 +192,18 @@ def explain(fact_dict, route, env=None, opener=None):
             return {"text": text, "engine": r.name, "where": r.where, "ok": True}
         except MuseError:
             continue
-    return {"text": fact_dict.get("why_paused", "Calls, messages and alarms stay on; other tasks are paused to save battery."), "engine": "rules", "where": "on this device", "ok": False}
+    why_paused = fact_dict.get("why_paused")
+    paused = fact_dict.get("paused")
+    if isinstance(why_paused, str) and why_paused.strip():
+        text = why_paused.strip()[:500]
+        if paused_by_glimmer:
+            text += " Muse Glimmer chose to pause " + _join_names(paused_by_glimmer) + "."
+        text += " Calls, messages and alarms always stay on."
+    elif isinstance(paused, list) and not paused:
+        text = "Calls, messages and alarms stay on; nothing is paused right now."
+    else:
+        text = "Calls, messages and alarms stay on; other tasks are paused to save battery."
+    return {"text": text, "engine": "rules", "where": "on this device", "ok": False}
 class Order(list):
     """Step order plus the answering route (None when no usable answer arrived)."""
     route = None
@@ -184,7 +231,7 @@ def plan(fact_dict, steps, route, env=None, opener=None):
     for r, timeout in _attempts(_routes(route), env, deadline):
         try:
             names = _parse_names(ask(r, prompt, env=env, opener=opener, timeout=timeout), steps)
-        except (MuseError, ValueError, IndexError, TypeError):
+        except (MuseError, ValueError, IndexError, TypeError, RecursionError):
             continue
         seen = set()
         ordered = Order()
@@ -227,7 +274,10 @@ def check(env=None, opener=None):
     except (MuseError, OSError, ValueError, KeyError, IndexError, TypeError, AttributeError, json.JSONDecodeError, RecursionError, http.client.HTTPException):
         return {"route": lbl, "model": route.model, "endpoint": endpoint, "reachable": False, "served": [], "model_served": False}
 def probe(env=None, opener=None):
-    """POST one short chat request and report whether the model answered."""
+    """POST one chat request and report whether visible text was returned.
+
+    reply_model is the server's self-reported name, not proof of the weights.
+    """
     if env is None:
         env = os.environ
     if opener is None:
@@ -238,13 +288,22 @@ def probe(env=None, opener=None):
     try:
         _require_http_url(route.base_url)
         req = urllib.request.Request(route.base_url + "/chat/completions", data=data, headers={"Content-Type": "application/json"}, method="POST")  # noqa: S310
-        raw = _read_capped(opener(req, timeout=30))
-        choices = json.loads(raw.decode("utf-8"))["choices"]
+        probe_timeout = min(timeout_s(env), 90.0)
+        started = time.monotonic()
+        raw = _read_capped(opener(req, timeout=probe_timeout))
+        latency = time.monotonic() - started
+        obj = json.loads(raw.decode("utf-8"))
+        if not isinstance(obj, dict):
+            raise ValueError("not an object")
+        choices = obj.get("choices")
         if not isinstance(choices, list) or not choices:
             raise ValueError("no choices")
-        content = choices[0]["message"]["content"]
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError("empty response")
+        content = choices[0].get("message", {}).get("content")
+        text = _visible(content) if isinstance(content, str) else ""
+        finish_reason = choices[0].get("finish_reason")
+        finish_reason = finish_reason if isinstance(finish_reason, str) else None
+        reply_model = obj.get("model")
+        reply_model = reply_model[:128] if isinstance(reply_model, str) else None
     except urllib.error.HTTPError as e:
         e.close()
         return {"answered": False, "error": f"HTTP {e.code}"}
@@ -252,8 +311,19 @@ def probe(env=None, opener=None):
         return {"answered": False, "error": "unreachable"}
     except (ValueError, KeyError, IndexError, TypeError, AttributeError, RecursionError, http.client.HTTPException):
         return {"answered": False, "error": "bad response"}
-    return {"answered": True}
+    out = {"answered": False, "latency_s": round(latency, 1), "finish_reason": finish_reason, "reply_model": reply_model}
+    if finish_reason == "length":
+        # "Reply with OK." never needs the whole budget, so a cut-off reply is reasoning, not an answer.
+        if not isinstance(content, str):
+            return dict(out, error="bad response")
+        if text:
+            out["reply"] = text[:60]
+        return dict(out, error="reasoning used the whole token budget")
+    if text:
+        return {"answered": True, "latency_s": round(latency, 1), "reply": text[:60], "finish_reason": finish_reason, "reply_model": reply_model}
+    return dict(out, error="empty reply")
 CHECK_HINT = "Serve the model id muse-glimmer-30b on a loopback chat-completions server, or set OPOS_GLIMMER_URL to that server's /v1 URL."
+NO_TEXT_HINT = "The server answered but gave no complete visible reply. Lower its reasoning effort, or check that it puts the answer in message.content."
 def main(argv=None):
     """Handle --check receipt, plus one probe request with --probe."""
     if argv is None:
@@ -266,7 +336,8 @@ def main(argv=None):
         result.update(probe())
     ok = bool(result.get("reachable") and result.get("model_served") and (result.get("answered") or not probing))
     if not result.get("model_served") or (probing and not result.get("answered")):
-        result["hint"] = CHECK_HINT
+        no_text = result.get("model_served") and result.get("error") in ("empty reply", "reasoning used the whole token budget")
+        result["hint"] = NO_TEXT_HINT if no_text else CHECK_HINT
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
     return 0 if ok else 1
 if __name__ == "__main__":

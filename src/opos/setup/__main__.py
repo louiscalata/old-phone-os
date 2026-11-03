@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Run the Old Phone OS setup command line with python -m opos.setup."""
+"""Run the Old Phone OS Interface setup command line with python -m opos.setup."""
 from __future__ import annotations
 from opos.setup.cli import main
 

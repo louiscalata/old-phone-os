@@ -79,3 +79,8 @@ Deletes `<prefix>/opos-tools` (wrappers, sandboxes including any sign-in data ke
 
 ## 8. How it was tested
 All with mocks: network, installers, `/sys/class/power_supply`, `/proc`, signals. A simulation with a stand-in binary in a temporary folder showed refusal on battery (exit 75), pause on unplug, resume on replug, and exact uninstall. This was not run on a real Surface Duo and the real vendor installers were not executed.
+
+## 9. Helper Wikipedia search
+This is separate from the coding tools above. When you tick Search Wikipedia in the helper, OPOS sends one GET request to `https://en.wikipedia.org/w/api.php`. It carries your question (cut to 500 characters) as `srsearch`, plus `action=query`, `list=search`, `srlimit=3`, `format=json` and `srprop=snippet`, and the header `User-Agent: OPOS-helper/1.0`. It sends no phone facts, cookies or keys.
+
+The request ignores `HTTP_PROXY`, `HTTPS_PROXY` and system proxy settings and does not follow redirects; a redirect or an error means no sources. It uses an 8-second network timeout and reads at most 64 KB of the reply.

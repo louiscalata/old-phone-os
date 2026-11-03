@@ -38,7 +38,7 @@ class TestSetupCli(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 srv.assert_not_called()
                 txt = out.getvalue()
-                self.assertIn("Old Phone OS is already set up.", txt)
+                self.assertIn("Old Phone OS Interface is already set up.", txt)
                 self.assertIn("http://127.0.0.1:8765/", txt)
                 self.assertIn("opos run --reconfigure", txt)
 
@@ -57,7 +57,7 @@ class TestSetupCli(unittest.TestCase):
                 rc = cli_main(["run"], env=env, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 5)
                 srv.assert_called_once_with([])
-                self.assertNotIn("Old Phone OS is already set up.", out.getvalue())
+                self.assertNotIn("Old Phone OS Interface is already set up.", out.getvalue())
 
     def test_run_reconfigure_hands_over_even_when_configured(self):
         with tempfile.TemporaryDirectory() as td:
@@ -460,7 +460,7 @@ class TestSetupCli(unittest.TestCase):
                 with patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
                     rc = cli_main(["run", "--defaults"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
-                self.assertIn("Old Phone OS is set up with the default settings.", out.getvalue())
+                self.assertIn("Old Phone OS Interface is set up with the default settings.", out.getvalue())
 
     def test_run_defaults_detects_surface_duo(self):
         with tempfile.TemporaryDirectory() as td:

@@ -48,7 +48,8 @@ class TestGoalNote(unittest.TestCase):
 
     def test_goal_06_30_spoken(self):
         self.d.set_goal("06:30")
-        v = self.d.view(3, opos.governor.Mode.NORMAL, False, 1.0, 12*3600, True, "")
+        # 06:30 at noon is now inside the reached window.
+        v = self.d.view(3, opos.governor.Mode.NORMAL, False, 1.0, 23*3600, True, "")
         note = v["goal_note"]
         self.assertTrue(note.startswith("Won't last until 6:30 AM, calls and messages until ~"))
 

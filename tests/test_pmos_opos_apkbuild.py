@@ -25,7 +25,7 @@ class TestOposApkbuild(unittest.TestCase):
             "pkgname": "opos",
             "pkgver": "0.1.0",
             "pkgrel": "3",
-            "pkgdesc": "Old Phone OS policy and optional helper",
+            "pkgdesc": "Old Phone OS Interface policy and optional helper",
             "url": "https://github.com/louiscalata/old-phone-os",
             "arch": "noarch",
             "license": "GPL-3.0-or-later",

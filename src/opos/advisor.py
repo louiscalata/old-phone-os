@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import contextlib
+import http.client
 import json
 import threading
 import time
@@ -12,16 +13,20 @@ def goal_bucket(goal_hours):
         return None
     return round(float(goal_hours) / GOAL_BUCKET_H) * GOAL_BUCKET_H
 def _parse_defer(reply):
-    """Find the first JSON object with a list-valued defer field."""
+    """Find the last JSON object with a list-valued defer field; objects nested inside it do not count."""
     decoder = json.JSONDecoder()
+    defer = None
     pos = reply.find("{")
     while pos != -1:
+        nxt = pos + 1
         with contextlib.suppress(ValueError):
-            data, _ = decoder.raw_decode(reply, pos)
+            data, end = decoder.raw_decode(reply, pos)
             if isinstance(data, dict) and isinstance(data.get("defer"), list):
-                return data["defer"]
-        pos = reply.find("{", pos + 1)
-    raise ValueError("no defer list")
+                defer, nxt = data["defer"], end
+        pos = reply.find("{", nxt)
+    if defer is None:
+        raise ValueError("no defer list")
+    return defer
 class GlimmerAdvisor:
     def __init__(self, base, route=None, ask=None, spawn=None, clock=None, backoff=60.0):
         self.base = base
@@ -67,7 +72,7 @@ class GlimmerAdvisor:
                     if len(self.cache) >= 64:
                         self.cache.clear()
                     self.cache[key] = filt
-            except (muse.MuseError, ValueError, KeyError, TypeError, AttributeError):
+            except (muse.MuseError, ValueError, KeyError, TypeError, AttributeError, RecursionError, http.client.HTTPException):
                 with self._lock:
                     self.down_until = self.clock() + self.backoff
             finally:

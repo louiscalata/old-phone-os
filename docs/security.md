@@ -1,10 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Security: threat model for Old Phone OS
+# Security: threat model for Old Phone OS Interface
 
 This is a historical Droidian and security-branch assessment. Its "fixed" statuses and test counts describe that branch-era review; they are not fresh security acceptance of this source export or a physical phone. See [README.md](../README.md) for current validation scope.
 
 ## Scope
-Old Phone OS runs on a Droidian phone as a Python stdlib-only layer with a local web UI at 127.0.0.1:8765 shown in a kiosk browser plus SMS, call, contact, modem, and install code. Developer machine tooling, keys, and spend logs are out of scope except secrets or personal data committed to git.
+Old Phone OS Interface runs on a Droidian phone as a Python stdlib-only layer with a local web UI at 127.0.0.1:8765 shown in a kiosk browser plus SMS, call, contact, modem, and install code. Developer machine tooling, keys, and spend logs are out of scope except secrets or personal data committed to git.
 
 ## Assets
 - SMS bodies and phone numbers in `~/.local/state/opos/messages.json`

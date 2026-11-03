@@ -39,7 +39,7 @@ if(!G('jaryo-masthead')){
 var div=E('div');
 div.id='jaryo-masthead';
 var s1=E('span');
-s1.textContent='Old Phone OS';
+s1.textContent='Old Phone OS Interface';
 var br=E('br');
 var s2=E('span');
 var d=new Date();

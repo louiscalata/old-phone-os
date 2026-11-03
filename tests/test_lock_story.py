@@ -20,7 +20,7 @@ HARNESS += r"""
 let minute=0;
 c.Date=class extends Date{getHours(){return 12}getMinutes(){return minute}};
 const out={},render=s=>c.oposHooks.forEach(f=>f(s)),story=get('lock-story');
-const text='Worn battery. 2 tasks paused for 16:00.';
+const text='Worn battery. 2 tasks paused for 4 PM.';
 render({battery:{percent:60},lock_story:text});
 out.first=[story.textContent,story.writes,!get('lock').hidden,get('phone').inert];
 out.timeBefore=get('lock-time').textContent;
@@ -100,12 +100,12 @@ class TestLockStory(unittest.TestCase):
         phone.dash.set_goal('16:00')
         state = phone.state()
         self.assertTrue(state['battery']['goal_met'])
-        self.assertEqual(state['lock_story'], 'Worn battery. 2 tasks paused for 16:00.')
+        self.assertEqual(state['lock_story'], 'Worn battery. 2 tasks paused for 4 PM.')
         phone.sim.level = 10
         phone.dash.set_goal('23:59')
         state = phone.state()
         self.assertFalse(state['battery']['goal_met'])
-        self.assertEqual(state['lock_story'], 'Battery low. 3 tasks paused; 23:59 unlikely.')
+        self.assertEqual(state['lock_story'], 'Battery low. 3 tasks paused; 11:59 PM unlikely.')
         self.assertNotIn('last until', state['lock_story'])
 
     def test_undo_and_in_use_remove_pauses_from_story(self):
@@ -167,7 +167,7 @@ class TestLockStory(unittest.TestCase):
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         out = json.loads(result.stdout)
-        self.assertEqual(out['first'], ['Worn battery. 2 tasks paused for 16:00.', 1, True, True])
+        self.assertEqual(out['first'], ['Worn battery. 2 tasks paused for 4 PM.', 1, True, True])
         self.assertEqual(out['timeBefore'], '12:00')
         self.assertEqual(out['same'], [1, '59%', '12:01'])
         self.assertEqual(out['changed'], ['Charging. Nothing paused.', 2])

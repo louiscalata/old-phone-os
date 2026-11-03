@@ -37,7 +37,7 @@ class TestWornResultsDocs(unittest.TestCase):
         rows = [
             'basic   before     0.76  0.76     0.76  0.76    0.76        100     24.6',
             'basic   after      1.91  2.03     2.03  1.65    2.03          0      0.0',
-            'static  before     1.62  1.62     1.62  1.62    1.62         98     20.5',
+            'static  before     1.62  1.62     1.62  1.62    1.62        100     20.0',
             'static  after      2.74  2.86     2.86  2.48    2.86          0      0.0',
             'rules   before     3.67  3.67     3.67  3.67    3.67        100     18.8',
             'rules   after      4.73  4.84     4.84  4.49    4.84          0      0.0',
@@ -95,6 +95,21 @@ class TestWornResultsDocs(unittest.TestCase):
         self.assertTrue(hasattr(eol, "call_reserve"))
         self.assertIn("neither zero brownouts% nor the simulator's termination flag "
                       "demonstrates controlled shutdown on real hardware.", doc.lower())
+
+    def test_planned_shutdown_never_triggered_in_published_runs(self):
+        import opos.eol as eol
+        self.assertIn("That rule never triggered in these runs", self.text)
+        self.assertNotIn("shuts down in a controlled way before the voltage collapses", self.text)
+        # Each phone starts at its 0-45 C ambient; the simulated cell only warms
+        # above ambient and DrainSim caps it at 60 C.
+        for health in (0.3, 0.35, 0.4):
+            for temp in (0, 10, 25, 35, 45, 60):
+                with self.subTest(health=health, temp=temp):
+                    self.assertEqual(eol.shutdown_floor(temp, eol.r0_for_health(health)), 0.0)
+
+    def test_after_mode_credits_reserve_and_burst_shaping(self):
+        self.assertIn("without and then with OPOS's worn-battery reserve and burst shaping", self.text)
+        self.assertNotIn("with the reserve", self.text)
 
     def test_event_classification_and_shutdown_accounting(self):
         from unittest.mock import patch

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Single-page setup wizard for Old Phone OS."""
+"""Single-page setup wizard for Old Phone OS Interface."""
 from __future__ import annotations
 import html
 import re
@@ -10,7 +10,7 @@ _TEMPLATE: str = """<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Old Phone OS setup</title>
+<title>Old Phone OS Interface setup</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;background:#000;color:#e6e2d9;font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
@@ -44,7 +44,7 @@ a{color:#e6e2d9}
 </style>
 <div id="meter" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="meter-fill"></div></div>
 <main class="wrap">
-<h1>Old Phone OS setup</h1>
+<h1>Old Phone OS Interface setup</h1>
 <p id="dry" hidden class="panel muted">Dry run: service and tool installation is previewed. Personal choices are still saved.</p>
 <p id="error" hidden role="alert"></p>
 <p id="stepno" class="muted"></p>
@@ -118,7 +118,7 @@ a{color:#e6e2d9}
 <ul id="summary"></ul>
 <button type="button" id="apply">Apply</button>
 <ul id="progress" aria-live="polite"></ul>
-<p id="done" hidden>All set. <a id="open-link" href="#">Open Old Phone OS</a></p>
+<p id="done" hidden>All set. <a id="open-link" href="#">Open Old Phone OS Interface</a></p>
 <p id="done-norun" hidden></p>
 <p id="failed" hidden></p>
 <p id="failed-help" hidden class="muted">Your choices are kept. Tap Try again. If it still fails, restart the device and run opos again.</p>
@@ -158,7 +158,7 @@ function busy(on){qa("[data-next],#apply,#retry").forEach(b=>b.disabled=on);}
 function keepPid(v){window._pid=v;try{if(v)sessionStorage.setItem("opos_setup_profile",v);else sessionStorage.removeItem("opos_setup_profile");}catch(_){}}
 async function changeProfile(){let sel=q("#profile"),v=sel.value,pv=window._pid||"",n=window._pn=(window._pn||0)+1;try{if(!v){keepPid("");window._curDev=S.device;renderDevice(window._curDev);return;}busy(true);let d=await Promise.race([(async()=>{let r=await fetch("/setup/api/device",{method:"POST",headers:{...H(),"Content-Type":"application/json"},body:JSON.stringify({profile_id:v})});if(!r.ok)throw new Error(await errMsg(r));return r.json();})(),new Promise((_,z)=>setTimeout(()=>z(new Error("The device did not load. Try again.")),8000))]);if(n!==window._pn||sel.value!==v)return;keepPid(v);window._curDev=d;renderDevice(window._curDev);}catch(e){if(n!==window._pn)return;if(sel.value===v){sel.value=pv;keepPid(pv);}showErr(e.message);}finally{if(n===window._pn)busy(false);}}
 let pollId=null;
-async function poll(){let ul=q("#progress");ul.textContent="";async function tick(){try{let r=await fetch("/setup/api/progress",{headers:H()});if(!r.ok)throw new Error(await errMsg(r));let j=await r.json();let rows=j.steps||j.items||[];ul.textContent="";let failed=null;rows.forEach(s=>{let li=document.createElement("li");let dot=document.createElement("span");dot.className="dot "+(s.status||"pending");let lab=document.createElement("span");lab.textContent=(s.label||s.name||"")+" ";let det=document.createElement("span");det.textContent=s.detail||s.message||"";det.className="muted";li.appendChild(dot);li.appendChild(lab);li.appendChild(det);ul.appendChild(li);if(s.status==="failed")failed=s;});if(j.done||j.finished){clearInterval(pollId);if(j.ok===false||failed){q("#failed").textContent=failed?failed.detail||failed.message||"Failed":"Setup failed";q("#failed").hidden=false;q("#retry").hidden=false;q("#failed-help").hidden=false;}else{let hr=rows.find(s=>s.id==="health");if(hr&&hr.status==="skipped"){let msg=S&&S.dry_run?"Dry run finished. No services or tools were installed. Personal choices are still saved.":"Your choices are saved, but Old Phone OS cannot start on its own here. See the README, section Quickstart, to start it by hand.";q("#done-norun").textContent=msg;q("#done-norun").hidden=false;}else{q("#done").hidden=false;}}} }catch(e){showErr(e.message);}};pollId=setInterval(tick,700);tick();}
+async function poll(){let ul=q("#progress");ul.textContent="";async function tick(){try{let r=await fetch("/setup/api/progress",{headers:H()});if(!r.ok)throw new Error(await errMsg(r));let j=await r.json();let rows=j.steps||j.items||[];ul.textContent="";let failed=null;rows.forEach(s=>{let li=document.createElement("li");let dot=document.createElement("span");dot.className="dot "+(s.status||"pending");let lab=document.createElement("span");lab.textContent=(s.label||s.name||"")+" ";let det=document.createElement("span");det.textContent=s.detail||s.message||"";det.className="muted";li.appendChild(dot);li.appendChild(lab);li.appendChild(det);ul.appendChild(li);if(s.status==="failed")failed=s;});if(j.done||j.finished){clearInterval(pollId);if(j.ok===false||failed){q("#failed").textContent=failed?failed.detail||failed.message||"Failed":"Setup failed";q("#failed").hidden=false;q("#retry").hidden=false;q("#failed-help").hidden=false;}else{let hr=rows.find(s=>s.id==="health");if(hr&&hr.status==="skipped"){let msg=S&&S.dry_run?"Dry run finished. No services or tools were installed. Personal choices are still saved.":"Your choices are saved, but Old Phone OS Interface cannot start on its own here. See the README, section Quickstart, to start it by hand.";q("#done-norun").textContent=msg;q("#done-norun").hidden=false;}else{q("#done").hidden=false;}}} }catch(e){showErr(e.message);}};pollId=setInterval(tick,700);tick();}
 async function doApply(){showErr("");q("#failed").hidden=true;q("#retry").hidden=true;q("#failed-help").hidden=true;q("#done").hidden=true;q("#done-norun").hidden=true;let cfg=collect();try{let r=await fetch("/setup/api/apply",{method:"POST",headers:{...H(),"Content-Type":"application/json"},body:JSON.stringify({config:cfg})});if(!r.ok)throw new Error(await errMsg(r));q("#apply").hidden=true;poll();try{if(window.jaryoSetup)window.jaryoSetup.start();}catch(_){}}catch(e){showErr(e.message);}}
 q("#notices-continue").addEventListener("click",function(e){e.preventDefault();q("#jaryo-notices").hidden=true;q("#profile").focus();});
 q("#profile").addEventListener("change",changeProfile);
@@ -509,7 +509,7 @@ def _with_headings(fragment: str) -> str:
 def page(token: str, nonce: str) -> str:
     """Return full HTML with token meta and nonced script/style."""
     esc: str = html.escape(token, quote=True)
-    h: str = _TEMPLATE.replace("<title>Old Phone OS setup</title>", f'<meta name="opos-token" content="{esc}"><title>Old Phone OS setup</title>')
+    h: str = _TEMPLATE.replace("<title>Old Phone OS Interface setup</title>", f'<meta name="opos-token" content="{esc}"><title>Old Phone OS Interface setup</title>')
     # JRY33: the install notices come first, before step s1; they need no script.
     h = h.replace('<section class="step panel" id="s1">', notices_screen.fragment() + '<section class="step panel" id="s1">', 1)
     h = h.replace('</main>', _with_headings(jaryo_steps.fragment()) + '\n</main>', 1)

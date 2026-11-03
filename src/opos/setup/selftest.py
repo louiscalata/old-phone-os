@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fast install-time self-test for Old Phone OS."""
+"""Fast install-time self-test for Old Phone OS Interface."""
 from __future__ import annotations
 import contextlib
 import http.client

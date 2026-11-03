@@ -13,7 +13,7 @@ from opos import notices
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "opos" / "notices.py"
-EXACT = ("Old Phone OS is Louis Calata's hackathon demo. It is experimental software, "
+EXACT = ("Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, "
          "provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's "
          "operating system and may erase data; back up first and use at your own risk.")
 NETWORK = {"urllib", "http", "socket", "requests", "ssl", "ftplib", "smtplib", "asyncio", "subprocess"}

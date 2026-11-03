@@ -51,7 +51,7 @@ from opos.essentials import Essentials, normalize_number, normalize_sender
 from opos.runtime import DEFAULT_TASKS, Runtime
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
-from opos.dashboard import Dashboard
+from opos.dashboard import Dashboard, _format_goal_12h
 from opos.battery import essentials_reserve
 from opos.governor import PowerState, rule_decide
 from opos.power import plan
@@ -84,11 +84,6 @@ def _route_with_glimmer(phone, env):
 
 
 _TASK_COST = {t.name: t for t in DEFAULT_TASKS}
-_REDACT_RE = re.compile(r'\b(AI|model|Governor|assistant)\b', re.IGNORECASE)
-def _redact_text(s):
-    if not isinstance(s, str):
-        return s
-    return _REDACT_RE.sub('...', s)
 _NOTICE_FORBIDDEN_RE = re.compile(r'\b(AI|model|Governor|assistant|battery)\b', re.IGNORECASE)
 _EMPTY_NOTICES = {
     "error: battery empty, charge the phone to call": "Charge the phone to call",
@@ -148,10 +143,11 @@ def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True
     names = sorted(set(paused))
     suffix = ""
     if goal and not charging:
+        goal_words = _format_goal_12h(goal)
         if not goal_met:
-            suffix = f"; {goal} unlikely"
+            suffix = f"; {goal_words} unlikely"
         elif names:
-            suffix = f" for {goal}"
+            suffix = f" for {goal_words}"
     action = _join(names).capitalize() + " paused" if names else "Nothing paused"
     if len(prefix + action + suffix) > 48 and names:
         action = f"{len(names)} task{'s' if len(names) != 1 else ''} paused"
@@ -241,7 +237,13 @@ class Phone:
         return self._tick_obj
     def paused_names(self):
         return set(self.dash.paused_names)
-    def _paused_reasons(self, tick):
+    def _goal_label(self):
+        """The goal still ahead as HH:MM, plus " tomorrow" past midnight; None without one."""
+        hours = self.dash.hours_to_goal(self.clock_s)
+        if hours is None:
+            return None
+        return self.dash.goal + (" tomorrow" if self.clock_s + hours * 3600 >= 86400 else "")
+    def _paused_reasons(self, tick, *, goal_met=True):
         """Explain current pauses without asking the helper or changing its decision."""
         if not self.dash.paused_names:
             return {}
@@ -251,6 +253,10 @@ class Phone:
         planned = plan(state.level, hours, self.runtime.tasks, state.health, state.charging, self.dash.in_use).paused
         waived = hours is not None and not state.charging and state.temp_c < 45
         reserve = state.level <= essentials_reserve(None) or (state.level <= tick.reserve and not waived) or tick.decision.reason == opos.reserve.WORN_REASON
+        goal_label = self._goal_label()
+        goal_words = _format_goal_12h(goal_label) if goal_label else None
+        goal_reason = (f"to help the battery last until {goal_words}" if goal_met else
+                       f"because the battery won't last until {goal_words}")
         reasons = {}
         for task in self.runtime.tasks:
             if task.name not in self.dash.paused_names:
@@ -260,11 +266,11 @@ class Phone:
             if reserve:
                 why = "to keep a battery reserve for calls"
             elif not allowed:
-                why = {"too hot": "because the phone is hot", "would miss your goal": f"to help the battery last until {self.dash.goal}", "battery below 80 percent": "because usable battery is below 80%" if self.visible else why, "not enough for the next 4 hours": "to keep power for the next 4 hours"}.get(cause, why)
+                why = {"too hot": "because the phone is hot", "would miss your goal": goal_reason, "battery below 80 percent": "because usable battery is below 80%" if self.visible else why, "not enough for the next 4 hours": "to keep power for the next 4 hours"}.get(cause, why)
             elif task.name in rules.deferred:
                 why = "because the phone is hot" if state.temp_c >= 45 else "because usable battery is low" if self.visible else why
             elif task.name in planned:
-                why = f"to help the battery last until {self.dash.goal}"
+                why = goal_reason
             elif task.name in tick.decision.deferred and tick.decision.reason.startswith("router+glimmer"):
                 who = "Muse Glimmer"
             reasons[task.name] = f"{who} paused this {why}."
@@ -290,6 +296,7 @@ class Phone:
     def state(self):
         tick = self._tick()
         d = tick.decision
+        reached = self.dash.goal_reached(self.clock_s)
         out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
         # Only the active, known in-memory modem is identified as simulated.
         out["simulation"] = {"modem": type(getattr(self.essentials, "modem", None)) is ScreenModem}
@@ -313,25 +320,15 @@ class Phone:
         out["prefs"] = public_prefs
         out["temp_c"] = round(float(self.sim.temp_c), 1)
         out["charging"] = bool(self.charging)
-        if not self.visible:
-            for t in out.get('threads', []):
-                for k in ('preview', 'last', 'text'):
-                    if isinstance(t.get(k), str):
-                        t[k] = _redact_text(t[k])
-            tl = out.get('thread', [])
-            for i, item in enumerate(tl):
-                if isinstance(item, str):
-                    tl[i] = _redact_text(item)
-                elif isinstance(item, dict) and isinstance(item.get('text'), str):
-                    item['text'] = _redact_text(item['text'])
         free = assist.free_mb()
         if self.visible:
             out["helper"] = {"mode": d.mode.name, "allowed": list(d.allowed), "paused": list(d.deferred), "hours_left": None if math.isinf(tick.hours_left) else round(tick.hours_left, 1), "reserve": round(tick.reserve, 1), "source": "router" if d.reason.startswith("router") else "rules", "engine": muse.label(assist.ask_route(free=free))}
         out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason, deferred=d.deferred)
-        reasons = self._paused_reasons(tick)
+        reasons = self._paused_reasons(tick, goal_met=out["battery"]["goal_met"])
         for item in out["battery"]["paused"]:
             item["reason"] = reasons[self.runtime.tasks[int(item["id"][1:])].name]
-        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, self.dash.paused_names, self.dash.goal, out["battery"]["goal_met"])
+        goal_label = self._goal_label()
+        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, self.dash.paused_names, goal_label, out["battery"]["goal_met"])
         if self.visible and "helper" in out:
             paused = self.paused_names()
             out["helper"]["allowed"] = [n for n in out["helper"]["allowed"] if n not in paused]
@@ -347,11 +344,13 @@ class Phone:
             hf["goal"] = self.dash.goal
             hf["goal_met"] = bool(out["battery"]["goal_met"])
             hf["time_left"] = out["battery"]["time_left"]
-            goal_label = self.dash.goal
-            goal_hours = self.dash.hours_to_goal(self.clock_s)
-            if goal_hours is not None and self.clock_s + goal_hours * 3600 >= 86400:
-                goal_label += " tomorrow"
             hf["why_paused"] = why_paused(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, hf["paused"], goal_label, goal_met=hf["goal_met"], time_left=hf["time_left"], usable_percent=hf["usable_percent"])
+            if reached and hf["goal_met"]:
+                # After the goal, goal_met must not read as "lasts until the goal time".
+                hf["why_paused"] = hf["why_paused"][:-1] + f"; the {_format_goal_12h(self.dash.goal)} goal time has passed and calls and messages stay on."
+            glimmer = [n for n in hf["paused"] if reasons.get(n, '').startswith('Muse Glimmer ')]
+            if glimmer:
+                hf["paused_by_glimmer"] = glimmer
         h = int(self.clock_s // 3600) % 24
         m = int((self.clock_s % 3600) // 60)
         out["clock"] = f"{h:02d}:{m:02d}"
@@ -530,11 +529,17 @@ class Phone:
                 except TypeError:
                     fn(dt, tick_obj.decision.mode.name, costs)
         else:
-            fn = getattr(self.sim, "step", None) or getattr(self.sim, "advance", None) or getattr(self.sim, "tick")
-            try:
-                fn(dt, tick_obj.decision.mode.name, sum(costs))
-            except TypeError:
-                fn(dt, tick_obj.decision.mode.name, costs)
+            if hasattr(self.sim, "advance"):
+                # 60 simulated seconds matches tick_s=60 in opos.profiles, evaluate and evaleol.
+                n = min(120, max(1, math.ceil(dt * speed / 60.0)))
+                for _ in range(n):
+                    self.sim.advance(dt / n, tick_obj.decision.mode.name, costs)
+            else:
+                fn = getattr(self.sim, "step", None) or getattr(self.sim, "advance", None) or getattr(self.sim, "tick")
+                try:
+                    fn(dt, tick_obj.decision.mode.name, sum(costs))
+                except TypeError:
+                    fn(dt, tick_obj.decision.mode.name, costs)
         self.dash.record(self.sim.level, self.clock_s)
         self._tick()
         if self.status != "call ended: battery empty" or self.charging or round(self.sim.level) > 0:
@@ -571,7 +576,7 @@ def _about_notices():
             + html_escape(notices.as_text()) + '</pre></details></div>')
 
 def page(token="", nonce="", *, demo=False):
-    html = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Old Phone OS</title><style>
+    html = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Old Phone OS Interface</title><style>
 @@OPOS:css-1.css@@
 @@OPOS:css-2.css@@
 @@OPOS:css-3.css@@
@@ -645,7 +650,7 @@ const renderBase=render;render=async function(s){const r=await renderBase(s);if(
     html = html.replace('@@ABOUT_NOTICES@@', _about_notices(), 1)
     if demo:
         html = html.replace('<div id="demo" hidden>', '<div id="demo" data-demo="1">', 1)
-    html = html.replace("<title>Old Phone OS</title>", '<meta name="opos-token" content="' + html_escape(token, quote=True) + '"><title>Old Phone OS</title>', 1)
+    html = html.replace("<title>Old Phone OS Interface</title>", '<meta name="opos-token" content="' + html_escape(token, quote=True) + '"><title>Old Phone OS Interface</title>', 1)
     return secure.add_nonce(html, nonce) if nonce else html
 _RATE_ACTIONS = {"call": "call", "send": "send", "receive": "receive", "explain": "explain", "ask": "ask", "plan": "plan", "restart_helper": "restart_helper"}
 _INJECT_ACTIONS = ("receive",)
@@ -931,7 +936,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.phone.charging = data["on"]
             elif a == "goal" and isinstance(data.get("time"), str):
                 try:
-                    self.phone.dash.set_goal(data["time"])
+                    self.phone.dash.set_goal(data["time"], self.phone.clock_s)
                 except ValueError:
                     bad = True
             elif a == "undo" and isinstance(data.get("name"), str):
@@ -1013,7 +1018,7 @@ def main(argv=None):
     except Exception:
         cfg = setup_config.default_config()
     goal = cfg["goal"]
-    phone.dash.set_goal(goal["time"] if goal["enabled"] else None)
+    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
     _route_with_glimmer(phone, os.environ)
     make_server(args.port, phone, token=token).serve_forever()
 

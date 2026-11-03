@@ -73,18 +73,19 @@ class TestInferenceTransport(unittest.TestCase):
         self.assertEqual(result["engine"], "none")
         self.assertEqual(result["where"], "")
 
-    def test_wikipedia_retains_its_own_default_transport(self):
+    def test_wikipedia_uses_the_no_redirect_proxy_free_transport(self):
         wiki = {"query": {"search": [{"title": "Battery", "snippet": "Stored energy"}]}}
-        with mock.patch.object(urllib.request, "urlopen", side_effect=lambda req, **kw: response(req, wiki)) as search, \
-                mock.patch.object(muse, "_open_no_redirect", side_effect=lambda req, **kw: response(req, CHAT)) as inference:
+        def reply(req, **kw):
+            return response(req, wiki if req.host == "en.wikipedia.org" else CHAT)
+        with mock.patch.object(urllib.request, "urlopen", side_effect=AssertionError("default urlopen used")) as default, \
+                mock.patch.object(muse, "_open_no_redirect", side_effect=reply) as opener:
             result = assist.answer("What is a battery?", web=True, env={})
         self.assertTrue(result["ok"])
         self.assertEqual(result["engine"], "Muse Glimmer")
         self.assertEqual(result["sources"], [{"title": "Battery", "url": "https://en.wikipedia.org/wiki/Battery"}])
-        search.assert_called_once()
-        self.assertTrue(search.call_args.args[0].full_url.startswith("https://en.wikipedia.org/w/api.php?"))
-        inference.assert_called_once()
-        self.assertEqual(inference.call_args.args[0].host, "127.0.0.1:1234")
+        default.assert_not_called()
+        self.assertEqual([call.args[0].host for call in opener.call_args_list], ["en.wikipedia.org", "127.0.0.1:1234"])
+        self.assertTrue(opener.call_args_list[0].args[0].full_url.startswith("https://en.wikipedia.org/w/api.php?"))
 
     def test_custom_opener_still_handles_search_and_inference(self):
         calls = []

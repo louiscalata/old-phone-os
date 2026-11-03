@@ -1,4 +1,4 @@
-# Jaryo — the Old Phone OS design language
+# Jaryo — the Old Phone OS Interface design language
 
 > Historical design specification, drafted November 1, 2026. Sections 1–8 keep the original proposal and are not a current implementation checklist. Section 9 names the files that implement it, and the notes in section 13 record later changes. See the README for current behavior.
 
@@ -88,7 +88,7 @@ System stacks only; nothing downloaded (`@font-face` is forbidden in Jaryo files
 
 | Role | Face | Size | Weight / case | Used by |
 |---|---|---|---|---|
-| Masthead | serif | `2.25rem`, line-height 1.05 | 700 | `#lock-time`, `#jaryo-masthead` (Home title "Old Phone OS"), `#sheet-title` |
+| Masthead | serif | `2.25rem`, line-height 1.05 | 700 | `#lock-time`, `#jaryo-masthead` (Home title "Old Phone OS Interface"), `#sheet-title` |
 | Headline | serif | `1.5rem`, lh 1.15 | 700 | tile labels (`#home button`), `#settings h2`, `#headline` |
 | Subhead | condensed | `1.125rem`, lh 1.2 | 400, uppercase, `letter-spacing:.04em` | pivot headers, `#settings h3`, `summary`, A–Z letters, dateline `#lock-date` |
 | Body | body | `1rem`, lh 1.45 | 400 | everything else |
@@ -134,7 +134,7 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 360x640                                    1280x720 (4 tracks, 1px rules between)
 +----------------------------------+       +-------------------------------------------+
 | 14:32  Offline  Helper on   23%  | #sb   | 14:32 ............................. 23%   |
-| [ Shade ]  [ Lock ]        (btn row)     | Old Phone OS           Saturday 1 November|
+| [ Shade ]  [ Lock ]        (btn row)     | Old Phone OS Interface           Saturday 1 November|
 | OLD PHONE OS         (masthead)  |       |===========================================|
 |==================================|       | Phone    | Messages | Helper   | Settings |
 | Phone            | Messages      | wide? | Calls... | 2 new    | Ask...   | Display..|
@@ -150,7 +150,7 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 ```
 
 - Status button row `#jaryo-status-row` (new, inserted by `jaryo.js` right under `#sb`): `[ Shade ]` (`#jaryo-shade`, calls `window.opos.open()`), `[ Lock ]` (`oposUI.lock()`). This is the visible button for the pull-down gesture; `#meter-hit` keeps working as the shortcut.
-- Masthead `#jaryo-masthead` = "Old Phone OS" serif + dateline, 3px rule below.
+- Masthead `#jaryo-masthead` = "Old Phone OS Interface" serif + dateline, 3px rule below.
 - Tiles = the existing `#home button[data-open]` elements, restyled as articles: headline label + one-line standfirst (`data-jaryo-sub`, filled from state: Phone → "Calls and texts" / "In call"; Messages → thread count from `s.threads.length`; Helper → "Ask a question" or "Resting to save power" when `s.mode==='CRITICAL'`; Settings → "Display, Battery, Device"). Sizes via `data-size="small|medium|wide"`: small = 1 track × 1 row (min 96 px), medium = 1 track × 2 rows, wide = all tracks. Defaults: Phone medium, Messages medium, Helper small, Settings small, favourites small; `#allapps` wide. The install wizard may change sizes (section 6); stored in `localStorage['jaryo_tiles']` as `{"phone":"medium",…}`. DOM order never changes.
 - `#home-notice` becomes a one-column brief under the tiles (`margin-top:0`), and `#intro` is hidden on home.
 - **All apps** (`#allapps` → `#apps-list`): an A–Z list; `jaryo.js` inserts a condensed uppercase letter heading (`<li class="jaryo-letter" aria-hidden="true">`) before the first entry of each letter and a letter-jump row `#jaryo-letters` of ≥48 px text buttons (only letters that exist; others omitted, not greyed). Jumping = `scrollIntoView` on the heading. Contacts/Threads entries are dropped. `#apps-close` and `#back` MUST not both be visible.
@@ -354,7 +354,7 @@ Jaryo ships as four static files in `src/opos/web_static/`, inlined into the kio
 Rules for every Jaryo file:
 
 - **Fail-open.** Code is wrapped in `try{…}catch(e){}` blocks, as in phone-a/b.js. If Jaryo throws, the inline shell, `oposUI.openApp`, lock/unlock and the shade must keep working.
-- **Quiet words.** Jaryo files never say "AI", "model" or "assistant"; the UI says "Helper".
+- **Quiet words.** Jaryo files never say "AI", "model" or "assistant"; the UI says "Helper". Message text is the owner's and is never redacted.
 - **No network, no downloads, no new dependencies.** System fonts only; no CDN, npm or Python packages.
 - Existing ids and classes are never renamed; new ones are prefixed `jaryo-`.
 
@@ -366,7 +366,7 @@ See the README for current status, and section 13 for changes since the proposal
 
 The following paragraph MUST appear word for word on the install-time setup screen, in Settings > About, and in the case study. It is held in one place, `opos.notices.DISCLAIMER` (src/opos/notices.py), shared with the installers; screens read it from there and never retype it. Tests assert each place (tests/test_notices.py, tests/test_setup_screens.py, tests/test_about_notices.py).
 
-> Old Phone OS is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk.
+> Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk.
 
 Concise essentials shown beside it (setup screen: "About this software"; Settings > About), all from the same source and only facts true for the build, unpublished items shown as a visible placeholder: version and build hash; GPL-3.0 licence, source link and third-party notices (postmarketOS, Linux, bundled tools); not affiliated with postmarketOS, Microsoft, Google or the phone makers, trademarks belong to their owners; tested devices (others untested); risks (warranty, data loss from unlocking the bootloader, bricking, no emergency-calling guarantee); how to restore stock; privacy (each claim verified against the code in docs/notices-verification.md); contact or issue link; (c) 2026 Louis Calata. Style: Jaryo (serif, left, thin rules, two colours, native details/summary, no icons).
 

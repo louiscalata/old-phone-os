@@ -83,12 +83,12 @@ class TestProbe(unittest.TestCase):
     def test_success_with_content(self):
         """A non-empty model reply confirms that the probe was answered."""
         opener = json_opener({"choices": [{"message": {"content": "OK"}}]})
-        self.assertEqual(muse_mod.probe(env={}, opener=opener), {"answered": True})
+        self.assertEqual(muse_mod.probe(env={}, opener=opener), {"answered": True, "latency_s": mock.ANY, "reply": "OK", "finish_reason": None, "reply_model": None})
         self.assertEqual(len(opener.requests), 1)
         req = opener.requests[0]
         self.assertEqual(req.get_method(), "POST")
         self.assertEqual(req.full_url, "http://127.0.0.1:1234/v1/chat/completions")
-        self.assertEqual(opener.timeouts, [30])
+        self.assertEqual(opener.timeouts, [90.0])
         body = json.loads(req.data.decode())
         self.assertEqual(body, {"model": "muse-glimmer-30b", "messages": [{"role": "user", "content": "Reply with OK."}], "max_tokens": muse_mod.DEFAULT_MAX_TOKENS + muse_mod.REASONING_HEADROOM, "reasoning_effort": "low", "temperature": 0})
     def test_http_502(self):

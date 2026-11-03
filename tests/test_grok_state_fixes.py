@@ -36,16 +36,16 @@ class TestGrokStateFixes(unittest.TestCase):
             with self.subTest(goal=goal):
                 phone = self.phone(goal)
                 phone.clock_s = clock
-                self.assertEqual(phone.dash.hours_to_goal(clock), 0)
+                self.assertIsNone(phone.dash.hours_to_goal(clock))
+                self.assertTrue(phone.dash.goal_reached(clock))
                 state = phone.state()
                 self.assertTrue(state["battery"]["goal_met"])
                 self.assertTrue(state["helper"]["goal_met"])
                 self.assertNotIn("tomorrow", state["helper"]["why_paused"])
 
     def test_a_past_goal_says_tomorrow(self):
-        for goal, clock, hours in (("16:00", 16 * 3600 + 1, 24 - 1 / 3600),
-                                   ("16:00", 17 * 3600, 23),
-                                   ("11:00", 12 * 3600, 23)):
+        for goal, clock, hours in (("06:00", 15 * 3600, 15.0),
+                                   ("11:00", 20 * 3600, 15.0)):
             with self.subTest(goal=goal, clock=clock):
                 phone = self.phone(goal)
                 phone.clock_s = clock
@@ -53,6 +53,12 @@ class TestGrokStateFixes(unittest.TestCase):
                 helper = phone.state()["helper"]
                 self.assertEqual(helper["goal"], goal)
                 self.assertIn(goal + " tomorrow", helper["why_paused"])
+        phone = self.phone("16:00")
+        phone.clock_s = 16 * 3600 + 1
+        self.assertIsNone(phone.dash.hours_to_goal(phone.clock_s))
+        helper = phone.state()["helper"]
+        self.assertNotIn("tomorrow", helper["why_paused"])
+        self.assertNotIn("until 16:00", helper["why_paused"])
 
     def test_a_future_goal_stays_today(self):
         phone = self.phone()

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Where Old Phone OS stands at the end of the Meta Global AI Developer Hackathon (November 4, 2026)
+Where Old Phone OS Interface stands at the end of the Meta Global AI Developer Hackathon (November 4, 2026)
 and what comes next. Plans are intentions, not promises.
 
 ## Working today

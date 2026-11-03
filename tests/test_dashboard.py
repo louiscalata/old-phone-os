@@ -33,7 +33,9 @@ class TestDashboard(unittest.TestCase):
         d = self.dash
         d.set_goal("23:00")
         self.assertEqual(d.hours_to_goal(20*3600), 3.0)
-        self.assertEqual(d.hours_to_goal(23.5*3600), 23.5)
+        self.assertIsNone(d.hours_to_goal(23.5*3600))
+        self.assertTrue(d.goal_reached(23.5*3600))
+        self.assertEqual(d.hours_to_goal(7.5*3600), 15.5)
         d.set_goal("")
         self.assertIsNone(d.goal)
         with self.assertRaises(ValueError):

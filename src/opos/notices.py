@@ -15,7 +15,7 @@ import sys
 
 # Owner's words, exact. Never paraphrase (docs/jaryo.md section 11).
 DISCLAIMER = (
-    "Old Phone OS is Louis Calata's hackathon demo. It is experimental software, "
+    "Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, "
     "provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's "
     "operating system and may erase data; back up first and use at your own risk."
 )
@@ -63,11 +63,11 @@ THIRD_PARTY = (
     "NetworkManager (GPL-2.0-or-later)",
     "polkit (LGPL-2.0-or-later) and D-Bus (AFL-2.1 or GPL-2.0-or-later)",
     "OpenRC (BSD-2-Clause) and psmisc (GPL-2.0-or-later)",
-    "Each of these keeps its own licence and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS.",
+    "Each of these keeps its own licence and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.",
 )
 
 AFFILIATION = (
-    "Old Phone OS is not affiliated with or endorsed by postmarketOS, Microsoft, Google "
+    "Old Phone OS Interface is not affiliated with or endorsed by postmarketOS, Microsoft, Google "
     "or any phone maker. All trademarks belong to their owners."
 )
 
@@ -86,11 +86,11 @@ RISKS = (
 RESTORE_STOCK = "[restore guide: unpublished]"
 
 PRIVACY = (
-    "Old Phone OS sends no telemetry or analytics.",
+    "Old Phone OS Interface sends no telemetry or analytics.",
     "The phone screen and setup pages are served only on the phone's own loopback address, not to the network.",
     "By default the Helper uses its built-in rules and programs on this phone only.",
-    "Old Phone OS's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.",
-    "postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS's control.",
+    "Old Phone OS Interface's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.",
+    "postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS Interface's control.",
 )
 
 CONTACT = "See the project repository for support."
@@ -122,7 +122,7 @@ def notices():
 def as_text(data=None):
     """Plain text (also valid Markdown) of every field."""
     d = notices() if data is None else data
-    out = ["About Old Phone OS", "", d["disclaimer"], "", INSTALL_SCOPE, ""]
+    out = ["About Old Phone OS Interface", "", d["disclaimer"], "", INSTALL_SCOPE, ""]
     for k in FIELDS[1:]:
         v = d[k]
         out.append(_TITLES[k])

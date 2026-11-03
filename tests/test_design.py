@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Design tests for Old Phone OS: history, home screen, web, goal wiring."""
+"""Design tests for Old Phone OS Interface: history, home screen, web, goal wiring."""
 
 import re
 import threading

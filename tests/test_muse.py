@@ -622,7 +622,7 @@ class TestLaneCoreRegressions(unittest.TestCase):
         self.assertGreater(t2, muse_mod.EARLY_ROUTE_S - 5)
         only = RouteOpener("ok")
         explain({"mode": "SAVER"}, [glimmer], env={}, opener=only)
-        self.assertLessEqual(only.calls[0][1], muse_mod.EARLY_ROUTE_S, "every route is capped at 60 seconds")
+        self.assertGreater(only.calls[0][1], muse_mod.EARLY_ROUTE_S, "the last route gets the remaining budget")
     def test_plan_falls_back_to_next_route_and_names_it(self):
         glimmer = glimmer_route({})
         opener = RouteOpener('["c","a"]', down=(self.LOCAL.base_url,))

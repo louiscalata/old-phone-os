@@ -12,7 +12,7 @@ from opos.setup import wizard_page, jaryo_steps, jaryo_steps_js
 
 class TestSetupScreens(unittest.TestCase):
     def test_disclaimer_literal_and_escaped_in_page(self):
-        literal = "Old Phone OS is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk."
+        literal = "Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk."
         self.assertEqual(notices.DISCLAIMER, literal)
         page = wizard_page.page('tok', 'nonce123')
         escaped = html.escape(notices.DISCLAIMER)

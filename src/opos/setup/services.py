@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Render and install user-level services for Old Phone OS."""
+"""Render and install user-level services for Old Phone OS Interface."""
 from __future__ import annotations
 
 import os

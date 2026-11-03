@@ -125,7 +125,7 @@ class TestReliable(unittest.TestCase):
 
     def test_boot_fetch_rejection_shows_reload(self):
         out = self.run_js('boot')
-        self.assertIn('Could not reach Old Phone OS.', out['message'])
+        self.assertIn('Could not reach Old Phone OS Interface.', out['message'])
         self.assertFalse(out['hidden'])
 
     def test_one_overlay_at_a_time(self):

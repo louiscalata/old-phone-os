@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Generated from src/opos/notices.py by `python -m opos.notices --markdown`; do not edit by hand. Shared with the installer workstream: the .exe/.dmg installers import opos.notices or run `python -m opos.notices` (JSON). Build shows "unpublished" here; a release build fills it in. Evidence for each privacy and tested-device line: docs/notices-verification.md. -->
-About Old Phone OS
+About Old Phone OS Interface
 
-Old Phone OS is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk.
+Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk.
 
 The replacement warning is for OS flashing; per-user install.sh installs OPOS within the existing OS.
 
@@ -28,10 +28,10 @@ Third-party notices
 - NetworkManager (GPL-2.0-or-later)
 - polkit (LGPL-2.0-or-later) and D-Bus (AFL-2.1 or GPL-2.0-or-later)
 - OpenRC (BSD-2-Clause) and psmisc (GPL-2.0-or-later)
-- Each of these keeps its own licence and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS.
+- Each of these keeps its own licence and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.
 
 Affiliation
-Old Phone OS is not affiliated with or endorsed by postmarketOS, Microsoft, Google or any phone maker. All trademarks belong to their owners.
+Old Phone OS Interface is not affiliated with or endorsed by postmarketOS, Microsoft, Google or any phone maker. All trademarks belong to their owners.
 
 Tested devices
 - Physical phones, including Surface Duo, are untested for this corrected source export.
@@ -47,11 +47,11 @@ Restore the original system
 [restore guide: unpublished]
 
 Privacy
-- Old Phone OS sends no telemetry or analytics.
+- Old Phone OS Interface sends no telemetry or analytics.
 - The phone screen and setup pages are served only on the phone's own loopback address, not to the network.
 - By default the Helper uses its built-in rules and programs on this phone only.
-- Old Phone OS's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.
-- postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS's control.
+- Old Phone OS Interface's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.
+- postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS Interface's control.
 
 Contact
 See the project repository for support.

@@ -32,7 +32,7 @@ class TestDefaultsUrl(unittest.TestCase):
                                     )
         output = buf.getvalue()
         self.assertEqual(rc, 0)
-        self.assertIn("Old Phone OS is set up with the default settings.", output)
+        self.assertIn("Old Phone OS Interface is set up with the default settings.", output)
         lines = output.splitlines()
         self.assertTrue(lines)
         self.assertEqual(lines[-1], "Open it at http://127.0.0.1:8765/")

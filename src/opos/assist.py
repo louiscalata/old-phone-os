@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import contextlib
+import http.client
 import ipaddress
 import json
 import os
@@ -92,7 +93,7 @@ def ask_route(env=None, free=None, question=""):
     return ask_routes(question, env, free)[0]
 def search(question, opener=None, timeout=8):
     if opener is None:
-        opener = urllib.request.urlopen
+        opener = muse._open_no_redirect  # ignores environment proxies and does not follow redirects
     params = urllib.parse.urlencode({"action": "query", "list": "search", "srsearch": question, "srlimit": 3, "format": "json", "srprop": "snippet"})
     url = "https://en.wikipedia.org/w/api.php?" + params
     req = urllib.request.Request(url, headers={"User-Agent": "OPOS-helper/1.0"})
@@ -112,7 +113,7 @@ def search(question, opener=None, timeout=8):
             wiki_url = "https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_"))
             out.append({"title": title, "url": wiki_url, "snippet": snippet})
         return out
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, RecursionError, http.client.HTTPException):
         return []
 def is_hard(question):
     return len(question.split()) >= 20
@@ -152,6 +153,8 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
         except (TypeError, ValueError, RecursionError):
             return {"ok": False, "text": "Invalid phone facts.", "engine": "none", "where": "", "sources": []}
         prompt += "Facts about this phone (use them for questions about the phone): " + facts + "\n"
+        if muse.glimmer_paused(context):
+            prompt += "If asked about a task listed in paused_by_glimmer, say that Muse Glimmer chose to pause it.\n"
     prompt += "\nQuestion: " + q
     deadline = time.monotonic() + muse.HELPER_DEADLINE_S
     last_failed = None

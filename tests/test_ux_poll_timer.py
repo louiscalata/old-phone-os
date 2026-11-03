@@ -56,7 +56,7 @@ class TestPollTimerSource(unittest.TestCase):
 
     def test_initial_load_preserved(self):
         self.assertIn("fetch('/api/state',", self.js)
-        self.assertIn("Could not reach Old Phone OS. Reload the page in a few seconds.", self.js)
+        self.assertIn("Could not reach Old Phone OS Interface. Reload the page in a few seconds.", self.js)
         self.assertEqual(self.js.count("fetch('/api/state',"), 1)
 
     def test_shell_retry_is_separate_and_conditional(self):

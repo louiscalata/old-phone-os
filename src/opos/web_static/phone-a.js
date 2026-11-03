@@ -230,7 +230,7 @@ return s;
 var screen=document.getElementById('screen');
 if(screen&&typeof MutationObserver==='function'){
 function bootFailed(){try{
-if(screen.textContent==='Could not reach Old Phone OS. Reload the page in a few seconds.'){
+if(screen.textContent==='Could not reach Old Phone OS Interface. Reload the page in a few seconds.'){
 failures=2;reload.hidden=false;bootWatch.disconnect();
 }
 }catch(e){}}

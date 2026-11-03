@@ -25,7 +25,7 @@ STYLE = """
 def fragment():
     data = notices.notices()
     parts = ['<section id="jaryo-notices" aria-labelledby="jaryo-notices-title">',
-             '<header>Old Phone OS · First run</header>',
+             '<header>Old Phone OS Interface · First run</header>',
              '<h2 id="jaryo-notices-title" tabindex="-1">About this software</h2>',
              '<p>Read before you continue. This setup runs within your existing operating system.</p>',
              f'<p class="notice-warning">{html.escape(data["disclaimer"])}</p>',

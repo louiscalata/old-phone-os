@@ -2,20 +2,23 @@
 from opos.power import plan, feature_drain, time_left_words, total_drain
 import re
 from opos.eol import is_worn
+# A daily goal counts as reached for 8 hours after its time, then targets the same time the next day.
+GOAL_GRACE_H = 8.0
 _REDACT_RE = re.compile(r'\b(AI|model|Governor|assistant)\b', re.IGNORECASE)
 def _redact(s):
     return _REDACT_RE.sub('...', s)
 def _format_goal_12h(goal_str):
-    h_str, m_str = goal_str.split(":")
+    """'16:00' reads '4 PM'; a trailing word stays, so '06:00 tomorrow' reads '6 AM tomorrow'."""
+    hhmm, _, day = goal_str.partition(" ")
+    h_str, m_str = hhmm.split(":")
     h = int(h_str)
     m = int(m_str)
     ampm = "PM" if h >= 12 else "AM"
     h12 = h % 12
     if h12 == 0:
         h12 = 12
-    if m == 0:
-        return f"{h12} {ampm}"
-    return f"{h12}:{m:02d} {ampm}"
+    words = f"{h12} {ampm}" if m == 0 else f"{h12}:{m:02d} {ampm}"
+    return f"{words} {day}" if day else words
 def _format_time_12h(sec):
     sec = int(sec)
     total_minutes = sec // 60
@@ -39,9 +42,11 @@ class Dashboard:
         self._last_paused = ()
         self.paused_names = ()
         self._last_record_minute = None
-    def set_goal(self, hhmm):
+        self._goal_armed = False
+    def set_goal(self, hhmm, clock_s=None):
         if hhmm is None or hhmm == "":
             self.goal = None
+            self._goal_armed = False
             return
         try:
             h_str, m_str = hhmm.split(":")
@@ -52,6 +57,9 @@ class Dashboard:
         if not (0 <= h <= 23 and 0 <= m <= 59):
             raise ValueError
         self.goal = f"{h:02d}:{m:02d}"
+        # A goal set inside its own grace window means the next one, so it is not reached yet.
+        # Without a clock, the goal counts as set before its time.
+        self._goal_armed = clock_s is None or self._since_goal_s(clock_s) >= GOAL_GRACE_H * 3600
     def undo(self, name):
         names = {t.name for t in self.tasks}
         if isinstance(name, str) and re.match(r'^#\d+$', name):
@@ -112,13 +120,25 @@ class Dashboard:
             self.history = [level]
             self._times = [None]
         self._last_record_minute = None
-    def hours_to_goal(self, clock_s):
+    def _since_goal_s(self, clock_s):
+        h_str, m_str = self.goal.split(":")
+        return (clock_s - int(h_str) * 3600 - int(m_str) * 60) % 86400
+    def goal_reached(self, clock_s):
+        """True in the grace window, once the clock was seen before the goal time (armed)."""
         if not self.goal or clock_s is None:
+            return False
+        if self._since_goal_s(clock_s) >= GOAL_GRACE_H * 3600:
+            self._goal_armed = True
+            return False
+        return self._goal_armed
+    def hours_to_goal(self, clock_s):
+        """Hours until the daily goal; None means no goal or goal reached."""
+        if not self.goal or clock_s is None or self.goal_reached(clock_s):
             return None
         h_str, m_str = self.goal.split(":")
         goal_sec = int(h_str) * 3600 + int(m_str) * 60
         delta = goal_sec - clock_s
-        if delta < 0:
+        if delta <= 0:  # 0 here means a goal set at its own time: the next one is a day away.
             delta += 86400
         return delta / 3600.0
     def set_in_use(self, name):
@@ -135,6 +155,7 @@ class Dashboard:
 
     def view(self, level, mode, charging, health, clock_s, visible, reason, deferred=()):
         hours = self.hours_to_goal(clock_s)
+        reached = self.goal_reached(clock_s)
         p = plan(level, hours, self.tasks, health, charging, self.in_use)
         paused_names = [t.name for t in self.tasks if (t.name in p.paused or t.name in deferred) and t.name not in self.undone and t.name != self.in_use]
         self.paused_names = tuple(paused_names)
@@ -170,8 +191,13 @@ class Dashboard:
             meets_goal = p.meets_goal
         else:
             meets_goal = hours_left_corrected >= hours
+        # Calls and messages treat a battery shown as 0% as empty, charging or not, so the goal does too.
+        if reached:
+            meets_goal = percent > 0
         goal_note = ""
-        if not charging and self.goal and hours is not None and not meets_goal:
+        if reached and not charging and percent > 0:
+            goal_note = f"Made it to {_format_goal_12h(self.goal)}. Calls and messages stay on"
+        elif not charging and self.goal and hours is not None and not meets_goal:
             if clock_s is not None and hours_left_corrected != float('inf') and hours_left_corrected == hours_left_corrected:
                 goal_words = _format_goal_12h(self.goal)
                 end_seconds_float = clock_s + hours_left_corrected * 3600
@@ -226,7 +252,7 @@ class Dashboard:
             "worn_note": "Battery is worn, keeping a reserve for calls" if is_worn(health) and not charging else "",
         }
         if visible:
-            out["why"] = reason + "; " + p.reason
+            out["why"] = reason + "; " + ("Goal time reached" if reached else p.reason)
         else:
             for item in out["paused"]:
                 item["name"] = _redact(item["name"])

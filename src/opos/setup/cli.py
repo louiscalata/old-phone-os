@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Command line interface for Old Phone OS setup."""
+"""Command line interface for Old Phone OS Interface setup."""
 from __future__ import annotations
 import argparse
 import json
@@ -105,9 +105,9 @@ def _handle_run(args: argparse.Namespace, env: dict[str, str], platform: str, ho
         except Exception:
             _dev_name = ""
         if _dev_name:
-            print(f"Old Phone OS is set up with the default settings. Device: {_dev_name}", file=out)
+            print(f"Old Phone OS Interface is set up with the default settings. Device: {_dev_name}", file=out)
         else:
-            print("Old Phone OS is set up with the default settings.", file=out)
+            print("Old Phone OS Interface is set up with the default settings.", file=out)
         print("Open it at http://127.0.0.1:8765/", file=out)
         return 0
     needs = False
@@ -138,7 +138,7 @@ def _handle_run(args: argparse.Namespace, env: dict[str, str], platform: str, ho
     if args.dry_run:
         print("Dry run finished. Nothing was configured or started.", file=out)
         return 0
-    print("Old Phone OS is already set up.", file=out)
+    print("Old Phone OS Interface is already set up.", file=out)
     print("Open it at http://127.0.0.1:8765/", file=out)
     print("Run 'opos run --reconfigure' to change preferences.", file=out)
     return 0

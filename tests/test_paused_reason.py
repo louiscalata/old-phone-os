@@ -87,7 +87,7 @@ class PausedReasonState(unittest.TestCase):
         phone.dash.set_goal("18:00")
         self.add_glimmer(phone)
         reasons = self.reasons(phone)
-        self.assertEqual(reasons["photos backup"], "Battery rules paused this to help the battery last until 18:00.")
+        self.assertEqual(reasons["photos backup"], "Battery rules paused this to help the battery last until 6 PM.")
         self.assertTrue(reasons["email"].startswith("Muse Glimmer"))
 
     def test_worn_battery_reserve_explains_calls(self):

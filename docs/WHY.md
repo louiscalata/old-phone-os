@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Why Old Phone OS
+# Why Old Phone OS Interface
 
 OPOS explores how an older phone can keep essential tasks usable while offering an optional local helper. Its rule router uses battery state and a daily goal to defer non-essential work; model advice may pause more work, but cannot override the essential-task rules.
 

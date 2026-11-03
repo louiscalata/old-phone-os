@@ -75,7 +75,7 @@ class UXP13SettingsStatic(unittest.TestCase):
             self.assertIn('<label>%s<input id="%s" type="range"' % (text, ident), self.s)
 
     def test_about_default_and_quiet_words(self):
-        self.assertIn('<p id="about">Old Phone OS</p>', self.s)
+        self.assertIn('<p id="about">Old Phone OS Interface</p>', self.s)
         text = re.sub(r"<[^>]+>", " ", self.s)
         for w in ("AI", "model", "governor", "assistant"):
             self.assertNotRegex(text, r"\b%s\b" % w)
@@ -120,7 +120,7 @@ let focused = null;
 function run(o) {
   const store = {}; if (o.stored !== undefined) store.opos_text = o.stored;
   const E = {phone: el(), home: el({querySelector: () => null}), back: el(), settings: el(), ff: el(),
-    'ff-detected': el(), 'ff-saved': el(), textsize: el(), about: el({textContent: 'Old Phone OS'}),
+    'ff-detected': el(), 'ff-saved': el(), textsize: el(), about: el({textContent: 'Old Phone OS Interface'}),
     'sb-engine': el({textContent: o.engine || ''})};
   if (o.noSelect) delete E.textsize;
   const root = {dataset: {}};
@@ -213,8 +213,8 @@ class UXP13SettingsRuntime(unittest.TestCase):
         self.assertTrue(r["homeAfterBack"])
 
     def test_about_uses_helper_label_or_name(self):
-        self.assertEqual(self.r["empty"]["about"], "Old Phone OS")
-        self.assertEqual(self.r["engine"]["about"], "Old Phone OS. Helper set to on this phone")
+        self.assertEqual(self.r["empty"]["about"], "Old Phone OS Interface")
+        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface. Helper set to on this phone")
 
 
 class UXP13Wizard(unittest.TestCase):

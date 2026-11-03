@@ -18,7 +18,7 @@ class WizardPageTests(unittest.TestCase):
         meta = f'<meta name="opos-token" content="{escape(self.token, quote=True)}">'
         self.assertIn(meta, self.html)
         self.assertNotIn(f'content="{self.token}"', self.html)
-        self.assertLess(self.html.index(meta), self.html.index("<title>Old Phone OS setup</title>"))
+        self.assertLess(self.html.index(meta), self.html.index("<title>Old Phone OS Interface setup</title>"))
 
     def test_every_inline_script_and_style_has_nonce(self):
         tags = re.findall(r"<(?:script|style)\b[^>]*>", self.html)

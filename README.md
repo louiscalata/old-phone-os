@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Old Phone OS (OPOS)
+# Old Phone OS Interface (OPOS)
 
 OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
 
@@ -60,7 +60,9 @@ All numbers below simulate the deterministic rule router against fixed rules, wi
 
 * Simulation with worn battery: router 518 important minutes vs rules 325.
 * Simulation with fresh battery: router 743 important minutes vs rules 437. The router gives up useful minutes to buy important minutes: 252 useful minutes for the router vs 403 for fixed rules.
-* Simulation of 40 worn phones for working calls: router 5.52 to 6.54 hours, rules 3.67 to 4.73 hours.
+* Averaged over 40 simulated worn phones, working calls lasted 5.52 hours with the router alone and 6.54 hours with the router plus OPOS's worn-battery reserve and burst shaping (fixed rules: 3.67 and 4.73 hours); without the reserve and burst shaping every simulated phone browned out, and with them none did.
+
+Reproduce: `PYTHONPATH=src python3 -m opos.profiles` (about 10 s) and `PYTHONPATH=src python3 -m opos.evaleol` (about 30 s).
 
 ## Install the per-user application
 
