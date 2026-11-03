@@ -84,12 +84,12 @@ class HelperResetRuntime(unittest.TestCase):
 
     def test_hiding_clears_answer_and_credit_even_without_reason_change(self):
         self.assertTrue(self.result['shown']['answer'].startswith('Plan:'))
-        self.assertEqual(self.result['shown']['credit'], 'Glimmer: kept the plan order')
-        self.assertEqual(self.result['hidden'], {'answer': '', 'credit': 'Glimmer: helper hidden'})
+        self.assertEqual(self.result['shown']['credit'], 'Glimmer: no extra pauses; kept the plan order')
+        self.assertEqual(self.result['hidden'], {'answer': '', 'credit': 'Glimmer: off'})
         self.assertEqual(self.result['reshown'], {'answer': '', 'credit': 'Glimmer: no extra pauses'})
 
     def test_late_plan_reply_cannot_restore_answer_after_hide(self):
-        self.assertEqual(self.result['late'], {'answer': '', 'credit': 'Glimmer: helper hidden'})
+        self.assertEqual(self.result['late'], {'answer': '', 'credit': 'Glimmer: off'})
         self.assertEqual(self.result['lateReshown'], {'answer': '', 'credit': 'Glimmer: no extra pauses'})
 
     def test_late_ask_reply_cannot_restore_answer_after_hide(self):
@@ -98,7 +98,7 @@ class HelperResetRuntime(unittest.TestCase):
         harness = harness.replace("const pending=G('planbtn').onclick()", "const pending=G('askbtn').onclick()")
         harness = harness.replace('release(plan)', "release({text:'Stale answer',engine:'Muse Glimmer',where:'on this device'})")
         result = node(harness)
-        self.assertEqual(result['late'], {'answer': '', 'credit': 'Glimmer: helper hidden'})
+        self.assertEqual(result['late'], {'answer': '', 'credit': 'Glimmer: off'})
         self.assertEqual(result['lateReshown'], {'answer': '', 'credit': 'Glimmer: no extra pauses'})
 
     def test_hiding_cancels_active_helper_before_clearing_answer(self):
@@ -108,7 +108,7 @@ class HelperResetRuntime(unittest.TestCase):
         harness = harness.replace('{shown,hidden,reshown,late,', '{cancelled,shown,hidden,reshown,late,')
         result = node(harness)
         self.assertEqual(result['cancelled'], 1)
-        self.assertEqual(result['hidden'], {'answer': '', 'credit': 'Glimmer: helper hidden'})
+        self.assertEqual(result['hidden'], {'answer': '', 'credit': 'Glimmer: off'})
 
 
 PAUSED_HARNESS = r"""
@@ -318,7 +318,7 @@ CHECKS.polish=async function(){
  if(!await waitFor("document.getElementById('helperwait')"))out.push('helper never started');
  await ev('render('+JSON.stringify(STATE.hidden)+')');
  await ev('render('+JSON.stringify(STATE.visible)+')');
- if(!await ev("__aborted&&helperTimer===null&&!G('helperwait')&&!G('helpercancel')&&G('answer').textContent===''&&G('glimmer-credit').textContent==='Glimmer: no extra pauses'"))out.push('hidden helper request or progress survived');
+ if(!await ev("__aborted&&helperTimer===null&&!G('helperwait')&&!G('helpercancel')&&G('answer').textContent===''&&G('glimmer-credit').textContent==='Glimmer: off'"))out.push('hidden helper request or progress survived');
  return out;
 };
 """

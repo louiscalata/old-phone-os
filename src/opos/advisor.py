@@ -52,7 +52,7 @@ class GlimmerAdvisor:
         with self._lock:
             if self.clock() < self.down_until:
                 return self.failure
-            return "waiting" if self.pending or not self.cache else "ready"
+            return "waiting" if self.pending else "ready"
     def __call__(self, state, tasks):
         d = self.base(state, tasks)
         if not self.base.visible:

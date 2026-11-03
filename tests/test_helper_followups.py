@@ -12,7 +12,7 @@ from unittest import mock
 
 from opos import advisor as advisor_mod, assist, muse
 from opos.advisor import GlimmerAdvisor
-from opos.governor import PowerState
+from opos.governor import PowerState, Priority
 from opos.router import Router
 from opos.runtime import DEFAULT_TASKS
 from tests.test_security_fixes import response
@@ -55,6 +55,51 @@ def run_advisor(ask):
 
 def prompt_of(opener):
     return json.loads(opener.requests[0].data)["messages"][0]["content"]
+
+
+class AdvisorStatusTest(unittest.TestCase):
+    def test_idle_without_optional_work_is_ready(self):
+        for state in (None, PowerState(5, False, 1, 25), PowerState(90, False, 1, 45)):
+            with self.subTest(state=state):
+                queued = []
+                adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}),
+                                     spawn=queued.append, clock=lambda: 0)
+                if state is not None:
+                    decision = adv(state, DEFAULT_TASKS)
+                    self.assertEqual(set(decision.allowed),
+                                     {t.name for t in DEFAULT_TASKS if t.priority == Priority.ESSENTIAL})
+                self.assertEqual(queued, [])
+                self.assertEqual(adv.pending, set())
+                self.assertEqual(adv.cache, {})
+                self.assertEqual(adv.status(), "ready")
+
+    def test_waiting_tracks_inflight_work_even_with_cached_reply(self):
+        queued = []
+        adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}),
+                             ask=lambda *a, **k: '{"defer":[]}',
+                             spawn=queued.append, clock=lambda: 0)
+        for level in (90, 100):
+            adv(PowerState(level, False, 1, 25), DEFAULT_TASKS)
+            self.assertEqual(len(queued), 1)
+            self.assertEqual(adv.status(), "waiting")
+            queued.pop()()
+            self.assertEqual(adv.status(), "ready")
+        self.assertEqual(len(adv.cache), 2)
+
+    def test_failed_reply_stays_visible_until_backoff_expires_then_is_idle(self):
+        now, queued = [0], []
+        def ask(*a, **k):
+            raise muse.MuseError("no response")
+        adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}), ask=ask,
+                             spawn=queued.append, clock=lambda: now[0], backoff=60)
+        adv(PowerState(90, False, 1, 25), DEFAULT_TASKS)
+        queued.pop()()
+        now[0] = 59
+        self.assertEqual(adv.status(), "no reply")
+        now[0] = 60
+        self.assertEqual(adv.pending, set())
+        self.assertEqual(adv.cache, {})
+        self.assertEqual(adv.status(), "ready")
 
 
 class UnclosedThinkTest(unittest.TestCase):
