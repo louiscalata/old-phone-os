@@ -20,7 +20,7 @@ Demo walkthrough:
 1. Open `http://127.0.0.1:8765/?demo=1` for simulator controls.
 2. The demo starts at 60% battery with 60% battery health, so about 36% is usable. OPOS calls a battery worn below 80% health, so this one is worn, but its worn-battery reserve stays off: the reserve engages only below 50% health, and the demo cannot change health (the reserve is shown in the [simulations](#simulation-results)). To last until the demo's 16:00 goal it pauses maps and photos backup; calls, messages and email stay on, and with the helper shown, Muse Glimmer's background advisor may pause email too.
 3. Tap the thin bar at the top to open battery details and click Start simulation to watch it drain.
-4. Click Show helper and try Why?, Plan or type a question such as "Why are maps paused?" and Ask. Muse Glimmer answers from the phone's facts. With no model running, Why answers from the rules, Plan keeps a fixed order and Ask says no model is running.
+4. Click Show helper and try Why?, Plan or type a question such as "Why are maps paused?" and Ask. Muse Glimmer uses the phone's facts when it replies; in the captures below, Ask received Glimmer replies while both Why? attempts reached the helper deadline and fell back to the rules. With no model running, Why answers from the rules, Plan keeps a fixed order and Ask says no model is running.
 5. Drag the Battery slider below about 25% (under 15% usable). Ask rests to save power, and calls and messages still work.
 
 <p>
@@ -41,7 +41,7 @@ The dark capture's answer, verbatim:
 
 > Maps are paused to preserve power for calls and messages until 16:00. The battery is worn at 60% health, so a 60% charge is only about 36% usable and the phone is not charging. To keep calls and messages working, the phone paused email, maps and photos backup.
 
-Glimmer's background advisor had itself paused email; the battery panel says "Muse Glimmer paused this to save power for calls and messages." The answer reflects that captured state.
+Glimmer's background advisor had itself paused email; the captured battery state records its reason as "Muse Glimmer paused this to save power for calls and messages." The answer reflects that captured state. The dark screenshot does not show the battery panel, and its helper status line still reads "Glimmer: no extra pauses" despite that state; the light screenshot reads "Glimmer: suggested extra pauses."
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/glimmer-ask-dark.png">
@@ -83,7 +83,7 @@ This check reports the model ids the endpoint serves and `model_served` (whether
 
 ## Simulation results
 
-These results use one simulated battery and burst model, varied across profiles; they do not establish battery savings or cut-out rates on real phones. All numbers below simulate the deterministic rule router against fixed rules, with no AI model involved; they are not measurements on a real phone.
+The profile table varies a simulated battery-drain model across six profiles, without burst current; burst shaping applies only to the separate worn-battery hours evaluation below. These results do not establish battery savings or cut-out rates on real phones. All numbers below simulate the deterministic rule router against fixed rules, with no AI model involved; they are not measurements on a real phone.
 
 Six simulated device profiles, 40 phones each. Important minutes are simulated minutes until the battery is empty or browns out, with calls, messages and alarms allowed throughout; useful minutes add up the minutes email and maps were each allowed to run. Each figure is the average over the 40 phones, rounded to whole minutes.
 

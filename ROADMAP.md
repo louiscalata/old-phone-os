@@ -1,15 +1,16 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Where Old Phone OS Interface stands at the end of the Meta Global AI Developer Hackathon (November 4, 2026)
+Status as of November 3, 2026: where Old Phone OS Interface stands
 and what comes next. Plans are intentions, not promises.
 
 ## Working today
 
 - Battery governor: Normal, Saver and Critical modes from battery level, battery health,
   temperature and a daily goal; calls, messages and alarms stay on in every mode.
-- Helper with Meta Muse Glimmer 30B on your own computer: Why?, Plan and Ask answer from plain facts
-  about the phone; a background advisor may pause extra non-essential tasks, never fewer.
+- Helper with Meta Muse Glimmer 30B on your own computer: supports Why?, Plan and Ask using plain
+  facts about the phone. Captured Ask replies succeeded; both captured Why? attempts fell back to
+  rules at 115 s. A background advisor may pause extra non-essential tasks, never fewer.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
