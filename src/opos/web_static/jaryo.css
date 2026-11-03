@@ -1,0 +1,63 @@
+/*jaryo.css*/
+#home button{display:flex;align-items:flex-end;justify-content:flex-start;text-align:left;padding:12px;box-sizing:border-box;font-size:1.5rem;line-height:1.15;font-weight:700;font-family:var(--jaryo-serif,Georgia,'Iowan Old Style','Times New Roman',serif);overflow-wrap:anywhere;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);border:1px solid var(--jaryo-fg,#000);border-radius:0;box-shadow:none;transition:none}
+#home button:active,#home button[aria-pressed="true"]{background:var(--jaryo-fg,#000);color:var(--jaryo-bg,#fff)}
+#home button[data-size="small"],#home button:not([data-size]){min-height:96px;grid-row:span 1;align-self:start}#home button[data-size="medium"]{min-height:144px;grid-row:span 2}#home button[data-size="wide"]{grid-column:1/-1;min-height:96px}
+#home #allapps[data-size="wide"]{min-height:96px;font-size:1.5rem}
+#home-favourites,#phone[data-app="home"] #home:not([hidden]){grid-auto-rows:minmax(48px,auto)}
+#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);padding:12px 0;font-family:var(--jaryo-serif,Georgia,'Iowan Old Style','Times New Roman',serif)}
+#phone[data-app="home"] #intro{display:none}
+#screen[hidden]{display:none}
+@media not all and (min-width:840px){#phone:not([data-app="home"]) #screen{margin-top:12px}}
+@media (min-width:840px){
+html:not([data-ff]) #phone[data-app="home"]{max-width:900px}
+html:not([data-ff]) #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}
+html:is(:not([data-ff]),[data-ff="tablet"],[data-ff="foldable"]) #home [data-open]{border-width:1px 0 0 1px}
+html:is(:not([data-ff]),[data-ff="tablet"],[data-ff="foldable"]) #home-favourites>[data-open]:first-child{border-left-width:0}
+}
+#jaryo-status-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 16px 0}
+#jaryo-status-row:has(+#reload-shell:not([hidden])){margin-top:64px}
+#jaryo-status-row button{min-height:48px;min-width:48px;width:auto;margin:0;padding:0 16px;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);border:1px solid var(--jaryo-fg,#000);border-radius:0;box-shadow:none;font-size:1rem}
+#jaryo-status-row button:active{background:var(--jaryo-fg,#000);color:var(--jaryo-bg,#fff)}
+#jaryo-status-row button:focus-visible{outline:3px solid var(--jaryo-fg,#000);outline-offset:3px}
+:root{
+--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8;color-scheme:light;
+--jaryo-serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+--jaryo-cond:'Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
+--jaryo-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+@media(prefers-color-scheme:dark){html:not([data-theme]){--jaryo-fg:#e6e2d9;--jaryo-bg:#000;color-scheme:dark}}
+html[data-theme="light"]{--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8;color-scheme:light}
+html[data-theme="dark"]{--jaryo-fg:#e6e2d9;--jaryo-bg:#000;color-scheme:dark}
+body{font-family:var(--jaryo-body);font-size:1rem;font-weight:400;line-height:1.45}
+h1,h2,.jaryo-head,#settings h2,#headline{font-family:var(--jaryo-serif);font-size:1.5rem;font-weight:700;line-height:1.15}
+.jaryo-head{margin:0 0 .5rem;text-align:left}
+h3,#settings h3,summary,.jaryo-letter,.jaryo-letter-head,#lock-date{font-family:var(--jaryo-cond);font-size:1.125rem;font-weight:400;line-height:1.2;text-transform:uppercase;letter-spacing:.04em}
+#jaryo-masthead,#lock-time,#sheet-title{font-family:var(--jaryo-serif);font-size:2.25rem;font-weight:700;line-height:1.05;border-bottom:3px solid var(--jaryo-fg,currentColor);white-space:normal;overflow-wrap:anywhere}
+#jaryo-masthead{letter-spacing:.02em;border-top:1px solid var(--jaryo-fg,currentColor);padding:.5rem 0;text-align:left}
+#jaryo-masthead span:last-child{font-family:var(--jaryo-cond);font-size:1.125rem;font-weight:400;line-height:1.2;text-transform:uppercase;letter-spacing:.04em}
+#sb,#notice,#history-label,#helper-where{font-family:var(--jaryo-cond);font-size:.875rem;font-weight:400;line-height:1.3}
+#settings section,#qs>*,#apps-list li{border-top:1px solid var(--jaryo-fg,currentColor)}
+#home-favourites>*{border-bottom:1px solid var(--jaryo-fg,currentColor)}
+html,body,#phone,#lock,#sheet,#sheet-grip,#history,#sb,#demo,.box,#screen,#reload-shell{background:var(--jaryo-bg);color:var(--jaryo-fg)}
+button,input[type=text],input[type=time],select,#topbar,#textsize,#goal-clear,#goal-row button,#goal-row input[type=time],#askbtn{background:var(--jaryo-bg);color:var(--jaryo-fg);border-color:var(--jaryo-fg);color-scheme:inherit;border-radius:0;min-height:48px;min-width:48px}
+html[data-ff="slideout"] #controls{background:var(--jaryo-bg)}
+button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active{background:var(--jaryo-fg);color:var(--jaryo-bg)}
+button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-disabled="true"],#goal-clear:disabled{background:var(--jaryo-bg);color:var(--jaryo-fg);opacity:1;border-style:dashed}
+#screen{border:1px solid var(--jaryo-fg);border-radius:0;filter:none!important}
+#sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#answer a,#demo label{color:var(--jaryo-fg)}
+#sb-batt[data-low="true"]{border:3px double var(--jaryo-fg)}
+#answer a{text-decoration:underline}
+#meter{background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)}
+#meter[data-tone] #meter-fill,.feature-fill{background:var(--jaryo-fg);box-shadow:none}
+#meter[data-tone]{animation:none}
+#meter-hit::after,#sheet-handle::after,#sheet-grip::after{background:var(--jaryo-fg)}
+#scrim{background:var(--jaryo-bg)}
+.feature-bar{background:var(--jaryo-bg);border:1px solid var(--jaryo-fg);border-radius:0}
+.paused-row{border-color:var(--jaryo-fg)}.paused-row button{min-height:48px}
+#history polyline{stroke:var(--jaryo-fg)}
+#sb-engine,#time-left,#history-label,#why,#events{opacity:1}
+#charge::before{background:var(--jaryo-bg);border-color:var(--jaryo-fg)}
+#charge:checked::before{background:var(--jaryo-fg);color:var(--jaryo-bg);border-color:var(--jaryo-fg)}
+:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible,#textsize:focus-visible,#meter:focus-visible,#sheet-title:focus-visible{outline:3px solid var(--jaryo-fg);outline-offset:3px}
+#apps-list .jaryo-letter{padding:8px 0 0;text-transform:uppercase;font-stretch:condensed;font-weight:400;grid-column:1/-1}
+input[type=radio],input[type=checkbox]{accent-color:var(--jaryo-fg)}

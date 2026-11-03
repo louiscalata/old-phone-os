@@ -1,0 +1,10 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+# Select the kiosk on first install; preserve the session after first boot.
+
+if [ ! -e /var/lib/opos/firstboot-done ]; then
+    tinydm-set-session -s /usr/share/wayland-sessions/cage-ui.desktop
+fi
+
+exit 0

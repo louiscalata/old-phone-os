@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Select the OPOS kiosk once after installation
+After=local-fs.target
+Before=tinydm.service opos-server.service
+ConditionPathExists=!/var/lib/opos/firstboot-done
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/bin/sh /usr/bin/opos-firstboot
+RemainAfterExit=yes
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

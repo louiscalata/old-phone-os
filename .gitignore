@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.bak
+*.orig
+*.swp
+.env
+venv/
+.venv/
+.claude/
+src/opos/_build_info.py
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/

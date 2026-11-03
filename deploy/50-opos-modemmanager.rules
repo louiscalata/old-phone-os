@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+polkit.addRule(function(action, subject) {
+    if (subject.user == "opos") {
+        if (action.id == "org.freedesktop.ModemManager1.Messaging" || action.id == "org.freedesktop.ModemManager1.Voice") {
+            return polkit.Result.YES;
+        }
+    }
+});

@@ -1,0 +1,2 @@
+# Old Phone OS uses only the Python standard library (Python 3.11 or newer).
+# Nothing is installed from PyPI. Add pinned lines with --hash entries here if a dependency is ever needed.

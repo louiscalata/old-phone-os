@@ -1,0 +1,86 @@
+/*phone-b.css: phone-shell hook point*/
+#phone[data-app="home"] #home:not([hidden]){display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px}
+#home button{min-height:96px;font-size:1.125rem;margin:0}
+#phone[data-app]:not([data-app="home"]) #back:not([hidden]){display:block;width:calc(100% - 24px);height:48px;min-height:48px;margin:40px 12px 0}
+#phone[data-app]~#demo,#phone[data-app]:not([data-app="phone"]) #contacts,#phone[data-app]:not([data-app="home"]) #screen{display:none}
+#phone[data-app="home"] #threads,#phone[data-app="home"] #thread,#phone[data-app="home"] #number,#phone[data-app="home"] #msg,#phone[data-app="home"] #controls,#phone[data-app="home"] #helper,#phone[data-app="home"] #ask,#phone[data-app="home"] #settings{display:none}
+#phone[data-app="phone"] #intro,#phone[data-app="phone"] #threads,#phone[data-app="phone"] #thread,#phone[data-app="phone"] #msg,#phone[data-app="phone"] #helper,#phone[data-app="phone"] #ask,#phone[data-app="phone"] #settings{display:none}
+#phone[data-app="messages"] #intro,#phone[data-app="messages"] #helper,#phone[data-app="messages"] #ask,#phone[data-app="messages"] #settings{display:none}
+#phone[data-app="phone"] #controls [data-go="send"],#phone[data-app="phone"] #controls [data-go="receive"],#phone[data-app="messages"] #controls [data-go="call"],#phone[data-app="messages"] #controls [data-go="hang_up"]{display:none}
+#demo-phone-note{flex-basis:100%;margin:0}
+#phone[data-app="helper"] #intro,#phone[data-app="helper"] #threads,#phone[data-app="helper"] #thread,#phone[data-app="helper"] #number,#phone[data-app="helper"] #msg,#phone[data-app="helper"] #controls,#phone[data-app="helper"] #settings{display:none}
+#phone[data-app="settings"] #intro,#phone[data-app="settings"] #threads,#phone[data-app="settings"] #thread,#phone[data-app="settings"] #number,#phone[data-app="settings"] #msg,#phone[data-app="settings"] #controls,#phone[data-app="settings"] #helper,#phone[data-app="settings"] #ask{display:none}
+#settings{white-space:normal;padding:12px}
+#phone #settings{transform:none!important}
+#phone[data-app="settings"] #settings:not([hidden]){display:block}
+#settings h2{margin:0 0 8px;font-size:1.25rem}
+#ff{border:0;margin:0;padding:0}
+#ff legend{padding:0;margin-bottom:4px}
+#phone[data-app] #ff label{display:flex;align-items:center;gap:12px;min-height:48px;font-size:1.125rem;margin:0 0 8px}
+#ff input{width:24px;height:24px;min-height:24px;margin:0}
+#settings p{margin:8px 0 0}
+#phone{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);padding-bottom:env(safe-area-inset-bottom,0px);overflow-wrap:break-word}
+#phone>*,#phone>*>*{min-width:0}
+@media (min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3){html:not([data-ff]) #phone{max-width:900px}html:not([data-ff]) #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,1fr)}}
+html[data-ff="foldable"] #phone{max-width:900px}html[data-ff="foldable"] #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,1fr)}
+@media (orientation:landscape) and (max-height:520px){html:not([data-ff]) #phone{max-width:none}html:not([data-ff]) #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,1fr)}html:not([data-ff]) #home button{min-height:64px}html:not([data-ff]) #lock-time{font-size:40px}}
+html[data-ff="slideout"] #phone,html[data-ff="slide"] #phone{max-width:none}html[data-ff="slideout"] #phone[data-app] #home:not([hidden]),html[data-ff="slide"] #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,1fr)}html[data-ff="slideout"] #home button,html[data-ff="slide"] #home button{min-height:64px}html[data-ff="slideout"] #lock-time,html[data-ff="slide"] #lock-time{font-size:40px}
+html[data-ff="slab"] #phone{max-width:420px}html[data-ff="slab"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr 1fr}
+body{padding-top:calc(48px + env(safe-area-inset-top,0px))}
+#sb{height:calc(28px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px);padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+#sheet{padding-top:calc(16px + env(safe-area-inset-top,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#lock{padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+#helper-where{margin:8px 0;font-size:14px;white-space:normal}
+#home #allapps{grid-column:1/-1;min-height:48px;font-size:1rem}
+#apps-list{list-style:none;margin:12px;padding:0}
+#phone[data-app="home"] #apps-list:not([hidden]){display:grid;grid-template-columns:1fr;gap:8px}
+#apps-list button{width:100%;min-height:48px;margin:0;font-size:1.125rem}
+#apps-close{min-height:48px;margin:0 12px}
+#phone[data-app="home"][data-allapps] #back:not([hidden]){display:block;width:calc(100% - 24px);height:48px;min-height:48px;margin:40px 12px 0}
+#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media (min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3){html:not([data-ff]) #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}}
+@media (orientation:landscape) and (max-height:520px){html:not([data-ff]) #phone[data-app] #apps-list:not([hidden]){grid-template-columns:repeat(3,1fr)}}
+html[data-ff="foldable"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}
+html[data-ff="slideout"] #phone[data-app] #apps-list:not([hidden]),html[data-ff="slide"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:repeat(3,1fr)}
+html[data-text="s"]{font-size:87.5%}html[data-text="n"]{font-size:100%}html[data-text="l"]{font-size:125%}html[data-text="xl"]{font-size:150%}
+html[data-text] label,html[data-text] input,html[data-text] button,html[data-text] select{font-size:1rem}html[data-text] #screen{font-size:1.25rem}html[data-text] #settings p{font-size:1rem}
+#settings section{margin-top:16px}#settings h3{margin:0 0 8px;font-size:1.125rem}
+#settings label,#phone[data-app] #settings label[for=textsize]{display:block;margin:0 0 8px}
+#bright,#vol{min-height:48px}
+#night{min-width:48px;min-height:48px;vertical-align:middle;margin-right:8px}
+#topbar,#textsize{width:100%;min-height:48px;padding:8px;background:#111;color:#fff;border:1px solid #444;border-radius:8px}
+#jaryo-theme{min-height:48px;min-width:48px;width:100%;margin:0 0 8px;padding:8px;font-size:1rem;white-space:normal}
+#textsize:focus-visible{outline:2px solid #fff;outline-offset:2px}
+html[data-ff="foldable"] #phone>*,html[data-ff="foldable"] #lock>*{grid-column:1}
+html[data-ff="foldable"] #phone>#threads,html[data-ff="foldable"] #phone>#threads~*,html[data-ff="foldable"] #lock>button{grid-column:2}
+@media (min-width:840px){html[data-ff="foldable"] #phone{max-width:none;display:grid;grid-template-columns:1fr 1fr;column-gap:24px;grid-auto-flow:row dense;align-content:start;align-items:start}
+html[data-ff="foldable"] #phone>#home,html[data-ff="foldable"] #phone>#apps-list,html[data-ff="foldable"] #phone>#jaryo-letters,html[data-ff="foldable"] #phone>#jaryo-masthead{grid-column:1/-1}
+html[data-ff="foldable"] #phone>[data-at="apps"]{grid-column:1/-1}
+html[data-ff="foldable"] #phone>#jaryo-letters{box-sizing:border-box;padding-right:calc(50% + 12px)}
+html[data-ff="foldable"] #phone[data-app] #home:not([hidden]),html[data-ff="foldable"] #phone[data-app] #apps-list:not([hidden]){column-gap:48px}
+html[data-ff="foldable"] #home #allapps{grid-column:1/3}
+html[data-ff="foldable"] #lock:not([hidden]){display:grid;grid-template-columns:1fr 1fr;column-gap:24px;grid-auto-flow:row dense;align-content:center;justify-items:center}
+html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=settings],html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=helper]{max-width:960px}
+html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=settings] #settings:not([hidden]){display:grid;grid-template-columns:1fr 1fr;column-gap:24px;grid-auto-flow:row dense;align-items:start}
+html:not([data-ff=slab]):not([data-ff=foldable]) #settings>*{grid-column:2}html:not([data-ff=slab]):not([data-ff=foldable]) #settings>h2{grid-column:1/-1}
+html:not([data-ff=slab]):not([data-ff=foldable]) #settings>#ff,html:not([data-ff=slab]):not([data-ff=foldable]) #settings>#ff-detected,html:not([data-ff=slab]):not([data-ff=foldable]) #settings>#ff-saved{grid-column:1}
+html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=helper]{display:grid;grid-template-columns:1fr 1fr;column-gap:12px;grid-auto-flow:row dense;align-content:start;align-items:start}
+html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=helper]>*{grid-column:1/-1}
+html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=helper]>#ask{grid-column:1}
+html:not([data-ff=slab]):not([data-ff=foldable]) #phone[data-app=helper]>#helper{grid-column:2}}
+@media (horizontal-viewport-segments:2){html[data-ff="foldable"] #phone,html[data-ff="foldable"] #lock:not([hidden]){max-width:none;display:grid;grid-template-columns:calc(env(viewport-segment-width 0 0) - env(safe-area-inset-left,0px)) 1fr;column-gap:calc(env(viewport-segment-left 1 0) - env(viewport-segment-width 0 0));grid-auto-flow:row dense;align-content:start}
+html[data-ff="foldable"] #phone>#home,html[data-ff="foldable"] #phone>#apps-list,html[data-ff="foldable"] #phone>#jaryo-letters,html[data-ff="foldable"] #phone>#jaryo-masthead{grid-column:1}
+html[data-ff="foldable"] #phone>[data-at="apps"]{grid-column:1}
+html[data-ff="foldable"] #phone>#jaryo-letters{padding-right:0}
+html[data-ff="foldable"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr 1fr}
+html[data-ff="foldable"] #home #allapps{grid-column:1/-1}}
+@media (orientation:landscape){html[data-ff="slideout"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr;width:240px;max-width:40%}
+html[data-ff="slideout"] #controls{position:sticky;bottom:0;z-index:5;margin:12px 0 0;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));background:#111}
+html[data-ff="slideout"] #controls button{min-height:64px;flex:1 1 auto}}
+html[data-ff="tablet"] #phone{max-width:720px}html[data-ff="tablet"] #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,1fr)}html[data-ff="tablet"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}
+#phone[data-app] #home:not([hidden]),#phone #settings{margin-left:max(0px,12px - env(safe-area-inset-left,0px));margin-right:max(0px,12px - env(safe-area-inset-right,0px))}
+#phone[data-app="settings"] #settings:not([hidden]){padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+#ask[data-hs] #askbtn{display:none}
+#hs-bar:not([hidden]){display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+#hs-bar button{min-height:48px;min-width:48px;margin:0}
+#hs-log{list-style:none;margin:0 0 8px;padding:0}#hs-log p{margin:4px 0;white-space:pre-wrap}

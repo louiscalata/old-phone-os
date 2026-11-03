@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+# SPDX-License-Identifier: GPL-3.0-or-later
+name="opos-firstboot"
+description="Run opos first-boot tasks once"
+depend() {
+	need localmount
+	before tinydm
+}
+start() {
+	local status=0
+	ebegin "Starting opos-firstboot"
+	/usr/bin/opos-firstboot || status=$?
+	eend "$status"
+	if [ "$status" -eq 0 ] && [ -e /var/lib/opos/firstboot-done ]; then
+		einfo "opos-firstboot: first boot complete, marker /var/lib/opos/firstboot-done written"
+	fi
+	return "$status"
+}

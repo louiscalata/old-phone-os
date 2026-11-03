@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+addgroup -S opos 2>/dev/null || true
+adduser -S -D -H -h /var/lib/opos -s /sbin/nologin -G opos -g "Old Phone OS" opos 2>/dev/null || true
+
+exit 0

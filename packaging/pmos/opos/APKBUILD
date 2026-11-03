@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# TODO(publish): publish the measured release-tarball and verify sha512 retrieval before remote builds.
+maintainer="Old Phone OS <173626247+louiscalata@users.noreply.github.com>"
+pkgname=opos
+pkgver=0.1.0
+pkgrel=3
+pkgdesc="Old Phone OS policy and optional helper"
+url="https://github.com/louiscalata/old-phone-os"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3 modemmanager polkit dbus"
+makedepends="python3"
+options="!check"
+install="$pkgname.pre-install"
+subpackages="$pkgname-systemd:_systemd $pkgname-openrc:_openrc"
+_source_archive="opos-runtime-source-20261102.tar.gz"
+_source_root="old-phone-os-source"
+source="$_source_archive::https://github.com/louiscalata/old-phone-os/releases/download/v0.1.0-source-20261102/$_source_archive opos-sysusers.conf opos-kiosk opos-server.initd opos-firstboot.sh opos-kiosk-off.sh opos-firstboot.initd opos-server.service opos-firstboot.service opos-systemd-state.py"
+builddir="$srcdir/$_source_root"
+package() {
+	install -Dm644 "$builddir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	install -Dm644 "$builddir/THIRD_PARTY.md" "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY.md"
+	mkdir -p "$pkgdir/usr/bin"
+	printf '#!/bin/sh\nexec python3 -m opos.setup "$@"\n' > "$pkgdir/usr/bin/opos"
+	chmod 755 "$pkgdir/usr/bin/opos"
+	install -Dm644 "$srcdir/opos-sysusers.conf" "$pkgdir/usr/lib/sysusers.d/opos.conf"
+	_sp=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+	mkdir -p "$pkgdir$_sp"
+	cp -r "$builddir/src/opos" "$pkgdir$_sp"
+	find "$pkgdir$_sp/opos" -name __pycache__ -exec rm -rf {} +
+	install -Dm755 "$srcdir/opos-kiosk" "$pkgdir/usr/bin/opos-kiosk"
+	install -Dm755 "$srcdir/opos-server.initd" "$pkgdir/etc/init.d/opos-server"
+	install -Dm755 "$srcdir/opos-firstboot.sh" "$pkgdir/usr/bin/opos-firstboot"
+	install -Dm755 "$srcdir/opos-kiosk-off.sh" "$pkgdir/usr/bin/opos-kiosk-off"
+	install -Dm755 "$srcdir/opos-firstboot.initd" "$pkgdir/etc/init.d/opos-firstboot"
+	install -Dm755 "$srcdir/opos-systemd-state.py" "$pkgdir/usr/libexec/opos-systemd-state"
+}
+
+_systemd() {
+	install_if="$pkgname=$pkgver-r$pkgrel systemd"
+	install="$subpkgname.post-install"
+	depends="systemd $pkgname=$pkgver-r$pkgrel"
+	mkdir -p "$subpkgdir"
+	install -Dm644 "$srcdir/opos-server.service" "$subpkgdir/usr/lib/systemd/system/opos-server.service"
+	install -Dm644 "$srcdir/opos-firstboot.service" "$subpkgdir/usr/lib/systemd/system/opos-firstboot.service"
+}
+_openrc() {
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	install="$subpkgname.post-install"
+	depends="openrc $pkgname=$pkgver-r$pkgrel"
+	mkdir -p "$subpkgdir"
+}
+sha512sums="
+f46e9febe2ed7f01907a317c6ad6e39c3c7a96cb8a985085c2a4d4f5e9cd0c3da64bb906acc43815b9b86dca295e380a243fe3471d966d8338a4c7ba19237d68  $_source_archive
+69a42652bc69cb979a14df47613d1600f0c52d0755a0f3f7510b01b977dd05b2dfcaa16eeccd761d4008cee04408672c83d47de3a5079a0f5c297c1aefa0b12a  opos-sysusers.conf
+3ce642ae3b6528dbf274778d99af88a9cc9016fb4253a6e8e435629c5a3ff9df177084a15c4efe2d96b66832b6443f6299a08e3b7d41cddb3524f92a61b2f6b5  opos-kiosk
+a3cf480a69358326f075f8a5ce594069e2b5b6e2a1f914e92af82ac2c2a39dbf68d4d3b4332b9194e04a1a14069b4f7c0e6798ea9227d5e76c45483698cc4f93  opos-server.initd
+3967041fb7c529f7ed118f5d937692158c7688b30758783d5ba1065f860696e10e89781fc73cca7b23e37b18bfb6688983c6956792fa2118d7e23f2db6940290  opos-firstboot.sh
+72d5233e8318b7ab510efdf1ea41b196307716b1c2b45f008fa7ea0e0c8d712c1047f62322d92b35c6ee33376b98c2054b45cd85b12ec3fada8eb8043aa9be5b  opos-kiosk-off.sh
+3473a04e1d5fdbc9f60ebed4c89eded951939fae87bc59a1be0db83bd163ff6a493dfce380e8d9a8fff65ae201cd9eee926751e2fed179de64452e32ae8a9dca  opos-firstboot.initd
+8af205656c32ce2626ccff509a7fa1f1732be9ca85e7537e9dcfdaf2d27c65dfb752437510e1149364c1ed081a3d4c7dcd16970df9634e1947089ca2097f1e83  opos-server.service
+05bb15c42babaf04fb9a422f37411357d62cbdcea1756610377ba74da41f4ba7a19dbca6ac3b1a28b66722f7cb7ddd6ebb77522cb243c2d5a295a72de2999b1c  opos-firstboot.service
+ca384263ac90f066ac67df5415a60dc8e7f8d13977ec8caa4bbb62ad50d7c82353c1dc29c98c2d3e995b0e511f380086475a719e1bb3a6fcf40f282896e6421e  opos-systemd-state.py
+"

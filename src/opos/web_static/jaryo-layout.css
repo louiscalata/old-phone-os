@@ -1,0 +1,21 @@
+/*jaryo-layout.css*/
+#jaryo-letters{display:none;margin:12px}
+#phone[data-app="home"][data-allapps] #jaryo-letters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#jaryo-letters button{margin:0;min-width:48px;min-height:48px}
+#lock>button{margin-right:0}
+@media (orientation:landscape) and (min-width:840px){
+html:not([data-ff="slab"]):not([data-ff="foldable"]) #lock:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:24px;grid-auto-flow:row dense;align-content:center;align-items:start;justify-items:start;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+html:not([data-ff="slab"]):not([data-ff="foldable"]) #lock>*{grid-column:1}
+html:not([data-ff="slab"]):not([data-ff="foldable"]) #lock>div{text-align:left}
+html:not([data-ff="slab"]):not([data-ff="foldable"]) #lock>#lock-notice,html:not([data-ff="slab"]):not([data-ff="foldable"]) #lock>button{grid-column:2}
+html:not([data-ff="slab"]):not([data-ff="foldable"]) #lock>#lock-date{justify-self:stretch;border-bottom:3px solid currentColor;padding-bottom:8px}
+}
+@media (min-width:840px){
+html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1/-1;padding-right:calc(50% + 12px)}
+html[data-ff="foldable"] #phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1/-1;column-gap:48px}
+#sheet{right:auto;width:min(100%,24rem);border-right:1px solid currentColor;transform:translateX(-100%)}
+.sheet-open #sheet{transform:translateX(0)}
+.sheet-open #scrim{opacity:0}}
+@media (horizontal-viewport-segments:2){
+html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1;padding-right:0}
+html[data-ff="foldable"] #phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1}}

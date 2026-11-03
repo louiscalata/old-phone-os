@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Wait (bounded) for opos-server so Chromium does not open on an error page.
+# OPOS_KIOSK_URL / OPOS_KIOSK_WAIT only affect the wait; it always proceeds.
+# alarm(2) kills a stalled probe, so the wait is at most about 3x OPOS_KIOSK_WAIT s.
+timing_file=${XDG_RUNTIME_DIR:-}/opos-boot-timing
+boot_timing() {
+  [ -n "${XDG_RUNTIME_DIR:-}" ] || return 0
+  (umask 022; printf '%s %s\n' "$1" "$(date +%s)" >> "$timing_file"
+   chmod a+r "$timing_file") 2>/dev/null || :
+}
+boot_timing kiosk-start
+url=${OPOS_KIOSK_URL:-http://127.0.0.1:8765/}
+wait=${OPOS_KIOSK_WAIT:-60}
+case $wait in ''|*[!0-9]*) wait=60 ;; esac
+i=0
+while [ "$i" -lt "$wait" ]; do
+  OPOS_KIOSK_URL=$url python3 -c "import os,signal,urllib.request; signal.signal(14, signal.default_int_handler); signal.alarm(2); urllib.request.urlopen(os.environ['OPOS_KIOSK_URL'], timeout=1)" 2>/dev/null && { boot_timing server-ready; break; }
+  i=$((i + 1))
+  [ "$i" -lt "$wait" ] && sleep 1
+done
+boot_timing chromium-launch
+exec ${OPOS_KIOSK_CHROMIUM:-chromium} --ozone-platform=wayland --kiosk --noerrdialogs --disable-infobars --no-first-run http://127.0.0.1:8765/

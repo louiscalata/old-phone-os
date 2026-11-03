@@ -1,0 +1,3 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+git interpret-trailers --parse "$1" | grep -q '^Provenance: ' || { echo 'GUARD FAIL: commit message needs a "Provenance: <id>" trailer (after a blank line) logged in docs/provenance.md'; exit 1; }

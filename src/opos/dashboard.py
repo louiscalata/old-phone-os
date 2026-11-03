@@ -1,0 +1,240 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+from opos.power import plan, feature_drain, time_left_words, total_drain
+import re
+from opos.eol import is_worn
+_REDACT_RE = re.compile(r'\b(AI|model|Governor|assistant)\b', re.IGNORECASE)
+def _redact(s):
+    return _REDACT_RE.sub('...', s)
+def _format_goal_12h(goal_str):
+    h_str, m_str = goal_str.split(":")
+    h = int(h_str)
+    m = int(m_str)
+    ampm = "PM" if h >= 12 else "AM"
+    h12 = h % 12
+    if h12 == 0:
+        h12 = 12
+    if m == 0:
+        return f"{h12} {ampm}"
+    return f"{h12}:{m:02d} {ampm}"
+def _format_time_12h(sec):
+    sec = int(sec)
+    total_minutes = sec // 60
+    hour_24 = (total_minutes // 60) % 24
+    minute = total_minutes % 60
+    ampm = "PM" if hour_24 >= 12 else "AM"
+    h12 = hour_24 % 12
+    if h12 == 0:
+        h12 = 12
+    return f"{h12}:{minute:02d} {ampm}"
+class Dashboard:
+    def __init__(self, tasks, history_len=60):
+        self.tasks = tasks
+        self._history_len = history_len
+        self.goal = None
+        self.in_use = None
+        self.undone = set()
+        self.history = []
+        self._times = []
+        self.events = []
+        self._last_paused = ()
+        self.paused_names = ()
+        self._last_record_minute = None
+    def set_goal(self, hhmm):
+        if hhmm is None or hhmm == "":
+            self.goal = None
+            return
+        try:
+            h_str, m_str = hhmm.split(":")
+            h = int(h_str)
+            m = int(m_str)
+        except Exception:
+            raise ValueError
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError
+        self.goal = f"{h:02d}:{m:02d}"
+    def undo(self, name):
+        names = {t.name for t in self.tasks}
+        if isinstance(name, str) and re.match(r'^#\d+$', name):
+            try:
+                idx = int(name[1:])
+                if 0 <= idx < len(self.tasks):
+                    real_name = self.tasks[idx].name
+                else:
+                    raise ValueError
+            except Exception:
+                raise ValueError
+        elif name in names:
+            real_name = name
+        else:
+            raise ValueError
+        self.undone.add(real_name)
+        self.events.append(f"{real_name} turned back on")
+        if len(self.events) > 20:
+            self.events = self.events[-20:]
+    def record(self, level, clock_s=None):
+        if clock_s is None:
+            self.history.append(level)
+            self._times.append(None)
+            n = self._history_len
+            if n > 0:
+                if len(self.history) > n:
+                    self.history = self.history[-n:]
+                    self._times = self._times[-n:]
+            else:
+                self.history = []
+                self._times = []
+            return
+        if self._times and self._times[-1] is not None and clock_s < self._times[-1]:
+            self.reset_history(level)
+        minute = int(clock_s // 60)
+        if minute != self._last_record_minute:
+            self.history.append(level)
+            self._times.append(clock_s)
+            self._last_record_minute = minute
+            n = self._history_len
+            if n > 0:
+                if len(self.history) > n:
+                    self.history = self.history[-n:]
+                    self._times = self._times[-n:]
+            else:
+                self.history = []
+                self._times = []
+            cutoff = clock_s - 3600
+            while self._times and self._times[0] is not None and self._times[0] < cutoff:
+                self.history.pop(0)
+                self._times.pop(0)
+    def reset_history(self, level):
+        n = self._history_len
+        if n == 0:
+            self.history = []
+            self._times = []
+        else:
+            self.history = [level]
+            self._times = [None]
+        self._last_record_minute = None
+    def hours_to_goal(self, clock_s):
+        if not self.goal or clock_s is None:
+            return None
+        h_str, m_str = self.goal.split(":")
+        goal_sec = int(h_str) * 3600 + int(m_str) * 60
+        delta = goal_sec - clock_s
+        if delta < 0:
+            delta += 86400
+        return delta / 3600.0
+    def set_in_use(self, name):
+        if name is None or name == "":
+            self.in_use = None
+            return
+        if not isinstance(name, str):
+            raise ValueError
+        names = {t.name for t in self.tasks}
+        if name not in names:
+            raise ValueError
+        self.in_use = name
+        self.undone.discard(name)
+
+    def view(self, level, mode, charging, health, clock_s, visible, reason, deferred=()):
+        hours = self.hours_to_goal(clock_s)
+        p = plan(level, hours, self.tasks, health, charging, self.in_use)
+        paused_names = [t.name for t in self.tasks if (t.name in p.paused or t.name in deferred) and t.name not in self.undone and t.name != self.in_use]
+        self.paused_names = tuple(paused_names)
+        prev = set(self._last_paused or ())
+        curr = set(paused_names)
+        newly = curr - prev
+        removed = prev - curr
+        if newly or removed:
+            for n in newly:
+                self.events.append(f"{n} paused")
+            for n in removed:
+                self.events.append(f"{n} back on")
+            self._last_paused = tuple(paused_names)
+            if len(self.events) > 20:
+                self.events = self.events[-20:]
+        clamped = max(0.0, min(100.0, level))
+        width = round(clamped, 1)
+        if level >= 100:
+            tone = "full"
+        elif charging:
+            tone = "charging"
+        elif level < 20:
+            tone = "low"
+        else:
+            tone = "normal"
+        percent = round(level)
+        paused_for_drain = paused_names
+        drain_total = total_drain(self.tasks, paused=paused_for_drain, steps=p.steps, health=health)
+        hours_left_corrected = float('inf') if drain_total <= 0 else level / drain_total
+        if charging:
+            meets_goal = p.meets_goal
+        elif hours is None:
+            meets_goal = p.meets_goal
+        else:
+            meets_goal = hours_left_corrected >= hours
+        goal_note = ""
+        if not charging and self.goal and hours is not None and not meets_goal:
+            if clock_s is not None and hours_left_corrected != float('inf') and hours_left_corrected == hours_left_corrected:
+                goal_words = _format_goal_12h(self.goal)
+                end_seconds_float = clock_s + hours_left_corrected * 3600
+                rounded_seconds = int(round(end_seconds_float / 60)) * 60
+                end_s_mod = rounded_seconds % 86400
+                end_words = _format_time_12h(end_s_mod)
+                goal_note = f"Won't last until {goal_words}, calls and messages until ~{end_words}"
+        time_left = "Charging" if charging else time_left_words(hours_left_corrected)
+        saving_for = ["calls", "messages"]
+        if self.in_use:
+            saving_for.append(self.in_use)
+        if any(t.name == "alarms" for t in self.tasks):
+            saving_for.append("alarms")
+        name_to_idx = {t.name: i for i, t in enumerate(self.tasks)}
+        paused_list = [{"name": n, "id": f"#{name_to_idx[n]}"} for n in paused_names]
+        if clock_s is None:
+            relevant = self.history
+        else:
+            cutoff = clock_s - 3600
+            relevant = [lvl for lvl, t in zip(self.history, self._times) if t is None or t >= cutoff]
+        history_out = []
+        for i in range(len(relevant)):
+            window = relevant[max(0, i - 4):i + 1]
+            history_out.append(round(sum(window) / len(window), 1))
+        drain = feature_drain(p.steps, health)
+        total = sum(drain.values())
+        features_out = []
+        for f, v in drain.items():
+            name = "helper" if f == "model" else f
+            share = round(v / max(total, 1e-9) * 100)
+            features_out.append({"name": name, "per_hour": round(v, 2), "share": share})
+        if charging:
+            headline = "Charging: everything back on"
+        elif paused_names or p.steps:
+            headline = "Saving power for " + ", ".join(saving_for)
+        else:
+            headline = "Everything on"
+        out = {
+            "meter": {"width": width, "tone": tone, "label": f"Battery {round(level)} percent"},
+            "percent": percent,
+            "time_left": time_left,
+            "goal": self.goal or "",
+            "goal_met": meets_goal,
+            "saving_for": saving_for,
+            "paused": paused_list,
+            "events": self.events[-8:],
+            "history": history_out,
+            "features": features_out,
+            "steps": list(p.steps),
+            "headline": headline,
+            "goal_note": goal_note,
+            "worn_note": "Battery is worn, keeping a reserve for calls" if is_worn(health) and not charging else "",
+        }
+        if visible:
+            out["why"] = reason + "; " + p.reason
+        else:
+            for item in out["paused"]:
+                item["name"] = _redact(item["name"])
+            out["events"] = [_redact(e) for e in out["events"]]
+            out["saving_for"] = [_redact(s) for s in out["saving_for"]]
+            out["headline"] = _redact(out["headline"])
+            out["goal_note"] = _redact(out["goal_note"])
+            out["worn_note"] = _redact(out["worn_note"])
+            for f in out["features"]:
+                f["name"] = _redact(f["name"])
+        return out

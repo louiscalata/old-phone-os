@@ -1,0 +1,12 @@
+// G: dynamic get-by-ID; E: element factory.
+var G=i=>document.getElementById(i),E=t=>document.createElement(t);
+let running=false,vis=false,sheetOpen=false,dragging=false,startY=0;
+const meterEl=G('meter');
+const hitEl=G('meter-hit');
+const sheetEl=G('sheet');
+const titleEl=G('sheet-title');
+const scrimEl=G('scrim');
+const handleEl=G('sheet-handle');
+const timeEl=G('time-left');
+const gripEl=G('sheet-grip');
+if(new URLSearchParams(location.search).get('demo')==='1'){G('demo').removeAttribute('hidden')}

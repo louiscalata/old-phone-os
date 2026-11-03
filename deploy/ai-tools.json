@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "id": "muse-code",
+      "name": "Muse Code (Meta)",
+      "binary": "muse",
+      "installer_url": "https://dev.meta.ai/install.sh",
+      "interpreter": "sh",
+      "installer_args": [],
+      "installer_env": {},
+      "archs": ["aarch64", "x86_64"],
+      "min_free_mb": 1024,
+      "state_subdir": ".config/muse",
+      "run_env": {
+        "XDG_CONFIG_HOME": "{sandbox}/.config",
+        "XDG_DATA_HOME": "{sandbox}/.local/share"
+      },
+      "lite_env": {},
+      "signin": "Run muse and choose browser sign-in or paste a Meta API key, or set it in your shell. OPOS never asks for or stores it.",
+      "docs_url": "https://dev.meta.ai/docs/muse-code"
+    }
+  ]
+}

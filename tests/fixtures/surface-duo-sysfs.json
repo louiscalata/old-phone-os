@@ -1,0 +1,22 @@
+{
+  "cmds": {
+    "cat /proc/device-tree/model": {
+      "rc": 0,
+      "out": "Surface Duo DV_B\n",
+      "err": ""
+    },
+    "cat /sys/class/dmi/id/product_name": {
+      "rc": 0,
+      "out": "Surface Duo\n",
+      "err": ""
+    },
+    "mmcli -m 0 -J": {
+      "rc": 0,
+      "out": "{\"modem\": {\"general\": {\"manufacturer\": \"ofono\", \"model\": \"binder\", \"plugin\": \"ofono2mm\", \"power-state\": \"on\", \"state\": \"failed\"}, \"numbers\": [\"REDACTED\"], \"technologies\": {\"access\": [], \"current\": [\"lte\"], \"supported\": [\"lte\"]}}}",
+      "err": ""
+    }
+  },
+  "filtered_commands": [
+    "mmcli -m 0 -J"
+  ]
+}

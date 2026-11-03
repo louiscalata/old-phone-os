@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+IFACES="${OPOS_INTERFACES:-/etc/network/interfaces}"
+if command -v ifquery >/dev/null 2>&1; then
+	if ! ifquery -l >/dev/null 2>&1; then
+		mkdir -p "$(dirname "$IFACES")"
+		if [ -e "$IFACES" ]; then
+			cp "$IFACES" "$IFACES.opos-orig"
+		fi
+		printf '%s\n' 'auto lo' 'iface lo inet loopback' > "$IFACES"
+	fi
+fi
+rc-update add networkmanager default
+exit 0
