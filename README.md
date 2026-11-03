@@ -23,11 +23,13 @@ Demo walkthrough:
 4. Click Show helper and try Why?, Plan or type a question such as "Why are maps paused?" and Ask. Muse Glimmer answers from the phone's facts. With no model running, Why answers from the rules, Plan keeps a fixed order and Ask says no model is running.
 5. Drag the Battery slider below about 25% (under 15% usable). Ask rests to save power, and calls and messages still work.
 
-![Historical desktop simulation](docs/assets/demo.gif)
-Recorded earlier from the desktop simulator; it does not show the postmarketOS image or a physical phone.
+<p>
+  <img src="docs/assets/screen-lock.png" width="240" alt="Desktop simulation lock screen at 12:00 with 60% battery, a worn-battery notice saying 2 tasks paused for 4 PM, and Unlock and Call buttons.">
+  <img src="docs/assets/screen-home.png" width="240" alt="Desktop simulation home screen with Calls, Messages and Email, and maps and photos backup paused to save power.">
+  <img src="docs/assets/screen-shade.png" width="240" alt="Desktop simulation battery panel at 60% with maps and photos backup paused; both expanded reasons say battery rules paused them to help the battery last until 4 PM.">
+</p>
 
-![Historical slow-server stand-in](docs/assets/wait-demo.gif)
-Wait GIF recorded against a stand-in slow server with simulated answer text. Not actual Glimmer timing.
+Screenshots of the desktop simulation (battery, calls and messages are simulated).
 
 ## Muse Glimmer answering
 
