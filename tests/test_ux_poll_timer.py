@@ -35,7 +35,9 @@ class TestPollTimerSource(unittest.TestCase):
     def test_tick_payload_and_running_guard(self):
         tick = re.search(r"async function pollTick\(\)\{.*?\n", self.js).group(0)
         self.assertIn("if(running)", tick)
-        self.assertIn("api({action:'tick',real_s:1})", tick)
+        # real_s is the real time since the previous poll; the server caps it at 5 s.
+        self.assertIn("real_s=(n-pollAt)/1000;pollAt=n;", tick)
+        self.assertIn("api({action:'tick',real_s})", tick)
         self.assertIn("finally{", tick)
         self.assertLess(tick.find("await render(await api("), tick.find("finally{"))
 

@@ -13,16 +13,22 @@ and what comes next. Plans are intentions, not promises.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
-  (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. On November 3, 2026,
-  an aarch64 image built from this tree reached the lock screen and Home in QEMU without a manual
-  renderer override, using the packaged tinydm renderer hook. See [docs/pmos.md](docs/pmos.md)
-  for the observation and its limits; acceptance of an exact release artifact requires its recorded
-  source/image identity. Earlier QA-only renderer observations are historical.
+  (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. The kiosk runs the
+  same server as the desktop demo, with the same simulated battery, calls and texts: it does not
+  read the phone's battery or use its modem yet. On November 3, 2026, an aarch64 image built from
+  this tree reached the lock screen and Home in QEMU without a manual renderer override, using the
+  packaged tinydm renderer hook. See [docs/pmos.md](docs/pmos.md) for that run and its limits; an
+  image built from other source needs its own boot check. An earlier run that set the renderer by
+  hand is historical.
 
 ## Simulated or not yet verified
 
-- The desktop demo simulates the battery, calls and texts.
-- OPOS has not been accepted on a physical phone; Surface Duo work is paused (see
+- The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
+  (`DrainSim` and `ScreenModem` in `src/opos/web.py`). The ModemManager adapter
+  (`src/opos/mm_modem.py`) is not connected to them, and the sysfs battery reader
+  (`src/opos/hw/battery.py`) is used only by setup to describe the device.
+- This source has not been tested on a physical phone. Earlier Surface Duo installs ran an older
+  snapshot on Droidian, and that work is paused (see
   [docs/duo-usb-install.md](docs/duo-usb-install.md)).
 - On-phone model inference (Llama 3.2 1B/3B) has no phone-speed measurement yet.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
@@ -31,8 +37,9 @@ and what comes next. Plans are intentions, not promises.
 
 1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
    battery life against the stock system with the same daily routine.
-2. **Real calls and texts.** Connect Phone and Messages to ModemManager on a device with a working
-   modem, keeping the simulated modem for the desktop demo.
+2. **Real battery, calls and texts.** Connect Phone and Messages to ModemManager through
+   `src/opos/mm_modem.py` and read the real battery on a device with a working modem, keeping the
+   simulated battery and modem for the desktop demo.
 3. **On-phone answers.** Measure Llama 3.2 1B and 3B on an old phone and pick the default from
    the measurement, not a guess.
 4. **Connectors.** Plug chat services into Messages as connectors (one unified inbox), never as

@@ -24,12 +24,18 @@ CHEAP_BEFORE = ("basic", "static", "rules")
 SLOW_PROFILE_PAIRS = frozenset({("worn", "router"), ("eol", "router")})
 TWO_DECIMALS = r"(?<![\w.])\d+\.\d{2}(?!\w|\.\d)"
 NUMBER = r"(?<![\w.])\d+(?:\.\d+)?(?!\w|\.\d)"
-README_MINUTES = (("worn", "router", "important_min"),
-                  ("worn", "rules", "important_min"),
-                  ("fresh", "router", "important_min"),
-                  ("fresh", "rules", "important_min"),
-                  ("fresh", "router", "useful_min"),
-                  ("fresh", "rules", "useful_min"))
+# The README profile table: one row per profile, in this order, with these columns.
+README_PROFILES = (("Fresh battery", "fresh"), ("Worn battery", "worn"), ("Cold", "cold"),
+                   ("Hot", "hot"), ("Low start", "lowstart"), ("End of life", "eol"))
+README_COLUMNS = (("router", "important_min"), ("rules", "important_min"),
+                  ("router", "useful_min"), ("rules", "useful_min"))
+README_HEADER = ("| Profile | Important minutes, router | Important minutes, rules "
+                 "| Useful minutes, router | Useful minutes, rules |")
+README_ROW = r"\| ([^|\n]+?) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \|"
+README_CELL = r"(?<=\| )\d+(?= \|)"
+README_TRADE_OFF = ("The router buys important minutes by giving up useful minutes in every profile: "
+                    "it allows email and maps for fewer minutes than the fixed rules everywhere, "
+                    "far fewer with a worn battery, and none with a low start or an end-of-life battery.")
 # Each expression captures one particular occurrence, including repeated values.
 META_FIELDS = (
     ("fresh", "rules", "important_min", r"fresh battery: rules (\d+)(?!\w|\.\d) important"),
@@ -48,8 +54,18 @@ META_FIELDS = (
     ("eol", "router", "important_min", r"End-of-life battery: rules \d+, router (\d+)(?!\w|\.\d)"),
     ("eol", "static", "important_min", r"End-of-life battery: rules \d+, router \d+, static (\d+)(?!\w|\.\d)"),
     ("eol", "static", "brownout", r"Static browns out in (\d+\.\d) percent"),
-    ("fresh", "router", "useful_min", r"fresh: (\d+)(?!\w|\.\d) useful vs"),
-    ("fresh", "rules", "useful_min", r"fresh: \d+ useful vs (\d+)(?!\w|\.\d) for rules"),
+    ("fresh", "router", "useful_min", r"router vs rules: fresh (\d+)(?!\w|\.\d) vs"),
+    ("fresh", "rules", "useful_min", r"router vs rules: fresh \d+ vs (\d+)(?!\w|\.\d)"),
+    ("worn", "router", "useful_min", r", worn (\d+)(?!\w|\.\d) vs"),
+    ("worn", "rules", "useful_min", r", worn \d+ vs (\d+)(?!\w|\.\d)"),
+    ("cold", "router", "useful_min", r", cold (\d+)(?!\w|\.\d) vs"),
+    ("cold", "rules", "useful_min", r", cold \d+ vs (\d+)(?!\w|\.\d)"),
+    ("hot", "router", "useful_min", r", hot (\d+)(?!\w|\.\d) vs"),
+    ("hot", "rules", "useful_min", r", hot \d+ vs (\d+)(?!\w|\.\d)"),
+    ("lowstart", "router", "useful_min", r", low start (\d+)(?!\w|\.\d) vs"),
+    ("lowstart", "rules", "useful_min", r", low start \d+ vs (\d+)(?!\w|\.\d)"),
+    ("eol", "router", "useful_min", r", end of life (\d+)(?!\w|\.\d) vs"),
+    ("eol", "rules", "useful_min", r", end of life \d+ vs (\d+)(?!\w|\.\d)"),
 )
 # One sentence claims zero counts for router and rules in every simulator profile.
 META_ZERO_CLAIM = (r"The recorded runs report (\d+)(?!\w|\.\d) brownouts and (\d+)(?!\w|\.\d) "
@@ -158,13 +174,36 @@ def published_profile_minutes(value):
     return f"{float(f'{value:.1f}'):.0f}"
 
 
+def readme_table_values(text):
+    """Read every figure of the README profile table, in its fixed row and column order.
+
+    Whole-minute figures (100 or more) outside the table are rejected, so a stale
+    figure left in the prose cannot pass unchecked.
+    """
+    lines = readme_section(text).splitlines()
+    if lines.count(README_HEADER) != 1:
+        raise ValueError("README minutes: expected one profile table header")
+    rows = [line for line in lines if line.startswith("|") and line != README_HEADER
+            and not re.fullmatch(r"\|(?:-+\|)+", line)]
+    if len(rows) != len(README_PROFILES):
+        raise ValueError(f"README minutes: expected {len(README_PROFILES)} profile rows, found {rows!r}")
+    values = {}
+    for line, (label, profile) in zip(rows, README_PROFILES):
+        match = re.fullmatch(README_ROW, line)
+        if not match or match.group(1) != label:
+            raise ValueError(f"README minutes: malformed or out-of-order {profile} row: {line!r}")
+        for (policy, metric), value in zip(README_COLUMNS, match.groups()[1:]):
+            values[profile, policy, metric] = value
+    prose = "\n".join(line for line in lines if not line.startswith("|"))
+    stray = [value for value in re.findall(r"(?<![\w.])\d+(?!\w|\.\d)", prose) if int(value) >= 100]
+    if stray:
+        raise ValueError(f"README minutes: whole-minute figures outside the table: {stray!r}")
+    return values
+
+
 def profile_values(text, document):
     if document == "README":
-        actual = [value for value in re.findall(r"(?<![\w.])\d+(?!\w|\.\d)", readme_section(text))
-                  if int(value) >= 100]
-        if len(actual) != len(README_MINUTES):
-            raise ValueError(f"README minutes: expected six integers >= 100, found {actual!r}")
-        return dict(zip(README_MINUTES, actual))
+        return readme_table_values(text)
     if document == "META":
         return meta_profile_values(text)
     raise ValueError(f"unknown profile document: {document}")
@@ -311,6 +350,28 @@ class TestPublishedNumbers(unittest.TestCase):
     def test_no_stale_brownout_range(self):
         self.assertNotIn("98-100%", self.doc)
 
+    def test_readme_table_covers_every_profile(self):
+        values = readme_table_values(self.readme)
+        self.assertEqual({profile for _, profile in README_PROFILES}, set(profiles.PROFILES))
+        self.assertEqual(len(values), len(README_PROFILES) * len(README_COLUMNS))
+
+    def test_readme_trade_off_sentence_matches_table(self):
+        # The sentence is checked against the table, and the table against the simulator.
+        section = readme_section(self.readme)
+        self.assertEqual(section.count(README_TRADE_OFF), 1)
+        values = {key: int(value) for key, value in readme_table_values(self.readme).items()}
+        for _, profile in README_PROFILES:
+            with self.subTest(profile=profile):
+                self.assertGreater(values[profile, "router", "important_min"], values[profile, "rules", "important_min"])
+                self.assertLess(values[profile, "router", "useful_min"], values[profile, "rules", "useful_min"])
+        self.assertEqual((values["lowstart", "router", "useful_min"], values["eol", "router", "useful_min"]), (0, 0))
+        self.assertLess(4 * values["worn", "router", "useful_min"], values["worn", "rules", "useful_min"])
+
+    def test_readme_worn_hours_are_averages_not_a_range(self):
+        section = readme_section(self.readme)
+        self.assertIn("the figures are the averages of those two sets of runs, not a range", section)
+        self.assertNotRegex(section, r"\d\.\d{2}\s*(?:-|–|to)\s*\d")
+
     def test_profile_minutes_follow_cli_precision(self):
         # Exercise the real CLI renderer at the half-minute rounding boundary.
         result = {"important_min": 337.475, "useful_min": 0,
@@ -337,7 +398,7 @@ class TestPublishedNumbers(unittest.TestCase):
              lambda text: hours_mismatches(text, hours, "META")),
             ("worn summary", meta_line(self.doc, "Average hours of working calls"), TWO_DECIMALS,
              lambda text: hours_mismatches(text, hours, "worn summary")),
-            ("README minutes", "## Simulation results\n" + readme_section(self.readme), r"(?<![\w.])\d{3,}(?!\w|\.\d)",
+            ("README minutes", "## Simulation results\n" + readme_section(self.readme), README_CELL,
              lambda text: profile_mismatches(text, minutes, "README")),
             ("brownout sentence", meta_line(self.doc, "How to read it"), NUMBER,
              lambda text: brownout_sentence_mismatches(text, hours, levels)),

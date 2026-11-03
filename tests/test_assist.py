@@ -30,7 +30,12 @@ def get_url(req):
     except AttributeError:
         return req.get_full_url()
 LAN_HOST = "192.0.2.10"
-BUSY_LAN_HOST = "192.0.2.20"
+# The LAN route takes RFC 1918 hosts only (192.0.2.0/24 is a documentation range); built from octets.
+RFC1918_HOST = ".".join(str(octet) for octet in (192, 168, 0, 10))
+BUSY_RFC1918_HOST = ".".join(str(octet) for octet in (192, 168, 0, 20))
+def models_reply(model_id):
+    """The /models list of a local Llama server that serves model_id."""
+    return FakeResp(json.dumps({"data": [{"id": model_id}]}).encode())
 class TestFreeMb(unittest.TestCase):
     def test_reads_temp(self):
         with tempfile.NamedTemporaryFile(mode="w+", delete=False) as tf:
@@ -67,7 +72,7 @@ class TestLocalRoute(unittest.TestCase):
         self.assertIsNone(assist.local_route({}, free=None))
 class TestLanRoute(unittest.TestCase):
     def test_accepts_private(self):
-        url = "http://" + LAN_HOST + ":1234/v1"
+        url = "http://" + RFC1918_HOST + ":1234/v1"
         r = assist.lan_route({"OPOS_LAN_URL": url})
         self.assertIsNotNone(r)
         self.assertEqual(r.base_url, url)
@@ -76,7 +81,7 @@ class TestLanRoute(unittest.TestCase):
     def test_rejects_hostname(self):
         self.assertIsNone(assist.lan_route({"OPOS_LAN_URL": "http://example.com:1234/v1"}))
     def test_rejects_https(self):
-        url = "https://" + LAN_HOST + ":1234/v1"
+        url = "https://" + RFC1918_HOST + ":1234/v1"
         self.assertIsNone(assist.lan_route({"OPOS_LAN_URL": url}))
 class TestSearch(unittest.TestCase):
     def test_parses(self):
@@ -119,12 +124,15 @@ class TestAnswer(unittest.TestCase):
             calls.append(get_url(req))
             if "wikipedia" in get_url(req):
                 return FakeResp(json.dumps({"query": {"search": []}}).encode())
+            if get_url(req).endswith("/models"):
+                return models_reply("llama-3.2-3b-instruct")
             return FakeResp(json.dumps(chat).encode())
         res = assist.answer("what is paused?", web=True, env={}, opener=opener, free=5000, context={"mode": "SAVER"})
         self.assertTrue(calls)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
         self.assertIn("wikipedia", calls[0])
-        self.assertTrue(calls[1].endswith("/chat/completions"))
+        self.assertTrue(calls[1].endswith("/models"), "the default Llama port is checked before it gets the question")
+        self.assertTrue(calls[2].endswith("/chat/completions"))
         self.assertEqual(res["engine"], "Meta Llama 3.2 3B")
         self.assertIs(res["ok"], True)
         self.assertEqual(res["text"], "hello model")
@@ -135,6 +143,8 @@ class TestAnswer(unittest.TestCase):
             url = get_url(req)
             if "wikipedia" in url:
                 return FakeResp(json.dumps(wiki).encode())
+            if url.endswith("/models"):
+                return models_reply("llama-3.2-1b-instruct")
             if "chat/completions" in url:
                 return FakeResp(json.dumps(chat).encode())
             raise OSError("unknown")
@@ -145,13 +155,15 @@ class TestAnswer(unittest.TestCase):
         self.assertEqual(res["engine"], "Meta Llama 3.2 1B")
     def test_hard_fallback(self):
         hard_q = " ".join(["word"] * 20)
-        private = "http://" + LAN_HOST + ":1234/v1"
+        private = "http://" + RFC1918_HOST + ":1234/v1"
         env = {"OPOS_LAN_URL": private}
         chat_local = {"choices": [{"message": {"content": "local answer"}}]}
         def opener(req, timeout=30):
             url = get_url(req)
-            if LAN_HOST in url:
+            if RFC1918_HOST in url:
                 raise OSError("lan down")
+            if "127.0.0.1:8080" in url and url.endswith("/models"):
+                return models_reply("llama-3.2-3b-instruct")
             if "127.0.0.1:8080" in url:
                 return FakeResp(json.dumps(chat_local).encode())
             raise OSError("unknown")
@@ -187,7 +199,7 @@ class TestAnswer(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(res["engine"], "Muse Glimmer")
     def test_last_failure_reported_with_lan_configured(self):
-        env = {"OPOS_LAN_URL": "http://" + BUSY_LAN_HOST + ":1234/v1"}
+        env = {"OPOS_LAN_URL": "http://" + BUSY_RFC1918_HOST + ":1234/v1"}
         def opener(req, timeout=None):
             raise OSError("down")
         res = assist.answer("hello world", web=False, env=env, opener=opener, free=2000)

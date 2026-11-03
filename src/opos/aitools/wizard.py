@@ -49,6 +49,9 @@ def public_state(*, env: Mapping[str, str], home: Path, machine: str, platform: 
             probs = place.preflight(t, prefix, machine, _free)
         except Exception as e:
             probs = [str(e)]
+        bad_digest = installer.digest_problem(t)
+        if bad_digest:
+            probs = [*probs, bad_digest]
         ok = not probs
         prob = None if ok else "; ".join(probs)
         out.append({"id": t.id, "name": t.name, "min_free_mb": t.min_free_mb, "archs": list(t.archs), "signin": t.signin, "docs_url": t.docs_url, "ok": ok, "problem": prob})

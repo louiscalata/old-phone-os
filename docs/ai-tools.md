@@ -5,7 +5,19 @@ Run the command examples from the retained source checkout.
 
 Optional step 6 of 7 in the first-run wizard ("AI coding tools"). Installs Meta's terminal coding agent, Muse Code, into a per-tool sandbox. User-level only, no sudo. Nothing is installed unless you tick it.
 
-The set of tools is data, not code, in `deploy/ai-tools.json` (`{"version":1,"tools":[...]}`). Adding a tool is adding one object with fields `id, name, binary, installer_url, interpreter, installer_args, installer_env, archs, min_free_mb, state_subdir, run_env, lite_env, signin, docs_url` as validated by `catalog.py`.
+The set of tools is data, not code, in `deploy/ai-tools.json` (`{"version":1,"tools":[...]}`). Adding a tool is adding one object with fields `id, name, binary, installer_url, interpreter, installer_args, installer_env, archs, min_free_mb, state_subdir, run_env, lite_env, signin, docs_url, installer_sha256, installer_sha256_checked` as validated by `catalog.py`. `installer_sha256` is the SHA-256 of the vendor installer script as 64 lowercase hex characters, and `installer_sha256_checked` is the date it was measured (`YYYY-MM-DD`). The table still loads without them, but a tool without `installer_sha256` cannot be installed.
+
+### Download check
+- A tool whose entry has no `installer_sha256` is refused before anything is downloaded, and the wizard lists it as not installable.
+- OPOS sends one GET request to `installer_url`, which must be https. It ignores `HTTP_PROXY`, `HTTPS_PROXY` and system proxy settings, uses a 30-second network timeout and reads at most 2,000,000 bytes.
+- OPOS follows no redirects, whether to the same host or another. A redirect stops the install and the message names where it pointed. A reply that reports a different scheme, host or port than `installer_url` is refused as well.
+- The script is written to a private temporary file. OPOS hashes that file and runs it only if the SHA-256 equals `installer_sha256`. On a mismatch it deletes the file, runs nothing, and says the vendor script changed and `installer_sha256` must be updated in the catalog.
+- To update the digest, download the script without running it and without following redirects (no `-L`), read it, then record its hash and the date:
+
+      curl -fsS https://dev.meta.ai/install.sh -o install.sh
+      shasum -a 256 install.sh    # sha256sum install.sh on Linux
+
+The shipped Muse Code digest was measured on 2026-11-03 from `https://dev.meta.ai/install.sh` (9,314 bytes, answered directly with no redirect). The server reported the script as last modified that same day, so expect to update the digest when the vendor changes it. The server's last-modified time later moved from 11:07 to 15:37 UTC; a second download at 15:50 UTC gave the same size and hash. The check covers only that first script: by default the script then downloads its launcher from `https://api.meta.ai/muse-launcher.sh` and compares it with an `x-content-sha256` header sent by the same server. OPOS does not check that second download.
 
 ## 2. Where it goes
 Prefix choice:
@@ -78,7 +90,7 @@ Deletes `<prefix>/opos-tools` (wrappers, sandboxes including any sign-in data ke
 - `power` — print `external power` or `battery`.
 
 ## 8. How it was tested
-All with mocks: network, installers, `/sys/class/power_supply`, `/proc`, signals. A simulation with a stand-in binary in a temporary folder showed refusal on battery (exit 75), pause on unplug, resume on replug, and exact uninstall. This was not run on a real Surface Duo and the real vendor installers were not executed.
+All with mocks: network, installers, `/sys/class/power_supply`, `/proc`, signals. A simulation with a stand-in binary in a temporary folder showed refusal on battery (exit 75), pause on unplug, resume on replug, and exact uninstall. This was not run on a real Surface Duo and the real vendor installers were not executed. The download check is tested with fake openers for a matching digest, a mismatch, a missing digest and redirects to another host. The shipped digest was measured by downloading the real script with a plain GET and hashing it, without running it.
 
 ## 9. Helper Wikipedia search
 This is separate from the coding tools above. When you tick Search Wikipedia in the helper, OPOS sends one GET request to `https://en.wikipedia.org/w/api.php`. It carries your question (cut to 500 characters) as `srsearch`, plus `action=query`, `list=search`, `srlimit=3`, `format=json` and `srprop=snippet`, and the header `User-Agent: OPOS-helper/1.0`. It sends no phone facts, cookies or keys.

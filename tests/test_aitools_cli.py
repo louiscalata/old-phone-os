@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import hashlib
 import io
 import json
 import os
@@ -14,9 +15,11 @@ from pathlib import Path
 from opos.aitools import cli, installer, launcher
 from opos.aitools import power
 
+_FAKE_SCRIPT = b"#!/bin/sh\necho hi\n"
+
 
 def _tool(tid="demo-tool", binary="mybin", archs=None, min_free=1):
-    return {"id": tid, "name": f"Name {tid}", "binary": binary, "installer_url": "https://example.com/install.sh", "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": archs or ["aarch64", "x86_64"], "min_free_mb": min_free, "state_subdir": ".state", "run_env": {}, "lite_env": {}, "signin": f"signin for {tid}", "docs_url": "https://example.com/docs"}
+    return {"id": tid, "name": f"Name {tid}", "binary": binary, "installer_url": "https://example.com/install.sh", "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": archs or ["aarch64", "x86_64"], "min_free_mb": min_free, "state_subdir": ".state", "run_env": {}, "lite_env": {}, "signin": f"signin for {tid}", "docs_url": "https://example.com/docs", "installer_sha256": hashlib.sha256(_FAKE_SCRIPT).hexdigest()}
 
 
 def _write_catalog(p, tools):
@@ -25,7 +28,7 @@ def _write_catalog(p, tools):
 
 def _fake_fetch(url):
     assert url.startswith("https://")
-    return b"#!/bin/sh\necho hi\n"
+    return _FAKE_SCRIPT
 
 
 def _runner_for(bins):

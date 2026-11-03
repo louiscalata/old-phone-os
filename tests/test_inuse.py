@@ -59,11 +59,19 @@ class InUseTest(unittest.TestCase):
         out2 = dash.view(80, Mode.NORMAL, False, 1.0, 43200.0, False, "rules", deferred=())
         self.assertNotIn("maps", paused_names(out2))
 
-    def test_in_use_suppresses_deferred(self):
+    def test_in_use_is_decided_by_the_final_decision_not_the_panel(self):
         dash = make_dash()
         dash.set_in_use("maps")
+        # The panel shows what the final decision says, even for the app in use (a hard floor may hold it).
         out = dash.view(80, Mode.NORMAL, False, 1.0, 43200.0, False, "rules", deferred=("maps",))
+        self.assertIn("maps", paused_names(out))
+        self.assertNotIn("maps", out["saving_for"])
+        # The runtime is what lets the app in use run over a soft pause.
+        phone = Phone()
+        phone.dash.set_in_use("maps")
+        out = phone.state()["battery"]
         self.assertNotIn("maps", paused_names(out))
+        self.assertIn("maps", out["saving_for"])
 
     def test_http_in_use(self):
         phone = Phone()
@@ -89,18 +97,19 @@ class InUseTest(unittest.TestCase):
     def test_in_use_changes_next_decision(self):
         phone = Phone()
         phone.runtime.governor.advisor = None
-        phone.sim.level = 10
+        # 40% at full health is SAVER under the battery rules: photos backup is a soft pause.
+        phone.sim.level = 40
         phone.sim.health = 1.0
         phone.sim.temp_c = 25.0
         phone.charging = False
         base = phone._tick()
-        self.assertEqual(base.decision.allowed, ("calls", "messages"))
-        self.assertEqual(base.decision.deferred, ("email", "maps", "photos backup"))
-        phone.dash.set_in_use("maps")
+        self.assertEqual(base.decision.allowed, ("calls", "messages", "email", "maps"))
+        self.assertEqual(base.decision.deferred, ("photos backup",))
+        phone.dash.set_in_use("photos backup")
         for _ in range(2):
             t = phone._tick()
-            self.assertEqual(t.decision.allowed, ("calls", "messages", "maps"))
-            self.assertEqual(t.decision.deferred, ("email", "photos backup"))
+            self.assertEqual(t.decision.allowed, ("calls", "messages", "email", "maps", "photos backup"))
+            self.assertEqual(t.decision.deferred, ())
             self.assertEqual(t.screen, home_screen(phone.sim.level, t.decision, visible=phone.visible))
             self.assertIs(t, phone._tick_obj)
             self.assertEqual(t.decision.mode, base.decision.mode)
@@ -111,6 +120,18 @@ class InUseTest(unittest.TestCase):
             self.assertEqual(t.steps, base.steps)
         phone.dash.set_in_use("")
         self.assertEqual(phone._tick().decision, base.decision)
+
+    def test_in_use_cannot_override_the_critical_floor(self):
+        phone = Phone()
+        phone.runtime.governor.advisor = None
+        phone.sim.level = 10  # 10% usable: the battery rules' CRITICAL mode, a hard floor
+        phone.sim.health = 1.0
+        phone.sim.temp_c = 25.0
+        base = phone._tick()
+        phone.dash.set_in_use("maps")
+        tick = phone._tick()
+        self.assertEqual(tick.decision, base.decision)
+        self.assertEqual(dict(tick.causes)["maps"], "low")
 
     def test_in_use_promotion_rejected_by_worn_reserve(self):
         phone = Phone()
@@ -126,7 +147,7 @@ class InUseTest(unittest.TestCase):
         for _ in range(2):
             tick = phone._tick()
             self.assertEqual(tick.decision.allowed, ("calls", "messages"))
-            self.assertEqual(tick.decision.deferred, ("email", "photos backup", "maps"))
+            self.assertEqual(tick.decision.deferred, ("email", "maps", "photos backup"))
             self.assertEqual(tick.decision.mode, base.decision.mode)
             self.assertEqual(tick.decision.reason, "worn battery: keeping a reserve for calls")
             self.assertEqual(tick.screen, home_screen(phone.sim.level, tick.decision, visible=phone.visible))

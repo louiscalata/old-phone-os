@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Package metadata only. The supported install paths are install.sh and the
+# postmarketOS packages; OPOS uses the Python standard library alone.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opos"
+version = "0.1.0"
+description = "Old Phone OS Interface: a prototype phone interface that pauses less essential work so the battery can last until a time the owner chooses"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Louis Calata" }]
+dependencies = []
+classifiers = ["Programming Language :: Python :: 3"]
+
+[project.urls]
+Source = "https://github.com/louiscalata/old-phone-os"
+
+# The phone page is assembled from these files at run time (src/opos/web.py).
+[tool.setuptools.package-data]
+opos = ["web_static/*"]

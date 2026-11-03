@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import datetime
 import json
 import re
 from dataclasses import dataclass
@@ -24,6 +25,10 @@ class Tool:
     lite_env: dict[str, str]
     signin: str
     docs_url: str
+    # sha256 (lowercase hex) of the vendor installer script; install refuses without it.
+    installer_sha256: str = ""
+    # Date (YYYY-MM-DD) the digest was measured.
+    installer_sha256_checked: str = ""
 
 _ID_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 _BIN_RE = re.compile(r"^[a-z0-9._-]{1,32}$")
@@ -31,6 +36,10 @@ _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 _WS_RE = re.compile(r"\s")
 _ARCHS_ALLOWED = {"aarch64", "x86_64"}
 _TOOL_KEYS = frozenset({"id", "name", "binary", "installer_url", "interpreter", "installer_args", "installer_env", "archs", "min_free_mb", "state_subdir", "run_env", "lite_env", "signin", "docs_url"})
+# Optional in the file so a table without them still lists; the installer refuses a tool with no digest.
+_OPTIONAL_TOOL_KEYS = frozenset({"installer_sha256", "installer_sha256_checked"})
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 _TOP_KEYS = frozenset({"version", "tools"})
 _FORBIDDEN_ENV = ("KEY", "TOKEN", "SECRET", "PASSWORD")
 
@@ -57,6 +66,16 @@ def _check_env(d: object) -> None:
             raise CatalogError(f"bad env value for {k!r}")
         if "\n" in v or "\r" in v or "\x00" in v:
             raise CatalogError(f"bad env value for {k!r}")
+
+def _is_date(text: str) -> bool:
+    """Check a YYYY-MM-DD calendar date."""
+    if not _DATE_RE.fullmatch(text):
+        return False
+    try:
+        datetime.date.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
 
 def default_path(repo_root: Path) -> Path:
     """Return default catalog path."""
@@ -90,7 +109,8 @@ def load(path: Path) -> tuple[Tool, ...]:
     for entry in raw_tools:
         if not isinstance(entry, dict):
             raise CatalogError("tool entry not dict")
-        if set(entry.keys()) != _TOOL_KEYS:
+        keys = set(entry.keys())
+        if not _TOOL_KEYS <= keys or not keys <= _TOOL_KEYS | _OPTIONAL_TOOL_KEYS:
             raise CatalogError("missing or unknown tool keys")
         tid = entry["id"]
         if not isinstance(tid, str) or not _ID_RE.fullmatch(tid):
@@ -149,7 +169,13 @@ def load(path: Path) -> tuple[Tool, ...]:
             raise CatalogError(f"bad signin: {signin!r}")
         docs_url = entry["docs_url"]
         _check_url(docs_url)
-        out.append(Tool(id=tid, name=name, binary=binary, installer_url=installer_url, interpreter=interpreter, installer_args=tuple(installer_args), installer_env=dict(installer_env), archs=tuple(archs), min_free_mb=min_free, state_subdir=state_subdir, run_env=dict(run_env), lite_env=dict(lite_env), signin=signin, docs_url=docs_url))
+        digest = entry.get("installer_sha256", "")
+        if not isinstance(digest, str) or (digest and not SHA256_RE.fullmatch(digest)):
+            raise CatalogError(f"bad installer_sha256 for {tid!r}: use 64 lowercase hex characters")
+        checked = entry.get("installer_sha256_checked", "")
+        if not isinstance(checked, str) or (checked and not _is_date(checked)):
+            raise CatalogError(f"bad installer_sha256_checked for {tid!r}: use YYYY-MM-DD")
+        out.append(Tool(id=tid, name=name, binary=binary, installer_url=installer_url, interpreter=interpreter, installer_args=tuple(installer_args), installer_env=dict(installer_env), archs=tuple(archs), min_free_mb=min_free, state_subdir=state_subdir, run_env=dict(run_env), lite_env=dict(lite_env), signin=signin, docs_url=docs_url, installer_sha256=digest, installer_sha256_checked=checked))
     return tuple(out)
 
 def get(tools: tuple[Tool, ...], tool_id: str) -> Tool:

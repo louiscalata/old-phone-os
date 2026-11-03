@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import argparse
-import dataclasses
 import os
 import http
 import html
@@ -18,8 +17,6 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import opos.muse as muse
 import opos.assist as assist
-import opos.home
-import opos.reserve
 from opos.advisor import GlimmerAdvisor
 import opos.setup.config as setup_config
 from opos.setup import prefs
@@ -48,14 +45,11 @@ class _Server(ThreadingHTTPServer):
             self._slots.release()
 from opos.contacts import DEMO_CONTACTS, Book, thread, threads
 from opos.essentials import Essentials, normalize_number, normalize_sender
-from opos.runtime import DEFAULT_TASKS, Runtime
+from opos.runtime import Runtime
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
 from opos.dashboard import Dashboard, _format_goal_12h
-from opos.battery import essentials_reserve
-from opos.governor import PowerState, rule_decide
-from opos.power import plan
-from opos.router import afford
+from opos.router import HOT_C
 from opos import notices, secure
 
 
@@ -83,7 +77,6 @@ def _route_with_glimmer(phone, env):
     return None
 
 
-_TASK_COST = {t.name: t for t in DEFAULT_TASKS}
 _NOTICE_FORBIDDEN_RE = re.compile(r'\b(AI|model|Governor|assistant|battery)\b', re.IGNORECASE)
 _EMPTY_NOTICES = {
     "error: battery empty, charge the phone to call": "Charge the phone to call",
@@ -113,6 +106,7 @@ def notice_for(status, in_call):
     if status == "message received":
         return "New message"
     return ""
+MAX_TICK_S = 5.0  # the longest real interval one simulation tick covers
 def poll_ms(mode, free, in_call):
     if in_call:
         return 1000
@@ -136,10 +130,13 @@ def _join(names):
     if len(names) <= 1:
         return "".join(names)
     return ", ".join(names[:-1]) + " and " + names[-1]
+# Owner-facing words call a battery "worn" below 80 percent health. The worn-battery
+# reserve (opos.reserve) only engages below opos.eol.WORN_HEALTH (50 percent).
+WORN_WORDS_HEALTH = 0.8
 def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True):
     """A short lock-screen fact, using effective pauses rather than helper visibility."""
-    prefix = ("Charging. " if charging else "Phone hot. " if temp_c >= 45 else
-              "Battery low. " if level < 20 else "Worn battery. " if health < 0.8 else "")
+    prefix = ("Charging. " if charging else "Phone hot. " if temp_c >= HOT_C else
+              "Battery low. " if level < 20 else "Worn battery. " if health < WORN_WORDS_HEALTH else "")
     names = sorted(set(paused))
     suffix = ""
     if goal and not charging:
@@ -156,11 +153,11 @@ def why_paused(level, health, temp_c, charging, paused, goal=None, goal_met=True
     """One plain sentence, from the numbers alone, that the helper repeats for why-questions."""
     pct, hp = int(round(level)), int(round(health * 100))
     usable = int(level * health) if usable_percent is None else usable_percent
-    if health < 0.8:
+    if health < WORN_WORDS_HEALTH:
         s = f"The battery is worn ({hp}% health), so {pct}% charge is about {usable}% usable"
     else:
         s = f"The battery is at {pct}% ({hp}% health, about {usable}% usable)"
-    if temp_c >= 45:
+    if temp_c >= HOT_C:
         s += f", the phone is hot ({temp_c:.0f}°C)"
     s += " and it is charging" if charging else " and it is not charging"
     if paused:
@@ -199,42 +196,35 @@ class Phone:
         self.status = "ready"
         self._in_call = False
         self._tick_obj = None
+        self._undo_mode = None  # the mode an Undo was made in; a different mode ends it
         self._last_tick_time = time.monotonic()
     def _tick(self):
-        try:
-            self._tick_obj = self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c, charging=self.charging, goal_hours=self.dash.hours_to_goal(self.clock_s))
-        except TypeError:
-            self._tick_obj = self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c)
-        tick = self._tick_obj
-        d = tick.decision
-        name = self.dash.in_use
-        names = {t.name for t in self.runtime.tasks}
-        if name in names and name in d.deferred and self.sim.level > tick.reserve:
-            new_deferred = tuple(x for x in d.deferred if x != name)
-            allowed = d.allowed
-            if name in allowed:
-                new_allowed = allowed
-            else:
-                new_allowed = tuple(allowed) + (name,)
-            new = dataclasses.replace(d, deferred=new_deferred, allowed=new_allowed)
-            if not self.charging:
-                new = opos.reserve.apply_reserve(new, self.sim.level, self.sim.temp_c, self.sim.health, self.runtime.tasks)
-            d = new
-        restored = tuple(t.name for t in self.runtime.tasks if t.name in self.dash.undone and t.name in d.deferred)
-        if restored:
-            d = dataclasses.replace(d, deferred=tuple(n for n in d.deferred if n not in restored),
-                                    allowed=d.allowed + tuple(n for n in restored if n not in d.allowed))
-        if d != tick.decision:
-            if d.reason.startswith("router+glimmer"):
-                state = PowerState(self.sim.level, self.charging, self.sim.health, self.sim.temp_c,
-                                   self.dash.hours_to_goal(self.clock_s))
-                rules = rule_decide(state, self.runtime.tasks)
-                if not any(t.name in d.deferred and t.name in rules.allowed and afford(state, t)[0]
-                           for t in self.runtime.tasks):
-                    d = dataclasses.replace(d, reason=f"router: allowed {len(d.allowed)}, deferred {len(d.deferred)}")
-            screen = opos.home.home_screen(self.sim.level, d, visible=self.visible)
-            self._tick_obj = dataclasses.replace(tick, decision=d, screen=screen)
-        return self._tick_obj
+        """The one final decision: home screen, battery panel, lock story, helper facts and drain read it.
+
+        The runtime applies the owner's Undo and foreground app over soft pauses, then the hard
+        floors. An Undo lasts until the mode changes.
+        """
+        hours = self.dash.hours_to_goal(self.clock_s)
+        def step(undone):
+            return self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c,
+                                     charging=self.charging, goal_hours=hours, in_use=self.dash.in_use, undone=undone)
+        tick = step(frozenset(self.dash.undone))
+        if not self.dash.undone:
+            self._undo_mode = None
+        elif self._undo_mode is None:
+            self._undo_mode = tick.decision.mode
+        elif tick.decision.mode != self._undo_mode:
+            self.dash.undone.clear()
+            self._undo_mode = None
+            tick = step(frozenset())
+        self._tick_obj = tick
+        return tick
+    def undo(self, name):
+        """Turn a paused task back on, unless a hard floor holds it (then Undo has no effect)."""
+        real_name = self.dash.task_name(name)
+        if real_name in self._tick().held:
+            return
+        self.dash.undo(real_name)
     def paused_names(self):
         return set(self.dash.paused_names)
     def _goal_label(self):
@@ -244,45 +234,22 @@ class Phone:
             return None
         return self.dash.goal + (" tomorrow" if self.clock_s + hours * 3600 >= 86400 else "")
     def _paused_reasons(self, tick, *, goal_met=True):
-        """Explain current pauses without asking the helper or changing its decision."""
-        if not self.dash.paused_names:
-            return {}
-        hours = self.dash.hours_to_goal(self.clock_s)
-        state = PowerState(self.sim.level, self.charging, self.sim.health, self.sim.temp_c, hours)
-        rules = rule_decide(state, self.runtime.tasks)
-        planned = plan(state.level, hours, self.runtime.tasks, state.health, state.charging, self.dash.in_use).paused
-        waived = hours is not None and not state.charging and state.temp_c < 45
-        reserve = state.level <= essentials_reserve(None) or (state.level <= tick.reserve and not waived) or tick.decision.reason == opos.reserve.WORN_REASON
+        """One sentence per paused task, from the cause the final decision recorded for it."""
         goal_label = self._goal_label()
         goal_words = _format_goal_12h(goal_label) if goal_label else None
-        goal_reason = (f"to help the battery last until {goal_words}" if goal_met else
-                       f"because the battery won't last until {goal_words}")
-        reasons = {}
-        for task in self.runtime.tasks:
-            if task.name not in self.dash.paused_names:
-                continue
-            allowed, cause = afford(state, task)
-            who, why = "Battery rules", "to save power for calls and messages"
-            if reserve:
-                why = "to keep a battery reserve for calls"
-            elif not allowed:
-                why = {"too hot": "because the phone is hot", "would miss your goal": goal_reason, "battery below 80 percent": "because usable battery is below 80%" if self.visible else why, "not enough for the next 4 hours": "to keep power for the next 4 hours"}.get(cause, why)
-            elif task.name in rules.deferred:
-                why = "because the phone is hot" if state.temp_c >= 45 else "because usable battery is low" if self.visible else why
-            elif task.name in planned:
-                why = goal_reason
-            elif task.name in tick.decision.deferred and tick.decision.reason.startswith("router+glimmer"):
-                who = "Muse Glimmer"
-            reasons[task.name] = f"{who} paused this {why}."
-        return reasons
-    def _essential(self, name):
-        t = _TASK_COST.get(name)
-        if t is None:
-            return True
-        p = t.priority
-        if isinstance(p, str):
-            return p == "essential"
-        return name in {"calls", "call", "sms", "messages", "phone"}
+        save = "to save power for calls and messages"
+        why = {
+            "reserve": "to keep a battery reserve for calls",
+            "hot": "because the phone is hot",
+            "low": "because usable battery is low" if self.visible else "because the battery is low",
+            "goal": (f"to help the battery last until {goal_words}" if goal_met else
+                     f"because the battery won't last until {goal_words}") if goal_words else save,
+            "optional": "because usable battery is below 80%" if self.visible else save,
+            "horizon": "to keep power for the next 4 hours",
+            "rules": "because usable battery is low" if self.visible else save,
+        }
+        return {name: f"{'Muse Glimmer' if cause == 'glimmer' else 'Battery rules'} paused this {why.get(cause, save)}."
+                for name, cause in tick.causes}
     def set_visible(self, visible):
         self.visible = bool(visible)
         try:
@@ -323,18 +290,17 @@ class Phone:
         free = assist.free_mb()
         if self.visible:
             out["helper"] = {"mode": d.mode.name, "allowed": list(d.allowed), "paused": list(d.deferred), "hours_left": None if math.isinf(tick.hours_left) else round(tick.hours_left, 1), "reserve": round(tick.reserve, 1), "source": "router" if d.reason.startswith("router") else "rules", "engine": muse.label(assist.ask_route(free=free))}
-        out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason, deferred=d.deferred)
+        out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason,
+                                        deferred=d.deferred, steps=tick.steps, drain_per_h=tick.drain_per_h)
         reasons = self._paused_reasons(tick, goal_met=out["battery"]["goal_met"])
+        held = set(tick.held)
         for item in out["battery"]["paused"]:
-            item["reason"] = reasons[self.runtime.tasks[int(item["id"][1:])].name]
+            name = self.runtime.tasks[int(item["id"][1:])].name
+            item["reason"] = reasons[name]
+            item["held"] = name in held  # a hard floor holds it: the page shows no Undo
         goal_label = self._goal_label()
-        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, self.dash.paused_names, goal_label, out["battery"]["goal_met"])
+        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, d.deferred, goal_label, out["battery"]["goal_met"])
         if self.visible and "helper" in out:
-            paused = self.paused_names()
-            out["helper"]["allowed"] = [n for n in out["helper"]["allowed"] if n not in paused]
-            for n in paused:
-                if n not in out["helper"]["paused"]:
-                    out["helper"]["paused"].append(n)
             hf = out["helper"]
             hf["battery_percent"] = int(round(self.sim.level))
             hf["battery_health_percent"] = int(round(self.sim.health * 100))
@@ -348,7 +314,7 @@ class Phone:
             if reached and hf["goal_met"]:
                 # After the goal, goal_met must not read as "lasts until the goal time".
                 hf["why_paused"] = hf["why_paused"][:-1] + f"; the {_format_goal_12h(self.dash.goal)} goal time has passed and calls and messages stay on."
-            glimmer = [n for n in hf["paused"] if reasons.get(n, '').startswith('Muse Glimmer ')]
+            glimmer = [n for n, cause in tick.causes if cause == "glimmer"]
             if glimmer:
                 hf["paused_by_glimmer"] = glimmer
         h = int(self.clock_s // 3600) % 24
@@ -481,65 +447,34 @@ class Phone:
                 pass
         self.status = "simulation running" if self.running else "simulation paused"
     def tick(self, real_s=1):
-        try:
-            real_ok = isinstance(real_s, bool) or not isinstance(real_s, (int, float)) or not math.isfinite(float(real_s)) or float(real_s) < 0
-        except (OverflowError, ValueError, TypeError):
+        """Advance the simulation by real_s seconds of real time (times the speed).
+
+        real_s is how long the page waited since its last tick. It is capped at MAX_TICK_S and
+        at the real time since the previous tick, so two open pages do not double the speed.
+        The battery drains at the final decision's rate, the same one the time-left estimate uses.
+        """
+        if isinstance(real_s, bool) or not isinstance(real_s, (int, float)):
             raise ValueError("bad real_s")
-        if real_ok:
+        try:
+            real_s = float(real_s)
+        except OverflowError:
+            raise ValueError("bad real_s")
+        if not math.isfinite(real_s) or real_s < 0:
             raise ValueError("bad real_s")
         now = time.monotonic()
-        elapsed = now - self._last_tick_time
-        if elapsed < 0:
-            elapsed = 0.0
-        dt = elapsed if elapsed <= 5.0 else 5.0
+        since = max(0.0, now - self._last_tick_time)
         self._last_tick_time = now
+        dt = min(real_s, since, MAX_TICK_S)
         tick_obj = self._tick()
-        paused = self.paused_names()
-        undone = set(getattr(self.dash, "undone", set()) or set())
-        costs = []
-        counted = set()
-        for name in tick_obj.decision.allowed:
-            if name in paused:
-                continue
-            t = _TASK_COST.get(name)
-            if t is None:
-                continue
-            if not self._essential(name):
-                costs.append(t.cost)
-                counted.add(name)
-        for name in undone:
-            if name in paused:
-                continue
-            if name in counted:
-                continue
-            t = _TASK_COST.get(name)
-            if t is None:
-                continue
-            if not self._essential(name):
-                costs.append(t.cost)
-        speed = getattr(self.sim, 'speed', 1.0)
+        speed = self.sim.speed
         self.clock_s = (self.clock_s + dt * speed) % 86400
         if self.charging:
-            try:
-                self.sim.charge(dt)
-            except AttributeError:
-                fn = getattr(self.sim, "step", None) or getattr(self.sim, "advance", None) or getattr(self.sim, "tick")
-                try:
-                    fn(dt, tick_obj.decision.mode.name, sum(costs))
-                except TypeError:
-                    fn(dt, tick_obj.decision.mode.name, costs)
+            self.sim.charge(dt)
         else:
-            if hasattr(self.sim, "advance"):
-                # 60 simulated seconds matches tick_s=60 in opos.profiles, evaluate and evaleol.
-                n = min(120, max(1, math.ceil(dt * speed / 60.0)))
-                for _ in range(n):
-                    self.sim.advance(dt / n, tick_obj.decision.mode.name, costs)
-            else:
-                fn = getattr(self.sim, "step", None) or getattr(self.sim, "advance", None) or getattr(self.sim, "tick")
-                try:
-                    fn(dt, tick_obj.decision.mode.name, sum(costs))
-                except TypeError:
-                    fn(dt, tick_obj.decision.mode.name, costs)
+            # 60 simulated seconds matches tick_s=60 in opos.profiles, evaluate and evaleol.
+            n = min(120, max(1, math.ceil(dt * speed / 60.0)))
+            for _ in range(n):
+                self.sim.advance(dt / n, tick_obj.decision.mode.name, (), per_hour=tick_obj.drain_per_h)
         self.dash.record(self.sim.level, self.clock_s)
         self._tick()
         if self.status != "call ended: battery empty" or self.charging or round(self.sim.level) > 0:
@@ -941,7 +876,7 @@ class Handler(BaseHTTPRequestHandler):
                     bad = True
             elif a == "undo" and isinstance(data.get("name"), str):
                 try:
-                    self.phone.dash.undo(data["name"])
+                    self.phone.undo(data["name"])
                 except ValueError:
                     bad = True
             elif a == "in_use":

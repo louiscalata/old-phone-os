@@ -80,6 +80,13 @@ class TestRuntimeGoalReserve(unittest.TestCase):
         rt = Runtime(tasks=TASKS)
         allow_all(rt)
         tick = rt.step(0.0, 90.0, health=0.9, temp_c=TEMP, goal_hours=8.0)
+        self.assertEqual(tick.held, ())  # No reserve or other hard floor.
+        # The goal plan's soft pauses are all that remains (the final decision owns them now).
+        self.assertEqual(tick.decision.deferred, ("maps", "photos backup"))
+        self.assertEqual(set(dict(tick.causes).values()), {"goal"})
+        rt = Runtime(tasks=TASKS)
+        allow_all(rt)
+        tick = rt.step(0.0, 90.0, health=0.9, temp_c=TEMP)  # Without a goal nothing is paused.
         self.assertEqual(set(tick.decision.allowed), {t.name for t in TASKS})
         self.assertEqual(tick.decision.deferred, ())
 
@@ -114,9 +121,12 @@ class TestRuntimeGoalReserve(unittest.TestCase):
                 with patch("opos.runtime.rule_decide", return_value=Decision(Mode.NORMAL, tuple(t.name for t in TASKS), (), "router: allow all")):
                     tick = rt.step(0.0, 90.0, charging=charging, health=1.0, temp_c=temp_c, goal_hours=goal_hours)
                 if goal_hours == 8.0 and temp_c == 25.0 and charging is False:
-                    self.assertEqual(tick.decision.allowed, tuple(t.name for t in TASKS))
-                    self.assertEqual(tick.decision.deferred, ())
+                    # The rate reserve is waived; only the goal plan's soft pauses remain.
+                    self.assertEqual(tick.held, ())
+                    self.assertEqual(tick.decision.allowed, ("calls", "messages", "alarms", "email"))
+                    self.assertEqual(set(dict(tick.causes).values()), {"goal"})
                 else:
+                    self.assertEqual(dict(tick.causes), dict.fromkeys(("email", "maps", "photos backup"), "reserve"))
                     self.assertEqual(tick.decision.allowed, ("calls", "messages", "alarms"))
                     self.assertEqual(tick.decision.deferred, ("email", "maps", "photos backup"))
 

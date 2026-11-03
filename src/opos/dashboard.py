@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from opos.power import plan, feature_drain, time_left_words, total_drain
+from opos.power import feature_drain, plan_reason, time_left_words, total_drain
 import re
 from opos.eol import is_worn
 # A daily goal counts as reached for 8 hours after its time, then targets the same time the next day.
@@ -60,21 +60,24 @@ class Dashboard:
         # A goal set inside its own grace window means the next one, so it is not reached yet.
         # Without a clock, the goal counts as set before its time.
         self._goal_armed = clock_s is None or self._since_goal_s(clock_s) >= GOAL_GRACE_H * 3600
-    def undo(self, name):
+    def task_name(self, name):
+        """The task a paused-row id ("#2") or name refers to; ValueError when there is none."""
         names = {t.name for t in self.tasks}
         if isinstance(name, str) and re.match(r'^#\d+$', name):
             try:
                 idx = int(name[1:])
                 if 0 <= idx < len(self.tasks):
-                    real_name = self.tasks[idx].name
-                else:
-                    raise ValueError
+                    return self.tasks[idx].name
+                raise ValueError
             except Exception:
                 raise ValueError
-        elif name in names:
-            real_name = name
-        else:
-            raise ValueError
+        if name in names:
+            return name
+        raise ValueError
+    def undo(self, name):
+        """Ask for a paused task back. The final decision honours it until the mode changes,
+        and never against a hard floor."""
+        real_name = self.task_name(name)
         self.undone.add(real_name)
         self.events.append(f"{real_name} turned back on")
         if len(self.events) > 20:
@@ -153,11 +156,17 @@ class Dashboard:
         self.in_use = name
         self.undone.discard(name)
 
-    def view(self, level, mode, charging, health, clock_s, visible, reason, deferred=()):
+    def view(self, level, mode, charging, health, clock_s, visible, reason, deferred=(), steps=(), drain_per_h=None):
+        """Render the final decision; the panel never adds or removes pauses on its own.
+
+        deferred and steps are the final decision's paused tasks and saving steps;
+        drain_per_h is its drain (computed from them when not given).
+        """
         hours = self.hours_to_goal(clock_s)
         reached = self.goal_reached(clock_s)
-        p = plan(level, hours, self.tasks, health, charging, self.in_use)
-        paused_names = [t.name for t in self.tasks if (t.name in p.paused or t.name in deferred) and t.name not in self.undone and t.name != self.in_use]
+        paused_set = set(deferred)
+        paused_names = [t.name for t in self.tasks if t.name in paused_set]
+        steps = tuple(steps)
         self.paused_names = tuple(paused_names)
         prev = set(self._last_paused or ())
         curr = set(paused_names)
@@ -182,13 +191,12 @@ class Dashboard:
         else:
             tone = "normal"
         percent = round(level)
-        paused_for_drain = paused_names
-        drain_total = total_drain(self.tasks, paused=paused_for_drain, steps=p.steps, health=health)
+        drain_total = total_drain(self.tasks, paused=paused_names, steps=steps, health=health) if drain_per_h is None else drain_per_h
         hours_left_corrected = float('inf') if drain_total <= 0 else level / drain_total
         if charging:
-            meets_goal = p.meets_goal
+            meets_goal = True
         elif hours is None:
-            meets_goal = p.meets_goal
+            meets_goal = False
         else:
             meets_goal = hours_left_corrected >= hours
         # Calls and messages treat a battery shown as 0% as empty, charging or not, so the goal does too.
@@ -206,9 +214,10 @@ class Dashboard:
                 end_words = _format_time_12h(end_s_mod)
                 goal_note = f"Won't last until {goal_words}, calls and messages until ~{end_words}"
         time_left = "Charging" if charging else time_left_words(hours_left_corrected)
+        in_use = self.in_use if self.in_use and self.in_use not in paused_set else None
         saving_for = ["calls", "messages"]
-        if self.in_use:
-            saving_for.append(self.in_use)
+        if in_use:
+            saving_for.append(in_use)
         if any(t.name == "alarms" for t in self.tasks):
             saving_for.append("alarms")
         name_to_idx = {t.name: i for i, t in enumerate(self.tasks)}
@@ -222,16 +231,16 @@ class Dashboard:
         for i in range(len(relevant)):
             window = relevant[max(0, i - 4):i + 1]
             history_out.append(round(sum(window) / len(window), 1))
-        drain = feature_drain(p.steps, health)
+        drain = feature_drain(steps, health)
         total = sum(drain.values())
         features_out = []
         for f, v in drain.items():
             name = "helper" if f == "model" else f
             share = round(v / max(total, 1e-9) * 100)
             features_out.append({"name": name, "per_hour": round(v, 2), "share": share})
-        if charging:
+        if charging and not paused_names:
             headline = "Charging: everything back on"
-        elif paused_names or p.steps:
+        elif paused_names or steps:
             headline = "Saving power for " + ", ".join(saving_for)
         else:
             headline = "Everything on"
@@ -246,13 +255,21 @@ class Dashboard:
             "events": self.events[-8:],
             "history": history_out,
             "features": features_out,
-            "steps": list(p.steps),
+            "steps": list(steps),
             "headline": headline,
             "goal_note": goal_note,
             "worn_note": "Battery is worn, keeping a reserve for calls" if is_worn(health) and not charging else "",
         }
         if visible:
-            out["why"] = reason + "; " + ("Goal time reached" if reached else p.reason)
+            if reached:
+                plan_words = "Goal time reached"
+            elif charging:
+                plan_words = "Charging" if paused_names else "Charging: everything back on"
+            elif hours is None:
+                plan_words = "No goal set"
+            else:
+                plan_words = plan_reason(steps, paused_names, meets_goal, in_use)
+            out["why"] = reason + "; " + plan_words
         else:
             for item in out["paused"]:
                 item["name"] = _redact(item["name"])

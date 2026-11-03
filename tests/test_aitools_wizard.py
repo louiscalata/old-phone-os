@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import hashlib
 import json
 import os
 import tempfile
@@ -10,8 +11,8 @@ from opos.aitools import catalog, installer, place, wizard
 
 
 def _td(tid, binary, url, archs, min_free):
-    """Build catalog tool dict."""
-    return {"id": tid, "name": f"Name {tid}", "binary": binary, "installer_url": url, "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": list(archs), "min_free_mb": min_free, "state_subdir": f".{tid}", "run_env": {}, "lite_env": {}, "signin": f"signin {tid}", "docs_url": f"https://example.com/{tid}"}
+    """Build catalog tool dict; its installer_sha256 matches the b"ok" payload the fake fetches return."""
+    return {"id": tid, "name": f"Name {tid}", "binary": binary, "installer_url": url, "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": list(archs), "min_free_mb": min_free, "state_subdir": f".{tid}", "run_env": {}, "lite_env": {}, "signin": f"signin {tid}", "docs_url": f"https://example.com/{tid}", "installer_sha256": hashlib.sha256(b"ok").hexdigest()}
 
 
 def _write_cat(p, tools):

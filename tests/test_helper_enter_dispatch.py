@@ -49,7 +49,7 @@ function world(opt={}){
   'simbtn','visbtn','helpertoggle','temp','charge','goal','goal-clear','number','msg','screen'])ids[id]=el(id);
  ids.phone.appendChild(ids.ask);ids.ask.appendChild(ids.q);ids.ask.appendChild(ids.askbtn);ids.ask.appendChild(ids.answer);
  if(opt.unavailable)ids.phone.appendChild(ids.q); // Enhancement cannot claim a non-direct input.
- const ctx={document:doc,location:{search:''},URLSearchParams,Promise,AbortController,JSON,String,Date,
+ const ctx={document:doc,location:{search:''},URLSearchParams,Promise,AbortController,JSON,String,Date,performance:{now:()=>Date.now()},
   localStorage:{getItem(){return null},setItem(){},removeItem(){}},matchMedia(){return{matches:false}},
   addEventListener(){},scrollTo(){},render:async()=>{},api:async()=>({}),go(){},toggleSim(){},
   setTimeout(f,ms){const t={f,ms,live:true};timers.push(t);return t},clearTimeout(t){if(t)t.live=false},

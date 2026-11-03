@@ -24,7 +24,7 @@ update to this document and `tests/test_lean_image.py`.
 
 ## Optional init integration
 
-The existing optional `opos-systemd` subpackage now declares
+The optional `opos-systemd` subpackage declares
 `systemd $pkgname=$pkgver-r$pkgrel` explicitly and supplies
 `opos-server.service` and `opos-firstboot.service`. Its automatic selection
 remains conditional on `install_if="$pkgname=$pkgver-r$pkgrel systemd"`.
@@ -34,12 +34,10 @@ and no new OPOS service names or UI recommendations are introduced.
 
 The main package also carries a fixed state-validation helper for
 installed-mode use; this is additional file payload, not a running daemon.
-These source changes repair the already advertised optional init route and
-do not broaden the direct dependency inventory above. Validation covers
+This optional init route does not broaden the direct dependency inventory above. Validation covers
 source and staging checks; actual APK installation and systemd startup remain unverified.
-Actual package/image size and performance overhead are unmeasured. No new boot,
-RAM, package-count or power measurements are claimed. The owner-approval policy
-for future package or service additions remains unchanged.
+Actual package/image size and performance overhead are unmeasured. No boot,
+RAM, package-count or power measurements are claimed.
 
 ## What is not installed
 
@@ -48,7 +46,7 @@ no telemetry, no cloud account, and no model weights.
 
 ## How we measure
 
-Numbers come only from `tools/opos-bench.sh` runs (spec UX02). Results are labelled
+Numbers come only from `tools/opos-bench.sh` runs. Results are labelled
 QEMU or device with date and image, and are never estimated. Record the image
 identifier alongside each result's target. No measurements are recorded yet.
 

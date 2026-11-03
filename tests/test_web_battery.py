@@ -30,22 +30,34 @@ class TestWebBattery(unittest.TestCase):
 
     def test_plan_pauses_and_undo_increases_drain(self):
         phone = opos.web.Phone()
-        phone.set_battery(15)
+        phone.set_battery(30)  # 18% usable: SAVER under the battery rules, so the goal pauses are soft
         phone.dash.set_goal("23:00")
         phone.state()
         self.assertTrue(phone.paused_names())
         level = phone.sim.level
         phone._last_tick_time = time.monotonic() - 5.0
-        phone.tick(1)
+        phone.tick(5)
         drain1 = level - phone.sim.level
         for item in phone.state()["battery"]["paused"]:
-            phone.dash.undo(item["id"])
+            phone.undo(item["id"])
         phone.state()
+        self.assertFalse(phone.paused_names())
         level2 = phone.sim.level
         phone._last_tick_time = time.monotonic() - 5.0
-        phone.tick(1)
+        phone.tick(5)
         drain2 = level2 - phone.sim.level
         self.assertGreater(drain2, drain1)
+
+    def test_undo_has_no_effect_under_a_hard_floor(self):
+        phone = opos.web.Phone()
+        phone.set_battery(15)  # 9% usable: the battery rules' CRITICAL mode
+        phone.dash.set_goal("23:00")
+        paused = phone.state()["battery"]["paused"]
+        self.assertTrue(paused)
+        for item in paused:
+            phone.undo(item["id"])
+        self.assertEqual(phone.dash.undone, set())
+        self.assertEqual(phone.state()["battery"]["paused"], paused)
 
     def test_http_errors_and_success(self):
         phone = opos.web.Phone()

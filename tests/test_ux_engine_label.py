@@ -8,6 +8,12 @@ from opos.web import Phone
 
 
 class TestEngineLabel(unittest.TestCase):
+    def setUp(self):
+        # These are the phone build's labels; a source checkout says "on this computer" (test_panel_helper_route).
+        phone = patch.object(assist, "PHONE_BUILD", True)
+        phone.start()
+        self.addCleanup(phone.stop)
+
     @patch("opos.assist.free_mb", return_value=2000)
     def test_local_llama(self, free_mb):
         with patch.dict(os.environ, {}, clear=False):

@@ -9,6 +9,10 @@ class TestDashboard(unittest.TestCase):
     def setUp(self):
         self.tasks = opos.runtime.DEFAULT_TASKS
         self.dash = opos.dashboard.Dashboard(self.tasks, history_len=5)
+    def final_view(self, d, level, health, clock_s):
+        """The panel renders the final decision, as the phone passes it in."""
+        tick = opos.runtime.Runtime(tasks=self.tasks).step(0, level, health=health, goal_hours=d.hours_to_goal(clock_s), in_use=d.in_use, undone=frozenset(d.undone))
+        return d.view(level, tick.decision.mode, False, health, clock_s, True, "", deferred=tick.decision.deferred, steps=tick.steps, drain_per_h=tick.drain_per_h)
     def test_meter_width_clamp(self):
         v = self.dash.view(120, opos.governor.Mode.NORMAL, False, 1.0, 0, True, "")
         self.assertEqual(v["meter"]["width"], 100)
@@ -45,7 +49,7 @@ class TestDashboard(unittest.TestCase):
     def test_view_saver_paused(self):
         d = self.dash
         d.set_goal("23:00")
-        v = d.view(30, opos.governor.Mode.SAVER, False, 0.6, 12*3600, True, "")
+        v = self.final_view(d, 30, 0.6, 12*3600)
         self.assertTrue(len(v["paused"]) > 0)
         self.assertTrue(v["headline"].startswith("Saving power for calls, messages"))
         names = [p["name"] for p in v["paused"]]
@@ -54,16 +58,28 @@ class TestDashboard(unittest.TestCase):
     def test_undo(self):
         d = self.dash
         d.set_goal("23:00")
-        v1 = d.view(30, opos.governor.Mode.SAVER, False, 0.6, 12*3600, True, "")
+        v1 = self.final_view(d, 30, 0.6, 12*3600)
         names_before = [p["name"] for p in v1["paused"]]
         self.assertIn("photos backup", names_before)
         d.undo("photos backup")
-        v2 = d.view(30, opos.governor.Mode.SAVER, False, 0.6, 12*3600, True, "")
+        v2 = self.final_view(d, 30, 0.6, 12*3600)
         names_after = [p["name"] for p in v2["paused"]]
         self.assertNotIn("photos backup", names_after)
         self.assertTrue(any("photos backup turned back on" in e for e in d.events))
         with self.assertRaises(ValueError):
             d.undo("nope")
+    def test_view_shows_only_the_final_decision(self):
+        d = self.dash
+        d.set_goal("23:00")
+        d.set_in_use("maps")
+        d.undo("photos backup")
+        v = d.view(30, opos.governor.Mode.SAVER, False, 0.6, 12*3600, True, "", deferred=("maps", "photos backup"))
+        self.assertEqual([p["name"] for p in v["paused"]], ["maps", "photos backup"])
+        self.assertEqual(v["saving_for"], ["calls", "messages"])  # maps is paused, so not saved for
+        v = d.view(30, opos.governor.Mode.SAVER, False, 0.6, 12*3600, True, "")
+        self.assertEqual(v["paused"], [])
+        self.assertEqual(v["steps"], [])
+        self.assertEqual(v["saving_for"], ["calls", "messages", "maps"])
     def test_charging_view(self):
         d = self.dash
         v = d.view(50, opos.governor.Mode.NORMAL, True, 1.0, 0, True, "")

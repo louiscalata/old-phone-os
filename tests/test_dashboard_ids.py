@@ -4,6 +4,7 @@ import re
 import unittest
 from opos.dashboard import Dashboard
 from opos.governor import Mode, Task, Priority
+from opos.runtime import Runtime
 import opos.power
 
 
@@ -32,15 +33,20 @@ class TestDashboardIds(unittest.TestCase):
         )
         dash = Dashboard(tasks)
         dash.set_goal("23:00")
-        dash.view(5, Mode.CRITICAL, False, 0.6, 43200, False, "")
-        paused = dash.view(5, Mode.CRITICAL, False, 0.6, 43200, False, "")["paused"]
+        runtime = Runtime(tasks=tasks)
+        def view():
+            # 30% at 60% health is SAVER under the battery rules, so these pauses are soft.
+            tick = runtime.step(0, 30, health=0.6, goal_hours=dash.hours_to_goal(43200), undone=frozenset(dash.undone))
+            return dash.view(30, tick.decision.mode, False, 0.6, 43200, False, "", deferred=tick.decision.deferred, steps=tick.steps)
+        view()
+        paused = view()["paused"]
         self.assertTrue(paused)
         item = paused[0]
         idx = int(item["id"][1:])
         real_name = tasks[idx].name
         dash.undo(item["id"])
         self.assertIn(real_name, dash.undone)
-        result2 = dash.view(5, Mode.CRITICAL, False, 0.6, 43200, False, "")
+        result2 = view()
         ids = [p["id"] for p in result2.get("paused", [])]
         self.assertNotIn(item["id"], ids)
         before = tuple(dash.undone)
@@ -108,7 +114,7 @@ class TestDashboardIds(unittest.TestCase):
         )
         dash_o = Dashboard(tasks_orig)
         dash_o.set_goal("23:00")
-        res = dash_o.view(5, Mode.CRITICAL, False, 0.6, 43200, False, "")
+        res = dash_o.view(5, Mode.CRITICAL, False, 0.6, 43200, False, "", deferred=("AI assistant", "maps"))
         self.assertIsInstance(dash_o.paused_names, tuple)
         self.assertIn("AI assistant", dash_o.paused_names)
         displayed = [p["name"] for p in res.get("paused", [])]

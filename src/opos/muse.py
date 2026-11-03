@@ -10,7 +10,7 @@ import time
 import urllib.error
 import urllib.request
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, hdrs, newurl):
         raise urllib.error.HTTPError(req.full_url, code, "redirect blocked", hdrs, fp)
@@ -20,15 +20,28 @@ REASONING_HEADROOM = 1200  # Glimmer spends tokens on reasoning before the visib
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_MAX_TOKENS = 600
 MAX_RESPONSE_BYTES = 1048576
+MODEL_LIST_TIMEOUT = 5.0  # seconds for the /models check before an unconfigured local route gets a prompt
+@contextlib.contextmanager
+def _opened(opener, req, timeout):
+    """Open req and close the response afterwards, also when reading or parsing it fails."""
+    try:
+        resp = opener(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        e.close()  # an HTTP error carries the open response body
+        raise
+    if hasattr(resp, "__enter__") and hasattr(resp, "__exit__"):
+        with resp as r:
+            yield r
+        return
+    try:
+        yield resp
+    finally:
+        close = getattr(resp, "close", None)
+        if callable(close):
+            close()
 def _read_capped(resp):
     cap = MAX_RESPONSE_BYTES
-    def _try_read(obj):
-        return obj.read(cap + 1)
-    try:
-        raw = _try_read(resp)
-    except Exception:
-        with resp as r:
-            raw = _try_read(r)
+    raw = resp.read(cap + 1)
     if len(raw) > cap:
         raise ValueError("response too large")
     return raw
@@ -51,12 +64,25 @@ def timeout_s(env=None):
     return float(v)
 @dataclass(frozen=True)
 class Route:
-    """Immutable route definition."""
+    """Immutable route definition.
+
+    verify_model: send a prompt only after the server's /models list contains model, or one of the
+    alternates, exactly. alternates: (model id, name) pairs accepted after model, in order.
+    """
     key: str
     name: str
     where: str
     base_url: str
     model: str
+    verify_model: bool = False
+    alternates: tuple = ()
+class Reply(str):
+    """Visible answer text; route is the route that answered, with the model id and name it served."""
+    route = None
+def answered_by(reply, route):
+    """The route that produced reply, or route when reply carries none (for example a stub's plain text)."""
+    used = getattr(reply, "route", None)
+    return used if isinstance(used, Route) else route
 def glimmer_route(env=None):
     """Return local Glimmer route."""
     if env is None:
@@ -114,7 +140,6 @@ def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_M
         timeout = timeout_s(env)
     if opener is None:
         opener = _open_no_redirect
-    data = json.dumps(_payload(route, prompt, max_tokens)).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if route.key == "spark-open":
         try:
@@ -122,10 +147,13 @@ def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_M
         except Exception as e:
             raise MuseError("auth missing") from e
     _require_http_url(route.base_url)
-    req = urllib.request.Request(route.base_url + "/chat/completions", data=data, headers=headers, method="POST")  # noqa: S310
     try:
-        resp = opener(req, timeout=timeout)
-        raw = _read_capped(resp)
+        if route.verify_model:
+            route = _verified(route, opener, min(timeout, MODEL_LIST_TIMEOUT))  # an unverified server never receives the prompt
+        data = json.dumps(_payload(route, prompt, max_tokens)).encode("utf-8")
+        req = urllib.request.Request(route.base_url + "/chat/completions", data=data, headers=headers, method="POST")  # noqa: S310
+        with _opened(opener, req, timeout) as resp:
+            raw = _read_capped(resp)
         obj = json.loads(raw.decode("utf-8"))
         text = obj["choices"][0]["message"]["content"]
         if not isinstance(text, str):
@@ -135,11 +163,29 @@ def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_M
         text = _visible(text)
         if not text:
             raise MuseError("empty response")
-        return text
+        reply = Reply(text)
+        reply.route = route
+        return reply
     except MuseError:
         raise
     except (OSError, ValueError, KeyError, IndexError, TypeError, RecursionError, http.client.HTTPException) as e:
         raise MuseError("request failed") from e
+def _verified(route, opener, timeout):
+    """The route with the first of model and alternates that /models lists exactly; MuseError when none is."""
+    served = _served_models(route.base_url, opener, timeout)
+    for model, name in ((route.model, route.name),) + tuple(route.alternates):
+        if any(type(s) is str and s == model for s in served):
+            return replace(route, model=model, name=name)
+    raise MuseError("model not listed")
+def _served_models(base_url, opener, timeout):
+    """GET base_url/models and return the listed model ids; raises on transport or format errors."""
+    req = urllib.request.Request(base_url + "/models", method="GET")  # noqa: S310
+    with _opened(opener, req, timeout) as resp:
+        raw = _read_capped(resp)
+    obj = json.loads(raw.decode("utf-8"))
+    if not isinstance(obj, dict):
+        raise ValueError("not an object")
+    return [item["id"] for item in obj.get("data", []) if isinstance(item, dict) and "id" in item]
 FACT_KEYS = ("mode", "allowed", "paused", "hours_left", "reserve", "goal_hours", "battery_percent", "battery_health_percent", "usable_percent", "temp_c", "charging", "why_paused", "goal", "goal_met", "time_left", "paused_by_glimmer")
 HELPER_DEADLINE_S = 115.0  # all route attempts of one Why/Plan/Ask share this; the page waits 125 s.
 def facts(d):
@@ -189,7 +235,8 @@ def explain(fact_dict, route, env=None, opener=None):
     for r, timeout in _attempts(_routes(route), env, deadline):
         try:
             text = ask(r, prompt, env=env, opener=opener, timeout=timeout)
-            return {"text": text, "engine": r.name, "where": r.where, "ok": True}
+            used = answered_by(text, r)
+            return {"text": str(text), "engine": used.name, "where": used.where, "ok": True}
         except MuseError:
             continue
     why_paused = fact_dict.get("why_paused")
@@ -230,7 +277,8 @@ def plan(fact_dict, steps, route, env=None, opener=None):
     deadline = time.monotonic() + HELPER_DEADLINE_S
     for r, timeout in _attempts(_routes(route), env, deadline):
         try:
-            names = _parse_names(ask(r, prompt, env=env, opener=opener, timeout=timeout), steps)
+            reply = ask(r, prompt, env=env, opener=opener, timeout=timeout)
+            names = _parse_names(reply, steps)
         except (MuseError, ValueError, IndexError, TypeError, RecursionError):
             continue
         seen = set()
@@ -245,7 +293,7 @@ def plan(fact_dict, steps, route, env=None, opener=None):
         for name in steps:
             if name not in seen:
                 ordered.append(name)
-        ordered.route = r
+        ordered.route = answered_by(reply, r)
         return ordered
     return Order(steps)
 def check(env=None, opener=None):
@@ -259,17 +307,7 @@ def check(env=None, opener=None):
     lbl = label(route)
     try:
         _require_http_url(endpoint)
-        req = urllib.request.Request(endpoint + "/models", method="GET")  # noqa: S310
-        resp = opener(req, timeout=5)
-        raw = _read_capped(resp)
-        obj = json.loads(raw.decode("utf-8"))
-        if not isinstance(obj, dict):
-            raise ValueError("not an object")
-        data = obj.get("data", [])
-        served = []
-        for item in data:
-            if isinstance(item, dict) and "id" in item:
-                served.append(item["id"])
+        served = _served_models(endpoint, opener, 5)
         return {"route": lbl, "model": route.model, "endpoint": endpoint, "reachable": True, "served": served, "model_served": route.model in served}
     except (MuseError, OSError, ValueError, KeyError, IndexError, TypeError, AttributeError, json.JSONDecodeError, RecursionError, http.client.HTTPException):
         return {"route": lbl, "model": route.model, "endpoint": endpoint, "reachable": False, "served": [], "model_served": False}
@@ -290,7 +328,8 @@ def probe(env=None, opener=None):
         req = urllib.request.Request(route.base_url + "/chat/completions", data=data, headers={"Content-Type": "application/json"}, method="POST")  # noqa: S310
         probe_timeout = min(timeout_s(env), 90.0)
         started = time.monotonic()
-        raw = _read_capped(opener(req, timeout=probe_timeout))
+        with _opened(opener, req, probe_timeout) as resp:
+            raw = _read_capped(resp)
         latency = time.monotonic() - started
         obj = json.loads(raw.decode("utf-8"))
         if not isinstance(obj, dict):

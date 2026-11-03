@@ -17,14 +17,23 @@ class DrainSim:
         self.dead = False
         self.shutdown_level = None
 
-    def advance(self, real_s, mode_name, task_costs, burst_a=0.0) -> float:
+    def advance(self, real_s, mode_name, task_costs, burst_a=0.0, per_hour=None) -> float:
+        """Drain for real_s seconds of real time (times speed).
+
+        By default the drain is the mode's base rate plus task_costs, divided by health.
+        per_hour, when given, is the whole drain in percent per hour with health already
+        counted (as opos.power.total_drain gives it) and replaces that sum.
+        """
         if real_s < 0:
             raise ValueError(real_s)
-        total_cost = sum(task_costs)
+        dt_h = real_s * self.speed / 3600
+        divisor = max(self.health, 0.1)
+        if per_hour is None:
+            units = DRAIN_PER_HOUR[mode_name] + sum(task_costs)
+        else:
+            units = per_hour * divisor
         if self.r0 is None:
-            base = DRAIN_PER_HOUR[mode_name]
-            dt_h = real_s * self.speed / 3600
-            drain = (base + total_cost) * dt_h / max(self.health, 0.1)
+            drain = units * dt_h / divisor if per_hour is None else per_hour * dt_h
             self.level = max(0.0, self.level - drain)
             target = 25 + drain * 40
             frac = min(1.0, 0.1 * dt_h * 6)
@@ -33,15 +42,12 @@ class DrainSim:
             return self.level
         if self.dead:
             return self.level
-        base = DRAIN_PER_HOUR[mode_name]
-        units = base + total_cost
         amps = load_amps(units) + burst_a
         if brownout(self.level, amps, self.temp_c, self.r0):
             self.dead = True
             self.shutdown_level = self.level
             return self.level
-        dt_h = real_s * self.speed / 3600
-        drain_base = (base + total_cost) * dt_h / max(self.health, 0.1)
+        drain_base = units * dt_h / divisor if per_hour is None else per_hour * dt_h
         low_factor = 1 + max(0.0, (30.0 - self.level) / 30.0)
         if self.temp_c < 15:
             temp_factor = 1 + 0.02 * (15 - self.temp_c)

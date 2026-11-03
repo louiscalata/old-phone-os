@@ -10,19 +10,25 @@ ESSENTIAL_MARGIN = 4.0
 def reserve_level(temp_c, health):
     return call_reserve(temp_c, r0_for_health(health), health=health)
 
-def apply_reserve(decision, level, temp_c, health, tasks):
+def reserve_keeps(level, temp_c, health, tasks):
+    """While the worn-battery reserve is engaged, return a test for the names it still runs; otherwise None."""
     if not is_worn(health):
-        return decision
+        return None
     reserve = reserve_level(temp_c, health)
     if level > reserve + BACKGROUND_MARGIN:
+        return None
+    if level <= reserve + ESSENTIAL_MARGIN:
+        return lambda name: name in KEEP
+    task_map = {t.name: t for t in tasks}
+    return lambda name: name in KEEP or ((t := task_map.get(name)) is not None and t.priority == Priority.ESSENTIAL)
+
+def apply_reserve(decision, level, temp_c, health, tasks):
+    keeps = reserve_keeps(level, temp_c, health, tasks)
+    if keeps is None:
         return decision
     allowed = decision.allowed
     deferred = decision.deferred
-    if level <= reserve + ESSENTIAL_MARGIN:
-        new_allowed = tuple(name for name in allowed if name in KEEP)
-    else:
-        task_map = {t.name: t for t in tasks}
-        new_allowed = tuple(name for name in allowed if name in KEEP or ((t := task_map.get(name)) and t.priority == Priority.ESSENTIAL))
+    new_allowed = tuple(name for name in allowed if keeps(name))
     removed = [name for name in allowed if name not in new_allowed]
     seen = set(deferred)
     new_deferred_list = list(deferred)

@@ -2,8 +2,9 @@
 # Documentation
 
 Old Phone OS Interface is a prototype. The desktop demo simulates the battery, calls and texts; recorded QEMU
-results and model experiments have their own limits. Documents marked **historical** preserve
-earlier work and are not current instructions or acceptance evidence.
+results and model experiments have their own limits. The postmarketOS kiosk uses the same simulated battery
+and modem as the desktop demo. Documents marked **historical** preserve
+earlier work and are not current instructions or evidence about the current source.
 
 ## Use OPOS
 
@@ -14,7 +15,7 @@ earlier work and are not current instructions or acceptance evidence.
 ## How it works
 
 - [Architecture](architecture.md): module map, how a request flows from the page to the governor and to Muse Glimmer, page assembly and tests.
-- [Rules remain the safety floor](design-safety-floor.md): how the governor validates model advice so it can never override the rules.
+- [Rules remain the safety floor](design-safety-floor.md): how the governor validates model advice so it can never override the rules, which limits are hard floors, what Undo can override and how the goal budget is shared.
 
 ## Meta AI and evaluation
 
@@ -48,7 +49,7 @@ earlier work and are not current instructions or acceptance evidence.
 - [Roadmap](../ROADMAP.md): what works today and what comes next.
 - [New work and source scope](../NEW-WORK.md): hackathon source scope and contributions.
 - [Development contributions](../WORK-BY-MODEL.md): who and which models contributed what.
-- [Provenance](provenance.md): public source attribution and what the private records do and do not cover.
+- [Provenance](provenance.md): public source attribution and what the unpublished development records do and do not cover.
 - [Repository checks](../guard/RULES.md): what the optional static guard examines and what it cannot certify.
 - [Web page maintenance notes](web-implementation-notes.md): CSS comments and headers moved out of the page to keep it under its size budget.
 - [Desktop demo GIF](assets/demo.gif) and [helper wait GIF](assets/wait-demo.gif): **historical** recordings; the wait GIF uses a stand-in server, not measured Glimmer timing.

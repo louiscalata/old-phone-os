@@ -16,7 +16,7 @@ Seeds 20-29 were never used before. Selection used 0,1,2; confirmation used 10,1
 |---|---|---|---|---|
 | rules | 346.4 | 26.8 | 225.3 | 0 |
 | static low power | 194.0 | 39.1 | 388.0 | 0 |
-| baseline model (6 features, evaluated with the benchmark code from a private development commit) | 445.6 | 37.1 | 163.9 | 0 |
+| baseline model (6 features, evaluated with benchmark code from an earlier development commit that is not in this repository) | 445.6 | 37.1 | 163.9 | 0 |
 | new model, training seed 0 (the weights shipped at the time; the model file has since been removed) | 491.0 | 41.9 | 133.3 | 0 |
 | new model, training seed 1 | 494.6 | 45.2 | 130.3 | 0 |
 | new model, training seed 2 | 491.1 | 44.2 | 133.2 | 0 |

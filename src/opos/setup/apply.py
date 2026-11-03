@@ -193,7 +193,8 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                     os.makedirs(logs, mode=0o700, exist_ok=True)
                     with contextlib.suppress(Exception):
                         os.chmod(logs, 0o700)
-                lines = install_services(repo_root, python, cdir, home, platform, port=port, dry_run=dry_run, runner=runner)
+                # The service keeps the model-route settings this setup run sees, so it uses the same route.
+                lines = install_services(repo_root, python, cdir, home, platform, port=port, dry_run=dry_run, runner=runner, env=env if env is not None else os.environ)
                 prog.finish("services", "; ".join(lines))
             except (ServiceError, ValueError, FileNotFoundError, OSError) as exc:
                 prog.fail("services", str(exc))

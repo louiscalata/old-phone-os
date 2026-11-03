@@ -5,10 +5,30 @@ import ipaddress
 import json
 import os
 import re
+import sys
+import sysconfig
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from . import muse
+PHONE_LAUNCHER = "/usr/bin/opos-kiosk"  # installed by the opos postmarketOS package only
+def _phone_package(module_file=__file__):
+    """True when opos runs from the postmarketOS package: it copies src/opos into the system interpreter's
+    purelib and installs the kiosk launcher.
+
+    A source checkout, the desktop installer and tests import opos from <checkout>/src instead. A virtual
+    environment (sys.prefix differs from sys.base_prefix) or a pip install without the launcher is not the package.
+    """
+    try:
+        if sys.prefix != sys.base_prefix:
+            return False
+        here = Path(module_file).resolve().parent.parent
+        return here in {Path(sysconfig.get_path(k)).resolve() for k in ("purelib", "platlib")} and Path(PHONE_LAUNCHER).is_file()
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+PHONE_BUILD = _phone_package()
+DEFAULT_LOCAL_URL = "http://127.0.0.1:8080/v1"
 MIN_MB_3B = 4096  # free RAM in MB needed for 3B Q4_K_M build with context
 REST_BELOW_USABLE = 15  # governor's critical line: below 15% usable charge the helper rests
 def is_resting(context):
@@ -22,6 +42,7 @@ def is_resting(context):
     usable = context.get("usable_percent")
     return not isinstance(usable, (int, float)) or isinstance(usable, bool) or usable < REST_BELOW_USABLE
 MIN_MB_1B = 1536  # free RAM in MB needed for 1B Q4_K_M build with context
+LOCAL_MODELS = {"llama-3.2-1b-instruct": "Meta Llama 3.2 1B", "llama-3.2-3b-instruct": "Meta Llama 3.2 3B"}
 def free_mb(path="/proc/meminfo"):
     try:
         with open(path, encoding="utf-8") as f:
@@ -38,6 +59,12 @@ def recommend(free):
         return "llama-3.2-3b-instruct"
     return "llama-3.2-1b-instruct"
 def local_route(env=None, free=None):
+    """The optional Llama server on this machine.
+
+    OPOS_LOCAL_URL (http on loopback) is the owner's choice and is used as set. The default port 8080 is
+    common for other programs, so that route is marked verify_model: muse.ask sends nothing to it until
+    its /models list contains one of the LOCAL_MODELS ids exactly, and the answer names the size listed.
+    """
     if env is None:
         env = os.environ
     if free is None:
@@ -45,15 +72,36 @@ def local_route(env=None, free=None):
     model = recommend(free)
     if model is None:
         return None
-    url = "http://127.0.0.1:8080/v1"
+    url = None
     env_url = env.get("OPOS_LOCAL_URL")
     if env_url:
         with contextlib.suppress(Exception):
             p = urllib.parse.urlparse(env_url)
             if p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost"):
                 url = env_url
-    name = "Meta Llama 3.2 3B" if model == "llama-3.2-3b-instruct" else "Meta Llama 3.2 1B"
-    return muse.Route("local", name, "on this phone", url, model)
+    where = "on this phone" if PHONE_BUILD else "on this computer"
+    # The server already holds whichever size it loaded, so either exact id verifies it; the free-memory pick goes first.
+    other = tuple((m, n) for m, n in LOCAL_MODELS.items() if m != model)
+    return muse.Route("local", LOCAL_MODELS[model], where, url or DEFAULT_LOCAL_URL, model, verify_model=url is None, alternates=other if url is None else ())
+# RFC 1918 (10/8, 172.16/12, 192.168/16) built from octets, plus IPv6 unique-local fc00::/7.
+_LAN_NETS = (
+    ipaddress.IPv4Network((bytes((10, 0, 0, 0)), 8)),
+    ipaddress.IPv4Network((bytes((172, 16, 0, 0)), 12)),
+    ipaddress.IPv4Network((bytes((192, 168, 0, 0)), 16)),
+    ipaddress.IPv6Network("fc00::/7"),
+)
+def _lan_address(host):
+    """A private LAN address, or loopback for a reverse tunnel to a computer you own (docs/duo-usb-install.md).
+
+    Link-local, documentation, benchmark, reserved and unspecified addresses are refused.
+    """
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback or any(ip in net for net in _LAN_NETS)
 def lan_route(env=None):
     if env is None:
         env = os.environ
@@ -67,12 +115,7 @@ def lan_route(env=None):
         return None
     if p.scheme != "http":
         return None
-    if host is None:
-        return None
-    try:
-        if not ipaddress.ip_address(host).is_private:
-            return None
-    except ValueError:
+    if host is None or not _lan_address(host):
         return None
     return muse.Route("lan", "Muse Glimmer", "on a computer you own", url, "muse-glimmer-30b")
 def explain_route(env=None, free=None):
@@ -98,12 +141,8 @@ def search(question, opener=None, timeout=8):
     url = "https://en.wikipedia.org/w/api.php?" + params
     req = urllib.request.Request(url, headers={"User-Agent": "OPOS-helper/1.0"})
     try:
-        resp = opener(req, timeout=timeout)
-        try:
+        with muse._opened(opener, req, timeout) as resp:
             raw = resp.read(65536)
-        except Exception:
-            with resp as r:
-                raw = r.read(65536)
         obj = json.loads(raw.decode("utf-8"))
         items = obj["query"]["search"]
         out = []
@@ -161,8 +200,9 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
     for route, timeout in muse._attempts(ask_routes(q, env, free), env, deadline):
         try:
             text = muse.ask(route, prompt, env=env, opener=opener, timeout=timeout, max_tokens=200 if route.key == "local" else 400)
-            text = _with_idk_hint(_strip_stray_citations(text, sources), web)
-            return {"ok": True, "text": text, "engine": route.name, "where": route.where, "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
+            used = muse.answered_by(text, route)
+            text = _with_idk_hint(_strip_stray_citations(str(text), sources), web)
+            return {"ok": True, "text": text, "engine": used.name, "where": used.where, "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
         except muse.MuseError:
             last_failed = route
             continue

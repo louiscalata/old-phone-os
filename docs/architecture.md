@@ -78,7 +78,12 @@ port. Ask rests when the mode is CRITICAL and less than 15% of the charge is usa
 Send under the same rule. Model explanations and the Plan order never execute actions.
 
 `web.Phone` uses `DrainSim` and `ScreenModem`; the hardware reader and the ModemManager adapter are
-not wired into this web runtime.
+not wired into this web runtime. The postmarketOS kiosk's `opos-server` service runs this same server, so the
+kiosk is simulated in the same way.
+
+`web.Phone` computes one final decision per tick, which the home screen, battery panel, lock-screen story,
+helper facts and simulated drain all read; [design-safety-floor.md](design-safety-floor.md) describes the
+hard floors, the soft pauses that Undo and foreground use may override, and the cumulative goal budget.
 
 ## Page assembly
 

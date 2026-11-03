@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import hashlib
 import json
 import os
 import shutil
@@ -17,8 +18,13 @@ from opos.aitools.catalog import Tool
 FAKE_HOME = "/" + "home/real"
 
 
+def _sha(data: bytes) -> str:
+    """sha256 hex of data"""
+    return hashlib.sha256(data).hexdigest()
+
+
 def _tool(**over) -> Tool:
-    """make Tool with defaults"""
+    """make Tool with defaults; its installer_sha256 matches _fetch_ok()'s default payload"""
     base = dict(
         id="test-tool",
         name="Test Tool",
@@ -34,6 +40,7 @@ def _tool(**over) -> Tool:
         lite_env={},
         signin="run testbin login",
         docs_url="https://example.com/docs",
+        installer_sha256=_sha(b"echo hi"),
     )
     base.update(over)
     return Tool(**base)  # type: ignore[arg-type]
@@ -243,7 +250,7 @@ class TestInstaller(unittest.TestCase):
                 self.assertFalse(any(bad in k for bad in ("KEY", "TOKEN", "SECRET", "PASSWORD")))
 
     def test_temp_script_removed_after_success(self):
-        t = _tool()
+        t = _tool(installer_sha256=_sha(b"data"))
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -275,7 +282,7 @@ class TestInstaller(unittest.TestCase):
             self.assertFalse(Path(script_path[0]).exists())
 
     def test_temp_script_removed_after_failure(self):
-        t = _tool()
+        t = _tool(installer_sha256=_sha(b"data"))
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -641,7 +648,7 @@ class TestInstaller(unittest.TestCase):
             self.assertNotIn("Plug in power", full_text)
 
     def test_skip_fetch_when_binary_exists(self):
-        t = _tool()
+        t = _tool(installer_sha256=_sha(b"first"))
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -1250,8 +1257,8 @@ class TestInstaller(unittest.TestCase):
 
     def test_short_write_fully_buffered(self):
         """short writes do not truncate installer"""
-        t = _tool()
         data = b"#!/bin/sh\necho hello\n" * 500
+        t = _tool(installer_sha256=_sha(data))
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -1294,8 +1301,8 @@ class TestInstaller(unittest.TestCase):
 
     def test_mid_write_failure_never_executes(self):
         """mid-write failure must not execute truncated installer"""
-        t = _tool()
         data = b"#!/bin/sh\necho hello\n" * 500
+        t = _tool(installer_sha256=_sha(data))
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -1346,35 +1353,27 @@ class TestInstaller(unittest.TestCase):
             self.assertFalse(installer.manifest_path(prefix).exists())
             self.assertFalse((installer.tools_root(prefix) / t.id).exists())
 
-    def test_redirect_handler_blocks_http(self):
-        handler = installer._HttpsOnlyRedirectHandler()
-        req = urllib.request.Request("https://example.com/start")
+    def test_default_fetch_refuses_redirect_to_http(self):
+        """a redirect to plain http is reported, not followed"""
+        import urllib.error
+
+        def opener(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 302, "redirect blocked", {"Location": "http://evil.example/"}, None)
+
         with self.assertRaises(installer.InstallError) as cm:
-            handler.redirect_request(req, None, 302, "Found", {}, "http://evil.com/")
-        self.assertIn("non-https", str(cm.exception))
+            installer.default_fetch("https://example.com/start", opener=opener)
+        self.assertIn("redirect not followed", str(cm.exception))
+        self.assertIn("http://evil.example/", str(cm.exception))
 
-    def test_redirect_handler_allows_https(self):
-        handler = installer._HttpsOnlyRedirectHandler()
-        req = urllib.request.Request("https://example.com/start")
-        new_req = handler.redirect_request(req, None, 302, "Found", {}, "https://good.com/next")
-        self.assertEqual(new_req.get_full_url(), "https://good.com/next")
+    def test_default_fetch_refuses_https_redirect_to_other_host(self):
+        """an https redirect to another host is not followed either (it was before)"""
+        import urllib.error
 
-        class FakeResp:
-            def __enter__(self):
-                return self
+        def opener(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 302, "redirect blocked", {"Location": "https://good.com/next"}, None)
 
-            def __exit__(self, *a):
-                return False
-
-            def read(self, n):
-                return b"ok-https"
-
-            def geturl(self):
-                return "https://good.com/next"
-
-        with mock.patch.object(urllib.request.OpenerDirector, "open", return_value=FakeResp()):
-            data = installer.default_fetch("https://example.com/start")
-            self.assertEqual(data, b"ok-https")
+        with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
+            installer.default_fetch("https://example.com/start", opener=opener)
 
     def test_default_fetch_redirect_policy_real_opener(self):
         import io
@@ -1410,17 +1409,20 @@ class TestInstaller(unittest.TestCase):
 
             with mock.patch.object(urllib.request.HTTPSHandler, "https_open", fake_https_open):
                 with mock.patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open):
-                    with self.assertRaisesRegex(installer.InstallError, "redirect to non-https"):
+                    with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
                         installer.default_fetch(start)
             self.assertEqual(https_calls, [start])
             self.assertEqual(http_calls, [])
             with self.subTest("f253-http-spy-positive-control"):
                 https_calls.clear()
                 http_calls.clear()
+                real_build = urllib.request.build_opener
                 with mock.patch.object(urllib.request.HTTPSHandler, "https_open", fake_https_open):
                     with mock.patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open):
-                        with mock.patch.object(installer, "_HttpsOnlyRedirectHandler", return_value=urllib.request.HTTPRedirectHandler()):
-                            with self.assertRaisesRegex(installer.InstallError, "redirect to non-https"):
+                        # A bare opener follows the redirect, so the spy sees the http request;
+                        # the final-address check still refuses the body.
+                        with mock.patch.object(urllib.request, "build_opener", side_effect=lambda *a, **k: real_build()):
+                            with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
                                 installer.default_fetch(start)
                 self.assertEqual(https_calls, [start])
                 self.assertEqual(http_calls, [dest])
@@ -1448,7 +1450,7 @@ class TestInstaller(unittest.TestCase):
 
             with mock.patch.object(urllib.request.HTTPSHandler, "https_open", fake_https_open):
                 with mock.patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open):
-                    with self.assertRaisesRegex(installer.InstallError, "redirect to non-https"):
+                    with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
                         installer.default_fetch(start)
             self.assertEqual(https_calls, [start])
             self.assertEqual(http_calls, [])
@@ -1471,11 +1473,12 @@ class TestInstaller(unittest.TestCase):
                 http_calls.append(url)
                 return make_resp(url, 200, "OK", b"ok-https")
 
+            # Installers follow no redirects, not even https on the same host.
             with mock.patch.object(urllib.request.HTTPSHandler, "https_open", fake_https_open):
                 with mock.patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open):
-                    data = installer.default_fetch(start)
-            self.assertEqual(data, b"ok-https")
-            self.assertEqual(https_calls, [start, dest])
+                    with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
+                        installer.default_fetch(start)
+            self.assertEqual(https_calls, [start])
             self.assertEqual(http_calls, [])
 
     def test_default_fetch_redirect_policy_detects_handler_removal(self):
@@ -1519,7 +1522,7 @@ class TestInstaller(unittest.TestCase):
 
         with mock.patch.object(urllib.request.HTTPSHandler, "https_open", fake_https_open):
             with mock.patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open):
-                with self.assertRaisesRegex(installer.InstallError, "redirect to non-https"):
+                with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
                     installer.default_fetch(start)
                 self.assertEqual(requested, [start])
                 requested.clear()

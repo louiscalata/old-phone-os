@@ -9,10 +9,10 @@ document.getElementById('goal-clear').onclick=()=>{G('goal').value='';api({actio
 document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();document.getElementById('msg').focus()}});
 document.getElementById('msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing&&!e.repeat){e.preventDefault();go('send')}});
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing&&!e.repeat&&!e.defaultPrevented){const a=document.getElementById('ask');if(a&&a.dataset.hs==='1')return;e.preventDefault();document.getElementById('askbtn').click()}});
-let pollMs=1000,pollTimer=null,pollDue=0;
+let pollMs=1000,pollTimer=null,pollDue=0,pollAt=performance.now();
 function armPoll(ms){clearTimeout(pollTimer);pollDue=Date.now()+ms;pollTimer=setTimeout(pollTick,ms)}
 const renderShown=render;
 render=async s=>{await renderShown(s);if(s&&!s.error){pollMs=s.poll_ms||1000;if(pollTimer!==null&&Date.now()+pollMs<pollDue)armPoll(pollMs)}};
-async function pollTick(){pollTimer=null;try{if(running)await render(await api({action:'tick',real_s:1}))}catch(e){await renderShown({error:'request failed'})}finally{if(pollTimer===null)armPoll(pollMs)}}
+async function pollTick(){pollTimer=null;const n=performance.now(),real_s=(n-pollAt)/1000;pollAt=n;try{if(running)await render(await api({action:'tick',real_s}))}catch(e){await renderShown({error:'request failed'})}finally{if(pollTimer===null)armPoll(pollMs)}}
 armPoll(pollMs);
 fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content}}).then(r=>r.json()).then(s=>{if(!s||s.error)throw new Error('bad state');return render(s)}).catch(()=>{document.getElementById('screen').textContent='Could not reach Old Phone OS Interface. Reload the page in a few seconds.'});

@@ -128,7 +128,7 @@ python -m opos.train out.json --labels budget --horizon 2 --cost-weight 2 --opti
 python -m opos.evaluate --model out.json --seeds 10,11,12
 ```
 
-The benchmark, model and docs were made in private development commits that are not in this repository.
+The benchmark, model and docs were made in earlier development commits that are not in this repository.
 
 ## Goal-aware model (goalsim)
 
@@ -136,7 +136,7 @@ Goal: "last until 11 PM" from the home screen. goalsim is a closed-loop simulati
 
 ### Before
 
-Before (a private development commit). Table, hours until empty, goal 11 h:
+Before (an earlier development commit that is not in this repository). Table, hours until empty, goal 11 h:
 
 | scenario | plan hours | plan reaches | model hours | model reaches | model paused | basic hours |
 |---|---|---|---|---|---|---|

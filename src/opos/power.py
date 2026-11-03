@@ -125,21 +125,25 @@ def plan(level, hours_to_goal, tasks, health=1.0, charging=False, in_use=None):
     drain_final = cur_drain()
     hours_left_final = float("inf") if drain_final <= 0 else level / drain_final
     meets_goal = hours_left_final >= hours_to_goal
-    if steps_applied or paused_names:
-        base = "Saving power for calls and messages"
-        if in_use:
-            base += f" and {in_use}"
-        parts = []
-        if steps_applied:
-            parts.append(", ".join(steps_applied))
-        if paused_names:
-            parts.append(f"paused {', '.join(paused_names)}")
-        reason = f"{base}: {'; '.join(parts)}"
-        if not meets_goal:
-            reason += ". Cannot reach the goal; calls and messages kept on"
-    else:
-        reason = "Lasts to the goal with everything on"
+    reason = plan_reason(steps_applied, paused_names, meets_goal, in_use)
     return Plan(tuple(steps_applied), tuple(paused_names), drain_final, hours_left_final, meets_goal, reason)
+
+def plan_reason(steps, paused, meets_goal, in_use=None):
+    """Words for a goal plan: its saving steps, its pauses and whether it reaches the goal."""
+    if not steps and not paused:
+        return "Lasts to the goal with everything on"
+    base = "Saving power for calls and messages"
+    if in_use:
+        base += f" and {in_use}"
+    parts = []
+    if steps:
+        parts.append(", ".join(steps))
+    if paused:
+        parts.append(f"paused {', '.join(paused)}")
+    reason = f"{base}: {'; '.join(parts)}"
+    if not meets_goal:
+        reason += ". Cannot reach the goal; calls and messages kept on"
+    return reason
 
 def static_low_power(level, tasks, health=1.0):
     tasks = tuple(tasks)

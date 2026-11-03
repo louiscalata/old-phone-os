@@ -16,7 +16,7 @@ from opos.web import Handler, Phone, page
 
 STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
 GLIMMER = muse.glimmer_route({})
-LOCAL = assist.local_route({}, free=2000)
+LOCAL = assist.local_route({"OPOS_LOCAL_URL": "http://127.0.0.1:8080/v1"}, free=2000)  # configured: no /models check
 STEPS = ["dim screen", "pause email"]
 
 

@@ -2,16 +2,21 @@
 """Render and install user-level services for Old Phone OS Interface."""
 from __future__ import annotations
 
+import math
 import os
 import plistlib
 import subprocess
 import tempfile
-from collections.abc import Callable, Sequence
+import urllib.parse
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 UNIT_NAME = "opos-server.service"
 LAUNCHD_LABEL = "org.oldphoneos.opos"
 SYSTEM_ONLY = frozenset({"User", "Group", "StateDirectory", "StateDirectoryMode", "InaccessiblePaths", "ReadOnlyPaths", "ProtectHome", "PrivateDevices", "IPAddressDeny", "IPAddressAllow", "MemoryDenyWriteExecute", "SystemCallFilter", "ProtectProc", "ProcSubset", "ProtectClock", "ProtectKernelLogs", "RestrictRealtime", "CapabilityBoundingSet", "AmbientCapabilities"})
+# Model-route settings copied from the setup environment into the installed
+# service. Keys, tokens and other secrets are never on this list.
+ROUTE_SETTINGS = ("OPOS_GLIMMER_URL", "OPOS_LAN_URL", "OPOS_LOCAL_URL", "OPOS_GLIMMER_ROUTING", "OPOS_MUSE_TIMEOUT")
 Runner = Callable[[Sequence[str]], tuple[int, str]]
 
 
@@ -61,6 +66,81 @@ def _validate_path(value: str | Path, systemd: bool = True) -> str:
     return text
 
 
+def _route_url_problem(name: str, value: str) -> str | None:
+    """Return why a route URL is not copied, using the runtime's own checks."""
+    from opos import assist, muse  # the runtime validators the service will apply
+
+    if any(ord(ch) <= 32 or ord(ch) >= 127 for ch in value):
+        return f"{name} contains spaces, control or non-ASCII characters"
+    try:
+        parts = urllib.parse.urlsplit(value)
+        has_login = parts.username is not None or parts.password is not None
+    except ValueError:
+        return f"{name} is not a valid URL"
+    if has_login:
+        return f"{name} contains a user name or password, which setup does not write to the service"
+    if "?" in value or "#" in value:
+        return f"{name} has a query or fragment"
+    if name == "OPOS_LAN_URL":
+        route = assist.lan_route({name: value})
+        if route is None or route.base_url != value:
+            return f"{name} must be an http:// URL with a private IP address"
+        return None
+    if name == "OPOS_LOCAL_URL":
+        route = assist.local_route({name: value}, free=assist.MIN_MB_3B)
+    else:
+        route = muse.glimmer_route({name: value})
+    if route is None or route.base_url != value:
+        return f"{name} must be an http:// URL on 127.0.0.1 or localhost"
+    return None
+
+
+def route_environment(env: Mapping[str, str] | None) -> tuple[dict[str, str], list[str]]:
+    """Return the model-route settings the installed service keeps, and notes on any left out.
+
+    Only names in ROUTE_SETTINGS are read, and only values the runtime accepts are
+    kept, so the service uses the route the setup shell would use.
+    """
+    keep: dict[str, str] = {}
+    notes: list[str] = []
+    if not env:
+        return keep, notes
+    for name in ROUTE_SETTINGS:
+        value = env.get(name)
+        if value is None or value == "":
+            continue
+        if name == "OPOS_GLIMMER_ROUTING":
+            # web.py turns Glimmer routing off only for exactly "0"; other values mean the default.
+            if value == "0":
+                keep[name] = "0"
+            continue
+        if name == "OPOS_MUSE_TIMEOUT":
+            from opos import muse
+
+            try:
+                number = float(value)
+            except ValueError:
+                number = math.nan
+            if not math.isfinite(number) or number <= 0:
+                notes.append(f"{name} must be a positive number of seconds")
+                continue
+            seconds = muse.timeout_s({name: value})  # held between 5 and 600, as at run time
+            keep[name] = str(int(seconds)) if seconds.is_integer() else repr(seconds)
+            continue
+        problem = _route_url_problem(name, value)
+        if problem is None:
+            keep[name] = value
+        else:
+            notes.append(problem)
+    return keep, notes
+
+
+def _systemd_environment_line(name: str, value: str) -> str:
+    """Quote one Environment= assignment: backslash and quote are escaped, % is doubled for specifiers."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    return f'Environment="{name}={escaped}"'
+
+
 def read_unit_template(repo_root: Path) -> str:
     """Read the hardened system unit template from a repository checkout."""
     path = repo_root / "deploy" / "opos-server.service"
@@ -69,11 +149,15 @@ def read_unit_template(repo_root: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def render_user_unit(template: str, repo_root: Path, python: str, config_dir: Path, port: int = 8765) -> str:
-    """Render the system unit template as a hardened user unit."""
+def render_user_unit(template: str, repo_root: Path, python: str, config_dir: Path, port: int = 8765, env: Mapping[str, str] | None = None) -> str:
+    """Render the system unit template as a hardened user unit.
+
+    env is the setup environment; only accepted model-route settings from it are written.
+    """
     root = _validate_path(repo_root)
     interpreter = _validate_path(python)
     config = _validate_path(config_dir)
+    route, _ = route_environment(env)
     sections: dict[str, list[tuple[str, str]]] = {}
     order: list[str] = []
     current = ""
@@ -114,6 +198,7 @@ def render_user_unit(template: str, repo_root: Path, python: str, config_dir: Pa
                     lines.append(f"Environment=PYTHONPATH={root}/src")
                     lines.append("Environment=PYTHONDONTWRITEBYTECODE=1")
                     lines.append(f"Environment=OPOS_CONFIG_DIR={config}")
+                    lines.extend(_systemd_environment_line(name, value) for name, value in route.items())
                     env_done = True
             else:
                 lines.append(f"{key}={value}")
@@ -126,16 +211,20 @@ def render_user_unit(template: str, repo_root: Path, python: str, config_dir: Pa
     return "\n".join(rendered).rstrip("\n") + "\n"
 
 
-def render_launchd_plist(repo_root: Path, python: str, config_dir: Path, port: int = 8765) -> str:
-    """Render a launchd agent plist for the web service."""
+def render_launchd_plist(repo_root: Path, python: str, config_dir: Path, port: int = 8765, env: Mapping[str, str] | None = None) -> str:
+    """Render a launchd agent plist for the web service.
+
+    env is the setup environment; only accepted model-route settings from it are written.
+    """
     root = _validate_path(repo_root, systemd=False)
     interpreter = _validate_path(python, systemd=False)
     config = Path(_validate_path(config_dir, systemd=False))
+    route, _ = route_environment(env)
     data = {
         "Label": LAUNCHD_LABEL,
         "ProgramArguments": [interpreter, "-m", "opos.web", "--port", str(port), "--token-file", str(config / "session.token")],
         "WorkingDirectory": root,
-        "EnvironmentVariables": {"PYTHONPATH": f"{root}/src", "PYTHONDONTWRITEBYTECODE": "1", "OPOS_CONFIG_DIR": str(config)},
+        "EnvironmentVariables": {"PYTHONPATH": f"{root}/src", "PYTHONDONTWRITEBYTECODE": "1", "OPOS_CONFIG_DIR": str(config), **route},
         "RunAtLoad": True,
         "KeepAlive": True,
         "StandardOutPath": str(config / "logs" / "stdout.log"),
@@ -181,32 +270,36 @@ def _run(runner: Runner, cmd: list[str], actions: list[str]) -> None:
     actions.append(f"ran: {' '.join(cmd)}")
 
 
-def install_services(repo_root: Path, python: str, config_dir: Path, home: Path, platform: str, port: int = 8765, dry_run: bool = False, runner: Runner | None = None) -> list[str]:
-    """Install and start the user service for the current platform."""
+def install_services(repo_root: Path, python: str, config_dir: Path, home: Path, platform: str, port: int = 8765, dry_run: bool = False, runner: Runner | None = None, env: Mapping[str, str] | None = None) -> list[str]:
+    """Install and start the user service for the current platform.
+
+    Accepted model-route settings in env (the setup environment) are written into the service.
+    """
     if platform not in {"linux", "darwin"}:
         return [f"services not supported on {platform}: run python -m opos.web manually"]
     run = runner if runner is not None else default_runner
     unload = None
+    notes = [f"not set in the service: {note}" for note in route_environment(env)[1]]
     if platform == "linux":
         path = unit_dir(home, platform) / UNIT_NAME
-        text = render_user_unit(read_unit_template(repo_root), repo_root, python, config_dir, port)
+        text = render_user_unit(read_unit_template(repo_root), repo_root, python, config_dir, port, env=env)
         commands = [["systemctl", "--user", "daemon-reload"], ["systemctl", "--user", "enable", "--now", UNIT_NAME]]
         if path.exists():
             # enable --now leaves an already running service on its old settings.
             commands.append(["systemctl", "--user", "restart", UNIT_NAME])
     else:
         path = unit_dir(home, platform) / f"{LAUNCHD_LABEL}.plist"
-        text = render_launchd_plist(repo_root, python, config_dir, port)
+        text = render_launchd_plist(repo_root, python, config_dir, port, env=env)
         commands = [["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)]]
         if path.exists():
             # launchd refuses to bootstrap a label that is still loaded, so a re-run unloads it first.
             unload = ["launchctl", "bootout", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"]
     if dry_run:
         pre = [f"would run: {' '.join(unload)}"] if unload else []
-        return [f"would write {path}"] + pre + [f"would run: {' '.join(cmd)}" for cmd in commands]
+        return [f"would write {path}"] + notes + pre + [f"would run: {' '.join(cmd)}" for cmd in commands]
     # Write first: if the write fails, the running service stays loaded.
     _write_atomic(path, text)
-    actions = [f"wrote {path}"]
+    actions = [f"wrote {path}"] + notes
     if unload:
         code, _ = run(unload)
         actions.append(f"ran: {' '.join(unload)}" if code == 0 else "previous service was not loaded")

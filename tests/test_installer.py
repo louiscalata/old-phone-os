@@ -1557,6 +1557,9 @@ class InstallerCloseTest(unittest.TestCase):
                     kwargs[name] = sys.executable
                 elif name == "installer_args":
                     kwargs[name] = []
+                elif name == "installer_sha256":
+                    # Well formed; these tests fail at write or close, before the digest is compared.
+                    kwargs[name] = "0" * 64
                 elif param.default is not inspect.Parameter.empty:
                     kwargs[name] = param.default
                 else:
@@ -1800,6 +1803,8 @@ class InstallerCloseTest(unittest.TestCase):
 
 class SetModePerToolTest(unittest.TestCase):
     def _make_tool(self, tid, binary):
+        import hashlib
+
         from opos.aitools.catalog import Tool
 
         return Tool(
@@ -1817,6 +1822,7 @@ class SetModePerToolTest(unittest.TestCase):
             lite_env={},
             signin="run login",
             docs_url="https://example.com/docs",
+            installer_sha256=hashlib.sha256(b"echo hi").hexdigest(),  # matches _fetch_ok()
         )
 
     def _fetch_ok(self):

@@ -1,56 +1,93 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import contextlib
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from opos import muse
 from opos.aitools import launcher, place
-from opos.aitools.catalog import Tool
+from opos.aitools.catalog import SHA256_RE, Tool
 
 
 class InstallError(RuntimeError):
     """installer failure"""
 
 
-class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """reject non-https redirects"""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not newurl.startswith("https://"):
-            raise InstallError("redirect to non-https")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
 Fetch = Callable[[str], bytes]
 Runner = Callable[[Sequence[str], Mapping[str, str], float], tuple[int, str]]
+Opener = Callable[..., object]
 
 
-def default_fetch(url: str, max_bytes: int = 2_000_000, timeout_s: float = 30.0) -> bytes:
-    """fetch https url with size limit"""
+def _origin(url: str) -> tuple[str, str | None, int | None]:
+    """scheme, host and port of a url"""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme, parts.hostname, parts.port
+
+
+def _printable(text: object, limit: int = 120) -> str:
+    """text without control characters, cut to limit"""
+    return "".join(ch for ch in str(text) if ord(ch) >= 32 and ord(ch) != 127)[:limit]
+
+
+def default_fetch(url: str, max_bytes: int = 2_000_000, timeout_s: float = 30.0, opener: Opener | None = None) -> bytes:
+    """Fetch an https installer with a size limit; ignores proxy settings and follows no redirects."""
     if not url.startswith("https://"):
         raise InstallError("https only")
     if any(c.isspace() for c in url):
         raise InstallError("bad url")
+    if opener is None:
+        opener = muse._open_no_redirect  # no proxies, no redirects
     req = urllib.request.Request(url)  # noqa: S310
-    opener = urllib.request.build_opener(_HttpsOnlyRedirectHandler())  # noqa: S310
     try:
-        with opener.open(req, timeout=timeout_s) as r:  # noqa: S310
+        with opener(req, timeout=timeout_s) as r:  # type: ignore[attr-defined]
             final = r.geturl() if hasattr(r, "geturl") else url
-            if not final.startswith("https://"):
-                raise InstallError("redirect to non-https")
+            # A custom opener could follow a redirect; only the requested https host is accepted.
+            if not isinstance(final, str) or not final.startswith("https://") or _origin(final) != _origin(url):
+                raise InstallError(f"redirect not followed: {url} ended at {_printable(final)}; OPOS downloads installers only from the catalog URL")
             data = r.read(max_bytes + 1)
     except InstallError:
         raise
+    except urllib.error.HTTPError as e:
+        location = e.headers.get("Location") if e.headers is not None else None
+        with contextlib.suppress(Exception):
+            e.close()
+        if 300 <= e.code < 400:
+            raise InstallError(f"redirect not followed: {url} answered HTTP {e.code} to {_printable(location or 'another address')}; OPOS downloads installers only from the catalog URL, so update installer_url and installer_sha256") from e
+        raise InstallError(f"HTTP {e.code} from {url}") from e
     except Exception as e:
         raise InstallError(str(e)) from e
     if len(data) > max_bytes:
         raise InstallError(f"too large: {len(data)} > {max_bytes}")
     return data
+
+
+def digest_problem(tool: Tool) -> str | None:
+    """Why the catalog entry cannot be installed safely, or None"""
+    if not tool.installer_sha256:
+        return f"no installer_sha256 in the catalog for {tool.installer_url}; OPOS runs a downloaded installer only after checking its sha256"
+    if not SHA256_RE.fullmatch(tool.installer_sha256):
+        return f"installer_sha256 for {tool.id} is not 64 lowercase hex characters"
+    return None
+
+
+def _check_digest(tool: Tool, path: str) -> None:
+    """refuse to run a downloaded installer whose sha256 differs from the catalog"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(65536), b""):
+            h.update(block)
+    got = h.hexdigest()
+    if got != tool.installer_sha256:
+        when = f" (measured {tool.installer_sha256_checked})" if tool.installer_sha256_checked else ""
+        raise InstallError(f"the vendor installer changed: {tool.installer_url} now has sha256 {got[:16]}..., the catalog lists {tool.installer_sha256[:16]}...{when}; nothing was run. Review the new script, then update installer_sha256 in the catalog.")
 
 
 def default_runner(argv: Sequence[str], env: Mapping[str, str], timeout_s: float) -> tuple[int, str]:
@@ -156,6 +193,9 @@ def install(tool: Tool, *, prefix: Path, mode: str, machine: str, home: Path, py
     probs = place.preflight(tool, prefix, machine, free_mb_fn)
     if probs:
         raise InstallError("; ".join(probs))
+    bad_digest = digest_problem(tool)
+    if bad_digest:
+        raise InstallError(bad_digest + ". Nothing was downloaded.")
     tr = tools_root(prefix)
     sandbox = tr / tool.id / "home"
     real_bin = sandbox / ".local" / "bin" / tool.binary
@@ -220,7 +260,8 @@ def install(tool: Tool, *, prefix: Path, mode: str, machine: str, home: Path, py
     except Exception as e:
         raise InstallError(str(e)) from e
     if dry_run:
-        return [f"would install {tool.id} to {prefix}", f"would fetch {tool.installer_url}", f"Sign in yourself: {tool.signin}"]
+        # Kept short: setup shows at most 300 characters of this joined list, and the sign-in line comes last.
+        return [f"would install {tool.id} to {prefix}", f"would fetch {tool.installer_url} and run it only if its sha256 matches", f"Sign in yourself: {tool.signin}"]
     _ensure_dirs(sandbox, tid_dir, bin_dir, run_dir)
     need_fetch = force or not (real_bin.is_file() and os.access(real_bin, os.X_OK))
     if need_fetch:
@@ -241,6 +282,8 @@ def install(tool: Tool, *, prefix: Path, mode: str, machine: str, home: Path, py
                 raise
             else:
                 os.close(fd)
+            # Hash the file the interpreter will read, before it is made executable or run.
+            _check_digest(tool, sp)
             os.chmod(sp, 0o700)
             env = _runner_env(sandbox, tool.installer_env)
             rc, out = runner([tool.interpreter, sp, *tool.installer_args], env, 900.0)
