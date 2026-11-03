@@ -23,6 +23,10 @@ and what comes next. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- The November 3 Glimmer capture follow-up reduces the Why? prompt and keeps helper pause
+  attribution current while the demo is stopped. Fake-route regressions cover the changes;
+  Why? latency on the revised source still needs a new LM Studio capture. See
+  [.pr/helper-glimmer-capture.md](.pr/helper-glimmer-capture.md).
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). The ModemManager adapter
   (`src/opos/mm_modem.py`) is not connected to them, and the sysfs battery reader

@@ -4,6 +4,7 @@ import http.client
 import json
 import threading
 import time
+import urllib.error
 import opos.assist as assist
 import opos.muse as muse
 from opos.governor import Decision, Mode, Priority
@@ -39,12 +40,19 @@ class GlimmerAdvisor:
         self.cache = {}
         self.pending = set()
         self.down_until = 0.0
+        self.failure = "no reply"
     @property
     def visible(self):
         return self.base.visible
     @visible.setter
     def visible(self, v):
         self.base.visible = v
+    def status(self):
+        """Observed advisor state, not a probe of the configured helper route."""
+        with self._lock:
+            if self.clock() < self.down_until:
+                return self.failure
+            return "waiting" if self.pending or not self.cache else "ready"
     def __call__(self, state, tasks):
         d = self.base(state, tasks)
         if not self.base.visible:
@@ -72,8 +80,11 @@ class GlimmerAdvisor:
                     if len(self.cache) >= 64:
                         self.cache.clear()
                     self.cache[key] = filt
-            except (muse.MuseError, ValueError, KeyError, TypeError, AttributeError, RecursionError, http.client.HTTPException):
+            except (muse.MuseError, ValueError, KeyError, TypeError, AttributeError, RecursionError, http.client.HTTPException) as e:
                 with self._lock:
+                    cause = e.__cause__
+                    unreachable = isinstance(cause, (ConnectionError, urllib.error.URLError)) and not isinstance(cause, urllib.error.HTTPError)
+                    self.failure = "not reachable" if unreachable else "no reply"
                     self.down_until = self.clock() + self.backoff
             finally:
                 with self._lock:

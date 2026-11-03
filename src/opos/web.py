@@ -302,6 +302,8 @@ class Phone:
         out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, d.deferred, goal_label, out["battery"]["goal_met"])
         if self.visible and "helper" in out:
             hf = out["helper"]
+            advisor = self.runtime.governor.advisor
+            hf["glimmer_status"] = advisor.status() if isinstance(advisor, GlimmerAdvisor) else "off"
             hf["battery_percent"] = int(round(self.sim.level))
             hf["battery_health_percent"] = int(round(self.sim.health * 100))
             hf["usable_percent"] = int(self.sim.level * self.sim.health)  # floor: 14.7% usable must not read as 15
