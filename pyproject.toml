@@ -23,4 +23,4 @@ Source = "https://github.com/louiscalata/old-phone-os"
 
 # The phone page is assembled from these files at run time (src/opos/web.py).
 [tool.setuptools.package-data]
-opos = ["web_static/*"]
+opos = ["web_static/*", "public_static/*"]

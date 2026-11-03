@@ -27,6 +27,18 @@ Recorded earlier from the desktop simulator; it does not show the postmarketOS i
 ![Historical slow-server stand-in](docs/assets/wait-demo.gif)
 Wait GIF recorded against a stand-in slow server with simulated answer text. Not actual Glimmer timing.
 
+## Try it online
+
+[Open the public simulation](https://opos-demo.up.railway.app) — **placeholder URL;
+not deployed yet**. The browser demo gives each visitor a temporary phone with
+simulated battery, calls and messages. It is not a phone operating system and
+has not run on a physical phone. All public helper answers come from the rules;
+Muse Glimmer runs only on your own computer.
+
+Open `?demo=1` for controls, drag the battery slider, then pull down the top bar
+and Undo a soft pause. See [public-demo setup and limits](docs/public-demo.md)
+for the separate Railway entry point, isolation and local run command.
+
 ## How it works
 
 Battery state drives a rule decision, then an advisory plan and explanation. Model text cannot enable a task the rule router deferred.

@@ -33,6 +33,21 @@ and what comes next. Plans are intentions, not promises.
 - On-phone model inference (Llama 3.2 1B/3B) has no phone-speed measurement yet.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
 
+## Public browser demo
+
+The separate `opos.public_demo` entry point wraps the existing phone page in a
+Jaryo landing and isolates each visitor in bounded, expiring memory. Public
+helpers use only battery rules; setup, model routes and host operations are
+unreachable. Railway configuration and [operating notes](docs/public-demo.md)
+are in this working copy. This work has not been committed, pushed or deployed.
+The README URL remains a placeholder. Native socket/browser and Railway
+verification must be recorded separately from handler-level checks.
+The security follow-up uses the trusted proxy's right-most forwarded address
+for rate limits and preserves sessions on cross-site landing visits. Both
+regressions pass through the in-memory HTTP transport; native socket tests
+remain blocked by workspace permissions. See [.pr/public-demo.md](.pr/public-demo.md)
+for the current test and guard results.
+
 ## Next
 
 1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
