@@ -46,6 +46,7 @@ earlier work and are not current instructions or evidence about the current sour
 
 ## Project records
 
+- [Changelog](../CHANGELOG.md): public snapshot, follow-up fixes and unreleased work.
 - [Roadmap](../ROADMAP.md): what works today and what comes next.
 - [New work and source scope](../NEW-WORK.md): hackathon source scope and contributions.
 - [Development contributions](../WORK-BY-MODEL.md): who and which models contributed what.

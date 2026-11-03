@@ -3,6 +3,8 @@
 
 OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
 
+You keep an older phone whose worn battery usually dies by mid-afternoon. With OPOS, maps and photo backup stay paused while calls and messages stay on. The call that matters in the evening still comes through. This is the scenario the simulation models.
+
 OPOS is a prototype phone interface for people who keep an older phone as its battery wears out. It pauses less essential work such as email, maps and photos backup so the battery can last until a time the owner chooses, while calls and messages stay on. Optional open-weight Meta Muse Glimmer 30B runs on the owner's computer, explains decisions in plain words when asked, and may pause extra tasks but never re-enables anything the rules paused or touches calls, messages or alarms; the rules work without it. Try the desktop demo below: it simulates battery, calls and messages and needs only Python 3.11+, no account or model download. The postmarketOS kiosk runs the same simulation: it does not yet read the phone's real battery or use its modem.
 
 ## Quickstart
@@ -26,6 +28,25 @@ Recorded earlier from the desktop simulator; it does not show the postmarketOS i
 
 ![Historical slow-server stand-in](docs/assets/wait-demo.gif)
 Wait GIF recorded against a stand-in slow server with simulated answer text. Not actual Glimmer timing.
+
+## Muse Glimmer answering
+
+On November 3, 2026, the OPOS desktop demo (`?demo=1`) ran on Louis's MacBook Pro with LM Studio serving `muse-glimmer-30b` (Meta Muse Glimmer 30B). The simulation was at noon, with 60% battery at 60% health, a 16:00 goal and the helper shown. On-phone inference is untested.
+
+Asked "Why are maps paused?", Muse Glimmer answered in **56.7 seconds in the dark capture** and **42.4 seconds in the light capture**. The screen labels each answer "reply: Muse Glimmer, on this device"; here, "this device" is the MacBook Pro running the desktop demo.
+
+The dark capture's answer, verbatim:
+
+> Maps are paused to preserve power for calls and messages until 16:00. The battery is worn at 60% health, so a 60% charge is only about 36% usable and the phone is not charging. To keep calls and messages working, the phone paused email, maps and photos backup.
+
+Glimmer's background advisor had itself paused email; the battery panel says "Muse Glimmer paused this to save power for calls and messages." The answer reflects that captured state.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/glimmer-ask-dark.png">
+  <img src="docs/assets/glimmer-ask.png" alt="OPOS desktop simulation showing Muse Glimmer's answer to Why are maps paused?, with 60% battery, a 16:00 goal and the reply label Muse Glimmer, on this device.">
+</picture>
+
+These are real Ask captures in dark and light appearance. The **Why? button fell back to the rules answer both times** because it reached OPOS's 115-second helper deadline before Glimmer returned visible text. A fix is in progress.
 
 ## How it works
 
@@ -60,7 +81,7 @@ This check reports the model ids the endpoint serves and `model_served` (whether
 
 ## Simulation results
 
-All numbers below simulate the deterministic rule router against fixed rules, with no model involved; they are not measurements on a real phone.
+These results use one simulated battery and burst model, varied across profiles; they do not establish battery savings or cut-out rates on real phones. All numbers below simulate the deterministic rule router against fixed rules, with no AI model involved; they are not measurements on a real phone.
 
 Six simulated device profiles, 40 phones each. Important minutes are simulated minutes until the battery is empty or browns out, with calls, messages and alarms allowed throughout; useful minutes add up the minutes email and maps were each allowed to run. Each figure is the average over the 40 phones, rounded to whole minutes.
 
@@ -98,7 +119,9 @@ OPOS_REPO_URL=https://github.com/louiscalata/old-phone-os OPOS_REF=main sh boots
 
 ## postmarketOS packages and QEMU
 
-See [docs/pmos.md](docs/pmos.md) for pinned toolchain, pmaports checkout and local-source staging. [Historical Duo USB notes](docs/duo-usb-install.md) are retained separately.
+On November 3, 2026, an aarch64 image built from this tree booted in QEMU 9.1.2 (TCG, OpenRC) to the OPOS lock screen about 70 seconds after start, and Unlock reached Home. It used the packaged tinydm Pixman renderer hook without a manual renderer override; the same image without the hook stayed on the console with a GLES2/GBM failure. See [docs/pmos.md](docs/pmos.md) for the recorded run, toolchain and local-source staging.
+
+This later virtual-machine boot result does not close the November 1 integrator report's **integration NOT READY** status: integration acceptance remains outstanding. The earlier private-baseline QEMU run described in [docs/provenance.md](docs/provenance.md#validation-scope) used a manual, QA-only Pixman renderer override. The November 3 image had no model server or route to one; on-phone inference and physical-phone behavior remain untested for this source.
 
 The kiosk starts the same `opos.web` server as the desktop demo, so it uses the same simulated battery (`DrainSim`) and simulated modem (`ScreenModem`): it does not read the phone's battery, place real calls or send real texts. A ModemManager adapter (`src/opos/mm_modem.py`) exists but is not connected yet, and the sysfs battery reader (`src/opos/hw/battery.py`) is used only by setup to describe the device, not by the phone screen.
 
@@ -119,7 +142,9 @@ Optional repository checks use `python3 guard/check.py`; see [guard/RULES.md](gu
 
 **Focused package inputs; performance gains remain unmeasured.** See [docs/lean.md](docs/lean.md).
 
-Demo is simulation only, and so is the postmarketOS kiosk: both use the simulated battery and modem. No physical phone testing is claimed and native on-phone inference is not tested. On a 64 GB M5 Pro MacBook Pro running Muse Glimmer 30B (Q4_K_M) in LM Studio, answers took about 30-60 seconds in November 2026 tests, most of it hidden reasoning. Ask rests when the mode is Critical and less than 15% of the charge is usable. Spark Open is off by default and requires user credentials. Wikipedia search is opt-in. On Windows run `install.cmd` (which invokes `install.ps1`); Windows runtime is untested.
+Demo is simulation only, and so is the postmarketOS kiosk: both use the simulated battery and modem. No physical phone testing is claimed and native on-phone inference is not tested. On a 64 GB M5 Pro MacBook Pro running Muse Glimmer 30B (Q4_K_M) in LM Studio, answers took about 30-60 seconds in November 2026 tests, most of it hidden reasoning. Ask rests when the mode is Critical and less than 15% of the charge is usable. Spark Open is off by default and requires user credentials. Wikipedia search is opt-in.
+
+The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-yet-verified), and [Surface Duo work is paused](docs/duo-usb-install.md); those paths are documented separately.
 
 ## Documentation
 
