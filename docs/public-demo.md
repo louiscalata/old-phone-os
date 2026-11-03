@@ -10,7 +10,7 @@ HTTP server's reverse-DNS startup lookup.
 
 Hackathon prototype. This public demo simulates the battery, calls and messages;
 it is not a phone operating system and has not run on a physical phone.
-The public URL in the README is a placeholder, not a deployment receipt.
+Try the live demo at https://opos-demo-production.up.railway.app.
 
 ## Run locally
 
@@ -46,12 +46,12 @@ on Railway during this task.
 Set these service variables before a later, separately authorized deployment:
 
 ```text
-OPOS_PUBLIC_HOSTS=your-exact-domain.up.railway.app,healthcheck.railway.app
+OPOS_PUBLIC_HOSTS=opos-demo-production.up.railway.app,healthcheck.railway.app
 OPOS_TRUST_PROXY=1
 ```
 
 Railway supplies `PORT`; the public process binds `0.0.0.0:$PORT` (8080 when
-omitted locally). Replace the example domain with the actual assigned domain.
+omitted locally). The host allowlist above uses the live demo domain.
 Use one replica/process, no persistent volume, and no model credentials. All
 state is process-local and disappears on restart or replacement.
 

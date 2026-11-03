@@ -29,8 +29,9 @@ Wait GIF recorded against a stand-in slow server with simulated answer text. Not
 
 ## Try it online
 
-[Open the public simulation](https://opos-demo.up.railway.app) — **placeholder URL;
-not deployed yet**. The browser demo gives each visitor a temporary phone with
+[Open the public simulation](https://opos-demo-production.up.railway.app) —
+simulation-only demo with no model; state resets after 15 minutes idle.
+The browser demo gives each visitor a temporary phone with
 simulated battery, calls and messages. It is not a phone operating system and
 has not run on a physical phone. All public helper answers come from the rules;
 Muse Glimmer runs only on your own computer.
