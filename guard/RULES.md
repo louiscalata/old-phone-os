@@ -5,7 +5,7 @@ The optional hooks in `.githooks/` run `guard/check.py` when configured with `gi
 | Local check | What it examines |
 |---|---|
 | Commit window | Recorded author/committer dates against the configured event window. |
-| Provenance | A `Provenance:` trailer and matching recorded model/contribution entry. Existing mixed-author exceptions are part of the implementation; a model name is not proof of sole authorship. |
+| Provenance | A `Provenance:` trailer and matching recorded model/contribution entry. A model name is not proof of sole authorship. |
 | Runtime routing text | Non-Meta names and URL hosts in selected runtime/deployment/install sources. It does not observe actual network traffic or server weights. |
 | Source overlap | Configured historical source roots, when a private `guard.json` exists. Missing configuration is reported; no public export contains private root paths. |
 | Privacy and secrets | Static patterns for credentials, private paths/addresses and configured identifiers. A clean scan is not a guarantee that all sensitive content was found. |
@@ -31,4 +31,4 @@ Co-Authored-By: Name <email@example.com>
 
 Every commit needs its own truthful row, or must be folded into an aggregate commit whose truthful row covers everything squashed. Never borrow an ID.
 
-The `uiux-*`/`fix-F*` exceptions in `check.py` cover private-history IDs; no commit or row in this snapshot uses them.
+This public snapshot has no private-history provenance exceptions; every commit still requires its matching provenance trailer and recorded model/contribution entry.

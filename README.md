@@ -68,6 +68,8 @@ The first dark capture's answer, verbatim:
 
 > Maps are paused to save power. The battery is worn at 60% health, so a 60% charge is only about 36% usable and the phone is not charging. The phone paused maps and photos backup to keep calls and messages working until 16:00.
 
+The light-theme Ask reply uses different wording, and its "CRITICAL" is not the battery rules' floor, which applies below 15% usable.
+
 The first dark question was sent while maps and photos backup were paused. By the time the reply appeared, Glimmer's background advisor had also paused email. The visible status line in both selected Ask screenshots reads "Glimmer: also paused email" and matches the captured current task state; the answer describes the facts supplied when the question was sent.
 
 <picture>
@@ -89,7 +91,7 @@ The revised **Why? button returned Glimmer answers in 66.549 and 60.696 seconds 
 | Light | Ask | 42.914 | 44.782 | Muse Glimmer; no fallback |
 | Light | Why? | 63.853 | 78.651 | Muse Glimmer; no fallback |
 
-The screenshots and demo video use the first chronological run; both runs of each action and appearance are reported. The captured runtime is the staged Git tree `e753c23bba4f3898a09ae4e1f6f0137e255fde68` (a tree object, not a commit). Full replies, timestamps, task states and unedited PNGs are retained in the owner's `final-capture/capture.json` and `capture-report.md` handoff. Battery, calls and messages remain simulated; Glimmer runs on the owner's computer.
+The screenshots and demo video use the first chronological run; both runs of each action and appearance are reported. The captured runtime is the staged Git tree `e753c23bba4f3898a09ae4e1f6f0137e255fde68` (a tree object, not a commit). Full replies, timestamps, task states and unedited PNGs are kept by the owner and are not in this repository. Battery, calls and messages remain simulated; Glimmer runs on the owner's computer.
 
 ## Try it online
 
@@ -183,7 +185,7 @@ OPOS_REPO_URL=https://github.com/louiscalata/old-phone-os OPOS_REF=main sh boots
 
 As recorded in [docs/pmos.md](docs/pmos.md), on November 3, 2026 a postmarketOS aarch64 image booted in QEMU 9.1.2 (TCG, OpenRC) to the OPOS lock screen, and Unlock reached Home. It used the packaged tinydm Pixman renderer hook without a manual renderer override; the same image without the hook stayed on the console with a GLES2/GBM failure. See [docs/pmos.md](docs/pmos.md) for the recorded run, toolchain and local-source staging.
 
-This later virtual-machine boot result does not close the November 1 integrator report's **integration NOT READY** status: integration acceptance remains outstanding. The earlier private-baseline QEMU run described in [docs/provenance.md](docs/provenance.md#validation-scope) used a manual, QA-only Pixman renderer override. The November 3 image had no model server or route to one; on-phone inference and physical-phone behavior remain untested for this source.
+This later virtual-machine boot does not finish integration acceptance. The earlier private-baseline QEMU run described in [docs/provenance.md](docs/provenance.md#validation-scope) used a manual, QA-only Pixman renderer override. The November 3 image had no model server or route to one; on-phone inference and physical-phone behavior remain untested for this source.
 
 The kiosk starts the same `opos.web` server as the desktop demo, so it uses the same simulated battery (`DrainSim`) and simulated modem (`ScreenModem`): it does not read the phone's battery, place real calls or send real texts. A ModemManager adapter (`src/opos/mm_modem.py`) exists but is not connected yet, and the sysfs battery reader (`src/opos/hw/battery.py`) is used only by setup to describe the device, not by the phone screen.
 

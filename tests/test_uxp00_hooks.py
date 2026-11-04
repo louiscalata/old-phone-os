@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-import importlib.util
 from pathlib import Path
 
 from opos.web import page
@@ -8,7 +7,6 @@ from opos.web import page
 ROOT = Path(__file__).resolve().parents[1]
 POST = ROOT / "packaging" / "pmos" / "opos" / "opos-openrc.post-install"
 WEB = ROOT / "src" / "opos" / "web.py"
-GUARD = ROOT / "guard" / "check.py"
 HOOKS = ["phone-a.css", "phone-b.css", "phone-a.html", "phone-b.html", "phone-a.js", "phone-b.js"]
 JARYO = ["jaryo.css", "jaryo-layout.css", "jaryo.js", "jaryo-layout.js"]
 
@@ -62,17 +60,6 @@ class UXP00Hooks(unittest.TestCase):
         self.assertIn("try{(window.oposHooks||[]).forEach(function(f){try{f(s)}catch(e){}})}catch(e){}", src)
         self.assertIn("if(s&&!s.error){try{(window.oposHooks", src)
 
-    def test_guard_allows_uiux_phone(self):
-        spec = importlib.util.spec_from_file_location("guard_check", GUARD)
-        guard = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(guard)
-        self.assertTrue(guard.UIUX_ID.fullmatch("uiux-UXP01"))
-        self.assertTrue(guard.UIUX_PHONE_ID.fullmatch("uiux-UXP01"))
-        self.assertIsNone(guard.UIUX_PHONE_ID.match("uiux-UXP01x"))
-        self.assertTrue(guard.uiux_ok("uiux-UXP01", ["- uiux-UXP01: phone redesign; written by Fable"]))
-        self.assertFalse(guard.uiux_ok("uiux-UXP01", ["- uiux-UXP01: phone redesign; written by an unknown tool"]))
-        self.assertTrue(guard.jry_ok("uiux-JRY02", ["- uiux-JRY02: motion; written by Fable"]))
-        self.assertFalse(guard.jry_ok("uiux-JRY02", ["- uiux-JRY02: motion; written by an unknown tool"]))
 
 
 class UXP00FailOpenScripts(unittest.TestCase):

@@ -12,6 +12,6 @@ This is a proposed sequence, not a completed video or a performance measurement.
 | Native kiosk | Actual Lock/Home frames from the November 3 QEMU image | Disclose that the packaged hook sets WLR_RENDERER=pixman after default GLES2/GBM failure (November 3 QEMU image); a virtual machine, not a phone. |
 | Credits and limits | GPL source, mixed development contributions, validation scope | No all-Meta authorship, physical-call or native-inference claim without proof. |
 
-Stills and sampled frame sequences must be labeled as such. Preserve real elapsed timing for recorded requests and mark explicit cuts between separate takes. Historical GIFs in the README are earlier simulations; the wait GIF uses a stand-in server and simulated answer.
+Stills and sampled frame sequences must be labeled as such. Preserve real elapsed timing for recorded requests and mark explicit cuts between separate takes. Do not present a stand-in wait animation as a measured Muse Glimmer reply.
 
 Meta runtime routing is separate from development authorship. See [../NEW-WORK.md](../NEW-WORK.md), [../WORK-BY-MODEL.md](../WORK-BY-MODEL.md) and [provenance.md](provenance.md). This plan does not publish anything or change any device.

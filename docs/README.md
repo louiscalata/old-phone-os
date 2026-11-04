@@ -21,8 +21,6 @@ earlier work and are not current instructions or evidence about the current sour
 
 - [OPOS and Meta models](META.md): runtime routes, optional inference, deterministic safeguards and simulation results.
 - [Worn-battery results](worn-battery-results.md): simulated service durations, resistance assumptions and brownout/shutdown accounting.
-- [Model improvement](model-improvement.md): **historical** experiments on the removed learned governor and its goal-aware successor.
-- [Experiment E6](experiment-e6.md): **historical** held-out evaluation of the removed learned governor.
 
 ## Install and packaging
 
@@ -53,4 +51,3 @@ earlier work and are not current instructions or evidence about the current sour
 - [Provenance](provenance.md): public source attribution and what the unpublished development records do and do not cover.
 - [Repository checks](../guard/RULES.md): what the optional static guard examines and what it cannot certify.
 - [Web page maintenance notes](web-implementation-notes.md): CSS comments and headers moved out of the page to keep it under its size budget.
-- [Desktop demo GIF](assets/demo.gif) and [helper wait GIF](assets/wait-demo.gif): **historical** recordings; the wait GIF uses a stand-in server, not measured Glimmer timing.
