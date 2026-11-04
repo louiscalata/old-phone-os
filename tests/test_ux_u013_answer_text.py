@@ -12,7 +12,7 @@ class WhyFallbackLabel(unittest.TestCase):
         start = text.index(start_tag)
         end = text.index(end_tag, start)
         snippet = text[start:end]
-        fallback = "ans.textContent=r.text+' (Standard answer: the helper did not reply. Try Why? again later.)'"
+        fallback = "ans.textContent=r.text+' (Rules text. The helper did not answer this request.)'"
         original = "ans.textContent=r.text+' ('+r.engine+', '+r.where+')'"
         self.assertIn("r.ok===false", snippet)
         self.assertIn(fallback, snippet)

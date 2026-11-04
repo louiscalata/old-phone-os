@@ -4,9 +4,7 @@ import re
 import shutil
 import subprocess
 import unittest
-import urllib.request
 from pathlib import Path
-from unittest import mock
 
 from opos.web import page
 
@@ -68,22 +66,26 @@ class UXP07Helper(unittest.TestCase):
     def test_helper_offline_rules_answer(self):
         from opos import assist
 
+        attempts = []
+
         def down(*a, **k):
+            attempts.append(a[0])
             raise OSError("offline")
 
-        # With nothing reachable the helper does not raise: it names the route that did not answer and
-        # that the phone itself still works (no made-up answer, no route claimed).
-        with mock.patch.object(urllib.request, "urlopen", down):
-            r = assist.answer("what is paused?", web=False, env={}, free=5000, context={})
+        # With transport explicitly offline, report no answer without naming a failed route.
+        r = assist.answer("what is paused?", web=False, env={}, free=5000, context={}, opener=down)
+        self.assertTrue(attempts)
         self.assertIsInstance(r, dict)
         self.assertIs(r["ok"], False)
         self.assertEqual((r["engine"], r["where"]), ("none", ""))
-        self.assertIn("Muse Glimmer (on this device) did not answer.", r["text"])
+        self.assertIn("No model answered.", r["text"])
         self.assertIn("Calls, messages", r["text"])
         self.assertEqual(r["sources"], [])
-        # Battery critical is answered by the rules on the phone itself, still fully offline.
-        with mock.patch.object(urllib.request, "urlopen", down):
-            r = assist.answer("what is paused?", web=False, env={}, free=5000, context={"mode": "CRITICAL"})
+        # Battery critical answers from rules without even invoking the offline transport.
+        attempts.clear()
+        r = assist.answer("what is paused?", web=False, env={}, free=5000,
+                          context={"mode": "CRITICAL"}, opener=down)
+        self.assertEqual(attempts, [])
         self.assertEqual((r["engine"], r["where"]), ("rules", "on this phone"))
         self.assertTrue(r["text"].startswith("Battery is critical"))
 

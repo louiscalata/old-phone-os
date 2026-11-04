@@ -22,7 +22,9 @@ export PYTHONPATH=src
 OPOS_PUBLIC_HOSTS=localhost:8080 PORT=8080 python3 -m opos.public_demo
 ```
 
-Open `http://localhost:8080/?demo=1` (it starts unlocked). Change the battery
+Open `http://localhost:8080/?demo=1` (it starts unlocked). Use exactly the host in `OPOS_PUBLIC_HOSTS`:
+`http://127.0.0.1:8080/` returns 421 because only that host is accepted. If port 8080 is taken, change both
+numbers, for example `OPOS_PUBLIC_HOSTS=localhost:8787 PORT=8787`. The server prints the URL to open. Change the battery
 slider, then open the top battery bar. At the initial 60%, Undo on maps turns
 the soft-paused task back on; low-battery and heat floors still protect calls
 and messages. Why, Plan and Ask answer from the current rules and explicitly

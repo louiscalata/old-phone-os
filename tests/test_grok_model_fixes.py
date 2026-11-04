@@ -69,15 +69,16 @@ class TestGRouteBudget(unittest.TestCase):
             attempts = list(muse._attempts([muse.glimmer_route({})], {}, 115))
         self.assertEqual(attempts[0][1], 115)
 
-    def test_ask_error_names_the_last_failed_route(self):
+    def test_ask_error_does_not_name_the_last_failed_route(self):
         with mock.patch.object(muse, "ask", side_effect=muse.MuseError("down")):
             result = assist.answer("word " * 20, env=self.ENV, free=2000)
         self.assertFalse(result["ok"])
-        self.assertIn("Muse Glimmer", result["text"])
-        self.assertIn("on this device", result["text"])
+        self.assertIn("No model answered.", result["text"])
+        self.assertNotIn("Muse Glimmer", result["text"])
+        self.assertNotIn("on this device", result["text"])
         self.assertNotIn("on your computer is busy", result["text"])
 
-    def test_ask_error_names_only_the_route_actually_attempted(self):
+    def test_ask_error_is_neutral_when_only_one_route_was_attempted(self):
         now = [0.0]
 
         def expired(route, prompt, **kwargs):
@@ -88,7 +89,8 @@ class TestGRouteBudget(unittest.TestCase):
                 mock.patch.object(muse, "ask", side_effect=expired) as ask:
             result = assist.answer("word " * 20, env=self.ENV, free=2000)
         ask.assert_called_once()
-        self.assertIn("on a computer you own", result["text"])
+        self.assertIn("No model answered.", result["text"])
+        self.assertNotIn("on a computer you own", result["text"])
         self.assertNotIn("on this device", result["text"])
 
 

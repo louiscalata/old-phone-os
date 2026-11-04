@@ -181,6 +181,7 @@ class TestAnswer(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(res["engine"], "none")
         self.assertEqual(len(res["sources"]), 2)
+        self.assertEqual(res["text"], "No model answered, so here are the sources I found.")
     def test_no_route_no_sources_low_memory(self):
         def opener(req, timeout=30):
             raise OSError("down")
@@ -198,13 +199,13 @@ class TestAnswer(unittest.TestCase):
         res = assist.answer("hello there", web=False, env={}, free=None, opener=opener)
         self.assertTrue(res["ok"])
         self.assertEqual(res["engine"], "Muse Glimmer")
-    def test_last_failure_reported_with_lan_configured(self):
+    def test_failed_routes_report_neutral_detail_with_lan_configured(self):
         env = {"OPOS_LAN_URL": "http://" + BUSY_RFC1918_HOST + ":1234/v1"}
         def opener(req, timeout=None):
             raise OSError("down")
         res = assist.answer("hello world", web=False, env=env, opener=opener, free=2000)
         self.assertFalse(res["ok"])
-        self.assertTrue(res["text"].startswith("Muse Glimmer (on this device) did not answer."))
+        self.assertTrue(res["text"].startswith("No model answered."))
         self.assertEqual(res["engine"], "none")
         self.assertEqual(res["sources"], [])
     def test_no_model_reachable_no_lan(self):
@@ -212,13 +213,13 @@ class TestAnswer(unittest.TestCase):
             raise OSError("down")
         res = assist.answer("hello", web=False, env={}, opener=opener, free=None)
         self.assertFalse(res["ok"])
-        self.assertTrue(res["text"].startswith("Muse Glimmer (on this device) did not answer."))
+        self.assertTrue(res["text"].startswith("No model answered."))
         self.assertIn("Calls, messages and battery saving still work.", res["text"])
     def test_unavailable_helper_explains_what_still_works(self):
         def opener(req, timeout=None):
             raise OSError("down")
         res = assist.answer("hello", web=False, env={}, opener=opener, free=None)
-        expected = {"ok": False, "text": "Muse Glimmer (on this device) did not answer. Calls, messages and battery saving still work.", "engine": "none", "where": "", "sources": []}
+        expected = {"ok": False, "text": "No model answered. Calls, messages and battery saving still work.", "engine": "none", "where": "", "sources": []}
         self.assertEqual(res, expected)
         self.assertNotIn("OPOS_LAN_URL", res["text"])
     def test_invalid_fact_dictionaries_return_controlled_error(self):

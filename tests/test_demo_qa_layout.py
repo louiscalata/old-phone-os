@@ -41,9 +41,11 @@ class PublicQALayout(unittest.TestCase):
             paper = self.declaration(selector, '--jaryo-bg')[-1][1]
             self.assertNotEqual(ink, paper)
 
-    def test_landing_explains_existing_unlocked_stacked_simulator_mode(self):
+    def test_landing_tour_starts_unlocked_and_undo_precedes_low_battery(self):
         self.assertIn('href="/?demo=1#try-phone"', self.public)
-        self.assertIn('Simulator mode opens unlocked, with the apps stacked for testing.', self.public)
+        self.assertIn('Starts unlocked at noon: 60% charge × 60% health is about 36% usable.', self.public)
+        self.assertLess(self.public.index('Undo a soft pause first'),
+                        self.public.index('Set Battery to 20%'))
         self.assertNotIn('Unlock the phone, then explore.', self.public)
         self.assertIn('<div id="demo" data-demo="1">', self.public)
         self.assertIn('not a phone operating system and has not run on a physical phone', self.public)

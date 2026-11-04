@@ -134,6 +134,8 @@ class TestGuardJaryoIntegration(unittest.TestCase):
                 commit = '0'*40 + ' 1793100000 1793100000 ' + pid + '\x1e'
                 def fake_git(*a, **k):
                     key = a
+                    if key == ('rev-parse', '--show-toplevel'):
+                        return os.getcwd() + '\n'
                     if key == ('rev-parse', '--git-common-dir'):
                         return '.git\n'
                     if key[:2] == ('log', '--format=%H %at %ct %(trailers:key=Provenance,valueonly,separator=%x20)%x1e'):

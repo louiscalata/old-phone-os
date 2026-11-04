@@ -8,6 +8,7 @@ const elements = {
   token: {content: 'old'},
   'public-session': {textContent: ''},
   'glimmer-credit': {textContent: 'waiting'},
+  'helper-where': {textContent: 'Answers are made on this phone when possible.'},
   webq: {checked: true, disabled: false},
   helperrestart: {disabled: false}
 };
@@ -37,9 +38,13 @@ vm.runInNewContext(source, scope);
   assert.equal(elements.webq.disabled, true);
   assert.equal(elements.helperrestart.disabled, true);
   assert.match(elements['glimmer-credit'].textContent, /answers come from the rules/);
+  const helperNotice = 'Demo phone. These answers come from the battery rules. Muse Glimmer runs only on your own computer.';
+  assert.equal(elements['helper-where'].textContent, helperNotice);
   elements['glimmer-credit'].textContent = 'no reply';
+  elements['helper-where'].textContent = 'Answers are made on this phone when possible.';
   mutation();
   assert.match(elements['glimmer-credit'].textContent, /answers come from the rules/);
+  assert.equal(elements['helper-where'].textContent, helperNotice);
   response = new Response(JSON.stringify({battery: {percent: 60}, threads: []}), {
     headers: {'X-OPOS-Token': 'fresh', 'X-OPOS-Session-Reset': '1'}
   });
