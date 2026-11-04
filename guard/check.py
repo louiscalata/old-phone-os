@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Local repository check for the Meta hackathon: each commit's Provenance ID must appear in docs/provenance.md on a line naming a Meta model (or a listed exception model), and src/, deploy/ and the top-level install files are scanned for listed non-Meta model names (src/ and deploy/ also for hosts outside an allow-list). It cannot certify contest eligibility or who wrote a change. Stdlib only, no network.
+"""Local repository check for the Meta hackathon: each commit's Provenance ID must appear in docs/provenance.md on a line naming a Meta model, and src/, deploy/ and the top-level install files are scanned for listed non-Meta model names (src/ and deploy/ also for hosts outside an allow-list). It cannot certify contest eligibility or who wrote a change. Stdlib only, no network.
 Usage: check.py [--staged] [--push]   Config: guard.json in the git common dir (untracked)."""
 import hashlib, json, os, re, stat, subprocess, sys
 import urllib.parse
@@ -10,32 +10,8 @@ DEADLINE = 1793844000  # 2026-11-04 21:00 EST (18:00 PST)
 TEXT_EXT = {'.py','.md','.txt','.sh','.json','.toml','.cfg','.yml','.yaml','.js','.ts','.c','.h','.kt','.java','.html','.css'}
 META = re.compile(r'muse|glimmer|spark|wonder|llama|sam[- ]?3', re.I)
 NON_META = re.compile(r'\b(gpt-?[0-9o]|claude|gemini|mistral|mixtral|qwen|deepseek|phi-[0-9]|gemma|command-r|grok|codex|openai|anthropic|chatgpt)', re.I)
-JRY_ID = re.compile(r'uiux-JRY[0-9]{2}(?:-fixup|-fix[0-9]{1,2})?')
-JRY_MODEL = re.compile(r'\b(?:Opus 5\.5|Sol 6\.1|Fable|Astra)(?!\w|\.\d)')
-# Owner-approved exception (Louis, Nov 1 2026): UX01-UX05, the redesign rounds UXPnn and the Fable UI worker's UXFnn may name Astra, Opus 5.5 or Fable on their provenance line.
-UIUX_ID = re.compile(r'uiux-(?:UX0[1-5](?:-fixup|-guard|-guardwiden|-guardfix|-r1-astra)?'
-                     r'|UXP[0-9]{2}(?:-r[0-9][a-f])?(?:-fixup|-fix[0-9]{1,2}|-correction|-guard)?'
-                     r'|UXF[0-9]{2}(?:-r[0-9][a-f])?(?:-fixup|-fix[0-9]{1,2}|-correction|-guard)?)')
-UIUX_PHONE_ID = re.compile(r'uiux-UXP[0-9]{2}(?:-r[0-9][a-f])?(?:-fixup|-fix[0-9]{1,2}|-correction|-guard)?\Z')
-UIUX_MODEL = re.compile(r'\b(?:(?:Astra|Opus 5\.5)(?!\w|\.\d)|Fable(?![\w-]|\.\d|\s+v?\d))')
-def uiux_ok(pid, lines):
-    # Narrow exception approved by the owner (Nov 1, widened to meta-forward 1:42 AM PST, UXP rounds 3:49 AM PST, UXF/Fable 4:39 AM PST):
-    # UX01-UX05, redesign-round (UXPnn) and Fable UI worker (UXFnn) work may name Astra, Opus 5.5 or Fable as the writing model.
-    return bool(UIUX_ID.fullmatch(pid)) and any(re.search(r'(?<![\w-])' + re.escape(pid) + r'(?![\w-])', l) and UIUX_MODEL.search(l) for l in lines)
-
-def jry_ok(pid, lines):
-    # Owner-approved exception (Louis, Nov 1 2026 18:00): uiux-JRYnn work (including -fixup and -fixNN) may name Opus 5.5, Sol 6.1, Fable or Astra on its provenance line.
-    # Pass 3 makes the same ID/model admission portable across branch names and detached checkouts.
-    if not JRY_ID.fullmatch(pid):
-        return False
-    return any(re.search(r'(?<![\w-])' + re.escape(pid) + r'(?![\w-])', l) and JRY_MODEL.search(l) for l in lines)
-
+# This public snapshot has no private-history provenance exceptions.
 META_HOSTS = {'dev.meta.ai', 'developer.meta.ai', 'ai.developer.meta.com', 'api.meta.ai', 'meta.ai', 'inference.baseten.co', '127.0.0.1', 'localhost'}
-FRONTIER_ID = re.compile(r'fix-(?:F3013[ab]|F3014[ab]|F3017|F2502|F3020|F3021|F3030|F3031|F231|F2996)')
-FRONTIER_MODEL = re.compile(r'\b(?:Sol 6\.1|Opus 5\.5)(?!\w|\.\d)')
-def frontier_ok(pid, lines):
-    """Owner-approved narrow exception (Louis, Nov 1 2026 2:09 AM PST; extended to F231 and F2996 at 3:57 AM PST 'boost development'): only the exact listed fix ids may name Sol 6.1 or Opus 5.5 on the provenance line for that id (honest author and reviewer both named there)."""
-    return bool(FRONTIER_ID.fullmatch(pid)) and any(re.search(r'(?<![\w-])' + re.escape(pid) + r'(?![\w-])', l) and FRONTIER_MODEL.search(l) for l in lines)
 SEARCH_HOSTS = {'en.wikipedia.org'}  # free search hosts, not models, used for cited web grounding
 def meta_only_errors(f, text):
     if not (f.startswith('src/') or f.startswith('deploy/') or f in ('install.sh', 'install.ps1', 'requirements.txt')):
@@ -275,13 +251,6 @@ def main():
         if int(ct) > DEADLINE:
             errs.append(f'commit {h[:8]}: after deadline')
         ok = pid and any(re.search(r'(?<![\w-])' + re.escape(pid[0]) + r'(?![\w-])', l) and META.search(l) for l in prov.splitlines())
-        if not ok and pid and frontier_ok(pid[0], prov.splitlines()):
-            ok = True
-        if not ok and pid and UIUX_ID.fullmatch(pid[0]):
-            ok = uiux_ok(pid[0], prov.splitlines())
-        if not ok and pid:
-            if jry_ok(pid[0], prov.splitlines()):
-                ok = True
         if not ok:
             errs.append(f'commit {h[:8]}: no Provenance trailer logged with a Meta model in docs/provenance.md')
     roots = cfg.get('old_repos', [])
