@@ -54,6 +54,18 @@ class TestGuardMeta(unittest.TestCase):
         errs_cred = check.meta_only_errors('src/app.py', cred_url)
         self.assertTrue(len(errs_cred) > 0)
 
+    def test_public_landing_navigation_exception_is_exact(self):
+        path = 'src/opos/public_static/public-demo.html'
+        for url in ('https://github.com/louiscalata/old-phone-os',
+                    'https://fortheloveof.studio/code/old-phone-os/'):
+            anchor = '<a href="' + url + '">Project</a>'
+            self.assertEqual(check.meta_only_errors(path, anchor), [])
+            self.assertTrue(check.meta_only_errors('src/other.html', anchor))
+            self.assertTrue(check.meta_only_errors(path, 'fetch("' + url + '")'))
+            self.assertTrue(check.meta_only_errors(path, '<script src="' + url + '"></script>'))
+            self.assertTrue(check.meta_only_errors(path, '<a href="' + url + '/other">Elsewhere</a>'))
+        self.assertTrue(check.meta_only_errors(path, 'claude'))
+
     def test_repo_files_clean(self):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         if not os.path.exists(os.path.join(root, '.git')):

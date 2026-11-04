@@ -45,7 +45,14 @@ def meta_only_errors(f, text):
         if NON_META.search(l):
             errs.append(f'{f}:{i}: non-Meta model reference')
     if f.startswith('src/') or f.startswith('deploy/'):
-        candidates = re.findall(r'https?://[^\s\'"<>]+', text)
+        # Only these literal navigation anchors in the public landing are project links.
+        # Model/network URLs, other files and other anchor targets remain checked.
+        host_text = text
+        if f == 'src/opos/public_static/public-demo.html':
+            for link in ('https://github.com/louiscalata/old-phone-os',
+                         'https://fortheloveof.studio/code/old-phone-os/'):
+                host_text = host_text.replace('<a href="' + link + '">', '<a>')
+        candidates = re.findall(r'https?://[^\s\'"<>]+', host_text)
         hosts = set()
         bad = set()
         for u in candidates:
