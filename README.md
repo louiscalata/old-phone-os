@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Old Phone OS Interface (OPOS)
 
+OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
+
 OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
 
 ## Quickstart — under five minutes
@@ -91,7 +93,7 @@ The revised **Why? button returned Glimmer answers in 66.549 and 60.696 seconds 
 | Light | Ask | 42.914 | 44.782 | Muse Glimmer; no fallback |
 | Light | Why? | 63.853 | 78.651 | Muse Glimmer; no fallback |
 
-The screenshots and demo video use the first chronological run; both runs of each action and appearance are reported. The captured runtime is the staged Git tree `e753c23bba4f3898a09ae4e1f6f0137e255fde68` (a tree object, not a commit). Full replies, timestamps, task states and unedited PNGs are kept by the owner and are not in this repository. Battery, calls and messages remain simulated; Glimmer runs on the owner's computer.
+The screenshots use the first chronological run; both runs of each action and appearance are reported. The demo video is a separate later recording from the final source, with its own times: Ask 64.981 s, Why? 86.650 s and Plan 50.247 s, all answered by Muse Glimmer. The captured runtime is the staged Git tree `e753c23bba4f3898a09ae4e1f6f0137e255fde68` (a tree object, not a commit). Full replies, timestamps, task states and unedited PNGs are kept by the owner and are not in this repository. Battery, calls and messages remain simulated; Glimmer runs on the owner's computer.
 
 ## Try it online
 
