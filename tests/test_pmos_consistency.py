@@ -19,7 +19,7 @@ class TestPmosConsistency(unittest.TestCase):
 
         pmos_dir = root / "packaging" / "pmos"
         for p in pmos_dir.rglob("*"):
-            if p.is_file():
+            if p.is_file() and "__pycache__" not in p.parts:
                 rel = str(p.relative_to(root))
                 text = p.read_text(encoding="utf-8", errors="replace")
                 with self.subTest(path=rel):
