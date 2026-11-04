@@ -20,12 +20,12 @@ Demo walkthrough:
 1. Open `http://127.0.0.1:8765/?demo=1` for simulator controls.
 2. The demo starts at 60% battery with 60% battery health, so about 36% is usable. OPOS calls a battery worn below 80% health, so this one is worn, but its worn-battery reserve stays off: the reserve engages only below 50% health, and the demo cannot change health (the reserve is shown in the [simulations](#simulation-results)). To last until the demo's 16:00 goal it pauses maps and photos backup; calls, messages and email stay on, and with the helper shown, Muse Glimmer's background advisor may pause email too.
 3. Tap the thin bar at the top to open battery details and click Start simulation to watch it drain.
-4. Click Show helper and try Why?, Plan or type a question such as "Why are maps paused?" and Ask. Muse Glimmer uses the phone's facts when it replies; in the captures below, Ask received Glimmer replies while both Why? attempts reached the helper deadline and fell back to the rules. With no model running, Why answers from the rules, Plan keeps a fixed order and Ask says no model is running.
+4. Click Show helper and try Why?, Plan or type a question such as "Why are maps paused?" and Ask. Muse Glimmer uses the phone's facts when it replies; in the final-tree captures below, all four Ask requests and all four Why? requests received Glimmer replies within the 115-second helper deadline. With no model running, Why answers from the rules, Plan keeps a fixed order and Ask says no model is running.
 5. Drag the Battery slider below about 25% (under 15% usable). Ask rests to save power, and calls and messages still work.
 
 <p>
   <img src="docs/assets/screen-lock.png" width="240" alt="Desktop simulation lock screen at 12:00 with 60% battery, a worn-battery notice saying 2 tasks paused for 4 PM, and Unlock and Call buttons.">
-  <img src="docs/assets/screen-home.png" width="240" alt="Desktop simulation home screen with Calls, Messages and Email, and maps and photos backup paused to save power.">
+  <img src="docs/assets/screen-home.png" width="240" alt="Desktop simulation Home with Phone, Messages, Helper, Settings and All apps; maps and photos backup are paused to save power.">
   <img src="docs/assets/screen-shade.png" width="240" alt="Desktop simulation battery panel at 60% with maps and photos backup paused; both expanded reasons say battery rules paused them to help the battery last until 4 PM.">
 </p>
 
@@ -35,20 +35,34 @@ Screenshots of the desktop simulation (battery, calls and messages are simulated
 
 On November 3, 2026, the OPOS desktop demo (`?demo=1`) ran on Louis's MacBook Pro with LM Studio serving `muse-glimmer-30b` (Meta Muse Glimmer 30B). The simulation was at noon, with 60% battery at 60% health, a 16:00 goal and the helper shown. On-phone inference is untested.
 
-Asked "Why are maps paused?", Muse Glimmer answered in **56.7 seconds in the dark capture** and **42.4 seconds in the light capture**. The screen labels each answer "reply: Muse Glimmer, on this device"; here, "this device" is the MacBook Pro running the desktop demo.
+Asked "Why are maps paused?", Muse Glimmer answered in **51.699 and 53.077 seconds in dark appearance** and **42.914 and 44.782 seconds in light appearance**. These are four individual measurements from activating the UI control to the displayed reply, including request and rendering time; they are not pure inference times or on-phone measurements. The screen labels each answer "reply: Muse Glimmer, on this device"; here, "this device" is the owner's MacBook Pro running the desktop demo.
 
-The dark capture's answer, verbatim:
+The first dark capture's answer, verbatim:
 
-> Maps are paused to preserve power for calls and messages until 16:00. The battery is worn at 60% health, so a 60% charge is only about 36% usable and the phone is not charging. To keep calls and messages working, the phone paused email, maps and photos backup.
+> Maps are paused to save power. The battery is worn at 60% health, so a 60% charge is only about 36% usable and the phone is not charging. The phone paused maps and photos backup to keep calls and messages working until 16:00.
 
-Glimmer's background advisor had itself paused email; the captured battery state records its reason as "Muse Glimmer paused this to save power for calls and messages." The answer reflects that captured state. The dark screenshot does not show the battery panel, and its helper status line still reads "Glimmer: no extra pauses" despite that state; the light screenshot reads "Glimmer: suggested extra pauses."
+The first dark question was sent while maps and photos backup were paused. By the time the reply appeared, Glimmer's background advisor had also paused email. The visible status line in both selected Ask screenshots reads "Glimmer: also paused email" and matches the captured current task state; the answer describes the facts supplied when the question was sent.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/glimmer-ask-dark.png">
-  <img src="docs/assets/glimmer-ask.png" alt="OPOS desktop simulation showing Muse Glimmer's answer to Why are maps paused?, with 60% battery, a 16:00 goal and the reply label Muse Glimmer, on this device.">
+  <img src="docs/assets/glimmer-ask.png" alt="OPOS desktop simulation showing a Muse Glimmer reply to Why are maps paused?, labeled reply: Muse Glimmer, on this device, with Glimmer: also paused email.">
 </picture>
 
-These are real Ask captures in dark and light appearance. The **Why? button fell back to the rules answer both times** because it reached OPOS's 115-second helper deadline before Glimmer returned visible text. A fix is in progress.
+The revised **Why? button returned Glimmer answers in 66.549 and 60.696 seconds in dark appearance, and 63.853 and 78.651 seconds in light appearance**. All four completed before OPOS's 115-second helper deadline; none used the rules fallback. These measurements replace the earlier pre-fix Why? deadline observations for this final source.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/glimmer-why-dark.png">
+  <img src="docs/assets/glimmer-why.png" alt="The real Why? reply in the OPOS desktop simulation, labeled Muse Glimmer, on this device, explaining the paused tasks.">
+</picture>
+
+| Appearance | Action | Run 1, seconds | Run 2, seconds | Result |
+|---|---|---:|---:|---|
+| Dark | Ask | 51.699 | 53.077 | Muse Glimmer; no fallback |
+| Dark | Why? | 66.549 | 60.696 | Muse Glimmer; no fallback |
+| Light | Ask | 42.914 | 44.782 | Muse Glimmer; no fallback |
+| Light | Why? | 63.853 | 78.651 | Muse Glimmer; no fallback |
+
+The screenshots and demo video use the first chronological run; both runs of each action and appearance are reported. The captured runtime is the staged Git tree `e753c23bba4f3898a09ae4e1f6f0137e255fde68` (a tree object, not a commit). Full replies, timestamps, task states and unedited PNGs are retained in the owner's `final-capture/capture.json` and `capture-report.md` handoff. Battery, calls and messages remain simulated; Glimmer runs on the owner's computer.
 
 ## Try it online
 
@@ -82,7 +96,7 @@ Glimmer may only pause additional non-essential tasks. It cannot allow anything 
 | Route | Purpose | Requirements and scope |
 |---|---|---|
 | Rules floor | Deterministic decisions and fallback text | No model or provider account. Simulations are not measured battery savings. |
-| Muse Glimmer 30B | Routing advice, Why, Plan and Ask | Your own server serving the model id `muse-glimmer-30b` (for example LM Studio) at `http://127.0.0.1:1234/v1`. If port 1234 is taken, set `OPOS_GLIMMER_URL=http://127.0.0.1:<port>/v1` to point OPOS at LM Studio's actual port. On a 64 GB M5 Pro MacBook Pro running Muse Glimmer 30B (Q4_K_M) in LM Studio, answers took about 30-60 seconds in November 2026 tests, most of it hidden reasoning. |
+| Muse Glimmer 30B | Routing advice, Why, Plan and Ask | Your own server serving the model id `muse-glimmer-30b` (for example LM Studio) at `http://127.0.0.1:1234/v1`. If port 1234 is taken, set `OPOS_GLIMMER_URL=http://127.0.0.1:<port>/v1` to point OPOS at LM Studio's actual port. The November 3 final-tree Ask and Why? UI response times are reported individually in [Muse Glimmer answering](#muse-glimmer-answering); these desktop measurements do not establish phone inference speed. |
 | Llama 3.2 1B/3B | Optional phone-local answers via server at loopback port 8080 | About 1.5/4 GB free memory; phone speed is unmeasured; weights are not shipped. |
 | User-owned LAN server | Optional Glimmer endpoint selected with OPOS_LAN_URL | Private-address validation; opt-in. OPOS does not expose a server for you. |
 | Wikipedia | Optional snippets for one question | Unchecked-by-default Search Wikipedia option sends that question to Wikipedia. |
@@ -136,7 +150,7 @@ OPOS_REPO_URL=https://github.com/louiscalata/old-phone-os OPOS_REF=main sh boots
 
 ## postmarketOS packages and QEMU
 
-On November 3, 2026, an aarch64 image built from this tree booted in QEMU 9.1.2 (TCG, OpenRC) to the OPOS lock screen about 70 seconds after start, and Unlock reached Home. It used the packaged tinydm Pixman renderer hook without a manual renderer override; the same image without the hook stayed on the console with a GLES2/GBM failure. See [docs/pmos.md](docs/pmos.md) for the recorded run, toolchain and local-source staging.
+As recorded in [docs/pmos.md](docs/pmos.md), on November 3, 2026 a postmarketOS aarch64 image booted in QEMU 9.1.2 (TCG, OpenRC) to the OPOS lock screen, and Unlock reached Home. It used the packaged tinydm Pixman renderer hook without a manual renderer override; the same image without the hook stayed on the console with a GLES2/GBM failure. See [docs/pmos.md](docs/pmos.md) for the recorded run, toolchain and local-source staging.
 
 This later virtual-machine boot result does not close the November 1 integrator report's **integration NOT READY** status: integration acceptance remains outstanding. The earlier private-baseline QEMU run described in [docs/provenance.md](docs/provenance.md#validation-scope) used a manual, QA-only Pixman renderer override. The November 3 image had no model server or route to one; on-phone inference and physical-phone behavior remain untested for this source.
 
@@ -159,7 +173,7 @@ Optional repository checks use `python3 guard/check.py`; see [guard/RULES.md](gu
 
 **Focused package inputs; performance gains remain unmeasured.** See [docs/lean.md](docs/lean.md).
 
-Demo is simulation only, and so is the postmarketOS kiosk: both use the simulated battery and modem. No physical phone testing is claimed and native on-phone inference is not tested. On a 64 GB M5 Pro MacBook Pro running Muse Glimmer 30B (Q4_K_M) in LM Studio, answers took about 30-60 seconds in November 2026 tests, most of it hidden reasoning. Ask rests when the mode is Critical and less than 15% of the charge is usable. Spark Open is off by default and requires user credentials. Wikipedia search is opt-in.
+Demo is simulation only, and so is the postmarketOS kiosk: both use the simulated battery and modem. No physical phone testing is claimed and native on-phone inference is not tested. The November 3 final-tree Ask and Why? UI response times are reported individually in [Muse Glimmer answering](#muse-glimmer-answering); these desktop measurements do not establish phone inference speed. Ask rests when the mode is Critical and less than 15% of the charge is usable. Spark Open is off by default and requires user credentials. Wikipedia search is opt-in.
 
 The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-yet-verified), and [Surface Duo work is paused](docs/duo-usb-install.md); those paths are documented separately.
 

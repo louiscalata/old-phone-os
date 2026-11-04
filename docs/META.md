@@ -14,8 +14,12 @@ reasoning effort (200 tokens for the small local Llama route). The 1,600-token t
 not a separate reasoning cap or a reserved answer allowance. These are token limits,
 not latency guarantees. Why, Plan and Ask retain a 115-second shared route deadline; earlier
 routes share that time and the last route gets what remains. Empty or token-truncated replies
-are rejected. The revised Why? prompt has fake-route coverage; its hardware latency still needs
-a new capture. The helper contribution line uses actual paused-task attribution and the
+are rejected. In the final November 3 desktop capture, all four Ask and all four Why? requests
+returned Muse Glimmer with no fallback, within 115 s. Ask took 51.699/53.077 s in dark appearance
+and 42.914/44.782 s in light; Why? took 66.549/60.696 s in dark and 63.853/78.651 s in light.
+These are UI response times on the owner's computer, not pure inference times or phone-speed
+measurements; see the [README capture table](../README.md#muse-glimmer-answering).
+The helper contribution line uses actual paused-task attribution and the
 background advisor's observed status, not the configured answer route's name.
 
 Muse Glimmer and Muse Spark contributed code alongside the recorded non-Meta repairs. The use of a development model is distinct from whether a runtime model has been tested on particular hardware.

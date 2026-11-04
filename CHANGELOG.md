@@ -7,7 +7,7 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 
 ### Changed
 
-- README now includes an illustrative older-phone vignette, real Muse Glimmer Ask captures with the quoted answer and elapsed times, and the observed Why? rules fallbacks. Simulation wording distinguishes the profile drain runs from the worn-battery burst-shaping evaluation; postmarketOS wording separates the recorded QEMU boot from outstanding integration acceptance and untested physical-phone behavior.
+- README now includes an illustrative older-phone vignette, new final-tree Muse Glimmer Ask and Why? captures in light and dark, with all eight measured UI response times, the quoted first dark Ask answer, and current pause status. All eight requests returned Glimmer replies within the 115-second deadline; the new Why? measurements replace the earlier rules-fallback observations for this source. Simulation wording distinguishes the profile drain runs from the worn-battery burst-shaping evaluation; postmarketOS wording separates the recorded QEMU boot from outstanding integration acceptance and untested physical-phone behavior.
 
 ## 0.1.0 - 2026-11-03
 

@@ -18,7 +18,7 @@ class TestDuoHelperDocs(unittest.TestCase):
         self.assertLess(health_pos, new_pos)
         self.assertLess(new_pos, push_pos)
         body = text[new_pos + len(new_heading):push_pos].strip()
-        expected = "“The helper starts hidden each time OPOS starts. Open the OPOS page with /?demo=1 in the phone’s browser to show the demo controls. Tap Show helper to show Why?, Plan and Ask; tap Hide helper to hide them. While the helper is hidden, these actions do not contact a model. An answer from the model on your computer takes about 30 to 70 seconds; Cancel stops waiting.”"
+        expected = '“The helper starts hidden each time OPOS starts. Open the OPOS page with /?demo=1 in the phone’s browser to show the demo controls. Tap Show helper to show Why?, Plan and Ask; tap Hide helper to hide them. While the helper is hidden, these actions do not contact a model. Cancel stops waiting.”\n\nFor the measured desktop response times, see the [README capture table](../README.md#muse-glimmer-answering). These are not on-phone measurements.'
         self.assertEqual(body, expected)
         dot = chr(46)
         back = chr(92)

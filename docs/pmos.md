@@ -47,7 +47,7 @@ The packaged recipe names a release archive and its measured runtime checksum. I
 pmbootstrap qemu --image-size=2G -m 2048 --no-gl
 ```
 
-The tool's default SSH forward is loopback port 2222; use the account chosen during installation. `sh packaging/pmos/qemu-demo.sh` only prints the corresponding plan, and `--help` shows usage; it does not build, connect or flash anything.
+The tool's default SSH forward is loopback port 2222; use the account chosen during installation. `sh packaging/pmos/qemu-demo.sh` only prints the corresponding plan for `$HOME/opos-pmaports` unless `OPOS_APORTS_DIR` is set, and `--help` shows usage; it does not build, connect or flash anything.
 
 The non-GL virtual GPU fails under the default GLES2/GBM renderer, and tinydm starts the cage compositor directly, so the renderer must be chosen before cage runs: `/etc/cage-ui/opos.sh` is only sourced later by cage's own session child. The package therefore installs `/usr/share/tinydm/env-wayland.d/50-opos-renderer.sh`, which tinydm sources before it starts cage and which sets `WLR_RENDERER=pixman` unless a value is already set; a device with working accelerated drivers can set `WLR_RENDERER` explicitly. On November 3, 2026 an aarch64 QEMU image (QEMU 9.1.2, TCG, OpenRC, no manual renderer override) built from this tree booted to the OPOS lock screen about 70 seconds after start, and Unlock reached Home; the same image without this hook stayed on the console with the GLES2/GBM failure. That is a virtual-machine result, not a physical-phone or accelerated-rendering result. Do not weaken the Chromium sandbox or host protections.
 

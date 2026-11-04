@@ -12,7 +12,7 @@ update to this document and `tests/test_lean_image.py`.
 | Essential | Why it is there |
 | --- | --- |
 | python3 | Runs the OPOS server and setup tools. |
-| modemmanager | Provides modem control for phone connectivity. |
+| modemmanager | Packaged for later modem access; the current kiosk simulates calls and messages. |
 | polkit | Provides permission rules for modem access. |
 | dbus | Provides communication with system services such as ModemManager. |
 | postmarketos-base-ui-cage | Provides the base Cage kiosk UI environment. |
