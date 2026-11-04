@@ -39,7 +39,13 @@ class TestStatusBar(unittest.TestCase):
         self.assertNotIn('innerHTML', js)
         self.assertIn('new Date()', js)
         self.assertIn('setInterval(tick,15000)', js)
-        self.assertNotIn('s.clock', js)
+        # Normal status bar time follows the visitor's local clock. The demo
+        # notice clock is intentionally sourced from simulated state.
+        self.assertIn("time.textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);", js)
+        hook = js[js.index('window.oposHooks.push(function(s){try{', js.index('var time=G(\'sb-time\')')):]
+        self.assertIn('var {clock}=s;if(demoTime&&clock)demoTime=\'Demo time \'+clock;', hook)
+        self.assertIn('tick();', hook)
+        self.assertNotIn('time.textContent=s.clock', hook)
         self.assertIn("isFinite(s.battery.percent)", js)
         self.assertIn("Math.round(s.battery.percent)+'%'", js)
         self.assertIn("typeof s.helper.engine==='string'", js)

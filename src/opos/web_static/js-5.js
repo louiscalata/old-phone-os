@@ -1,4 +1,4 @@
-const _n=G('notice');if(_n){_n.textContent=s.notice||'';_n.hidden=!s.notice;_n.dataset.tone=s.in_call?'call':''}
+const _n=G('notice');if(_n){showNotice(s.notice||'',s.notice_app||'');_n.dataset.tone=s.in_call?'call':''}
 G('simbtn').textContent=running?'Pause simulation':'Start simulation';
 document.getElementById('visbtn').textContent=vis?'Hide helper':'Show helper';
 const helperToggle=document.getElementById('helpertoggle');

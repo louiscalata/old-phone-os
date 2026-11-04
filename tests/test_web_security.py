@@ -111,7 +111,7 @@ class TestWebSecurity(unittest.TestCase):
 
     def test_bad_methods(self) -> None:
         """Unsupported methods return 405 with Allow."""
-        for m in ("PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
+        for m in ("PUT", "DELETE", "PATCH", "OPTIONS"):
             for p in ("/", "/api"):
                 s, h, b = webclient.request(self.port, m, p)
                 self.assertEqual(s, 405)

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Per-task pause explanations and native disclosure controls."""
+import base64
 import json
 from html.parser import HTMLParser
 import os
@@ -15,7 +16,7 @@ from opos.dashboard import Dashboard
 from opos.governor import Priority, Task
 from opos.router import Router
 from opos.runtime import Runtime
-from opos.web import Phone, page
+from opos.web import FAVICON, Phone, page
 from tests.test_uxr_acceptance import find_chrome
 
 
@@ -247,8 +248,12 @@ class PausedReasonBrowser(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="paused-reason-") as directory:
             root = Path(directory)
             nonce = "paused-reason-test"
-            policy = "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; connect-src 'none'"
+            policy = "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'"
             html = page("t" * 43, nonce, demo=True).replace("<head>", '<head><meta http-equiv="Content-Security-Policy" content="' + policy + '">', 1)
+            # A file fixture has no /favicon.ico route; retain the actual icon
+            # without granting file or network image access to this CSP test.
+            icon = base64.b64encode(FAVICON).decode('ascii')
+            html = html.replace('href="/favicon.ico"', 'href="data:image/png;base64,' + icon + '"', 1)
             (root / "page.html").write_text(html, encoding="utf-8")
             with mock.patch("opos.web.prefs.load", side_effect=OSError):
                 state = Phone().state()

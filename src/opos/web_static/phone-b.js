@@ -26,6 +26,7 @@ var p=$('phone'),h=$('home'),b=$('back'),s=$('settings');if(!p)return;
 try{
 var prev=p.dataset.app;
 p.dataset.app=name;
+if(typeof scopeNotice==='function')scopeNotice();
 if(h)h.hidden=name!=='home';if(b)b.hidden=name==='home';if(s)s.hidden=name!=='settings';
 try{window.scrollTo(0,0)}catch(e){}
 if(name==='home'){var t=last&&h&&h.querySelector('[data-open='+last+']');if(t&&prev&&prev!=='home')t.focus();return}
@@ -113,6 +114,7 @@ helperAsk(q,!!(w&&w.checked),function(payload){return fetch('/api',{method:'POST
 .then(function(r){return r.json().then(function(j){if(r.ok)return j;return{error:r.status===429?'Too many questions in a row. Wait a few seconds, then try again.':r.status===403?'This page is out of date. Reload it, then try again.':r.status>=500?'Something went wrong in OPOS. Try again in a minute.':j&&j.error||'The request failed. Try again.'}},function(){return{ok:false}})})})
 .then(function(j){if(ctl!==c||dead)return;if(j&&j.error)return end(t,j.error,j.error,true);if(j&&j.ok===false&&j.engine==='rules'&&typeof j.text==='string'&&j.text.trim()){if(modeVersion===askedModeVersion)setRest(true);return end(t,j.text.trim(),resting?REST:'This request rested to save power. You can ask again.',false)}if(!j||j.ok===false)return end(t,std(j),'No reply. Showing the standard answer.',true);
 var text=typeof j.text==='string'?j.text.trim():'';if(!text)return end(t,std(j),'No reply. Showing the standard answer.',true);
+var input=$('q');if(input&&input.value.trim()===q)input.value='';
 end(t,text+(j.engine&&j.engine!=='none'&&j.where?' (reply: '+j.engine+', '+j.where+')':''),'Answered.',false,Array.isArray(j.sources)?j.sources:null)})
 .catch(function(){if(ctl!==c||dead)return;end(t,std(null),'No reply. Showing the standard answer.',true)})
 .catch(off)}
