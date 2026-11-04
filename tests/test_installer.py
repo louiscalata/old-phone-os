@@ -83,13 +83,27 @@ def _overlaps(a, b):
 def make_env(base):
     """Build a clean environment rooted at base."""
     home = Path(base) / "home"
+    # HOME alone does not isolate systemctl: it still contacts the host user bus.
+    # These fixtures install no service. Service lifecycle/failure cases have
+    # their own explicit stubs in test_install_review.py.
+    tools = Path(base) / "sandbox-tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    systemctl = tools / "systemctl"
+    systemctl.write_text(
+        '#!/bin/sh\n'
+        'case "$*" in\n'
+        '  "--user list-unit-files --no-legend opos-server.service") exit 0 ;;\n'
+        '  *) echo "unexpected systemctl call: $*" >&2; exit 99 ;;\n'
+        'esac\n', encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
     return {
         "HOME": str(home),
         "OPOS_HOME": str(home / ".local" / "share" / "opos"),
         "OPOS_BIN_DIR": str(home / ".local" / "bin"),
         "OPOS_CONFIG_DIR": str(home / ".config" / "opos"),
         "OPOS_PYTHON": sys.executable,
-        "PATH": os.environ.get("PATH", ""),
+        "PATH": str(tools) + os.pathsep + os.environ.get("PATH", ""),
     }
 
 
