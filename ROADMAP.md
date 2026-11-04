@@ -1,15 +1,20 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Where Old Phone OS Interface stands at the end of the Meta Global AI Developer Hackathon (November 4, 2026)
+Status as of November 3, 2026: where Old Phone OS Interface stands
 and what comes next. Plans are intentions, not promises.
 
 ## Working today
 
 - Battery governor: Normal, Saver and Critical modes from battery level, battery health,
   temperature and a daily goal; calls, messages and alarms stay on in every mode.
-- Helper with Meta Muse Glimmer 30B on your own computer: Why?, Plan and Ask answer from plain facts
-  about the phone; a background advisor may pause extra non-essential tasks, never fewer.
+- Helper with Meta Muse Glimmer 30B on your own computer: supports Why?, Plan and Ask using plain
+  facts about the phone. In the final November 3 desktop capture, all four Ask and all four Why?
+  requests returned Muse Glimmer within 115 s, with no fallback. Ask took 51.699/53.077 s in dark
+  appearance and 42.914/44.782 s in light; Why? took 66.549/60.696 s in dark and 63.853/78.651 s
+  in light. These are UI response times, not pure inference or on-phone measurements. See the
+  [README capture table](README.md#muse-glimmer-answering). A background advisor may pause extra
+  non-essential tasks, never fewer.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
@@ -23,10 +28,6 @@ and what comes next. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
-- The November 3 Glimmer capture follow-up reduces the Why? prompt and keeps helper pause
-  attribution current while the demo is stopped. Fake-route regressions cover the changes;
-  Why? latency on the revised source still needs a new LM Studio capture. See
-  [.pr/helper-glimmer-capture.md](.pr/helper-glimmer-capture.md).
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). The ModemManager adapter
   (`src/opos/mm_modem.py`) is not connected to them, and the sysfs battery reader
@@ -39,27 +40,25 @@ and what comes next. Plans are intentions, not promises.
 
 ## Public browser demo
 
+The public demo is live at [opos-demo-production.up.railway.app](https://opos-demo-production.up.railway.app).
 The separate `opos.public_demo` entry point wraps the existing phone page in a
-Jaryo landing and isolates each visitor in bounded, expiring memory. Public
-helpers use only battery rules; setup, model routes and host operations are
-unreachable. Railway configuration and [operating notes](docs/public-demo.md)
-are in this working copy. This work has not been committed, pushed or deployed.
-The README URL remains a placeholder. Native socket/browser and Railway
-verification must be recorded separately from handler-level checks.
-The security follow-up uses the trusted proxy's right-most forwarded address
-for rate limits and preserves sessions on cross-site landing visits. Both
-regressions pass through the in-memory HTTP transport; native socket tests
-remain blocked by workspace permissions. See [.pr/public-demo.md](.pr/public-demo.md)
-for the current test and guard results.
+Jaryo landing and isolates each visitor in bounded, expiring memory. Muse Glimmer
+and every other model route are off there: public helpers use only battery rules.
+Setup and host operations are unreachable. Railway configuration and
+[operating notes](docs/public-demo.md) are included in this tree. This is a browser
+simulation; the live deployment does not establish physical-phone use.
 
-The outside-QA follow-up `qa-20261103` fixes the public Settings layout, battery
-history, app status, rules-helper answers, simulator controls and link-checker
-responses. See [.pr/qa-demo.md](.pr/qa-demo.md) for the unstaged changes, regression
-results and remaining browser review; this does not establish physical-phone use.
+The public server uses the trusted proxy's right-most forwarded address for rate
+limits and preserves sessions on cross-site landing visits. The final source also
+includes the public Settings layout, battery history, app status, rules-helper,
+simulator-control and link-checker fixes. Handler-level checks, native browser
+checks and deployment observations remain separate evidence.
 
 ## Next
 
-Linux CI portability fixes are under local verification; hosted Python 3.11/3.13 results are still pending. See [.pr/ci-linux.md](.pr/ci-linux.md) for the failure analysis and verification limits.
+Linux CI portability fixes were verified on a Debian VM. Hosted CI results for
+the Python 3.11/3.13 matrix in `.github/workflows/tests.yml` are still pending;
+the Debian verification does not establish a hosted CI pass.
 
 1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
    battery life against the stock system with the same daily routine.

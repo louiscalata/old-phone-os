@@ -14,8 +14,12 @@ reasoning effort (200 tokens for the small local Llama route). The 1,600-token t
 not a separate reasoning cap or a reserved answer allowance. These are token limits,
 not latency guarantees. Why, Plan and Ask retain a 115-second shared route deadline; earlier
 routes share that time and the last route gets what remains. Empty or token-truncated replies
-are rejected. The revised Why? prompt has fake-route coverage; its hardware latency still needs
-a new capture. The helper contribution line uses actual paused-task attribution and the
+are rejected. In the final November 3 desktop capture, all four Ask and all four Why? requests
+returned Muse Glimmer with no fallback, within 115 s. Ask took 51.699/53.077 s in dark appearance
+and 42.914/44.782 s in light; Why? took 66.549/60.696 s in dark and 63.853/78.651 s in light.
+These are UI response times on the owner's computer, not pure inference times or phone-speed
+measurements; see the [README capture table](../README.md#muse-glimmer-answering).
+The helper contribution line uses actual paused-task attribution and the
 background advisor's observed status, not the configured answer route's name.
 
 Muse Glimmer and Muse Spark contributed code alongside the recorded non-Meta repairs. The use of a development model is distinct from whether a runtime model has been tested on particular hardware.
@@ -68,7 +72,7 @@ Muse Code (Meta) is paid, needs an account, and runs on Mac and Windows. It is o
 
 `guard/check.py` is an optional static repository check. Its fixed non-Meta-name pattern scans `src/`, `deploy/`, `install.sh`, `install.ps1` and `requirements.txt`; its URL-host check scans `src/` and `deploy/`. A violation makes the check fail when it is run. It reads source text and does not monitor or restrict runtime network traffic.
 
-Configured starting destinations are loopback model servers, a user-supplied private-IP LAN endpoint, en.wikipedia.org for an explicitly requested search, dev.meta.ai for Muse Code installation, and Baseten for explicit paid opt-in. This is not an enforced network allowlist: Wikipedia search and model requests ignore HTTP_PROXY and system proxy settings and do not follow redirects, and the Muse Code downloader permits HTTPS redirects.
+Configured starting destinations are loopback model servers, a user-supplied private-IP LAN endpoint, en.wikipedia.org for an explicitly requested search, dev.meta.ai for Muse Code installation, and Baseten for explicit paid opt-in. This is not an enforced network allowlist: Wikipedia search and model requests ignore HTTP_PROXY and system proxy settings and do not follow redirects, and the OPOS Muse Code installer downloader also refuses redirects. This describes the initial installer download; downloads performed by the vendor script are a separate scope.
 
 ## How OPOS was built
 

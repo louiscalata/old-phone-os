@@ -4,7 +4,7 @@
 
 ## Reboot warning
 
-the phone will reboot several times during setup
+> WARNING: the phone will reboot several times during setup. Do not unplug it or press buttons until it says Done.
 
 `confirm-reboot.sh` prints the warning above. The scripts in this repository do not implement or verify a multi-reboot setup sequence: `easy-install.sh` prints a plan by default and invokes `pmbootstrap flasher flash_rootfs` only with `--flash`. Use [pmos.md](pmos.md) for the current QEMU development workflow.
 

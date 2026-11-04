@@ -175,7 +175,7 @@ class TestReleaseDocs(unittest.TestCase):
         self.assertEqual(project["description"], DESCRIPTION)
         intro = flat(read("README.md"))
         self.assertIn("It pauses less essential work", intro)
-        self.assertIn("so the battery can last until a time the owner chooses", intro)
+        self.assertIn("toward a time the owner chooses", intro)
 
 
 if __name__ == "__main__":

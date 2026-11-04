@@ -9,7 +9,10 @@ class TestEasyDocs(unittest.TestCase):
         n = [x for x in self.text.splitlines() if x.strip()]
         self.assertEqual(n[:2], ["<!-- SPDX-License-Identifier: GPL-3.0-or-later -->", "# Easy setup on postmarketOS"])
     def test_reboot_warning(self):
-        self.assertIn("## Reboot warning\n\nthe phone will reboot several times during setup\n\n", self.text)
+        script = (Path(__file__).resolve().parents[1] / "packaging/pmos/easy/confirm-reboot.sh").read_text()
+        warning = "WARNING: the phone will reboot several times during setup. Do not unplug it or press buttons until it says Done."
+        self.assertIn(warning, script)  # the doc quotes what the script prints
+        self.assertIn("## Reboot warning\n\n> " + warning + "\n\n", self.text)
         self.assertIn("`confirm-reboot.sh` prints the warning above.", self.text)
         self.assertIn("do not implement or verify a multi-reboot setup sequence", self.text)
         self.assertIn("Do not unplug the phone during setup.", self.text)

@@ -3,12 +3,42 @@ import importlib.util
 import unittest
 import subprocess
 import os
+import pathlib
+import sys
+import tempfile
 
 spec = importlib.util.spec_from_file_location('check', 'guard/check.py')
 check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check)
 
 class TestGuardMeta(unittest.TestCase):
+    def test_source_archive_outside_git_reports_not_run(self):
+        guard_path = pathlib.Path(__file__).resolve().parents[1] / 'guard' / 'check.py'
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(pathlib.Path(tmp).resolve().parent))
+            result = subprocess.run([sys.executable, '-B', str(guard_path)], cwd=tmp,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, 'guard: NOT RUN (run from the root of an OPOS Git checkout; source archives lack Git metadata)\n')
+            self.assertEqual(result.stderr, '')
+
+    def test_source_archive_does_not_inspect_parent_checkout(self):
+        guard_path = pathlib.Path(__file__).resolve().parents[1] / 'guard' / 'check.py'
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.check_call(['git', 'init'], cwd=tmp,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Even invalid parent configuration must not be read before the root check.
+            pathlib.Path(tmp, '.git', 'guard.json').write_text('not JSON')
+            archive = pathlib.Path(tmp, 'downloaded-archive')
+            archive.mkdir()
+            for args in ([], ['--staged']):
+                with self.subTest(args=args):
+                    result = subprocess.run([sys.executable, '-B', str(guard_path), *args],
+                                            cwd=archive, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, 'guard: NOT RUN (run from the root of an OPOS Git checkout; source archives lack Git metadata)\n')
+                    self.assertEqual(result.stderr, '')
+
     def test_deploy_ai_tools(self):
         text = '"Claude Code"\n"https://claude.ai/install.sh"'
         errs = check.meta_only_errors('deploy/ai-tools.json', text)

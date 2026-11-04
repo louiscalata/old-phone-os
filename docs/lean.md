@@ -12,7 +12,7 @@ update to this document and `tests/test_lean_image.py`.
 | Essential | Why it is there |
 | --- | --- |
 | python3 | Runs the OPOS server and setup tools. |
-| modemmanager | Provides modem control for phone connectivity. |
+| modemmanager | Packaged for later modem access; the current kiosk simulates calls and messages. |
 | polkit | Provides permission rules for modem access. |
 | dbus | Provides communication with system services such as ModemManager. |
 | postmarketos-base-ui-cage | Provides the base Cage kiosk UI environment. |
@@ -36,8 +36,10 @@ The main package also carries a fixed state-validation helper for
 installed-mode use; this is additional file payload, not a running daemon.
 This optional init route does not broaden the direct dependency inventory above. Validation covers
 source and staging checks; actual APK installation and systemd startup remain unverified.
-Actual package/image size and performance overhead are unmeasured. No boot,
-RAM, package-count or power measurements are claimed.
+Actual package/image size and performance overhead are unmeasured. No formal
+`opos-bench.sh` measurements or measured performance improvements are recorded here.
+The separate November 3 QEMU boot observation is documented in [pmos.md](pmos.md);
+it is not a formal boot benchmark.
 
 ## What is not installed
 
@@ -48,7 +50,8 @@ no telemetry, no cloud account, and no model weights.
 
 Numbers come only from `tools/opos-bench.sh` runs. Results are labelled
 QEMU or device with date and image, and are never estimated. Record the image
-identifier alongside each result's target. No measurements are recorded yet.
+identifier alongside each result's target. No formal `opos-bench.sh` measurements
+are recorded in this table yet; the separate QEMU observation above does not fill it.
 
 | date | target (QEMU/device) | boot_to_login_s | idle_ram_mb | idle_cpu_pct | pkg_count | enabled_services |
 | --- | --- | --- | --- | --- | --- | --- |

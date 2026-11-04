@@ -24,7 +24,7 @@ Third-party notices
 - Python 3 standard library (PSF License); no other Python packages are used
 - Chromium (BSD-3-Clause and others), shows the phone screen
 - cage (MIT), the kiosk session
-- ModemManager (GPL-2.0-or-later), calls and messages
+- ModemManager (GPL-2.0-or-later), packaged for later modem use
 - NetworkManager (GPL-2.0-or-later)
 - polkit (LGPL-2.0-or-later) and D-Bus (AFL-2.1 or GPL-2.0-or-later)
 - OpenRC (BSD-2-Clause) and psmisc (GPL-2.0-or-later)
@@ -48,7 +48,7 @@ Restore the original system
 
 Privacy
 - Old Phone OS Interface sends no telemetry or analytics.
-- The phone screen and setup pages are served only on the phone's own loopback address, not to the network.
+- The phone and setup pages are loopback-only; the public demo server listens on the network.
 - By default the Helper uses its built-in rules and programs on this phone only.
 - Old Phone OS Interface's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.
 - postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS Interface's control.

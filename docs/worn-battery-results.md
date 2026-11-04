@@ -2,7 +2,7 @@
 
 *Old Phone OS Interface is GPL-3.0.*
 
-What was measured: 40 simulated phones with a worn battery (health 0.3-0.4, temperatures 0-45 C, start 60-100%), run by `PYTHONPATH=src python3 -m opos.evaleol`. "before" = the phone runs its normal way; "after" = OPOS keeps a battery reserve for calls, shapes call and sync bursts to what the worn cell can deliver, and has a planned-shutdown rule (should_shutdown). That rule never triggered in these runs: for health 0.3-0.4 its shutdown_floor is 0% at every temperature the runs reached, so every "after" phone ran its simulated battery down to 0% without a brownout.
+What was measured: 40 simulated phones with a worn battery (health 0.3-0.4, temperatures 0-45 C, start 60-100%), run by `PYTHONPATH=src python3 -m opos.evaleol`. The paired arms run each policy before/after the additional worn-cell protection in `run_eol`: "before" uses `aware=False`; "after" uses `aware=True`, adding reserve handling for tasks, shaping call and sync bursts to what the worn cell can deliver, and checking a planned-shutdown rule (should_shutdown). That rule never triggered in these runs: for health 0.3-0.4 its shutdown_floor is 0% at every temperature the runs reached, so every "after" phone ran its simulated battery down to 0% without a brownout. The router already includes reserve task pauses through `Runtime.step()` in both runs; its "before" arm is not wholly without reserve protection.
 
 Event definition: brownout = simulated cell voltage < 3.0 V (CUTOFF_V = 3.0) under load, causing immediate simulated power loss. Planned shutdown = termination of the simulation when should_shutdown reaches the shutdown_floor threshold; call_reserve instead determines reserve protection for tasks.
 
@@ -25,6 +25,6 @@ router  after      6.54  6.69     6.69  6.31    6.69          0      0.0
 
 How to read it: the "brownouts%" column is the share of phones that cut out suddenly mid-use; "died_at%" is the average charge level at that point. Before, all 40 simulated worn phones (100%) cut out suddenly, at an average of about 19-25% charge depending on the policy (individual phones anywhere from 0% to 34%); after, 0%. Zero brownouts% in this simulation does not by itself demonstrate controlled shutdown on real hardware.
 
-Average hours of working calls over the 40 simulated worn phones, without and then with OPOS's worn-battery reserve and burst shaping: plain phone 0.76 and 1.91, static low-power 1.62 and 2.74, rules 3.67 and 4.73, rule router 5.52 and 6.54. The router with reserve and burst shaping gives 6.54 hours of calls against 2.74 for static low-power with reserve and burst shaping.
+Average hours of working calls over the 40 simulated worn phones, without and then with OPOS's worn-battery reserve and burst shaping as added by the evaluation's `aware` flag (the router's runs include the task pauses both times): plain phone 0.76 and 1.91, static low-power 1.62 and 2.74, rules 3.67 and 4.73, rule router 5.52 and 6.54. The router with reserve and burst shaping gives 6.54 hours of calls against 2.74 for static low-power with reserve and burst shaping.
 
 Limits: this is a simulation of a worn battery, not a measurement on a real worn phone; a held-out seed is checked by tests/test_evaleol.py; the numbers come from one battery model (src/opos/eol.py).

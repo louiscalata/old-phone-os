@@ -27,7 +27,7 @@ Every other pause is soft:
 
 - goal-saving pauses, which help the battery last until the owner's daily goal;
 - the router's battery-affordability pauses, for tasks the remaining charge cannot fund;
-- the battery rules' SAVER pauses of optional tasks, when 15 to 50 percent of the charge is usable;
+- the battery rules' SAVER pauses of optional tasks, when usable charge is at least 15% and below 50%;
 - extra pauses added by Muse Glimmer.
 
 The owner's Undo, or using the app in the foreground, may override a soft pause.

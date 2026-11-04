@@ -182,8 +182,6 @@ def read(path):
     except OSError:
         return ''
 
-PRIVATE.extend(extra_patterns(json.loads(read(os.path.join(git('rev-parse', '--git-common-dir').strip() or '.git', 'guard.json')) or '{}')))
-
 BOILERPLATE = ("# SPDX-License-Identifier", "import ", "from ", "if __name__", "with self.assert", "self.assert", "unittest.main")
 
 def norm_lines(text):
@@ -234,10 +232,15 @@ def blob_errors(paths, staged=False, blobs=None):
 
 
 def main():
+    git_root = git('rev-parse', '--show-toplevel').strip()
+    if not git_root or os.path.realpath(git_root) != os.path.realpath(os.getcwd()):
+        print('guard: NOT RUN (run from the root of an OPOS Git checkout; source archives lack Git metadata)')
+        return 1
     staged = '--staged' in sys.argv
     cfg_path = os.path.join(git("rev-parse", "--git-common-dir").strip() or ".git", "guard.json")
     has_cfg = os.path.isfile(cfg_path)
     cfg = json.loads(read(cfg_path) or '{}')
+    private_patterns = PRIVATE + extra_patterns(cfg)
     allowed = allowed_text(cfg)
     errs, fl = [], files(staged)
     blobs = {}
@@ -301,7 +304,7 @@ def main():
         if f.endswith(('.py', '.sh', '.mjs', '.ps1')) or f.startswith('.githooks/'):
             if not any(l.startswith('# SPDX-License-Identifier: GPL-3.0-or-later') for l in t.splitlines()[:3]):
                 errs.append(f'{f}: missing SPDX header')
-        for p in PRIVATE:
+        for p in private_patterns:
             m = p.search(strip_allowed(t, allowed))
             if m:
                 errs.append(f'{f}: private/secret match {m.group(0)[:12]!r}...')

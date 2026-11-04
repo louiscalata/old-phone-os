@@ -994,7 +994,12 @@ def main(argv=None):
     goal = cfg["goal"]
     phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
     _route_with_glimmer(phone, os.environ)
-    make_server(args.port, phone, token=token).serve_forever()
+    server = make_server(args.port, phone, token=token)
+    print(f"OPOS desktop demo: http://127.0.0.1:{args.port}/?demo=1 (Ctrl-C to stop)", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 

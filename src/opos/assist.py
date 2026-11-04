@@ -196,7 +196,6 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
             prompt += "If asked about a task listed in paused_by_glimmer, say that Muse Glimmer chose to pause it.\n"
     prompt += "\nQuestion: " + q
     deadline = time.monotonic() + muse.HELPER_DEADLINE_S
-    last_failed = None
     for route, timeout in muse._attempts(ask_routes(q, env, free), env, deadline):
         try:
             text = muse.ask(route, prompt, env=env, opener=opener, timeout=timeout, max_tokens=200 if route.key == "local" else 400)
@@ -204,11 +203,10 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
             text = _with_idk_hint(_strip_stray_citations(str(text), sources), web)
             return {"ok": True, "text": text, "engine": used.name, "where": used.where, "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
         except muse.MuseError:
-            last_failed = route
             continue
     if sources:
-        return {"ok": True, "text": "No model is running, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
-    detail = f"{last_failed.name} ({last_failed.where}) did not answer. " if last_failed is not None else "The helper cannot reach a model server on this device. "
+        return {"ok": True, "text": "No model answered, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
+    detail = "No model answered. "
     if free is not None and free < MIN_MB_1B:
         return {"ok": False, "text": detail + f"Not enough free memory for the on-phone model (about {free} MB free, needs 1536).", "engine": "none", "where": "", "sources": []}
     return {"ok": False, "text": detail + "Calls, messages and battery saving still work.", "engine": "none", "where": "", "sources": []}

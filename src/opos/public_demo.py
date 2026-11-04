@@ -450,7 +450,8 @@ def main():
                              trust_proxy=os.environ.get("OPOS_TRUST_PROXY") == "1")
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    print(f"OPOS public simulation listening on 0.0.0.0:{port}", flush=True)
+    first_host = os.environ.get("OPOS_PUBLIC_HOSTS", "").split(",")[0].strip()
+    print(f"OPOS public simulation listening on 0.0.0.0:{port}; open {first_host}/ in a browser (Ctrl-C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

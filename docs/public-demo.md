@@ -10,7 +10,8 @@ HTTP server's reverse-DNS startup lookup.
 
 Hackathon prototype. This public demo simulates the battery, calls and messages;
 it is not a phone operating system and has not run on a physical phone.
-Try the live demo at https://opos-demo-production.up.railway.app.
+The public demo is live at https://opos-demo-production.up.railway.app.
+Muse Glimmer is off there; Why, Plan and Ask use deterministic battery rules.
 
 ## Run locally
 
@@ -21,10 +22,13 @@ export PYTHONPATH=src
 OPOS_PUBLIC_HOSTS=localhost:8080 PORT=8080 python3 -m opos.public_demo
 ```
 
-Open `http://localhost:8080/?demo=1`. Unlock, change the battery slider, then
-pull down the top battery bar. At the initial 60%, Undo on maps restores a soft
-pause; low-battery and heat floors still protect calls and messages. Why, Plan
-and Ask answer from the current rules and explicitly identify the public mode.
+Open `http://localhost:8080/?demo=1` (it starts unlocked). Use exactly the host in `OPOS_PUBLIC_HOSTS`:
+`http://127.0.0.1:8080/` returns 421 because only that host is accepted. If port 8080 is taken, change both
+numbers, for example `OPOS_PUBLIC_HOSTS=localhost:8787 PORT=8787`. The server prints the URL to open. Change the battery
+slider, then open the top battery bar. At the initial 60%, Undo on maps turns
+the soft-paused task back on; low-battery and heat floors still protect calls
+and messages. Why, Plan and Ask answer from the current rules and explicitly
+identify the public mode.
 Settings such as theme are browser preferences, never host preference files.
 
 ## Railway configuration
@@ -40,10 +44,9 @@ Railway's [current builder reference](https://docs.railway.com/config-as-code/re
 lists Railpack and Dockerfile for new services. It also marks railway.json as a
 legacy configuration mechanism: if the service uses the newer infrastructure
 flow, set the same start command, one replica and `/healthz` health-check path
-in that service's configuration. These files have not been built or deployed
-on Railway during this task.
+in that service's configuration.
 
-Set these service variables before a later, separately authorized deployment:
+Configure the service variables as follows:
 
 ```text
 OPOS_PUBLIC_HOSTS=opos-demo-production.up.railway.app,healthcheck.railway.app
@@ -123,8 +126,9 @@ against distributed traffic. Platform-level traffic controls remain useful.
 
 ## What the public handler can do
 
-Only `GET /`, `GET /?demo=1`, `GET /api/state`, `GET /healthz` and `POST /api`
-are routed. The API action allowlist covers battery/temperature, simulated
+Only `GET /`, `GET /?demo=1`, `GET /api/state`, `GET /healthz`, `GET /favicon.ico`
+and `POST /api` are routed; HEAD follows the GET routes without a response body.
+The API action allowlist covers battery/temperature, simulated
 calls/messages, open thread, helper visibility, simulation ticks, charging,
 goal, Undo, foreground task and the three deterministic helper answers.
 Every other route, method or action returns 404 after the Host/Origin and
@@ -152,10 +156,11 @@ do not expand its model/network host allowlist.
 ## Verification
 
 ```sh
-mkdir -p /private/tmp/opos-demo-tests
-TMPDIR=/private/tmp/opos-demo-tests PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -B -m unittest tests.test_public_demo tests.test_web tests.test_web_security tests.test_demo_day tests.test_lock_story tests.test_panel_decision
-TMPDIR=/private/tmp/opos-demo-tests PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -B -m unittest discover -s tests -t .
-python3 guard/check.py
+TMPDIR=$(mktemp -d)
+export TMPDIR
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -B -m unittest tests.test_public_demo tests.test_web tests.test_web_security tests.test_demo_day tests.test_lock_story tests.test_panel_decision
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -B -m unittest discover -s tests -t .
+python3 -B guard/check.py
 ```
 
 `PublicBoundary` uses real TCP sockets. `PublicProtocolWithoutSockets` repeats
@@ -165,7 +170,7 @@ connection admission or browser behavior. The outbound-denial test patches
 urllib/http.client entry points and model/host functions to fail if called,
 then exercises every allowed action with hostile model configuration present.
 
-### Working-copy verification, 3 November 2026
+### Earlier working-copy verification, 3 November 2026
 
 The earlier demo implementation's focused run passed **60 tests**, covering the public handler through
 an in-memory transport, the client script, source-archive consistency, original
@@ -189,10 +194,12 @@ The source/deploy model-and-host scan passed (104 files, zero errors).
 `python3 guard/check.py` reported one problem: the existing base commit
 `4aa9b7c3` has no Provenance trailer logged with a Meta model in
 `docs/provenance.md`. No provenance was invented and no history was changed.
-Native socket serving, browser rendering, the Python 3.12 container build and
-Railway deployment still need verification in an environment that supports them.
+These restricted-workspace runs did not verify native socket serving, browser
+rendering or the Python 3.12 container build. The live Railway demo is a separate
+deployment result; it does not turn these earlier test failures into passes or
+establish a fresh container build from the final tree.
 
-### Security follow-up, 3 November 2026
+### Earlier security follow-up, 3 November 2026
 
 Before the fixes, the two new regression methods produced three assertion
 failures through the in-memory HTTP transport: a forged left-most forwarding
@@ -204,7 +211,7 @@ it does not claim an actual browser run.
 The requested run of `tests.test_public_demo`, `tests.test_web` and
 `tests.test_web_security` ran **103 tests: 40 passed, 63 errored**. Every error
 was `PermissionError: [Errno 1] Operation not permitted` at `socket.bind`.
-These native socket tests remain blocked, not passed or silently skipped.
+These native socket tests were blocked in that run, not passed or silently skipped.
 The separate `PublicProtocolWithoutSockets`, `PublicBindWithoutDNS` and
 `PublicClientScript` run passed **24 tests**.
 
@@ -213,4 +220,4 @@ has no Provenance trailer logged with a Meta model in `docs/provenance.md`.
 The new `publicdemo-20261103` row records the demo's declared Codex authorship
 and disabled public model routes; it does not repair that historical trailer.
 The guard also reported that the overlap check was skipped because `guard.json`
-is absent. See [.pr/public-demo.md](../.pr/public-demo.md) for commands and logs.
+is absent.

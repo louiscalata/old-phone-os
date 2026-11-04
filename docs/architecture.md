@@ -74,8 +74,10 @@ Why and Plan use `muse.explain` / `muse.plan`; Ask uses `assist.answer`. All of 
 from the helper facts (battery %, health, usable %, temperature, charging, what is paused and
 `why_paused`) and call `muse.ask`, which POSTs to `/chat/completions`. The default Glimmer endpoint is
 `http://127.0.0.1:1234/v1` with model `muse-glimmer-30b`; `OPOS_GLIMMER_URL` selects another loopback
-port. Ask rests when the mode is CRITICAL and less than 15% of the charge is usable; the page disables
-Send under the same rule. Model explanations and the Plan order never execute actions.
+port. Ask rests when the mode is CRITICAL, the phone is not charging, and less than 15% of the charge
+is usable. The Helper app disables Send; the simulator's Ask button instead returns the resting
+explanation without calling a model. The public demo answers from rules at every charge level.
+Model explanations and the Plan order never execute actions.
 
 `web.Phone` uses `DrainSim` and `ScreenModem`; the hardware reader and the ModemManager adapter are
 not wired into this web runtime. The postmarketOS kiosk's `opos-server` service runs this same server, so the

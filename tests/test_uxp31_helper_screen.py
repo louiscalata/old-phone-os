@@ -135,8 +135,9 @@ const S={
 class UXP31Static(unittest.TestCase):
     def test_builtin_text_and_quiet_words(self):
         out = page("t" * 32, "n")
-        # The standard answer phrase is the one the page already shows for Why?; the screen reuses it.
-        self.assertIn(STD, (STATIC / "js-5.js").read_text(encoding="utf-8"))
+        # Why? identifies rules text; the separate chat keeps its existing no-answer label.
+        self.assertIn("Rules text. The helper did not answer this request.",
+                      (STATIC / "js-5.js").read_text(encoding="utf-8"))
         self.assertIn(STD, out)
         js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
         mod = js[js.index("UXP31"):]

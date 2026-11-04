@@ -19,7 +19,9 @@ class DemoScriptControlsTest(unittest.TestCase):
         start = text.find("## Quickstart")
         self.assertNotEqual(start, -1, "README Quickstart missing")
         rest = text[start:]
-        cut = rest.find("\n## ", 1)
+        # The short launch section is followed immediately by the battery tour.
+        self.assertIn("## Try the battery features", rest)
+        cut = rest.find("\n## The scenario and its limits", 1)
         section = rest[:cut] if cut != -1 else rest
         for label in LABELS:
             self.assertIn(label, section, label)

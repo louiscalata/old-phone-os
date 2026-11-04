@@ -26,9 +26,16 @@
       window.scrollTo({top: 0, behavior: 'instant'});
     }
     const credit = document.getElementById('glimmer-credit');
-    function honestCredit() { if (credit.textContent !== notice) credit.textContent = notice; }
+    const where = document.getElementById('helper-where');
+    const helperNotice = 'Demo phone. These answers come from the battery rules. Muse Glimmer runs only on your own computer.';
+    function honestCredit() {
+      if (credit.textContent !== notice) credit.textContent = notice;
+      if (where && where.textContent !== helperNotice) where.textContent = helperNotice;
+    }
     honestCredit();
-    new MutationObserver(honestCredit).observe(credit, {childList: true});
+    const observer = new MutationObserver(honestCredit);
+    observer.observe(credit, {childList: true});
+    if (where) observer.observe(where, {childList: true});
     const web = document.getElementById('webq');
     web.checked = false;
     web.disabled = true;
