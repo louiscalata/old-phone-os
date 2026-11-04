@@ -194,10 +194,10 @@ process.stdout.write(JSON.stringify({html,stable,replaced,calls,remaining:list.c
 CDP = r"""
 const fs=require('fs'),path=require('path'),{spawn}=require('child_process');
 const [chrome,url,stateFile,profile]=process.argv.slice(2),S=JSON.parse(fs.readFileSync(stateFile,'utf8'));
-const child=spawn(chrome,['--headless','--no-sandbox','--disable-gpu','--single-process','--disable-background-networking','--remote-debugging-pipe','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
+const child=spawn(chrome,['--headless','--no-sandbox','--disable-gpu',...(process.platform==='darwin'?['--single-process']:[]),'--disable-background-networking','--remote-debugging-pipe','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
 let seq=0,buf=Buffer.alloc(0),session,errors='';const pending=new Map();
 child.stderr.on('data',d=>errors+=d);
-child.on('exit',code=>{for(const p of pending.values())p.reject(Error('browser exited '+code+': '+errors.slice(-800)));pending.clear()});
+child.on('exit',(code,signal)=>{for(const p of pending.values())p.reject(Error('browser exited '+(signal||code)+': '+errors.slice(-800)));pending.clear()});
 child.stdio[4].on('data',d=>{buf=Buffer.concat([buf,d]);for(let i;(i=buf.indexOf(0))>=0;buf=buf.subarray(i+1)){const m=JSON.parse(buf.subarray(0,i)),p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result)}}});
 function send(method,params={},sid=session){return new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});child.stdio[3].write(JSON.stringify({id,method,params,...(sid?{sessionId:sid}:{})})+'\0')})}
 async function ev(expression){const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value}
