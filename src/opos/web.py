@@ -194,6 +194,8 @@ class Phone:
         self.running = False
         self.open_number = None
         self.status = "ready"
+        self.status_app = ""
+        self.dash.record(self.sim.level, self.clock_s)
         self._in_call = False
         self._tick_obj = None
         self._undo_mode = None  # the mode an Undo was made in; a different mode ends it
@@ -265,6 +267,7 @@ class Phone:
         d = tick.decision
         reached = self.dash.goal_reached(self.clock_s)
         out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
+        out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
         out["simulation"] = {"modem": type(getattr(self.essentials, "modem", None)) is ScreenModem}
         out["prefs"] = self._preferences()
@@ -373,9 +376,11 @@ class Phone:
         except ValueError:
             self.status = "error: battery not valid"
             return
+        self.dash.record(self.sim.level, self.clock_s)
+        changed = self.sim.level != v
         self.sim.level = v
         self.status = "ready"
-        self.dash.reset_history(self.sim.level)
+        self.dash.record(self.sim.level, self.clock_s, changed=changed)
         self._end_empty_call()
     def set_temp(self, t):
         try:
@@ -386,6 +391,7 @@ class Phone:
         self.sim.temp_c = v
         self.status = "ready"
     def call(self, number):
+        self.status_app = "phone"
         if round(self.sim.level) <= 0:
             self.status = "error: battery empty, charge the phone to call"
             return
@@ -401,6 +407,7 @@ class Phone:
         except RuntimeError:
             self.status = "error: already in a call"
     def hang_up(self):
+        self.status_app = "phone"
         try:
             self.essentials.end_call()
             self._in_call = False
@@ -410,6 +417,7 @@ class Phone:
         except ValueError:
             self.status = "error: number not valid"
     def send(self, number, text):
+        self.status_app = "messages"
         if round(self.sim.level) <= 0:
             self.status = "error: battery empty, charge the phone to send"
             return
@@ -426,6 +434,7 @@ class Phone:
         except RuntimeError:
             self.status = "error: message empty or too long"
     def receive(self, number, text):
+        self.status_app = "messages"
         try:
             number = normalize_sender(number)
         except ValueError:
@@ -439,6 +448,7 @@ class Phone:
         except RuntimeError:
             self.status = "error: message empty or too long"
     def open(self, number):
+        self.status_app = "messages"
         self.open_number = str(number)
         self.status = "thread open"
     def set_sim(self, running, speed=None):
@@ -498,6 +508,7 @@ class Phone:
                 self.essentials.end_call()
             except RuntimeError:
                 pass
+            self.status_app = "phone"
             self.status = "call ended: battery empty"
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
 def _validate_token(token):
@@ -521,8 +532,10 @@ def _about_notices():
             'overflow-wrap:anywhere;font:inherit">'
             + html_escape(notices.as_text()) + '</pre></details></div>')
 
+FAVICON = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000100000001008060000001ff3ff610000002a49444154789c63f8fae1c97f4a3003ba808888105e4c9401b86c1b3560d400fa1a30f049992217908a01dc7a527c28c3ed9a0000000049454e44ae426082")
+
 def page(token="", nonce="", *, demo=False):
-    html = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Old Phone OS Interface</title><style>
+    html = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Old Phone OS Interface</title><link rel="icon" href="/favicon.ico" type="image/png"><style>
 @@OPOS:css-1.css@@
 @@OPOS:css-2.css@@
 @@OPOS:css-3.css@@
@@ -560,7 +573,7 @@ button{min-height:44px;margin-right:8px}
 @@OPOS:body-2.html@@
 @@OPOS:body-3.html@@
 @@OPOS:body-4.html@@
-</div><div id="demo" hidden><p id="status">ready</p><div class="box"><label>Battery <input id="battery" type="range" min="0" max="100" step="0.5" value="60"><output id="battery-val" for="battery">60%</output></label><br><label>Temp (°C) <input id="temp" type="range" min="15" max="60" step="0.5" value="30"></label><label style="display:flex;align-items:center;gap:8px"><input id="charge" type="checkbox"> Charging</label></div><div id="demo-controls"><button id="simbtn">Start simulation</button><button id="visbtn">Show helper</button></div></div><script>
+</div><div id="demo" hidden><p id="status">ready</p><div class="box"><label>Battery <input id="battery" type="range" min="0" max="100" step="0.5" value="60"><output id="battery-val" for="battery">60%</output></label><br><label>Temp (°C) <input id="temp" type="range" min="15" max="60" step="0.5" value="30"><output id="temp-val" for="temp">30°C</output></label><label style="display:flex;align-items:center;gap:8px"><input id="charge" type="checkbox"> Charging</label></div><div id="demo-controls"><button id="simbtn">Start simulation</button><button id="visbtn">Show helper</button></div></div><script>
 window.oposHooks=window.oposHooks||[];
 @@OPOS:js-1.js@@
 (function(){try{var a=G('about'),n=G('about-notices');if(a&&n)a.insertAdjacentElement('afterend',n)}catch(e){}})();
@@ -575,7 +588,7 @@ function helperReset(){if(helperCtl){helperCtl.abort();helperCtl=null}if(helperT
 @@OPOS:js-6.js@@
    let bv=document.getElementById('battery-val');if(!bv){bv=document.createElement('span');bv.id='battery-val';G('battery').insertAdjacentElement('afterend',bv)}
    if(document.activeElement!==document.getElementById('battery')){document.getElementById('battery').value=s.battery.percent;document.getElementById('battery-val').textContent=Math.round(s.battery.percent)+'%'}
-   if(s.temp_c!=null&&document.activeElement!==G('temp'))G('temp').value=s.temp_c;G('charge').checked=!!s.charging;
+   if(s.temp_c!=null&&document.activeElement!==G('temp')){G('temp').value=s.temp_c;G('temp-val').textContent=s.temp_c+'°C'}G('charge').checked=!!s.charging;
 @@OPOS:js-7.js@@
 const renderBase=render;render=async function(s){const r=await renderBase(s);if(s&&!s.error){try{(window.oposHooks||[]).forEach(function(f){try{f(s)}catch(e){}})}catch(e){}}return r};
 @@OPOS:js-8.js@@
@@ -660,7 +673,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
     def _get(self):
         """Serve page or state."""
         self._disarm()
@@ -668,16 +682,17 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "forbidden", "host")
             return
         path = urllib.parse.urlsplit(self.path).path
-        if path == "/":
+        if path in ("/", "/favicon.ico"):
             nonce = secrets.token_urlsafe(16)
-            body = page(self.token, nonce).encode()
+            body = FAVICON if path == "/favicon.ico" else page(self.token, nonce).encode()
             self.send_response(200)
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", "image/png" if path == "/favicon.ico" else "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != "HEAD":
+                self.wfile.write(body)
         elif path == "/api/state":
             if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
                 self._deny(403, "forbidden", "token")
@@ -699,6 +714,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "internal error"}, 500)
             except OSError:
                 pass
+    do_HEAD = do_GET
     token = ""
     port = 0
     limiter = None
@@ -726,12 +742,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         logging.getLogger("opos.security").warning("rejected: %s", "method")
         self.send_response(405)
-        self.send_header("Allow", "GET, POST")
+        self.send_header("Allow", "GET, HEAD, POST")
         self.send_header("Content-Length", "0")
         for k, v in secure.security_headers().items():
             self.send_header(k, v)
         self.end_headers()
-    do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _no
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _no
     def send_error(self, code, message=None, explain=None):
         """Send JSON error."""
         try:

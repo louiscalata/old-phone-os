@@ -83,9 +83,13 @@ CHECKS.polish = async function() {
       if(document.querySelector('#helper details').open!==open)out.push('Helper details state lost: '+open);
     }
     s.battery.why='Saving power for calls and messages';await render(s);
-    opos.open();document.getElementById('shade-technical').open=false;
+    opos.open();var technical=document.getElementById('shade-technical');technical.open=false;
     var why=document.getElementById('why');
-    if(why.closest('details')||!__u.vis(why)||why.textContent!==s.battery.why)out.push('Battery explanation hidden');
+    // Closed native details can retain layout boxes; check actual visibility too.
+    if(why.closest('details')!==technical||why.checkVisibility()||why.textContent!==s.battery.why)out.push('Battery explanation leaks outside closed details');
+    technical.open=true;
+    if(!why.checkVisibility()||!__u.vis(why)||why.textContent!==s.battery.why)out.push('Battery explanation missing from open details');
+    technical.open=false;
     return out;
   })()`));
   await sleep(350);

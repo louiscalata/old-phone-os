@@ -268,7 +268,7 @@ class PublicBoundary(unittest.TestCase):
     def test_every_non_phone_route_and_action_is_404(self):
         routes = ('/setup', '/setup/', '/api/setup', '/api/prefs', '/prefs', '/restart_helper',
                   '/install', '/installer', '/ai-tools', '/api/models', '/api/ask', '/api/plan',
-                  '/favicon.ico', '/src/opos/web.py', '/.env', '/../../README.md', '/%2e%2e/',
+                  '/src/opos/web.py', '/.env', '/../../README.md', '/%2e%2e/',
                   '//evil.example', '/api/state?x=1', '/?setup=1')
         with running() as server:
             a = Visitor(server)
@@ -396,7 +396,8 @@ class PublicBoundary(unittest.TestCase):
                     code, reply = a.post(action, **args)
                     self.assertEqual(code, 200, (action, reply))
                     if action in ('explain', 'plan', 'ask'):
-                        self.assertIn(public.NOTICE, reply.get('text', reply.get('credit', '')))
+                        self.assertNotIn(public.NOTICE, reply.get('text', reply.get('credit', '')))
+                        self.assertEqual(reply['engine'], 'rules')
                 self.assertEqual(a.post('restart_helper')[0], 404)
                 self.assertEqual(a.state()['lean'], {'opos_mb': None, 'free_mb': None})
             for patched in mocks:

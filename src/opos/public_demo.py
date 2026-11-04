@@ -56,6 +56,14 @@ class DemoPhone(web.Phone):
     def _preferences(self):
         return web.prefs.defaults()  # Pure constants; never load or save a file.
 
+    def state(self):
+        state = super().state()
+        battery = state["battery"]
+        if (battery["goal_met"] and not state["charging"] and
+                not battery["goal_note"] and battery["calls_until"]):
+            battery["goal_note"] = "Calls and messages until ~" + battery["calls_until"]
+        return state
+
     def _environment(self):
         return None, None, "Battery rules (public demo)"
 
@@ -68,15 +76,51 @@ class DemoPhone(web.Phone):
             speed = web._num(speed, 0.001, MAX_SPEED)
         super().set_sim(running, speed)
 
-    def reply(self, action):
+    def reply(self, action, question=""):
         state = self.state()
         if not self.visible:
             return {"error": "helper hidden"}
         if action == "plan":
             return {"order": list(state["battery"]["steps"]), "engine": "rules",
-                    "where": "battery rules", "credit": NOTICE}
-        return {"ok": True, "text": state["helper"]["why_paused"] + " " + NOTICE,
+                    "where": "battery rules", "credit": "Based on current battery rules."}
+        text = state["helper"]["why_paused"]
+        if action == "ask":
+            question = question.strip()
+            if not question:
+                return {"error": "Type a question first."}
+            if re.search(r"\b(?:until|by)\b", question, re.I):
+                text = self._deadline_reply(question, state)
+            elif not re.search(r"\b(?:why|battery|power|paus\w*|calls?|messages?)\b", question, re.I):
+                text = ("I can explain this simulated battery and its paused tasks. "
+                        "Try asking: Will calls last until 4 PM?")
+        return {"ok": True, "text": text,
                 "engine": "rules", "where": "battery rules", "sources": []}
+
+    def _deadline_reply(self, question, state):
+        match = re.search(r"\b(?:until|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", question, re.I)
+        if not match:
+            return "Use a time like 16:00 or 4 PM so I can compare it with the battery estimate."
+        hour, minute, suffix = match.groups()
+        hour, minute = int(hour), int(minute or 0)
+        if (minute > 59 or (suffix and not 1 <= hour <= 12) or
+                (not suffix and (hour > 23 or match.group(2) is None))):
+            return "Use a time like 16:00 or 4 PM so I can compare it with the battery estimate."
+        if suffix:
+            hour = hour % 12 + (12 if suffix.lower() == "pm" else 0)
+        deadline = hour * 3600 + minute * 60
+        delta = deadline - self.clock_s
+        if delta < 0 or re.search(r"\btomorrow\b", question, re.I):
+            delta += 86400
+        battery = state["battery"]
+        if battery["percent"] == 0:
+            return "No. The battery is empty; charge it before making calls or sending messages."
+        if state["charging"]:
+            return "Yes, while it stays plugged in. The battery panel shows Charging."
+        hours = battery["hours_left"]
+        if hours is None or not battery["calls_until"]:
+            return "The battery panel has no finite end-time estimate to compare with that time."
+        answer = "Yes" if hours * 3600 >= delta else "No"
+        return f"{answer}. At this rate, calls and messages until ~{battery['calls_until']}."
 
 
 @dataclass
@@ -143,6 +187,7 @@ class IPLimits:
 def landing(token, nonce, demo=False):
     """Compose around the unchanged phone page; its byte budget stays independent."""
     page = web.page(token, nonce, demo=demo)
+    page = page.replace("</head>", '<meta name="description" content="Try a simulated phone that saves battery for calls and messages. A hackathon interface prototype, not an operating system; not run on a physical phone."><meta property="og:title" content="Old Phone OS Interface"><meta property="og:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Old Phone OS Interface"><meta name="twitter:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta property="og:type" content="website">' + "</head>", 1)
     page = page.replace('<div id="about-notices">', '<div id="about-notices">'
                         '<p id="public-about">This public simulation runs on a web server. '
                         'It makes no model calls, changes no device settings and places no real calls. '
@@ -202,7 +247,8 @@ class Handler(web.Handler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _json(self, obj, code=200):
         self._respond(json.dumps(obj).encode(), code)
@@ -285,7 +331,9 @@ class Handler(web.Handler):
             return
         if not self._ip_allowed():
             return
-        if self.path in ("/", "/?demo=1"):
+        if self.path == "/favicon.ico":
+            self._respond(web.FAVICON, content_type="image/png")
+        elif self.path in ("/", "/?demo=1"):
             # Root establishes the cookie/token pair; it never discloses another session.
             raw = self._one("Cookie") or ""
             cookie = SimpleCookie()
@@ -344,9 +392,9 @@ class Handler(web.Handler):
                 # Expiry/eviction is a reset, never an implicit replay of an old action.
                 snap = session.phone.state()
                 if action in {"ask", "plan", "explain"}:
-                    snap.update(session.phone.reply(action))
+                    snap.update(session.phone.reply(action, data.get("text", "")))
             elif action in {"ask", "plan", "explain"}:
-                snap = session.phone.reply(action)  # 'web' is ignored; no network capability exists.
+                snap = session.phone.reply(action, data.get("text", ""))  # 'web' is ignored; no network capability exists.
             else:
                 try:
                     valid = web.apply_phone_action(session.phone, data)
@@ -363,7 +411,8 @@ class Handler(web.Handler):
         if self._admit_request() and self._boundary() and self._ip_allowed():
             self._deny(404, "not found", "method")
 
-    do_HEAD = do_OPTIONS = do_PUT = do_PATCH = do_DELETE = do_TRACE = do_CONNECT = _no
+    do_HEAD = web.Handler.do_GET
+    do_OPTIONS = do_PUT = do_PATCH = do_DELETE = do_TRACE = do_CONNECT = _no
 
     def send_error(self, code, message=None, explain=None):
         if code == 501:  # Unknown methods cannot fall through to a local route.

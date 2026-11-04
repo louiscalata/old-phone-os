@@ -50,22 +50,19 @@ class TestDesign(unittest.TestCase):
         dash.record(31.0, clock_s=61.0)
         self.assertEqual(dash.history, [30.0, 31.0])
 
-    def test_view_history_smoothed(self):
+    def test_view_history_keeps_measured_levels(self):
         dash = make_dash()
         for _ in range(5):
             dash.record(50.0)
         dash.record(40.0)
-        smoothed = make_view(dash, 40.0)["history"]
-        last = smoothed[-1]
-        self.assertGreater(last, 40)
-        self.assertLess(last, 50)
-        self.assertEqual(last, round((50 * 4 + 40) / 5, 1))
+        history = make_view(dash, 40.0)["history"]
+        self.assertEqual(history, [50.0] * 5 + [40.0])
 
-    def test_set_battery_resets_history(self):
+    def test_set_battery_preserves_recent_history(self):
         phone = Phone()
         phone.set_battery(30)
         hist = phone.state()["battery"]["history"]
-        self.assertEqual(len(hist), 1)
+        self.assertEqual(hist, [60.0, 30.0])
 
     def test_home_screen_no_battery(self):
         decision = Decision(Mode.NORMAL, ("calls", "messages"), (), "rules")

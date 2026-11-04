@@ -15,7 +15,7 @@ body.public-demo{height:auto;min-height:100%;padding:0 28px 56px;overflow-x:clip
 .public-steps li{display:flex;gap:14px;font-family:var(--jaryo-serif);font-size:1.2rem;font-weight:700}
 .public-steps li>span{font-size:2rem;line-height:1}
 .public-steps small{display:block;font-family:var(--jaryo-body);font-size:.8rem;font-weight:400;line-height:1.5;margin-top:6px}
-.public-rules,#public-session{text-align:center;font-size:.8rem;line-height:1.5;margin:16px 0 0}
+#public-session{text-align:center;font-size:.8rem;line-height:1.5;margin:16px 0 0}
 #public-session{margin:6px 0 24px;min-height:2.5em}
 #try-phone{position:relative;max-width:1120px;margin:auto;display:grid;justify-items:center;gap:24px;scroll-margin-top:20px}
 .public-device{position:relative;isolation:isolate;width:440px;height:780px;max-width:100%;overflow:auto;overscroll-behavior:contain;border:10px solid var(--jaryo-fg);border-radius:32px;padding-top:48px;background:var(--jaryo-bg);box-shadow:0 16px 40px #0002;scrollbar-width:none}
@@ -30,6 +30,7 @@ html .public-device #lock{min-height:0;padding:24px;display:flex;gap:16px}
 html .public-device #lock[hidden]{display:none}
 html .public-device #sheet{width:100%;height:100%;max-height:none;right:0;border:0}
 html .public-device #phone #helper,html .public-device #phone #ask,html .public-device #phone #settings{width:100%;margin-left:0;margin-right:0}
+html body.public-demo .public-device #phone[data-app=settings] #settings:not([hidden]){display:block}
 html .public-device #apps-list:not([hidden]){grid-template-columns:1fr}
 .public-device #ff,.public-device #ff-detected,.public-device #ff-saved,.public-device .wiki-consent,.public-device #helperrestart{display:none!important}
 .public-demo #demo{position:static;width:100%;max-width:440px;margin:0;border:1px solid currentColor;border-radius:0;padding:16px;background:var(--jaryo-bg)}
@@ -50,4 +51,7 @@ body.public-demo{padding:0 0 24px}
 .public-disclaimer{text-align:left}
 .public-device{width:100%;height:820px;height:100svh;min-height:640px;border:0;border-block:1px solid currentColor;border-radius:0;box-shadow:none}
 .public-demo #demo{max-width:calc(100% - 36px)}
+#try-phone:has(>#demo:not([hidden])){height:100svh;grid-template-rows:minmax(0,3fr) minmax(0,2fr);gap:12px;scroll-margin-top:0}
+#try-phone:has(>#demo:not([hidden])) .public-device{height:100%;min-height:0}
+.public-demo #demo:not([hidden]){min-height:0;max-height:100%;overflow:auto;overscroll-behavior:contain;align-self:stretch}
 }

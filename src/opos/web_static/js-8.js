@@ -2,6 +2,7 @@ async function toggleVis(){render(await api({action:'visible',visible:!vis}));if
 var G=i=>document.getElementById(i);
 document.getElementById('battery').oninput=e=>document.getElementById('battery-val').textContent=Math.round(parseFloat(e.target.value))+'%';document.getElementById('battery').onchange=e=>api({action:'battery',level:parseFloat(e.target.value)}).then(render);
 document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));G('simbtn').onclick=toggleSim;G('visbtn').onclick=toggleVis;document.getElementById('helpertoggle').onclick=toggleVis;
+G('temp').oninput=e=>G('temp-val').textContent=e.target.value+'°C';
 G('temp').onchange=e=>api({action:'temp',temp:parseFloat(e.target.value)}).then(render);
 G('charge').onchange=e=>api({action:'charge',on:e.target.checked}).then(render);
 G('goal').onchange=e=>api({action:'goal',time:e.target.value}).then(render);

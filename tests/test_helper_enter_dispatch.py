@@ -71,7 +71,7 @@ function world(opt={}){
  const send=async()=>{doc.getElementById('hs-send').click();await flush()};
  const state=()=>({count:posts.length,asks:posts.map(r=>r.body),aborted:posts.map(r=>r.aborted),
   legacyClicks:ids.askbtn.clicks,legacyWaiting:!!doc.getElementById('helperwait'),marker:ids.ask.dataset.hs||'',
-  status:doc.getElementById('hs-status')?.textContent||''});
+  question:ids.q.value,status:doc.getElementById('hs-status')?.textContent||''});
  return{ids,doc,posts,flush,open,key,send,state};
 }
 (async()=>{
@@ -82,7 +82,7 @@ function world(opt={}){
   else if(kind==='inFlight'){await w.send();out.inFlightBefore=w.state();await w.key()}
   else if(kind==='settledRepeat'){
    await w.send();w.posts[0].reply({ok:true,text:'Answer'});await w.flush();out.settledBefore=w.state();
-   await w.key({repeat:true});out.settledAfterRepeat=w.state();await w.key();
+   await w.key({repeat:true});out.settledAfterRepeat=w.state();w.ids.q.value='A new question';await w.key();
   }
   else if(kind==='empty'){w.ids.q.value='  ';await w.key()}
   else if(kind==='otherKey')await w.key({key:'a'});
@@ -153,6 +153,7 @@ class HelperEnterDispatch(unittest.TestCase):
     def test_repeat_after_a_reply_does_not_create_a_new_turn(self):
         self.assertEqual(self.results["settledBefore"]["count"], 1)
         self.assertEqual(self.results["settledBefore"]["status"], "Answered.")
+        self.assertEqual(self.results["settledBefore"]["question"], "")
         self.assertEqual(self.results["settledAfterRepeat"]["count"], 1)
         self.assertEqual(self.results["settledRepeat"]["count"], 2)
         self.assertEqual(self.results["settledRepeat"]["legacyClicks"], 0)

@@ -29,7 +29,7 @@ notices.forEach(function(item){
 var li=E('li'),label=E('b');
 label.textContent='Notice';li.appendChild(label);
 var time=E('time');
-time.textContent=item.at.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+time.textContent=item.clock;
 time.setAttribute('datetime',item.at.toISOString());li.appendChild(time);
 var text=E('span');
 text.textContent=item.text;li.appendChild(text);
@@ -97,8 +97,8 @@ available('qs-helper',s.helper_visible?'Helper: On':'Helper: Off',typeof toggleV
 G('qs-helper').setAttribute('aria-pressed',s.helper_visible?'true':'false');
 G('qs-settings').hidden=!G('settings');
 var notice=typeof s.notice==='string'?s.notice.trim():'';
-if(notice&&notice!==lastNotice){
-notices.unshift({text:s.notice,at:new Date()});
+if(notice&&notice!==lastNotice&&!String(s.status||'').startsWith('error:')){
+var at=new Date();notices.unshift({text:s.notice,at:at,clock:demoTime?s.clock:('0'+at.getHours()).slice(-2)+':'+('0'+at.getMinutes()).slice(-2)});
 notices=notices.slice(0,5);
 renderNotices();
 }

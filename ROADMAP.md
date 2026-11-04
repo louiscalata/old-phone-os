@@ -52,6 +52,11 @@ regressions pass through the in-memory HTTP transport; native socket tests
 remain blocked by workspace permissions. See [.pr/public-demo.md](.pr/public-demo.md)
 for the current test and guard results.
 
+The outside-QA follow-up `qa-20261103` fixes the public Settings layout, battery
+history, app status, rules-helper answers, simulator controls and link-checker
+responses. See [.pr/qa-demo.md](.pr/qa-demo.md) for the unstaged changes, regression
+results and remaining browser review; this does not establish physical-phone use.
+
 ## Next
 
 Linux CI portability fixes are under local verification; hosted Python 3.11/3.13 results are still pending. See [.pr/ci-linux.md](.pr/ci-linux.md) for the failure analysis and verification limits.
