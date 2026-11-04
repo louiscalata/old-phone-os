@@ -20,6 +20,7 @@ earlier work and are not current instructions or evidence about the current sour
 ## Meta AI and evaluation
 
 - [OPOS and Meta models](META.md): runtime routes, optional inference, deterministic safeguards and simulation results.
+- [Meta model field report](meta-model-field-report.md): field observations from one project, eight findings and five requests for Meta's model teams.
 - [Worn-battery results](worn-battery-results.md): simulated service durations, resistance assumptions and brownout/shutdown accounting.
 
 ## Install and packaging
