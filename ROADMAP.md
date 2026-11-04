@@ -24,6 +24,10 @@ and what comes next. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- The November 3 Glimmer capture follow-up reduces the Why? prompt and keeps helper pause
+  attribution current while the demo is stopped. Fake-route regressions cover the changes;
+  Why? latency on the revised source still needs a new LM Studio capture. See
+  [.pr/helper-glimmer-capture.md](.pr/helper-glimmer-capture.md).
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). The ModemManager adapter
   (`src/opos/mm_modem.py`) is not connected to them, and the sysfs battery reader
@@ -34,7 +38,29 @@ and what comes next. Plans are intentions, not promises.
 - On-phone model inference (Llama 3.2 1B/3B) has no phone-speed measurement yet.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
 
+## Public browser demo
+
+The separate `opos.public_demo` entry point wraps the existing phone page in a
+Jaryo landing and isolates each visitor in bounded, expiring memory. Public
+helpers use only battery rules; setup, model routes and host operations are
+unreachable. Railway configuration and [operating notes](docs/public-demo.md)
+are in this working copy. This work has not been committed, pushed or deployed.
+The README URL remains a placeholder. Native socket/browser and Railway
+verification must be recorded separately from handler-level checks.
+The security follow-up uses the trusted proxy's right-most forwarded address
+for rate limits and preserves sessions on cross-site landing visits. Both
+regressions pass through the in-memory HTTP transport; native socket tests
+remain blocked by workspace permissions. See [.pr/public-demo.md](.pr/public-demo.md)
+for the current test and guard results.
+
+The outside-QA follow-up `qa-20261103` fixes the public Settings layout, battery
+history, app status, rules-helper answers, simulator controls and link-checker
+responses. See [.pr/qa-demo.md](.pr/qa-demo.md) for the unstaged changes, regression
+results and remaining browser review; this does not establish physical-phone use.
+
 ## Next
+
+Linux CI portability fixes are under local verification; hosted Python 3.11/3.13 results are still pending. See [.pr/ci-linux.md](.pr/ci-linux.md) for the failure analysis and verification limits.
 
 1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
    battery life against the stock system with the same daily routine.

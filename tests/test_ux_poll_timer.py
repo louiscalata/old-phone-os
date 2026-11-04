@@ -73,16 +73,16 @@ class TestPollTimerSource(unittest.TestCase):
 
 
 STUB = r"""
-let now=0,timers=[],nextId=1,calls=0,notices=[],fail=false,replies=[];
+let now=0,timers=[],nextId=1,calls=0,stateReads=0,states=[],notices=[],fail=false,replies=[];
 globalThis.Date={now:()=>now};
 globalThis.setTimeout=(f,ms)=>{const id=nextId++;timers.push({id,f,at:now+ms});return id};
 globalThis.clearTimeout=id=>{timers=timers.filter(t=>t.id!==id)};
 const el=()=>({onclick:null,oninput:null,onchange:null,addEventListener(){},textContent:'',value:'',dataset:{}});
 globalThis.document={getElementById:()=>el(),querySelector:()=>({content:'t'.repeat(43)}),querySelectorAll:()=>[]};
-globalThis.fetch=()=>new Promise(()=>{});
+globalThis.fetch=(url,options)=>{stateReads++;if(url!=='/api/state'||options.headers['X-OPOS-Token']!=='t'.repeat(43))throw new Error('bad state request');return stateReads===1?new Promise(()=>{}):Promise.resolve({json:async()=>({helper:{paused_by_glimmer:['email']}})})};
 var running=true,vis=false;
 var api=async o=>{calls++;if(fail)throw new Error('down');return replies.shift()||{poll_ms:5000}};
-var render=async s=>{if(s&&s.error)notices.push(s.error)};
+var render=async s=>{if(s&&s.error)notices.push(s.error);else if(s?.helper)states.push(s.helper)};
 function go(){} function toggleSim(){}
 """
 
@@ -95,7 +95,7 @@ async function advance(ms){const end=now+ms;for(;;){timers.sort((a,b)=>a.at-b.at
  await advance(1000); out.afterFirst={calls,pending:timers.length,due:timers[0].at-now};
  await render({poll_ms:1000}); out.rearm={pending:timers.length,due:timers[0].at-now};
  fail=true; await advance(1000); out.fail={notices:notices.length,pending:timers.length};
- fail=false; running=false; const c=calls; await advance(1000); out.stopped={calls:calls-c,pending:timers.length};
+ fail=false; running=false; const c=calls; await advance(1000); out.stopped={calls:calls-c,pending:timers.length,stateReads,states};
  console.log(JSON.stringify(out));
 })();
 """
@@ -112,7 +112,7 @@ class TestPollTimerStub(unittest.TestCase):
         self.assertEqual(out["afterFirst"], {"calls": 1, "pending": 1, "due": 5000})
         self.assertEqual(out["rearm"], {"pending": 1, "due": 1000})
         self.assertEqual(out["fail"], {"notices": 1, "pending": 1})
-        self.assertEqual(out["stopped"], {"calls": 0, "pending": 1})
+        self.assertEqual(out["stopped"], {"calls": 0, "pending": 1, "stateReads": 2, "states": [{"paused_by_glimmer": ["email"]}]})
 
 
 if __name__ == "__main__":

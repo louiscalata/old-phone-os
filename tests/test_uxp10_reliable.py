@@ -43,7 +43,10 @@ c.window=c;c.opos={open:c.openSheet,close:c.closeSheet};
 c.document.getElementById('scrim').addEventListener('click',c.closeSheet);
 vm.createContext(c);
 vm.runInContext(html.match(/^async function api\(o\).*$/m)[0],c);
-if(boot)vm.runInContext(html.match(/^fetch\('\/api\/state',.*$/m)[0],c);
+if(boot){
+ vm.runInContext(html.match(/^function fetchState\(\).*$/m)[0],c);
+ vm.runInContext(html.match(/^fetchState\(\)\.then\(.*$/m)[0],c);
+}
 vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
 function good(){c.oposHooks.forEach(f=>f({}));}
 (async()=>{

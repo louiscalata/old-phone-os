@@ -200,7 +200,9 @@ class BaseRepairsStatic(unittest.TestCase):
         for marker in ("document.getElementById('askbtn').onclick=", "helperCall({action:'plan'", "helperCall({action:'explain'"):
             self.assertEqual(len([ln for ln in lines if marker in ln]), 1, marker)
         ask = next(ln for ln in lines if "document.getElementById('askbtn').onclick=" in ln)
-        self.assertIn("helperAsk(q.value,webq.checked,o=>helperCall(o,ans))", ask)
+        self.assertIn("helperAsk(asked,webq.checked,o=>helperCall(o,ans))", ask)
+        self.assertIn("const asked=q.value", ask)
+        self.assertIn("q.value===asked", ask)
         self.assertNotIn("helperCall({action:'ask'", out)
         for ln in lines:
             if "action:'ask'" in ln:

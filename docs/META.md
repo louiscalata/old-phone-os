@@ -7,6 +7,17 @@ Mission: free AI for people who cannot buy it. The free AI route needs hardware 
 
 The helper is opt-in and shows which engine answers. The default UI never names AI.
 
+Why? restates the computed `why_paused` reason and validated `paused_by_glimmer` attribution,
+without asking the model to reconcile the raw estimates again. It allows four short sentences
+and uses Ask's budget: 400 tokens plus 1,200 tokens of reasoning headroom for Glimmer, with low
+reasoning effort (200 tokens for the small local Llama route). The 1,600-token total is shared,
+not a separate reasoning cap or a reserved answer allowance. These are token limits,
+not latency guarantees. Why, Plan and Ask retain a 115-second shared route deadline; earlier
+routes share that time and the last route gets what remains. Empty or token-truncated replies
+are rejected. The revised Why? prompt has fake-route coverage; its hardware latency still needs
+a new capture. The helper contribution line uses actual paused-task attribution and the
+background advisor's observed status, not the configured answer route's name.
+
 Muse Glimmer and Muse Spark contributed code alongside the recorded non-Meta repairs. The use of a development model is distinct from whether a runtime model has been tested on particular hardware.
 
 | Tier | Model | Where | Cost | Needs |

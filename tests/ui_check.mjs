@@ -42,7 +42,8 @@ const spawnChrome = () => new Promise((res, rej) => {
 let apiToken;
 const apiPost = async (obj) => { if (!apiToken) { const r = await fetch(baseUrl + '/'); const m = (await r.text()).match(/name="opos-token" content="([^"]+)"/); apiToken = m[1]; } await fetch(baseUrl + '/api', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OPOS-Token': apiToken }, body: JSON.stringify(obj) }); };
 const waitTone = async (cdp) => { for (let i = 0; i < 50; i++) { const v = await cdp.send('Runtime.evaluate', { expression: "document.querySelector('#meter')?.dataset.tone", returnByValue: true, awaitPromise: true }); if (v.result?.value) return true; await new Promise(r => setTimeout(r, 100)); } return false; };
-const evalJs = async (cdp, expr) => { const r = await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); return r.result?.value; };
+const evalJs = async (cdp, expr) => { const r = await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails)); return r.result?.value; };
+const ready = cdp => evalJs(cdp, "(async()=>{oposUI.unlock();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))})()");
 const mouse = async (cdp, type, x, y) => { await cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
 const key = async (cdp, type, keyName) => { await cdp.send('Input.dispatchKeyEvent', { type, key: keyName, code: keyName, keyCode: 0, windowsVirtualKeyCode: 0 }); };
 let pageEnabled = false;
@@ -60,7 +61,7 @@ const reloadAndWait = async (cdp) => {
   const start = Date.now();
   while (Date.now() - start < 5000) {
     const width = await evalJs(cdp, 'document.querySelector("#meter-fill")?.style.width');
-    if (width) return;
+    if (width) { await ready(cdp); return; }
     await new Promise(r => setTimeout(r, 50));
   }
   throw new Error('render timeout');
@@ -80,6 +81,7 @@ const reloadAndWait = async (cdp) => {
     await cdp.send('Page.navigate', { url: baseUrl });
     await initialLoad;
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 2, mobile: true });
+    await reloadAndWait(cdp);
     const results = [];
     const check = async (name, fn) => { currentStage = `test: ${name}`; try { await fn(); results.push(`PASS ${name}`); } catch (e) { results.push(`FAIL ${name}: ${e.message}`); } };
     await check('meter width', async () => {
@@ -94,34 +96,23 @@ const reloadAndWait = async (cdp) => {
       const label = await evalJs(cdp, "document.querySelector('#sheet-title').getAttribute('aria-label')");
       if (!/Battery 42 percent/.test(label || '')) throw new Error(`aria-label ${label}`);
     });
-    await check('tone colours', async () => {
-      const testLevel = async (lvl, tone, bgCheck, boxCheck) => {
-        await apiPost({ action: 'battery', level: lvl }); await reloadAndWait(cdp); await waitTone(cdp);
-        const meterTone = await evalJs(cdp, "document.querySelector('#meter').dataset.tone");
-        const sheetTone = await evalJs(cdp, "document.querySelector('#sheet-title').dataset.tone");
-        if (meterTone !== tone) throw new Error(`meter tone ${meterTone} != ${tone}`);
-        if (sheetTone !== tone) throw new Error(`sheet tone mismatch`);
-        const bg = await evalJs(cdp, "(() => { const s = getComputedStyle(document.querySelector('#meter-fill')); const m = s.backgroundColor.match(/\\d+/g); return m ? [ +m[0], +m[1], +m[2] ] : null; })()");
-        if (!bgCheck(...bg)) throw new Error(`bg ${bg}`);
-        if (boxCheck) {
-          const bs = await evalJs(cdp, "(() => { const e = document.querySelector('#meter-fill') || document.querySelector('#meter'); return getComputedStyle(e).boxShadow; })()");
-          if (bs === 'none') throw new Error('no box-shadow');
+    await check('tone and theme colours', async () => {
+      for (const theme of ['light', 'dark']) {
+        await evalJs(cdp, `document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+        for (const [level, tone, charging] of [[19,'low',false],[20,'normal',false],[100,'full',false],[50,'charging',true],[100,'full',true]]) {
+          await apiPost({ action: 'charge', on: charging });
+          await apiPost({ action: 'battery', level });
+          await reloadAndWait(cdp);
+          await evalJs(cdp, `document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+          const v = await evalJs(cdp, `(()=>{const m=document.querySelector('#meter'), f=document.querySelector('#meter-fill'), s=getComputedStyle(f), root=getComputedStyle(document.documentElement);return {tone:m.dataset.tone,title:document.querySelector('#sheet-title').dataset.tone,fill:s.backgroundColor,shadow:s.boxShadow,animation:getComputedStyle(m).animationName,fg:root.getPropertyValue('--jaryo-fg').trim(),bg:getComputedStyle(m).backgroundColor}})()`);
+          const expected = theme === 'light' ? 'rgb(26, 26, 26)' : 'rgb(230, 226, 217)';
+          if (v.tone !== tone || v.title !== tone) throw new Error(`tone ${JSON.stringify(v)} != ${tone}`);
+          if (v.fill !== expected || v.fill === v.bg || v.shadow !== 'none' || v.animation !== 'none') throw new Error(`theme ${theme}: ${JSON.stringify(v)}`);
         }
-      };
-      const bgLow = (r,g,b) => r > 150 && g < 120;
-      const bgNorm = (r,g,b) => Math.abs(r-g) < 20 && Math.abs(g-b) < 30 && r < 200;
-      const bgFull = (r,g,b) => r > 230 && g > 230 && b > 230;
-      await testLevel(19, 'low', bgLow, false);
-      await testLevel(20, 'normal', bgNorm, false);
-      await testLevel(100, 'full', bgFull, true);
-      await apiPost({ action: 'charge', on: true }); await apiPost({ action: 'battery', level: 50 }); await reloadAndWait(cdp); await waitTone(cdp);
-      const toneC = await evalJs(cdp, "document.querySelector('#meter').dataset.tone");
-      if (toneC !== 'charging') throw new Error('not charging');
-      const bsC = await evalJs(cdp, "(() => { const e = document.querySelector('#meter-fill') || document.querySelector('#meter'); const s = getComputedStyle(e).boxShadow; const m = s.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/); return m ? [ +m[1], +m[2], +m[3] ] : null; })()");
-      if (!bsC || !(bsC[1] > bsC[0] && bsC[1] > bsC[2])) throw new Error('charging shadow colour');
-      await apiPost({ action: 'battery', level: 100 }); await reloadAndWait(cdp); await waitTone(cdp);
-      if (await evalJs(cdp, "document.querySelector('#meter').dataset.tone") !== 'full') throw new Error('charging 100 not full');
-      await apiPost({ action: 'charge', on: false }); await apiPost({ action: 'battery', level: 42 }); await reloadAndWait(cdp); await waitTone(cdp);
+      }
+      await apiPost({ action: 'charge', on: false });
+      await apiPost({ action: 'battery', level: 42 });
+      await reloadAndWait(cdp);
     });
     await check('tap toggle', async () => {
       const rect = await evalJs(cdp, "(() => { const r = document.querySelector('#meter-hit').getBoundingClientRect(); return {x: r.left + r.width/2, y: r.top + r.height/2}; })()");
@@ -131,7 +122,8 @@ const reloadAndWait = async (cdp) => {
       if (await evalJs(cdp, "document.querySelector('#meter').getAttribute('aria-expanded')") !== 'true') throw new Error('aria-expanded');
       await new Promise(r=>setTimeout(r,150));
       if (await evalJs(cdp, "document.activeElement.id") !== 'sheet-title') throw new Error('focus');
-      await mouse(cdp, 'mousePressed', 180, 770); await mouse(cdp, 'mouseReleased', 180, 770);
+      const dismiss = await evalJs(cdp, "(()=>{const r=document.querySelector('#sheet-handle').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()");
+      await mouse(cdp, 'mousePressed', dismiss.x, dismiss.y); await mouse(cdp, 'mouseReleased', dismiss.x, dismiss.y);
       if (await evalJs(cdp, 'window.opos.isOpen()')) throw new Error('still open');
       await new Promise(r=>setTimeout(r,450));
       if (await evalJs(cdp, "document.activeElement.id") !== 'meter') throw new Error('focus back');
@@ -149,7 +141,7 @@ const reloadAndWait = async (cdp) => {
       await mouse(cdp, 'mouseReleased', closeStart.x, 0);
       if (await evalJs(cdp, 'window.opos.isOpen()')) throw new Error('drag close fail');
       await new Promise(r=>setTimeout(r,450));
-      const handle = await evalJs(cdp, "(() => { const r = document.querySelector('#sheet-handle').getBoundingClientRect(); return {x: r.left + r.width/2, y: r.top + r.height/2}; })()");
+      const handle = await evalJs(cdp, "(() => { const r = document.querySelector('#meter-hit').getBoundingClientRect(); return {x: r.left + r.width/2, y: r.top + r.height/2}; })()");
       await mouse(cdp, 'mousePressed', handle.x, handle.y); await mouse(cdp, 'mouseMoved', handle.x, handle.y + 20); await mouse(cdp, 'mouseReleased', handle.x, handle.y + 20);
       if (await evalJs(cdp, 'window.opos.isOpen()')) throw new Error('small drag opened');
       await new Promise(r=>setTimeout(r,450));
@@ -167,13 +159,13 @@ const reloadAndWait = async (cdp) => {
     await check('aria', async () => {
       const ok = await evalJs(cdp, `(() => {
         const m = document.querySelector('#meter');
-        if (m.getAttribute('role') !== 'button') return false;
+        if (m.tagName !== 'BUTTON' || m.type !== 'button') return false;
         if (!/Battery/i.test(m.getAttribute('aria-label')||'')) return false;
         if (m.getAttribute('aria-controls') !== 'sheet') return false;
         const s = document.querySelector('#sheet');
         if (s.getAttribute('role') !== 'dialog') return false;
         if (s.getAttribute('aria-modal') !== 'true') return false;
-        const pausedBtns = [...document.querySelectorAll('#paused button')];
+        const pausedBtns = [...document.querySelectorAll('#paused-list button')];
         if (pausedBtns.some(b => !b.getAttribute('aria-label')?.trim())) return false;
         const sheetBtns = [...document.querySelectorAll('#sheet button')];
         if (sheetBtns.some(b => b.getBoundingClientRect().height < 44)) return false;
@@ -225,7 +217,7 @@ const reloadAndWait = async (cdp) => {
       await apiPost({ action: 'battery', level: 42 }); await reloadAndWait(cdp); await waitTone(cdp);
       await evalJs(cdp, "window.opos.close()");
       await new Promise(r => setTimeout(r, 450));
-      const v = await evalJs(cdp, "(() => { const s = document.querySelector('#screen'); const screenText = s ? s.innerText : null; const firstLine = s ? s.innerText.split(/\\r?\\n/)[0].trim() : null; let statusText = null; let statusVisible = false; const st = document.querySelector('#status'); if (st) { const r = st.getBoundingClientRect(); const cs = getComputedStyle(st); statusVisible = r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; statusText = st.innerText; } const clone = document.body.cloneNode(true); clone.querySelector('#sheet')?.remove(); clone.querySelector('#demo')?.remove(); clone.querySelectorAll('script,style').forEach(n => n.remove()); const outsideText = clone.innerText || ''; return { screenText, firstLine, statusText, statusVisible, outsideText }; })()");
+      const v = await evalJs(cdp, "(() => { const s = document.querySelector('#screen'); const screenText = s ? s.innerText : null; const firstLine = s ? s.firstChild?.textContent.trim() : null; let statusText = null; let statusVisible = false; const st = document.querySelector('#status'); if (st) { const r = st.getBoundingClientRect(); const cs = getComputedStyle(st); statusVisible = r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; statusText = st.innerText; } const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let outsideText='',n;while(n=walker.nextNode()){const e=n.parentElement;if(!e||e.closest('#sheet,#demo,#sb,script,style'))continue;const r=document.createRange();r.selectNodeContents(n);if(r.getClientRects().length&&getComputedStyle(e).visibility==='visible')outsideText+=n.textContent} return { screenText, firstLine, statusText, statusVisible, outsideText }; })()");
       if (v.screenText == null) throw new Error('no screen');
       if (v.screenText.includes('Battery')) throw new Error('screen Battery');
       if (v.screenText.includes('%')) throw new Error('screen %');
@@ -246,6 +238,7 @@ const reloadAndWait = async (cdp) => {
       if (shown.display === 'none') throw new Error('demo not shown');
       if (!shown.hasOffset) throw new Error('battery no offsetParent');
       const q = waitForLoadEvent(cdp, 45000); q.catch(() => {}); await cdp.send('Page.navigate', { url: baseUrl }); await q;
+      await ready(cdp);
       await waitTone(cdp);
     });
     await check('sheet covers inputs', async () => {
@@ -268,15 +261,15 @@ const reloadAndWait = async (cdp) => {
       await reloadAndWait(cdp); await waitTone(cdp);
       await evalJs(cdp, "window.opos.open()");
       await new Promise(r => setTimeout(r, 450));
-      const v = await evalJs(cdp, "(() => { const sheet = document.querySelector('#sheet'); sheet.scrollTop = sheet.scrollHeight; const rows = [...sheet.querySelectorAll('.feature-row')]; const last = rows[rows.length - 1]; const lr = last ? last.getBoundingClientRect() : null; const grip = document.querySelector('#sheet-grip'); const gr = grip ? grip.getBoundingClientRect() : null; const sheetText = sheet.innerText || ''; const count = (sheetText.match(/Saving power for/g) || []).length; const hl = document.querySelector('#history-label'); const g = document.querySelector('#goal'); const gb = g ? getComputedStyle(g).backgroundColor : null; const btn = document.querySelector('#goal-row button'); const bb = btn ? getComputedStyle(btn).backgroundColor : null; return { bottom: lr ? lr.bottom : null, gripTop: gr ? gr.top : null, count, history: hl ? hl.textContent.trim() : null, goalBg: gb, btnBg: bb }; })()");
+      const v = await evalJs(cdp, "(() => { const sheet = document.querySelector('#sheet'); const details=document.querySelector('#shade-technical'); if(details.open)throw new Error('technical details must start collapsed'); details.open=true; sheet.scrollTop = sheet.scrollHeight; const rows = [...sheet.querySelectorAll('.feature-row')]; const last = rows[rows.length - 1]; const lr = last ? last.getBoundingClientRect() : null; const grip = document.querySelector('#sheet-grip'); const gr = grip ? grip.getBoundingClientRect() : null; const sheetText = sheet.innerText || ''; const count = (sheetText.match(/Saving power for/g) || []).length; const hl = document.querySelector('#history-label'); const g = document.querySelector('#goal'); const gb = g ? getComputedStyle(g).backgroundColor : null; const btn = document.querySelector('#goal-row button'); const bb = btn ? getComputedStyle(btn).backgroundColor : null; return { bottom: lr ? lr.bottom : null, gripTop: gr ? gr.top : null, count, history: hl ? hl.textContent.trim() : null, goalBg: gb, btnBg: bb, themeBg: getComputedStyle(sheet).backgroundColor }; })()");
       const parse = s => { const m = (s || '').match(/\d+/g); return m ? [+m[0], +m[1], +m[2]] : null; };
       if (!(v.bottom != null && v.gripTop != null && v.bottom <= v.gripTop + 1)) throw new Error(`overflow ${v.bottom} > ${v.gripTop}`);
       if (v.count !== 1) throw new Error(`count ${v.count}`);
       if (v.history !== 'last hour') throw new Error(`history ${v.history}`);
       const gb = parse(v.goalBg);
-      if (!gb || !(gb[0] < 80 && gb[1] < 80 && gb[2] < 80)) throw new Error(`goal bg ${v.goalBg}`);
+      if (!gb || v.goalBg !== v.themeBg) throw new Error(`goal bg ${v.goalBg}`);
       const bb = parse(v.btnBg);
-      if (!bb || !(bb[0] < 80 && bb[1] < 80 && bb[2] < 80)) throw new Error(`btn bg ${v.btnBg}`);
+      if (!bb || v.btnBg !== v.themeBg) throw new Error(`btn bg ${v.btnBg}`);
       await apiPost({ action: 'goal', time: '' });
     });
     await check('pull cue', async () => {
@@ -304,13 +297,13 @@ const reloadAndWait = async (cdp) => {
       await apiPost({ action: 'hang_up' }); await apiPost({ action: 'battery', level: 42 }); await reloadAndWait(cdp); await waitTone(cdp);
     });
     await check('screen legible when dim', async () => {
-      await apiPost({ action: 'battery', level: 5 }); await reloadAndWait(cdp); await waitTone(cdp);
-      const filter = await evalJs(cdp, "getComputedStyle(document.querySelector('#screen')).filter");
-      const m = (filter || '').match(/brightness\(([^)]+)\)/);
-      const val = m ? parseFloat(m[1]) : NaN;
-      if (!m || Number.isNaN(val)) throw new Error(`brightness ${filter}`);
-      if (val < 0.6) throw new Error(`brightness ${val}`);
-      await apiPost({ action: 'battery', level: 42 }); await reloadAndWait(cdp); await waitTone(cdp);
+      await apiPost({ action: 'battery', level: 5 }); await reloadAndWait(cdp);
+      // Page brightness is an owner preference; low battery must not dim text twice.
+      await evalJs(cdp, "(()=>{const e=document.querySelector('#bright');e.value='60';e.dispatchEvent(new Event('input',{bubbles:true}))})()");
+      const filters = await evalJs(cdp, "({page:getComputedStyle(document.documentElement).filter,screen:getComputedStyle(document.querySelector('#screen')).filter})");
+      if (filters.page !== 'brightness(0.6)' || filters.screen !== 'none') throw new Error(JSON.stringify(filters));
+      await evalJs(cdp, "(()=>{const e=document.querySelector('#bright');e.value='100';e.dispatchEvent(new Event('input',{bubbles:true}))})()");
+      await apiPost({ action: 'battery', level: 42 }); await reloadAndWait(cdp);
     });
 await check('goal note and compact screen', async () => {
     await apiPost({ action: 'battery', level: 5 });

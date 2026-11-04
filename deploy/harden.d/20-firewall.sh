@@ -130,10 +130,10 @@ EOF
 		: # hint only, never decides
 	fi
 	if [ -r /proc/config.gz ] && [ -x "$(command -v zgrep 2>/dev/null || true)" ]; then
-		zgrep "^CONFIG_NF_TABLES" /proc/config.gz 2>/dev/null || true
+		zgrep "^CONFIG_NF_TABLES" /proc/config.gz >&2 2>/dev/null || true
 	fi
 	if [ -r "/boot/config-$(uname -r 2>/dev/null)" ]; then
-		grep "^CONFIG_NF_TABLES" "/boot/config-$(uname -r)" 2>/dev/null || true
+		grep "^CONFIG_NF_TABLES" "/boot/config-$(uname -r)" >&2 2>/dev/null || true
 	fi
 	case "$want" in
 		nft)
@@ -170,6 +170,9 @@ fw_proven_absent() {
 	[ -n "$cur" ] || cur="/"
 	while :; do
 		if err="$(LC_ALL=C ls -ld "$cur" 2>&1)"; then
+			# Listing an empty directory can succeed without search permission
+			# on GNU ls. It cannot prove a child is absent in that case.
+			[ -d "$cur" ] && [ -r "$cur" ] && [ -x "$cur" ] || return 1
 			if ! ls -l "$cur" >/dev/null 2>&1; then
 				return 1
 			fi
@@ -201,7 +204,7 @@ fw_saved_backend() {
 			die "cannot read firewall backend state"
 		fi
 		if [ -e "$state_dir" ]; then
-			if [ ! -d "$state_dir" ]; then
+			if [ ! -d "$state_dir" ] || [ ! -r "$state_dir" ] || [ ! -x "$state_dir" ]; then
 				die "cannot read firewall backend state"
 			fi
 			if ! ls -ld "$state_dir" >/dev/null 2>&1; then

@@ -121,7 +121,7 @@ class RuntimeSourceArchive(unittest.TestCase):
         values = apkbuild_vars(ROOT / "packaging/pmos/opos/APKBUILD")
         output = self.base / values["_source_archive"]
         paths = builder.create_archive(ROOT, output, values["_source_root"])
-        self.assertEqual(len(paths), 86)
+        self.assertEqual(len(paths), 90)
         tokens = values["sha512sums"].split()
         self.assertEqual(tokens[1], "$_source_archive")
         self.assertEqual(tokens[0], hashlib.sha512(output.read_bytes()).hexdigest())

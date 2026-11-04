@@ -227,14 +227,23 @@ def _join_names(names):
     return ", ".join(shown)
 def explain(fact_dict, route, env=None, opener=None):
     """Explain pause using facts via the first route that answers, with a rules fallback."""
-    prompt = "In at most two plain sentences for a non-technical phone owner explain why the phone is pausing the listed tasks using only these facts: " + json.dumps(fact_dict) + ". If a why_paused fact is present, it is the reason: restate it in your own plain words. Say calls, messages and alarms are always kept."
     paused_by_glimmer = glimmer_paused(fact_dict)
+    # why_paused already reconciles the battery, goal and final task decision. Sending
+    # the raw estimates too invites Glimmer to reconcile them again before answering.
+    why = fact_dict.get("why_paused")
+    context = {"why_paused": why.strip()} if isinstance(why, str) and why.strip() else facts(fact_dict)
+    context.pop("paused_by_glimmer", None)
+    if paused_by_glimmer:
+        context["paused_by_glimmer"] = paused_by_glimmer
+    prompt = "Explain why tasks are paused in at most four short sentences. Restate the supplied reason in plain words; do not recalculate or propose a new plan. Say calls, messages and alarms stay on. Facts: " + json.dumps(context)
     if paused_by_glimmer:
         prompt += " If a paused_by_glimmer fact is present, also say that Muse Glimmer chose to pause those tasks."
     deadline = time.monotonic() + HELPER_DEADLINE_S
     for r, timeout in _attempts(_routes(route), env, deadline):
         try:
-            text = ask(r, prompt, env=env, opener=opener, timeout=timeout)
+            # Match Ask's answer budget; Glimmer still receives reasoning headroom
+            # and low effort via _payload. A token cap is not a wall-clock timeout.
+            text = ask(r, prompt, env=env, opener=opener, timeout=timeout, max_tokens=200 if r.key == "local" else 400)
             used = answered_by(text, r)
             return {"text": str(text), "engine": used.name, "where": used.where, "ok": True}
         except MuseError:

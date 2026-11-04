@@ -82,7 +82,7 @@ class Dashboard:
         self.events.append(f"{real_name} turned back on")
         if len(self.events) > 20:
             self.events = self.events[-20:]
-    def record(self, level, clock_s=None):
+    def record(self, level, clock_s=None, *, changed=False):
         if clock_s is None:
             self.history.append(level)
             self._times.append(None)
@@ -98,7 +98,7 @@ class Dashboard:
         if self._times and self._times[-1] is not None and clock_s < self._times[-1]:
             self.reset_history(level)
         minute = int(clock_s // 60)
-        if minute != self._last_record_minute:
+        if minute != self._last_record_minute or changed:
             self.history.append(level)
             self._times.append(clock_s)
             self._last_record_minute = minute
@@ -203,16 +203,16 @@ class Dashboard:
         if reached:
             meets_goal = percent > 0
         goal_note = ""
+        calls_until = ""
+        if clock_s is not None and hours_left_corrected < float('inf'):
+            end_seconds = int(round((clock_s + hours_left_corrected * 3600) / 60)) * 60
+            calls_until = _format_time_12h(end_seconds % 86400)
         if reached and not charging and percent > 0:
             goal_note = f"Made it to {_format_goal_12h(self.goal)}. Calls and messages stay on"
         elif not charging and self.goal and hours is not None and not meets_goal:
             if clock_s is not None and hours_left_corrected != float('inf') and hours_left_corrected == hours_left_corrected:
                 goal_words = _format_goal_12h(self.goal)
-                end_seconds_float = clock_s + hours_left_corrected * 3600
-                rounded_seconds = int(round(end_seconds_float / 60)) * 60
-                end_s_mod = rounded_seconds % 86400
-                end_words = _format_time_12h(end_s_mod)
-                goal_note = f"Won't last until {goal_words}, calls and messages until ~{end_words}"
+                goal_note = f"Won't last until {goal_words}, calls and messages until ~{calls_until}"
         time_left = "Charging" if charging else time_left_words(hours_left_corrected)
         in_use = self.in_use if self.in_use and self.in_use not in paused_set else None
         saving_for = ["calls", "messages"]
@@ -227,10 +227,7 @@ class Dashboard:
         else:
             cutoff = clock_s - 3600
             relevant = [lvl for lvl, t in zip(self.history, self._times) if t is None or t >= cutoff]
-        history_out = []
-        for i in range(len(relevant)):
-            window = relevant[max(0, i - 4):i + 1]
-            history_out.append(round(sum(window) / len(window), 1))
+        history_out = [round(level, 1) for level in relevant]
         drain = feature_drain(steps, health)
         total = sum(drain.values())
         features_out = []
@@ -248,6 +245,8 @@ class Dashboard:
             "meter": {"width": width, "tone": tone, "label": f"Battery {round(level)} percent"},
             "percent": percent,
             "time_left": time_left,
+            "hours_left": hours_left_corrected if hours_left_corrected < float('inf') else None,
+            "calls_until": calls_until,
             "goal": self.goal or "",
             "goal_met": meets_goal,
             "saving_for": saving_for,

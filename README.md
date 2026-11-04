@@ -50,6 +50,19 @@ Glimmer's background advisor had itself paused email; the captured battery state
 
 These are real Ask captures in dark and light appearance. The **Why? button fell back to the rules answer both times** because it reached OPOS's 115-second helper deadline before Glimmer returned visible text. A fix is in progress.
 
+## Try it online
+
+[Open the public simulation](https://opos-demo-production.up.railway.app) —
+simulation-only demo with no model; state resets after 15 minutes idle.
+The browser demo gives each visitor a temporary phone with
+simulated battery, calls and messages. It is not a phone operating system and
+has not run on a physical phone. All public helper answers come from the rules;
+Muse Glimmer runs only on your own computer.
+
+Open `?demo=1` for controls, drag the battery slider, then pull down the top bar
+and Undo a soft pause. See [public-demo setup and limits](docs/public-demo.md)
+for the separate Railway entry point, isolation and local run command.
+
 ## How it works
 
 Battery state drives a rule decision, then an advisory plan and explanation. Model text cannot enable a task the rule router deferred.
@@ -104,6 +117,8 @@ Reproduce: `PYTHONPATH=src python3 -m opos.profiles` (about 10 s) and `PYTHONPAT
 
 ## Install the per-user application
 
+On Windows, run `install.cmd` to invoke `install.ps1` with your arguments; the Windows runtime remains untested.
+
 From a checkout of this repository:
 ```sh
 sh install.sh --yes --no-launch
@@ -129,7 +144,7 @@ The kiosk starts the same `opos.web` server as the desktop demo, so it uses the 
 
 ## Tests
 
-The complete suite also requires Node.js and Git on PATH, permission to bind loopback sockets, and a writable temporary directory outside the checkout. JavaScript checks skip with a reason when Node.js is unavailable. Some fixtures create disposable Git history in that temporary directory and require local commits to succeed.
+The complete suite also requires Node.js 22+ and Git on PATH, permission to bind loopback sockets, and a writable temporary directory outside the checkout. Browser checks use Chromium or Google Chrome (`OPOS_TEST_CHROME` selects an executable; the UI check also accepts `CHROME`). JavaScript/browser checks skip with a reason when their optional local tools are unavailable. Shell lint uses ShellCheck 0.11.0. CI installs these tools so those checks run there. Some fixtures create disposable Git history in the temporary directory and require local commits to succeed.
 
 Run discovery canonically from the checkout root:
 ```sh

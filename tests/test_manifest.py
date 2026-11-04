@@ -232,7 +232,7 @@ class ManifestTest(unittest.TestCase):
         assert exe is not None
         for s in (str(MAKE), str(VERIFY)):
             r = subprocess.run([exe, s], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

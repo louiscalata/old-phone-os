@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Per-task pause explanations and native disclosure controls."""
+import base64
 import json
 from html.parser import HTMLParser
 import os
@@ -15,7 +16,7 @@ from opos.dashboard import Dashboard
 from opos.governor import Priority, Task
 from opos.router import Router
 from opos.runtime import Runtime
-from opos.web import Phone, page
+from opos.web import FAVICON, Phone, page
 from tests.test_uxr_acceptance import find_chrome
 
 
@@ -212,11 +213,15 @@ await send('Emulation.setDeviceMetricsOverride',{width:360,height:800,deviceScal
 await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
 await send('Page.navigate',{url:url+'?lock=0'});
 await wait("document.readyState==='complete'&&!!document.querySelector('#paused-list summary')&&!!window.oposUI");
-await ev("oposUI.unlock();oposUI.openApp('home');openSheet()");await sleep(100);
+await ev("oposUI.unlock();oposUI.openApp('home');openSheet()");
+// Wait for the visible sheet to reach its final position, then let queued
+// animation-frame focus work finish before focusing a summary.
+await wait("getComputedStyle(document.querySelector('#sheet')).visibility==='visible'&&Math.abs(document.querySelector('#sheet').getBoundingClientRect().top)<1&&getComputedStyle(document.querySelector('#paused-list summary')).visibility==='visible'");
+await ev("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
 const selector="#paused-list summary",details="#paused-list details";
 const initial=await ev(`(()=>{const s=document.querySelector('${selector}'),r=s.getBoundingClientRect(),b=document.querySelector('#paused-list button').getBoundingClientRect();s.focus();return {w:r.width,h:r.height,bw:b.width,bh:b.height,focus:document.activeElement===s,open:s.parentNode.open,name:s.textContent,label:document.querySelector('#paused-list span').textContent,hidden:s.closest('.paused-row').hidden}})()`);
 check(initial.w>=48&&initial.h>=48&&initial.bw>=48&&initial.bh>=48,'targets smaller than 48px');
-check(initial.focus&&!initial.open&&!initial.hidden&&initial.name===initial.label,'summary focus, name or row filter');
+check(initial.focus&&!initial.open&&!initial.hidden&&initial.name===initial.label,'summary focus, name or row filter: '+JSON.stringify(initial));
 await key('Enter','Enter',13);check(await ev(`document.querySelector('${details}').open`),'Enter did not open reason');
 await key(' ','Space',32);check(!await ev(`document.querySelector('${details}').open`),'Space did not close reason');
 const box=await ev(`(()=>{const r=document.querySelector('${selector}').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
@@ -243,8 +248,12 @@ class PausedReasonBrowser(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="paused-reason-") as directory:
             root = Path(directory)
             nonce = "paused-reason-test"
-            policy = "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; connect-src 'none'"
+            policy = "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'"
             html = page("t" * 43, nonce, demo=True).replace("<head>", '<head><meta http-equiv="Content-Security-Policy" content="' + policy + '">', 1)
+            # A file fixture has no /favicon.ico route; retain the actual icon
+            # without granting file or network image access to this CSP test.
+            icon = base64.b64encode(FAVICON).decode('ascii')
+            html = html.replace('href="/favicon.ico"', 'href="data:image/png;base64,' + icon + '"', 1)
             (root / "page.html").write_text(html, encoding="utf-8")
             with mock.patch("opos.web.prefs.load", side_effect=OSError):
                 state = Phone().state()
