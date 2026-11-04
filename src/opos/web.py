@@ -267,29 +267,12 @@ class Phone:
         out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
         # Only the active, known in-memory modem is identified as simulated.
         out["simulation"] = {"modem": type(getattr(self.essentials, "modem", None)) is ScreenModem}
-        # Public install defaults only; never return setup answers or network names.
-        public_prefs = prefs.defaults()
-        try:
-            saved = prefs.load()
-            effective = prefs.effective(saved) if saved["applied"] else public_prefs
-            if isinstance(effective, dict):
-                for key in public_prefs:
-                    if key in ("wifi", "pin"):
-                        continue  # Record-only steps (network names, lock PIN) stay private; the kiosk sees the defaults.
-                    try:
-                        value = effective.get(key, public_prefs[key])
-                        prefs.validate_answer(key, value)
-                        public_prefs[key] = value
-                    except (ValueError, TypeError):
-                        pass
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass
-        out["prefs"] = public_prefs
+        out["prefs"] = self._preferences()
         out["temp_c"] = round(float(self.sim.temp_c), 1)
         out["charging"] = bool(self.charging)
-        free = assist.free_mb()
+        free, rss, engine = self._environment()
         if self.visible:
-            out["helper"] = {"mode": d.mode.name, "allowed": list(d.allowed), "paused": list(d.deferred), "hours_left": None if math.isinf(tick.hours_left) else round(tick.hours_left, 1), "reserve": round(tick.reserve, 1), "source": "router" if d.reason.startswith("router") else "rules", "engine": muse.label(assist.ask_route(free=free))}
+            out["helper"] = {"mode": d.mode.name, "allowed": list(d.allowed), "paused": list(d.deferred), "hours_left": None if math.isinf(tick.hours_left) else round(tick.hours_left, 1), "reserve": round(tick.reserve, 1), "source": "router" if d.reason.startswith("router") else "rules", "engine": engine}
         out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason,
                                         deferred=d.deferred, steps=tick.steps, drain_per_h=tick.drain_per_h)
         reasons = self._paused_reasons(tick, goal_met=out["battery"]["goal_met"])
@@ -322,9 +305,35 @@ class Phone:
         h = int(self.clock_s // 3600) % 24
         m = int((self.clock_s % 3600) // 60)
         out["clock"] = f"{h:02d}:{m:02d}"
-        out["lean"] = {"opos_mb": self_rss_mb(), "free_mb": free}
+        out["lean"] = {"opos_mb": rss, "free_mb": free}
         out["poll_ms"] = poll_ms(d.mode.name, free, self._in_call)
         return out
+    def _preferences(self):
+        """Host preferences for the local UI; isolated simulations override this seam."""
+        # Public install defaults only; never return setup answers or network names.
+        public_prefs = prefs.defaults()
+        try:
+            saved = prefs.load()
+            effective = prefs.effective(saved) if saved["applied"] else public_prefs
+            if isinstance(effective, dict):
+                for key in public_prefs:
+                    if key in ("wifi", "pin"):
+                        continue  # Record-only steps (network names, lock PIN) stay private; the kiosk sees the defaults.
+                    try:
+                        value = effective.get(key, public_prefs[key])
+                        prefs.validate_answer(key, value)
+                        public_prefs[key] = value
+                    except (ValueError, TypeError):
+                        pass
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        return public_prefs
+
+    def _environment(self):
+        """Local diagnostics and helper label, separate from the simulated state."""
+        free = assist.free_mb()
+        return free, self_rss_mb(), muse.label(assist.ask_route(free=free)) if self.visible else ""
+
     def _helper_request(self):
         """Facts, saving steps and the ordered routes (Spark Open first when the goal is hard)."""
         s = self.state()
@@ -781,17 +790,6 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(a, str):
             self._deny(400, "bad request", "action")
             return
-        def num(k):
-            if k not in data:
-                return False
-            v = data[k]
-            if isinstance(v, bool) or not isinstance(v, (int, float)):
-                return False
-            try:
-                f = float(v)
-            except (OverflowError, ValueError, TypeError):
-                return False
-            return math.isfinite(f)
         txt = lambda k: k in data and isinstance(data[k], str)
         if a in _INJECT_ACTIONS and not self.allow_inject:
             self._deny(403, "forbidden", "inject")
@@ -844,60 +842,83 @@ class Handler(BaseHTTPRequestHandler):
             _restart_service()
             self._json({"ok": True, "text": "Restarting the helper..."})
             return
-        bad = False
         with self.lock:
-            if a == "battery" and num("level" if "level" in data else "value"):
-                self.phone.set_battery(data.get("level", data.get("value")))
-            elif a == "temp" and num("temp" if "temp" in data else "value"):
-                self.phone.set_temp(data.get("temp", data.get("value")))
-            elif a == "call" and txt("number"):
-                self.phone.call(data["number"])
-            elif a == "hang_up":
-                self.phone.hang_up()
-            elif a == "send" and txt("number") and txt("text"):
-                self.phone.send(data["number"], data["text"])
-            elif a == "receive" and txt("number") and txt("text"):
-                self.phone.receive(data["number"], data["text"])
-            elif a == "open" and txt("number"):
-                self.phone.open(data["number"])
-            elif a == "visible" and isinstance(data.get("visible"), bool):
-                self.phone.set_visible(data["visible"])
-            elif a == "sim" and isinstance(data.get("running"), bool) and ("speed" not in data or num("speed")):
-                self.phone.set_sim(data["running"], data.get("speed"))
-            elif a == "tick" and ("real_s" not in data or num("real_s")):
-                try:
-                    self.phone.tick(data.get("real_s", 1))
-                except ValueError:
-                    bad = True
-            elif a == "charge" and isinstance(data.get("on"), bool):
-                self.phone.charging = data["on"]
-            elif a == "goal" and isinstance(data.get("time"), str):
-                try:
-                    self.phone.dash.set_goal(data["time"], self.phone.clock_s)
-                except ValueError:
-                    bad = True
-            elif a == "undo" and isinstance(data.get("name"), str):
-                try:
-                    self.phone.undo(data["name"])
-                except ValueError:
-                    bad = True
-            elif a == "in_use":
-                name = data.get("name", "")
-                if isinstance(name, str):
-                    try:
-                        self.phone.dash.set_in_use(name)
-                    except ValueError:
-                        bad = True
-                else:
-                    bad = True
-            else:
-                bad = True
+            bad = not apply_phone_action(self.phone, data)
             if not bad:
                 snap = self.phone.state()
         if bad:
             self._json({"error": "unknown action" if a not in {"battery","temp","call","hang_up","send","receive","open","visible","sim","tick","charge","goal","undo","in_use","explain","ask","plan","restart_helper"} else "bad request"}, 400)
             return
         self._json(snap)
+def apply_phone_action(phone, data):
+    """Apply only a validated in-memory phone action; return whether its shape was valid.
+
+    Helper inference and host operations deliberately live outside this dispatcher.
+    Callers own authorization, body/string limits and synchronization.
+    """
+    a = data.get("action")
+    bad = False
+    def num(k):
+        if k not in data:
+            return False
+        v = data[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return False
+        try:
+            f = float(v)
+        except (OverflowError, ValueError, TypeError):
+            return False
+        return math.isfinite(f)
+    txt = lambda k: k in data and isinstance(data[k], str)
+    if a == "battery" and num("level" if "level" in data else "value"):
+        phone.set_battery(data.get("level", data.get("value")))
+    elif a == "temp" and num("temp" if "temp" in data else "value"):
+        phone.set_temp(data.get("temp", data.get("value")))
+    elif a == "call" and txt("number"):
+        phone.call(data["number"])
+    elif a == "hang_up":
+        phone.hang_up()
+    elif a == "send" and txt("number") and txt("text"):
+        phone.send(data["number"], data["text"])
+    elif a == "receive" and txt("number") and txt("text"):
+        phone.receive(data["number"], data["text"])
+    elif a == "open" and txt("number"):
+        phone.open(data["number"])
+    elif a == "visible" and isinstance(data.get("visible"), bool):
+        phone.set_visible(data["visible"])
+    elif a == "sim" and isinstance(data.get("running"), bool) and ("speed" not in data or num("speed")):
+        phone.set_sim(data["running"], data.get("speed"))
+    elif a == "tick" and ("real_s" not in data or num("real_s")):
+        try:
+            phone.tick(data.get("real_s", 1))
+        except ValueError:
+            bad = True
+    elif a == "charge" and isinstance(data.get("on"), bool):
+        phone.charging = data["on"]
+    elif a == "goal" and isinstance(data.get("time"), str):
+        try:
+            phone.dash.set_goal(data["time"], phone.clock_s)
+        except ValueError:
+            bad = True
+    elif a == "undo" and isinstance(data.get("name"), str):
+        try:
+            phone.undo(data["name"])
+        except ValueError:
+            bad = True
+    elif a == "in_use":
+        name = data.get("name", "")
+        if isinstance(name, str):
+            try:
+                phone.dash.set_in_use(name)
+            except ValueError:
+                bad = True
+        else:
+            bad = True
+    else:
+        bad = True
+    return not bad
+
+
 class _Limits:
     """Per-action rate limits."""
     def __init__(self):

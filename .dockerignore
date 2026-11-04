@@ -1,0 +1,8 @@
+# Only public runtime source and license enter the image.
+*
+!Dockerfile
+!src/
+!src/**
+!LICENSE
+**/__pycache__/
+**/*.pyc
