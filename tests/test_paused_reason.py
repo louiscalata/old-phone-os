@@ -193,10 +193,10 @@ process.stdout.write(JSON.stringify({html,stable,replaced,calls,remaining:list.c
 CDP = r"""
 const fs=require('fs'),path=require('path'),{spawn}=require('child_process');
 const [chrome,url,stateFile,profile]=process.argv.slice(2),S=JSON.parse(fs.readFileSync(stateFile,'utf8'));
-const child=spawn(chrome,['--headless','--no-sandbox','--disable-gpu','--single-process','--disable-background-networking','--remote-debugging-pipe','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
+const child=spawn(chrome,['--headless','--no-sandbox','--disable-gpu',...(process.platform==='darwin'?['--single-process']:[]),'--disable-background-networking','--remote-debugging-pipe','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
 let seq=0,buf=Buffer.alloc(0),session,errors='';const pending=new Map();
 child.stderr.on('data',d=>errors+=d);
-child.on('exit',code=>{for(const p of pending.values())p.reject(Error('browser exited '+code+': '+errors.slice(-800)));pending.clear()});
+child.on('exit',(code,signal)=>{for(const p of pending.values())p.reject(Error('browser exited '+(signal||code)+': '+errors.slice(-800)));pending.clear()});
 child.stdio[4].on('data',d=>{buf=Buffer.concat([buf,d]);for(let i;(i=buf.indexOf(0))>=0;buf=buf.subarray(i+1)){const m=JSON.parse(buf.subarray(0,i)),p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result)}}});
 function send(method,params={},sid=session){return new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});child.stdio[3].write(JSON.stringify({id,method,params,...(sid?{sessionId:sid}:{})})+'\0')})}
 async function ev(expression){const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value}
@@ -212,11 +212,15 @@ await send('Emulation.setDeviceMetricsOverride',{width:360,height:800,deviceScal
 await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
 await send('Page.navigate',{url:url+'?lock=0'});
 await wait("document.readyState==='complete'&&!!document.querySelector('#paused-list summary')&&!!window.oposUI");
-await ev("oposUI.unlock();oposUI.openApp('home');openSheet()");await sleep(100);
+await ev("oposUI.unlock();oposUI.openApp('home');openSheet()");
+// Wait for the visible sheet to reach its final position, then let queued
+// animation-frame focus work finish before focusing a summary.
+await wait("getComputedStyle(document.querySelector('#sheet')).visibility==='visible'&&Math.abs(document.querySelector('#sheet').getBoundingClientRect().top)<1&&getComputedStyle(document.querySelector('#paused-list summary')).visibility==='visible'");
+await ev("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
 const selector="#paused-list summary",details="#paused-list details";
 const initial=await ev(`(()=>{const s=document.querySelector('${selector}'),r=s.getBoundingClientRect(),b=document.querySelector('#paused-list button').getBoundingClientRect();s.focus();return {w:r.width,h:r.height,bw:b.width,bh:b.height,focus:document.activeElement===s,open:s.parentNode.open,name:s.textContent,label:document.querySelector('#paused-list span').textContent,hidden:s.closest('.paused-row').hidden}})()`);
 check(initial.w>=48&&initial.h>=48&&initial.bw>=48&&initial.bh>=48,'targets smaller than 48px');
-check(initial.focus&&!initial.open&&!initial.hidden&&initial.name===initial.label,'summary focus, name or row filter');
+check(initial.focus&&!initial.open&&!initial.hidden&&initial.name===initial.label,'summary focus, name or row filter: '+JSON.stringify(initial));
 await key('Enter','Enter',13);check(await ev(`document.querySelector('${details}').open`),'Enter did not open reason');
 await key(' ','Space',32);check(!await ev(`document.querySelector('${details}').open`),'Space did not close reason');
 const box=await ev(`(()=>{const r=document.querySelector('${selector}').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);

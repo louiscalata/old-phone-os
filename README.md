@@ -81,6 +81,8 @@ Reproduce: `PYTHONPATH=src python3 -m opos.profiles` (about 10 s) and `PYTHONPAT
 
 ## Install the per-user application
 
+On Windows, run `install.cmd` to invoke `install.ps1` with your arguments; the Windows runtime remains untested.
+
 From a checkout of this repository:
 ```sh
 sh install.sh --yes --no-launch
@@ -104,7 +106,7 @@ The kiosk starts the same `opos.web` server as the desktop demo, so it uses the 
 
 ## Tests
 
-The complete suite also requires Node.js and Git on PATH, permission to bind loopback sockets, and a writable temporary directory outside the checkout. JavaScript checks skip with a reason when Node.js is unavailable. Some fixtures create disposable Git history in that temporary directory and require local commits to succeed.
+The complete suite also requires Node.js 22+ and Git on PATH, permission to bind loopback sockets, and a writable temporary directory outside the checkout. Browser checks use Chromium or Google Chrome (`OPOS_TEST_CHROME` selects an executable; the UI check also accepts `CHROME`). JavaScript/browser checks skip with a reason when their optional local tools are unavailable. Shell lint uses ShellCheck 0.11.0. CI installs these tools so those checks run there. Some fixtures create disposable Git history in the temporary directory and require local commits to succeed.
 
 Run discovery canonically from the checkout root:
 ```sh
