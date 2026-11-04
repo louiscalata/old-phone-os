@@ -35,6 +35,8 @@ and what comes next. Plans are intentions, not promises.
 
 ## Next
 
+Linux CI portability fixes are under local verification; hosted Python 3.11/3.13 results are still pending. See [.pr/ci-linux.md](.pr/ci-linux.md) for the failure analysis and verification limits.
+
 1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
    battery life against the stock system with the same daily routine.
 2. **Real battery, calls and texts.** Connect Phone and Messages to ModemManager through

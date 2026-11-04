@@ -154,10 +154,21 @@ const [chrome, fileUrl, stateFile] = process.argv.slice(2);
 const STATE = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'uxp21-'));
-const child = spawn(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--single-process', '--remote-debugging-pipe',
-  '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check', 'about:blank'], {stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe']});
+const child = spawn(chrome, ['--headless', '--no-sandbox', '--disable-gpu', ...(process.platform === 'darwin' ? ['--single-process'] : []), '--remote-debugging-pipe',
+  '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check', 'about:blank'], {stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe']});
 let buf = Buffer.alloc(0), seq = 0, session;
 const pending = new Map();
+let browserError = null, browserStderr = '';
+child.stderr.on('data', chunk => { browserStderr = (browserStderr + chunk).slice(-4000); });
+function browserFailed(reason) {
+  browserError = new Error(reason + '\nChromium stderr: ' + browserStderr);
+  for (const p of pending.values()) p.rej(browserError);
+  pending.clear();
+}
+child.on('error', error => browserFailed('Chromium launch: ' + error.message));
+child.on('exit', (code, signal) => browserFailed('Chromium exited: ' + code + ' / ' + signal));
+for (const pipe of [child.stdio[3], child.stdio[4]])
+  pipe.on('error', error => browserFailed('CDP pipe: ' + error.message));
 child.stdio[4].on('data', c => {
   buf = Buffer.concat([buf, c]);
   for (let i; (i = buf.indexOf(0)) >= 0; buf = buf.subarray(i + 1)) {
@@ -166,6 +177,7 @@ child.stdio[4].on('data', c => {
   }
 });
 function sendTo(sessionId, m, params = {}) {
+  if (browserError) return Promise.reject(browserError);
   return new Promise((res, rej) => { const id = ++seq; pending.set(id, {res, rej, m});
     child.stdio[3].write(JSON.stringify(sessionId ? {id, method: m, params, sessionId} : {id, method: m, params}) + '\0'); });
 }
@@ -276,7 +288,7 @@ class UXP21Browser(unittest.TestCase):
             p = subprocess.run([NODE, str(drv), chrome, html.as_uri(), str(state)], capture_output=True, text=True,
                                timeout=90, env=dict(os.environ, TMPDIR=d))
             if p.returncode:
-                raise AssertionError("CDP driver failed: " + p.stderr[-800:])
+                raise AssertionError("CDP driver failed: " + p.stderr[-5000:])
             cls.r = json.loads(p.stdout.strip().splitlines()[-1])
 
     def setUp(self):

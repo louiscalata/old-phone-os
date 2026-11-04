@@ -8,17 +8,20 @@ import unittest
 from pathlib import Path
 
 import opos.web
+from tests.test_uxr_acceptance import find_chrome
 
 has_node = bool(shutil.which("node"))
 value = os.environ.get("CHROME")
 resolved = shutil.which(value) if value else None
 chrome_candidates = [
     resolved,
+    find_chrome(),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     shutil.which("google-chrome"),
     shutil.which("chromium"),
 ]
 has_chrome = any(p and os.access(p, os.X_OK) for p in chrome_candidates)
+chrome = next((p for p in chrome_candidates if p and os.access(p, os.X_OK)), None)
 
 
 class TestUICheck(unittest.TestCase):
@@ -36,6 +39,7 @@ class TestUICheck(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=150,
+            env=dict(os.environ, CHROME=chrome),
         )
         msg = f"returncode={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
         self.assertEqual(proc.returncode, 0, msg)

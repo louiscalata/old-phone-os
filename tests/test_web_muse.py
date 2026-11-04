@@ -32,7 +32,8 @@ class TestWebMuse(unittest.TestCase):
         self.assertNotIn("Muse", j)
         self.assertNotIn("engine", j)
 
-    def test_explain_patched(self):
+    @patch("opos.assist.free_mb", return_value=None)
+    def test_explain_patched(self, _free_mb):
         p = Phone(visible=True)
         req = p.explain_request()
         self.assertIsInstance(req, tuple)
