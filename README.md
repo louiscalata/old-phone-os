@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Old Phone OS Interface (OPOS)
 
-OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://fortheloveof.studio/videos/opos-demo.mp4). Meta model developers: see the [field report](docs/meta-model-field-report.md).
+OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
 
 OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
 

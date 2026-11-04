@@ -91,7 +91,20 @@ const LIB = eval(/const LIB = (`[\s\S]*?`);/.exec(fs.readFileSync(uxrFile, 'utf8
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'uxp22-'));
 const child = spawn(chrome, ['--headless', '--no-sandbox', '--disable-gpu', ...(process.platform === 'darwin' ? ['--single-process'] : []), '--remote-debugging-pipe',
-  '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check', 'about:blank'], {stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe']});
+  '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check', 'about:blank'], {detached: true, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe']});
+// Own the process group so Linux's Chrome children cannot outlive cleanup.
+async function closeBrowser() {
+  if (child.pid) {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Chromium did not exit after SIGKILL')), 10000);
+        child.once('exit', () => { clearTimeout(timeout); resolve(); });
+      });
+    }
+  }
+  try { fs.rmSync(udd, {recursive: true, force: true}); } catch (e) {}
+}
 let buf = Buffer.alloc(0), seq = 0, session;
 const pending = new Map();
 let browserError = null, browserStderr = '';
@@ -174,7 +187,10 @@ async function run(w, h, q, app) {
   return ev(MEASURE);
 }
 (async () => {
-  const timer = setTimeout(() => { process.stderr.write('timed out\n'); try { child.kill('SIGKILL'); } catch (e) {} process.exit(3); }, 60000);
+  const timer = setTimeout(() => {
+    process.stderr.write('timed out\n');
+    closeBrowser().catch(e => process.stderr.write(String(e) + '\n')).finally(() => process.exit(3));
+  }, 60000);
   const out = {};
   try {
     const {targetId} = await sendTo(null, 'Target.createTarget', {url: 'about:blank'});
@@ -194,11 +210,10 @@ async function run(w, h, q, app) {
     await ev("document.getElementById('keyboard-negative-control').remove()");
   } finally {
     clearTimeout(timer);
-    try { child.kill('SIGKILL'); } catch (e) {}
-    try { fs.rmSync(udd, {recursive: true, force: true}); } catch (e) {}
+    await closeBrowser();
   }
   process.stdout.write(JSON.stringify({views:out,critical_keyboard_negative_control:negative}) + '\n', () => process.exit(0));
-})().catch(e => { process.stderr.write(String(e && e.stack || e) + '\n'); try { child.kill('SIGKILL'); } catch (_) {} process.exit(2); });
+})().catch(e => { process.stderr.write(String(e && e.stack || e) + '\n'); process.exit(2); });
 """
 
 
@@ -217,7 +232,7 @@ class UXP22Browser(unittest.TestCase):
         chrome = find_chrome()
         if not chrome or not NODE:
             return
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             html = Path(d) / "page.html"
             html.write_text(page(demo=True), encoding="utf-8")
             state = Path(d) / "state.json"
