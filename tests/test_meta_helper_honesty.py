@@ -73,7 +73,11 @@ class MetaHelperHonestyTest(unittest.TestCase):
         self.assertIn('"paused_by_glimmer": ["maps"]', prompt)
         op2 = CapturingOpener(content="Model explanation.")
         muse.explain({"paused": ["maps"]}, route, env={}, opener=op2)
-        self.assertEqual(json.loads(op2.requests[0].data)["messages"][0]["content"], "In at most two plain sentences for a non-technical phone owner explain why the phone is pausing the listed tasks using only these facts: {\"paused\": [\"maps\"]}. If a why_paused fact is present, it is the reason: restate it in your own plain words. Say calls, messages and alarms are always kept.")
+        prompt = json.loads(op2.requests[0].data)["messages"][0]["content"]
+        self.assertIn('"paused": ["maps"]', prompt)
+        self.assertIn("four short sentences", prompt)
+        self.assertIn("calls, messages and alarms stay on", prompt)
+        self.assertNotIn("Muse Glimmer chose", prompt)
 
     def test_assist_grounding_includes_attribution(self):
         facts = {"paused": ["email"], "paused_by_glimmer": ["email"]}

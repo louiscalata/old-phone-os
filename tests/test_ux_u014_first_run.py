@@ -8,7 +8,8 @@ from tests.web_source import web_text
 class TestInitialLoad(unittest.TestCase):
     def test_initial_load_failure_text(self):
         text = web_text()
-        hits = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("fetch('/api/state',")]
+        hits = [ln.strip() for ln in text.splitlines()
+                if ln.strip().startswith(("fetchState().then(", "fetch('/api/state',"))]
         # UXP23 retries once after DOMContentLoaded; only the initial fetch sets failure text.
         self.assertEqual(len(hits), 2)
         self.assertIn("if(s&&!s.error)return render(s)", hits[1])
@@ -17,7 +18,9 @@ class TestInitialLoad(unittest.TestCase):
         def norm(s):
             return re.sub(r"\s+", " ", s).strip()
         nline = norm(line)
-        self.assertIn(norm("r.json()"), nline)
+        self.assertIn("function fetchState(){return fetch('/api/state',", text)
+        self.assertIn("'X-OPOS-Token':document.querySelector('[name=opos-token]').content", text)
+        self.assertIn(".then(r=>r.json())}", text)
         self.assertLess(nline.find(norm("!s")), nline.find(norm("throw new Error")))
         self.assertLess(nline.find(norm("s.error")), nline.find(norm("throw new Error")))
         self.assertLess(nline.find(norm("throw new Error")), nline.find(norm("render(s)")))
