@@ -197,14 +197,22 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
             prompt += "If asked about a task listed in paused_by_glimmer, say that Muse Glimmer chose to pause it.\n"
     prompt += "\nQuestion: " + q
     deadline = time.monotonic() + muse.HELPER_DEADLINE_S
+    contradicted = False
     for route, timeout in muse._attempts(ask_routes(q, env, free), env, deadline):
         try:
             text = muse.ask(route, prompt, env=env, opener=opener, timeout=timeout, max_tokens=200 if route.key == "local" else 400)
+            if use_facts and muse.contradicts(text, context):
+                contradicted = True
+                continue
             used = muse.answered_by(text, route)
             text = _with_idk_hint(_strip_stray_citations(str(text), sources), web)
             return {"ok": True, "text": text, "engine": used.name, "where": used.where, "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
         except muse.MuseError:
             continue
+    why = context.get("why_paused") if use_facts else None
+    if contradicted and isinstance(why, str) and why.strip():
+        # The model claimed a pause the phone does not have; the rules' own sentence is the answer.
+        return {"ok": False, "text": why.strip()[:500] + " Calls, messages and alarms always stay on.", "engine": "rules", "where": "on this phone", "sources": []}
     if sources:
         return {"ok": True, "text": "No model answered, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
     detail = "No model answered. "

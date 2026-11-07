@@ -213,7 +213,9 @@ class GlimmerAttributionTest(unittest.TestCase):
             with self.subTest(facts=facts):
                 op = Opener("Model explanation.")
                 muse.explain(facts, muse.glimmer_route({}), env={}, opener=op)
-                self.assertNotIn("Muse Glimmer chose", prompt_of(op))
+                # With nothing paused, Why sends no prompt at all, which also carries no attribution.
+                if op.requests:
+                    self.assertNotIn("Muse Glimmer chose", prompt_of(op))
                 op = Opener("It chose.")
                 assist.answer("Why is maps paused?", env={}, free=None, context=facts, opener=op)
                 self.assertNotIn("Muse Glimmer chose", prompt_of(op))
