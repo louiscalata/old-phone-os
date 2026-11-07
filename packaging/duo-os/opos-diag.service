@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=OPOS: one boot diagnostics dump
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/opos/opos-diag
+
+[Install]
+WantedBy=multi-user.target

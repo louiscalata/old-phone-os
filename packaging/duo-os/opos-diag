@@ -1,0 +1,22 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# One diagnostics dump per boot, 90 s after boot, for reading after a failed or dark boot:
+# /var/log/opos-boot-diag.txt (the journal itself is persistent too).
+out=/var/log/opos-boot-diag.txt
+sleep 90
+{
+    echo "== $(date -Is)  up $(cut -d' ' -f1 /proc/uptime)s  kernel $(uname -r)  opos $(cat /opt/opos/REVISION 2>/dev/null)"
+    echo "== system state: $(systemctl is-system-running)"
+    echo "== failed units"; systemctl --failed --no-legend
+    echo "== unit states (lxc@android, composer, opos-server, opos, phosh, item)"
+    systemctl is-active lxc@android android-service@hwcomposer opos-server opos phosh item
+    echo "== sessions"; loginctl list-sessions --no-legend
+    echo "== processes"; ps -eo pid,user,comm,args | grep -E 'phoc|chromium|composer|opos|python3 -m' | grep -v grep | cut -c1-240
+    echo "== /dev/dri, /dev/input"; ls -l /dev/dri /dev/input 2>&1 | head -30
+    echo "== network"; ip -br addr 2>&1
+    echo "== power supplies"
+    for d in /sys/class/power_supply/*; do echo "$d: $(cat "$d/type" 2>/dev/null) $(cat "$d/capacity" 2>/dev/null) $(cat "$d/status" 2>/dev/null)"; done
+    echo "== OPOS units, this boot"
+    journalctl -b -u opos.service -u opos-server.service -u opos-fallback.service --no-pager 2>&1 | tail -150
+    echo "== kernel warnings and errors"; dmesg --level=err,warn 2>/dev/null | tail -80
+} > "$out" 2>&1

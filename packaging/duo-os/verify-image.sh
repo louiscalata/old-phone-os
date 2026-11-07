@@ -22,6 +22,13 @@ check "phosh-session runs PHOSH_SESSION_BIN under phoc -E" "grep -q -- '-E \"\${
 check "phoc drives the panels through hwcomposer, as phosh's drop-in does" "grep -q '^Environment=WLR_BACKENDS=hwcomposer,libinput' $w/opos.service && grep -q '^Environment=EGL_PLATFORM=hwcomposer' $w/opos.service && grep -q 'WLR_BACKENDS=.hwcomposer' $r/lib/systemd/system/phosh.service.d/20-wlroots-hwc-env.conf"
 check "the shell is bound to the vendor composer and switches VT before starting" "grep -q '^BindsTo=android-service@hwcomposer.service' $w/opos.service && grep -q '^ExecStartPre=+chvt 7' $w/opos.service"
 check "the vendor composer is still started at boot" "[ -L $w/graphical.target.wants/android-service@hwcomposer.service ]"
+check "journal is persistent, so a failed boot leaves evidence" "grep -q '^Storage=persistent' $w/journald.conf.d/50-opos-persistent.conf && [ -d $r/var/log/journal ]"
+check "boot diagnostics dump is enabled" "[ -L $w/multi-user.target.wants/opos-diag.service ] && [ -x $r/usr/libexec/opos/opos-diag ]"
+if [ -f "$r/home/droidian/.ssh/authorized_keys" ]; then
+    echo "NOTE: DEV image: droidian has $(wc -l < "$r/home/droidian/.ssh/authorized_keys") authorized ssh key(s)"
+else
+    echo "NOTE: no ssh key in this image (nothing new can log in)"
+fi
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"

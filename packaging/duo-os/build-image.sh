@@ -46,6 +46,30 @@ rm -f "$r/etc/systemd/system/graphical.target.wants/phosh.service" "$r/etc/syste
 ln -sf /etc/systemd/system/opos.service "$r/etc/systemd/system/graphical.target.wants/opos.service"
 ln -sf /etc/systemd/system/opos-server.service "$r/etc/systemd/system/multi-user.target.wants/opos-server.service"
 
+# Boot evidence that survives a failed boot: the rootfs lives on userdata, so a persistent journal and one
+# diagnostics dump (opos-diag, 90 s after boot) can be read afterwards over ssh or from TWRP.
+mkdir -p "$r/var/log/journal" "$r/etc/systemd/journald.conf.d"
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=200M\n' > "$r/etc/systemd/journald.conf.d/50-opos-persistent.conf"
+install -m 0755 "$here/opos-diag" "$r/usr/libexec/opos/opos-diag"
+install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"
+ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"
+
+# DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
+# droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
+# for an image that is meant to be carried: without it nothing new can log in.
+if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    uid=$(awk -F: '$1=="droidian"{print $3}' "$r/etc/passwd")
+    gid=$(awk -F: '$1=="droidian"{print $4}' "$r/etc/passwd")
+    home=$(awk -F: '$1=="droidian"{print $6}' "$r/etc/passwd")
+    [ -n "$uid" ] && [ -n "$home" ] || { echo "base rootfs has no droidian user" >&2; exit 1; }
+    [ -d "$r$home" ] || install -d -m 0755 -o "$uid" -g "$gid" "$r$home"
+    install -d -m 0700 -o "$uid" -g "$gid" "$r$home/.ssh"
+    cat "$OPOS_DEV_SSH_PUBKEY" >> "$r$home/.ssh/authorized_keys"
+    chown "$uid:$gid" "$r$home/.ssh/authorized_keys"
+    chmod 0600 "$r$home/.ssh/authorized_keys"
+    echo "DEV IMAGE: droidian accepts the ssh key '$(cut -d' ' -f3- "$OPOS_DEV_SSH_PUBKEY")' (remove with: rm ~/.ssh/authorized_keys)"
+fi
+
 sync
 echo "manifest:"
 ( cd "$r" && find opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch etc/systemd/system/opos*.service -type f -exec sha256sum {} + )
