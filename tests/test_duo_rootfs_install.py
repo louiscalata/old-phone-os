@@ -55,8 +55,11 @@ class TestDuoRootfsInstall(unittest.TestCase):
 
             boot_lines = [l for l in lines if l.startswith('+ fastboot boot') and l.rstrip().endswith('boot.img')]
             self.assertEqual(len(boot_lines), 1)
-            for l in lines:
-                self.assertNotIn('reboot', l)
+            # Only TWRP may be left for the bootloader, before the one RAM-boot; the RAM-booted kernel
+            # itself is never rebooted (docs/duo-usb-install.md).
+            reboots = [i for i, l in enumerate(lines) if 'reboot' in l]
+            self.assertEqual([lines[i].strip() for i in reboots], ['+ adb reboot bootloader'])
+            self.assertLess(reboots[0], lines.index(boot_lines[0]))
 
             result_n = subprocess.run(['sh', '-n', SCRIPT], capture_output=True, text=True)
             self.assertEqual(result_n.returncode, 0)

@@ -47,6 +47,9 @@ main() {
  run adb wait-for-recovery
  run adb push "$rootfs" "$dest"
  run verify
+ # fastboot only answers in the bootloader: leave TWRP for it before the one RAM-boot.
+ run adb reboot bootloader
+ run fastboot wait-for-device
  run fastboot boot "$boot"
 }
 
