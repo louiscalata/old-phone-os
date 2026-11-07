@@ -36,6 +36,7 @@ g rev-parse "$ref" > "$r/opt/opos/REVISION"
 
 install -d "$r/usr/libexec/opos"
 install -m 0755 "$here/opos-kiosk" "$r/usr/libexec/opos/opos-kiosk"
+install -m 0755 "$here/opos-session" "$r/usr/libexec/opos/opos-session"
 install -m 0755 "$here/opos-switch" "$r/usr/sbin/opos-switch"
 for u in opos-server.service opos.service opos-fallback.service; do
     install -m 0644 "$here/$u" "$r/etc/systemd/system/$u"

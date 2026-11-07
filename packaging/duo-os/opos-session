@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The OPOS session: what phosh-session does to start phoc, minus phoc's shell mode. phosh-session
+# passes -S, and in shell mode phoc keeps an opaque black shield over every output until a phosh
+# client reports that the shell is up. OPOS's kiosk is not one, so both panels stayed black on the
+# Duo (2026-11-07) with every process running; phoc without -S lit them.
+PHOC_INI=/usr/share/phosh/phoc.ini
+[ -f /etc/phosh/phoc.ini ] && PHOC_INI=/etc/phosh/phoc.ini
+[ -n "$WLR_BACKENDS" ] || WLR_BACKENDS=hwcomposer,libinput
+export WLR_BACKENDS
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    DBUS_RUN_SESSION="dbus-run-session --"
+fi
+exec systemd-cat -t phoc $DBUS_RUN_SESSION /usr/bin/phoc -v -C "$PHOC_INI" -E /usr/libexec/opos/opos-kiosk

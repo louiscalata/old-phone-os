@@ -24,18 +24,19 @@ Environment=XDG_SESSION_TYPE=wayland
 Environment=WLR_BACKENDS=hwcomposer,libinput
 Environment=EGL_PLATFORM=hwcomposer
 Environment=WLR_HWC_SKIP_VERSION_CHECK=1
-Environment=PHOSH_SESSION_BIN=/usr/libexec/opos/opos-kiosk
 # A compositor on an old vendor composer reset the phone (the port's item-composer-fresh), and a
 # chvt racing the session start killed it: both before the session, as item does.
 ExecStartPre=+/bin/sh -c '[ -x /usr/libexec/item/item-composer-fresh ] && /usr/libexec/item/item-composer-fresh; true'
 ExecStartPre=+chvt 7
-ExecStart=capsh --noamb -- -c "exec /usr/bin/phosh-session"
+ExecStart=capsh --noamb -- -c "exec /usr/libexec/opos/opos-session"
 TimeoutStartSec=30
 User=droidian
 PAMName=phosh
 WorkingDirectory=~
 Restart=always
 RestartSec=500ms
+# As item.service: a restart goes straight to activating, so OnFailure fires only at the start limit.
+RestartMode=direct
 TTYPath=/dev/tty7
 TTYReset=yes
 TTYVHangup=yes

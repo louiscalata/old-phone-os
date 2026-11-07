@@ -18,5 +18,11 @@ sleep 90
     for d in /sys/class/power_supply/*; do echo "$d: $(cat "$d/type" 2>/dev/null) $(cat "$d/capacity" 2>/dev/null) $(cat "$d/status" 2>/dev/null)"; done
     echo "== OPOS units, this boot"
     journalctl -b -u opos.service -u opos-server.service -u opos-fallback.service --no-pager 2>&1 | tail -150
+    echo "== DRM clients (the composer must show master y)"; cat /sys/kernel/debug/dri/0/clients 2>&1
+    echo "== panel backlights"
+    for b in /sys/class/backlight/*; do
+        echo "$b brightness=$(cat "$b/brightness" 2>/dev/null) actual=$(cat "$b/actual_brightness" 2>/dev/null) max=$(cat "$b/max_brightness" 2>/dev/null) bl_power=$(cat "$b/bl_power" 2>/dev/null)"
+    done
+    echo "== phoc, this boot"; journalctl -b -t phoc --no-pager 2>&1 | tail -40
     echo "== kernel warnings and errors"; dmesg --level=err,warn 2>/dev/null | tail -80
 } > "$out" 2>&1
