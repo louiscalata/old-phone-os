@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The OPOS shell: phosh.service's session start, with OPOS's kiosk as the session client.
+[Unit]
+Description=OPOS, the phone's only interface
+Conflicts=getty@tty1.service phosh.service item.service
+After=getty@tty1.service rc-local.service plymouth-quit-wait.service systemd-user-sessions.service
+After=dbus.socket session-c1.scope opos-server.service
+Wants=dbus.socket opos-server.service
+Before=graphical.target
+OnFailure=opos-fallback.service
+ConditionPathExists=/dev/tty0
+
+[Service]
+Environment=LANG=C.UTF-8
+Environment=XDG_SESSION_TYPE=wayland
+Environment=PHOSH_SESSION_BIN=/usr/libexec/opos/opos-kiosk
+ExecStart=capsh --noamb -- -c "exec /usr/bin/phosh-session"
+TimeoutStartSec=30
+User=droidian
+PAMName=phosh
+WorkingDirectory=~
+Restart=always
+RestartSec=5s
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty7
+UtmpMode=user
+
+[Install]
+WantedBy=graphical.target

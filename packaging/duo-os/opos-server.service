@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=OPOS server: rules, governor and helper on the phone's real battery
+After=network.target lxc@android.service
+Wants=lxc@android.service
+
+[Service]
+User=droidian
+Environment=PYTHONPATH=/opt/opos/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=OPOS_BATTERY=live
+Environment=OPOS_ON_PHONE=1
+ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target
