@@ -62,20 +62,45 @@ class ExplainTests(unittest.TestCase):
 
 
 class AskTests(unittest.TestCase):
-    def _answer(self, reply, facts):
+    def _answer(self, reply, facts, question="Tell me about maps."):
         route = muse.Route("local", "Meta Llama 3.2 1B", "on this phone", "http://127.0.0.1:8080/v1", "llama-3.2-1b-instruct")
-        with mock.patch.object(assist, "ask_routes", return_value=[route]), mock.patch.object(muse, "ask", return_value=reply):
-            return assist.answer("Why are maps paused?", env={}, free=4096, context=facts)
+        with mock.patch.object(assist, "ask_routes", return_value=[route]), mock.patch.object(muse, "ask", return_value=reply) as ask:
+            return assist.answer(question, env={}, free=4096, context=facts), ask
 
     def test_duo_ask_reply_replaced_by_rules(self):
-        out = self._answer(DUO_ASK, CHARGING)
-        self.assertEqual((out["engine"], out["ok"]), ("rules", False))
+        out, _ = self._answer(DUO_ASK, CHARGING)
+        # ok stays True: on the page, ok False with a rules engine means the helper is resting.
+        self.assertEqual((out["engine"], out["where"], out["ok"]), ("battery rules", "on this phone", True))
         self.assertTrue(out["text"].startswith(CHARGING["why_paused"]))
         self.assertNotIn("maps are paused", out["text"].lower())
 
     def test_grounded_reply_kept(self):
-        out = self._answer(GLIMMER, SAVER)
+        out, _ = self._answer(GLIMMER, SAVER)
         self.assertEqual((out["engine"], out["ok"]), ("Meta Llama 3.2 1B", True))
+
+    def test_pause_question_answered_by_rules_without_a_model(self):
+        out, ask = self._answer(DUO_ASK, CHARGING, "Why are maps paused?")
+        ask.assert_not_called()
+        self.assertEqual(out["engine"], "battery rules")
+        self.assertTrue(out["text"].startswith(CHARGING["why_paused"]))
+
+    def test_time_questions_answered_by_rules(self):
+        # The Duo's 1B model answered "16 hours" here, reading the 16:00 goal as a duration.
+        charging = dict(CHARGING, time_left="Charging", charging=True, goal="16:00", goal_met=True)
+        out, ask = self._answer("16 hours", charging, "How long will my battery last?")
+        ask.assert_not_called()
+        self.assertTrue(out["text"].startswith("The phone is charging, so the battery is filling"))
+        unplugged = dict(SAVER, time_left="About 3 h 10 min left", charging=False, goal="16:00", goal_met=False)
+        out, _ = self._answer("x", unplugged, "When will it run out?")
+        self.assertTrue(out["text"].startswith("About 3 h 10 min left at the current rate. That falls short of your 16:00 goal"))
+        out, _ = self._answer("x", dict(unplugged, goal_met=True), "how long will it last")
+        self.assertIn("That reaches your 16:00 goal.", out["text"])
+
+    def test_other_questions_and_web_search_still_use_the_model(self):
+        out, ask = self._answer("A capital city.", CHARGING, "What is the capital of France?")
+        ask.assert_called_once()
+        self.assertEqual(out["engine"], "Meta Llama 3.2 1B")
+        self.assertIsNone(assist.rules_answer("Why is maps paused?", {}))
 
 
 if __name__ == "__main__":
