@@ -14,11 +14,13 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $drop = "/sdcard/Download/opos"
-function Adb { $out = & adb @args 2>&1; if ($LASTEXITCODE -ne 0) { throw "adb $($args -join ' '): $out" }; $out }
+function Adb { $out = & adb.exe @args 2>&1; if ($LASTEXITCODE -ne 0) { throw "adb $($args -join ' '): $out" }; $out }
 function Sh([string]$cmd) { (Adb shell $cmd | Out-String).Trim() }
 
-$devices = @(& adb devices | Select-String "`tdevice$")
-if ($devices.Count -ne 1) { throw "need exactly one authorized adb device, found $($devices.Count) (check the cable and tap Allow on the phone)" }
+$devices = @(& adb.exe devices | Select-String "`tdevice$")
+if ($env:ANDROID_SERIAL) {
+    if (-not ($devices | Where-Object { $_.Line.StartsWith("$env:ANDROID_SERIAL`t") })) { throw "ANDROID_SERIAL $env:ANDROID_SERIAL is not an authorized adb device" }
+} elseif ($devices.Count -ne 1) { throw "need exactly one authorized adb device, found $($devices.Count) (check the cable and tap Allow on the phone, or set ANDROID_SERIAL)" }
 $info = [ordered]@{
     model   = Sh "getprop ro.product.model"
     android = Sh "getprop ro.build.version.release"
@@ -47,7 +49,7 @@ Remove-Item $tmp
 Adb push (Join-Path $PSScriptRoot "termux-setup.sh") "$drop/termux-setup.sh" | Out-Null
 if ($Model) {
     $size = (Get-Item $Model).Length
-    if ((Sh "stat -c %s $drop/model.gguf 2>/dev/null") -ne "$size") { "pushing model ($size bytes)"; Adb push $Model "$drop/model.gguf" | Out-Null }
+    if ((Sh "stat -c %s $drop/model.gguf 2>/dev/null || echo 0") -ne "$size") { "pushing model ($size bytes)"; Adb push $Model "$drop/model.gguf" | Out-Null }
 }
 # Termux targets API 28, so the legacy storage grant lets it read the drop folder.
 foreach ($perm in "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE") { Sh "pm grant com.termux android.permission.$perm" | Out-Null }
@@ -75,8 +77,8 @@ if ($st -ne "ready") { Sh "tail -n 40 $drop/setup.log"; throw "setup timed out a
 "battery: " + (Sh "cat $drop/battery.json")
 
 Adb reverse tcp:1234 tcp:1234 | Out-Null
-Adb forward tcp:18765 tcp:8765 | Out-Null
-$code = (Invoke-WebRequest http://127.0.0.1:18765/ -UseBasicParsing -TimeoutSec 10).StatusCode
+Adb forward tcp:8765 tcp:8765 | Out-Null
+$code = (Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing -TimeoutSec 10).StatusCode
 "OPOS on the phone answered HTTP $code"
 Sh "am start -a android.intent.action.VIEW -d http://127.0.0.1:8765/" | Out-Null
 
