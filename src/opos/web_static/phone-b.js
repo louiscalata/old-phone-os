@@ -2,10 +2,11 @@
 var G=i=>document.getElementById(i),E=t=>document.createElement(t);
 try{(function(){
 var FF=['slab','foldable','slideout','tablet'],d=document.documentElement,v='auto';
-function $(i){return document.getElementById(i)}
-function apply(x){if(x==='slide')x='slideout';if(FF.indexOf(x)<0)x='auto';v=x;if(x==='auto')delete d.dataset.ff;else d.dataset.ff=x}
+var $=G;
+var TWO='(horizontal-viewport-segments:2)';
+function apply(x){if(x==='slide')x='slideout';if(FF.indexOf(x)<0)x='auto';v=x;if(x!=='auto')d.dataset.ff=x;else if(mq(TWO))d.dataset.ff='foldable';else delete d.dataset.ff}
 function mq(q){try{return window.matchMedia(q).matches}catch(e){return false}}
-function guess(){var g=$('ff-detected');if(g)g.textContent='Auto looks like: '+(mq('(min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3)')?'foldable':mq('(orientation:landscape) and (max-height:520px)')?'slide-out':'slab')}
+function guess(){try{apply(v)}catch(e){}var g=$('ff-detected');if(g)g.textContent='Auto looks like: '+(mq(TWO)?'two screens':mq('(min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3)')?'foldable':mq('(orientation:landscape) and (max-height:520px)')?'slide-out':'slab')}
 try{v=localStorage.getItem('opos_ff')}catch(e){v='auto'}
 try{apply(v)}catch(e){}
 try{var f=$('ff'),r=f&&f.querySelector('input[value="'+v+'"]');if(r)r.checked=true;guess();window.addEventListener('resize',guess);
@@ -15,7 +16,7 @@ try{if(v==='auto')localStorage.removeItem('opos_ff');else localStorage.setItem('
 })()}catch(e){}
 try{(function(){
 var ui=window.oposUI=window.oposUI||{},APPS=['home','phone','messages','helper','settings'],first=true,last='',pend=false;
-function $(i){return document.getElementById(i)}
+var $=G;
 function full(){var p=$('phone'),h=$('home'),b=$('back'),s=$('settings');if(p)delete p.dataset.app;if(h)h.hidden=true;if(b)b.hidden=true;if(s)s.hidden=true}
 function done(){pend=false;try{var p=$('phone'),a=$('ask');if(!p||!a||p.dataset.app!=='helper')return;if(a.hidden){full();return}
 if(typeof a.scrollIntoView==='function')a.scrollIntoView({block:'nearest'});var q=$('q');if(q)q.focus()}catch(e){full()}}
@@ -55,7 +56,7 @@ set();if(c)c.addEventListener('change',set);
 try{var n=G('answer');if(n&&typeof MutationObserver==='function')new MutationObserver(function(){try{set()}catch(e){}}).observe(n,{childList:true,characterData:true})}catch(e){}
 })()}catch(e){}
 try{(function(){
-var ui=window.oposUI;function $(i){return document.getElementById(i)}
+var ui=window.oposUI;var $=G;
 var p=$('phone'),h=$('home'),a=$('allapps'),ul=$('apps-list'),x=$('apps-close');if(!ui||!ui.openApp||!p||!h||!a||!ul||!x)return;
 var L=[['phone','Phone'],['messages','Messages'],['helper','Helper'],['settings','Settings'],['contacts','Contacts','phone'],['threads','Threads','messages']],open=false,o=ui.openApp;
 L.forEach(function(e){var li=E('li'),b=E('button');b.type='button';b.textContent=e[1];b.dataset.open=e[2]||e[0];if(e[2])b.dataset.scroll=e[0];li.appendChild(b);ul.appendChild(li)});
@@ -90,7 +91,7 @@ function helperAsk(text,web,request){return request({action:'ask',text:text,web:
 try{(function(){
 var ui=window.oposUI;if(!ui||!ui.openApp)return;
 var o=ui.openApp,built=false,dead=false,T=[],MAX=6,ASK_WAIT_MS=125000,ctl=null,timer=null,pulse=null,lastQ='',ask,log,st,bar,bs,bc,br,resting=false,modeVersion=0,REST='Resting to save power. Calls and messages still work.',STD='Standard answer: the helper did not reply.';
-function $(i){return document.getElementById(i)}
+var $=G;
 function mk(t){return document.createElement(t)}
 function btn(id,t){var b=mk('button');b.type='button';b.id=id;b.textContent=t;return b}
 function clearWait(){if(timer!==null){clearTimeout(timer);timer=null}if(pulse!==null){clearInterval(pulse);pulse=null}}

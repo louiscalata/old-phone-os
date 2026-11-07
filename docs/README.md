@@ -28,6 +28,7 @@ earlier work and are not current instructions or evidence about the current sour
 - [OPOS on postmarketOS](pmos.md): package inputs, local-source staging, QEMU development and validation limits.
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
+- [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; prepared, not yet run on the phone.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
 
 ## Security and privacy

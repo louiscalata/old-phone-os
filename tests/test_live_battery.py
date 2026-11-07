@@ -26,7 +26,7 @@ def _no_which(name):
 class TermuxTests(unittest.TestCase):
     def test_discharging(self):
         r = lb._termux_status(_run_json({"percentage": 42, "status": "DISCHARGING", "plugged": "UNPLUGGED", "temperature": 31.5}), _which)
-        self.assertEqual(r, {"level": 42.0, "temp_c": 31.5, "charging": False, "source": "termux-api"})
+        self.assertEqual(r, {"level": 42.0, "temp_c": 31.5, "charging": False, "source": "termux-api", "charge_counter_uah": None})
 
     def test_charging_and_full(self):
         for status in ("CHARGING", "FULL"):
@@ -45,6 +45,39 @@ class TermuxTests(unittest.TestCase):
 
     def test_percentage_clamped(self):
         self.assertEqual(lb._termux_status(_run_json({"percentage": 140}), _which)["level"], 100.0)
+
+    def test_charge_counter_kept(self):
+        r = lb._termux_status(_run_json({"percentage": 100, "charge_counter": 3179000}), _which)
+        self.assertEqual(r["charge_counter_uah"], 3179000)
+        self.assertIsNone(lb._termux_status(_run_json({"percentage": 50, "charge_counter": -1}), _which)["charge_counter_uah"])
+
+
+class CounterHealthTests(unittest.TestCase):
+    def test_duo_backup_reading(self):
+        # The Nov 4 Surface Duo capture: 3,179,000 uAh at 100% against the 3,577 mAh design.
+        self.assertAlmostEqual(lb.counter_health(100, 3179000, 3577), 0.8887, places=3)
+        self.assertAlmostEqual(lb.counter_health(50, 1589500, 3577), 0.8887, places=3)
+
+    def test_low_charge_or_missing_inputs(self):
+        self.assertIsNone(lb.counter_health(lb.MIN_ESTIMATE_PCT - 1, 900000, 3577))
+        self.assertIsNone(lb.counter_health(80, None, 3577))
+        self.assertIsNone(lb.counter_health(80, 2000000, None))
+        self.assertEqual(lb.counter_health(50, 9000000, 3577), 1.0)
+
+    def test_design_capacity_sources(self):
+        def model(name):
+            return lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=name + "\n", stderr="")
+        self.assertEqual(lb.design_mah({}, model("Surface Duo")), 3577)
+        self.assertEqual(lb.design_mah({"OPOS_BATTERY_DESIGN_MAH": "4000"}, model("Surface Duo")), 4000)
+        self.assertIsNone(lb.design_mah({}, model("Pixel 3")))
+
+    def test_read_live_prefers_counter_over_env(self):
+        def run(cmd, **kw):
+            out = "Surface Duo\n" if cmd[0] == "getprop" else json.dumps({"percentage": 80, "charge_counter": 2543200})
+            return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+        r = lb.read_live(env={"OPOS_BATTERY_HEALTH": "0.5"}, root="/nonexistent", run=run, which=_which)
+        self.assertEqual(r["health_source"], "charge-counter")
+        self.assertAlmostEqual(r["health"], 0.8887, places=3)
 
 
 class SysfsAndHealthTests(unittest.TestCase):
@@ -110,6 +143,15 @@ class LiveBatteryTests(unittest.TestCase):
         s = Phone().state()
         self.assertNotIn("battery_source", s)
         self.assertFalse(s["charging"])
+
+
+class OnPhoneLabelTests(unittest.TestCase):
+    def test_termux_flag_names_the_phone(self):
+        from opos import assist
+        if assist.PHONE_BUILD:
+            self.skipTest("packaged phone install")
+        self.assertEqual(assist.local_route({}, free=4096).where, "on this computer")
+        self.assertEqual(assist.local_route({"OPOS_ON_PHONE": "1"}, free=4096).where, "on this phone")
 
 
 if __name__ == "__main__":

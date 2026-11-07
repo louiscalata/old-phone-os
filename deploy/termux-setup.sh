@@ -35,7 +35,7 @@ if [ -f "$HOME/models/model.gguf" ]; then
     --host 127.0.0.1 --port 8080 -c 2048 -t "${OPOS_LLAMA_THREADS:-4}" > "$HOME/llama.log" 2>&1 &
 fi
 cd "$HOME/opos"
-OPOS_BATTERY=live PYTHONPATH=src nohup python -m opos.web --port 8765 --live-battery > "$HOME/opos.log" 2>&1 &
+OPOS_ON_PHONE=1 OPOS_BATTERY=live PYTHONPATH=src nohup python -m opos.web --port 8765 --live-battery > "$HOME/opos.log" 2>&1 &
 EOF
 chmod +x "$HOME/bin/opos-start"
 status "starting"

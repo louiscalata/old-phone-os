@@ -79,7 +79,8 @@ def local_route(env=None, free=None):
             p = urllib.parse.urlparse(env_url)
             if p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost"):
                 url = env_url
-    where = "on this phone" if PHONE_BUILD else "on this computer"
+    # OPOS_ON_PHONE=1: set by deploy/termux-setup.sh, where the packaged-install check cannot see the phone.
+    where = "on this phone" if PHONE_BUILD or env.get("OPOS_ON_PHONE") == "1" else "on this computer"
     # The server already holds whichever size it loaded, so either exact id verifies it; the free-memory pick goes first.
     other = tuple((m, n) for m, n in LOCAL_MODELS.items() if m != model)
     return muse.Route("local", LOCAL_MODELS[model], where, url or DEFAULT_LOCAL_URL, model, verify_model=url is None, alternates=other if url is None else ())

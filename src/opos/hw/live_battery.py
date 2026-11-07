@@ -3,9 +3,11 @@
 
 Sources, first that answers wins: Termux:API's termux-battery-status (stock Android under
 Termux), then the Linux sysfs reader in opos.hw.battery (postmarketOS, Droidian). Health
-comes from sysfs charge_full/charge_full_design when readable, else OPOS_BATTERY_HEALTH,
-else 1.0 with health_source "assumed", so the screen never claims a measured health it
-did not read.
+comes from sysfs charge_full/charge_full_design when readable; else, on Android, from the
+fuel gauge's charge counter scaled to 100% against the design capacity (OPOS_BATTERY_DESIGN_MAH
+or the DESIGN_MAH model table), at MIN_ESTIMATE_PCT charge or more; else OPOS_BATTERY_HEALTH;
+else 1.0 with health_source "assumed", so the screen never claims a measured health it did
+not read.
 """
 from __future__ import annotations
 
@@ -19,6 +21,10 @@ from opos.hw.battery import read_battery
 
 REFRESH_S = 15.0
 _TERMUX_TIMEOUT_S = 10.0
+# Manufacturer design capacities, keyed by ro.product.model.
+DESIGN_MAH = {"Surface Duo": 3577, "Surface Duo 2": 4449}
+# Below this charge, percentage rounding makes the counter estimate too coarse to use.
+MIN_ESTIMATE_PCT = 30
 
 
 def _clamp(v, lo, hi):
@@ -39,12 +45,40 @@ def _termux_status(run=subprocess.run, which=shutil.which):
     status = str(data.get("status", "")).upper()
     plugged = str(data.get("plugged", "")).upper()
     temp = data.get("temperature")
+    counter = data.get("charge_counter")
     return {
         "level": float(_clamp(data["percentage"], 0, 100)),
         "temp_c": float(temp) if isinstance(temp, (int, float)) else None,
         "charging": status in ("CHARGING", "FULL") or (plugged not in ("", "UNPLUGGED") and status != "DISCHARGING"),
         "source": "termux-api",
+        "charge_counter_uah": int(counter) if isinstance(counter, (int, float)) and counter > 0 else None,
     }
+
+
+def _model(run=subprocess.run):
+    try:
+        return run(["getprop", "ro.product.model"], capture_output=True, text=True, timeout=5, check=False).stdout.strip()
+    except Exception:
+        return ""
+
+
+def design_mah(env, run=subprocess.run):
+    raw = env.get("OPOS_BATTERY_DESIGN_MAH")
+    if raw:
+        try:
+            v = int(raw)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return DESIGN_MAH.get(_model(run))
+
+
+def counter_health(level, counter_uah, design):
+    """Full-charge capacity over design capacity, from one charge-counter reading, or None."""
+    if not counter_uah or not design or level < MIN_ESTIMATE_PCT:
+        return None
+    return _clamp(counter_uah / (level / 100) / (design * 1000), 0.1, 1.0)
 
 
 def _sysfs_status(root="/"):
@@ -59,10 +93,14 @@ def _sysfs_status(root="/"):
     }
 
 
-def _health(env, root="/"):
+def _health(env, root="/", reading=None, design=None):
     b = read_battery(root)
     if b["health"] is not None and b["health"] > 0:
         return float(b["health"]), "sysfs"
+    if reading is not None:
+        h = counter_health(reading["level"], reading.get("charge_counter_uah"), design)
+        if h is not None:
+            return float(h), "charge-counter"
     raw = env.get("OPOS_BATTERY_HEALTH")
     if raw:
         try:
@@ -78,7 +116,8 @@ def read_live(env=None, root="/", run=subprocess.run, which=shutil.which):
     r = _termux_status(run, which) or _sysfs_status(root)
     if r is None:
         return None
-    r["health"], r["health_source"] = _health(env, root)
+    design = design_mah(env, run) if r.get("charge_counter_uah") else None
+    r["health"], r["health_source"] = _health(env, root, r, design)
     return r
 
 
