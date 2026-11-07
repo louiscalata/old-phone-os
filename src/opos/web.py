@@ -180,17 +180,22 @@ def _contact(c):
     if isinstance(c, (list, tuple)):
         return {"name": str(c[0]), "number": str(c[1])}
     return {"name": str(c.name), "number": str(c.number)}
+def _local_clock_s():
+    t = time.localtime()
+    return t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec
 class Phone:
-    def __init__(self, visible=False):
+    def __init__(self, visible=False, live_battery=None):
         self.visible = bool(visible)
         self.runtime = Runtime(visible=self.visible)
         self.modem = ScreenModem()
         self.essentials = Essentials(self.modem)
         self.book = Book(DEMO_CONTACTS)
-        self.sim = DrainSim(60.0, health=0.6, temp_c=30.0, speed=1.0)  # Saver at start: the helper answers, maps and photos backup rest
+        # live_battery: a LiveBattery reading the phone's own battery and wall clock in place of the demo's noon simulation.
+        self.live = live_battery is not None
+        self.sim = live_battery if self.live else DrainSim(60.0, health=0.6, temp_c=30.0, speed=1.0)  # Saver at start: the helper answers, maps and photos backup rest
         self.dash = Dashboard(self.runtime.tasks)
-        self.clock_s = 43200
-        self.charging = False
+        self.clock_s = _local_clock_s() if self.live else 43200
+        self.charging = bool(self.sim.charging) if self.live else False
         self.running = False
         self.open_number = None
         self.status = "ready"
@@ -206,6 +211,10 @@ class Phone:
         The runtime applies the owner's Undo and foreground app over soft pauses, then the hard
         floors. An Undo lasts until the mode changes.
         """
+        if self.live:
+            self.sim.refresh()
+            self.charging = bool(self.sim.charging)
+            self.clock_s = _local_clock_s()
         hours = self.dash.hours_to_goal(self.clock_s)
         def step(undone):
             return self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c,
@@ -270,6 +279,8 @@ class Phone:
         out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
         out["simulation"] = {"modem": type(getattr(self.essentials, "modem", None)) is ScreenModem}
+        if self.live:
+            out["battery_source"] = {"source": self.sim.source, "health_source": self.sim.health_source}
         out["prefs"] = self._preferences()
         out["temp_c"] = round(float(self.sim.temp_c), 1)
         out["charging"] = bool(self.charging)
@@ -972,10 +983,18 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--visible", action="store_true")
     p.add_argument("--token-file", default=None)
+    p.add_argument("--live-battery", action="store_true", help="read this phone's battery and clock instead of simulating (also OPOS_BATTERY=live)")
     args = p.parse_args(argv)
+    import sys
+    live = None
+    if args.live_battery or os.environ.get("OPOS_BATTERY") == "live":
+        from opos.hw.live_battery import LiveBattery
+        live = LiveBattery()
+        if not live.ok:
+            print("opos: no readable battery (termux-battery-status or sysfs); using the simulation", file=sys.stderr)
+            live = None
     token = None
     if args.token_file is not None:
-        import sys
         try:
             with open(args.token_file, encoding="utf-8") as f:
                 token = f.read().strip()
@@ -983,7 +1002,7 @@ def main(argv=None):
         except Exception:
             print("opos: cannot read session token", file=sys.stderr)
             raise SystemExit(2)
-    phone = Phone(visible=_install_helper_visible(args.visible))
+    phone = Phone(visible=_install_helper_visible(args.visible), live_battery=live)
     try:
         cfg = setup_config.load()
         if cfg is None:
@@ -995,7 +1014,10 @@ def main(argv=None):
     phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
     _route_with_glimmer(phone, os.environ)
     server = make_server(args.port, phone, token=token)
-    print(f"OPOS desktop demo: http://127.0.0.1:{args.port}/?demo=1 (Ctrl-C to stop)", flush=True)
+    if live is not None:
+        print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{args.port}/ (Ctrl-C to stop)", flush=True)
+    else:
+        print(f"OPOS desktop demo: http://127.0.0.1:{args.port}/?demo=1 (Ctrl-C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
