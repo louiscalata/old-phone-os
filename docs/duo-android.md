@@ -1,9 +1,24 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # OPOS on a stock-Android Surface Duo
 
-Status, November 7, 2026: **prepared, not yet run on the phone.** The deploy path, real-battery reader and
-two-screen detection exist in source and pass tests; the target Duo was stuck in a boot loop when this was
-written, so nothing below has a physical-phone result yet. Results get recorded here when they exist.
+Status, November 7, 2026: **running on the owner's Surface Duo** (AT&T `duo-att`, stock 2022.902.48 after a
+factory reset), deployed over wireless debugging because the phone's USB-C port charges but no longer carries
+data. Results below are from that phone on that day; they are one device and one session, not a field test.
+
+## Results on the phone, November 7, 2026
+
+- **Live battery:** Termux:API readings reached the lock screen and helper facts (for example 43 %, charging,
+  32.7 °C, "Charging. Nothing paused."); `battery_source` reported `termux-api` with health from the charge
+  counter (98 % while charging at 42-54 %; the November 4 full-charge reading gave 89 %, so this estimate is not
+  yet stable across charge levels).
+- **On-phone model:** llama-server with Llama 3.2 1B Instruct Q4_K_M (807,694,464 bytes) on the Snapdragon 855:
+  17.7-18.4 generated tokens/s, 2.2 s per short warm answer and 5.3 s cold (84-token prompt, 39-45 tokens out).
+- **Helper honesty:** with nothing paused, the 1B model asserted pauses in Why? and Ask and read the 16:00 goal as
+  "16 hours". Why? with nothing paused, and Ask's pause and time-left questions on the local route, now answer
+  from the rules ("battery rules, on this phone"); any model reply that calls a running task paused falls back
+  to the rules. Afterwards all five checked questions answered correctly: three instantly from the rules, two
+  general ones from the phone's model in 8-11 s.
+- **Two screens:** Chrome opened OPOS on one screen beside Termux; spanning was not tested.
 
 This path keeps Android. It does not flash, root or wipe the phone, and uninstalling two apps undoes it.
 The Droidian route in [duo-usb-install.md](duo-usb-install.md) stays historical and paused.
@@ -83,9 +98,9 @@ checksum. Local pmOS builds are unaffected: `OPOS_LOCAL_SOURCE=1` staging measur
 
 ## Not yet verified
 
-- Any of this on the physical Duo: deploy, live battery, charge-counter health, two-screen detection in the
-  phone's Chrome, on-phone Llama speed. The phone was in a boot loop on November 7.
-- The helper's "on this phone" wording under Termux, which comes from `OPOS_ON_PHONE=1` in `opos-start` because
-  `PHONE_BUILD` only recognises the packaged install.
-- Whether the phone's Chrome supports viewport segments. Without them, spanning both screens keeps the wide
-  single layout; one screen is unaffected.
+- Spanning OPOS across both screens in the phone's Chrome (viewport-segment support), and battery life over a
+  real day against stock Android.
+- Discharging behaviour: every reading so far was while charging, so no task was paused on the real phone.
+- Survival of Termux in the background over hours (it holds a wake lock; Android 12 may still stop it).
+- Deploying over USB on a phone whose port works; this one used wireless debugging (`adb pair`, then
+  `ANDROID_SERIAL=<ip:port>`), and the setup command is typed into Termux, so the screen must stay unlocked.

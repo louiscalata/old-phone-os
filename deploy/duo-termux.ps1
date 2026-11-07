@@ -58,18 +58,18 @@ Sh "input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard" | Out-Null
 Sh "am start -n com.termux/com.termux.app.TermuxActivity" | Out-Null
 "waiting for Termux's first-run bootstrap"
 Start-Sleep -Seconds 25
-Sh "input text 'sh%s$drop/termux-setup.sh'; input keyevent 66" | Out-Null
+Sh "input keyevent KEYCODE_MOVE_END; input keyevent --longpress KEYCODE_DEL; input text 'sh%s$drop/termux-setup.sh'; sleep 2; input keyevent 66" | Out-Null
 
 $deadline = (Get-Date).AddSeconds($SetupTimeoutS)
 $last = ""
 do {
     Start-Sleep -Seconds 10
-    $st = Sh "cat $drop/status 2>/dev/null"
+    $st = Sh "cat $drop/status 2>/dev/null || true"
     if ($st -ne $last) { "{0:HH:mm:ss} {1}" -f (Get-Date), $st; $last = $st }
     if ($st -like "failed*") { Sh "tail -n 40 $drop/setup.log"; throw $st }
     if (-not $st -and (Get-Date) -gt $deadline.AddSeconds(90 - $SetupTimeoutS)) {
         "setup has not started; typing the command again"
-        Sh "am start -n com.termux/com.termux.app.TermuxActivity; input text 'sh%s$drop/termux-setup.sh'; input keyevent 66" | Out-Null
+        Sh "am start -n com.termux/com.termux.app.TermuxActivity; input keyevent KEYCODE_MOVE_END; input keyevent --longpress KEYCODE_DEL; input text 'sh%s$drop/termux-setup.sh'; sleep 2; input keyevent 66" | Out-Null
         $deadline = $deadline.AddSeconds(60)
     }
 } until ($st -eq "ready" -or (Get-Date) -gt $deadline)
