@@ -21,7 +21,7 @@ check "kiosk is phosh-session's client" "grep -q 'PHOSH_SESSION_BIN=/usr/libexec
 check "phosh-session runs PHOSH_SESSION_BIN under phoc -E" "grep -q -- '-E \"\${PHOSH_SESSION_BIN}' $r/usr/bin/phosh-session"
 check "phoc drives the panels through hwcomposer, as phosh's drop-in does" "grep -q '^Environment=WLR_BACKENDS=hwcomposer,libinput' $w/opos.service && grep -q '^Environment=EGL_PLATFORM=hwcomposer' $w/opos.service && grep -q 'WLR_BACKENDS=.hwcomposer' $r/lib/systemd/system/phosh.service.d/20-wlroots-hwc-env.conf"
 check "the shell is bound to the vendor composer and switches VT before starting" "grep -q '^BindsTo=android-service@hwcomposer.service' $w/opos.service && grep -q '^ExecStartPre=+chvt 7' $w/opos.service"
-check "the vendor composer is still started at boot" "[ -e $w/graphical.target.wants/android-service@hwcomposer.service ]"
+check "the vendor composer is still started at boot" "[ -L $w/graphical.target.wants/android-service@hwcomposer.service ]"
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"
