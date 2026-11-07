@@ -74,6 +74,13 @@ A PIN lock blocks the typed command, so unlock the phone first.
 
 Undo: uninstall `com.termux` and `com.termux.api` and delete `/sdcard/Download/opos`.
 
+## Release note
+
+This work changes runtime files, so `packaging/pmos/opos/APKBUILD` still names and checksums the published
+`opos-runtime-source-20261102` archive, and `test_release_recipe_digest_matches_current_declared_runtime_bytes`
+fails (91 declared files, not 90) until a new runtime archive is cut and published with its own name and
+checksum. Local pmOS builds are unaffected: `OPOS_LOCAL_SOURCE=1` staging measures the staged archive itself.
+
 ## Not yet verified
 
 - Any of this on the physical Duo: deploy, live battery, charge-counter health, two-screen detection in the
