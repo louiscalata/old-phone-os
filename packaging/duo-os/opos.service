@@ -1,26 +1,41 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # The OPOS shell: phosh.service's session start, with OPOS's kiosk as the session client.
+# The port gives phosh its hardware through drop-ins (phosh.service.d/20-wlroots-hwc-env,
+# 40-droid-wait, 70-sfduo-chvt) and item the same in its unit; OPOS needs all of them, or phoc
+# falls back to DRM and both panels stay dark (seen on the Duo, 2026-11-07).
 [Unit]
 Description=OPOS, the phone's only interface
 Conflicts=getty@tty1.service phosh.service item.service
 After=getty@tty1.service rc-local.service plymouth-quit-wait.service systemd-user-sessions.service
-After=dbus.socket session-c1.scope opos-server.service
+After=dbus.socket session-c1.scope opos-server.service lxc@android.service
 Wants=dbus.socket opos-server.service
+BindsTo=android-service@hwcomposer.service
+Requires=android-service@hwcomposer.service
+After=android-service@hwcomposer.service
 Before=graphical.target
 OnFailure=opos-fallback.service
 ConditionPathExists=/dev/tty0
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Environment=LANG=C.UTF-8
 Environment=XDG_SESSION_TYPE=wayland
+Environment=WLR_BACKENDS=hwcomposer,libinput
+Environment=EGL_PLATFORM=hwcomposer
+Environment=WLR_HWC_SKIP_VERSION_CHECK=1
 Environment=PHOSH_SESSION_BIN=/usr/libexec/opos/opos-kiosk
+# A compositor on an old vendor composer reset the phone (the port's item-composer-fresh), and a
+# chvt racing the session start killed it: both before the session, as item does.
+ExecStartPre=+/bin/sh -c '[ -x /usr/libexec/item/item-composer-fresh ] && /usr/libexec/item/item-composer-fresh; true'
+ExecStartPre=+chvt 7
 ExecStart=capsh --noamb -- -c "exec /usr/bin/phosh-session"
 TimeoutStartSec=30
 User=droidian
 PAMName=phosh
 WorkingDirectory=~
 Restart=always
-RestartSec=5s
+RestartSec=500ms
 TTYPath=/dev/tty7
 TTYReset=yes
 TTYVHangup=yes

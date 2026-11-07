@@ -45,11 +45,13 @@ main() {
  run fastboot format:ext4 userdata
  run fastboot boot "$twrp"
  run adb wait-for-recovery
+ # TWRP 3.5.2 for the Duo leaves the freshly formatted userdata unmounted (seen 2026-11-07).
+ run adb shell 'mountpoint -q /data || mount -t ext4 /dev/block/platform/soc/1d84000.ufshc/by-name/userdata /data'
  run adb push "$rootfs" "$dest"
  run verify
  # fastboot only answers in the bootloader: leave TWRP for it before the one RAM-boot.
  run adb reboot bootloader
- run fastboot wait-for-device
+ run fastboot getvar product
  run fastboot boot "$boot"
 }
 
