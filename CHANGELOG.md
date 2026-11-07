@@ -5,8 +5,15 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 
 ## Unreleased
 
+### Added
+
+- Surface Duo with OPOS as the only interface (`packaging/duo-os`): a build script, offline checks and boot-evidence tools for an image on the community Droidian port's rootfs, where `opos-server.service` runs the OPOS server on the phone's real battery and `opos-session` starts phoc (hwcomposer, no shell mode) with a full-screen Chromium kiosk. Ran on the owner's Surface Duo 1 on November 7, 2026, RAM-booted from a PC; the owner confirmed it worked and logs showed phoc on hwcomposer and the real battery from sysfs. It was seen on one phone in one session; no speed, battery-life or stability measurements; calls and texts are still simulated; RAM-boot only.
+- `deploy/duo-opos-boot.ps1`: the install chain for that image from a Windows PC (misc brake, userdata format, TWRP, hash-verified push, one RAM-boot of the kernel), with the phone found by probing TCP 22 across the /24 of the USB network adapter instead of waiting for a gateway, an optional ssh key for diagnostics, no hard-coded paths and a dry run unless `-Yes`. Tests parse it, read its safety rules and run its probe against loopback; it has not been run in this form.
+- Surface Duo on stock Android: `--live-battery` (`LiveBattery`), `deploy/duo-termux.ps1` and `deploy/termux-setup.sh`; one session on the owner's phone on November 7, 2026 (see `docs/duo-android.md`).
+
 ### Changed
 
+- Documentation for the Surface Duo runs: `README.md` Limits, `ROADMAP.md` and the documentation index now separate what ran on the phone (one phone, one day) from what is simulated or unmeasured, and the Droidian USB notes are labelled historical.
 - README now includes an illustrative older-phone vignette, new final-tree Muse Glimmer Ask and Why? captures in light and dark, with all eight measured UI response times, the quoted first dark Ask answer, and current pause status. All eight requests returned Glimmer replies within the 115-second deadline; the new Why? measurements replace the earlier rules-fallback observations for this source. Simulation wording distinguishes the profile drain runs from the worn-battery burst-shaping evaluation; postmarketOS wording separates the recorded QEMU boot from outstanding integration acceptance and untested physical-phone behavior.
 
 ## 0.1.0 - 2026-11-03

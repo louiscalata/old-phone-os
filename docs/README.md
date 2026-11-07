@@ -3,8 +3,10 @@
 
 Old Phone OS Interface is a prototype. The desktop demo simulates the battery, calls and texts; recorded QEMU
 results and model experiments have their own limits. The postmarketOS kiosk uses the same simulated battery
-and modem as the desktop demo. Documents marked **historical** preserve
-earlier work and are not current instructions or evidence about the current source.
+and modem as the desktop demo. The Surface Duo routes read the phone's real battery and ran on one owner's
+phone on November 7, 2026, with calls and texts still simulated and no speed, battery-life or stability
+measurements. Documents marked **historical** preserve earlier work and are not current instructions or
+evidence about the current source.
 
 ## Use OPOS
 
@@ -28,8 +30,9 @@ earlier work and are not current instructions or evidence about the current sour
 - [OPOS on postmarketOS](pmos.md): package inputs, local-source staging, QEMU development and validation limits.
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
-- [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; prepared, not yet run on the phone.
-- [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
+- [OPOS OS for the Surface Duo](../packaging/duo-os/README.md): OPOS as the only interface of a Linux image, RAM-booted on the owner's Duo on November 7, 2026 (it worked, per the owner); what was and was not observed, the RAM-boot-only rule and the misc brake, the dev ssh key, boot logs, known issues and restoring Android. Installed by `deploy/duo-opos-boot.ps1`.
+- [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; ran on the owner's Duo on November 7, 2026, one session.
+- [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; the current Duo routes are the two above.
 
 ## Security and privacy
 

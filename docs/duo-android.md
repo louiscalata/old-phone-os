@@ -21,7 +21,9 @@ data. Results below are from that phone on that day; they are one device and one
 - **Two screens:** Chrome opened OPOS on one screen beside Termux; spanning was not tested.
 
 This path keeps Android. It does not flash, root or wipe the phone, and uninstalling two apps undoes it.
-The Droidian route in [duo-usb-install.md](duo-usb-install.md) stays historical and paused.
+Removing Android is a separate route that ran on the same phone later that day, once its USB port carried data
+again: [OPOS OS for the Surface Duo](../packaging/duo-os/README.md), RAM-booted from a PC, with the same server on
+the real battery from sysfs. The older Droidian notes in [duo-usb-install.md](duo-usb-install.md) stay historical.
 
 ## How it fits together
 

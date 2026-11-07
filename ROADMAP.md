@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Status as of November 3, 2026: where Old Phone OS Interface stands
+Status as of November 7, 2026: where Old Phone OS Interface stands
 and what comes next. Plans are intentions, not promises.
 
 ## Working today
@@ -25,17 +25,32 @@ and what comes next. Plans are intentions, not promises.
   packaged tinydm renderer hook. See [docs/pmos.md](docs/pmos.md) for that run and its limits; an
   image built from other source needs its own boot check. An earlier run that set the renderer by
   hand is historical.
+- Surface Duo with OPOS as the whole OS ([packaging/duo-os](packaging/duo-os/README.md)): on November 7,
+  2026 an image built from this repository's source (the revision is recorded on the image) ran on the owner's Duo, RAM-booted from a PC with no Android, and the
+  owner confirmed on the screens that it was working. Logs read from the phone showed phoc on the
+  hwcomposer backend (GLES on the Adreno 640) and OPOS reading the real battery from sysfs. One phone, one
+  session, with the owner watching: it is RAM-boot only, so a power cycle returns the phone to Android and
+  wipes the image.
+- Surface Duo on stock Android ([docs/duo-android.md](docs/duo-android.md)): the same server runs under
+  Termux with the real battery from Termux:API, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens/s
+  on the phone, on November 7, 2026, in one session.
 
 ## Simulated or not yet verified
 
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
-  (`DrainSim` and `ScreenModem` in `src/opos/web.py`). The ModemManager adapter
-  (`src/opos/mm_modem.py`) is not connected to them, and the sysfs battery reader
-  (`src/opos/hw/battery.py`) is used only by setup to describe the device.
-- This source has not been tested on a physical phone. Earlier Surface Duo installs ran an older
-  snapshot on Droidian, and that work is paused (see
+  (`DrainSim` and `ScreenModem` in `src/opos/web.py`). Only the Surface Duo routes, started with
+  `--live-battery`, read the phone's real battery (`LiveBattery`). Calls and texts are simulated on every
+  route: the ModemManager adapter (`src/opos/mm_modem.py`) is not connected, although the Duo OS image
+  carries ModemManager.
+- The postmarketOS kiosk has not been tested on a physical phone. Earlier Surface Duo installs ran an
+  older snapshot on Droidian; those notes are historical (see
   [docs/duo-usb-install.md](docs/duo-usb-install.md)).
-- On-phone model inference (Llama 3.2 1B/3B) has no phone-speed measurement yet.
+- The Duo OS image has no measurement of speed, battery life or stability, and was seen on one phone in one
+  session. It cannot be installed permanently: the bootloader refuses flashes of the boot partition, so every
+  start is a RAM-boot from a PC. Its failure path (a failed OPOS shell falling back to phosh) and shell
+  switching have not been run on the phone.
+- On-phone model inference: Llama 3.2 1B was timed on the Duo under Android (see above); Llama 3.2 3B has no
+  phone-speed measurement, and nothing was timed on the Duo OS image.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
 
 ## Public browser demo
@@ -60,13 +75,13 @@ Linux CI portability fixes were verified on a Debian VM. Hosted CI results for
 the Python 3.11/3.13 matrix in `.github/workflows/tests.yml` are still pending;
 the Debian verification does not establish a hosted CI pass.
 
-1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
-   battery life against the stock system with the same daily routine.
-2. **Real battery, calls and texts.** Connect Phone and Messages to ModemManager through
-   `src/opos/mm_modem.py` and read the real battery on a device with a working modem, keeping the
-   simulated battery and modem for the desktop demo.
-3. **On-phone answers.** Measure Llama 3.2 1B and 3B on an old phone and pick the default from
-   the measurement, not a guess.
+1. **Battery life on a real phone.** Run a Duo route (the OS image or Android with Termux) through
+   the same daily routine as the stock system and record battery life; no such measurement exists.
+2. **Real calls and texts.** Connect Phone and Messages to ModemManager through
+   `src/opos/mm_modem.py` on a device with a working modem, keeping the simulated modem for the
+   desktop demo.
+3. **On-phone answers.** Measure Llama 3.2 3B, and 1B over more than one session, on an old phone
+   and pick the default from the measurement, not a guess.
 4. **Connectors.** Plug chat services into Messages as connectors (one unified inbox), never as
    separate apps.
 5. **Internet sandbox.** Run the browser and social apps in a sandbox the governor can throttle
