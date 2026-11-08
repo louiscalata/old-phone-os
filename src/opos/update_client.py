@@ -478,7 +478,7 @@ class UpdateClient:
         n = resp.headers.get("Content-Length")
         if n is None:
             return None
-        if not n.isdigit() or len(n) > 12:
+        if not (n.isascii() and n.isdigit()) or len(n) > 12:  # str.isdigit() is true for "²", which int() refuses
             raise UpdateError("fetch", "The update server sent a bad length.", 502)
         if int(n) > limit:
             raise UpdateError("too_large", f"The {what} is larger than OPOS accepts.", 502)

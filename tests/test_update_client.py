@@ -472,6 +472,21 @@ class Check(Env):
         self.assertLess(time.monotonic() - t0, 3)
         self.assertEqual(cm.exception.code, "fetch")
 
+    def test_a_content_length_of_non_ascii_digits_is_a_bad_length_not_a_crash(self):
+        """Review finding: "²".isdigit() is true and int("²") raises ValueError, which no caller of check() expects."""
+        self.conf()
+        self.state(0)
+        for bad in ("²", "³", "1¹"):
+            with self.subTest(bad):
+                def lie(h, bad=bad):
+                    h.send_response(200)
+                    h.send_header("Content-Length", bad)
+                    h.end_headers()
+                self.src.routes["/latest.json"] = lie
+                with self.assertRaises(uc.UpdateError) as cm:
+                    self.client().check()
+                self.assertEqual((cm.exception.code, cm.exception.message), ("fetch", "The update server sent a bad length."))
+
     def test_a_trickle_hits_the_deadline_not_just_the_socket_timeout(self):
         self.conf()
         self.state(0)
