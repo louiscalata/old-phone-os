@@ -14,6 +14,9 @@ EnvironmentFile=-/etc/default/opos-osk
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=OPOS_BATTERY=live
 Environment=OPOS_ON_PHONE=1
+# >>> track firstboot: first-run setup, time zone page and the saved time zone (src/opos/firstrun.py); unset = none of it
+Environment=OPOS_FIRSTRUN=1
+# <<< track firstboot
 ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery
 Restart=always
 RestartSec=3s

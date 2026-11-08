@@ -12,6 +12,11 @@ until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=
     sleep 1
 done
 while :; do
+    # >>> track firstboot: the owner's time zone, saved by src/opos/timezone.py. Chromium reads TZ when it starts, so every start re-reads it.
+    z=; f=${OPOS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opos}/timezone
+    [ -f "$f" ] && IFS= read -r z < "$f"
+    case "$z" in ''|*[!A-Za-z0-9_+/-]*|[+-]*|/*|*//*|*..*) ;; *) [ "${#z}" -le 64 ] && export TZ="$z" ;; esac
+    # <<< track firstboot
     chromium --kiosk --ozone-platform=wayland --no-first-run --noerrdialogs --disable-translate \
         --disable-features=Translate,MediaRouter --password-store=basic --user-data-dir="$HOME/.cache/opos-kiosk" "$url"
     sleep 2

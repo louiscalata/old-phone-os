@@ -32,6 +32,9 @@ earlier work and are not current instructions or evidence about the current sour
 <!-- track: network -->
 - [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.
 <!-- end track: network -->
+<!-- >>> track firstboot -->
+- [First run and time zone on the Duo OS](duo-firstrun.md): the setup shown on the first start, the owner's time zone applied without root, the clock sentence and the switch that turns it on; tested off the phone.
+<!-- <<< track firstboot -->
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; prepared, not yet run on the phone.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
 
