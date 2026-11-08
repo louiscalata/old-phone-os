@@ -78,7 +78,7 @@ fi
 mo=$r/opt/opos/src/opos
 check "the Inference page is on: opos-server.service sets OPOS_MONITOR=1 and reads the optional /etc/opos/monitor.env" "grep -qx 'Environment=OPOS_MONITOR=1' $w/opos-server.service && grep -qx 'EnvironmentFile=-/etc/opos/monitor.env' $w/opos-server.service"
 check "the Inference page is in the image (monitor.py, monitor_web.py and its document)" "[ -s $mo/monitor.py ] && [ -s $mo/monitor_web.py ] && [ -s $mo/web_static/monitor.html ] && [ -s $mo/web_static/monitor.css ] && [ -s $mo/web_static/monitor.js ] && [ -s $mo/web_static/monitor-theme.js ]"
-check "/etc/opos is 0755 and holds only the commented example: no monitor.env, no setting that is on, nothing secret" "[ -d $r/etc/opos ] && [ \"\$(stat -c %a $r/etc/opos)\" = 755 ] && [ -f $r/etc/opos/monitor.env.example ] && [ ! -e $r/etc/opos/monitor.env ] && ! grep -v '^[[:space:]]*#' $r/etc/opos/monitor.env.example | grep -q '[^[:space:]]'"
+check "/etc/opos is owned by root:root, mode 0755, and holds only the commented example: no monitor.env, no setting that is on, nothing secret" "[ -d $r/etc/opos ] && [ \"\$(stat -c %a $r/etc/opos)\" = 755 ] && [ \"\$(stat -c %u:%g $r/etc/opos)\" = 0:0 ] && [ -f $r/etc/opos/monitor.env.example ] && [ ! -e $r/etc/opos/monitor.env ] && ! grep -v '^[[:space:]]*#' $r/etc/opos/monitor.env.example | grep -q '[^[:space:]]'"
 check "the example names the reverse-tunnel setting (OPOS_AGIW_URL on the Duo's loopback, OPOS_AGIW_HOST for the monitor's Host)" "grep -qx '#OPOS_AGIW_URL=http://127.0.0.1:18767' $r/etc/opos/monitor.env.example && grep -qx '#OPOS_AGIW_HOST=127.0.0.1:8767' $r/etc/opos/monitor.env.example"
 # --- end track: monitor ---
 umount "$mnt"

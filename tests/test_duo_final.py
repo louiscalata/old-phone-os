@@ -279,10 +279,32 @@ class ImageWiring(unittest.TestCase):
     def test_the_build_has_each_tracks_block_once(self):
         b = self.read("build-image.sh")
         for marker in (r"^# --- track osk: the on-screen keyboard", r"^# --- end track osk", r"^# --- track: network \(Wi-Fi and radio status\)",
-                       r"^# --- end track: network ---", r"^# --- qa: BEGIN", r"^# --- qa: END"):
+                       r"^# --- end track: network ---", r"^# --- qa: BEGIN", r"^# --- qa: END",
+                       r'^# --- track: monitor \(the Inference page; packaging/duo-os/README\.md, "Inference page"\) ---$',
+                       r"^# --- end track: monitor ---$"):
             self.assertEqual(len(re.findall(marker, b, re.M)), 1, marker)
-        for must in ("opos-osk.service", "20-opos-network.conf", "opos-selftest", "opos-diag"):
+        for must in ("opos-osk.service", "20-opos-network.conf", "opos-selftest", "opos-diag", "monitor.env.example"):
             self.assertIn(must, b)
+        self.assertLess(b.index("# --- track: monitor"), b.index("# --- end track: monitor ---"))
+        self.assertRegex(b, r'(?m)^install -d -m 0755 "\$r/etc/opos"$')  # the mode verify-image.sh checks, in the block that makes it
+
+    def test_the_verify_has_the_monitor_blocks_once_each(self):
+        v = self.read("verify-image.sh")
+        for marker, n in ((r'^# --- track: monitor \(the Inference page; packaging/duo-os/README\.md, "Inference page"\): static wiring ---$', 1),
+                          (r"^# --- track: monitor \(the Inference page\): /monitor and /api/monitor answer 404", 1),
+                          (r"^# --- end track: monitor ---$", 2)):
+            self.assertEqual(len(re.findall(marker, v, re.M)), n, marker)
+
+    def test_the_server_unit_turns_the_inference_page_on_and_reads_the_optional_file(self):
+        u = self.read("opos-server.service")
+        self.assertRegex(u, r"(?m)^Environment=OPOS_MONITOR=1$")
+        self.assertRegex(u, r"(?m)^EnvironmentFile=-/etc/opos/monitor\.env$", "the dash makes the file optional: a missing one must not stop the server")
+        self.assertEqual(len(re.findall(r"(?m)^Environment=OPOS_MONITOR=", u)), 1)
+        self.assertEqual(len(re.findall(r"(?m)^EnvironmentFile=.*monitor", u)), 1)
+        block = u[u.index("# >>> track monitor"):u.index("# <<< track monitor")]
+        self.assertIn("Environment=OPOS_MONITOR=1\n", block)
+        self.assertIn("EnvironmentFile=-/etc/opos/monitor.env\n", block)
+        self.assertTrue(u.index("[Service]") < u.index("# >>> track monitor") < u.index("[Install]"), "inside the service section")
 
     def test_the_server_unit_sets_the_switches_and_the_drop_in_sets_the_network(self):
         u = self.read("opos-server.service")
@@ -293,6 +315,35 @@ class ImageWiring(unittest.TestCase):
         self.assertRegex(u, r"(?m)^Environment=OPOS_BATTERY=live$")
         self.assertRegex(u, r"(?m)^Environment=OPOS_ON_PHONE=1$")
         self.assertRegex(self.read("opos-network.conf"), r"(?m)^Environment=OPOS_NETWORK=1$")
+
+    def test_the_verify_requires_etc_opos_to_be_root_owned_with_mode_0755(self):
+        # Run the verify script's own check line against a stand-in root file system. A shim for stat answers the mode, the owner
+        # and the group, which an unprivileged test cannot set (and a drive that does not keep modes could not hold).
+        lines = self.read("verify-image.sh").splitlines()
+        check_fn = next(x for x in lines if x.startswith("check() {"))
+        line = next(x for x in lines if x.startswith('check "/etc/opos is '))
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "rootfs"
+            (root / "etc/opos").mkdir(parents=True)
+            (root / "etc/opos/monitor.env.example").write_text("# a comment\n#OPOS_AGIW_URL=http://127.0.0.1:18767\n", encoding="utf-8")
+            shim = Path(d) / "shim"
+            shim.mkdir()
+            (shim / "stat").write_text('#!/bin/sh\n[ "$1" = "-c" ] || exit 99\ncase "$2" in\n  %a) echo "$FAKE_MODE";;\n  %u:%g) echo "$FAKE_OWNER";;\n  *) exit 98;;\nesac\n',
+                                       encoding="utf-8")
+            (shim / "stat").chmod(0o755)
+
+            def verdict(owner, mode="755"):
+                script = check_fn + "\nr='" + str(root) + "'\n" + line + "\n"
+                env = dict(os.environ, PATH=str(shim) + os.pathsep + os.environ["PATH"], FAKE_OWNER=owner, FAKE_MODE=mode)
+                out = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env, timeout=30).stdout
+                self.assertRegex(out, r"^(PASS|FAIL) /etc/opos is ", out)
+                return out.split()[0]
+
+            self.assertEqual(verdict("0:0"), "PASS")
+            for owner in ("1000:1000", "0:1000", "1000:0", "65534:65534", ""):
+                self.assertEqual(verdict(owner), "FAIL", "owner and group %r" % owner)
+            for mode in ("775", "700", "757", "1755"):
+                self.assertEqual(verdict("0:0", mode), "FAIL", "mode " + mode)
 
     def test_the_kiosk_keeps_what_the_restart_and_the_time_zone_need(self):
         k = self.read("opos-kiosk")
