@@ -357,7 +357,12 @@ class LiveBattery:
         """One line for the technical view saying where the drain figure came from."""
         if info["basis"] == "measured":
             return f"drain measured at {info['per_hour']:.1f}%/h over {info['window_s'] / 60:.0f} min"
-        return f"drain from the model, not measured yet ({min(info['window_s'], DRAIN_WINDOW_S) / 60:.0f} of {DRAIN_WINDOW_S / 60:.0f} min)"
+        w = info["window_s"]
+        if w < DRAIN_WINDOW_S:  # whole minutes, rounded down, so the count never reads full before the window is
+            return f"drain from the model, not measured yet ({int(w // 60)} of {DRAIN_WINDOW_S / 60:.0f} min)"
+        if (info["age_s"] or 0) > DRAIN_MAX_GAP_S:
+            return "drain from the model, readings have lapsed"
+        return f"drain from the model, waiting for the next {info['via']} step"  # the window is full; a closed step is not
 
     def rate_estimator(self):
         return _MeasuredRate(self)

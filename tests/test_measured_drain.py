@@ -247,10 +247,10 @@ class LiveBatteryDrainTests(unittest.TestCase):
         self.level = [80.0]
         self.charging = [False]
         self.counter = [None]
-        self.fail = [False]
+        self.unreadable = [False]
 
     def reader(self):
-        if self.fail[0]:
+        if self.unreadable[0]:
             return None
         r = {"level": round(self.level[0]), "temp_c": 29.0, "charging": self.charging[0], "source": "sysfs",
              "health": 0.7, "health_source": "OPOS_BATTERY_HEALTH"}
@@ -290,7 +290,7 @@ class LiveBatteryDrainTests(unittest.TestCase):
         b = self.battery()
         self.run_for(b, 3600, 6)
         self.assertEqual(b.drain_rate(23.0)[1]["basis"], "measured")
-        self.fail[0] = True
+        self.unreadable[0] = True
         self.now[0] += 60
         b.refresh()
         info = b.drain_rate(23.0)[1]
@@ -299,7 +299,7 @@ class LiveBatteryDrainTests(unittest.TestCase):
         info = b.drain_rate(23.0)[1]
         self.assertEqual(info["basis"], "model")
         self.assertGreater(info["age_s"], lb.DRAIN_MAX_GAP_S)
-        self.fail[0] = False
+        self.unreadable[0] = False
         self.level[0] -= 10
         self.now[0] += 15
         b.refresh()
@@ -339,6 +339,44 @@ class LiveBatteryDrainTests(unittest.TestCase):
         self.run_for(b, 3600, 6)
         words = b.drain_words(b.drain_rate(23.0)[1])
         self.assertRegex(words, r"^drain measured at [56]\.\d%/h over \d+ min$")
+
+    def test_words_do_not_claim_the_whole_window_while_a_level_step_is_awaited(self):
+        # At 3 %/h a level step comes only every 20 minutes: the window can fill before the second one closes a segment.
+        self.level[0] = 80.3
+        b = self.battery()
+        minutes, waiting = set(), []
+        for _ in range(240):
+            self.run_for(b, 15, 3)
+            info = b.drain_rate(23.0)[1]
+            words = b.drain_words(info)
+            if info["basis"] == "measured":
+                break
+            self.assertNotIn("10 of 10", words)
+            if info["window_s"] < lb.DRAIN_WINDOW_S:
+                self.assertEqual(words, f"drain from the model, not measured yet ({int(info['window_s'] // 60)} of 10 min)")
+                minutes.add(int(info["window_s"] // 60))
+            else:
+                waiting.append(words)
+        self.assertEqual(info["basis"], "measured")
+        self.assertEqual(minutes, set(range(10)))  # 0 to 9 min, never rounded up to 10
+        self.assertTrue(waiting)
+        self.assertEqual(set(waiting), {"drain from the model, waiting for the next level step"})
+
+    def test_words_name_the_counter_step_when_the_counter_is_in_use(self):
+        info = {"basis": "model", "window_s": 700.0, "via": "counter", "age_s": 15.0}
+        self.assertEqual(LiveBattery.drain_words(info), "drain from the model, waiting for the next counter step")
+
+    def test_words_say_so_when_the_readings_have_lapsed(self):
+        b = self.battery()
+        self.run_for(b, 3600, 6)
+        self.unreadable[0] = True
+        self.now[0] += 60
+        b.refresh()
+        self.now[0] += lb.DRAIN_MAX_GAP_S
+        info = b.drain_rate(23.0)[1]
+        self.assertEqual(info["basis"], "model")
+        self.assertGreaterEqual(info["window_s"], lb.DRAIN_WINDOW_S)
+        self.assertEqual(b.drain_words(info), "drain from the model, readings have lapsed")
 
 
 class SysfsCounterTests(unittest.TestCase):
