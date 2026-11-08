@@ -62,7 +62,7 @@ function api(p,b){var o={headers:{'X-OPOS-Token':T}};if(b){o.method='POST';o.hea
 return fetch(p,o).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j&&j.error||String(r.status));return j},function(){throw new Error(String(r.status))})})}
 function mytz(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){return ''}}
 function nice(z){return z.replace(/_/g,' ')}
-function there(z){try{return new Intl.DateTimeFormat([],{timeZone:z,weekday:'short',hour:'2-digit',minute:'2-digit'}).format(new Date())}catch(e){return ''}}
+function there(z){if(window.badClock)return '';try{return new Intl.DateTimeFormat([],{timeZone:z,weekday:'short',hour:'2-digit',minute:'2-digit'}).format(new Date())}catch(e){return ''}}
 function tzPicker(box,zones,source,cur,onpick){
 var R={},order=[],pick=cur||null;
 zones.forEach(function(z){var i=z.indexOf('/'),r=i<0?z:z.slice(0,i);if(!R[r]){R[r]=[];order.push(r)}R[r].push(z)});
@@ -162,7 +162,7 @@ $('hm').onclick=function(){g.min=(g.min+1440-60)%1440;goalPaint()};$('hp').oncli
 $('mm').onclick=function(){g.min=(g.min+1440-15)%1440;goalPaint()};$('mp').onclick=function(){g.min=(g.min+15)%1440;goalPaint()};
 $('help-on').onclick=function(){help='on';helpPaint()};$('help-off').onclick=function(){help='off';helpPaint()};
 fetch('/network',{method:'HEAD'}).then(function(r){if(r.ok){$('wifi-none').hidden=true;$('wifi-yes').hidden=false;$('wifi-link').hidden=false}},function(){});
-Promise.all([api('/api/firstrun'),api('/api/timezone')]).then(function(v){S=v[0];Z=v[1];
+Promise.all([api('/api/firstrun'),api('/api/timezone')]).then(function(v){S=v[0];Z=v[1];window.badClock=S.clock.plausible===false;
 $('clock').textContent=S.clock.text?'Phone clock: '+S.clock.text:'';
 if(S.clock.note){$('clock-note').textContent=S.clock.note;$('clock-note').hidden=false}
 if(S.goal){g.on=!!S.goal.enabled;var p=(S.goal.time||'23:00').split(':');g.min=(+p[0])*60+(+p[1])}
@@ -196,6 +196,7 @@ api('/api/timezone',{zone:z,client_tz:mytz()}).then(function(r){saving=false;$('
 msg(r.restart?'Saved. The screen restarts in a few seconds to use the new time zone.':'Saved.');$('save').disabled=false},
 function(x){saving=false;$('save').disabled=false;msg('Could not save ('+x.message+').')})};
 api('/api/timezone').then(function(Z){
+window.badClock=!!Z.clock&&Z.clock.plausible===false;
 $('cur').textContent=Z.saved?'Now using: '+nice(Z.saved):'No time zone chosen yet; the phone uses its default ('+(Z.active||'UTC')+').';
 $('clock').textContent=Z.clock&&Z.clock.text?'Phone clock: '+Z.clock.text:'';
 if(Z.clock&&Z.clock.note){$('clock-note').textContent=Z.clock.note;$('clock-note').hidden=false}

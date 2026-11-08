@@ -36,7 +36,7 @@ before: no route, hook, header or byte changes. The hook is one block in `opos.w
 
 | What | Where |
 |---|---|
-| the owner's zone | one line, `<config>/timezone` (for user `droidian`: `/home/droidian/.config/opos/timezone`), written atomically, mode 0600 |
+| the owner's zone | one line, `<config>/timezone` (for user `droidian`: `~/.config/opos/timezone`), written atomically, mode 0600 |
 | the server | at start, `opos.web.main()` calls `firstrun.install()`, which applies the zone (`TZ` and `time.tzset()`) before the `Phone` first reads the clock; changes from the pages apply at once |
 | the screen | `opos-kiosk` reads that line before every Chromium start, checks it (letters, digits, `_ + - /` only, at most 64 characters, no `..`, no leading `/ + -`) and exports `TZ`; Chromium reads `TZ` when it starts |
 | the list | the zone files found under `/usr/share/zoneinfo` (the image's package list has tzdata 2026e); copies (`posix/`, `right/`), old country-named directories and `Etc/` are left out. If that directory is missing, a short built-in list with fixed POSIX rules is offered and the page says so |

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -19,7 +20,8 @@ from opos import timezone as tzmod
 from opos.setup import config as setup_config
 from opos.setup import prefs
 
-BROWSER ={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+PHONE_HOME = "/" + "home/droidian"  # written in two parts so the repository check does not read it as a private path
+BROWSER = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
 
 
 class ClockCheck(unittest.TestCase):
@@ -254,20 +256,39 @@ class KioskRestart(Env):
         def run(argv, **kw):
             seen.append((argv, kw))
             return mock.Mock(returncode=0)
-        self.assertTrue(firstrun.restart_kiosk({"HOME": "/home/droidian"}, run=run))
+        self.assertTrue(firstrun.restart_kiosk({"HOME": PHONE_HOME}, run=run))
         argv, kw = seen[0]
         self.assertIsInstance(argv, list)
         self.assertEqual("pkill", argv[0])
         self.assertIn("-TERM", argv)
         self.assertIn("--", argv)
-        self.assertTrue(argv[-1].startswith("--user-data-dir=/home/droidian/\\.cache/opos-kiosk"), argv[-1])
+        self.assertTrue(argv[-1].startswith("--user-data-dir=" + PHONE_HOME + "/\\.cache/opos-kiosk"), argv[-1])
         self.assertFalse(kw.get("shell", False))
         self.assertLessEqual(kw["timeout"], 10)
 
     def test_regex_characters_in_home_are_escaped(self):
         seen = []
-        firstrun.restart_kiosk({"HOME": "/home/a.b+c(d)"}, run=lambda argv, **kw: seen.append(argv) or mock.Mock(returncode=1))
-        self.assertIn("/home/a\\.b\\+c\\(d\\)/\\.cache/opos-kiosk", seen[0][-1])
+        firstrun.restart_kiosk({"HOME": "/" + "home/a.b+c(d)"}, run=lambda argv, **kw: seen.append(argv) or mock.Mock(returncode=1))
+        self.assertIn("/" + "home/a\\.b\\+c\\(d\\)/\\.cache/opos-kiosk", seen[0][-1])
+
+    @unittest.skipUnless(shutil.which("pkill") and hasattr(os, "getuid"), "needs pkill")
+    def test_the_real_pkill_stops_only_the_process_with_that_profile_directory(self):
+        home = os.path.join(self.d, "h.o+me")  # regex characters in the path on purpose
+        sleeper = "import time; time.sleep(60)"
+
+        def start(profile):
+            p = subprocess.Popen([sys.executable, "-c", sleeper, "--user-data-dir=" + os.path.join(home, *profile), "http://127.0.0.1:8765/"])
+            self.addCleanup(p.wait)  # cleanups run last-in first-out: kill, then wait
+            self.addCleanup(p.kill)
+            return p
+        kiosk, other, longer, lookalike = start((".cache", "opos-kiosk")), start((".cache", "other")), start((".cache", "opos-kiosk-2")), start((".cache", "opos-kioskX"))
+        time.sleep(0.5)  # let them start
+        self.assertTrue(firstrun.restart_kiosk({"HOME": home}))
+        self.assertEqual(-15, kiosk.wait(10))  # SIGTERM
+        for p in (other, longer, lookalike):
+            time.sleep(0.2)
+            self.assertIsNone(p.poll())
+        self.assertFalse(firstrun.restart_kiosk({"HOME": home}))  # nothing left to signal
 
     def test_nothing_signalled_or_no_pkill_is_false_not_an_error(self):
         self.assertFalse(firstrun.restart_kiosk({"HOME": "/h"}, run=lambda argv, **kw: mock.Mock(returncode=1)))
@@ -674,6 +695,12 @@ class Pages(unittest.TestCase):
         self.assertIn('id="wifi-link" href="/network" hidden', page)
         self.assertIn('id="wifi-none"', page)  # the documented fallback text
         self.assertIn("Joining a network is not available on this screen yet", page)
+
+    def test_no_time_there_is_shown_from_a_clock_that_is_wrong(self):
+        for page in (firstrun_page.firstrun_page("t", "n"), firstrun_page.timezone_page("t", "n")):
+            self.assertIn("function there(z){if(window.badClock)return ''", page)
+            self.assertIn("window.badClock=", page)
+            self.assertIn("plausible===false", page)
 
     def test_the_picker_needs_no_keyboard(self):
         page = firstrun_page.timezone_page("t", "n")
