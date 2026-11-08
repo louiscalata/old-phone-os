@@ -167,7 +167,8 @@ class MeasuredDrain:
     the two readings that bracket it), and a segment's rate is the points lost over the time between
     anchors. Each segment moves an exponentially weighted average by 1 - exp(-length / DRAIN_TAU_S).
     A level that bounces back up a point or two is ignored. When a charge counter is given and stays
-    within about a point of the shown level, it gives finer positions and anchors need no step.
+    within about a point of the shown level, it gives finer positions and anchors need no step; one that
+    disagrees with the level, or is missing from a reading after being used, is not used again in that run.
     Until the run spans DRAIN_WINDOW_S, rate() is None and the caller keeps its model. Charging or a
     jump in the level starts the run again, and so does a gap of DRAIN_MAX_GAP_S between readings
     (the phone slept, or nobody read it); a shorter gap past DRAIN_SOFT_GAP_S only drops the segment
@@ -188,7 +189,7 @@ class MeasuredDrain:
         self._t0 = None
         self._drop = 0.0
         self._cap = None  # counter units per 100 points, from the run's first reading at MIN_ESTIMATE_PCT or more
-        self._off = False  # the counter disagreed with the level: not used again this run
+        self._off = False  # the counter disagreed with the level, or went missing once in use: not used again this run
         self._fine = False
 
     @property
@@ -217,6 +218,8 @@ class MeasuredDrain:
                     self._off = True
                 else:
                     x, fine = pos, True
+        if self._fine and not fine:
+            self._off = True  # a counter in use went missing: one switch to the level, then no more for the run
         if fine != self._fine:
             self._fine, self._anchor, self._lo = fine, None, None
         if gap:

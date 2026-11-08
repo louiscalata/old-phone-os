@@ -198,6 +198,35 @@ class MeasuredDrainTests(unittest.TestCase):
         self.assertEqual(tr.md.via, "level")
         self.assertNear(tr.md.rate(tr.t), 12, 12)
 
+    def test_a_counter_that_comes_and_goes_is_dropped_once_for_the_run(self):
+        # Termux timing out now and then leaves readings without the counter. That must be one switch to the
+        # level for the rest of the run, not a restart of the run at every change.
+        for first in (True, False):
+            with self.subTest(counter_on_the_first_reading=first):
+                tr = Trace()
+                for i in range(480):  # two hours at 8 %/h, the counter on every other reading
+                    tr.t += 15
+                    tr.true -= 8 * 15 / 3600
+                    c = round(tr.true / 100 * tr.cap) if (i % 2 == 0) == first else None
+                    tr.md.observe(tr.t, float(round(tr.true)), False, c)
+                self.assertEqual(tr.md.via, "level")
+                self.assertNear(tr.md.rate(tr.t), 8, 10)
+
+    def test_a_counter_lost_after_use_is_not_taken_back_in_the_same_run(self):
+        tr = Trace()
+        tr.feed(1800, 6, counter=True)
+        self.assertEqual(tr.md.via, "counter")
+        self.assertIsNotNone(tr.md.rate(tr.t))
+        tr.feed(15, 6)  # one reading without the counter
+        self.assertEqual(tr.md.via, "level")
+        self.assertIsNotNone(tr.md.rate(tr.t))  # the average built so far is kept
+        tr.feed(1800, 6, counter=True)  # the counter is back, but not used again until a new run
+        self.assertEqual(tr.md.via, "level")
+        self.assertNear(tr.md.rate(tr.t), 6, 10)
+        tr.feed(60, -20, charging=True)  # plugging in starts a new run, and the counter may be used again
+        tr.feed(1800, 6, counter=True)
+        self.assertEqual(tr.md.via, "counter")
+
     def test_counter_is_only_calibrated_from_a_high_enough_level(self):
         tr = Trace(level=25.0)
         tr.feed(1800, 12, counter=True)
