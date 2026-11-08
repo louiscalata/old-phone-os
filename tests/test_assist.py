@@ -113,7 +113,7 @@ class TestAnswer(unittest.TestCase):
         self.assertTrue(res["text"].startswith("Battery is critical"))
         self.assertEqual(res["where"], "on this phone")
         self.assertEqual(res["sources"], [])
-        self.assertEqual(res["text"], "Battery is critical, so the helper is resting to save power. Calls, messages and alarms still work. Ask again once the battery recovers or the phone is charging.")
+        self.assertEqual(res["text"], "Battery is critical, so the helper is resting to save power. Calls and messages are never paused. Ask again once the battery recovers or the phone is charging.")
         res = assist.answer("what is paused?", web=False, env={"OPOS_LAN_URL": "http://glimmer.test:1234"}, opener=opener, free=5000, context={"mode": "CRITICAL"})
         self.assertEqual(calls, [])
         self.assertEqual(res["engine"], "rules")
@@ -181,13 +181,13 @@ class TestAnswer(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(res["engine"], "none")
         self.assertEqual(len(res["sources"]), 2)
-        self.assertEqual(res["text"], "No model answered, so here are the sources I found.")
+        self.assertEqual(res["text"], "The helper did not answer, so here are the sources I found.")
     def test_no_route_no_sources_low_memory(self):
         def opener(req, timeout=30):
             raise OSError("down")
         res = assist.answer("hello?", web=False, env={}, opener=opener, free=1000)
         self.assertFalse(res["ok"])
-        self.assertIn("1000", res["text"])
+        self.assertEqual(res["text"], "The helper did not answer. The phone has only about 1000 MB of free memory and the helper needs 1536 MB.")
     def test_empty(self):
         res = assist.answer("   ", web=False, env={}, free=2000)
         self.assertFalse(res["ok"])
@@ -205,7 +205,7 @@ class TestAnswer(unittest.TestCase):
             raise OSError("down")
         res = assist.answer("hello world", web=False, env=env, opener=opener, free=2000)
         self.assertFalse(res["ok"])
-        self.assertTrue(res["text"].startswith("No model answered."))
+        self.assertTrue(res["text"].startswith("The helper did not answer."))
         self.assertEqual(res["engine"], "none")
         self.assertEqual(res["sources"], [])
     def test_no_model_reachable_no_lan(self):
@@ -213,15 +213,28 @@ class TestAnswer(unittest.TestCase):
             raise OSError("down")
         res = assist.answer("hello", web=False, env={}, opener=opener, free=None)
         self.assertFalse(res["ok"])
-        self.assertTrue(res["text"].startswith("No model answered."))
-        self.assertIn("Calls, messages and battery saving still work.", res["text"])
+        self.assertTrue(res["text"].startswith("The helper did not answer."))
+        self.assertIn("The battery rules still work.", res["text"])
     def test_unavailable_helper_explains_what_still_works(self):
         def opener(req, timeout=None):
             raise OSError("down")
         res = assist.answer("hello", web=False, env={}, opener=opener, free=None)
-        expected = {"ok": False, "text": "No model answered. Calls, messages and battery saving still work.", "engine": "none", "where": "", "sources": []}
+        expected = {"ok": False, "text": "The helper did not answer. The battery rules still work.", "engine": "none", "where": "", "sources": []}
         self.assertEqual(res, expected)
         self.assertNotIn("OPOS_LAN_URL", res["text"])
+    def test_user_text_claims_only_what_is_true(self):
+        """W1-08: no alarm app exists, so no helper text promises alarms; no model or OPOS words reach the user."""
+        def opener(req, timeout=None):
+            raise OSError("down")
+        facts = {"why_paused": "Email is paused to save battery.", "time_left": "About 4 h left", "goal": "4 PM", "goal_met": True}
+        texts = [assist.answer(q, web=False, env={}, opener=opener, free=f, context=c)["text"]
+                 for q, f, c in (("hello", None, None), ("hello", 900, None), ("what is paused?", None, facts),
+                                 ("how long will it last?", None, facts), ("what is paused?", 5000, {"mode": "CRITICAL"}))]
+        texts.append(assist.rules_answer("why is email paused?", facts)["text"])
+        self.assertIn("Email is paused to save battery. Calls and messages are never paused.", texts)
+        for t in texts:
+            with self.subTest(text=t):
+                self.assertNotRegex(t, r"(?i)alarm|model|OPOS|AI|on-phone")
     def test_invalid_fact_dictionaries_return_controlled_error(self):
         circular = {}
         circular["self"] = circular

@@ -32,13 +32,13 @@ class MetaHelperHonestyTest(unittest.TestCase):
         facts = {"why_paused": "The battery is worn (60% health), so 60% charge is about 36% usable and it is not charging; to keep calls and messages working until 16:00, the phone paused maps.", "paused": ["maps"]}
         out = muse.explain(facts, muse.glimmer_route({}), env={}, opener=op)
         self.assertTrue(out["text"].startswith(facts["why_paused"]))
-        self.assertTrue(out["text"].endswith("Calls, messages and alarms always stay on."))
+        self.assertTrue(out["text"].endswith("Calls and messages are never paused."))
         self.assertEqual((out["engine"], out["where"], out["ok"]), ("rules", "on this device", False))
 
     def test_paused_empty_without_why_explains_nothing_paused(self):
         op = CapturingOpener(error=OSError("offline"))
         out = muse.explain({"paused": []}, muse.glimmer_route({}), env={}, opener=op)
-        self.assertEqual(out["text"], "Calls, messages and alarms stay on; nothing is paused right now.")
+        self.assertEqual(out["text"], "Calls and messages are never paused. Nothing is paused right now.")
         self.assertNotIn("paused to save battery", out["text"])
 
     def test_charging_why_preserves_reason_without_false_pause_claim(self):
@@ -46,11 +46,11 @@ class MetaHelperHonestyTest(unittest.TestCase):
         why = "The phone is charging, so nothing is paused, so everything is on."
         out = muse.explain({"paused": [], "why_paused": why}, muse.glimmer_route({}), env={}, opener=op)
         self.assertTrue(out["text"].startswith(why))
-        self.assertTrue(out["text"].endswith("Calls, messages and alarms always stay on."))
+        self.assertTrue(out["text"].endswith("Calls and messages are never paused."))
         self.assertNotIn("paused to save battery", out["text"].lower())
 
     def test_invalid_why_uses_legacy_fallback(self):
-        legacy = "Calls, messages and alarms stay on; other tasks are paused to save battery."
+        legacy = "Calls and messages are never paused. Other tasks are paused to save battery."
         for why in ("", "   ", None, 5):
             with self.subTest(why=why):
                 op = CapturingOpener(error=OSError("offline"))
@@ -67,7 +67,7 @@ class MetaHelperHonestyTest(unittest.TestCase):
         route = muse.glimmer_route({})
         op = CapturingOpener(content="Model explanation.")
         out = muse.explain({"paused": ["maps"], "paused_by_glimmer": ["maps"]}, route, env={}, opener=op)
-        self.assertEqual(out, {"text": "Model explanation.", "engine": "Muse Glimmer", "where": "on this device", "ok": True})
+        self.assertEqual(out, {"text": "Model explanation.", "engine": "Muse Glimmer", "where": "on a local server", "ok": True})
         prompt = json.loads(op.requests[0].data)["messages"][0]["content"]
         self.assertIn("Muse Glimmer chose to pause those tasks", prompt)
         self.assertIn('"paused_by_glimmer": ["maps"]', prompt)
@@ -76,7 +76,8 @@ class MetaHelperHonestyTest(unittest.TestCase):
         prompt = json.loads(op2.requests[0].data)["messages"][0]["content"]
         self.assertIn('"paused": ["maps"]', prompt)
         self.assertIn("four short sentences", prompt)
-        self.assertIn("calls, messages and alarms stay on", prompt)
+        self.assertIn("Say calls and messages are never paused", prompt)
+        self.assertNotIn("alarm", prompt.lower())
         self.assertNotIn("Muse Glimmer chose", prompt)
 
     def test_assist_grounding_includes_attribution(self):
@@ -179,19 +180,19 @@ class MetaHelperHonestyTest(unittest.TestCase):
         why = "  " + "reason " * 100 + "  "
         out = muse.explain({"why_paused": why}, muse.glimmer_route({}), env={},
                            opener=CapturingOpener(error=OSError("offline")))
-        self.assertEqual(out["text"], why.strip()[:500] + " Calls, messages and alarms always stay on.")
+        self.assertEqual(out["text"], why.strip()[:500] + " Calls and messages are never paused.")
 
     def test_fallback_ignores_malformed_attribution_and_paused_values(self):
         for names in (None, "email", 5, [], ["email", None], [5]):
             with self.subTest(names=names):
                 out = muse.explain({"why_paused": "Reason.", "paused_by_glimmer": names},
                                    muse.glimmer_route({}), env={}, opener=CapturingOpener(error=OSError("offline")))
-                self.assertEqual(out["text"], "Reason. Calls, messages and alarms always stay on.")
+                self.assertEqual(out["text"], "Reason. Calls and messages are never paused.")
         for paused in (None, "", 0, {}, ()):
             with self.subTest(paused=paused):
                 out = muse.explain({"paused": paused}, muse.glimmer_route({}), env={},
                                    opener=CapturingOpener(error=OSError("offline")))
-                self.assertEqual(out["text"], "Calls, messages and alarms stay on; other tasks are paused to save battery.")
+                self.assertEqual(out["text"], "Calls and messages are never paused. Other tasks are paused to save battery.")
 
     def test_attribution_prompt_requires_nonempty_list(self):
         for names in (None, "email", 5, []):

@@ -186,7 +186,7 @@ def rules_answer(question, facts):
         return None
     why = facts.get("why_paused")
     if _PAUSE_Q.search(question) and isinstance(why, str) and why.strip():
-        return _rules_reply(why.strip()[:500] + " Calls, messages and alarms always stay on.")
+        return _rules_reply(why.strip()[:500] + " Calls and messages are never paused.")
     left, goal = facts.get("time_left"), facts.get("goal")
     if _TIME_Q.search(question) and isinstance(left, str) and left.strip():
         if facts.get("charging") is True:
@@ -195,7 +195,7 @@ def rules_answer(question, facts):
             text = left.strip().rstrip(".") + " at the current rate."
             if isinstance(goal, str) and goal:
                 text += f" That reaches your {goal} goal." if facts.get("goal_met") is True else f" That falls short of your {goal} goal, so the phone pauses less important tasks."
-        return _rules_reply(text + " Calls, messages and alarms always stay on.")
+        return _rules_reply(text + " Calls and messages are never paused.")
     return None
 def answer(question, web=False, env=None, opener=None, free=None, context=None):
     if env is None:
@@ -204,7 +204,7 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
     if not q:
         return {"ok": False, "text": "Ask a question.", "engine": "none", "where": "", "sources": []}
     if is_resting(context):
-        return {"ok": False, "text": "Battery is critical, so the helper is resting to save power. Calls, messages and alarms still work. Ask again once the battery recovers or the phone is charging.", "engine": "rules", "where": "on this phone", "sources": []}
+        return {"ok": False, "text": "Battery is critical, so the helper is resting to save power. Calls and messages are never paused. Ask again once the battery recovers or the phone is charging.", "engine": "rules", "where": "on this phone", "sources": []}
     use_facts = isinstance(context, dict) and len(context) > 0
     ruled = rules_answer(q, context) if use_facts and not web else None
     sources = search(q, opener) if web else []
@@ -242,10 +242,10 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
     why = context.get("why_paused") if use_facts else None
     if contradicted and isinstance(why, str) and why.strip():
         # The model claimed a pause the phone does not have; the rules' own sentence is the answer.
-        return _rules_reply(why.strip()[:500] + " Calls, messages and alarms always stay on.")
+        return _rules_reply(why.strip()[:500] + " Calls and messages are never paused.")
     if sources:
-        return {"ok": True, "text": "No model answered, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
-    detail = "No model answered. "
+        return {"ok": True, "text": "The helper did not answer, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
+    detail = "The helper did not answer. "
     if free is not None and free < MIN_MB_1B:
-        return {"ok": False, "text": detail + f"Not enough free memory for the on-phone model (about {free} MB free, needs 1536).", "engine": "none", "where": "", "sources": []}
-    return {"ok": False, "text": detail + "Calls, messages and battery saving still work.", "engine": "none", "where": "", "sources": []}
+        return {"ok": False, "text": detail + f"The phone has only about {free} MB of free memory and the helper needs {MIN_MB_1B} MB.", "engine": "none", "where": "", "sources": []}
+    return {"ok": False, "text": detail + "The battery rules still work.", "engine": "none", "where": "", "sources": []}

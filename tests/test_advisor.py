@@ -59,6 +59,8 @@ class TestAdvisor(unittest.TestCase):
         self.assertEqual(called[0][2], 120)
         self.assertEqual(called[0][3], 60)
         self.assertIn("90", called[0][1])
+        self.assertIn("to protect calls and messages.", called[0][1])  # W1-08: there is no alarm app to protect
+        self.assertNotIn("alarm", called[0][1].lower())
         d2 = adv(self.state_high, self.tasks_all)
         self.assertNotIn("sync", d2.allowed)
         self.assertIn("sync", d2.deferred)

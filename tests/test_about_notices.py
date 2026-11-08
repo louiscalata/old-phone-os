@@ -84,7 +84,9 @@ class TestAboutNotices(unittest.TestCase):
         self.assertIsNot(parsed.ids["about"]["parent"], parsed.ids["about-notices"])
         self.assertNotIn("Licence", "".join(parsed.ids["about"]["text"]))
         self.assertIn("a.insertAdjacentElement('afterend',n)", page)
-        self.assertIn("a.textContent=e?", page)
+        # W1-08: the helper-status hook that rewrote About ("Helper set to ...") is gone; the line stays static.
+        self.assertNotIn("a.textContent=e?", page)
+        self.assertEqual("".join(parsed.ids["about"]["text"]), "Old Phone OS Interface")
 
     def test_native_readability_and_nonce_contract(self):
         page = web.page(nonce="test-about-nonce")
