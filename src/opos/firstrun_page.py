@@ -38,6 +38,10 @@ input[type=search]{width:100%;min-height:48px;margin:8px 0;padding:8px;backgroun
 .nav{margin-top:16px;border-top:1px solid var(--fg);padding-top:8px}
 ul.sum{padding-left:1.2rem}
 @media(min-width:1000px){.cols{display:grid;grid-template-columns:minmax(0,1fr) var(--hinge) minmax(0,1fr)}.l{grid-column:1;padding-right:16px}.r{grid-column:3;padding-left:16px}}
+::placeholder{color:var(--fg);opacity:1;font-style:italic}
+button:disabled::after{content:" unavailable"}
+.list{display:flex;flex-direction:column;gap:8px;border:0}
+.list button{border:1px solid var(--fg)}
 """
 
 _HEAD = """<!doctype html>
