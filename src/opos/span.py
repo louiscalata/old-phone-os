@@ -64,10 +64,14 @@ EXTRA = ('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}'
 
 
 def readout(span):
-    """Settings, Device type also states the window the page found, so the numbers can be checked on the phone."""
-    return ("<script>addEventListener('load',function(){var e=document.getElementById('ff-detected');"
+    """Settings, Device type also states the window the page found, so the numbers can be checked on the phone.
+
+    phone-b.js rewrites that line from scratch on every resize, so the readout is appended again on each one; its
+    script is the last in the page, which puts its listener after phone-b.js's and the append cannot repeat."""
+    return ("<script>['load','resize'].forEach(function(t){addEventListener(t,function(){"
+            "var e=document.getElementById('ff-detected');"
             "if(e)e.textContent+='. Window '+innerWidth+' x '+innerHeight+' CSS px at '+devicePixelRatio+'x, "
-            f"span {_n(span.pane)} + {_n(span.hinge)} + {_n(span.pane)}.'}})</script>")
+            f"span {_n(span.pane)} + {_n(span.hinge)} + {_n(span.pane)}.'}})}})</script>")
 
 
 def rewrites(span):

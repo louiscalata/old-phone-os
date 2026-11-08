@@ -218,6 +218,17 @@ class ServedPage(unittest.TestCase):
         self.assertIn("span 540 + 33.6 + 540.", spanmod.readout(Span(540, 33.6)))
         self.assertNotIn("innerWidth", page())
 
+    def test_readout_is_added_again_after_every_resize(self):
+        # phone-b.js rewrites the whole line on each resize (the on-screen keyboard, a compositor configure), which
+        # took the readout away when it was appended on load only.
+        out, readout = page(span=DUO), spanmod.readout(DUO)
+        self.assertIn("['load','resize'].forEach(function(t){addEventListener(t,function(){", readout)
+        self.assertEqual(readout.count("textContent+="), 1)
+        # Appended after phone-b.js has rewritten the line, so it cannot be added twice: that script's resize
+        # listener is registered before this one.
+        self.assertEqual(out.count("window.addEventListener('resize',guess)"), 1)
+        self.assertLess(out.index("window.addEventListener('resize',guess)"), out.index(readout))
+
 
 @contextlib.contextmanager
 def serving(**kw):
@@ -377,6 +388,12 @@ async function run(url, w, h, q, after) {
     out.one_pane_phone = await run(fileUrl, 675, 900, q, `oposUI.openApp('phone')`);
     out.slab = await run(fileUrl, 1392, 900, q + '&ff=slab', `oposUI.openApp('home')`);
     out.plain = await run(plainUrl, 1392, 900, q, `oposUI.openApp('home')`);
+    // phone-b.js writes the Device type line again on every resize: the readout has to come back, once, with the new size.
+    out.resized = await run(fileUrl, 1392, 900, q, `oposUI.openApp('settings');dispatchEvent(new Event('resize'));dispatchEvent(new Event('resize'))`);
+    await send('Emulation.setDeviceMetricsOverride', {width: 1392, height: 800, deviceScaleFactor: 1, mobile: true,
+      screenOrientation: {type: 'landscapePrimary', angle: 90}});
+    await sleep(250);
+    out.resized_real = await ev(MEASURE2);
   } finally {
     clearTimeout(timer);
     await closeBrowser();
@@ -442,6 +459,13 @@ class Browser(unittest.TestCase):
             self.assertIsNone(m["ff"], k)
             self.assertEqual(m["display"], "flex", k)
             self.assertLessEqual(m["scroll"], 675, k)
+
+    def test_the_readout_follows_the_window_when_it_resizes(self):
+        # A resize event, then a real change of the window's height: the line is written again each time and the
+        # readout comes back once, with the size the window has now.
+        for k, height in (("resized", 900), ("resized_real", 800)):
+            self.assertEqual(self.r[k]["auto"],
+                             "Auto looks like: two screens. Window 1392 x %d CSS px at 1x, span 675 + 42 + 675." % height, k)
 
     def test_an_explicit_device_type_is_still_honoured(self):
         self.assertEqual(self.r["slab"]["ff"], "slab")
