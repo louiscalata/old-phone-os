@@ -119,7 +119,7 @@ E.home.querySelector=s=>{const m=/data-open="?(\w+)/.exec(s);return m?tiles[m[1]
 const mode=process.argv[3];let calls=0,net=0,unhandled=0;
 process.on('unhandledRejection',()=>{unhandled++});
 if(mode==='focus-throws')E.q.focus=()=>{throw Error('focus failed')};
-const c={window:{addEventListener(){},scrollTo(){}},document:{getElementById:i=>E[i]||null},
+const body={scrollTop:0},c={window:{addEventListener(){},scrollTo(){}},document:{getElementById:i=>E[i]||null,body},
  // UXP07 defers Helper completion with the browser timer; provide it in the VM.
  location:{search:process.argv[4]||''},Promise,setTimeout,fetch(){net++},api(){net++}};
 if(mode!=='none')c.toggleVis=function(){calls++;if(mode==='reject')return Promise.reject(Error('x'));
@@ -129,10 +129,11 @@ vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),c);
 const ui=c.window.oposUI,out={};
 c.window.oposHooks.forEach(f=>f({}));c.window.oposHooks.forEach(f=>f({}));
 out.start=E.phone.dataset.app;out.settingsTile=tiles.settings.hidden;
-ui.openApp('phone');out.phone=[E.phone.dataset.app,E.home.hidden,E.back.hidden,active&&active.id];
-ui.openApp('home');out.home=[E.phone.dataset.app,E.home.hidden,E.back.hidden,active&&active.id];
-ui.openApp('settings');out.settings=E.phone.dataset.app;
-ui.openApp('bogus');out.bogus=E.phone.dataset.app;
+out.tops=[];const top=n=>{body.scrollTop=120;ui.openApp(n);out.tops.push(body.scrollTop)};
+top('phone');out.phone=[E.phone.dataset.app,E.home.hidden,E.back.hidden,active&&active.id];
+top('home');out.home=[E.phone.dataset.app,E.home.hidden,E.back.hidden,active&&active.id];
+top('settings');out.settings=E.phone.dataset.app;
+top('bogus');out.bogus=E.phone.dataset.app;
 E.home.l.click({target:{closest(){return tiles.helper}}});
 setTimeout(()=>{c.window.oposHooks.forEach(f=>f({}));out.helper=[E.phone.dataset.app===undefined?null:E.phone.dataset.app,E.home.hidden,E.back.hidden,active&&active.id];
  out.calls=calls;out.net=net;out.unhandled=unhandled;out.drafts=[E.number.value,E.msg.value,E.answer.textContent];
@@ -165,6 +166,13 @@ class UXP04Runtime(unittest.TestCase):
         self.assertEqual(o["calls"], 1)
         self.assertEqual(o["net"], 0)
         self.assertEqual(o["drafts"], ["555", "hi", "old"])
+
+    def test_every_app_change_scrolls_the_page_scroller_to_the_top(self):
+        # <body> is the scroller (html and body are height:100% with overflow-x:hidden), so window.scrollTo does nothing: a Messages
+        # page scrolled down used to leave Settings or Home scrolled under the status bar, where the Home button sat inside the 48 px
+        # shade strip. Every app change, including the one that falls back to Home, resets body.scrollTop as well.
+        o = self.run_js("ok")
+        self.assertEqual(o["tops"], [0, 0, 0, 0])
 
     def test_helper_failure_falls_back_to_full_view(self):
         for mode in ("reject", "stay-hidden", "none", "focus-throws"):

@@ -29,7 +29,7 @@ var prev=p.dataset.app;
 p.dataset.app=name;
 if(typeof scopeNotice==='function')scopeNotice();
 if(h)h.hidden=name!=='home';if(b)b.hidden=name==='home';if(s)s.hidden=name!=='settings';
-try{window.scrollTo(0,0)}catch(e){}
+try{window.scrollTo(0,0);document.body.scrollTop=0}catch(e){}
 if(name==='home'){var t=last&&h&&h.querySelector('[data-open='+last+']');if(t&&prev&&prev!=='home')t.focus();return}
 last=name;
 if(name!=='helper'){pend=false;if(b)b.focus();return}
