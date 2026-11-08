@@ -43,7 +43,7 @@ renderNotices();
 }catch(e){}};
 li.appendChild(dismiss);ul.appendChild(li);
 });
-var status=G('lock-notice'),text=notices.length?'New notice':'';
+var status=G('lock-notice'),text=notices.length?notices[0].text:'';
 if(status&&status.textContent!==text)status.textContent=text;
 }
 function available(id,label,ready){

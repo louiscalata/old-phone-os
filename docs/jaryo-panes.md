@@ -91,7 +91,7 @@ Zero text or controls sit on the hinge in any of these states. Home, All apps an
 | Helper | masthead, "Helper", Technical details and Reset | Home, Ask field, Send, Cancel, Clear, Why, Plan, Wikipedia switch | `#helper` to the left pane |
 | Settings | masthead | Home, Settings (device type, Display with Theme and Hand, About) | `#settings` to the right pane |
 
-The status bar (`#sb`) keeps its text where it is (time, network, helper engine in the left pane; battery in the right pane) and takes each pane's colours. The Shade and Lock buttons (`#jaryo-status-row`) move to the thumb side: right-aligned in Right, left-aligned in Left.
+The status bar (`#sb`) keeps its text where it is (time, network note and "Helper on" in the left pane; battery in the right pane) and takes each pane's colours. The Shade and Lock buttons (`#jaryo-status-row`) move to the thumb side: right-aligned in Right, left-aligned in Left.
 
 Settings stays one column in the thumb pane. A two-column Settings spanning both panes was tried and dropped: the shared grid rows push Device type below the whole Display section (the same artefact the audit recorded in geometry-15).
 

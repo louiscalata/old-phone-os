@@ -70,6 +70,7 @@ html[data-theme="dark"]{--jaryo-fg:#fff;--jaryo-bg:#000}
 | `.box{background:#222}`, `#demo`, `.paused-row{border-bottom:#333}`, `.feature-bar/.feature-fill`, `#textsize{background:#111;border:#444}`, `#askbtn{background:#fff;color:#111}`, `#history polyline{stroke:#fff}` | bg/fg variables; `.feature-fill` becomes fg; the SVG polyline gets `stroke:currentColor` via CSS |
 | `#sb{background:#000}`, `#sb-engine{opacity:.8}`, `#time-left{opacity:.85}`, `#history-label{opacity:.6}`, `#why{opacity:.9}`, `#events{opacity:.8}` | `background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)`; all opacities `1` |
 | `:focus-visible{outline:2px solid #fff}` (web.py:399, phone-b.css:42,53) | `outline:3px solid var(--jaryo-fg);outline-offset:3px` |
+| A call in progress (was a 14 px centred grey line) | `#notice[data-tone=call]`: 1.25 rem bold, `padding:12px`, `3px double` box in the pane's ink (the "Error / notice" row above), left aligned. `Hang up` beside it is the inverted fill (`#notice[data-tone=call]~#controls [data-go=hang_up]`) and goes back to the plain look while pressed, so a press is always a visible change. The status bar says "In call"; Home's card says "In a practice call with <name or number>" ("practice" while the modem is the simulated one); the lock line shows the notice text |
 | Wizard: `#meter-fill{background:#30a46c}`, `.dot.*`, `#error{color:#e5484d}`, `a{color:#30a46c}` | wizard gets the same tokens; progress dots become text `pending/running/ok/failed/skipped` in a condensed face |
 
 The `palette` CDP test (section 8) MUST verify that no visible element computes to anything but `rgb(0,0,0)`/`rgb(255,255,255)` after the overrides.
@@ -306,8 +307,8 @@ All reads come from `GET /api/state` = `Phone.state()` (web.py:174) unless noted
 
 | Screen | Reads today | Writes today | Pending / not wired |
 |---|---|---|---|
-| Status bar `#sb` | `battery.percent`, `helper.engine` (visible only), `navigator.onLine` | — | real radio state; `in_call` tone shown as text "In call" from `notice` |
-| Lock | `battery.percent`, `battery.time_left`, `battery.headline`, `in_call`, `notice` | `hang_up` | — |
+| Status bar `#sb` | `clock` (`--:--` = not set), `in_call`, `status_note` ("Simulated battery", "Battery not readable", "Clock not set"; `statusbar.py`), `navigator.onLine`, `battery.percent` (`LOW 12%` at 15 or less, with the double border), `helper` (present: "Helper on", never a model name) | — | real radio state. The network slot says "In call", else the note, else "Offline" |
+| Lock | `battery.percent`, `battery.time_left`, `battery.headline`, `in_call`, `notice` (the newest notice is the lock line), `clock` (unset: `--:--` and "Time not set") | `hang_up` | — |
 | Home tiles | `in_call`, `threads.length`, `mode` (NEW additive field, `d.mode.name`, always present), `battery.paused` for the brief | — | app badges beyond messages |
 | Shade | `battery.{percent,time_left,headline,steps,paused,events,history,goal,goal_note,worn_note}`, `brightness`, `helper_visible`, `notice` | `visible`, `goal`, `undo`, `in_use` (not exposed) | real screen brightness (value is the budget's wish, budget.py; no sysfs writer) |
 | Settings › Display | localStorage `jaryo_theme`, `opos_text`, `jaryo_tiles` | localStorage | server-side persistence after install (config `jaryo`) |

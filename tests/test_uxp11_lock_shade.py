@@ -49,6 +49,7 @@ out.sameDismiss=get('qs-notices').children[0].children[3]===item.children[3];
 out.sameStatusWrites=get('lock-notice').writes===writes;
 render({notice:'second',helper_visible:true});
 out.addStatusWrites=get('lock-notice').writes===writes;
+out.lockAfterSecond=get('lock-notice').textContent;
 out.on=[get('qs-helper').textContent,get('qs-helper').attrs['aria-pressed']];
 get('qs-notices').children[0].children[3].onclick();
 out.remaining=get('qs-notices').children.map(e=>e.children[2].textContent);
@@ -97,8 +98,9 @@ class TestPrivateLockShade(unittest.TestCase):
     def test_private_lock_and_shade(self):
         out = self.run_js()
         self.assertTrue(out['locked'])
-        self.assertEqual(out['lock'], 'New notice')
-        self.assertNotIn('secret demo text', out['lock'])
+        # The lock line is the newest notice itself (interface plan W1-06): the server's notices are fixed phrases ("In call",
+        # "Call ended", "New message"), never a message body or a number, so "New notice" told the owner nothing for no gain.
+        self.assertEqual(out['lock'], 'secret demo text')
         self.assertIn('secret demo text', out['shade'])
         self.assertEqual(out['emptyLock'], '')
         self.assertEqual(out['unlocked'], [True, False])
@@ -109,12 +111,14 @@ class TestPrivateLockShade(unittest.TestCase):
     def test_unchanged_poll_preserves_dismiss_button_and_live_region(self):
         out = self.run_js()
         self.assertTrue(out['sameDismiss'])
-        self.assertTrue(out['sameStatusWrites'])
-        self.assertTrue(out['addStatusWrites'])
+        self.assertTrue(out['sameStatusWrites'])  # an unchanged poll does not touch the lock line
+        # The lock line is the newest notice (W1-06), so a different notice is one more write, and only that.
+        self.assertFalse(out['addStatusWrites'])
+        self.assertEqual(out['lockAfterSecond'], 'second')
 
     def test_lock_status_tracks_pending_notices(self):
         out = self.run_js()
-        self.assertEqual(out['pendingLock'], 'New notice')
+        self.assertEqual(out['pendingLock'], 'secret demo text')  # the newest notice still pending after 'second' was dismissed
         self.assertEqual(out['dismissedLock'], '')
         self.assertEqual(out['emptyShade'], 'No recent notices')
         self.assertEqual(out['dismissedPollLock'], '')

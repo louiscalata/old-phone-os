@@ -274,6 +274,15 @@ const SHOT_IDS = new Set(['back', 'apps-close', 'unlock', 'lock-call']), SHOT_ST
 const save = (name, buf) => { if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); fs.writeFileSync(SHOTS + '/' + name, buf); } };
 
 const out = { states: {}, hand: {}, off: {}, os: {}, osk: {}, motion: {}, logs: {} };
+// The low-battery chip: its word, its box, its size, and the Shade's title.
+const LOW = `(function(){var b=document.getElementById('sb-batt'),c=getComputedStyle(b),r=b.getBoundingClientRect(),s=document.getElementById('sb').getBoundingClientRect();
+ return {text:b.textContent,low:b.getAttribute('data-low'),border:c.borderTopWidth+' '+c.borderTopStyle,borderColor:c.borderTopColor,color:c.color,h:Math.round(r.height*10)/10,l:Math.round(r.left),r:Math.round(r.right),
+  inBar:r.top>=s.top&&r.bottom<=s.bottom,title:document.getElementById('sheet-title').textContent}})()`;
+// What a call in progress looks like: the notice (boxed, bold, in the pane's ink), Hang up (inverted fill), the status bar's word.
+const CALL = `(function(){function B(e){var r=e.getBoundingClientRect();return {l:Math.round(r.left),r:Math.round(r.right),h:Math.round(r.height)}}
+ var n=document.getElementById('notice'),c=getComputedStyle(n),h=document.querySelector('#controls [data-go=hang_up]'),k=getComputedStyle(h),g=document.getElementById('sb-net');
+ return {tone:n.dataset.tone,hidden:n.hidden,text:n.textContent,fontSize:c.fontSize,fontWeight:c.fontWeight,border:c.borderTopWidth+' '+c.borderTopStyle,borderColor:c.borderTopColor,color:c.color,box:B(n),
+  hang:{fg:k.color,bg:k.backgroundColor,box:B(h)},net:g.textContent,screen:document.getElementById('screen').textContent}})()`;
 const MAIN = BASE + '/?firstrun=later';
 // What each page needs before it is measured: the kiosk page can open an app; the Network page has read its radios and scanned; the
 // first-run page has its choices and the time zone page its list (both come from the server after the page has loaded).
@@ -304,14 +313,23 @@ try {
   if (want('states')) for (const scheme of ['light', 'dark']) for (const hand of ['right', 'left']) {
     const p = await open({ url: MAIN, w: 1392, h: 900, scheme, ready: APP_READY });
     await p.ev(setStore(hand, scheme)); await p.reload();
-    const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(500);
-      const m = await measure(p);  // then every control pressed: forced :active everywhere, a real mouse-down in the dark run
+    const st = async (name, fn, probe) => { if (fn) await p.ev(fn); await sleep(500);
+      const m = await measure(p, probe && { probe: await p.ev(probe) });  // then every control pressed: forced :active everywhere, a real mouse-down in the dark run
       m.press = { forced: await pressedForced(p), real: scheme === 'dark' ? await pressedReal(p, SHOT_STATES.has(name) ? `${hand}-${name}` : null) : [] };
       out.states[`${scheme}/${hand}/${name}`] = m; };
     await st('lock-start');
     await st('home', `oposUI.unlock&&oposUI.unlock();oposUI.openApp('home')`);
     await st('allapps', `oposUI.openApp('home');document.getElementById('allapps').click()`);
     await st('phone', `oposUI.openApp('phone')`);
+    // A call in progress (interface plan W1-06): the boxed bold notice and the inverted Hang up, measured like every other state. The
+    // call is ended right after, so the states that follow are the idle ones.
+    // A call polls once a second and each poll rebuilds the contact buttons, which would invalidate the nodes the pressed pass holds: the
+    // page's render is held still while this state is measured, and let go before the call is ended.
+    await st('phone-call', `(async()=>{document.getElementById('number').value='+15550100';await go('call');await new Promise(r=>setTimeout(r,300));window.__r=render;render=async function(){}})()`, CALL);
+    await p.ev(`(async()=>{render=window.__r;delete window.__r;await go('hang_up')})()`);
+    // Low battery (W1-05): "LOW 12%" in a double box in the right pane's ink; the battery is put back after.
+    await st('home-low', `(async()=>{oposUI.openApp('home');render(await api({action:'battery',level:12}))})()`, LOW);
+    await p.ev(`(async()=>{render(await api({action:'battery',level:60}))})()`);
     await st('messages', `oposUI.openApp('messages')`);
     await st('helper', `oposUI.openApp('helper')`);
     await st('settings', `oposUI.openApp('settings')`);

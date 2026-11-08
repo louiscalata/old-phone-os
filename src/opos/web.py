@@ -224,6 +224,7 @@ class Phone:
         self.status_app = ""
         self.dash.record(self.sim.level, self.clock_s)
         self._in_call = False
+        self._call_with = ""  # who the call is with (a contact's name, else the number), for the Home line
         self._tick_obj = None
         self._undo_mode = None  # the mode an Undo was made in; a different mode ends it
         self._last_tick_time = time.monotonic()
@@ -452,7 +453,7 @@ class Phone:
             self.status = "error: already in a call"
             return
         try:
-            self.essentials.call(number)
+            self._call_with = self.book.name_for(self.essentials.call(number))
             self._in_call = True
             self.status = "in call"
         except ValueError:

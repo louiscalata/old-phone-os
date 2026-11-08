@@ -297,8 +297,10 @@ What the image does now:
   (`/var/lib/opos/clock-guess`), because `timekeeper` stores whatever the clock was.
 - The OPOS server reads those files. While the clock is a guess, or before 2026, `/api/state` has
   `battery.clock_ok: false`, `clock` reads `--:--`, goals and `calls_until` are not computed against it, the governor
-  gets no goal hours, and the goal note reads "Clock not set". The demo and the public demo do not change. The page's
-  lock-screen and status-bar times are Chromium's own `Date`, so they show the guess until it is replaced.
+  gets no goal hours, and the goal note reads "Clock not set". The demo and the public demo do not change. The page
+  draws the same fact: the status bar and the lock screen show `--:--`, the lock screen and the Home dateline say "Time not
+  set", and the status bar's network slot says "Clock not set", until the clock is real (the page also treats a browser
+  year before 2026 as unset, so a 1970 boot is never drawn as a time).
 
 Set the time from the PC, dev images only (built with `OPOS_DEV_SSH_PUBKEY`; the units are in every image, enabled
 only in those). The `droidian` user has no passwordless sudo and none is added. Instead a root path unit watches

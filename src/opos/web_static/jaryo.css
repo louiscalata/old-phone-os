@@ -61,3 +61,6 @@ button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-d
 :focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible,#textsize:focus-visible,#meter:focus-visible,#sheet-title:focus-visible{outline:3px solid var(--jaryo-fg);outline-offset:3px}
 #apps-list .jaryo-letter{padding:8px 0 0;text-transform:uppercase;font-stretch:condensed;font-weight:400;grid-column:1/-1}
 input[type=radio],input[type=checkbox]{accent-color:var(--jaryo-fg)}
+#notice[data-tone=call]:not([hidden]){font-size:1.25rem;font-weight:700;padding:12px;border:3px double var(--jaryo-fg);margin:8px 12px;text-align:left}
+#notice[data-tone=call]~#controls [data-go=hang_up]{background:var(--jaryo-fg);color:var(--jaryo-bg)}
+#notice[data-tone=call]~#controls [data-go=hang_up]:active{background:var(--jaryo-bg);color:var(--jaryo-fg)}
