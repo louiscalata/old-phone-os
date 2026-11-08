@@ -10,7 +10,7 @@ html[data-panes=two]{--jp-k:@K@;--jp-k-ink:@KI@;--jp-k-cs:@KCS@;--jp-w:@W@;--jp-
 --jp-x1:env(viewport-segment-width 0 0);--jp-x2:env(viewport-segment-left 1 0);
 --jp-l:var(--jp-w);--jp-l-ink:var(--jp-w-ink);--jp-l-cs:var(--jp-w-cs);--jp-r:var(--jp-k);--jp-r-ink:var(--jp-k-ink);--jp-r-cs:var(--jp-k-cs);
 --jp-act:var(--jp-r);--jp-act-ink:var(--jp-r-ink);--jp-act-cs:var(--jp-r-cs);--jp-lst:var(--jp-l);--jp-lst-ink:var(--jp-l-ink);--jp-lst-cs:var(--jp-l-cs);
-background:var(--jp-r);color-scheme:var(--jp-r-cs)}
+background:var(--jp-r);color:var(--jp-r-ink);color-scheme:var(--jp-r-cs)}
 html[data-panes=two][data-hand=left]{--jp-l:var(--jp-k);--jp-l-ink:var(--jp-k-ink);--jp-l-cs:var(--jp-k-cs);--jp-r:var(--jp-w);--jp-r-ink:var(--jp-w-ink);--jp-r-cs:var(--jp-w-cs)}
 /* 2. Backdrop: the canvas is the right pane, one fixed layer is the left pane, one fixed layer is the hinge (always black). */
 html[data-panes=two]::before{content:"";position:fixed;z-index:-1;top:0;bottom:0;left:0;width:var(--jp-x1);background:var(--jp-l);pointer-events:none}

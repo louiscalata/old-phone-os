@@ -49,12 +49,21 @@ def env_without(**kw):
 
 class Flag(unittest.TestCase):
     def test_words(self):
-        for v, m in (("1", {"1"}), ("on", {"on"}), (" 1,pure ", {"1", "pure"}), ("INVERT", {"invert"}), ("1,touch,theme", {"1", "touch", "theme"})):
+        for v, m in (("1", {"1"}), ("on", {"on"}), (" 1,pure ", {"1", "pure"}), ("INVERT", {"invert"}), ("1,theme", {"1", "theme"})):
             self.assertEqual(panes.modes({"OPOS_PANES": v}), m, v)
         for v in ("", "0", "off", "yes", "1,wat", "true", "pure,"):
             self.assertEqual(panes.modes({"OPOS_PANES": v}), set() if v != "pure," else {"pure"}, v)
         self.assertFalse(panes.enabled({}))
         self.assertTrue(panes.enabled({"OPOS_PANES": "mirror"}))
+
+    def test_touch_is_not_a_word_until_it_is_built(self):
+        # docs/jaryo-panes.md section 7 says "touch" is specified, not built: it used to turn the feature on and behave like "1"
+        for v in ("touch", "1,touch", "touch,pure", "TOUCH"):
+            self.assertEqual(panes.modes({"OPOS_PANES": v}), set(), v)
+            self.assertFalse(panes.enabled({"OPOS_PANES": v}), v)
+            self.assertIsNone(panes.asset("/panes.css", None, {"OPOS_PANES": v}), v)
+            self.assertEqual(panes.inject("<head></head>", "n1", {"OPOS_PANES": v}), "<head></head>", v)
+        self.assertEqual(panes._WORDS, {"1", "on", "mirror", "invert", "theme", "pure"})
 
 
 class Sheet(unittest.TestCase):
@@ -121,6 +130,21 @@ class Sheet(unittest.TestCase):
         self.assertIn("@media (min-width:1055px){", out)
         self.assertIn("--jp-x1:var(--pane);--jp-x2:calc(var(--pane) + var(--hinge))", out)
         self.assertEqual(out.count("--pane:"), 1)  # defined once, not once per rule
+
+    def test_the_root_takes_the_ink_of_the_pane_it_paints(self):
+        # html is the right pane's canvas, so its colour (and the caret that follows it) is that pane's ink: with "pure" #fff or #000, not
+        # the theme's soft ink. No caret-color is set: it would be inherited into the other pane.
+        for env, k_ink, w_ink in ((ON, "#e6e2d9", "#1a1a1a"), ({"OPOS_PANES": "1,pure"}, "#fff", "#000")):
+            out = self.served(**env)
+            root = [d.strip() for d in re.search(r"html\[data-panes=two\]\{([^}]*)\}", out).group(1).split(";")]
+            self.assertIn("background:var(--jp-r)", root)
+            self.assertIn("color:var(--jp-r-ink)", root)
+            self.assertIn("--jp-r-ink:var(--jp-k-ink)", root)  # Right: the right pane is the black one
+            self.assertIn("--jp-k-ink:" + k_ink, root)
+            self.assertIn("--jp-w-ink:" + w_ink, root)
+            left = [d.strip() for d in re.search(r"\[data-hand=left\]\{([^}]*)\}", out).group(1).split(";")]
+            self.assertIn("--jp-r-ink:var(--jp-w-ink)", left)  # Left: the right pane is the white one
+            self.assertNotIn("caret-color", out)
 
     def test_modes_change_one_thing_each(self):
         soft, pure = self.served(), self.served(**{"OPOS_PANES": "1,pure"})

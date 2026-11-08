@@ -21,7 +21,8 @@ _STATIC = Path(__file__).with_name("panes_static")
 _NONCE_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _HEAD_END = re.compile(r"</head\s*>", re.I)
 _BODY_END = re.compile(r"</body\s*>", re.I)
-_WORDS = {"1", "on", "mirror", "invert", "touch", "theme", "pure"}
+# "touch" (docs/jaryo-panes.md section 7) is specified, not built: it is not a word, so it means off, until it is built.
+_WORDS = {"1", "on", "mirror", "invert", "theme", "pure"}
 # Surface constants: the two token pairs of jaryo.css (dark: #e6e2d9 on #000, light: #1a1a1a on #f3f0e8). "pure" is the strict AGIW
 # pair (primitives.css). "theme" paints both panes in the page's own Light/Dark/System tokens.
 SOFT = {"@K@": "#000", "@KI@": "#e6e2d9", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"}

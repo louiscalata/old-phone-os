@@ -132,7 +132,7 @@ The four literals are the two token pairs of `jaryo.css` lines `--jaryo-fg:#e6e2
 
 `jaryo.md` section 2.1 and the planned `jaryo_palette` test forbid `background-image`, gradients, shadows and filters on visible nodes, so a hard-stop gradient is out. Three flat layers are used instead, on `html` only:
 
-1. The canvas is the right pane: `html { background: var(--jp-r) }`. `body` and `#phone` become `transparent`.
+1. The canvas is the right pane: `html { background: var(--jp-r); color: var(--jp-r-ink) }`. `body` and `#phone` become `transparent`. The root's `color` (and with it the `caret-color: auto` that follows it) is the right pane's ink, so with `pure` the root computes `#fff` or `#000` and not the theme's soft ink; no `caret-color` is set, because it would be inherited into the other pane.
 2. The left pane is one fixed layer: `html::before { position: fixed; z-index: -1; top: 0; bottom: 0; left: 0; width: var(--jp-x1); background: var(--jp-l) }`.
 3. The hinge is one fixed layer, always the black surface: `html::after { position: fixed; z-index: 1000; left: var(--jp-x1); width: calc(var(--jp-x2) - var(--jp-x1)); background: var(--jp-k); pointer-events: none }`. It covers the 42 px strip above everything (the Shade is 70, the lock is 100, the keyboard is higher and avoids the hinge itself).
 
@@ -396,14 +396,14 @@ The nonce check and tag shape, the "same bytes object while off" contract, the `
 
 ## 7. Alternatives to the reading, each with its single switch
 
-`OPOS_PANES` takes a comma list of words (`1`, `on`, `mirror`, `invert`, `touch`, `theme`, `pure`); any known word turns the feature on. Unknown words turn it off.
+`OPOS_PANES` takes a comma list of words (`1`, `on`, `mirror`, `invert`, `theme`, `pure`); any known word turns the feature on. Unknown words turn it off, and so does `touch` until it is built: the table below says "specified, not built" for it, and a flag word that turned the feature on but behaved like `1` would be a promise the build does not keep.
 
 | Alternative | What it does | Switch | Status |
 |---|---|---|---|
 | Invert, not mirror ("invert for the left" read as colours swapping) | Left: layout does NOT mirror; the thumb pane stays on the right and becomes white, the list pane on the left becomes black | `OPOS_PANES=invert` (`panes-mirror.css` omitted; the colour swap stays) | built and screenshot-verified |
 | Both panes follow the system theme | no fixed black and white; both panes use `--jaryo-bg/--jaryo-fg` (Light, Dark or System); the split reads only by the 42 px hinge strip, which then has the page's background | `OPOS_PANES=theme` (the four literals become `var(--jaryo-bg/--jaryo-fg)`, `color-scheme: normal`) | built; computed colours verified (both panes equal) |
 | Strict AGIW pair | `#000` / `#fff`, contrast 21:1 | `OPOS_PANES=1,pure` | built; verified (`#fff` left pane) |
-| Active = last touched pane | colours (not content) follow the last pointer: the pane last touched is black; Hand is hidden | `OPOS_PANES=touch` = `invert` plus: in `panes.js`, `document.addEventListener('pointerdown',function(e){d.dataset.black=e.clientX<(window.innerWidth/2)?'left':'right'},true)` with initial `right`, no `#jaryo-hand`; in `panes.css` the Left physical block's selector becomes `html[data-panes=two]:is([data-hand=left],[data-black=left])` | specified, not built |
+| Active = last touched pane | colours (not content) follow the last pointer: the pane last touched is black; Hand is hidden | `OPOS_PANES=touch` (not a flag word yet) = `invert` plus: in `panes.js`, `document.addEventListener('pointerdown',function(e){d.dataset.black=e.clientX<(window.innerWidth/2)?'left':'right'},true)` with initial `right`, no `#jaryo-hand`; in `panes.css` the Left physical block's selector becomes `html[data-panes=two]:is([data-hand=left],[data-black=left])` | specified, not built |
 | Home stays in the list pane (leave Home, All apps and Settings where `improve/hinge-layout` put them) | the thumb pane is empty on those three screens | delete the three `#home`, `#apps-list`, `#settings` entries from the placement list (4 rules in 2.4) | specified, not built |
 | White hinge | hinge strip is the white surface | change `background: var(--jp-k)` to `var(--jp-w)` on `html::after` | one declaration |
 

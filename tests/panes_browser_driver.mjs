@@ -123,6 +123,7 @@ const MEASURE = `(function(){
  }
  var ph=document.getElementById('phone');
  res.attrs={ff:root.dataset.ff||null,panes:root.dataset.panes||null,hand:root.dataset.hand||null,theme:root.dataset.theme||null,app:ph?ph.dataset.app||null:null};
+ res.root={color:getComputedStyle(root).color,caret:getComputedStyle(root).caretColor};
  res.surface={left:getComputedStyle(root,'::before').backgroundColor,right:getComputedStyle(root).backgroundColor,hinge:getComputedStyle(root,'::after').backgroundColor};
  res.cols=(function(){var m=document.querySelector('main,.cols');return m?getComputedStyle(m).gridTemplateColumns:null})();
  function B(id){var e=document.getElementById(id);if(!e)return null;var r=e.getBoundingClientRect();return r.width>0?{l:Math.round(r.left),r:Math.round(r.right),w:Math.round(r.width)}:null}

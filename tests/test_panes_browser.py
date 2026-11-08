@@ -128,6 +128,13 @@ class PanesBrowser(unittest.TestCase):
         for k, scheme, hand, name, m in self.states("os"):
             self.assertEqual((m["attrs"]["panes"], m["attrs"]["hand"]), ("two", hand), k)
 
+    def test_the_root_has_the_ink_of_the_right_pane_and_the_caret_follows_it(self):
+        # html paints the right pane, so its colour is that pane's ink (not the theme's): #e6e2d9 on black in Right, #1a1a1a on white in Left
+        for prefix in ("states", "os"):
+            for k, scheme, hand, name, m in self.states(prefix):
+                ink = "rgb(230, 226, 217)" if hand == "right" else "rgb(26, 26, 26)"
+                self.assertEqual((m["root"]["color"], m["root"]["caret"]), (ink, ink), k)
+
     def test_the_two_surfaces_are_one_black_and_one_white_and_the_hinge_is_black(self):
         for prefix in ("states", "os"):
             for k, scheme, hand, name, m in self.states(prefix):
