@@ -6,6 +6,7 @@ import base64
 import functools
 import json
 import re
+import shlex
 import shutil
 import struct
 import subprocess
@@ -265,6 +266,54 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertIn("if ($script:brakeMayBeAbsent)", caught)
         self.assertLess(caught.index("Show-BrakeWarning"), caught.index("} finally {"))
 
+    def test_the_brake_flag_goes_up_before_the_erase_and_comes_down_only_after_a_confirmed_flash(self):
+        body = code()
+        brake = function_text("Set-MiscBrake")
+        # Up once, before anything is written: what the catch below never sees (Ctrl+C) still leaves it up.
+        self.assertEqual(brake.count("$script:brakeMayBeAbsent = $true"), 1)
+        self.assertEqual(body.count("brakeMayBeAbsent = $true"), 1)
+        self.assertLess(brake.index("$script:brakeMayBeAbsent = $true"), brake.index("Fb erase misc"))
+        self.assertLess(brake.index("$script:brakeMayBeAbsent = $true"), brake.index("try {"))
+        # Down twice: after the erase and flash of the first try, and after the flash of the second try.
+        downs = [m.start() for m in re.finditer(re.escape("$script:brakeMayBeAbsent = $false"), brake)]
+        self.assertEqual(len(downs), 2)
+        self.assertGreater(downs[0], brake.index("} catch {"))
+        self.assertLess(downs[0], brake.index("BRAKE WRITE FAILED"))
+        self.assertGreater(downs[1], brake.rindex("Fb flash misc"))
+        # The finally keeps the brake image whenever the flag is up, and says so when the catch did not.
+        final = body[body.index("} finally {\n    if ($script:brakeMayBeAbsent)"):]
+        self.assertIn("if (-not $failed) { try { Show-BrakeWarning; Show-BrakeByHand } catch { } }", final)
+        self.assertLess(final.index("Show-BrakeByHand"), final.index("Release-Staged"))
+
+    def test_the_by_hand_brake_command_puts_the_staged_path_in_double_quotes(self):
+        hand = function_text("Show-BrakeByHand")
+        self.assertIn("flash misc `\"$($p['misc-brake.img'])`\"\"", hand)
+        self.assertNotIn("$orig", hand)
+        self.assertNotIn("flash misc $(", hand)
+
+    def test_the_log_is_best_effort_and_every_line_reaches_the_screen(self):
+        log = function_text("Log")
+        self.assertIn("try { Add-Content -LiteralPath $script:log -Value $l -ErrorAction Stop }", log)
+        self.assertIn("\n    catch {\n", log)
+        # The screen line comes after the catch and is not inside any try, so a failed write cannot hide it.
+        self.assertTrue(log.endswith("    }\n    Write-Host $l\n}"), log)
+        self.assertEqual(log.count("Write-Host $l"), 1)
+        self.assertEqual(log.count("try {"), 1)
+
+    def test_ssh_runs_in_the_log_folder_and_the_key_is_made_absolute(self):
+        ssh = function_text("Invoke-Ssh")
+        self.assertIn("Push-Location -LiteralPath $LogDir", ssh)
+        self.assertIn("finally { Pop-Location }", ssh)
+        self.assertIn("-o UserKnownHostsFile=known_hosts", ssh)
+        self.assertNotIn("$kh", ssh)
+        self.assertLess(ssh.index("Push-Location"), ssh.index("& ssh.exe"))
+        self.assertLess(ssh.index("& ssh.exe"), ssh.index("Pop-Location"))
+        # -Key is resolved while the location is still the caller's, before Invoke-Ssh changes it.
+        body = code()
+        self.assertIn("$Key = (Resolve-Path -LiteralPath $Key).ProviderPath", body)
+        self.assertLess(body.index("-Key $Key is not a file"), body.index("$Key = (Resolve-Path"))
+        self.assertLess(body.index("$Key = (Resolve-Path"), body.index("Invoke-Ssh $ip"))
+
     def test_ab_stops_on_a_nonzero_exit_and_the_umount_is_one_checked_sequence(self):
         body = code()
         self.assertRegex(function_text("Ab"), r"if \(\$r\.Code -ne 0\) \{ throw ")
@@ -310,7 +359,8 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertNotIn("Get-FileHash", stage)
         self.assertIn("    } else {\n        Release-Staged $held $staged $stage\n    }\n}\nif ($failed) { exit 1 }", body)
         # ... except the verified brake image, kept for the by-hand command after a failed brake write.
-        self.assertIn("if ($script:brakeMayBeAbsent) {\n        Release-Staged $held @($staged | Where-Object", body)
+        self.assertIn("if ($script:brakeMayBeAbsent) {\n        if (-not $failed) { try { Show-BrakeWarning; Show-BrakeByHand } catch { } }\n"
+                      "        Release-Staged $held @($staged | Where-Object", body)
         self.assertIn("Where-Object { $_ -ne $p['misc-brake.img'] }", body)
         # The staged rootfs is checked again, with its copy open.
         self.assertIn("$bad = Get-Ext4Problem $dst", body)
@@ -440,22 +490,40 @@ def ipv4_program(cases):
 
 
 # ssh.exe is replaced by a function that behaves like OpenSSH with StrictHostKeyChecking=no and no known_hosts
-# entry: its first line, on stderr, is the "Permanently added" warning, unless LogLevel=ERROR was passed.
+# entry: its first line, on stderr, is the "Permanently added" warning, unless LogLevel=ERROR was passed. It records
+# where it was started: the PowerShell location of the moment, and, on Windows, the working directory a REAL native
+# process gets from PowerShell (cmd.exe /c cd). Run once with a plain log folder and once with a space in its name.
 SSH = AST + r"""
-$LogDir = Join-Path ([IO.Path]::GetTempPath()) 'opos-duo-ssh-test'
-$Key = 'dev.key'
-$SshUser = 'droidian'
-. ([scriptblock]::Create((FunctionText 'Invoke-Ssh')))
-$global:SshArgs = @()
-function global:ssh.exe {
-    $global:SshArgs = @($args | ForEach-Object { "$_" })
-    $global:LASTEXITCODE = 0
-    if ($args -notcontains 'LogLevel=ERROR') { Write-Error "Warning: Permanently added '203.0.113.7' (ED25519) to the list of known hosts." }
-    'state=running'
-    '2026-11-07T10:00:00+00:00'
+$base = Join-Path ([IO.Path]::GetTempPath()) ('opos-duo-ssh-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $base | Out-Null
+try {
+    $Key = Join-Path $base 'dev.key'
+    Set-Content -LiteralPath $Key -Value 'stand-in private key' -Encoding ASCII
+    $SshUser = 'droidian'
+    . ([scriptblock]::Create((FunctionText 'Invoke-Ssh')))
+    function global:ssh.exe {
+        $global:SshArgs = @($args | ForEach-Object { "$_" })
+        $global:SshCwd = (Get-Location).ProviderPath
+        $global:NativeCwd = $null
+        if ([Environment]::OSVersion.Platform -eq 'Win32NT') { $global:NativeCwd = ((& cmd.exe /c cd) -join '').Trim() }
+        $global:LASTEXITCODE = 0
+        if ($args -notcontains 'LogLevel=ERROR') { Write-Error "Warning: Permanently added '203.0.113.7' (ED25519) to the list of known hosts." }
+        'state=running'
+        '2026-11-07T10:00:00+00:00'
+    }
+    $got = @()
+    foreach ($name in 'plain', 'with a space in it') {
+        $LogDir = Join-Path $base $name
+        New-Item -ItemType Directory -Path $LogDir | Out-Null
+        $before = (Get-Location).ProviderPath
+        $r = Invoke-Ssh '203.0.113.7' 'echo hi'
+        $got += [pscustomobject]@{ name = $name; logdir = $LogDir; code = $r.Code; text = $r.Text; args = @($global:SshArgs)
+            cwd = $global:SshCwd; native_cwd = $global:NativeCwd; location_restored = ((Get-Location).ProviderPath -eq $before) }
+    }
+    [pscustomobject]@{ runs = @($got) } | ConvertTo-Json -Compress -Depth 4
+} finally {
+    Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
 }
-$r = Invoke-Ssh '203.0.113.7' 'echo hi'
-[pscustomobject]@{ code = $r.Code; text = $r.Text; args = @($global:SshArgs) } | ConvertTo-Json -Compress
 """
 
 # The whole script, run in this PowerShell session with fastboot.exe, adb.exe, ssh.exe, ssh-keygen.exe, the network
@@ -464,8 +532,15 @@ $r = Invoke-Ssh '203.0.113.7' 'echo hi'
 # fastboot or adb could be found. The three pinned hashes in the script's copy are swapped for those of small
 # stand-in files (data only; the pinning itself is tested as text above), the rootfs is a small raw ext4 stand-in,
 # and the script's TCP probe is replaced by one that answers with its first host. $runs is a JSON list of
-#   {label, args, rootfs (base64), key, fail, others, late_others, tamper, no_keygen, no_early_ext4}
-# and each run starts from freshly written image files. fail is a list of {tool, match, mode, skip, times, text}:
+#   {label, args, rootfs (base64), key, fail, others, late_others, tamper, no_keygen, no_early_ext4,
+#    imgdir, logdir, relative, lock_log_on, stop_on, stop_skip}
+# and each run starts from freshly written image files. imgdir names the image folder under the work folder (default
+# img) and logdir a log folder beside it (default: logs inside the image folder), so a folder name can have a space in
+# it. relative lists the parameters (ImageDir, LogDir, Key) that are passed as paths relative to the work folder while
+# the PowerShell location is the work folder and the process working directory is another one. lock_log_on is a regex:
+# the log file is made read-only when a fastboot command matching it is issued. stop_on is a regex for a line the script
+# prints: when that line (the stop_skip+1)th time is printed the script's output pipeline is stopped, which interrupts
+# the script the way Ctrl+C does (the catch blocks are skipped, the finally blocks run). fail is a list of {tool, match, mode, skip, times, text}:
 # the (skip+1)th call of that tool whose arguments match the regex fails `times` times, as a nonzero exit
 # ('exit'), a nonzero exit with FAILED in the answer ('failed'), FAILED with exit 0 ('failed0') or a replaced
 # answer ('output'). Every path handed to a tool is probed: can another opener still get it with FileShare.None
@@ -481,6 +556,10 @@ try {
     $env:PATH = $empty
     $global:CallLog = Join-Path $work 'calls.txt'
     $global:ProbeLog = Join-Path $work 'probes.txt'
+    $global:SshLog = Join-Path $work 'ssh-calls.txt'
+    $procdir = Join-Path $work 'process-cwd'
+    New-Item -ItemType Directory -Path $procdir | Out-Null
+    $startCwd = [Environment]::CurrentDirectory
     $img = Join-Path $work 'img'
     New-Item -ItemType Directory -Path $img | Out-Null
     $names = 'boot.img', 'surfaceduo1-twrp.img', 'misc-brake.img', 'opos-os-rootfs.img'
@@ -540,7 +619,11 @@ try {
         $a = $args -join ' '
         Add-Content -LiteralPath $global:CallLog -Value ('fastboot ' + $a)
         $global:LASTEXITCODE = 0
+        if ($null -eq $global:ProcCwd) { $global:ProcCwd = [Environment]::CurrentDirectory; $global:PsLoc = (Get-Location).ProviderPath }
         Probe-Paths $args
+        if ($global:LockLogOn -and $a -match $global:LockLogOn -and (Test-Path -LiteralPath $global:LogFile)) {
+            Set-ItemProperty -LiteralPath $global:LogFile -Name IsReadOnly -Value $true
+        }
         if ($global:Tamper -and $a -match 'getvar product') {
             foreach ($f in $global:Originals) { Set-Content -LiteralPath $f -Value 'replaced after the hash check' -Encoding ASCII }
         }
@@ -578,10 +661,32 @@ try {
         $ip = $global:AddrOf["$InterfaceIndex"]
         if ($ip) { [pscustomobject]@{ IPAddress = $ip } }
     }
+    # Like a native ssh: it starts in the PowerShell location of the moment (which is what PowerShell does for a native
+    # tool), it cannot log in without its identity file, and the value of UserKnownHostsFile is a list of files
+    # separated by blanks of which the first receives a new host key. Every call is recorded as a line of JSON.
     function global:ssh.exe {
-        $kh = @($args | Where-Object { "$_" -like 'UserKnownHostsFile=*' }) -replace '^UserKnownHostsFile=', ''
-        if ($kh) { Set-Content -LiteralPath $kh[0] -Value '203.0.113.82 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY' }
+        $cwd = (Get-Location).ProviderPath
+        $argv = @($args | ForEach-Object { "$_" })
         $global:LASTEXITCODE = 0
+        $call = [ordered]@{ cwd = $cwd; argv = @($argv | Select-Object -First ($argv.Count - 2)); key_found = $true; wrote = '' }
+        $ki = [array]::IndexOf($argv, '-i')
+        if ($ki -ge 0 -and -not (Test-Path -LiteralPath $argv[$ki + 1] -PathType Leaf)) {
+            $call.key_found = $false
+            Add-Content -LiteralPath $global:SshLog -Value ($call | ConvertTo-Json -Compress)
+            $global:LASTEXITCODE = 255
+            'Permission denied (publickey).'
+            return
+        }
+        $kv = @($argv | Where-Object { $_ -like 'UserKnownHostsFile=*' })
+        if ($kv.Count) {
+            $first = @(($kv[0] -replace '^UserKnownHostsFile=', '') -split '\s+' | Where-Object { $_ })[0]
+            $full = [IO.Path]::Combine($cwd, $first)
+            try {
+                Set-Content -LiteralPath $full -Value '203.0.113.82 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEY' -ErrorAction Stop
+                $call.wrote = $full
+            } catch { }
+        }
+        Add-Content -LiteralPath $global:SshLog -Value ($call | ConvertTo-Json -Compress)
         'state=running'
     }
     # The fake phone answers at once, so any wait means the script went somewhere it should not: stop it there
@@ -597,12 +702,23 @@ try {
     Set-Content -LiteralPath $tmpNoEarly -Value $text.Replace($early, '$bad = ""') -Encoding UTF8
     $results = @()
     foreach ($run in ($runs | ConvertFrom-Json)) {
+        $imgName = $(if ($run.imgdir) { [string]$run.imgdir } else { 'img' })
+        $img = Join-Path $work $imgName
+        New-Item -ItemType Directory -Force -Path $img | Out-Null
+        $global:Originals = @($names | ForEach-Object { Join-Path $img $_ })
+        $logs = $(if ($run.logdir) { Join-Path $work ([string]$run.logdir) } else { Join-Path $img 'logs' })
+        $global:LogFile = Join-Path $logs 'boot-chain.log'
         Reset-Images $run.rootfs
         $p = @{ ImageDir = $img; RootfsSha256 = $global:RootfsSum; WaitMinutes = 1 }
         foreach ($prop in $run.args.PSObject.Properties) { $p[$prop.Name] = $prop.Value }
+        if ($run.logdir) { $p['LogDir'] = $logs }
+        $rel = @($run.relative | Where-Object { $_ })
+        if ($rel -contains 'ImageDir') { $p['ImageDir'] = $imgName }
+        if ($rel -contains 'LogDir') { $p['LogDir'] = [string]$run.logdir }
         if ($run.key) {
             $p['Key'] = Join-Path $work 'dev.key'
             Set-Content -LiteralPath $p['Key'] -Value 'stand-in private key' -Encoding ASCII
+            if ($rel -contains 'Key') { $p['Key'] = 'dev.key' }
         }
         Remove-Item -Path 'Function:\ssh-keygen.exe' -ErrorAction SilentlyContinue
         if (-not $run.no_keygen) {
@@ -624,19 +740,40 @@ try {
         $global:LateOthers = @(foreach ($o in @($run.late_others)) { if ($o) { $global:AddrOf["$($o.index)"] = $o.ip; & $mk $o } })
         $global:KernelBooted = $false
         $global:Tamper = [bool]$run.tamper
-        Remove-Item -LiteralPath $global:CallLog, $global:ProbeLog -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath (Join-Path $img 'logs') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $global:CallLog, $global:ProbeLog, $global:SshLog -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $logs -Recurse -Force -ErrorAction SilentlyContinue
+        $global:LockLogOn = [string]$run.lock_log_on
+        $global:ProcCwd = $null
+        $global:PsLoc = $null
         $global:LASTEXITCODE = $null
         $threw = $null
         $target = $tmp
         if ($run.no_early_ext4) { $target = $tmpNoEarly }
-        try { & $target @p *> $null } catch { $threw = $_.Exception.Message }
-        $logs = Join-Path $img 'logs'
-        $logfile = Join-Path $logs 'boot-chain.log'
+        $captured = New-Object System.Collections.ArrayList
+        $stopOn = [string]$run.stop_on
+        $stopSkip = [int]$run.stop_skip
+        $stopState = @{ seen = 0 }
+        if ($rel.Count) { Push-Location -LiteralPath $work; [Environment]::CurrentDirectory = $procdir }
+        try {
+            # Everything the script prints is kept. A line matching stop_on is passed on to Select-Object -First 1,
+            # which stops the pipeline upstream of it: a PipelineStopped-type exception, like Ctrl+C.
+            & $target @p *>&1 | ForEach-Object {
+                $line = "$_"
+                [void]$captured.Add($line)
+                if ($stopOn -and $line -match $stopOn) { if ($stopState.seen -ge $stopSkip) { $line }; $stopState.seen++ }
+            } | Select-Object -First 1 | Out-Null
+        } catch { $threw = $_.Exception.Message } finally {
+            if ($rel.Count) { Pop-Location; [Environment]::CurrentDirectory = $startCwd }
+        }
+        $logfile = $global:LogFile
         $results += [pscustomobject]@{
             label = $run.label
             threw = $threw
             exit = $global:LASTEXITCODE
+            output = @($captured)
+            proc_cwd = $global:ProcCwd
+            ps_location = $global:PsLoc
+            ssh_calls = @(if (Test-Path -LiteralPath $global:SshLog) { Get-Content -LiteralPath $global:SshLog | ForEach-Object { [string]$_ } })
             calls = @(if (Test-Path -LiteralPath $global:CallLog) { Get-Content -LiteralPath $global:CallLog | ForEach-Object { [string]$_ } })
             probes = @(if (Test-Path -LiteralPath $global:ProbeLog) { Get-Content -LiteralPath $global:ProbeLog | ForEach-Object { [string]$_ } })
             expected = $global:Expected
@@ -648,6 +785,7 @@ try {
     }
     [pscustomobject]@{ runs = @($results) } | ConvertTo-Json -Compress -Depth 6
 } finally {
+    [Environment]::CurrentDirectory = $startCwd
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 """
@@ -806,8 +944,16 @@ def upto(index, *extra):
 
 
 def norm(call):
-    """A logged command with the staging folder shown as <S>/ and forward slashes."""
-    return re.sub(r"\S*/stage-\d{8}-\d{6}-[0-9a-f]{8}/", "<S>/", call.replace("\\", "/"))
+    """A logged command with the staging folder shown as <S>/ and forward slashes (the folder above it may have
+    spaces in its name)."""
+    return re.sub(r"(?:[A-Za-z]:)?/[^\n]*?/stage-\d{8}-\d{6}-[0-9a-f]{8}/", "<S>/", call.replace("\\", "/"))
+
+
+def hand_command_words(log):
+    """The by-hand brake command in a log, split the way a shell splits it: quotes kept, backslashes left alone."""
+    lines = [line for line in log.splitlines() if "To put the brake back by hand" in line]
+    assert len(lines) == 1, lines
+    return shlex.split(lines[0].split("Boot Select: ", 1)[1], posix=False)
 
 
 def rule(tool, match, mode="exit", **more):
@@ -823,6 +969,7 @@ def run_yes(runs):
     for run in got:
         run["raw_calls"] = as_list(run["calls"])
         run["calls"] = [norm(c) for c in run["raw_calls"]]
+        run["output"] = as_list(run["output"])
     return got
 
 
@@ -962,13 +1109,33 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 self.assertEqual(as_list(run["stage_left"]), [], "a dry run copied images")
 
     def test_ssh_output_does_not_start_with_the_known_hosts_warning(self):
-        got = run_powershell(SSH)
-        self.assertEqual(got["code"], 0)
-        self.assertTrue(got["text"].startswith("state=running"), got["text"])
-        self.assertNotIn("Warning", got["text"])
-        args = as_list(got["args"])
-        for option in ("LogLevel=ERROR", "BatchMode=yes", "IdentitiesOnly=yes", "StrictHostKeyChecking=no"):
-            self.assertIn(option, args)
+        for got in as_list(run_powershell(SSH)["runs"]):
+            with self.subTest(log_folder=got["name"]):
+                self.assertEqual(got["code"], 0)
+                self.assertTrue(got["text"].startswith("state=running"), got["text"])
+                self.assertNotIn("Warning", got["text"])
+                args = as_list(got["args"])
+                for option in ("LogLevel=ERROR", "BatchMode=yes", "IdentitiesOnly=yes", "StrictHostKeyChecking=no"):
+                    self.assertIn(option, args)
+
+    def test_ssh_runs_in_the_log_folder_and_names_known_hosts_without_a_path_or_a_space(self):
+        """The late failure this prevents: ssh splits the value of UserKnownHostsFile at blanks, so a log folder under
+        'C:/Duo Images' made it write the host key to a file called C:/Duo, and Show-HostKey found nothing. The name
+        is now a bare file name, and ssh runs in the log folder, so it still lands there."""
+        runs = as_list(run_powershell(SSH)["runs"])
+        self.assertEqual(len(runs), 2)
+        for got in runs:
+            with self.subTest(log_folder=got["name"]):
+                args = as_list(got["args"])
+                options = [a for a in args if a.startswith("UserKnownHostsFile=")]
+                self.assertEqual(options, ["UserKnownHostsFile=known_hosts"])
+                self.assertEqual(" " in got["logdir"], got["name"] != "plain")
+                # The folder ssh starts in is the log folder, whatever it is called, and the location comes back.
+                self.assertEqual(got["cwd"].lower(), got["logdir"].lower())
+                self.assertTrue(got["location_restored"], "Invoke-Ssh left the PowerShell location changed")
+                if got["native_cwd"] is not None:
+                    self.assertEqual(got["native_cwd"].rstrip("\\").lower(), got["logdir"].rstrip("\\").lower(),
+                                     "a real native process did not start in the log folder")
 
     def test_get_ext4_problem_accepts_raw_ext4_and_names_what_is_wrong_with_anything_else(self):
         cases = [{"b64": b64(data)} for _, data, _ in EXT4_CASES]
@@ -1093,15 +1260,152 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         self.assertEqual(works["calls"].count(GOLDEN[FLASH1]), 2)
         self.assertEqual(works["log"].count(BRAKE_MAY_BE_ABSENT), 1)
         self.assertIn("the first failure stops it", works["log"])
-        # When the retry fails too, the warning comes again last, with the hand command naming the ORIGINAL image.
+        # When the retry fails too, the warning comes again last, with the hand command naming the verified STAGED
+        # copy (in the stage folder under the log folder), not the original in the image folder, in double quotes.
         self.assertEqual(fails["log"].count(BRAKE_MAY_BE_ABSENT), 2)
         hand = [line for line in fails["log"].splitlines() if "To put the brake back by hand" in line]
         self.assertEqual(len(hand), 1)
-        self.assertRegex(hand[0], r"fastboot -s SER1 flash misc \S+[\\/]img[\\/]logs[\\/]stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img$")
+        self.assertRegex(hand[0], r'fastboot -s SER1 flash misc "\S+[\\/]img[\\/]logs[\\/]stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img"$')
         self.assertIn("(SHA-256 " + fails["expected"]["misc-brake.img"] + ")", fails["log"])
         self.assertEqual(second["log"].count(BRAKE_MAY_BE_ABSENT), 2)
         self.assertNotIn(" boot <S>/boot.img", " ".join(second["calls"]))
         self.assertNotIn("format:ext4", " ".join(fails["calls"]))
+
+    def test_the_by_hand_brake_command_keeps_a_path_with_a_space_in_one_piece(self):
+        """The late failure this prevents: the command printed after a double brake failure was meant to be pasted,
+        and with the image folder 'C:/Duo Images' its unquoted staged path became two words."""
+        got = run_yes([{"label": "spaced image folder", "imgdir": "Duo Images", "fail": [rule("fastboot", "flash misc", "failed")]}])[0]
+        self.assertIsNone(got["threw"])
+        self.assertEqual(got["exit"], 1)
+        self.assertEqual(got["log"].count(BRAKE_MAY_BE_ABSENT), 2)
+        words = hand_command_words(got["log"])
+        self.assertEqual(words[:5], ["fastboot", "-s", "SER1", "flash", "misc"])
+        self.assertEqual(len(words), 6, words)
+        path = words[5]
+        self.assertTrue(path.startswith('"') and path.endswith('"'), path)
+        self.assertIn("Duo Images", path)
+        self.assertRegex(path, r'stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img"$')
+        # It is the very file the failed flashes were handed, and the one the run kept.
+        flashed = {c.split("flash misc ", 1)[1] for c in got["raw_calls"] if "flash misc " in c}
+        self.assertEqual(flashed, {path[1:-1]})
+        self.assertEqual(as_list(got["stage_hashes"]), ["misc-brake.img|" + got["expected"]["misc-brake.img"]])
+
+    def test_relative_log_and_image_folders_work_while_the_powershell_location_is_not_the_process_directory(self):
+        """File.Copy and FileStream resolve a relative path against the process working directory, which Set-Location
+        and Push-Location do not change. The script makes -ImageDir and -LogDir absolute before it stages anything;
+        each relative run here has the PowerShell location in the work folder and the process in another one."""
+        runs = [{"label": "relative -LogDir", "logdir": "relative-logs", "relative": ["LogDir"]},
+                {"label": "relative -ImageDir", "relative": ["ImageDir"]},
+                {"label": "both, image folder with a space", "imgdir": "relative images", "logdir": "relative-logs", "relative": ["ImageDir", "LogDir"]},
+                {"label": "absolute, log folder with a space", "logdir": "absolute logs"}]
+        got = run_yes([dict(r) for r in runs])
+        for run, wanted in zip(got, runs):
+            with self.subTest(run=run["label"]):
+                self.assertIsNone(run["threw"])
+                self.assertEqual(run["exit"], 0)
+                self.assertEqual(run["calls"], GOLDEN)
+                self.assertIn("DONE: the rootfs is on the phone", run["log"])
+                self.assertEqual(as_list(run["stage_left"]), [])
+                if wanted.get("relative"):
+                    self.assertTrue(run["proc_cwd"] and run["ps_location"])
+                    self.assertNotEqual(run["proc_cwd"].lower(), run["ps_location"].lower(), "the test did not separate the two")
+                folder = "/" + wanted.get("logdir", "img/logs") + "/stage-"
+                self.assertTrue(all(folder in line for line in as_list(run["probes"])), run["probes"])
+
+    def test_an_unwritable_log_cannot_hide_the_brake_warning_or_skip_the_retry(self):
+        """The late failure this prevents: Log used Add-Content unguarded, and Fb logs before it looks at the result.
+        A log that became unwritable right after 'erase misc' succeeded made Fb throw from Log, the catch in
+        Set-MiscBrake caught it, its next Log threw outside the try: no retry flash, no warning, no hand command.
+        Here the log file is made read-only when the erase is issued; what the script printed is read from the screen."""
+        locked = {"lock_log_on": "erase misc"}
+        got = {r["label"]: r for r in run_yes([
+            dict(label="retry works", fail=[rule("fastboot", "flash misc", times=1)], **locked),
+            dict(label="retry fails", fail=[rule("fastboot", "flash misc")], **locked),
+            dict(label="nothing fails", **locked),
+        ])}
+        screen = {label: "\n".join(run["output"]) for label, run in got.items()}
+        for label, run in got.items():
+            with self.subTest(run=label):
+                self.assertIsNone(run["threw"], "an exception escaped the script")
+                # The file stopped at the erase, the screen did not, and the broken log is mentioned once.
+                self.assertIn("arming the misc brake", run["log"])
+                self.assertNotIn("fastboot erase misc", run["log"])
+                self.assertIn("fastboot erase misc", screen[label])
+                self.assertEqual(sum("the log file could not be written" in line for line in run["output"]), 1)
+        works, fails, fine = got["retry works"], got["retry fails"], got["nothing fails"]
+        self.assertEqual(works["exit"], 1)
+        self.assertEqual(works["calls"], upto(FLASH1, GOLDEN[FLASH1]))
+        for words in (BRAKE_MAY_BE_ABSENT, "trying the brake image once more, without another erase", "the second try succeeded"):
+            self.assertIn(words, screen["retry works"])
+        self.assertEqual(as_list(works["stage_left"]), [])
+        self.assertEqual(fails["exit"], 1)
+        self.assertEqual(fails["calls"], upto(FLASH1, GOLDEN[FLASH1]))
+        self.assertEqual(screen["retry fails"].count(BRAKE_MAY_BE_ABSENT), 2)
+        for words in ("KEEP THE PHONE IN BOOT SELECT", "the misc brake could not be written", "To put the brake back by hand"):
+            self.assertIn(words, screen["retry fails"])
+        self.assertEqual(as_list(fails["stage_hashes"]), ["misc-brake.img|" + fails["expected"]["misc-brake.img"]])
+        self.assertEqual(fine["exit"], 0)
+        self.assertEqual(fine["calls"], GOLDEN)
+        self.assertIn("DONE: the rootfs is on the phone", screen["nothing fails"])
+        self.assertNotIn("DONE:", fine["log"])
+
+    def test_an_interrupt_after_the_brake_erase_still_warns_and_keeps_the_brake_image(self):
+        """The late failure this prevents: the flag 'the brake may be absent' was raised after the catch, so Ctrl+C
+        between 'erase misc' and the confirmed flash (which a catch never sees) left it down, the finally deleted the
+        staged brake image and nothing warned. Ctrl+C is simulated by stopping the script's output pipeline at the
+        line that reports the erase: the catch blocks are skipped (no 'STOPPED at') and the finally blocks run."""
+        got = {r["label"]: r for r in run_yes([
+            {"label": "first arming", "stop_on": "fastboot erase misc ->"},
+            {"label": "second arming", "stop_on": "fastboot erase misc ->", "stop_skip": 1},
+            {"label": "after the brake was confirmed", "stop_on": "adb reboot bootloader ->"},
+        ])}
+        for label, last in (("first arming", ERASE1), ("second arming", ERASE2)):
+            run = got[label]
+            with self.subTest(run=label):
+                self.assertIsNone(run["threw"])
+                self.assertEqual(run["calls"], upto(last), "the script went on after the interrupt")
+                self.assertNotIn("STOPPED at:", run["log"], "the interrupt reached a catch block")
+                self.assertNotIn("DONE:", run["log"])
+                self.assertEqual(run["log"].count(BRAKE_MAY_BE_ABSENT), 1)
+                self.assertIn("KEEP THE PHONE IN BOOT SELECT", run["log"])
+                words = hand_command_words(run["log"])
+                self.assertEqual(words[:5], ["fastboot", "-s", "SER1", "flash", "misc"])
+                self.assertRegex(words[5], r'^"\S+[\\/]stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img"$')
+                # Only the verified brake image (and its folder) is left.
+                self.assertEqual(len(as_list(run["stage_left"])), 2)
+                self.assertEqual(as_list(run["stage_hashes"]), ["misc-brake.img|" + run["expected"]["misc-brake.img"]])
+        # Interrupted later, with the brake confirmed: nothing to warn about, everything released.
+        late = got["after the brake was confirmed"]
+        self.assertEqual(late["calls"], upto(REBOOT))
+        self.assertNotIn("STOPPED at:", late["log"])
+        self.assertNotIn(BRAKE_MAY_BE_ABSENT, late["log"])
+        self.assertEqual(as_list(late["stage_left"]), [])
+
+    def test_a_key_or_log_folder_with_spaces_or_a_relative_key_still_gives_the_host_key_fingerprint(self):
+        """The late failure this prevents: ssh got '-o UserKnownHostsFile=<log folder>/known_hosts' as one argument, split
+        it at the blanks of the folder name and wrote the host key elsewhere (here: to the first word), so Show-HostKey
+        saw no file. The fake ssh behaves that way; now it gets a bare file name and the log folder as its directory."""
+        runs = [{"label": "folders with spaces", "key": True, "imgdir": "Duo Images", "logdir": "Log Folder"},
+                {"label": "relative -Key", "key": True, "relative": ["Key"]},
+                {"label": "everything relative, with spaces", "key": True, "imgdir": "my images", "logdir": "my logs", "relative": ["ImageDir", "LogDir", "Key"]}]
+        got = run_yes([dict(r) for r in runs])
+        for run, wanted in zip(got, runs):
+            with self.subTest(run=run["label"]):
+                self.assertIsNone(run["threw"])
+                self.assertEqual(run["exit"], 0)
+                self.assertEqual(run["calls"], GOLDEN)
+                calls = [json.loads(line) for line in as_list(run["ssh_calls"])]
+                self.assertEqual(len(calls), 1)
+                argv = as_list(calls[0]["argv"])
+                self.assertEqual([a for a in argv if a.startswith("UserKnownHostsFile=")], ["UserKnownHostsFile=known_hosts"])
+                key = argv[argv.index("-i") + 1]
+                self.assertRegex(key, r"^(?:[A-Za-z]:)?[\\/]", "the key was handed to ssh as a relative path")
+                self.assertTrue(calls[0]["key_found"])
+                folder = "/" + wanted.get("logdir", "img/logs")
+                self.assertTrue(calls[0]["cwd"].replace("\\", "/").endswith(folder), calls[0]["cwd"])
+                self.assertEqual(calls[0]["wrote"].replace("\\", "/"), calls[0]["cwd"].replace("\\", "/") + "/known_hosts")
+                self.assertIn("diagnostics saved to boot-diag.txt", run["log"])
+                self.assertIn("ssh accepted this host key without checking it first: 256 SHA256:TESTFINGERPRINT", run["log"])
 
     def test_adb_failures_are_not_swallowed(self):
         """Ab used to return text only. A failing 'umount /data' must stop the run before the phone leaves TWRP."""

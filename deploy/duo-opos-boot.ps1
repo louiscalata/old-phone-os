@@ -33,7 +33,10 @@
 #     userdata). A precaution, not a guarantee. If writing the brake fails, the script says in capitals that
 #     the brake may be ABSENT, tries the brake image once more (no second erase) and stops; the phone must
 #     then stay in Boot Select: do not power-cycle it or let it restart. The by-hand command it prints names the
-#     verified staged brake image, which is kept for that case only.
+#     verified staged brake image (path in double quotes), which is kept for that case only. The same holds if the
+#     run is interrupted (Ctrl+C) after the erase and before a flash was confirmed: the warning is printed at the end.
+#   - The log file (boot-chain.log) is best effort: if it cannot be written, every message still goes to the screen
+#     and nothing stops because of it.
 #   - The kernel is RAM-booted exactly ONCE and never retried, even if something after it fails. A kernel that
 #     crashed may leave the slot rejecting RAM-boots with Device Error; stop and ask, do not try again.
 #   - Only misc (erase, flash) and userdata (format) are written. Nothing is written to boot, vbmeta, dtbo or
@@ -59,9 +62,18 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# Best effort on the file: a log that cannot be written (disk full, folder gone, file locked) must never stop the
+# chain or swallow a message, least of all the brake warning. The line always reaches the screen; the failed
+# write is mentioned once, on the screen only.
 function Log($m) {
     $l = '{0:HH:mm:ss} {1}' -f (Get-Date), $m
-    Add-Content -Path $script:log -Value $l
+    try { Add-Content -LiteralPath $script:log -Value $l -ErrorAction Stop }
+    catch {
+        if (-not $script:logBroken) {
+            $script:logBroken = $true
+            Write-Host "(the log file could not be written: $($_.Exception.Message) -- messages continue on the screen only)"
+        }
+    }
     Write-Host $l
 }
 # Run a native tool; stderr is text here (fastboot prints its answers there), the exit code is the verdict.
@@ -103,18 +115,25 @@ function Show-BrakeWarning {
     Log 'KEEP THE PHONE IN BOOT SELECT (fastboot). Do not power-cycle it, do not let it restart on its own, do not choose Start or Recovery Mode.'
     Log 'Without the brake an ordinary restart can reach stock Android, which wipes userdata (and the rootfs on it).'
 }
+function Show-BrakeByHand {
+    Log "To put the brake back by hand, with the phone still in Boot Select: fastboot -s $Serial flash misc `"$($p['misc-brake.img'])`""
+    Log "That file is the verified copy (SHA-256 $($want['misc-brake.img'])); it is kept for this. Do not use the one in the image folder without checking it."
+}
 # The misc brake: erase misc, then write the brake image. A failure here is not an ordinary stop: misc may now hold
 # no brake, and an ordinary restart of the phone could reach stock Android, which would wipe the foreign userdata.
 # So it is said loudly, the brake image is tried ONCE more (without another erase) and the chain stops either way.
 # The catch at the end of the script shows the warning again, last, where it is not scrolled away.
+# The flag goes up BEFORE the erase and comes down only after a flash that was confirmed good, so that what the catch
+# below never sees (Ctrl+C, a stopped pipeline) still leaves it up: the finally at the end of the script then keeps
+# the brake image and says it.
 function Set-MiscBrake([string]$image) {
+    $script:brakeMayBeAbsent = $true
     $why = $null
     try {
         Fb erase misc | Out-Null
         Fb flash misc $image | Out-Null
     } catch { $why = $_.Exception.Message }
-    if (-not $why) { return }
-    $script:brakeMayBeAbsent = $true
+    if (-not $why) { $script:brakeMayBeAbsent = $false; return }
     Log "BRAKE WRITE FAILED: $why"
     Show-BrakeWarning
     Log 'trying the brake image once more, without another erase'
@@ -260,19 +279,27 @@ function Find-Phone {
 }
 # stderr is merged into the text, and with no known_hosts entry ssh would start it with "Warning: Permanently
 # added ... to the list of known hosts." LogLevel=ERROR keeps that out, so boot-diag.txt starts with state=...
+# The known_hosts file is named WITHOUT a folder: ssh runs in the log folder for the call (PowerShell starts a native
+# tool in its current location), so the file lands there. A path in the option value would break on a space: ssh reads
+# the value of UserKnownHostsFile as a list of files and splits it at blanks (a log folder under "C:\Duo Images" would
+# make it write to C:\Duo), and Windows PowerShell 5.1 and PowerShell 7 quote an option value with quotes in it
+# differently. -Key is made absolute at the start for the same reason: the working directory changes under it.
 function Invoke-Ssh([string]$ip, [string]$remote) {
     $ErrorActionPreference = 'Continue'
-    $kh = (Join-Path $LogDir 'known_hosts') -replace '\\', '/'
-    $o = (& ssh.exe -i $Key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=$kh" -o LogLevel=ERROR -o ConnectTimeout=8 "$SshUser@$ip" $remote 2>&1 | ForEach-Object { "$_" }) -join "`n"
-    [pscustomobject]@{ Code = $LASTEXITCODE; Text = $o }
+    Push-Location -LiteralPath $LogDir -ErrorAction Stop
+    try {
+        $o = (& ssh.exe -i $Key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=known_hosts -o LogLevel=ERROR -o ConnectTimeout=8 "$SshUser@$ip" $remote 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $code = $LASTEXITCODE
+    } finally { Pop-Location }
+    [pscustomobject]@{ Code = $code; Text = $o }
 }
 # StrictHostKeyChecking=no accepts whatever host key answers, and the phone makes new keys with each image, so the
 # key cannot be pinned in advance. What can be done is to show the fingerprint ssh took (it wrote the key to the
-# known_hosts file in the log folder), so the owner can compare it with the phone's own.
+# known_hosts file in the log folder, see Invoke-Ssh), so the owner can compare it with the phone's own.
 function Show-HostKey {
     $ErrorActionPreference = 'Continue'
     $kh = Join-Path $LogDir 'known_hosts'
-    if (-not (Test-Path -LiteralPath $kh)) { Log 'ssh recorded no host key (it never got as far as the key exchange)'; return }
+    if (-not (Test-Path -LiteralPath $kh)) { Log "ssh left no host key in $kh (it never got as far as the key exchange)"; return }
     if (-not (Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue)) { Log "ssh-keygen.exe is not on PATH, so the host key fingerprint cannot be printed; the key ssh accepted is in $kh"; return }
     $fps = @(& ssh-keygen.exe -l -f $kh 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ -match 'SHA256:' })
     if (-not $fps.Count) { Log "ssh-keygen could not read a fingerprint from $kh"; return }
@@ -298,6 +325,7 @@ foreach ($t in @('fastboot.exe', 'adb.exe')) { if (-not (Get-Command $t -ErrorAc
 if ($Key) {
     if (-not (Test-Path -LiteralPath $Key -PathType Leaf)) { throw "-Key $Key is not a file" }
     if (-not (Get-Command ssh.exe -ErrorAction SilentlyContinue)) { throw 'ssh.exe is not on PATH (needed for -Key)' }
+    $Key = (Resolve-Path -LiteralPath $Key).ProviderPath   # absolute: ssh runs in the log folder (see Invoke-Ssh)
 }
 $want = [ordered]@{
     'boot.img'             = 'abec1fe9ce4cbb7a9296c3abd4fd7b4acc1283842e86f2bfe0879a7e84fae552'
@@ -438,12 +466,14 @@ try {
     Write-Host 'Stopped on the first failure; nothing was retried. See the log:' $log
     if ($script:brakeMayBeAbsent) {
         Show-BrakeWarning
-        Log "To put the brake back by hand, with the phone still in Boot Select: fastboot -s $Serial flash misc $($p['misc-brake.img'])"
-        Log "That file is the verified copy (SHA-256 $($want['misc-brake.img'])); it is kept for this. Do not use the one in the image folder without checking it."
+        Show-BrakeByHand
     }
     if ($kernelBoots -ge 1) { Write-Host 'The kernel was RAM-booted once. Do not run fastboot boot again for this attempt.' }
 } finally {
     if ($script:brakeMayBeAbsent) {
+        # The catch above says it when a failure got there. Ctrl+C or a stopped pipeline skip the catch and land here with
+        # the flag up: say it here, and still release the staged files whatever the saying does.
+        if (-not $failed) { try { Show-BrakeWarning; Show-BrakeByHand } catch { } }
         # Everything is closed and removed except the verified brake image (and so its folder), named in the by-hand command above.
         Release-Staged $held @($staged | Where-Object { $_ -ne $p['misc-brake.img'] }) $null
     } else {
