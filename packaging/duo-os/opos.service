@@ -15,10 +15,10 @@ After=android-service@hwcomposer.service
 Before=graphical.target
 OnFailure=opos-fallback.service
 ConditionPathExists=/dev/tty0
-# One start-limit window must span several whole failed sessions: opos-kiosk gives up after about 4 minutes of
-# quick Chromium exits, and each restart takes 20-40 s more in item-composer-fresh, so a session that fails for
-# good lasts about 5 minutes. 3 starts in 30 minutes lets the 4th refused start (about 15 minutes in) fail the unit.
-StartLimitIntervalSec=30min
+# The original short window: a phoc that dies at once, 4 starts in a minute, fails the unit. The give-up of a Chromium
+# that cannot run does not depend on it (RestartPreventExitStatus= below), so a manual restart or the composer
+# watchdog's try-restart is not counted against a long window.
+StartLimitIntervalSec=60
 StartLimitBurst=3
 
 [Service]
@@ -38,7 +38,12 @@ PAMName=phosh
 WorkingDirectory=~
 Restart=always
 RestartSec=500ms
-# As item.service: a restart goes straight to activating, so OnFailure fires only at the start limit (above).
+# opos-session exits 75 when opos-kiosk has given up on Chromium (6 quick exits, or 10 exits in 10 minutes): another
+# session would only repeat it. 75 is not restarted, so the unit fails at once and OnFailure= starts phosh. The 75 is
+# opos-session's alone; do not add it to SuccessExitStatus=, that would end the unit without a failure.
+RestartPreventExitStatus=75
+# As item.service: a restart goes straight to activating, so OnFailure fires only at the start limit (above) or for
+# an exit that is not restarted (75, above).
 RestartMode=direct
 TTYPath=/dev/tty7
 TTYReset=yes

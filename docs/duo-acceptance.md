@@ -55,7 +55,7 @@ check cannot run yet (the diagnostics dump is only written 90 seconds after boot
 |---|---|---|---|
 | `svc.lxc-android`, `svc.hwcomposer`, `svc.opos-server`, `svc.opos` | `systemctl show` of `lxc@android`, `android-service@hwcomposer`, `opos-server`, `opos` | not active (an `activating` restart loop counts) | |
 | `svc.phosh-off`, `svc.item-off` | the same for `phosh` and `item`, which must not run next to OPOS | active | WARN if failed |
-| `svc.fallback` | whether `opos-fallback.service` ran this boot | | WARN if it did: OPOS failed once and phosh was started |
+| `svc.fallback` | whether `opos-fallback.service` ran this boot | | WARN if it did: OPOS failed once and phosh was started (a kiosk that gave up on Chromium shows as exit status 75 of `opos.service` and `chromium exited ... giving up` in `journalctl -t opos-kiosk`; `sudo opos-switch opos` brings OPOS back) |
 | `svc.system` | `systemctl is-system-running` | any state other than running, degraded or starting | WARN: degraded (lists the failed units), starting |
 | `phoc.process`, `phoc.no-shell-mode` | `/proc/<pid>/cmdline` of phoc | no phoc, two phoc, or `-S`/`--shell` in its command line (a black shield over both panels) | |
 | `gfx.composer` | a `*composer*` binary among the processes | none | |
