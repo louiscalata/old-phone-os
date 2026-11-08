@@ -201,7 +201,9 @@ class Fake:
                   env={"XDG_RUNTIME_DIR": "/run/user/%d" % self.uid, "WAYLAND_DISPLAY": "wayland-0", "HOME": "/phone-home"})
         self.proc(201, ["/usr/lib/chromium/chromium", "--type=gpu-process", "--ozone-platform=wayland"], "chromium")
         self.proc(202, ["/usr/lib/chromium/chromium", "--type=renderer"], "chromium")
-        self.proc(300, ["/usr/bin/python3", "-m", "opos.web", "--port", "8765", "--live-battery"], "python3", env={"OPOS_ON_PHONE": "1"})
+        self.proc(300, SERVER_ARGV, "python3", env=dict(SERVER_ENV))
+        for mod in ("osk", "net_page", "firstrun", "timezone"):  # the image was built with the keyboard, the Network page and the first run
+            self.put("opt/opos/src/opos/%s.py" % mod, "# the module\n")
         self.put("proc/uptime", "1234.50 4000.00\n")
         self.put("proc/meminfo", "MemTotal:        5800000 kB\nMemFree:          900000 kB\nMemAvailable:    3000000 kB\n")
         self.backlight("panel0-backlight")
@@ -219,7 +221,7 @@ class Fake:
         self.answer("nmcli", "wlan0:wifi:connected\nwlan0-p2p:wifi-p2p:disconnected\nlo:loopback:unmanaged\n")
         self.put("etc/systemd/journald.conf.d/50-opos-persistent.conf", "[Journal]\nStorage=persistent\nSystemMaxUse=200M\n")
         self.put("var/log/journal/0123abcd/system.journal", "x" * 2048)
-        self.put("var/log/opos-boot-diag.txt", "== 2026-11-06T21:19:00+01:00  up 90s  kernel 4.14  opos 0123456789ab\n== system state: running\n== failed units\n")
+        self.put("var/log/opos-boot-diag.txt", "== 2026-11-06T21:19:00+01:00  up 93.52s  kernel 4.14  opos 0123456789ab\n== system state: running\n== failed units\n")  # as opos-diag writes it
         self.put("opt/opos/REVISION", "0123456789abcdef0123456789abcdef01234567\n")
         self.put("etc/passwd", "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\n")
         self.put("etc/ssh/sshd_config", SSHD)
@@ -253,6 +255,8 @@ class Fake:
         return f.read_text().splitlines() if f.exists() else []
 
 
+SERVER_ARGV = ["/usr/bin/python3", "-m", "opos.web", "--port", "8765", "--live-battery"]
+SERVER_ENV = {"OPOS_ON_PHONE": "1", "OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"}  # what the image's units give the server
 LINE = re.compile(r"^(PASS|FAIL|WARN|SKIP)\s{2}(\S+)\s+(.*)$")
 
 
@@ -282,6 +286,10 @@ class Handler(BaseHTTPRequestHandler):
     gate = True
     osk = False
     network = False
+    firstrun = False
+    pending = False
+    zone_saved = None
+    zone_active = None
 
     def log_message(self, *a):
         pass
@@ -294,13 +302,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def tag(self):
+        return '<script src="/osk.js" defer></script>' if self.osk else ""
+
     def do_GET(self):
         if self.path == "/":
-            return self.send(200, self.page.replace("</body>", '<script src="/osk.js" defer></script></body>') if self.osk else self.page, "text/html")
+            links = ('<a href="/network">Wi-Fi and radios</a>' if self.network else "") + ('<a href="/timezone">Time zone</a>' if self.firstrun else "")
+            return self.send(200, self.page.replace("</body>", links + self.tag() + "</body>"), "text/html")
         if self.osk and self.path in ("/osk.js", "/osk.css"):
             return self.send(200, "x = 1;", "text/javascript")
         if self.network and self.path == "/network":
-            return self.send(200, "<html>network</html>", "text/html")
+            return self.send(200, "<html>network" + self.tag() + "</html>", "text/html")
+        if self.firstrun and self.path in ("/firstrun", "/timezone"):
+            return self.send(200, "<html>" + self.path + self.tag() + "</html>", "text/html")
+        if self.firstrun and self.path in ("/api/firstrun", "/api/timezone"):
+            if self.headers.get("X-OPOS-Token") != "tok123":
+                return self.send(403, '{"error":"forbidden"}')
+            if self.path == "/api/firstrun":
+                return self.send(200, json.dumps({"pending": self.pending, "clock": {"plausible": True}, "goal": {}, "helper": "off", "timezone": {"saved": self.zone_saved}}))
+            return self.send(200, json.dumps({"zones": [], "source": "system", "saved": self.zone_saved, "active": self.zone_active or "", "clock": {}}))
         if self.path == "/api/state":
             if self.gate and self.headers.get("X-OPOS-Token") != "tok123":
                 return self.send(403, '{"error":"forbidden"}')
@@ -324,11 +344,14 @@ def handler_with(**kw):
     return type("H", (Handler,), kw)
 
 
+MERGED = handler_with(osk=True, network=True, firstrun=True)  # the stand-in for a server started by the merged image's units
+
+
 class SelftestCase(unittest.TestCase):
     """Each test gets a healthy fake phone and a stand-in server unless it asks otherwise."""
 
     def setUp(self):
-        cm = serve(Handler)
+        cm = serve(MERGED)
         self.url = cm.__enter__()
         self.addCleanup(cm.__exit__, None, None, None)
         self.f = Fake(self.url)
@@ -344,12 +367,13 @@ class HealthyPhone(SelftestCase):
         self.assertEqual(r.rc, 0, r.text)
         self.assertEqual(r.by("FAIL"), [], r.text)
         self.assertEqual(r.by("WARN"), [], r.text)
-        self.assertEqual(r.by("SKIP"), ["kiosk.restarts", "net.page", "net.permissions", "osk.keyboard", "ota.updater"], r.text)
+        self.assertEqual(r.by("SKIP"), ["clock.kiosk-tz", "kiosk.restarts", "ota.updater"], r.text)
         for cid in ("svc.lxc-android", "svc.hwcomposer", "svc.opos-server", "svc.opos", "svc.phosh-off", "svc.item-off", "svc.fallback", "svc.system",
                     "phoc.process", "phoc.no-shell-mode", "gfx.composer", "gfx.output", "gfx.backlight", "kiosk.chromium", "kiosk.gpu",
                     "server.http", "server.state", "server.token-gate", "battery.sysfs", "battery.api-match", "battery.temp",
                     "clock.year", "clock.timezone", "log.journal", "log.diag", "log.opos-errors", "res.disk", "res.mem",
-                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.ssh-key", "dev.devtools", "dev.time-drop"):
+                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.ssh-key", "dev.devtools", "dev.time-drop",
+                    "osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes"):
             self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
 
     def test_output_format_is_one_line_per_check_with_a_summary(self):
@@ -569,6 +593,14 @@ class Kiosk(SelftestCase):
         self.assertEqual(r.status("kiosk.chromium"), "FAIL")
         self.assertIn("without --kiosk", r.ev("kiosk.chromium"))
 
+    def test_a_helper_that_rewrote_its_title_is_still_a_gpu_process(self):
+        self.f.rm("proc/201")
+        d = self.f.root / "proc/201"
+        d.mkdir(parents=True)
+        (d / "cmdline").write_bytes(b"/usr/lib/chromium/chromium --type=gpu-process --ozone-platform=wayland\0")
+        (d / "comm").write_text("chromium\n")
+        self.assertEqual(self.run_st().status("kiosk.gpu"), "PASS")
+
     def test_gpu_process_is_required(self):
         self.f.kill(201)
         self.assertEqual(self.run_st().status("kiosk.gpu"), "FAIL")
@@ -755,10 +787,13 @@ class Logs(SelftestCase):
 
     def test_a_dump_from_an_earlier_boot_is_not_this_boots_evidence(self):
         self.f.put("proc/uptime", "400.0 100.0\n")
-        self.f.put("var/log/opos-boot-diag.txt", "== 2026-11-05T09:00:00+00:00  up 5000s  kernel 4.14  opos abc\n== system state: running\n")
-        r = self.run_st()
-        self.assertEqual(r.status("log.diag"), "WARN")
-        self.assertIn("earlier boot", r.ev("log.diag"))
+        for up in ("5000s", "5000.12s"):  # opos-diag writes the second form, from /proc/uptime
+            self.f.put("var/log/opos-boot-diag.txt", "== 2026-11-05T09:00:00+00:00  up %s  kernel 4.14  opos abc\n== system state: running\n" % up)
+            r = self.run_st()
+            self.assertEqual(r.status("log.diag"), "WARN", up)
+            self.assertIn("earlier boot", r.ev("log.diag"))
+        self.f.put("var/log/opos-boot-diag.txt", "== 2026-11-05T09:00:00+00:00  up 93.52s  kernel 4.14  opos abc\n== system state: running\n")
+        self.assertEqual(self.run_st().status("log.diag"), "PASS", "a dump 93 s into this boot is this boot's")
 
     def test_diag_evidence_includes_its_system_state(self):
         self.assertIn("system state: running", self.run_st().ev("log.diag"))
@@ -817,6 +852,15 @@ class Network(SelftestCase):
         self.f.unit("sfduo-usb.service", "failed", "failed")
         self.assertEqual(self.run_st().status("net.usb"), "FAIL")
 
+    def test_a_gadget_service_the_image_does_not_have_is_judged_by_the_interface(self):
+        self.f.unit("sfduo-usb.service", "inactive", "dead", load="not-found")
+        r = self.run_st()
+        self.assertEqual(r.status("net.usb"), "PASS", r.ev("net.usb"))
+        self.f.rm("sys/class/net/usb0")
+        r = self.run_st()
+        self.assertEqual(r.status("net.usb"), "WARN", "no gadget service and no interface: the phone may be reached over Wi-Fi")
+        self.assertIn("not installed", r.ev("net.usb"))
+
     def test_network_manager_down_fails_and_absent_skips(self):
         self.f.unit("NetworkManager.service", "inactive", "dead")
         self.assertEqual(self.run_st().status("net.manager"), "FAIL")
@@ -867,6 +911,15 @@ class Ssh(SelftestCase):
         self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address 8.8.8.0/24\n  PasswordAuthentication yes\n")
         self.assertEqual(self.run_st().status("ssh.auth"), "WARN")
 
+    def test_a_list_of_addresses_is_private_only_when_every_entry_is(self):
+        for cond, want in (("10.0.1.0/24,0.0.0.0/0", "WARN"), ("0.0.0.0/0,10.0.1.0/24", "WARN"), ("10.0.1.0/24,8.8.8.0/24", "WARN"),
+                           ("8.8.8.0/24,10.0.1.0/24", "WARN"), ("10.0.1.0/24,192.168.7.0/24", "PASS"), ("10.0.1.0/24,!10.0.1.9", "PASS"),
+                           ("10.0.1.0/24,not-an-address", "WARN"), ("10.0.0.0/8", "WARN"), ("!10.0.1.9", "WARN")):
+            with self.subTest(cond):
+                self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+                           "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s\n  PasswordAuthentication yes\n" % cond)
+                self.assertEqual(self.run_st().status("ssh.auth"), want)
+
     def test_an_unreadable_config_fails(self):
         self.f.rm("etc/ssh/sshd_config")
         self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
@@ -908,49 +961,93 @@ class Updater(SelftestCase):
         self.assertEqual(self.run_st().status("ota.updater"), "FAIL")
 
 
-SERVER_ARGV = ["/usr/bin/python3", "-m", "opos.web", "--port", "8765", "--live-battery"]
+class NoLink(MERGED):
+    """A server whose Settings has no link to /network."""
+
+    def send(self, code, body, ctype="application/json"):
+        super().send(code, body.replace('<a href="/network">Wi-Fi and radios</a>', "") if isinstance(body, str) else body, ctype)
 
 
-class Keyboard(SelftestCase):
-    def test_unset_is_skipped_and_off_is_skipped(self):
+class NoKeyboardOnPages(MERGED):
+    """A server that adds the keyboard to the home page only, not to /network."""
+
+    def send(self, code, body, ctype="application/json"):
+        super().send(code, body.replace('<script src="/osk.js" defer></script>', "") if self.path != "/" and isinstance(body, str) else body, ctype)
+
+
+class PieceCase(SelftestCase):
+    def server(self, **env):
+        """Restart the stand-in server process with only these variables (a unit that does not set the rest)."""
+        self.f.proc(300, SERVER_ARGV, "python3", env=env)
+
+    def on(self, handler, **env):
+        """A second fake phone in front of another stand-in server; env is the running server's environment."""
+        cm = serve(handler)
+        url = cm.__enter__()
+        self.addCleanup(cm.__exit__, None, None, None)
+        f = Fake(url)
+        self.addCleanup(f.cleanup)
+        f.proc(300, SERVER_ARGV, "python3", env=env)
+        return f
+
+
+class Keyboard(PieceCase):
+    def test_the_merged_image_runs_the_web_keyboard(self):
+        r = self.run_st()
+        self.assertEqual(r.status("osk.keyboard"), "PASS", r.ev("osk.keyboard"))
+        self.assertIn("the server's environment", r.ev("osk.keyboard"))
+        self.assertIn("page loads /osk.js: yes", r.ev("osk.keyboard"))
+
+    def test_an_image_without_the_keyboard_skips_when_it_is_unset_or_off(self):
+        self.f.rm("opt/opos/src/opos/osk.py")
+        self.server()
         self.assertEqual(self.run_st().status("osk.keyboard"), "SKIP")
-        self.f.put("etc/default/opos-kiosk", "OPOS_OSK=0\n")
-        self.f.kill(300)
+        self.server(OPOS_OSK="0")
         self.assertEqual(self.run_st().status("osk.keyboard"), "SKIP")
+
+    def test_an_image_that_ships_the_keyboard_must_run_it(self):
+        self.server()
+        r = self.run_st()
+        self.assertEqual(r.status("osk.keyboard"), "FAIL")
+        self.assertIn("without OPOS_OSK", r.ev("osk.keyboard"))
+        self.assertEqual(r.rc, 1)
+        self.server(OPOS_OSK="off")
+        r = self.run_st()
+        self.assertEqual(r.status("osk.keyboard"), "WARN", "switched off by the owner: allowed, but nothing can be typed by touch")
+        self.assertIn("by touch", r.ev("osk.keyboard"))
 
     def test_a_commented_setting_does_not_count(self):
         self.f.kill(300)
         self.f.put("etc/systemd/system/opos-server.service", "#Environment=OPOS_OSK=1\n")
+        self.assertEqual(self.run_st().status("osk.keyboard"), "FAIL", "shipped and set nowhere")
+        self.f.rm("opt/opos/src/opos/osk.py")
         self.assertEqual(self.run_st().status("osk.keyboard"), "SKIP")
 
     def test_the_web_keyboard_must_be_loaded_by_the_page_and_served(self):
-        self.f.proc(300, SERVER_ARGV, "python3", env={"OPOS_OSK": "1"})
-        r = self.run_st()
+        f = self.on(handler_with(osk=False), OPOS_OSK="1")
+        r = f.run()
         self.assertEqual(r.status("osk.keyboard"), "FAIL", "the setting is on but this server serves no keyboard")
         self.assertIn("page loads /osk.js: NO", r.ev("osk.keyboard"))
-        with serve(handler_with(osk=True)) as url:
-            f = Fake(url)
-            self.addCleanup(f.cleanup)
-            f.proc(300, SERVER_ARGV, "python3", env={"OPOS_OSK": "web"})
-            r = f.run()
-            self.assertEqual(r.status("osk.keyboard"), "PASS", r.ev("osk.keyboard"))
-            self.assertIn("the server's environment", r.ev("osk.keyboard"))
+        f = self.on(handler_with(osk=True), OPOS_OSK="web")
+        self.assertEqual(f.run().status("osk.keyboard"), "PASS")
 
     def test_the_setting_is_found_in_a_unit_drop_in_when_no_server_runs(self):
-        self.f.kill(300)
-        self.f.put("etc/systemd/system/opos-server.service.d/20-osk.conf", "[Service]\nEnvironment=OPOS_OSK=1\n")
-        r = self.run_st()
+        f = self.on(handler_with(osk=False))
+        f.kill(300)
+        f.put("etc/systemd/system/opos-server.service.d/20-osk.conf", "[Service]\nEnvironment=OPOS_OSK=1\n")
+        r = f.run()
         self.assertEqual(r.status("osk.keyboard"), "FAIL")
         self.assertIn("20-osk.conf", r.ev("osk.keyboard"))
 
     def test_a_unit_edited_but_not_restarted_is_a_warning(self):
+        self.server(OPOS_NETWORK="1")  # started without the keyboard
         self.f.put("etc/systemd/system/opos-server.service.d/20-osk.conf", "[Service]\nEnvironment=OPOS_OSK=1\n")
         r = self.run_st()
         self.assertEqual(r.status("osk.keyboard"), "WARN")
         self.assertIn("started without it", r.ev("osk.keyboard"))
 
     def test_the_ports_keyboard_needs_its_process(self):
-        self.f.proc(300, SERVER_ARGV, "python3", env={"OPOS_OSK": "stevia"})
+        self.server(OPOS_OSK="stevia")
         self.assertEqual(self.run_st().status("osk.keyboard"), "WARN")
         self.f.proc(400, ["/usr/bin/phosh-osk-stevia"], "phosh-osk-stevi")
         r = self.run_st()
@@ -958,39 +1055,121 @@ class Keyboard(SelftestCase):
         self.assertIn("phosh-osk-stevia", r.ev("osk.keyboard"))
 
     def test_a_dead_server_skips_it(self):
-        self.f.proc(300, SERVER_ARGV, "python3", env={"OPOS_OSK": "1"})
         self.assertEqual(self.run_st(url="http://127.0.0.1:1/").status("osk.keyboard"), "SKIP")
 
 
-class NetworkPage(SelftestCase):
-    def test_off_is_skipped(self):
+class NetworkPage(PieceCase):
+    def test_an_image_without_the_page_skips_when_it_is_not_on(self):
+        self.f.rm("opt/opos/src/opos/net_page.py")
+        self.server()
         r = self.run_st()
         self.assertEqual((r.status("net.page"), r.status("net.permissions")), ("SKIP", "SKIP"))
 
-    def test_on_needs_the_page_to_answer_and_reports_the_permissions(self):
-        self.f.proc(300, SERVER_ARGV, "python3", env={"OPOS_NETWORK": "1"})
-        self.assertEqual(self.run_st().status("net.page"), "FAIL", "this stand-in server has no /network")
-        with serve(handler_with(network=True)) as url:
-            f = Fake(url)
-            self.addCleanup(f.cleanup)
-            f.proc(300, SERVER_ARGV, "python3", env={"OPOS_NETWORK": "1"})
-            r = f.run()
-            self.assertEqual(r.status("net.page"), "PASS", r.ev("net.page"))
-            self.assertEqual(r.status("net.permissions"), "PASS")
-            self.assertIn("wifi.scan=yes", r.ev("net.permissions"))
-            f.answer("nmcli-permissions", "org.freedesktop.NetworkManager.wifi.scan:auth\norg.freedesktop.NetworkManager.network-control:yes\n")
-            r = f.run()
-            self.assertEqual(r.status("net.permissions"), "WARN")
-            self.assertIn("wifi.scan=auth", r.ev("net.permissions"))
-            self.assertIn("settings.modify.system=?", r.ev("net.permissions"))
-            f.answer("nmcli-permissions", "")
-            self.assertEqual(f.run().status("net.permissions"), "WARN")
-            (f.bin / "nmcli").unlink()
-            self.assertEqual(f.run().status("net.permissions"), "SKIP")
+    def test_an_image_that_ships_the_page_must_turn_it_on(self):
+        self.server(OPOS_OSK="1")
+        r = self.run_st()
+        self.assertEqual((r.status("net.page"), r.status("net.permissions")), ("FAIL", "SKIP"))
+        self.assertIn("without OPOS_NETWORK=1", r.ev("net.page"))
+        self.server(OPOS_NETWORK="yes")
+        r = self.run_st()
+        self.assertEqual(r.status("net.page"), "WARN", "the server honours exactly 1")
+        self.assertIn("read-only", r.ev("net.page"))
+
+    def test_on_needs_the_page_the_link_and_the_keyboard_and_reports_the_permissions(self):
+        r = self.run_st()
+        self.assertEqual(r.status("net.page"), "PASS", r.ev("net.page"))
+        self.assertIn("GET /network -> 200", r.ev("net.page"))
+        self.assertIn("Settings links to it: yes", r.ev("net.page"))
+        self.assertIn("keyboard loaded on it: yes", r.ev("net.page"))
+        self.assertEqual(r.status("net.permissions"), "PASS")
+        self.assertIn("wifi.scan=yes", r.ev("net.permissions"))
+
+    def test_a_missing_page_link_or_keyboard_on_it_fails(self):
+        r = self.on(handler_with(network=False, osk=True), OPOS_NETWORK="1", OPOS_OSK="1").run()
+        self.assertEqual(r.status("net.page"), "FAIL", "this stand-in server has no /network")
+        r = self.on(NoLink, OPOS_NETWORK="1").run()
+        self.assertEqual(r.status("net.page"), "FAIL")
+        self.assertIn("Settings links to it: NO", r.ev("net.page"))
+        r = self.on(NoKeyboardOnPages, OPOS_NETWORK="1", OPOS_OSK="1").run()
+        self.assertEqual(r.status("net.page"), "FAIL", "a password field without a keyboard cannot be filled in")
+        self.assertIn("keyboard loaded on it: NO", r.ev("net.page"))
+        r = self.on(NoKeyboardOnPages, OPOS_NETWORK="1").run()
+        self.assertEqual(r.status("net.page"), "PASS", "without the web keyboard the page does not owe one")
+
+    def test_permissions(self):
+        f = self.f
+        f.answer("nmcli-permissions", "org.freedesktop.NetworkManager.wifi.scan:auth\norg.freedesktop.NetworkManager.network-control:yes\n")
+        r = f.run()
+        self.assertEqual(r.status("net.permissions"), "WARN")
+        self.assertIn("wifi.scan=auth", r.ev("net.permissions"))
+        self.assertIn("settings.modify.system=?", r.ev("net.permissions"))
+        f.answer("nmcli-permissions", "")
+        self.assertEqual(f.run().status("net.permissions"), "WARN")
+        (f.bin / "nmcli").unlink()
+        self.assertEqual(f.run().status("net.permissions"), "SKIP")
 
     def test_a_unit_edited_but_not_restarted_is_a_warning(self):
+        self.server(OPOS_OSK="1")
         self.f.put("etc/systemd/system/opos-server.service.d/20-opos-network.conf", "[Service]\nEnvironment=OPOS_NETWORK=1\n")
         self.assertEqual(self.run_st().status("net.page"), "WARN")
+
+
+class FirstRun(PieceCase):
+    def test_the_merged_image_runs_the_first_run_and_the_time_zone_page(self):
+        r = self.run_st()
+        self.assertEqual((r.status("firstrun.flag"), r.status("firstrun.routes")), ("PASS", "PASS"), r.text)
+        self.assertIn("GET /firstrun -> 200, /timezone -> 200, /api/firstrun -> 200 (no token -> 403)", r.ev("firstrun.routes"))
+        self.assertIn("Settings links to /timezone: yes", r.ev("firstrun.routes"))
+        self.assertIn("first run done", r.ev("firstrun.routes"))
+
+    def test_a_pending_first_run_is_said_not_failed(self):
+        r = self.on(handler_with(osk=True, network=True, firstrun=True, pending=True), **SERVER_ENV).run()
+        self.assertEqual(r.status("firstrun.routes"), "PASS")
+        self.assertIn("PENDING", r.ev("firstrun.routes"))
+
+    def test_an_image_without_it_skips_and_an_image_with_it_must_turn_it_on(self):
+        self.f.rm("opt/opos/src/opos/firstrun.py")
+        self.server()
+        r = self.run_st()
+        self.assertEqual((r.status("firstrun.flag"), r.status("firstrun.routes"), r.status("clock.kiosk-tz")), ("SKIP", "SKIP", "SKIP"))
+        self.f.put("opt/opos/src/opos/firstrun.py", "# the module\n")
+        r = self.run_st()
+        self.assertEqual((r.status("firstrun.flag"), r.status("firstrun.routes")), ("FAIL", "SKIP"))
+        self.assertIn("without OPOS_FIRSTRUN=1", r.ev("firstrun.flag"))
+        self.server(OPOS_FIRSTRUN="true")
+        self.assertEqual(self.run_st().status("firstrun.flag"), "WARN", "the server honours exactly 1")
+
+    def test_broken_routes_fail(self):
+        r = self.on(handler_with(osk=True, network=True, firstrun=False), **SERVER_ENV).run()
+        self.assertEqual(r.status("firstrun.routes"), "FAIL")
+        self.assertIn("GET /firstrun -> 404", r.ev("firstrun.routes"))
+
+    def test_the_server_must_have_applied_the_saved_zone(self):
+        f = self.on(handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Europe/Paris"), **SERVER_ENV)
+        r = f.run()
+        self.assertEqual(r.status("firstrun.routes"), "WARN")
+        self.assertIn("zone saved Asia/Tokyo, server uses Europe/Paris", r.ev("firstrun.routes"))
+        f = self.on(handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Asia/Tokyo"), **SERVER_ENV)
+        self.assertEqual(f.run().status("firstrun.routes"), "PASS")
+
+    def test_the_kiosk_chromium_must_run_in_the_saved_zone(self):
+        self.f.put("phone-home/.config/opos/timezone", "Asia/Tokyo\n")
+        r = self.run_st()
+        self.assertEqual(r.status("clock.kiosk-tz"), "WARN")
+        self.assertIn("TZ=unset", r.ev("clock.kiosk-tz"))
+        self.f.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", self.url], "chromium",
+                    env={"XDG_RUNTIME_DIR": "/run/user/32011", "WAYLAND_DISPLAY": "wayland-0", "TZ": "Europe/Paris"})
+        self.assertEqual(self.run_st().status("clock.kiosk-tz"), "WARN")
+        self.f.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", self.url], "chromium",
+                    env={"XDG_RUNTIME_DIR": "/run/user/32011", "WAYLAND_DISPLAY": "wayland-0", "TZ": "Asia/Tokyo"})
+        r = self.run_st()
+        self.assertEqual(r.status("clock.kiosk-tz"), "PASS")
+        self.assertEqual(r.status("clock.timezone"), "PASS")
+        self.assertIn("Asia/Tokyo", r.ev("clock.timezone"))
+
+    def test_only_firstrun_prefix(self):
+        r = self.run_st("--only", "firstrun")
+        self.assertEqual(sorted(r.rows), ["firstrun.flag", "firstrun.routes"])
 
 
 class DevMarkers(SelftestCase):
@@ -1009,6 +1188,33 @@ class DevMarkers(SelftestCase):
         self.assertEqual(self.run_st().status("dev.devtools"), "WARN")
         self.f.put("etc/systemd/system/multi-user.target.wants/opos-clock-set.path", "")
         self.assertEqual(self.run_st().status("dev.time-drop"), "WARN")
+
+
+class Robustness(SelftestCase):
+    def test_text_from_the_phone_is_one_line_without_control_characters(self):
+        c = ST.Ctx()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            c.emit("WARN", "x.y", "a\x1b[31mred\x00\nsecond line\r\ttab")
+        self.assertEqual(buf.getvalue(), "WARN  x.y                    a [31mred second line tab\n")
+        self.assertEqual(buf.getvalue().count("\n"), 1)
+
+    def test_a_phoc_without_a_uid_and_no_browser_does_not_crash_the_output_check(self):
+        self.f.kill(200)
+        self.f.kill(201)
+        self.f.kill(202)
+        (self.f.root / "proc/100/status").write_text("Name:\tphoc\n")
+        r = self.run_st()
+        self.assertNotIn("selftest.error", r.rows, r.text)
+        self.assertIn(r.status("gfx.output"), ("PASS", "WARN"))
+
+    def test_a_battery_that_is_not_an_object_is_a_failure_of_the_server_check_not_a_crash(self):
+        with serve(handler_with(state={"battery": "82", "charging": False, "temp_c": 31.0, "battery_source": {"source": "sysfs", "health_source": "sysfs"}})) as url:
+            f = Fake(url)
+            self.addCleanup(f.cleanup)
+            r = f.run()
+            self.assertNotIn("selftest.error", r.rows, r.text)
+            self.assertEqual(r.status("server.state"), "FAIL")
 
 
 class ReadOnlyByConstruction(unittest.TestCase):
@@ -1401,6 +1607,22 @@ class AcceptanceRun(unittest.TestCase):
         report = (run / "report.md").read_text(encoding="utf-8")
         self.assertIn("| FAIL | pc.ssh | ssh to droidian@phone.test failed: Permission denied (publickey). |", report)
         self.assertEqual(len(self.calls()), 1, "it gives up after the first refusal")
+
+    def test_text_from_the_phone_cannot_add_rows_or_markup_to_the_report(self):
+        hostile = SELFTEST_OUT.replace("SKIP  ota.updater            no /var/lib/opos-update\n",
+                                       "SKIP  ota.updater            x \x1b[31m<img src=x> y\n")
+        self.scenario(selftest=(hostile, 0))
+        p, run = self.run_ps1("-Key", str(self.fake))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        report = (run / "report.md").read_text(encoding="utf-8")
+        self.assertNotIn("\x1b", report)
+        self.assertNotIn("<img", report)
+        self.assertIn("| SKIP | ota.updater | x [31m&lt;img src=x> y |", report)
+        self.scenario(ssh_fail="Permission denied.\n| PASS | forged | row |\n## heading")
+        p, run = self.run_ps1()
+        report = (run / "report.md").read_text(encoding="utf-8")
+        self.assertEqual(report.count("forged"), 1)
+        self.assertIn("failed: Permission denied. \\| PASS \\| forged \\| row \\| ## heading |", report)
 
     def test_an_image_without_the_selftest_exits_two(self):
         self.scenario(no_selftest=True)

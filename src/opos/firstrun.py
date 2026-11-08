@@ -28,6 +28,10 @@ from html import escape
 from pathlib import Path
 
 from opos import clockcheck, firstrun_page, secure, timezone
+try:  # the on-screen keyboard (OPOS_OSK=1) also serves the time zone page's search box; its absence changes nothing
+    from opos import osk
+except ImportError:
+    osk = None
 from opos.setup import config as setup_config
 from opos.setup import prefs
 
@@ -288,7 +292,10 @@ def route_get(h, path):
         h._disarm()
         nonce = secrets.token_urlsafe(16)
         make = firstrun_page.firstrun_page if path == "/firstrun" else firstrun_page.timezone_page
-        _send(h, make(h.token, nonce).encode(), "text/html; charset=utf-8", nonce)
+        body = make(h.token, nonce).encode()
+        if osk is not None:
+            body = osk.inject_bytes(body, nonce)  # the same bytes while OPOS_OSK is off
+        _send(h, body, "text/html; charset=utf-8", nonce)
         return True
     if path in ("/api/firstrun", "/api/timezone"):
         if not _host_ok(h):

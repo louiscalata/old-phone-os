@@ -26,7 +26,7 @@ param(
     [string]$SshPath = '',
     [switch]$NoScreenshot,
     [switch]$RequireScreenshot,
-    [int]$TimeoutS = 120
+    [int]$TimeoutS = 240
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -62,6 +62,8 @@ $Rows = [System.Collections.Generic.List[object]]::new()
 $Info = [ordered]@{ PhoneTime = '?'; Uptime = '?'; SelftestExit = '?'; Revision = '?' }
 
 function Add-Row([string]$Status, [string]$Id, [string]$Evidence, [string]$Source = 'pc') {
+    # Text from the phone or from ssh is data: one line, no control characters, no markup in the report table.
+    $Evidence = (($Evidence -replace '[\x00-\x1f\x7f]+', ' ') -replace '\s+', ' ').Trim().Replace('<', '&lt;')
     $Rows.Add([pscustomobject]@{ Status = $Status; Id = $Id; Evidence = $Evidence; Source = $Source })
 }
 
