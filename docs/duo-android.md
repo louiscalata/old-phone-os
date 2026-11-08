@@ -42,6 +42,24 @@ The Droidian route in [duo-usb-install.md](duo-usb-install.md) stays historical 
   `LiveBattery` (`src/opos/hw/live_battery.py`) takes `DrainSim`'s place: it re-reads the battery at most every
   15 s and never simulates drain. The clock is the phone's wall clock, not the demo's noon. The state payload
   adds `battery_source` (`source`, `health_source`) so the screen can say where numbers came from.
+- **Time left and the goal come from the phone's own discharge.** On a live battery the panel divides the level
+  by a measured rate instead of the model's, and `battery.drain` in the state payload says which:
+  `basis` (`measured` or `model`), `per_hour` (the rate in use), `measured_per_hour` (null until trusted),
+  `model_per_hour`, `age_s` (seconds since the newest reading), `window_s` (discharge observed so far) and `via`
+  (`level` or `counter`). The rate is an exponentially weighted average (30 min time constant) of segments between
+  level steps, timed from when each step is first seen, so whole-percent rounding does not read as a burst of
+  drain. It is trusted once the run spans 10 minutes from its first level step (or first counter reading) and a segment
+  of at least half a point has closed (in the synthetic traces, about 15 minutes at 12 %/h and 30 at 3 %/h); until then
+  `basis` is `model` and the page keeps the model's figure, and with the helper shown the technical line says
+  "drain from the model, not measured yet". Plugging in or out, a jump of more than five points, or no reading
+  for 15 minutes starts it again; a gap over two minutes only drops the segment it falls in. Readings are timed on
+  the boot clock, which keeps counting while the phone suspends, so a sleep shows up as a gap. A charge counter
+  (Termux:API's `charge_counter`, or one battery's sysfs `charge_counter`, `charge_now` or `energy_now`) is used
+  for finer positions while it stays within about a point of the shown level; otherwise the level steps alone
+  are used. The reserve and the helper's `hours_left` follow the same measured rate. What is paused, and the
+  saving steps toward the goal, still come from the model's task costs. Verified against synthetic discharge
+  traces only (`tests/test_measured_drain.py`); no measurement on the phone yet, and whether the Duo's sysfs
+  exposes a usable counter is unverified.
 - **Calls and messages stay simulated.** `ScreenModem` still answers Phone and Messages; Android keeps the real
   modem. The page's simulation flag for the modem stays true.
 - **Models:** the routes are unchanged (`src/opos/assist.py`). The phone-local route sends nothing until
