@@ -107,7 +107,9 @@ class TestReliable(unittest.TestCase):
         self.assertLess(out.index('id="sb"'), button.start())
         self.assertLess(button.end(), out.index('id="lock"'))
         self.assertRegex(out, r'#reload-shell\{[^}]*min-height:48px')
-        self.assertRegex(out, r'#reload-shell\{[^}]*background:#fff;color:#000')
+        # Its colours come from the Jaryo tokens (the shared surface rule in jaryo.css), not from a white-on-black pair.
+        self.assertRegex(out, r'#reload-shell\b[^{}]*\{[^}]*background:var\(--jaryo-bg\)[^}]*color:var\(--jaryo-fg\)')
+        self.assertNotRegex(out, r'#reload-shell\{[^}]*(?:background|color):#')
 
     def test_reload_shows_after_two_failures_and_hides_after_good(self):
         out = self.run_js()

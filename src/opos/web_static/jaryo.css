@@ -44,9 +44,8 @@ html[data-ff="slideout"] #controls{background:var(--jaryo-bg)}
 button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active{background:var(--jaryo-fg);color:var(--jaryo-bg)}
 button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-disabled="true"],#goal-clear:disabled{background:var(--jaryo-bg);color:var(--jaryo-fg);opacity:1;border-style:dashed}
 #screen{border:1px solid var(--jaryo-fg);border-radius:0;filter:none!important}
-#sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#answer a,#demo label{color:var(--jaryo-fg)}
+#sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#demo label{color:var(--jaryo-fg)}
 #sb-batt[data-low="true"]{border:3px double var(--jaryo-fg)}
-#answer a{text-decoration:underline}
 #meter{background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)}
 #meter[data-tone] #meter-fill,.feature-fill{background:var(--jaryo-fg);box-shadow:none}
 #meter[data-tone]{animation:none}

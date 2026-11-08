@@ -75,15 +75,20 @@ class Budget(unittest.TestCase):
                     for prop in transition_properties(declarations[name]):
                         self.assertIn(prop, ('transform', 'opacity', 'visibility', 'none'),
                                       (context, selector, name, declarations[name]))
-            for name in ('animation', 'animation-name'):
+            for name in ('animation', 'animation-name', 'animation-iteration-count'):
                 if name in declarations and declarations[name] != 'none':
-                    animations.update(item.strip().split()[0]
-                                      for item in declarations[name].split(','))
+                    # Nothing animates at idle: a looping animation is a defect. (The charging pulse that used to be the
+                    # fixture here was a dead rule, retired by B-03 of the interface plan.)
+                    self.assertNotIn('infinite', declarations[name], (context, selector, name))
+                    if name != 'animation-iteration-count':
+                        animations.update(item.strip().split()[0]
+                                          for item in declarations[name].split(','))
         self.assertGreater(count, 0)
-        self.assertTrue(animations)
-        for name in animations:
+        self.assertNotIn('pulse', frames)
+        for name in animations:  # whatever animation may be added later: declared frames, and only transform and opacity
             self.assertIn(name, frames)
-            self.assertTrue(frames[name] <= {'transform', 'opacity'}, frames[name])
+        for name, props in frames.items():
+            self.assertTrue(props <= {'transform', 'opacity'}, (name, props))
 
     def test_sheet_keeps_base_transition(self):
         # An override here once dropped the base `visibility 0s .25s` delay.

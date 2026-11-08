@@ -98,8 +98,7 @@ function clearWait(){if(timer!==null){clearTimeout(timer);timer=null}if(pulse!==
 function off(){dead=true;clearWait();try{if(ctl)ctl.abort()}catch(e){}ctl=null;try{bar.hidden=true;log.hidden=true;st.textContent=''}catch(e){}if(ask)delete ask.dataset.hs}
 function g(f){return function(){if(dead)return;try{return f.apply(this,arguments)}catch(e){off()}}}
 function row(t){if(!t.li){t.li=mk('li');var q=mk('p');t.ap=mk('p');q.textContent='You: '+t.q;t.li.appendChild(q);t.li.appendChild(t.ap)}
-if(t.shown===t.a)return t.li;t.shown=t.a;t.ap.textContent='Helper: '+(t.a||'...');(t.src||[]).forEach(function(s){if(!s||typeof s.title!=='string')return;var a=mk('a');a.textContent=s.title;
-if(typeof s.url==='string'&&s.url.indexOf('https://en.wikipedia.org/')===0)a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';t.ap.appendChild(mk('br'));t.ap.appendChild(a)});return t.li}
+if(t.shown===t.a)return t.li;t.shown=t.a;t.ap.textContent='Helper: '+(t.a||'...');(t.src||[]).forEach(function(s){if(!s||typeof s.title!=='string')return;t.ap.appendChild(mk('br'));t.ap.appendChild(document.createTextNode('Source: '+s.title+', Wikipedia'))});return t.li}
 function draw(){var k=T.map(row);while(log.firstChild&&k.indexOf(log.firstChild)<0)log.removeChild(log.firstChild);k.forEach(function(li){if(li.parentNode!==log)log.appendChild(li)});log.hidden=!T.length}
 function std(j){var w=$('why'),x=j&&typeof j.text==='string'&&j.text.trim()||w&&(w.textContent||'').trim()||'You can try again.';return STD+' '+x}
 function setRest(v){resting=v;if(!bs)return;bs.disabled=resting||!!ctl;if(!ctl){if(resting){st.textContent=REST;br.hidden=true}else if(st.textContent===REST)st.textContent=''}}

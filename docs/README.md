@@ -75,3 +75,4 @@ evidence about the current source.
 - [Provenance](provenance.md): public source attribution and what the unpublished development records do and do not cover.
 - [Repository checks](../guard/RULES.md): what the optional static guard examines and what it cannot certify.
 - [Web page maintenance notes](web-implementation-notes.md): CSS comments and headers moved out of the page to keep it under its size budget.
+- [UI byte ledger](ui-byte-ledger.md): what the page weighs now (`page()` and the served page with every switch on), where the bytes are, the 102,000-byte wave gate and how to measure it again.

@@ -1,4 +1,3 @@
-:root{--tone-low:#e5484d;--tone-normal:#a3a8b0;--tone-full:#fff;--tone-charging:#30a46c}
 #scrim{position:fixed;top:0;right:0;bottom:0;left:0;opacity:0;pointer-events:none;transition:.2s;z-index:60}
 .sheet-open #scrim{opacity:1;pointer-events:auto}
 #sheet{position:fixed;top:0;right:0;left:0;height:88vh;height:88dvh;overflow-y:auto;z-index:70;transform:translateY(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s .25s;padding:16px 16px 0;touch-action:pan-y}
@@ -10,7 +9,3 @@
 #sheet-title,#time-left,#headline{touch-action:none}
 #sheet-title{font-size:56px;margin:8px 0 4px;line-height:1;white-space:nowrap}
 #sheet-title:focus{outline:none}
-#sheet-title[data-tone="low"]{color:var(--tone-low)}
-#sheet-title[data-tone="normal"]{color:var(--tone-normal)}
-#sheet-title[data-tone="full"]{color:var(--tone-full)}
-#sheet-title[data-tone="charging"]{color:var(--tone-charging)}

@@ -4,14 +4,7 @@ input[type=text],input[type=time]{border:1px solid;padding:0 12px}
 #phone{max-width:420px;margin:auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 #meter{position:fixed;top:0;left:0;right:0;height:4px;min-height:0;width:100%;padding:0;border:0;border-radius:0;margin:0;z-index:50;overflow:visible}
 #meter::after{content:attr(data-caption);position:absolute;right:12px;top:calc(28px + env(safe-area-inset-top,0px));font-size:.875rem}
-#meter-fill{display:block;height:100%;width:0%;background:#a3a8b0}
-#meter[data-tone="low"] #meter-fill{background:#e5484d}
-#meter[data-tone="normal"] #meter-fill{background:#a3a8b0}
-#meter[data-tone="full"] #meter-fill{background:#fff;box-shadow:0 0 6px rgba(255,255,255,.6)}
-#meter[data-tone="charging"]{animation:pulse 2s infinite}
-#meter[data-tone="charging"] #meter-fill{background:#30a46c;box-shadow:0 0 6px rgba(48,164,108,.55)}
-@media (prefers-reduced-motion:reduce){#meter[data-tone="charging"]{animation:none}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+#meter-fill{display:block;height:100%;width:0%}
 #meter-hit{position:fixed;top:0;left:0;right:0;height:48px;z-index:51;touch-action:none;cursor:grab}
 #meter-hit::after{content:"";position:absolute;left:50%;margin-left:-20px;top:4px;width:40px;height:4px;border-radius:3px}
 .sheet-open #meter-hit::after{display:none}

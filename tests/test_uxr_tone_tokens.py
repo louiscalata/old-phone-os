@@ -1,87 +1,90 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
+"""The battery tone is a word, not a colour.
+
+The page used to give the four battery tones (low, normal, full, charging) four colours: a --tone-* variable each, a
+coloured #sheet-title and a coloured #meter-fill. The Jaryo palette (docs/jaryo.md: --jaryo-fg and --jaryo-bg, nothing
+else) overrides all of them in every state, so they were dead rules, and B-03 of the interface plan retired them. What these
+tests pin now is the truth that remains: no tone colour reaches the screen, and each tone still reads as the two Jaryo tokens.
+"""
 import re
 import unittest
 import opos.web
 
+TONES = ['low', 'normal', 'full', 'charging']
+TOKEN = 'var(--jaryo-fg)'
+RETIRED = ('--tone-', '#e5484d', '#a3a8b0', '#30a46c', '#8a8f98')  # the old variables and their colours
+
+
 def _page():
     return opos.web.page()
+
 
 def _root_vars(html):
     vars_dict = {}
     for m in re.finditer(r':root\s*\{([^}]*)\}', html):
-        content = m.group(1)
-        for part in content.split(';'):
-            if not part.strip():
-                continue
-            if ':' not in part:
-                continue
-            name, val = part.split(':', 1)
-            vars_dict[name.strip()] = val.strip()
+        for part in m.group(1).split(';'):
+            if ':' in part:
+                name, val = part.split(':', 1)
+                vars_dict[name.strip()] = val.strip()
     return vars_dict
 
-def _decl(html, selector, prop):
-    esc_sel = re.escape(selector)
-    pattern = re.compile(esc_sel + r'\s*\{([^}]*)\}', re.DOTALL)
-    m = pattern.search(html)
-    if not m:
-        return None
-    block = m.group(1)
-    prop_pat = re.compile(r'(?:^|;)\s*' + re.escape(prop) + r'\s*:\s*([^;}]+)')
-    m2 = prop_pat.search(block)
-    if not m2:
-        return None
-    return m2.group(1).strip()
 
-def _resolve(value, vars_dict):
-    m = re.match(r'var\s*\(\s*(--[\w-]+)\s*\)', value)
-    if m:
-        name = m.group(1)
-        return vars_dict.get(name)
-    return value
+def _rules(html):
+    """(selector, declarations) for every rule of the page's style sheets, in source order; a group is split."""
+    css = re.sub(r'/\*.*?\*/', '', '\n'.join(re.findall(r'<style[^>]*>(.*?)</style>', html, re.S)), flags=re.S)
+    out = []
+    for m in re.finditer(r'([^{}]+)\{([^{}]*)\}', css):
+        decls = {}
+        for part in m.group(2).split(';'):
+            if ':' in part:
+                name, val = part.split(':', 1)
+                decls[name.strip()] = val.strip()
+        out += [(s.strip(), decls) for s in m.group(1).split(',')]
+    return out
+
+
+def _effective(rules, base_before, base_after, tone, prop):
+    """The value of prop for `base_before[data-tone=tone]base_after`, by specificity (a data-tone selector beats the
+    bare one) then source order. A tone-specific rule and a rule for any tone weigh the same."""
+    best, found = (-1, -1), None
+    for order, (selector, decls) in enumerate(rules):
+        for rank, candidates in ((0, (base_before + base_after,)),
+                                 (1, (base_before + '[data-tone]' + base_after,
+                                      base_before + '[data-tone="' + tone + '"]' + base_after))):
+            if selector in candidates and prop in decls and (rank, order) > best:
+                best, found = (rank, order), decls[prop]
+    return found
+
 
 class TestUxrToneTokens(unittest.TestCase):
-    def test_normal_matches_meter(self):
+    def test_no_tone_variable_or_tone_colour_is_left(self):
         html = _page()
+        for needle in RETIRED:
+            self.assertNotIn(needle, html.lower(), needle)
         root_vars = _root_vars(html)
-        meter_color = _decl(html, '#meter[data-tone="normal"] #meter-fill', 'background')
-        if not meter_color:
-            meter_color = _decl(html, '#meter[data-tone="normal"] #meter-fill', 'background-color')
-        self.assertIsNotNone(meter_color)
-        self.assertEqual(meter_color.strip().lower(), '#a3a8b0')
-        sheet_raw = _decl(html, '#sheet-title[data-tone="normal"]', 'color')
-        self.assertIsNotNone(sheet_raw)
-        self.assertRegex(sheet_raw, r'^var\s*\(')
-        self.assertFalse(sheet_raw.lstrip().startswith('#'))
-        resolved = _resolve(sheet_raw, root_vars)
-        self.assertIsNotNone(resolved)
-        self.assertEqual(resolved.strip().lower(), meter_color.strip().lower())
-        for v in root_vars.values():
-            self.assertNotIn('#8a8f98', v.lower())
-        for tone in ['low', 'normal', 'full', 'charging']:
-            sel = f'#sheet-title[data-tone="{tone}"]'
-            raw = _decl(html, sel, 'color')
-            self.assertIsNotNone(raw)
-            self.assertNotIn('#8a8f98', raw)
+        self.assertEqual([k for k in root_vars if k.startswith('--tone')], [])
+        self.assertIn('--jaryo-fg', root_vars)
+        self.assertIn('--jaryo-bg', root_vars)
 
-    def test_every_tone_tokenised(self):
-        html = _page()
-        root_vars = _root_vars(html)
-        tones = ['low', 'normal', 'full', 'charging']
-        for tone in tones:
+    def test_no_rule_colours_a_tone(self):
+        # Every rule that names a tone value is gone; the only data-tone rules left are the valueless Jaryo overrides.
+        for selector, decls in _rules(_page()):
+            if re.search(r'#(?:sheet-title|meter)\[data-tone=', selector):
+                self.fail((selector, decls))
+            if '[data-tone]' in selector and ('#sheet-title' in selector or '#meter' in selector):
+                for prop in ('color', 'background', 'background-color', 'box-shadow', 'animation'):
+                    if prop in decls:
+                        self.assertIn(decls[prop], (TOKEN, 'var(--jaryo-bg)', 'none'), (selector, prop))
+
+    def test_every_tone_reads_as_the_jaryo_token(self):
+        rules = _rules(_page())
+        for tone in TONES:
             with self.subTest(tone=tone):
-                prop_name = f'--tone-{tone}'
-                self.assertIn(prop_name, root_vars)
-                sel = f'#sheet-title[data-tone="{tone}"]'
-                sheet_raw = _decl(html, sel, 'color')
-                self.assertIsNotNone(sheet_raw)
-                self.assertRegex(sheet_raw, rf'^var\s*\(\s*{re.escape(prop_name)}\s*\)$')
-                resolved = _resolve(sheet_raw, root_vars)
-                meter_sel = f'#meter[data-tone="{tone}"] #meter-fill'
-                meter_color = _decl(html, meter_sel, 'background')
-                if not meter_color:
-                    meter_color = _decl(html, meter_sel, 'background-color')
-                self.assertIsNotNone(meter_color)
-                self.assertEqual(resolved.strip().lower(), meter_color.strip().lower())
+                self.assertEqual(_effective(rules, '#sheet-title', '', tone, 'color'), TOKEN)
+                self.assertEqual(_effective(rules, '#meter', ' #meter-fill', tone, 'background'), TOKEN)
+                self.assertEqual(_effective(rules, '#meter', ' #meter-fill', tone, 'box-shadow'), 'none')
+                self.assertEqual(_effective(rules, '#meter', '', tone, 'animation'), 'none')
+
 
 if __name__ == '__main__':
     unittest.main()
