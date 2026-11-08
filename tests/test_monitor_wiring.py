@@ -256,7 +256,7 @@ class SwitchOn(WiringCase):
         self.assertTrue(head.startswith(b"HTTP/1.") and head.split(b"\r\n")[0].split()[1] == b"200", head.split(b"\r\n")[0])
         self.assertIn(("content-length: %d" % get_length).encode("ascii"), head.lower(), "the length GET would send, in the header only")
         self.assertEqual(rest, b"", "nothing after the blank line that ends the headers")
-        data = raw_exchange(s.port, ("HEAD /api/monitor HTTP/1.1\r\n" + host + "X-OPOS-Token: " + s.token + "\r\nConnection: close\r\n\r\n").encode("ascii"))
+        data = raw_exchange(s.port, ("HEAD /api/monitor HTTP/1.1\r\n%sX-OPOS-Token: %s\r\nConnection: close\r\n\r\n" % (host, s.token)).encode("ascii"))
         head, sep, rest = data.partition(b"\r\n\r\n")
         self.assertTrue(sep and head.split(b"\r\n")[0].split()[1] == b"405", head.split(b"\r\n")[0])
         self.assertEqual(rest, b"")
