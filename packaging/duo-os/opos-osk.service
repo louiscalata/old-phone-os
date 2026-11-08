@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Option A of the on-screen keyboard (opt-in): the port's phosh-osk-stevia beside the kiosk Chromium in OPOS's phoc session.
+# Enabled but idle: opos-osk exits at once unless /etc/default/opos-osk says OPOS_OSK=stevia. The default keyboard is the
+# in-page one served by opos-server (OPOS_OSK=1). Requisite: never start beside phosh, which has a keyboard of its own.
+[Unit]
+Description=OPOS: the port's on-screen keyboard beside the kiosk (only with OPOS_OSK=stevia)
+Requisite=opos.service
+After=opos.service
+PartOf=opos.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+User=droidian
+Environment=LANG=C.UTF-8
+EnvironmentFile=-/etc/default/opos-osk
+ExecStart=/usr/libexec/opos/opos-osk
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=graphical.target

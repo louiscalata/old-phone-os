@@ -7,6 +7,10 @@ Wants=lxc@android.service
 [Service]
 User=droidian
 Environment=PYTHONPATH=/opt/opos/src
+# On-screen keyboard (src/opos/osk.py): 1 serves the in-page keyboard to the kiosk page. /etc/default/opos-osk overrides it:
+# OPOS_OSK=off for none, OPOS_OSK=stevia for the port's Wayland keyboard instead (opos-osk.service), see packaging/duo-os/OSK.md.
+Environment=OPOS_OSK=1
+EnvironmentFile=-/etc/default/opos-osk
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=OPOS_BATTERY=live
 Environment=OPOS_ON_PHONE=1

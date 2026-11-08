@@ -33,6 +33,16 @@ fi
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"
+# --- track osk: the on-screen keyboard (packaging/duo-os/OSK.md) ---
+o=$r/opt/opos/src/opos
+check "the in-page on-screen keyboard is in the image (osk.py, osk.js, osk.css)" "[ -s $o/osk.py ] && [ -s $o/osk_static/osk.js ] && [ -s $o/osk_static/osk.css ]"
+check "opos-server turns the in-page keyboard on and reads /etc/default/opos-osk for an override" "grep -qx 'Environment=OPOS_OSK=1' $w/opos-server.service && grep -qx 'EnvironmentFile=-/etc/default/opos-osk' $w/opos-server.service && [ -f $r/etc/default/opos-osk ]"
+check "opos-osk (the opt-in Wayland keyboard) is installed, parses, and its unit is enabled but idle" "sh -n $r/usr/libexec/opos/opos-osk && [ -x $r/usr/libexec/opos/opos-osk ] && [ -L $w/graphical.target.wants/opos-osk.service ] && grep -q '^Requisite=opos.service' $w/opos-osk.service && ! grep -v '^#' $r/etc/default/opos-osk | grep -q OPOS_OSK"
+if [ -x "$r/usr/bin/phosh-osk-stevia" ]; then
+    echo "NOTE: phosh-osk-stevia is in the image, so OPOS_OSK=stevia (opt-in, untried on the phone) has a keyboard to start"
+else
+    echo "NOTE: no phosh-osk-stevia in this image: the opt-in OPOS_OSK=stevia would start nothing"
+fi
 umount "$mnt"
 
 # Server smoke test: qemu-user with the read-only image as its sysroot (-L), so the image's own
@@ -56,6 +66,18 @@ tok = re.search(r'name="opos-token" content="([^"]+)"', html).group(1)
 s = json.load(urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{p}/api/state", headers={"X-OPOS-Token": tok}), timeout=5))
 print("state: battery %s%%, mode %s, lock '%s'" % (s["battery"]["percent"], s.get("helper", {}).get("mode", "-"), s.get("lock_story", "")))
 EOF
+# --- track osk: the image's own python3 reads the keyboard's files and builds the page tags (no server needed) ---
+py -c "
+import os
+os.environ['OPOS_OSK'] = '1'
+from opos import osk
+js, css = osk.asset('/osk.js'), osk.asset('/osk.css')
+assert js and css and len(js[0]) > 5000 and len(css[0]) > 500, 'keyboard assets missing or tiny'
+t = osk.tags('n' * 22)
+assert '/osk.js' in t and '/osk.css' in t and 'nonce=' in t
+print('on-screen keyboard assets: osk.js', len(js[0]), 'bytes, osk.css', len(css[0]), 'bytes')" > /tmp/opos-verify-osk.txt 2>&1
+check "the image's python3 serves the on-screen keyboard's files" "grep -q 'on-screen keyboard assets' /tmp/opos-verify-osk.txt"
+tail -n 1 /tmp/opos-verify-osk.txt
 kill "$(cat /tmp/opos-verify.pid)" 2>/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port" 2>/dev/null || break; sleep 1; done
 head -5 /tmp/opos-verify.log

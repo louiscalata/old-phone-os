@@ -55,6 +55,20 @@ install -m 0755 "$here/opos-diag" "$r/usr/libexec/opos/opos-diag"
 install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"
 ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"
 
+# --- track osk: the on-screen keyboard (packaging/duo-os/OSK.md) ---------------------------------------------------------
+# The default is the in-page keyboard: opos-server.service sets OPOS_OSK=1 and src/opos/osk.py serves /osk.js and /osk.css
+# from the OPOS tree archived above (src/opos/osk_static). The opt-in is the port's phosh-osk-stevia, started by
+# opos-osk.service, which is enabled but idle until /etc/default/opos-osk says OPOS_OSK=stevia.
+install -m 0755 "$here/opos-osk" "$r/usr/libexec/opos/opos-osk"
+install -m 0644 "$here/opos-osk.service" "$r/etc/systemd/system/opos-osk.service"
+ln -sf /etc/systemd/system/opos-osk.service "$r/etc/systemd/system/graphical.target.wants/opos-osk.service"
+printf '%s\n' '# On-screen keyboard. OPOS_OSK=1 (the default when this line is absent): the in-page keyboard served by opos-server.' \
+    '# OPOS_OSK=off: none. OPOS_OSK=stevia: the port'"'"'s phosh-osk-stevia instead (opt-in, not yet tried on the phone).' \
+    '# After a change: sudo systemctl restart opos-server opos-osk, then pkill chromium as droidian (opos-kiosk starts it again).' \
+    '#OPOS_OSK=1' > "$r/etc/default/opos-osk"
+chmod 0644 "$r/etc/default/opos-osk"
+# --- end track osk --------------------------------------------------------------------------------------------------------
+
 # DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
 # droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
 # for an image that is meant to be carried: without it nothing new can log in.
