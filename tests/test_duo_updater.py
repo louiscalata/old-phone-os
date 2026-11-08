@@ -74,8 +74,19 @@ def tearDownModule():
         shutil.rmtree(_keydir, ignore_errors=True)
 
 
+
+def rd(path, mode='r'):
+    with open(path, mode) as f:
+        return f.read()
+
+
+def wr(path, data, mode='w'):
+    with open(path, mode) as f:
+        f.write(data)
+
+
 def pub_line(name):
-    fields = open(KEYS[name] + '.pub').read().split()
+    fields = rd(KEYS[name] + '.pub').split()
     return 'opos-release %s %s\n' % (fields[0], fields[1])
 
 
@@ -85,7 +96,7 @@ def sign(key, ns, data):
         with open(p, 'wb') as f:
             f.write(data)
         subprocess.run([KEYGEN, '-Y', 'sign', '-q', '-f', KEYS[key], '-n', ns, p], check=True, capture_output=True)
-        return open(p + '.sig', 'rb').read()
+        return rd(p + '.sig', 'rb')
 
 
 def sha(b):
@@ -214,7 +225,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         env = self.server.env
         try:
-            running = open(env.running).read().strip()
+            running = rd(env.running).strip()
         except OSError:
             running = ''
         if env.health_mode == 'down' or os.path.exists(os.path.join(running, 'src/opos/BROKEN')):
@@ -358,14 +369,14 @@ exit 0''')
 
     # -- looking
     def state(self):
-        return json.load(open(os.path.join(self.var, 'state.json')))
+        return json.loads(rd(os.path.join(self.var, 'state.json')))
 
     def status(self):
-        return json.load(open(os.path.join(self.var, 'status.json')))
+        return json.loads(rd(os.path.join(self.var, 'status.json')))
 
     def calls(self):
         try:
-            return open(self.callslog).read().splitlines()
+            return rd(self.callslog).splitlines()
         except OSError:
             return []
 
@@ -375,7 +386,7 @@ exit 0''')
             st = os.lstat(p)
         except FileNotFoundError:
             return None
-        return (sha(open(p, 'rb').read()), stat.S_IMODE(st.st_mode))
+        return (sha(rd(p, 'rb')), stat.S_IMODE(st.st_mode))
 
     def overlay_state(self):
         return {p: self.file_info(p) for p in OVERLAY_PATHS}
@@ -384,11 +395,11 @@ exit 0''')
         st = self.state()
         return {'link': os.readlink(self.opt_link), 'releases': sorted(os.listdir(self.releases)), 'files': self.overlay_state(),
                 'state': {k: st[k] for k in ('current', 'previous', 'failed', 'pending_boot', 'trial', 'txn')},
-                'running': open(self.running).read(), 'restarts': [c for c in self.calls() if ' restart ' in c or 'daemon-reload' in c],
+                'running': rd(self.running), 'restarts': [c for c in self.calls() if ' restart ' in c or 'daemon-reload' in c],
                 'staging': sorted(os.listdir(self.staging))}
 
     def marker(self):
-        return open(os.path.join(self.opt_link, 'src/opos/marker.txt')).read().strip()
+        return rd(os.path.join(self.opt_link, 'src/opos/marker.txt')).strip()
 
     def expect_overlay(self, serial):
         if serial == 0:
@@ -860,11 +871,11 @@ class TestSigners(EnvCase):
     fast = True
 
     def test_empty_allowed_signers_accepts_nothing(self):
-        open(self.env.signers, 'w').close()
+        wr(self.env.signers, '')
         self.reject(make_bundle(7), 'no update signing keys')
 
     def test_comment_only_allowed_signers_accepts_nothing(self):
-        open(self.env.signers, 'w').write('# opos-release ' + pub_line('good'))
+        wr(self.env.signers, '# opos-release ' + pub_line('good'))
         self.reject(make_bundle(7), 'no update signing keys')
 
     def test_missing_allowed_signers_accepts_nothing(self):
@@ -904,8 +915,8 @@ class TestSigners(EnvCase):
         self.assertEqual(e.live(), before)
 
     def test_principal_must_be_opos_release(self):
-        fields = open(KEYS['good'] + '.pub').read().split()
-        open(self.env.signers, 'w').write('someone-else %s %s\n' % (fields[0], fields[1]))
+        fields = rd(KEYS['good'] + '.pub').split()
+        wr(self.env.signers, 'someone-else %s %s\n' % (fields[0], fields[1]))
         self.reject(make_bundle(7), 'signature')
 
 
@@ -918,7 +929,7 @@ class TestInbox(EnvCase):
     def test_symlink_in_the_inbox_is_removed_and_never_followed(self):
         e = self.env
         elsewhere = os.path.join(e.tmp, 'valid.opos-update')
-        open(elsewhere, 'wb').write(make_bundle(7))
+        wr(elsewhere, make_bundle(7), 'wb')
         link = os.path.join(e.inbox, 'opos-7.opos-update')
         os.symlink(elsewhere, link)
         before = e.live()
@@ -933,7 +944,7 @@ class TestInbox(EnvCase):
         """copy_in opens with O_NOFOLLOW, so even a swap between listing and opening cannot redirect it."""
         e = self.env
         elsewhere = os.path.join(e.tmp, 'valid')
-        open(elsewhere, 'wb').write(make_bundle(7))
+        wr(elsewhere, make_bundle(7), 'wb')
         os.symlink(elsewhere, os.path.join(e.inbox, 'x.opos-update'))
         dfd = os.open(e.inbox, os.O_RDONLY | os.O_DIRECTORY)
         self.addCleanup(os.close, dfd)
@@ -972,7 +983,7 @@ class TestInbox(EnvCase):
         e = self.env
         d = os.path.join(e.inbox, 'opos-7.opos-update')
         os.makedirs(os.path.join(d, 'sub'))
-        open(os.path.join(d, 'sub', 'f'), 'w').write('x')
+        wr(os.path.join(d, 'sub', 'f'), 'x')
         before = e.live()
         self.assertEqual(e.updater().apply_inbox(), 3)
         self.assertFalse(os.path.lexists(d))
@@ -981,7 +992,7 @@ class TestInbox(EnvCase):
     def test_unrelated_files_are_left_alone(self):
         e = self.env
         for n in ('README.txt', 'opos-7.opos-update.bak', 'x.partial'):
-            open(os.path.join(e.inbox, n), 'w').write('x')
+            wr(os.path.join(e.inbox, n), 'x')
         self.assertEqual(e.updater().apply_inbox(), 0)
         self.assertEqual(sorted(os.listdir(e.inbox)), ['README.txt', 'opos-7.opos-update.bak', 'x.partial'])
 
@@ -989,7 +1000,7 @@ class TestInbox(EnvCase):
         e = self.env
         for n, age in (('fresh.partial', 60), ('stale.partial', 3 * 86400)):
             p = os.path.join(e.inbox, n)
-            open(p, 'w').write('x')
+            wr(p, 'x')
             t = time.time() - age
             os.utime(p, (t, t))
         e.updater().apply_inbox()
@@ -1005,7 +1016,7 @@ class TestInbox(EnvCase):
             if name == 'copy-read' and not fired:  # after the bytes were copied, before the inbox entry is dropped
                 fired.append(1)
                 p = os.path.join(e.inbox, 'opos-7.opos-update')
-                open(p + '.swap', 'wb').write(evil)
+                wr(p + '.swap', evil, 'wb')
                 os.rename(p + '.swap', p)
         e.cfg.hook = hook
         e.deliver(make_bundle(7))
@@ -1019,7 +1030,7 @@ class TestInbox(EnvCase):
     def test_file_swapped_for_a_symlink_after_the_copy(self):
         e = self.env
         evil_path = os.path.join(e.tmp, 'evil')
-        open(evil_path, 'wb').write(make_bundle(8, app={**default_app(8), 'src/opos/marker.txt': (b'EVIL\n', 0o644)}))
+        wr(evil_path, make_bundle(8, app={**default_app(8), 'src/opos/marker.txt': (b'EVIL\n', 0o644)}), 'wb')
 
         fired = []
 
@@ -1101,12 +1112,12 @@ class TestApply(EnvCase):
         # the symlink moved atomically to the new release and is relative
         self.assertEqual(os.readlink(e.opt_link), 'opos-releases/' + rel)
         self.assertEqual(e.marker(), 'build 7')
-        self.assertEqual(open(os.path.join(e.opt_link, 'REVISION')).read(), revision(7) + '\n')
+        self.assertEqual(rd(os.path.join(e.opt_link, 'REVISION')), revision(7) + '\n')
         # overlay files replaced, mode kept, new file created
         self.assertEqual(e.overlay_state(), e.expect_overlay(7))
         self.assertNotEqual(e.overlay_state(), before_files)
         # the originals were saved in the new release
-        idx = json.load(open(os.path.join(e.releases, rel, 'overlay-backup/index.json')))
+        idx = json.loads(rd(os.path.join(e.releases, rel, 'overlay-backup/index.json')))
         self.assertEqual({i['path']: i['existed'] for i in idx}, {'usr/libexec/opos/opos-kiosk': True, 'etc/systemd/system/opos-server.service': True, NEWFILE: False})
         # state and status
         st = e.state()
@@ -1226,7 +1237,7 @@ class TestApply(EnvCase):
         self.assertEqual(st['current']['serial'], 0)
         self.assertEqual(e.marker(), 'build 0')
         self.assertEqual(os.listdir(e.releases), ['0-aaaaaaaaaaaa'])
-        self.assertEqual(open(e.running).read().strip(), os.path.realpath(e.opt_link))
+        self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))
         self.assertEqual(len([c for c in e.calls() if c == 'systemctl restart opos-server.service']), 2)
         self.assertEqual(e.live()['link'], before['link'])
         e.consistent()
@@ -1238,7 +1249,7 @@ class TestApply(EnvCase):
     def test_health_failure_when_the_server_is_not_active(self):
         e = self.env
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
-        open(os.path.join(e.run, 'inactive'), 'w').close()
+        wr(os.path.join(e.run, 'inactive'), '')
         self.assertEqual(e.apply(make_bundle(7)), 3)
         self.assertEqual(e.status()['phase'], 'rolled-back')
         self.assertEqual(e.consistent(), 0)
@@ -1246,7 +1257,7 @@ class TestApply(EnvCase):
     def test_health_failure_when_the_restart_fails(self):
         e = self.env
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
-        open(os.path.join(e.run, 'restart-fails'), 'w').close()
+        wr(os.path.join(e.run, 'restart-fails'), '')
         self.assertEqual(e.apply(make_bundle(7)), 3)
         self.assertEqual(e.status()['phase'], 'rolled-back')
         self.assertIn('restart', e.status()['message'])
@@ -1302,7 +1313,7 @@ class TestApply(EnvCase):
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
         e.apply(make_bundle(1), 'opos-1.opos-update')
         e.apply(make_bundle(2), 'opos-2.opos-update')
-        idx = json.load(open(os.path.join(e.releases, release_name(2), 'overlay-backup/index.json')))
+        idx = json.loads(rd(os.path.join(e.releases, release_name(2), 'overlay-backup/index.json')))
         kiosk = next(i for i in idx if i['path'].endswith('opos-kiosk'))
         self.assertEqual(kiosk['sha256'], sha(default_overlay(1)['usr/libexec/opos/opos-kiosk'][0]))
 
@@ -1349,12 +1360,12 @@ class TestLayout(EnvCase):
 
     def test_corrupt_state_is_not_guessed(self):
         e = self.env
-        open(os.path.join(e.var, 'state.json'), 'w').write('{not json')
+        wr(os.path.join(e.var, 'state.json'), '{not json')
         e.deliver(make_bundle(7))
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(U.main(['apply-inbox'], e.cfg), 1)
         self.assertEqual(e.marker(), 'build 0')
-        open(os.path.join(e.var, 'state.json'), 'w').write('{"current": 5}')
+        wr(os.path.join(e.var, 'state.json'), '{"current": 5}')
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(U.main(['apply-inbox'], e.cfg), 1)
 
@@ -1419,7 +1430,7 @@ class TestRollback(EnvCase):
         self.assertEqual((st['current']['serial'], [p['serial'] for p in st['previous']], st['failed']), (1, [0], [2]))
         self.assertEqual(e.status()['phase'], 'rolled-back')
         self.assertEqual(e.marker(), 'build 1')
-        self.assertEqual(open(e.running).read().strip(), os.path.realpath(e.opt_link))
+        self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))
         self.assertEqual(os.listdir(e.releases).count(release_name(2)), 0)
 
     def test_rollback_subcommand(self):
@@ -1445,7 +1456,7 @@ class TestRollback(EnvCase):
 
     def test_rollback_restarts_only_the_server(self):
         e = self.env
-        open(e.callslog, 'w').close()
+        wr(e.callslog, '')
         e.request_rollback()
         e.updater().apply_inbox()
         sc = [c for c in e.calls() if c.startswith('systemctl')]
@@ -1511,7 +1522,7 @@ class TestBoot(EnvCase):
         e = self.env
         self.stage()
         e.boot = 'boot-2'
-        open(e.callslog, 'w').close()
+        wr(e.callslog, '')
         self.assertEqual(e.updater().apply_pending_boot(), 0)
         self.assertEqual(e.marker(), 'build 7')
         self.assertEqual(e.overlay_state(), e.expect_overlay(7))
@@ -1573,7 +1584,7 @@ class TestBoot(EnvCase):
         self.assertEqual(e.state()['trial']['failed_boots'], 1)
         self.assertEqual(e.state()['current']['serial'], 7)
         e.boot = 'boot-4'                       # boot 3 never confirmed either: rolled back at the start of boot 4
-        open(e.callslog, 'w').close()
+        wr(e.callslog, '')
         self.assertEqual(e.updater().apply_pending_boot(), 3)
         st = e.state()
         self.assertEqual((st['current']['serial'], st['failed'], st['trial']), (0, [7], None))
@@ -1616,7 +1627,7 @@ class TestBoot(EnvCase):
         self.stage(7)
         st = e.state()
         st['current']['serial'] = 9  # as if something newer ran meanwhile
-        open(os.path.join(e.var, 'state.json'), 'w').write(json.dumps(st))
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st))
         e.boot = 'boot-2'
         self.assertEqual(e.updater().apply_pending_boot(), 3)
         self.assertIsNone(e.state()['pending_boot'])
@@ -1624,11 +1635,11 @@ class TestBoot(EnvCase):
 
     def test_tampered_staged_release_is_refused_at_boot(self):
         e = self.env
-        for label, tamper in (('file content', lambda d: open(os.path.join(d, 'src/opos/web.py'), 'ab').write(b'# evil\n')),
-                              ('extra file', lambda d: open(os.path.join(d, 'src/opos/evil.py'), 'w').write('x')),
-                              ('overlay content', lambda d: open(os.path.join(d, 'overlay/usr/libexec/opos/opos-kiosk'), 'ab').write(b'evil')),
+        for label, tamper in (('file content', lambda d: wr(os.path.join(d, 'src/opos/web.py'), b'# evil\n', 'ab')),
+                              ('extra file', lambda d: wr(os.path.join(d, 'src/opos/evil.py'), 'x')),
+                              ('overlay content', lambda d: wr(os.path.join(d, 'overlay/usr/libexec/opos/opos-kiosk'), b'evil', 'ab')),
                               ('mode', lambda d: os.chmod(os.path.join(d, 'src/opos/web.py'), 0o4755)),
-                              ('manifest', lambda d: open(os.path.join(d, 'manifest.json'), 'ab').write(b' ')),
+                              ('manifest', lambda d: wr(os.path.join(d, 'manifest.json'), b' ', 'ab')),
                               ('removed file', lambda d: os.unlink(os.path.join(d, 'LICENSE'))),
                               ('symlink', lambda d: (os.unlink(os.path.join(d, 'LICENSE')), os.symlink('/etc/passwd', os.path.join(d, 'LICENSE'))))):
             with self.subTest(label):
@@ -1646,7 +1657,7 @@ class TestBoot(EnvCase):
     def test_staged_release_is_rechecked_against_the_current_signers(self):
         e = self.env
         self.stage()
-        open(e.signers, 'w').close()  # the key is no longer trusted
+        wr(e.signers, '')  # the key is no longer trusted
         e.boot = 'boot-2'
         self.assertEqual(e.updater().apply_pending_boot(), 3)
         self.assertEqual(e.consistent(), 0)
@@ -2052,7 +2063,7 @@ class TestProbes(unittest.TestCase):
     def test_probe_health_needs_an_active_unit(self):
         e = self.env
         self.assertTrue(U.probe_health(e.cfg)[0])
-        open(os.path.join(e.run, 'inactive'), 'w').close()
+        wr(os.path.join(e.run, 'inactive'), '')
         ok, msg = U.probe_health(e.cfg)
         self.assertFalse(ok)
         self.assertIn('not active', msg)
@@ -2208,16 +2219,16 @@ class TestImageBlocks(unittest.TestCase):
     def make_root(self):
         r = self.r
         os.makedirs(os.path.join(r, 'opt/opos/src/opos'))
-        open(os.path.join(r, 'opt/opos/src/opos/web.py'), 'wb').write(WEB_PY)
-        open(os.path.join(r, 'opt/opos/REVISION'), 'w').write('0123456789abcdef0123456789abcdef01234567\n')
+        wr(os.path.join(r, 'opt/opos/src/opos/web.py'), WEB_PY, 'wb')
+        wr(os.path.join(r, 'opt/opos/REVISION'), '0123456789abcdef0123456789abcdef01234567\n')
         os.makedirs(os.path.join(r, 'etc/systemd/system/multi-user.target.wants'))
         os.makedirs(os.path.join(r, 'usr/libexec/opos'))
-        open(os.path.join(r, 'etc/passwd'), 'w').write('root:x:0:0:root:/root:/bin/sh\ndroidian:x:32011:32011::/home/droidian:/bin/bash\n')
+        wr(os.path.join(r, 'etc/passwd'), 'root:x:0:0:root:/root:/bin/sh\ndroidian:x:32011:32011::/nonexistent:/bin/bash\n')
 
     def build(self, signers=None, passwd=None):
         self.make_root()
         if passwd is not None:
-            open(os.path.join(self.r, 'etc/passwd'), 'w').write(passwd)
+            wr(os.path.join(self.r, 'etc/passwd'), passwd)
         env = dict(os.environ)
         env.pop('OPOS_UPDATE_SIGNERS', None)
         if signers is not None:
@@ -2238,7 +2249,7 @@ class TestImageBlocks(unittest.TestCase):
         p = os.path.join(self.tmp, 'signers')
         with open(p, 'w') as f:
             for n in names:
-                f.write(open(KEYS[n] + '.pub').read())
+                f.write(rd(KEYS[n] + '.pub'))
             f.write(extra)
         return p
 
@@ -2249,10 +2260,10 @@ class TestImageBlocks(unittest.TestCase):
         link = os.path.join(self.r, 'opt/opos')
         self.assertEqual(os.readlink(link), 'opos-releases/0-0123456789ab')
         self.assertTrue(os.path.isfile(os.path.join(self.r, 'opt/opos-releases/0-0123456789ab/src/opos/web.py')))
-        self.assertEqual(open(os.path.join(link, 'REVISION')).read().strip(), '0123456789abcdef0123456789abcdef01234567')
+        self.assertEqual(rd(os.path.join(link, 'REVISION')).strip(), '0123456789abcdef0123456789abcdef01234567')
         self.assertEqual(os.listdir(os.path.join(self.r, 'opt/opos-releases')), ['0-0123456789ab'])
         self.assertEqual(os.path.getsize(os.path.join(self.r, 'etc/opos/update/allowed_signers')), 0)
-        self.assertEqual(open(os.path.join(self.r, 'etc/opos/base-version')).read(), '1\n')
+        self.assertEqual(rd(os.path.join(self.r, 'etc/opos/base-version')), '1\n')
         inbox = os.stat(os.path.join(self.r, 'var/lib/opos-update/inbox'))
         self.assertEqual(stat.S_IMODE(inbox.st_mode), 0o2770)
         if os.geteuid() == 0:
@@ -2261,7 +2272,7 @@ class TestImageBlocks(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.r, 'var/lib/opos-update')).st_mode), 0o755)
         u = os.path.join(self.r, 'usr/libexec/opos-updater/opos-updater')
         self.assertEqual(stat.S_IMODE(os.stat(u).st_mode), 0o755)
-        self.assertEqual(open(u, 'rb').read(), UPDATER.read_bytes())
+        self.assertEqual(rd(u, 'rb'), UPDATER.read_bytes())
         w = os.path.join(self.r, 'etc/systemd/system')
         for n in ('opos-update.path', 'opos-update.service', 'opos-update-boot.service', 'opos-update-confirm.service'):
             self.assertEqual(stat.S_IMODE(os.stat(os.path.join(w, n)).st_mode), 0o644)
@@ -2273,25 +2284,25 @@ class TestImageBlocks(unittest.TestCase):
         r = self.build(signers=self.keyfile('good', 'other', extra='\n# a comment\n'))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn('update signers: 2 public key(s)', r.stdout)
-        lines = open(os.path.join(self.r, 'etc/opos/update/allowed_signers')).read().splitlines()
+        lines = rd(os.path.join(self.r, 'etc/opos/update/allowed_signers')).splitlines()
         self.assertEqual(lines, [pub_line(k).strip() for k in ('good', 'other')])
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.r, 'etc/opos/update/allowed_signers')).st_mode), 0o644)
 
     def test_signers_given_in_allowed_signers_format_are_accepted(self):
         p = os.path.join(self.tmp, 'signers')
-        open(p, 'w').write(pub_line('good'))
+        wr(p, pub_line('good'))
         r = self.build(signers=p)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(open(os.path.join(self.r, 'etc/opos/update/allowed_signers')).read(), pub_line('good'))
+        self.assertEqual(rd(os.path.join(self.r, 'etc/opos/update/allowed_signers')), pub_line('good'))
 
     def test_private_keys_and_junk_stop_the_build(self):
-        for label, content in (('private key', open(KEYS['good']).read()), ('other key type', 'ssh-rsa AAAAB3NzaC1yc2E user\n'),
+        for label, content in (('private key', rd(KEYS['good'])), ('other key type', 'ssh-rsa AAAAB3NzaC1yc2E user\n'),
                                ('junk', 'hello world\n'), ('empty', ''), ('comments only', '# nothing\n\n'), ('principal', 'someone ssh-ed25519 AAAA\n'),
                                ('shell injection', 'ssh-ed25519 AAAA$(touch /tmp/x)\n')):
             with self.subTest(label):
                 shutil.rmtree(self.r, ignore_errors=True)
                 p = os.path.join(self.tmp, 'bad')
-                open(p, 'w').write(content)
+                wr(p, content)
                 r = self.build(signers=p)
                 self.assertNotEqual(r.returncode, 0, r.stdout)
                 self.assertIn('OPOS_UPDATE_SIGNERS', r.stderr)
@@ -2306,7 +2317,7 @@ class TestImageBlocks(unittest.TestCase):
         self.assertIn('droidian', r.stderr)
         shutil.rmtree(self.r)
         self.make_root()
-        open(os.path.join(self.r, 'opt/opos/REVISION'), 'w').write('not-a-revision\n')
+        wr(os.path.join(self.r, 'opt/opos/REVISION'), 'not-a-revision\n')
         script = 'set -eu\nr=%s\nhere=%s\n%s\n%s' % (self.r, PKG, 'chown() { :; }', extract_block(PKG / 'build-image.sh', 'updates'))
         r = subprocess.run(['sh', '-c', script], capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
@@ -2327,25 +2338,25 @@ class TestImageBlocks(unittest.TestCase):
             os.makedirs(os.path.join(r, 'opt/opos'))
         mutations = {
             'real /opt/opos directory': link,
-            'wrong REVISION': lambda r: open(os.path.join(r, 'opt/opos-releases/0-0123456789ab/REVISION'), 'w').write('f' * 40 + '\n'),
+            'wrong REVISION': lambda r: wr(os.path.join(r, 'opt/opos-releases/0-0123456789ab/REVISION'), 'f' * 40 + '\n'),
             'absolute symlink': lambda r: (os.unlink(os.path.join(r, 'opt/opos')), os.symlink('/opt/opos-releases/0-0123456789ab', os.path.join(r, 'opt/opos'))),
             'unit not enabled': lambda r: os.unlink(os.path.join(r, 'etc/systemd/system/multi-user.target.wants/opos-update.path')),
             'boot unit not enabled': lambda r: os.unlink(os.path.join(r, 'etc/systemd/system/multi-user.target.wants/opos-update-boot.service')),
             'service enabled directly': lambda r: os.symlink('/etc/systemd/system/opos-update.service', os.path.join(r, 'etc/systemd/system/multi-user.target.wants/opos-update.service')),
-            'unit file changed': lambda r: open(os.path.join(r, 'etc/systemd/system/opos-update.service'), 'w').write('[Service]\nExecStart=/bin/true\n'),
+            'unit file changed': lambda r: wr(os.path.join(r, 'etc/systemd/system/opos-update.service'), '[Service]\nExecStart=/bin/true\n'),
             'updater missing': lambda r: os.unlink(os.path.join(r, 'usr/libexec/opos-updater/opos-updater')),
             'updater not executable': lambda r: os.chmod(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 0o644),
             'updater writable': lambda r: os.chmod(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 0o775),
-            'updater broken': lambda r: open(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 'a').write('def ('),
-            'signers has a private key': lambda r: open(os.path.join(r, 'etc/opos/update/allowed_signers'), 'w').write('-----BEGIN OPENSSH PRIVATE KEY-----\n'),
-            'signers has a stray line': lambda r: open(os.path.join(r, 'etc/opos/update/allowed_signers'), 'a').write('other ssh-ed25519 AAAA\n'),
+            'updater broken': lambda r: wr(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 'def (', 'a'),
+            'signers has a private key': lambda r: wr(os.path.join(r, 'etc/opos/update/allowed_signers'), '-----BEGIN OPENSSH PRIVATE KEY-----\n'),
+            'signers has a stray line': lambda r: wr(os.path.join(r, 'etc/opos/update/allowed_signers'), 'other ssh-ed25519 AAAA\n', 'a'),
             'signers world writable': lambda r: os.chmod(os.path.join(r, 'etc/opos/update/allowed_signers'), 0o666),
             'signers missing': lambda r: os.unlink(os.path.join(r, 'etc/opos/update/allowed_signers')),
-            'base-version wrong': lambda r: open(os.path.join(r, 'etc/opos/base-version'), 'w').write('2\n'),
+            'base-version wrong': lambda r: wr(os.path.join(r, 'etc/opos/base-version'), '2\n'),
             'inbox world writable': lambda r: os.chmod(os.path.join(r, 'var/lib/opos-update/inbox'), 0o777),
             'inbox lost setgid': lambda r: os.chmod(os.path.join(r, 'var/lib/opos-update/inbox'), 0o770),
             'staging open': lambda r: os.chmod(os.path.join(r, 'var/lib/opos-update/staging'), 0o755),
-            'path unit watches the directory': lambda r: open(os.path.join(r, 'etc/systemd/system/opos-update.path'), 'w').write('[Path]\nDirectoryNotEmpty=/x\n'),
+            'path unit watches the directory': lambda r: wr(os.path.join(r, 'etc/systemd/system/opos-update.path'), '[Path]\nDirectoryNotEmpty=/x\n'),
         }
         for label, mutate in mutations.items():
             with self.subTest(label):
@@ -2362,12 +2373,12 @@ class TestImageBlocks(unittest.TestCase):
         var = os.path.join(r, 'var/lib/opos-update')
         run = os.path.join(self.tmp, 'run')
         os.makedirs(run)
-        open(os.path.join(r, 'etc/systemd/system/opos-server.service'), 'w').write('x')
+        wr(os.path.join(r, 'etc/systemd/system/opos-server.service'), 'x')
         stubs = os.path.join(self.tmp, 'bin')
         os.makedirs(stubs)
         for n in ('systemctl', 'pkill'):
             p = os.path.join(stubs, n)
-            open(p, 'w').write('#!/bin/sh\nexit 0\n')
+            wr(p, '#!/bin/sh\nexit 0\n')
             os.chmod(p, 0o755)
         cfg = U.Config(root=r, opt_link=os.path.join(r, 'opt/opos'), releases=os.path.join(r, 'opt/opos-releases'), var=var,
                        signers=os.path.join(r, 'etc/opos/update/allowed_signers'), base_version=os.path.join(r, 'etc/opos/base-version'),
@@ -2376,13 +2387,13 @@ class TestImageBlocks(unittest.TestCase):
                        statvfs=lambda p: 10**12, sync=lambda: None, log=lambda m: None)
         u = U.Updater(cfg)
         self.assertEqual(u.apply_pending_boot(), 0)
-        st = json.load(open(os.path.join(var, 'state.json')))
+        st = json.loads(rd(os.path.join(var, 'state.json')))
         self.assertEqual((st['current']['serial'], st['current']['release'], st['current']['revision']),
                          (0, '0-0123456789ab', '0123456789abcdef0123456789abcdef01234567'))
-        open(os.path.join(var, 'inbox', 'opos-1.opos-update'), 'wb').write(make_bundle(1, overlay={}))
+        wr(os.path.join(var, 'inbox', 'opos-1.opos-update'), make_bundle(1, overlay={}), 'wb')
         self.assertEqual(U.Updater(cfg).apply_inbox(), 0)
         self.assertEqual(os.readlink(os.path.join(r, 'opt/opos')), 'opos-releases/' + release_name(1))
-        self.assertEqual(open(os.path.join(r, 'opt/opos/src/opos/marker.txt')).read(), 'build 1\n')
+        self.assertEqual(rd(os.path.join(r, 'opt/opos/src/opos/marker.txt')), 'build 1\n')
 
 
 if __name__ == '__main__':
