@@ -29,7 +29,7 @@ var prev=p.dataset.app;
 p.dataset.app=name;
 if(typeof scopeNotice==='function')scopeNotice();
 if(h)h.hidden=name!=='home';if(b)b.hidden=name==='home';if(s)s.hidden=name!=='settings';
-try{window.scrollTo(0,0)}catch(e){}
+try{window.scrollTo(0,0);document.body.scrollTop=0}catch(e){}
 if(name==='home'){var t=last&&h&&h.querySelector('[data-open='+last+']');if(t&&prev&&prev!=='home')t.focus();return}
 last=name;
 if(name!=='helper'){pend=false;if(b)b.focus();return}
@@ -97,7 +97,7 @@ function off(){dead=true;clearWait();try{if(ctl)ctl.abort()}catch(e){}ctl=null;t
 function g(f){return function(){if(dead)return;try{return f.apply(this,arguments)}catch(e){off()}}}
 function row(t){if(!t.li){t.li=mk('li');var q=mk('p');t.ap=mk('p');q.textContent='You: '+t.q;t.li.appendChild(q);t.li.appendChild(t.ap)}
 if(t.shown===t.a)return t.li;t.shown=t.a;t.ap.textContent='Helper: '+(t.a||'...');(t.src||[]).forEach(function(s){if(!s||typeof s.title!=='string')return;t.ap.appendChild(mk('br'));t.ap.appendChild(document.createTextNode('Source: '+s.title+', Wikipedia'))});return t.li}
-function draw(){var k=T.map(row);while(log.firstChild&&k.indexOf(log.firstChild)<0)log.removeChild(log.firstChild);k.forEach(function(li){if(li.parentNode!==log)log.appendChild(li)});log.hidden=!T.length}
+function draw(){var k=T.map(row);while(log.firstChild&&k.indexOf(log.firstChild)<0)log.removeChild(log.firstChild);k.forEach(function(li){if(li.parentNode!==log)log.appendChild(li)});log.hidden=!T.length;log.scrollTop=log.scrollHeight;var f=$('q');if(document.activeElement===f)f.scrollIntoView({block:'nearest'})}
 function std(j){return j&&typeof j.text==='string'&&j.text.trim()||STD+' You can try again.'}
 function setRest(v){resting=v;if(!bs)return;bs.disabled=resting||!!ctl;if(!ctl){if(resting){st.textContent=REST;br.hidden=true}else if(st.textContent===REST)st.textContent=''}}
 (window.oposHooks=window.oposHooks||[]).push(function(s){var m=s&&s.helper&&s.helper.mode;if(m==='CRITICAL'||m==='NORMAL'||m==='SAVER'){modeVersion++;setRest(m==='CRITICAL'&&!(s.helper.usable_percent>=15))}});

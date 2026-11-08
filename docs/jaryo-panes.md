@@ -499,6 +499,75 @@ Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or 
 
 The keyboard adds 154 B to each full page and serves `/osk.js` (30,642 B) and `/osk.css` (2,663 B); the Network link adds 229 B to `/` and the time zone link 253 B, only where those flags are on.
 
+## 11. Wave 1, layout track (`ui/w1-layout`, 2026-11-08): the hinge, the keyboard and long words
+
+Plan items W1-10, W1-11 and W1-12 of the interface finalization plan. Headless Edge 157 at 1392 x 900 CSS px against the real server
+(`python -m opos.web --span 675,42`), the same limits as section 10: nothing here was run on the Duo, and the span is still off in
+`opos-server.service`.
+
+### 11.1 W1-11: nothing on the hinge (x 675 to 717)
+
+The check is the audit's `overHinge` rule (every visible interactive element whose box reaches into 675 to 717) plus two more, so that
+"no text, button or border" is tested as written: every visible piece of text (each line box of each text node) and every box with a
+visible border. It was run on the lock screen, Home, All apps, Phone (idle, in a call, after a refused call), Messages (empty and after
+a sent text), Helper (waiting and after an answer), Settings and the open Shade.
+
+| Configuration | Before (`11c39ba`) | After |
+|---|---|---|
+| `--span 675,42` only | 10 of 12 screens list `#meter`, the 4 px gauge button, from x 0 to 1392 (control and border); text: none | every list is empty |
+| `OPOS_PANES=1 OPOS_OSK=1`, Hand: Right | empty (`panes.css` already keeps `#meter` in the first pane) | empty |
+| the same, Hand: Left | empty | empty |
+
+Settings, Device type reads "Auto looks like: two screens. Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675." in all three.
+
+The one thing found was the gauge. `#meter` is `left:0;right:0;width:100%`, so with the span on and the panes off its border and its fill ran
+across the hinge (its caption is placed from its right edge, so it sat in the second pane). `span.EXTRA`, the block of rules the span adds
+for what the segment rules leave on the hinge, now also carries `#meter{right:auto;width:var(--pane)}`: the gauge is the first pane's, as
+the panes already made it, and its fill is a percentage of that pane. It is 38 B in the spanned page and nothing in the unspanned one
+(`page()` is unchanged by this item). `tests/test_span.py` asserts the rule and its browser test now counts `#meter` (it used to skip
+it), adds the Phone states "in a call" and "after a refused call", and checks that those two states were drawn.
+
+Not done, on purpose: `#meter-hit`, the transparent 48 px pull strip, stays full width. With Hand: Left the panes put the gauge and the
+handle in the second pane, and the handle is positioned inside `#meter-hit`; clipping the strip to the first pane would leave the
+handle outside it. The hinge-horizontal orientation (D18) was not looked at.
+
+### 11.2 W1-12: the field and its buttons above the keyboard
+
+Run with `OPOS_OSK=1` (the in-page keyboard, which publishes its height as `--osk-h` and adds a padding element of that height to the end of
+the page), a real mouse press on the field, headless Edge. "Above" means the bottom of the box is not below the top of the keyboard and the
+centre of the box is not covered. The alphabet keyboard is 306 px high, the digits keyboard 256 px.
+
+| Window | Before (`11c39ba`) | After |
+|---|---|---|
+| 1392 x 900, spanned, Messages | `#msg` 534-582, Send 631-679: Send under the keyboard (top 594) | `#msg` 406-454, Send 503-551 |
+| 1392 x 900, spanned, Phone | `#number` 110-158, Call 243-291 (keyboard top 644): fine | the same |
+| 675 x 900, Messages | `#msg` 534-582, Send 631-679: under the keyboard, and covered by it | `#msg` 421-469, Send 518-566 |
+| 675 x 900, Phone | `#number` 489-537, Call 586-634 (keyboard top 644): fine | `#number` 456-504, Call 553-601 |
+| 390 x 844, Messages and Phone (not asked for) | Send 575-623 and Call 626-674 under the keyboard (tops 538 and 588) | Send 447-495, Call 498-546 |
+| Helper, field top over four Asks (1392 / 675) | 122, 184, 208, 262, 285 / 393, 456, 479, 533, 557: it walks down on every Ask, and on the single pane the Send bar is under the keyboard from the third | 122, 406, 406, 406, 406 / 393, 406, 406, 406, 406: it moves once, when the first question makes the log appear, and not when an answer arrives; the field and the Send bar stay above the keyboard |
+
+`OPOS_PANES=1`, Hand: Right and Hand: Left give the same figures on the two windows tried (1392 spanned, 675), the Helper included.
+
+What was done differs from the plan's text, and why:
+
+- The plan's `#controls{position:sticky;bottom:var(--osk-h,0px)}` was built and measured first. In the spanned grid a sticky box cannot leave its
+  grid area, and `#controls` is stretched to its grid row, so Send ended at y 240, above the field; on the single pane the stuck bar covered
+  `#msg` even with no keyboard up. It is not used, and
+  `tests/test_w1_layout.py` fails if `sticky` comes back into `phone-b.css`.
+- Instead the browser's own scroll-into-view does the work. `body{scroll-padding-bottom:var(--osk-h,0px)}` makes the keyboard's height part of
+  the scroller's edge, and `#number,#msg,#q{scroll-margin-bottom:140px}` makes the box a field must fit include the buttons under it (Send and
+  Call sit 97 to 133 px below their field, the Helper's Send bar 64 px). The keyboard's `reveal()` already calls `scrollIntoView`, so a tapped
+  field goes where both fit. No `body{padding-bottom}`: the scroll room is the keyboard's own padding element, and a second one would double it.
+  The margin is on the three text fields only; on every input it would also move a checkbox or a slider that takes focus under a finger.
+- `#hs-log{height:35dvh;overflow-y:auto}` is a height, not the plan's `max-height`: the log sits above the field, so with a maximum the field
+  still moved on every answer until the log was full. The cost is one jump, when the first question makes the log appear. Two lines in
+  `draw()` (phone-b.js) go with it: the log is scrolled to its newest turn, and a field that has focus is scrolled back into view, which is how
+  it stays above the keyboard on the single pane after that jump.
+
+Not done: the plan's P2 rule that hides the masthead below 700 px of height (+90 B; the page budget does not allow it, and no Duo window is that
+short). Not looked at: `OPOS_OSK=stevia` (the Wayland keyboard publishes no `--osk-h`, so these rules do nothing and the browser behaves as it did),
+the keyboard's Hide key, and any of it on the Duo.
+
 ## Appendix. `panes.py` API (`src/opos/panes.py`)
 
 `modes(env=None) -> set`, `enabled(env=None) -> bool`, `css_text(span=None, env=None) -> str` (placeholders, `@MIRROR@`, then `span.rewrites` and `span.variables`), `asset(path, span=None, env=None) -> (bytes, content_type) | None`, `tags(nonce) -> str`, `inject(html, nonce, env=None) -> str`, `inject_bytes(body, nonce, env=None) -> bytes` (the same object while off), `serve(handler, path, env=None) -> bool`. Constants `SOFT`, `PURE`, `THEME` hold the surface literals.
