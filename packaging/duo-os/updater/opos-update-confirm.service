@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# After the system is up: a boot-scope update that was applied at this boot must pass the health check
+# (opos-server active, GET / and /api/state answer) to be confirmed. Two boots in a row that do not confirm
+# roll it back. Nothing to do on a boot without an update on trial.
+[Unit]
+Description=OPOS: confirm a boot-applied update after the system is up
+After=multi-user.target opos-server.service opos-update-boot.service
+ConditionPathIsDirectory=/var/lib/opos-update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/opos-updater/opos-updater confirm-boot
+SuccessExitStatus=3
+TimeoutStartSec=600
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt /var/lib/opos-update -/usr/libexec/opos -/usr/sbin -/etc/systemd/system -/etc/default -/etc/opos
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE
+UMask=0022
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
