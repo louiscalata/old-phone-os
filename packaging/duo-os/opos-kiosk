@@ -1,18 +1,69 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# OPOS's session client: run by phosh-session in place of gnome-session, so phoc starts exactly
-# as the port starts it for phosh (hwcomposer output, hinge seam, scale). Waits for the OPOS
-# server, then keeps Chromium on the OPOS page full-screen; if Chromium exits it starts again.
-. /etc/profile.d/zz-droidian.sh 2>/dev/null || true
+# OPOS's session client: run by opos-session as phoc's -E command, so phoc starts exactly as the port
+# starts it for phosh (hwcomposer output, hinge seam, scale). Waits for the OPOS server, then keeps
+# Chromium on the OPOS page full-screen. A Chromium that exits is started again at once when it had run
+# for a while; when it keeps dying within seconds the pause grows (2 s up to 60 s) and from the third quick
+# exit on it runs without the GPU. Every exit is logged: journalctl -t opos-kiosk
+# shellcheck disable=SC1090,SC1091
+# dash ends the script when `.` cannot open its file, whatever follows it, so the file is tested first.
+if [ -r /etc/profile.d/zz-droidian.sh ]; then . /etc/profile.d/zz-droidian.sh; fi
+# Dev images only: build-image.sh writes this file when OPOS_DEV_SSH_PUBKEY is set (OPOS_KIOSK_DEBUG_PORT=9222).
+# Tried in a subshell first, so a typo in it cannot end the phone's only interface. The port is unset before
+# the file is read: only the file can open it, never an Environment= line in a unit or the caller's environment.
+defaults=${OPOS_KIOSK_DEFAULTS:-/etc/default/opos-kiosk}
+unset OPOS_KIOSK_DEBUG_PORT
+if [ -r "$defaults" ] && (. "$defaults") >/dev/null 2>&1; then . "$defaults"; fi
+# Chromium connects by WAYLAND_DISPLAY. phoc 0.47.0 as the port builds it hands its -E command that and no
+# WAYLAND_SOCKET (checked in the source); a research fork that adds one does so in shell mode only, and
+# opos-session does not use -S. Unset anyway: a restarted Chromium must never adopt a spent connection.
+unset WAYLAND_SOCKET
 url=http://127.0.0.1:8765/
+dir=$HOME/.cache/opos-kiosk
+quick=20 gpu='' fails=0 delay=2
+log() { logger -t opos-kiosk "$*" 2>/dev/null || echo "opos-kiosk: $*" >&2; }
+now() { date +%s 2>/dev/null || echo 0; }
 n=0
 until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
     n=$((n + 1))
-    [ "$n" -lt 120 ] || break
+    if [ "$n" -ge 120 ]; then
+        log "the OPOS server does not answer after ${n} tries; starting chromium anyway"
+        break
+    fi
     sleep 1
 done
+set -- --kiosk --ozone-platform=wayland --no-first-run --noerrdialogs --disable-translate \
+    --disable-features=Translate,MediaRouter --password-store=basic --user-data-dir="$dir"
+case ${OPOS_KIOSK_DEBUG_PORT:-} in
+'') ;;
+*[!0-9]*) log "OPOS_KIOSK_DEBUG_PORT=$OPOS_KIOSK_DEBUG_PORT is not a port number; no debugging port" ;;
+*) set -- "$@" --remote-debugging-port="$OPOS_KIOSK_DEBUG_PORT" --remote-debugging-address=127.0.0.1 ;;
+esac
 while :; do
-    chromium --kiosk --ozone-platform=wayland --no-first-run --noerrdialogs --disable-translate \
-        --disable-features=Translate,MediaRouter --password-store=basic --user-data-dir="$HOME/.cache/opos-kiosk" "$url"
-    sleep 2
+    # A lock left by a Chromium that died with the phone (hard reset, RAM-boot) can name a host or pid that
+    # Chromium then takes for a live owner. Never while a Chromium is still running on this profile.
+    if pgrep -f -- "--user-data-dir=$dir" >/dev/null 2>&1; then
+        log "a chromium is still running on $dir; its profile lock stays"
+    else
+        rm -f "$dir/SingletonLock" "$dir/SingletonCookie" "$dir/SingletonSocket"
+    fi
+    t0=$(now)
+    chromium "$@" ${gpu:+--disable-gpu} "$url"
+    rc=$?
+    ran=$(($(now) - t0))
+    if [ "$ran" -ge 0 ] && [ "$ran" -lt "$quick" ]; then
+        fails=$((fails + 1))
+        if [ "$fails" -ge 3 ]; then
+            delay=$((delay * 2))
+            [ "$delay" -le 60 ] || delay=60
+            if [ -z "$gpu" ]; then
+                gpu=1
+                log "chromium exited $fails times in a row within ${quick}s; from now on without the GPU (--disable-gpu)"
+            fi
+        fi
+    else
+        fails=0 delay=2
+    fi
+    log "chromium exited with status $rc after ${ran}s (quick exits in a row: $fails); starting it again in ${delay}s"
+    sleep "$delay"
 done

@@ -42,6 +42,25 @@ for u in opos-server.service opos.service opos-fallback.service; do
     install -m 0644 "$here/$u" "$r/etc/systemd/system/$u"
 done
 
+# The port's composer watchdog bounces a vendor composer that never became DRM master and then restarts
+# phosh, which is not running here: a phoc already on the killed composer would stay dark. Restart OPOS
+# too (try-restart leaves a unit that is not running alone). The script belongs to the port's adaptation
+# package, so a package upgrade puts the original back; verify-image.sh reports that.
+# Idempotent: a BASE that is an earlier OPOS image already has the edit, and the sed would add opos.service
+# a second time. Only a script that has neither the original line nor the edited one is refused.
+wd=$r/usr/local/sbin/sfduo-composer-watchdog
+if grep -qF 'systemctl try-restart phosh.service opos.service 2>/dev/null || true' "$wd"; then
+    echo "sfduo-composer-watchdog already restarts opos.service; leaving it as it is"
+elif grep -qF 'systemctl try-restart phosh.service 2>/dev/null || true' "$wd"; then
+    sed -i -e 's|systemctl try-restart phosh\.service |systemctl try-restart phosh.service opos.service |' \
+        -e 's|reacquired DRM master - restarting phosh"|reacquired DRM master - restarting the shell (phosh or opos)"|' "$wd"
+else
+    echo "base rootfs: sfduo-composer-watchdog is not the script the OPOS edit is written for" >&2; exit 1
+fi
+if ! grep -qF 'systemctl try-restart phosh.service opos.service 2>/dev/null || true' "$wd" || ! sh -n "$wd"; then
+    echo "the sfduo-composer-watchdog edit did not take" >&2; exit 1
+fi
+
 # OPOS is the shell from the first boot: phosh's symlink goes, OPOS's two are added.
 rm -f "$r/etc/systemd/system/graphical.target.wants/phosh.service" "$r/etc/systemd/system/graphical.target.wants/item.service"
 ln -sf /etc/systemd/system/opos.service "$r/etc/systemd/system/graphical.target.wants/opos.service"
@@ -69,11 +88,21 @@ if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
     chown "$uid:$gid" "$r$home/.ssh/authorized_keys"
     chmod 0600 "$r$home/.ssh/authorized_keys"
     echo "DEV IMAGE: droidian accepts the ssh key '$(cut -d' ' -f3- "$OPOS_DEV_SSH_PUBKEY")' (remove with: rm ~/.ssh/authorized_keys)"
+    # The same developer can then reach the kiosk Chromium's DevTools on the phone's loopback, for page
+    # screenshots: ssh -L 9222:127.0.0.1:9222 droidian@<phone>, then curl http://127.0.0.1:9222/json
+    printf '%s\n' '# DEV IMAGE: opos-kiosk starts Chromium with DevTools on 127.0.0.1 at this port. Delete the file to turn it off.' \
+        'OPOS_KIOSK_DEBUG_PORT=9222' > "$r/etc/default/opos-kiosk"
+    chmod 0644 "$r/etc/default/opos-kiosk"
+    echo "DEV IMAGE: the kiosk Chromium serves DevTools on the phone's 127.0.0.1:9222 (remove with: sudo rm /etc/default/opos-kiosk)"
+else
+    rm -f "$r/etc/default/opos-kiosk"
 fi
 
 sync
 echo "manifest:"
-( cd "$r" && find opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch etc/systemd/system/opos*.service -type f -exec sha256sum {} + )
+set -- opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch usr/local/sbin/sfduo-composer-watchdog
+if [ -e "$r/etc/default/opos-kiosk" ]; then set -- "$@" etc/default/opos-kiosk; fi
+( cd "$r" && find "$@" etc/systemd/system/opos*.service -type f -exec sha256sum {} + )
 umount "$mnt"
 trap - EXIT
 rmdir "$mnt"

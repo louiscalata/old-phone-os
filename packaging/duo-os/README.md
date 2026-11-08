@@ -21,8 +21,9 @@ On top of the base, `build-image.sh` adds:
 |---|---|
 | `/opt/opos` | OPOS runtime at an exact revision (`/opt/opos/REVISION`); stdlib Python on the image's python3 |
 | `opos-server.service` | `python3 -m opos.web --live-battery` as user `droidian`: the rules on the phone's sysfs battery |
-| `opos.service` | the shell: `phosh-session` with `PHOSH_SESSION_BIN=/usr/libexec/opos/opos-kiosk`, so `phoc` starts exactly as the port starts it (hwcomposer output, hinge seam, scale 2) with OPOS full-screen as its only client |
-| `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page, restarting it if it exits |
+| `opos.service` | the shell: `opos-session`, which starts `phoc` as `phosh-session` does (hwcomposer output, hinge seam, scale 2) but without `-S`, with the kiosk as phoc's only client |
+| `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU. Every exit is logged: `journalctl -t opos-kiosk` |
+| `sfduo-composer-watchdog` | the port's script, edited at build time so that its bounce of a composer that is not DRM master restarts OPOS as well as phosh (`verify-image.sh` checks the edit; an upgrade of the port's package reverts it) |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
 
 phosh and item stay installed but are not started. Calls and texts still go through OPOS's simulated modem:
@@ -64,6 +65,27 @@ sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 
 `verify-image.sh` checks the unit wiring and phoc's `-E` startup command, and runs the OPOS server from the image
 with the image's own aarch64 python3 under qemu-user. It is not a boot, display or battery test.
+`tests/test_duo_kiosk.py` runs the kiosk script under `sh` with a fake `chromium` (locks, back-off, the no-GPU retry).
+
+## Looking at the page on a dev image
+
+`OPOS_DEV_SSH_PUBKEY=<file.pub> sudo -E sh packaging/duo-os/build-image.sh ...` also writes `/etc/default/opos-kiosk`
+with `OPOS_KIOSK_DEBUG_PORT=9222`; without that variable the file is not in the image (`verify-image.sh` fails an image
+that has one without the key). The kiosk then starts Chromium with `--remote-debugging-port=9222
+--remote-debugging-address=127.0.0.1`, reachable only over an ssh port-forward, which also carries page screenshots
+(DevTools `Page.captureScreenshot`):
+
+```sh
+ssh -L 9222:127.0.0.1:9222 droidian@<phone>
+curl -s http://127.0.0.1:9222/json        # lists the OPOS page and its webSocketDebuggerUrl
+```
+
+Clients that open the DevTools websocket without an `Origin` header (puppeteer, chrome-remote-interface, a plain
+websocket library) should connect as they are; a browser-based client sends one, and Chromium 111 and later refuse it
+unless `--remote-allow-origins` names it. That is expected behaviour, not tried on the phone.
+The port gives full control of the browser to whoever can reach it; that is the same trust as the dev ssh key. Delete
+the file on the phone (`sudo rm /etc/default/opos-kiosk`, then restart `opos.service`) to close it. Screen blanking and
+the power key are not handled by OPOS yet: see [POWER.md](POWER.md).
 
 ## Install, once USB data works
 
