@@ -52,6 +52,7 @@ RESERVED = frozenset({'REVISION', 'manifest.json', 'manifest.json.sig', 'overlay
 MODES = {'0644': 0o644, '0755': 0o755}
 MAX_MANIFEST = 8 << 20
 MAX_SIG = 16 << 10
+BLOCK = 512                # the tar block size
 CHUNK = 1 << 20
 Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
 
@@ -547,6 +548,31 @@ def _tail(path, keep=300):
         return ''
 
 
+def _octal(field, what):
+    digits = field.strip(b'\0 ')
+    if not 1 <= len(digits) <= 11 or digits.strip(b'01234567'):
+        raise Reject('not a bundle: %s is not an octal number' % what)
+    return int(digits, 8)
+
+
+def outer_header(block, index, name):
+    """Check one 512-byte header of the outer archive: a plain (USTAR or GNU-magic) header of a regular file with exactly the
+    expected name. Returns the member's size. Extension, sparse, long-name, link, directory and device headers are all refused
+    here, by their type flag, without reading anything they point at."""
+    bad = 'bundle member %d must be the regular file %s' % (index + 1, name)
+    if len(block) < BLOCK:
+        raise Reject('bundle is truncated')
+    if _octal(block[148:156], 'the checksum') != sum(block[:148]) + 8 * 32 + sum(block[156:BLOCK]):
+        raise Reject('not a bundle: bad header checksum')
+    if block[257:265] not in (b'ustar\x0000', b'ustar  \x00'):
+        raise Reject('not a bundle: not a tar archive')
+    if block[156:157] not in (b'0', b'\0') or block[:100].split(b'\0', 1)[0] != name.encode():
+        raise Reject(bad)
+    if any(block[157:257]) or any(block[345:BLOCK]):  # link name; prefix and the GNU atime, sparse and extension fields
+        raise Reject('bundle member %s has header fields that a plain archive does not use' % name)
+    return _octal(block[124:136], 'the size')
+
+
 # ---- the updater -------------------------------------------------------------------------------------------
 
 def _new_state(cur):
@@ -827,40 +853,37 @@ class Updater:
 
     # -- verification
     def split_outer(self, bundle, run_dir):
+        """Copy the three members of the outer archive into run_dir. The archive is read here, header by header, and not by
+        tarfile: before it hands over a member, tarfile reads and parses PAX and GNU extension headers (a sparse map, a long
+        name) of any size the unauthenticated file declares, so a few hundred megabytes of them could exhaust the phone's
+        memory before the signature is even looked at (review finding 3). Only plain regular members are understood; a header
+        of any other kind is refused before its contents are touched."""
         cfg = self.cfg
         want = [('manifest.json', MAX_MANIFEST), ('manifest.json.sig', MAX_SIG), ('payload.tar.gz', cfg.max_bundle)]
-        i = 0
-        try:
-            with tarfile.open(bundle, 'r:') as tf:
-                for m in tf:
-                    if i >= 3:
-                        raise Reject('bundle has extra members')
-                    name, limit = want[i]
-                    if m.name != name or m.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):
-                        raise Reject('bundle member %d must be the regular file %s' % (i + 1, name))
-                    if m.size > limit:
-                        raise Reject('bundle member %s is too large' % name)
-                    src = tf.extractfile(m)
-                    out = os.open(os.path.join(run_dir, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-                    try:
-                        left = m.size
-                        while left:
-                            b = src.read(min(CHUNK, left))
-                            if not b:
-                                raise Reject('bundle is truncated')
-                            write_all(out, b)
-                            left -= len(b)
-                    finally:
-                        os.close(out)
-                    i += 1
-                end = tf.offset
-        except (tarfile.TarError, EOFError) as e:
-            raise Reject('not a bundle: %s' % e)
-        if i != 3:
-            raise Reject('bundle is missing members')
-        with open(bundle, 'rb') as f:  # the end-of-archive padding must be zeros
-            f.seek(end)
-            while True:
+        with open(bundle, 'rb') as f:
+            for i, (name, limit) in enumerate(want):
+                block = f.read(BLOCK)
+                if not block:
+                    raise Reject('not a bundle: empty file' if i == 0 else 'bundle is missing members')
+                if not any(block):  # the end-of-archive marker, too early
+                    raise Reject('bundle is missing members')
+                size = outer_header(block, i, name)
+                if size > limit:
+                    raise Reject('bundle member %s is too large' % name)
+                out = os.open(os.path.join(run_dir, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    left = size
+                    while left:
+                        b = f.read(min(CHUNK, left))
+                        if not b:
+                            raise Reject('bundle is truncated')
+                        write_all(out, b)
+                        left -= len(b)
+                finally:
+                    os.close(out)
+                if f.read(-size % BLOCK).strip(b'\0'):  # the padding up to the next block is zeros (a cut-short last one is harmless)
+                    raise Reject('bundle has data after its last member')
+            while True:  # nothing but zeros may follow: the end-of-archive blocks and the padding
                 b = f.read(CHUNK)
                 if not b:
                     break

@@ -2156,6 +2156,126 @@ class TestCrashSafety(unittest.TestCase):
 # Findings 2, 3, 5, 6, 7, 8, 10 and 11 of the independent review of snapshot 366ac0d (finding 4 is under "units" below).
 # Each test names what went wrong; every one fails on the code before its fix.
 
+def retype(data, flag):
+    """The first header of a tar with another type flag and a matching checksum."""
+    b = bytearray(data[:512])
+    b[156] = ord(flag)
+    return fix_checksum(b) + data[512:]
+
+
+def fix_checksum(b):
+    b[148:156] = b'        '
+    b[148:156] = ('%06o\0 ' % sum(b[:512])).encode()
+    return bytes(b)
+
+
+def tampered(data, offset, value):
+    b = bytearray(data[:512])
+    b[offset:offset + len(value)] = value
+    return fix_checksum(b) + data[512:]
+
+
+def outer_members(good):
+    with tarfile.open(fileobj=io.BytesIO(good)) as tf:
+        return [tf.extractfile(n).read() for n in ('manifest.json', 'manifest.json.sig', 'payload.tar.gz')]
+
+
+@needs_keygen
+class TestOuterArchive(EnvCase):
+    """Finding 3: Python's tarfile parses PAX and GNU extension headers (sparse maps, long names) of whatever size the
+    unsigned file declares before it yields the member, so the size and type checks came too late."""
+    fast = True
+
+    def peak_of(self, data):
+        e = self.env
+        path, run_dir = os.path.join(e.tmp, 'outer'), os.path.join(e.tmp, 'outer-run')
+        wr(path, data, 'wb')
+        shutil.rmtree(run_dir, ignore_errors=True)
+        os.mkdir(run_dir)
+        tracemalloc.start()
+        try:
+            with self.assertRaises(U.Reject) as cm:
+                e.updater().split_outer(path, run_dir)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        return peak, str(cm.exception)
+
+    def test_a_huge_sparse_map_is_refused_without_being_parsed(self):
+        m, s, p = outer_members(make_bundle(7))
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode='w', format=tarfile.PAX_FORMAT) as tf:
+            ti = tarfile.TarInfo('manifest.json')
+            ti.mtime, ti.size = 0, len(m)
+            ti.pax_headers = {'GNU.sparse.map': ','.join(['0'] * 1000000)}   # a million tiny entries; a real attack declares hundreds of MiB
+            tf.addfile(ti, io.BytesIO(m))
+            for name, data in (('manifest.json.sig', s), ('payload.tar.gz', p)):
+                ti = tarfile.TarInfo(name)
+                ti.mtime, ti.size = 0, len(data)
+                tf.addfile(ti, io.BytesIO(data))
+        data = buf.getvalue()
+        self.assertGreater(len(data), 1 << 20)
+        peak, why = self.peak_of(data)
+        self.assertIn('must be the regular file manifest.json', why)
+        self.assertLess(peak, 1 << 20, 'the sparse map was parsed before it was refused')
+        self.reject(data, 'must be the regular file manifest.json')
+
+    def test_a_huge_long_name_is_refused_without_being_read(self):
+        m, s, p = outer_members(make_bundle(7))
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode='w', format=tarfile.GNU_FORMAT) as tf:
+            ti = tarfile.TarInfo('x' * 6000000)
+            ti.mtime, ti.size = 0, len(m)
+            tf.addfile(ti, io.BytesIO(m))
+        peak, why = self.peak_of(buf.getvalue())
+        self.assertIn('must be the regular file manifest.json', why)
+        self.assertLess(peak, 1 << 20, 'the long name was read before it was refused')
+
+    def test_every_header_type_but_a_plain_file_is_refused_by_its_flag(self):
+        good = make_bundle(7)
+        for flag in 'xgLKSDMV1234567A':
+            with self.subTest(flag):
+                self.reject(retype(good, flag), 'must be the regular file manifest.json')
+
+    def test_headers_a_plain_archive_does_not_use_are_refused(self):
+        good = make_bundle(7)
+        cases = {
+            'a prefix': (345, b'dir'), 'a link name': (157, b'x'), 'the GNU extended flag': (482, b'\1'), 'a GNU real size': (483, b'0'),
+            'a different magic': (257, b'xxxxxxxx'), 'a size in base 256': (124, b'\x80' + b'\0' * 10 + b'\x10'),
+            'a size that is not octal': (124, b'0000000008\0\0'),
+        }
+        for label, (offset, value) in cases.items():
+            with self.subTest(label):
+                self.reject(tampered(good, offset, value), '')
+        flipped = bytearray(good)
+        flipped[100] ^= 1                                   # a header whose checksum no longer matches
+        self.reject(bytes(flipped), 'checksum')
+        self.reject(tampered(good, 124, b'%011o\0' % (9 << 20)), 'too large')      # declared bigger than the manifest limit; nothing is read
+        self.reject(tampered(good, 124, b'%011o\0' % (2 << 20)), 'truncated')      # declared, but the file ends first
+        self.reject(good[:512] + b'\0' * 2000, 'missing members')                # a header, zeros for its data, then the end of the archive
+
+    def test_padding_between_members_must_be_zero(self):
+        good = make_bundle(7)
+        m, _, _ = outer_members(good)
+        pad_at = 512 + len(m)                               # the first byte of the padding after manifest.json
+        if len(m) % 512:
+            dirty = good[:pad_at] + b'\1' + good[pad_at + 1:]
+            self.reject(dirty, 'after its last member')
+        self.assertEqual(self.env.apply(good), 0)
+
+    def test_an_ordinary_bundle_still_goes_through(self):
+        e = self.env
+        m, s, p = outer_members(make_bundle(7))
+        for fmt in (tarfile.USTAR_FORMAT, tarfile.GNU_FORMAT, tarfile.PAX_FORMAT):   # the release tool writes USTAR; the tests use GNU
+            with self.subTest(fmt):
+                path, run_dir = os.path.join(e.tmp, 'outer-ok'), os.path.join(e.tmp, 'outer-ok-run')
+                wr(path, plain_tar([('manifest.json', m), ('manifest.json.sig', s), ('payload.tar.gz', p)], fmt), 'wb')
+                shutil.rmtree(run_dir, ignore_errors=True)
+                os.mkdir(run_dir)
+                e.updater().split_outer(path, run_dir)
+                self.assertEqual([rd(os.path.join(run_dir, n), 'rb') for n in ('manifest.json', 'manifest.json.sig', 'payload.tar.gz')], [m, s, p])
+
+
 FLOOD_PY = b'''import sys, time
 while True:
     try:
