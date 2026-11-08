@@ -46,6 +46,7 @@ check "boot diagnostics dump is enabled" "[ -L $w/multi-user.target.wants/opos-d
 k=$r/usr/libexec/opos/opos-kiosk
 check "the kiosk and session scripts parse" "sh -n $k && sh -n $r/usr/libexec/opos/opos-session"
 check "the kiosk clears stale profile locks, drops WAYLAND_SOCKET, logs, backs off and can drop the GPU" "grep -q SingletonLock $k && grep -q 'unset WAYLAND_SOCKET' $k && grep -q 'logger -t opos-kiosk' $k && grep -q -- '--disable-gpu' $k && grep -q 'sleep \"\$delay\"' $k"
+check "a Chromium that never starts ends the session (the kiosk gives up after 10 quick exits) and opos.service's start limit spans minutes, so OnFailure= can reach phosh" "grep -q 'giveup=10' $k && grep -q 'exit 1' $k && grep -q '^StartLimitIntervalSec=30min' $w/opos.service && grep -q '^StartLimitBurst=3' $w/opos.service && grep -q '^Restart=always' $w/opos.service && grep -q '^OnFailure=opos-fallback.service' $w/opos.service"
 check "the composer watchdog restarts OPOS as well as phosh (a package upgrade of the port reverts this)" "grep -qF 'systemctl try-restart phosh.service opos.service' $r/usr/local/sbin/sfduo-composer-watchdog && sh -n $r/usr/local/sbin/sfduo-composer-watchdog"
 check "a Chromium DevTools port exists only together with a dev ssh key" "[ ! -e $r/etc/default/opos-kiosk ] || { [ -f $r/home/droidian/.ssh/authorized_keys ] && grep -qx 'OPOS_KIOSK_DEBUG_PORT=9222' $r/etc/default/opos-kiosk; }"
 if [ -f "$r/home/droidian/.ssh/authorized_keys" ]; then

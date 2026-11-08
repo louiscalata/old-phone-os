@@ -5,6 +5,9 @@
 # Chromium on the OPOS page full-screen. A Chromium that exits is started again at once when it had run
 # for a while; when it keeps dying within seconds the pause grows (2 s up to 60 s) and from the third quick
 # exit on it runs without the GPU. Every exit is logged: journalctl -t opos-kiosk
+# After 10 quick exits in a row (about 4 minutes of back-off) Chromium is not going to start (an unwritable
+# profile, a broken install): the kiosk ends phoc and exits 1, so that opos.service restarts the session and
+# its start limit (StartLimitIntervalSec=30min, StartLimitBurst=3) ends the cycle with OnFailure= starting phosh.
 # shellcheck disable=SC1090,SC1091
 # dash ends the script when `.` cannot open its file, whatever follows it, so the file is tested first.
 if [ -r /etc/profile.d/zz-droidian.sh ]; then . /etc/profile.d/zz-droidian.sh; fi
@@ -20,7 +23,7 @@ if [ -r "$defaults" ] && (. "$defaults") >/dev/null 2>&1; then . "$defaults"; fi
 unset WAYLAND_SOCKET
 url=http://127.0.0.1:8765/
 dir=$HOME/.cache/opos-kiosk
-quick=20 gpu='' fails=0 delay=2
+quick=20 giveup=10 gpu='' fails=0 delay=2
 log() { logger -t opos-kiosk "$*" 2>/dev/null || echo "opos-kiosk: $*" >&2; }
 now() { date +%s 2>/dev/null || echo 0; }
 n=0
@@ -65,6 +68,12 @@ while :; do
                 gpu=1
                 log "chromium exited $fails times in a row within ${quick}s; from now on without the GPU (--disable-gpu)"
             fi
+        fi
+        if [ "$fails" -ge "$giveup" ]; then
+            log "chromium exited $fails times in a row within ${quick}s (last status $rc); giving up: ending phoc and the session so that opos.service restarts it and, if that keeps failing, starts phosh"
+            # phoc may not end with its -E client, so it is asked to end; the session then ends either way.
+            pkill -TERM -u "$(id -u)" -x phoc >/dev/null 2>&1
+            exit 1
         fi
     else
         fails=0 delay=2

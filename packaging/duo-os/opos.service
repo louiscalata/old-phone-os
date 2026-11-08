@@ -15,7 +15,10 @@ After=android-service@hwcomposer.service
 Before=graphical.target
 OnFailure=opos-fallback.service
 ConditionPathExists=/dev/tty0
-StartLimitIntervalSec=60
+# One start-limit window must span several whole failed sessions: opos-kiosk gives up after about 4 minutes of
+# quick Chromium exits, and each restart takes 20-40 s more in item-composer-fresh, so a session that fails for
+# good lasts about 5 minutes. 3 starts in 30 minutes lets the 4th refused start (about 15 minutes in) fail the unit.
+StartLimitIntervalSec=30min
 StartLimitBurst=3
 
 [Service]
@@ -35,7 +38,7 @@ PAMName=phosh
 WorkingDirectory=~
 Restart=always
 RestartSec=500ms
-# As item.service: a restart goes straight to activating, so OnFailure fires only at the start limit.
+# As item.service: a restart goes straight to activating, so OnFailure fires only at the start limit (above).
 RestartMode=direct
 TTYPath=/dev/tty7
 TTYReset=yes

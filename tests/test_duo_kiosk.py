@@ -2,13 +2,17 @@
 """The Duo OS kiosk script (packaging/duo-os/opos-kiosk) run under sh with a fake chromium, logger, date,
 sleep, python3 and pgrep on PATH: lock clearing, WAYLAND_SOCKET, the DevTools port, the back-off and the
 no-GPU retry. The fake chromium reads one line of a plan per start ("status seconds") and, when the plan
-is spent, ends the script with SIGTERM. Also the build-image.sh and verify-image.sh parts that go with it."""
+is spent, ends the script with SIGTERM. The give-up after ten quick exits (phoc ended, exit 1) and the unit settings
+that let it reach opos-fallback.service; with OPOS_TEST_SYSTEMD=1 as root, also a scaled model of that chain on the
+real systemd. Also the build-image.sh and verify-image.sh parts that go with it."""
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -41,6 +45,7 @@ exit "$1"
     "sleep": '#!/bin/sh\necho "$1" >> "$T/sleeps"\n',
     "logger": '#!/bin/sh\necho "$*" >> "$T/logger.log"\nrc=0\n[ -r "$T/logger_rc" ] && read -r rc < "$T/logger_rc"\nexit "$rc"\n',
     "pgrep": '#!/bin/sh\n[ -e "$T/busy" ]\n',
+    "pkill": '#!/bin/sh\necho "$*" >> "$T/pkill.log"\nrc=0\n[ -r "$T/pkill_rc" ] && read -r rc < "$T/pkill_rc"\nexit "$rc"\n',
     "python3": r"""#!/bin/sh
 f=0
 [ -r "$T/py_fails" ] && read -r f < "$T/py_fails"
@@ -49,6 +54,13 @@ echo $((f - 1)) > "$T/py_fails"
 exit 1
 """,
 }
+
+
+def unit_seconds(text):
+    """A systemd time span as the unit files write it: 60, 60s, 30min, 1h."""
+    m = re.fullmatch(r"(\d+)(s|sec|min|m|h)?", text)
+    assert m, text
+    return int(m.group(1)) * {None: 1, "s": 1, "sec": 1, "min": 60, "m": 60, "h": 3600}[m.group(2)]
 
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
@@ -69,13 +81,13 @@ class KioskScriptTest(unittest.TestCase):
         (self.t / "clock").write_text("1000\n")
         (self.t / "py_fails").write_text("0\n")
 
-    def run_kiosk(self, plan, env=None, defaults=None):
+    def run_kiosk(self, plan, env=None, defaults=None, returncode=-signal.SIGTERM):
         (self.t / "plan").write_text("".join("%s %s\n" % p for p in plan))
         e = {"PATH": "%s:/usr/bin:/bin" % self.bin, "T": str(self.t), "HOME": str(self.home),
              "OPOS_KIOSK_DEFAULTS": str(defaults or self.t / "no-such-defaults")}
         e.update(env or {})
         r = subprocess.run(["sh", str(KIOSK)], env=e, capture_output=True, text=True, timeout=60)
-        self.assertEqual(r.returncode, -signal.SIGTERM, r.stderr)  # ended by the fake chromium, as planned
+        self.assertEqual(r.returncode, returncode, r.stderr)  # by default: ended by the fake chromium, as planned
         return r
 
     def runs(self):
@@ -105,6 +117,12 @@ class KioskScriptTest(unittest.TestCase):
     def logged(self):
         try:
             return (self.t / "logger.log").read_text().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def phoc_signals(self):
+        try:
+            return (self.t / "pkill.log").read_text().splitlines()
         except FileNotFoundError:
             return []
 
@@ -201,6 +219,63 @@ class KioskScriptTest(unittest.TestCase):
         self.assertEqual(sum("--disable-gpu" in m for m in log), 1)  # said once, at the switch
         self.assertEqual(sum("chromium exited with status 1 after 1s" in m for m in log), 9)
         self.assertIn("-t opos-kiosk chromium exited with status 1 after 1s (quick exits in a row: 3); starting it again in 4s", log)
+
+    # Giving up: a Chromium that never starts (an unwritable profile, a broken install) must end the session, because
+    # only a session that ends can reach opos.service's start limit and, with it, OnFailure= (phosh).
+    def test_ten_quick_exits_in_a_row_end_phoc_and_the_script_with_status_1(self):
+        r = self.run_kiosk([(1, 1)] * 10 + [(0, 100)], returncode=1)
+        self.assertEqual(len(self.runs()), 10, "no eleventh start")
+        self.assertEqual(self.phoc_signals(), ["-TERM -u %d -x phoc" % os.getuid()])
+        self.assertEqual(self.sleeps(), [2, 2, 4, 8, 16, 32, 60, 60, 60], "no pause after the last quick exit")
+        self.assertGreaterEqual(sum(self.sleeps()), 120, "the pauses before giving up span at least two minutes")
+        gave_up = [m for m in self.logged() if "giving up" in m]
+        self.assertEqual(len(gave_up), 1)
+        self.assertIn("10 times in a row within 20s (last status 1)", gave_up[0])
+        self.assertTrue(gave_up[0].startswith("-t opos-kiosk "))
+        self.assertEqual(r.stdout, "")
+
+    def test_nine_quick_exits_do_not_give_up_and_a_long_run_resets_the_count(self):
+        self.run_kiosk([(1, 1)] * 9)
+        self.assertEqual(self.phoc_signals(), [])
+        self.assertFalse(any("giving up" in m for m in self.logged()))
+        for f in ("count", "chromium.log", "sleeps"):
+            (self.t / f).unlink()
+        self.run_kiosk([(1, 1)] * 9 + [(0, 40)] + [(1, 1)] * 9)
+        self.assertEqual(len(self.runs()), 19)
+        self.assertEqual(self.phoc_signals(), [])
+
+    def test_giving_up_ends_the_script_even_if_pkill_finds_no_phoc_or_is_not_there(self):
+        for rc in (1, 127):  # no process matched; command not found
+            with self.subTest(pkill_status=rc):
+                for f in ("count", "chromium.log", "sleeps", "pkill.log"):
+                    (self.t / f).unlink(missing_ok=True)
+                (self.t / "pkill_rc").write_text("%d\n" % rc)
+                self.run_kiosk([(1, 1)] * 10, returncode=1)
+                self.assertEqual(len(self.runs()), 10)
+                self.assertEqual(len(self.phoc_signals()), 1)
+
+    def test_give_up_counts_every_kind_of_quick_exit(self):
+        # killed by a signal (139), a clean 0 and a plain failure before 20 s are all a Chromium that cannot run
+        self.run_kiosk([(139, 1), (0, 1), (2, 1)] * 3 + [(139, 1)], returncode=1)
+        self.assertEqual(len(self.runs()), 10)
+        self.assertEqual(len(self.phoc_signals()), 1)
+
+    def test_the_start_limit_window_spans_several_whole_failed_sessions(self):
+        """opos.service restarts a session that ended; only the start limit stops that. The window must hold the first
+        start and the three that follow, with the kiosk's own give-up time, the wait for the server (up to 120 s) and the
+        restart's item-composer-fresh (20-40 s) in every session: otherwise the 4th start finds the 1st outside the
+        window and the fallback is never reached."""
+        self.run_kiosk([(1, 19)] * 10, returncode=1)  # the slowest quick exits: 19 s each
+        kiosk_s = sum(self.sleeps()) + 10 * 19
+        wait = int(re.search(r'"\$n" -ge (\d+)', KIOSK.read_text()).group(1))
+        composer_fresh = 40
+        session = composer_fresh + wait + kiosk_s
+        unit = (DUO / "opos.service").read_text()
+        interval = unit_seconds(re.search(r"(?m)^StartLimitIntervalSec=(\S+)$", unit).group(1))
+        burst = int(re.search(r"(?m)^StartLimitBurst=(\d+)$", unit).group(1))
+        self.assertEqual(burst, 3)
+        self.assertLess(burst * session, interval, "%d s per session x %d must fit in %d s" % (session, burst, interval))
+        self.assertGreater(interval, 60, "the old 60 s window could never hold more than one of these sessions")
 
     def test_a_long_run_resets_the_count_and_the_pause(self):
         self.run_kiosk([(1, 1), (1, 1), (0, 40), (1, 1), (1, 1), (0, 40)])
@@ -347,6 +422,21 @@ class ImageScriptsTest(unittest.TestCase):
         for s in ("try-restart phosh.service opos.service", "unset WAYLAND_SOCKET", "SingletonLock", "OPOS_KIOSK_DEBUG_PORT=9222", "authorized_keys"):
             self.assertIn(s, v)
 
+    def test_verify_image_checks_the_give_up_and_the_start_limit_against_the_shipped_files(self):
+        v = (DUO / "verify-image.sh").read_text()
+        line = next(ln for ln in v.splitlines() if ln.startswith('check "a Chromium that never starts ends the session'))
+        cond = line.split('" "', 1)[1].rstrip('"')
+        # run the check's own condition against the shipped kiosk and unit
+        with tempfile.TemporaryDirectory() as d:
+            w = Path(d) / "etc" / "systemd" / "system"
+            w.mkdir(parents=True)
+            shutil.copy(DUO / "opos.service", w / "opos.service")
+            script = "k=%s\nw=%s\n%s\n" % (KIOSK, w, cond)
+            ok = subprocess.run(["sh", "-c", script], capture_output=True, text=True)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            (w / "opos.service").write_text((DUO / "opos.service").read_text().replace("StartLimitIntervalSec=30min", "StartLimitIntervalSec=60"))
+            self.assertNotEqual(subprocess.run(["sh", "-c", script], capture_output=True, text=True).returncode, 0, "the old 60 s window must fail the check")
+
     def test_power_note_exists_and_the_readme_points_to_it(self):
         power = (DUO / "POWER.md").read_text()
         self.assertTrue(power.startswith("<!-- SPDX-License-Identifier: GPL-3.0-or-later -->"))
@@ -357,6 +447,94 @@ class ImageScriptsTest(unittest.TestCase):
         u = (DUO / "opos.service").read_text()
         for s in ("RestartMode=direct", "OnFailure=opos-fallback.service", "StartLimitBurst=3", "ExecStartPre=+chvt 7"):
             self.assertIn(s, u)
+
+    def test_the_unit_restarts_a_session_that_ended_and_its_start_limit_can_be_reached(self):
+        u = (DUO / "opos.service").read_text()
+        # the kiosk exits 1 after giving up; the unit starts a new session (Restart=always, nothing in RestartPreventExitStatus)
+        self.assertRegex(u, r"(?m)^Restart=always$")
+        self.assertNotIn("RestartPreventExitStatus", u)
+        self.assertNotIn("SuccessExitStatus", u)
+        # the limit sits in [Unit], is not switched off, and spans minutes, not the old 60 s
+        m = re.search(r"(?m)^StartLimitIntervalSec=(\S+)$", u.split("[Service]")[0])
+        self.assertIsNotNone(m, "StartLimitIntervalSec belongs in [Unit]")
+        self.assertGreaterEqual(unit_seconds(m.group(1)), 20 * 60)
+        self.assertNotRegex(u, r"(?m)^StartLimitAction=")
+        # the fallback is what OnFailure= starts; it starts phosh once opos.service has failed
+        fb = (DUO / "opos-fallback.service").read_text()
+        self.assertIn("systemctl start phosh.service", fb)
+        self.assertIn("active|activating|reloading) exit 0", fb)
+
+
+def systemd_can_be_driven():
+    return (os.environ.get("OPOS_TEST_SYSTEMD") == "1" and hasattr(os, "geteuid") and os.geteuid() == 0
+            and os.path.isdir("/run/systemd/system") and shutil.which("systemctl") is not None)
+
+
+@unittest.skipUnless(systemd_can_be_driven(), "set OPOS_TEST_SYSTEMD=1 and run as root on a machine whose PID 1 is systemd (it adds two transient units)")
+class SystemdModelTest(unittest.TestCase):
+    """The real systemd on a scaled model of opos.service: the restart and start-limit lines are copied from the shipped
+    unit, ExecStart runs the real opos-kiosk with a chromium that dies at once (and a sleep that returns at once), and
+    OnFailure= starts a stand-in fallback that leaves a marker. It shows that a kiosk that gives up and exits 1 is
+    restarted, that the start limit then fails the unit, and that OnFailure= fires. It is not the phone: no phoc, no
+    item-composer-fresh, no real durations (the window arithmetic is pinned in KioskScriptTest)."""
+
+    def setUp(self):
+        self.t = Path(tempfile.mkdtemp(prefix="opos-model-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, self.t, True)
+        (self.t / "bin").mkdir()
+        (self.t / "home").mkdir()
+        stubs = {
+            "chromium": 'echo run >> "$T/runs"; exit 1',
+            "sleep": "exit 0", "python3": "exit 0", "pgrep": "exit 1",
+            "logger": 'echo "$*" >> "$T/logger.log"',
+            "pkill": 'echo "$*" >> "$T/pkill.log"',
+        }
+        for name, body in stubs.items():
+            p = self.t / "bin" / name
+            p.write_text("#!/bin/sh\n" + body + "\n")
+            p.chmod(0o755)
+        self.name = "opos-model-test-%d" % os.getpid()
+        self.addCleanup(self.cleanup_units)
+
+    def systemctl(self, *args):
+        return subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=60)
+
+    def cleanup_units(self):
+        for n in (self.name, self.name + "-fallback"):
+            self.systemctl("stop", n + ".service")
+            self.systemctl("reset-failed", n + ".service")
+            try:
+                os.unlink("/run/systemd/system/%s.service" % n)
+            except FileNotFoundError:
+                pass
+        self.systemctl("daemon-reload")
+
+    def shipped(self, key):
+        return re.search(r"(?m)^%s=(\S+)$" % key, (DUO / "opos.service").read_text()).group(1)
+
+    def test_a_kiosk_that_gives_up_reaches_the_fallback_through_the_start_limit(self):
+        d = Path("/run/systemd/system")
+        (d / (self.name + "-fallback.service")).write_text(
+            "[Unit]\nDescription=model of opos-fallback.service\n[Service]\nType=oneshot\nExecStart=/bin/sh -c 'date +%%s > %s/fallback-ran'\n" % self.t)
+        (d / (self.name + ".service")).write_text(
+            "[Unit]\nDescription=scaled model of opos.service\nOnFailure=%s-fallback.service\nStartLimitIntervalSec=%s\nStartLimitBurst=%s\n"
+            "[Service]\nEnvironment=T=%s HOME=%s/home PATH=%s/bin:/usr/bin:/bin\nExecStartPre=/bin/sleep 1\nExecStart=/bin/sh %s\n"
+            "Restart=%s\nRestartSec=%s\nRestartMode=%s\n" % (
+                self.name, self.shipped("StartLimitIntervalSec"), self.shipped("StartLimitBurst"), self.t, self.t, self.t, KIOSK,
+                self.shipped("Restart"), self.shipped("RestartSec"), self.shipped("RestartMode")))
+        self.assertEqual(self.systemctl("daemon-reload").returncode, 0)
+        self.systemctl("start", "--no-block", self.name + ".service")
+        marker = self.t / "fallback-ran"
+        for _ in range(90):
+            if marker.exists():
+                break
+            time.sleep(1)
+        self.assertTrue(marker.exists(), "OnFailure= never started the fallback: " + self.systemctl("status", self.name + ".service", "--no-pager").stdout)
+        shown = dict(ln.split("=", 1) for ln in self.systemctl("show", self.name + ".service", "-p", "ActiveState,NRestarts").stdout.splitlines())
+        self.assertEqual(shown["ActiveState"], "failed")
+        burst = int(self.shipped("StartLimitBurst"))
+        self.assertEqual(len((self.t / "pkill.log").read_text().splitlines()), burst, "one give-up per allowed start")
+        self.assertEqual(len((self.t / "runs").read_text().splitlines()), burst * 10)
 
 
 if __name__ == "__main__":

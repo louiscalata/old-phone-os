@@ -43,7 +43,7 @@ On top of the base, `build-image.sh` adds:
 | `opos-server.service` | `python3 -m opos.web --live-battery` as user `droidian`, on `127.0.0.1:8765`: the rules on the phone's sysfs battery; sets the switches below |
 | `opos.service` | the shell, with the hardware setup the port gives phosh and item (hwcomposer backend, vendor composer, VT 7); it runs `opos-session` |
 | `opos-session` | starts `phoc` as phosh-session does (the port's `phoc.ini`, hwcomposer output, hinge seam, scale) but **without `-S`**, with `opos-kiosk` as phoc's only client |
-| `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU. Every exit is logged: `journalctl -t opos-kiosk`; the owner's time zone is put in Chromium's environment at every start |
+| `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU, and after the tenth in a row the kiosk gives up (below). Every exit is logged: `journalctl -t opos-kiosk`; the owner's time zone is put in Chromium's environment at every start |
 | `sfduo-composer-watchdog` | the port's script, edited at build time so that its bounce of a composer that is not DRM master restarts OPOS as well as phosh (`verify-image.sh` checks the edit; an upgrade of the port's package reverts it) |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
 | `opos-diag`, journald drop-in | boot evidence that survives a failed boot (below) |
@@ -59,6 +59,17 @@ shield over every output until a phosh client reports that the shell is up. OPOS
 November 7 both panels stayed black while every process ran. `opos-session` leaves `-S` out, and
 `verify-image.sh` fails an image whose session script passes it. phosh and item stay installed but are not
 started at boot.
+
+**When Chromium never starts.** After 10 quick exits in a row (each under 20 s, with about 4 minutes of back-off
+between them) `opos-kiosk` logs it, sends `phoc` SIGTERM (phoc may not end with its client) and exits 1.
+That ends the session, so `opos.service` (`Restart=always`) starts a new one, and its start limit (3 starts in
+`StartLimitIntervalSec=30min`; the old 60 s could not be reached, because one session takes minutes) refuses the
+fourth: the unit fails and `OnFailure=` runs `opos-fallback.service`, which starts phosh. Expect about 15 minutes of
+a dark or flickering screen first. Shown: the give-up path with a stub Chromium (`tests/test_duo_kiosk.py`), and the
+restart, start-limit and `OnFailure=` chain on real systemd with a scaled model of the unit (`OPOS_TEST_SYSTEMD=1`,
+root; the same test file). Not shown: that phoc ends on SIGTERM, how long a real session takes, and that
+`opos-fallback` brings phosh up, since none of it has run on the phone. So the fallback is reachable in a model,
+not yet end to end.
 
 Over-the-air updates are a design ([docs/ota-update.md](../../docs/ota-update.md)), not part of this tree.
 
