@@ -262,11 +262,11 @@ powershell -File deploy\duo-opos-boot.ps1 -ImageDir <folder> -RootfsSha256 <sha2
 powershell -File deploy\duo-opos-boot.ps1 -ImageDir <folder> -RootfsSha256 <sha256> [-Key <private key>] -Yes
 ```
 
-The first command checks the four files against their SHA-256 and prints the steps without touching the phone.
+The first command checks the four files against their SHA-256 (and that the rootfs is a raw ext4 image, not a `.zst` or sparse file) and prints the steps without touching the phone.
 With `-Yes` it checks product, slot a, unlocked and battery; arms the brake; formats userdata; RAM-boots TWRP;
 pushes the rootfs and compares its hash on the phone; returns to the bootloader; re-arms the brake; RAM-boots
 the port's kernel once; then finds the phone on the USB network and, only if `-Key` is given, reads its state
-and logs over ssh. The first failure stops it and nothing is retried. The safety rules are written at the top
+and logs over ssh. The first failure stops it and nothing is retried; the one exception is a failed brake write, which is tried once more without another erase before it stops and says to keep the phone in Boot Select (an interrupt with Ctrl+C after the brake erase says the same). The safety rules are written at the top
 of the script. If Windows refuses to run the script under its default execution policy, put
 `-ExecutionPolicy Bypass` before `-File` (the repository's `install.cmd` does the same).
 
