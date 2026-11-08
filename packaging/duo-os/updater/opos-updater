@@ -26,6 +26,7 @@ import json
 import os
 import pwd
 import re
+import resource
 import shutil
 import signal
 import socket
@@ -104,6 +105,7 @@ class Config:
     smoke_port: int = 0                              # 0: the smoke server binds a port the kernel picks and reports it
     smoke_chown: bool = True                         # give the smoke server's throwaway HOME to service_user
     smoke_timeout: float = 20.0
+    smoke_log_limit: int = 1 << 20                   # the smoke server may not write a file larger than this (RLIMIT_FSIZE), its log included
     health_timeout: float = 45.0
     health_interval: float = 1.0
     probe_deadline: float = 8.0                      # hard limit for one probe of the server: connect, headers and body
@@ -486,8 +488,13 @@ def run_smoke(cfg, release_dir):
            'PYTHONDONTWRITEBYTECODE=1', 'OPOS_BATTERY=live', 'OPOS_ON_PHONE=1']
     argv = [*cfg.runuser, cfg.env_bin, '-i', *env, cfg.python, '-m', 'opos.web', '--port', str(cfg.smoke_port), '--live-battery']
     out = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
+    limit = cfg.smoke_log_limit
+
+    def cap_file_size():  # the kernel stops a server that loops on an error from filling the storage (review finding 10)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
     try:
-        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd='/', env=SAFE_ENV, start_new_session=True)
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd='/', env=SAFE_ENV, start_new_session=True,
+                                preexec_fn=cap_file_size)
     except OSError as e:
         return False, 'cannot start the server: %s' % e
     finally:
@@ -529,10 +536,13 @@ def run_smoke(cfg, release_dir):
         remove_tree(log)
 
 
-def _tail(path):
+def _tail(path, keep=300):
+    """The last bytes of a log, read from the end: the file may be as large as a looping server could make it."""
     try:
         with open(path, 'rb') as f:
-            return f.read()[-300:].decode('utf-8', 'replace').strip().replace('\n', ' | ')
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 4 * keep))
+            return f.read(8 * keep)[-keep:].decode('utf-8', 'replace').strip().replace('\n', ' | ')
     except OSError:
         return ''
 

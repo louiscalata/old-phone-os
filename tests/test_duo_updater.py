@@ -28,6 +28,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import tracemalloc
 import unittest
 import http.server
 from unittest import mock
@@ -2155,6 +2156,15 @@ class TestCrashSafety(unittest.TestCase):
 # Findings 2, 3, 5, 6, 7, 8, 10 and 11 of the independent review of snapshot 366ac0d (finding 4 is under "units" below).
 # Each test names what went wrong; every one fails on the code before its fix.
 
+FLOOD_PY = b'''import sys, time
+while True:
+    try:
+        sys.stderr.write("E" * 65535 + "\\n")
+        sys.stderr.flush()
+    except OSError:
+        sys.exit(1)
+    time.sleep(0.001)
+'''
 SLOW_PY = b'''import argparse, http.server, sys, time
 p = argparse.ArgumentParser()
 p.add_argument("--port", type=int, default=8765)
@@ -2289,6 +2299,56 @@ class TestProbeDeadline(EnvCase):
         self.assertEqual(e.consistent(), 0)
 
 
+@needs_keygen
+class TestSmokeLog(EnvCase):
+    """Finding 10: the smoke server's output went to a file with no limit, and the failure message read the whole file."""
+    fast = True
+
+    def test_tail_reads_the_end_of_the_file_and_not_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'smoke.log')
+            with open(path, 'wb') as f:
+                f.write(b'first line\n')
+                f.seek(64 << 20)
+                f.write(b'one\ntwo\nlast words\n')
+            tracemalloc.start()
+            try:
+                text = U._tail(path)
+                peak = tracemalloc.get_traced_memory()[1]
+            finally:
+                tracemalloc.stop()
+            self.assertTrue(text.endswith('one | two | last words'), text)
+            self.assertLess(peak, 1 << 20)
+            self.assertEqual(U._tail(os.path.join(d, 'missing')), '')
+            wr(os.path.join(d, 'short'), 'tiny\n')
+            self.assertEqual(U._tail(os.path.join(d, 'short')), 'tiny')
+            wr(os.path.join(d, 'long'), 'x' * 5000 + '\nend\n')
+            tail = U._tail(os.path.join(d, 'long'))
+            self.assertTrue(tail.endswith(' | end') and 290 < len(tail) <= 310, tail)
+
+    def test_a_server_that_floods_its_output_is_stopped_at_the_limit(self):
+        e = self.env
+        e.cfg.smoke = U.run_smoke
+        e.cfg.smoke_log_limit = 100000
+        e.cfg.smoke_timeout = 3.0
+        sizes, real = [], U.remove_tree
+
+        def spy(path):
+            if path.endswith('smoke.log') and os.path.exists(path):
+                sizes.append(os.path.getsize(path))
+            return real(path)
+        with mock.patch.object(U, 'remove_tree', spy):
+            self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/web.py': (FLOOD_PY, 0o644)})), 3)
+        self.assertEqual(len(sizes), 1)
+        self.assertLessEqual(sizes[0], 100000)
+        self.assertGreater(sizes[0], 60000)               # it did write up to the limit: this is the limit working, not an early exit
+        self.assertIn('smoke test failed', e.status()['message'])
+        self.assertLess(len(e.status()['message']), 400)
+        self.assertEqual(e.consistent(), 0)
+
+    def test_the_production_limit_is_small_next_to_a_phone(self):
+        self.assertEqual(U.Config(root='/').smoke_log_limit, 1 << 20)
+        self.assertEqual(U.Config(root='/').probe_deadline, 8.0)
 
 
 # =============================================================================================================== lock
