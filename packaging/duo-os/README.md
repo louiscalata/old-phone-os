@@ -25,6 +25,12 @@ On top of the base, `build-image.sh` adds:
 | `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page, restarting it if it exits |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
 
+<!-- track: network -->
+The image also lets OPOS show the radios and join Wi-Fi through NetworkManager (Settings > Network, `/network`): see
+[docs/network.md](../../docs/network.md). Its drop-in `opos-network.conf` sets `OPOS_NETWORK=1`; the polkit rule
+`50-opos-network.rules` is installed only when building with `OPOS_NET_POLKIT=1`.
+<!-- end track: network -->
+
 phosh and item stay installed but are not started. Calls and texts still go through OPOS's simulated modem:
 the base has ModemManager (via ofono2mm), but `src/opos/mm_modem.py` is not wired in yet.
 
