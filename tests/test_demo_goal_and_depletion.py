@@ -79,12 +79,14 @@ class TestDemoGoalAndDepletion(unittest.TestCase):
                 self.assertTrue(helper["paused"])
                 why = helper["why_paused"]
                 self.assertIn("; to stretch the battery toward 23:00, the phone paused ", why)
-                self.assertTrue(why.endswith(", but at this rate the battery shows " + state["battery"]["time_left"].lower() + "."))
+                self.assertTrue(why.endswith(", but at this rate the battery shows " + state["battery"]["time_left"].removeprefix("Rough estimate: ").lower() + "."))
                 self.assertNotIn("working until", why)
 
     def test_why_paused_wording(self):
         msg = web.why_paused(30.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="About 2 h 5 min left")
-        self.assertEqual(msg, "The battery is worn (60% health), so 30% charge is about 18% usable and it is not charging; to stretch the battery toward 16:00, the phone paused maps, but at this rate the battery shows about 2 h 5 min left.")
+        self.assertEqual(msg, "The battery is worn. It holds 60% of what it did when new, so 30% is really about 18% and it is not charging; to stretch the battery toward 16:00, the phone paused maps, but at this rate the battery shows about 2 h 5 min left.")
+        labelled = web.why_paused(30.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="Rough estimate: About 2 h 5 min left")
+        self.assertEqual(labelled, msg)  # the label belongs to the panel; the sentence already says "at this rate"
         for status, notice in (("error: battery empty, charge the phone to call", "Charge the phone to call"),
                                ("error: battery empty, charge the phone to send", "Charge the phone to send"),
                                ("call ended: battery empty", "Call ended. Charge the phone")):

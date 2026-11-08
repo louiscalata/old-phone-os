@@ -304,7 +304,7 @@ jl=s;jsc();
 var percent=s.battery&&s.battery.percent;
 $('sb-batt').setAttribute('data-low',typeof percent==='number'&&isFinite(percent)&&percent<=15?'true':'false');
 var technical=$('shade-technical');['events'].forEach(function(id){technical.appendChild($(id))});
-['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length)});
+['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length>1)});
 ['headline','time-left','goal-note','why'].forEach(function(id){var e=$(id);e.hidden=!known(e.textContent)});
 ['paused-list','features','events'].forEach(function(id){Array.prototype.forEach.call($(id).children,function(row){var label=row.querySelector('span');row.hidden=!known(label?label.textContent:row.textContent)})});
 var helper=$('helper'),button=helper.querySelector('button');

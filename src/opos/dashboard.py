@@ -4,6 +4,7 @@ import re
 from opos.eol import is_worn
 # A daily goal counts as reached for 8 hours after its time, then targets the same time the next day.
 GOAL_GRACE_H = 8.0
+ROUGH = "Rough estimate: "  # starts a time left that comes from the model; a trusted measurement is not prefixed
 _REDACT_RE = re.compile(r'\b(AI|model|Governor|assistant)\b', re.IGNORECASE)
 def _redact(s):
     return _REDACT_RE.sub('...', s)
@@ -96,7 +97,10 @@ class Dashboard:
                 self._times = []
             return
         if self._times and self._times[-1] is not None and clock_s < self._times[-1]:
-            self.reset_history(level)
+            self.reset_history(level)  # midnight, or the clock was set back: start over with this one sample, not a flat pair
+            if self._times:
+                self._times[-1], self._last_record_minute = clock_s, int(clock_s // 60)
+            return
         minute = int(clock_s // 60)
         if minute != self._last_record_minute or changed:
             self.history.append(level)
@@ -156,11 +160,12 @@ class Dashboard:
         self.in_use = name
         self.undone.discard(name)
 
-    def view(self, level, mode, charging, health, clock_s, visible, reason, deferred=(), steps=(), drain_per_h=None):
+    def view(self, level, mode, charging, health, clock_s, visible, reason, deferred=(), steps=(), drain_per_h=None, measured=False):
         """Render the final decision; the panel never adds or removes pauses on its own.
 
         deferred and steps are the final decision's paused tasks and saving steps;
-        drain_per_h is its drain (computed from them when not given).
+        drain_per_h is its drain (computed from them when not given); measured says that drain was
+        read from the phone itself, so the time left is not labelled a rough estimate.
         """
         hours = self.hours_to_goal(clock_s)
         reached = self.goal_reached(clock_s)
@@ -214,6 +219,8 @@ class Dashboard:
                 goal_words = _format_goal_12h(self.goal)
                 goal_note = f"Won't last until {goal_words}, calls and messages until ~{calls_until}"
         time_left = "Charging" if charging else time_left_words(hours_left_corrected)
+        if time_left.startswith("About") and not measured:
+            time_left = ROUGH + time_left
         in_use = self.in_use if self.in_use and self.in_use not in paused_set else None
         saving_for = ["calls", "messages"]
         if in_use:

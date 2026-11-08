@@ -49,7 +49,7 @@ class PhoneDrainTests(unittest.TestCase):
         self.assertEqual(s["battery"]["drain"]["basis"], "model")
         self.assertEqual(s["battery"]["drain"]["per_hour"], round(model, 2))
         self.assertFalse(s["battery"]["goal_met"])
-        self.assertEqual(s["battery"]["time_left"], time_left_words(round(self.true[0]) / model))
+        self.assertEqual(s["battery"]["time_left"], "Rough estimate: " + time_left_words(round(self.true[0]) / model))
         s = self.poll(p, 3600)
         drain = s["battery"]["drain"]
         self.assertEqual(drain["basis"], "measured")
@@ -131,7 +131,7 @@ class PhoneDrainTests(unittest.TestCase):
         s = p.state()
         self.assertNotIn("drain", s["battery"])
         self.assertNotIn("battery_source", s)
-        self.assertEqual(s["battery"]["time_left"], time_left_words(s["battery"]["hours_left"]))
+        self.assertEqual(s["battery"]["time_left"], "Rough estimate: " + time_left_words(s["battery"]["hours_left"]))
         self.assertAlmostEqual(s["battery"]["hours_left"], s["battery"]["percent"] / p._tick_obj.drain_per_h, places=1)
         p.set_sim(True)
         p.tick(1)

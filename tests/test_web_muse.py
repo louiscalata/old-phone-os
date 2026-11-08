@@ -185,7 +185,7 @@ class TestWebMuseHelperReset(unittest.TestCase):
 
 
 class TestLaneCoreRegressions(unittest.TestCase):
-    WHY_30 = "The battery is worn (60% health), so 30% charge is about 18% usable and it is not charging; to keep calls and messages working, the phone paused email, maps and photos backup."
+    WHY_30 = "The battery is worn. It holds 60% of what it did when new, so 30% is really about 18% and it is not charging; to keep calls and messages working, the phone paused email, maps and photos backup."
 
     @patch("opos.assist.free_mb", return_value=None)
     def test_undo_and_fractional_usable_reach_the_helper_facts(self, _free_mb):
@@ -254,7 +254,8 @@ class TestLaneCoreRegressions(unittest.TestCase):
         self.assertNotIn("not charging", charging)
         self.assertTrue(charging.endswith("the phone paused photos backup."))
         healthy = web.why_paused(80.0, 1.0, 25.0, False, [])
-        self.assertTrue(healthy.startswith("The battery is at 80% (100% health, about 80% usable)"))
+        self.assertTrue(healthy.startswith("The battery is at 80% and it is not charging"))
+        self.assertNotRegex(healthy, r"(?i)health|usable")
         self.assertIn("nothing is paused", healthy)
         self.assertEqual(web.why_paused(30.0, 0.6, 30.0, False, ["maps"]).split("paused ")[-1], "maps.")
         goal = web.why_paused(60.0, 0.6, 30.0, False, ["maps"], "23:00")

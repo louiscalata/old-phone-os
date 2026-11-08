@@ -215,7 +215,7 @@ class SimulatedDrainMatchesTimeLeft(PhoneCase):
     def test_ten_percent_full_health_no_goal(self):
         phone = self.phone(level=10, health=1.0)
         state = phone.state()
-        self.assertEqual(state["battery"]["time_left"], "About 52 min left")
+        self.assertEqual(state["battery"]["time_left"], "Rough estimate: About 52 min left")  # the demo's drain is the model's
         rate = self.measured_rate(phone)
         self.assertAlmostEqual(rate, 11.5, places=9)
         self.assertEqual(time_left_words(10 / rate), "About 52 min left")
@@ -236,7 +236,7 @@ class SimulatedDrainMatchesTimeLeft(PhoneCase):
                 level, predicted = phone.sim.level, self.predicted_rate(phone, state)
                 rate = self.measured_rate(phone)
                 self.assertAlmostEqual(rate, predicted, places=9)
-                self.assertEqual(time_left_words(level / rate), state["battery"]["time_left"])
+                self.assertEqual("Rough estimate: " + time_left_words(level / rate), state["battery"]["time_left"])
 
 
 class RouterHeatAndGoalInThePhone(PhoneCase):
@@ -382,8 +382,11 @@ class WornWords(unittest.TestCase):
         self.assertEqual(web.WORN_WORDS_HEALTH, 0.8)
         self.assertEqual(web.lock_story(50, 0.79, 30, False, ()), "Worn battery. Nothing paused.")
         self.assertEqual(web.lock_story(50, 0.8, 30, False, ()), "Nothing paused.")
-        self.assertIn("is worn (79% health)", web.why_paused(50, 0.79, 30, False, ()))
+        self.assertIn("is worn. It holds 79% of what it did when new", web.why_paused(50, 0.79, 30, False, ()))
         self.assertNotIn("worn", web.why_paused(50, 0.8, 30, False, ()))
+        # ... but only a health that was read: a guess of 79% is not called worn
+        self.assertEqual(web.lock_story(50, 0.79, 30, False, (), health_known=False), "Nothing paused.")
+        self.assertNotIn("worn", web.why_paused(50, 0.79, 30, False, (), health_known=False))
 
 
 if __name__ == "__main__":

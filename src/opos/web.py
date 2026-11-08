@@ -48,7 +48,7 @@ from opos.essentials import Essentials, normalize_number, normalize_sender
 from opos.runtime import Runtime
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
-from opos.dashboard import Dashboard, _format_goal_12h
+from opos.dashboard import ROUGH, Dashboard, _format_goal_12h
 from opos.router import HOT_C
 from opos import notices, practice, secure, update_client, update_page
 from opos.span import apply as apply_span, parse as parse_span
@@ -145,10 +145,10 @@ def _join(names):
 # Owner-facing words call a battery "worn" below 80 percent health. The worn-battery
 # reserve (opos.reserve) only engages below opos.eol.WORN_HEALTH (50 percent).
 WORN_WORDS_HEALTH = 0.8
-def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True):
-    """A short lock-screen fact, using effective pauses rather than helper visibility."""
+def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True, *, health_known=True):
+    """A short lock-screen fact, using effective pauses rather than helper visibility. A health nobody read is not said."""
     prefix = ("Charging. " if charging else "Phone hot. " if temp_c >= HOT_C else
-              "Battery low. " if level < 20 else "Worn battery. " if health < WORN_WORDS_HEALTH else "")
+              "Battery low. " if level < 20 else "Worn battery. " if health_known and health < WORN_WORDS_HEALTH else "")
     names = sorted(set(paused))
     suffix = ""
     if goal and not charging:
@@ -161,14 +161,19 @@ def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True
     if len(prefix + action + suffix) > 48 and names:
         action = f"{len(names)} task{'s' if len(names) != 1 else ''} paused"
     return prefix + action + suffix + "."
-def why_paused(level, health, temp_c, charging, paused, goal=None, goal_met=True, time_left=None, *, usable_percent=None):
-    """One plain sentence, from the numbers alone, that the helper repeats for why-questions."""
+def why_paused(level, health, temp_c, charging, paused, goal=None, goal_met=True, time_left=None, *, usable_percent=None, health_known=True):
+    """One plain sentence, from the numbers alone, that the helper repeats for why-questions.
+
+    Health is said only when it was read and is under 80 percent; the time left is said without its "Rough estimate" label.
+    """
     pct, hp = int(round(level)), int(round(health * 100))
     usable = int(level * health) if usable_percent is None else usable_percent
-    if health < WORN_WORDS_HEALTH:
-        s = f"The battery is worn ({hp}% health), so {pct}% charge is about {usable}% usable"
+    if time_left:
+        time_left = time_left.removeprefix(ROUGH)
+    if health_known and health < WORN_WORDS_HEALTH:
+        s = f"The battery is worn. It holds {hp}% of what it did when new, so {pct}% is really about {usable}%"
     else:
-        s = f"The battery is at {pct}% ({hp}% health, about {usable}% usable)"
+        s = f"The battery is at {pct}%"
     if temp_c >= HOT_C:
         s += f", the phone is hot ({temp_c:.0f}°C)"
     s += " and it is charging" if charging else " and it is not charging"
@@ -238,6 +243,7 @@ class Phone:
             self.sim.refresh()
             self.charging = bool(self.sim.charging)
             self.clock_s = _local_clock_s()
+            self.dash.record(self.sim.level, self.clock_s)  # the last-hour graph grows while the phone is read, not only when the demo ticks
             was_ok, self.clock_ok = self.clock_ok, clock_ok()
             if self.clock_ok and not was_ok and self.dash.goal:
                 # A goal set against a guessed clock counts as set before its time. The clock is real now, so
@@ -306,6 +312,7 @@ class Phone:
         tick = self._tick()
         d = tick.decision
         reached = self.dash.goal_reached(self._goal_clock())
+        health_known = getattr(self.sim, "health_source", None) != "assumed"  # a health nobody read is not said
         out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call, practice.simulated(self.essentials)), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
         out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
@@ -322,7 +329,8 @@ class Phone:
         if self.live:
             drain, drain_info = self.sim.drain_rate(drain)  # the phone's measured discharge once trusted, else the model's
         out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self._goal_clock(), self.visible, d.reason,
-                                        deferred=d.deferred, steps=tick.steps, drain_per_h=drain)
+                                        deferred=d.deferred, steps=tick.steps, drain_per_h=drain,
+                                        measured=bool(drain_info and drain_info["basis"] == "measured"))
         if self.live:
             out["battery"]["clock_ok"] = self.clock_ok
             if not self.clock_ok and self.dash.goal:
@@ -338,20 +346,21 @@ class Phone:
             item["reason"] = reasons[name]
             item["held"] = name in held  # a hard floor holds it: the page shows no Undo
         goal_label = self._goal_label()
-        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, d.deferred, goal_label, out["battery"]["goal_met"])
+        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, d.deferred, goal_label, out["battery"]["goal_met"], health_known=health_known)
         if self.visible and "helper" in out:
             hf = out["helper"]
             advisor = self.runtime.governor.advisor
             hf["glimmer_status"] = advisor.status() if isinstance(advisor, GlimmerAdvisor) else "off"
             hf["battery_percent"] = int(round(self.sim.level))
-            hf["battery_health_percent"] = int(round(self.sim.health * 100))
+            if health_known:
+                hf["battery_health_percent"] = int(round(self.sim.health * 100))
             hf["usable_percent"] = int(self.sim.level * self.sim.health)  # floor: 14.7% usable must not read as 15
             hf["temp_c"] = out["temp_c"]
             hf["charging"] = out["charging"]
             hf["goal"] = self.dash.goal if self.clock_ok else ""
             hf["goal_met"] = bool(out["battery"]["goal_met"])
             hf["time_left"] = out["battery"]["time_left"]
-            hf["why_paused"] = why_paused(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, hf["paused"], goal_label, goal_met=hf["goal_met"], time_left=hf["time_left"], usable_percent=hf["usable_percent"])
+            hf["why_paused"] = why_paused(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, hf["paused"], goal_label, goal_met=hf["goal_met"], time_left=hf["time_left"], usable_percent=hf["usable_percent"], health_known=health_known)
             if reached and hf["goal_met"]:
                 # After the goal, goal_met must not read as "lasts until the goal time".
                 hf["why_paused"] = hf["why_paused"][:-1] + f"; the {_format_goal_12h(self.dash.goal)} goal time has passed and calls and messages stay on."
@@ -1185,7 +1194,7 @@ def main(argv=None):
         cfg = setup_config.load()
         if cfg is None:
             cfg = setup_config.default_config()
-            cfg["goal"] = {"enabled": True, "time": DEMO_GOAL}
+            cfg["goal"] = {"enabled": live is None, "time": DEMO_GOAL}  # a real phone has no goal until its owner picks one
     except Exception:
         cfg = setup_config.default_config()
     _arm_configured_goal(phone, cfg)
