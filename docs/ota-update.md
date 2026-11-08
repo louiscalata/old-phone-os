@@ -128,16 +128,34 @@ is an empty file `inbox/rollback.request` (limited, see the trust model) or `opo
   no background polling unless `auto_check` is true.
 - `check` fetches `latest.json` and compares serials; `download` fetches the bundle to `inbox/<name>.partial`, fsyncs,
   renames to `.opos-update`; progress and results come from `status.json`. It never verifies for trust: root does.
+  Storage is protected while the bytes arrive, because nothing can be verified before they have: 32 MiB must stay free after
+  the bundle. A size the index (or the server's `Content-Length`) promises is reserved before the first byte and is a ceiling
+  for the stream (a longer body stops at the promised size); with no promise at all, which a chunked reply without an index
+  `size` is, the 256 MiB cap is the ceiling and the free space is looked at every MiB as the file grows, so the download stops
+  when less than 32 MiB would remain.
 - UI: a separate small page at `/update` (not the main page, which is at its size budget; the main page has one link to it,
   "Updates" in Settings under About, and the page's "Back to the phone" returns) showing the running
-  version/revision/serial, check, download/apply, the last status and a rollback request. Existing token, origin and
-  rate-limit rules for POSTs apply. Without `/var/lib/opos-update` (desktop demo, Android) the page says updates are not
+  version/revision/serial, check, download/apply, the last status and a rollback request. While a boot-scope update is
+  staged (`pending_boot` in `state.json`) the button becomes "Cancel staged update" and writes `rollback.request` holding the
+  text `cancel-staged` (as `rollback.request.partial`, then renamed), which the updater takes as dropping the staged update and
+  nothing else. It is offered with no earlier release and after the one requested step back was used, and it is the only request
+  the client makes while something is staged, so cancelling never also moves the installed release; to go back, cancel first.
+  The client is in the app and the updater is in the image, so it can be newer than the updater, which would read the cancel
+  text as a plain "go back": the button is offered only when `state.json` shows an updater that knows the form (one that keeps a
+  `floor`); on an older one the page behaves as before. Existing token, origin and rate-limit rules for POSTs apply. Without `/var/lib/opos-update` (desktop demo, Android) the page says updates are not
   available on this install.
 
 ## Developer path (no Wi-Fi, no host)
 
 `tools/opos-release.py` builds and signs a bundle from a git revision (`build`, `verify`, `index`). `deploy/duo-push-update.ps1`
-copies a bundle into the phone's inbox over the USB network with the dev key and prints `status.json` until it settles. This is
+copies a bundle into the phone's inbox over the USB network with the dev key and prints `status.json` until the status that
+belongs to this bundle settles. It reads the serial from the bundle's manifest and takes a status for its own only if it
+carries that serial, so another update finishing while this one is handed over is shown but never taken for the result. Two
+statuses carry no serial: `verifying`, which the script recognises by the inbox file name in its message, and a refusal before
+the manifest was read (a bad signature). The script takes such a refusal as this bundle's when the updater was idle at the
+hand-over or has been seen verifying this file, and otherwise keeps waiting and reports what it saw at the timeout (exit 2).
+A request identifier in every status would make that case exact; it is not there yet. The release tool also stops a build
+that would ship private key material and `verify` refuses a bundle that carries it, by content and not by file name. This is
 also how app-level changes reach the running phone without a new rootfs image.
 
 ## As built
