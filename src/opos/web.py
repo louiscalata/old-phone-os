@@ -986,6 +986,14 @@ def main(argv=None):
     p.add_argument("--live-battery", action="store_true", help="read this phone's battery and clock instead of simulating (also OPOS_BATTERY=live)")
     args = p.parse_args(argv)
     import sys
+    # >>> track firstboot: Duo OS first run and time zone (src/opos/firstrun.py); does nothing unless OPOS_FIRSTRUN=1.
+    # It applies the saved time zone, so it must run before Phone() reads the clock.
+    try:
+        from opos import firstrun as _firstrun
+        _firstrun.install(sys.modules[__name__])
+    except Exception as e:  # never let first run keep the phone from starting
+        print("opos: first run not available:", type(e).__name__, file=sys.stderr)
+    # <<< track firstboot
     live = None
     if args.live_battery or os.environ.get("OPOS_BATTERY") == "live":
         from opos.hw.live_battery import LiveBattery
