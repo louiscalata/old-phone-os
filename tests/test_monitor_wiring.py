@@ -9,6 +9,7 @@ import json
 import os
 import re
 import secrets
+import socket
 import threading
 import unittest
 from pathlib import Path
@@ -49,6 +50,32 @@ def request(port, path, headers=None, method="GET"):
         return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read()
     finally:
         c.close()
+
+
+def raw_exchange(port, request):
+    """Send these exact bytes and return everything the server sends back until it closes: head and body unparsed.
+
+    http.client throws away what follows the headers of a HEAD response, so it cannot tell a server that wrote a body
+    from one that did not; a socket can.
+    """
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as c:
+        c.sendall(request)
+        data = b""
+        while True:
+            chunk = c.recv(65536)
+            if not chunk:
+                return data
+            data += chunk
+
+
+class FakeClock:
+    """A clock the test moves by hand; secure.RateLimiter takes one as its third argument."""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
 
 
 def nonce_of(headers):
@@ -217,6 +244,23 @@ class SwitchOn(WiringCase):
         self.assertEqual(hh["content-type"], h["content-type"])
         self.assertIn("nonce-", hh["content-security-policy"])
 
+    def test_head_writes_no_bytes_after_the_headers(self):
+        # http.client discards a HEAD response's body, so the test above passes even if the server writes one; count the bytes on the wire.
+        s = self.server()
+        get_length = len(s.get("/monitor")[2])
+        self.assertGreater(get_length, 1000)
+        host = "Host: 127.0.0.1:%d\r\n" % s.port
+        data = raw_exchange(s.port, ("HEAD /monitor HTTP/1.1\r\n" + host + "Connection: close\r\n\r\n").encode("ascii"))
+        head, sep, rest = data.partition(b"\r\n\r\n")
+        self.assertTrue(sep, data[:200])
+        self.assertTrue(head.startswith(b"HTTP/1.") and head.split(b"\r\n")[0].split()[1] == b"200", head.split(b"\r\n")[0])
+        self.assertIn(("content-length: %d" % get_length).encode("ascii"), head.lower(), "the length GET would send, in the header only")
+        self.assertEqual(rest, b"", "nothing after the blank line that ends the headers")
+        data = raw_exchange(s.port, ("HEAD /api/monitor HTTP/1.1\r\n" + host + "X-OPOS-Token: " + s.token + "\r\nConnection: close\r\n\r\n").encode("ascii"))
+        head, sep, rest = data.partition(b"\r\n\r\n")
+        self.assertTrue(sep and head.split(b"\r\n")[0].split()[1] == b"405", head.split(b"\r\n")[0])
+        self.assertEqual(rest, b"")
+
     def test_a_query_string_does_not_change_the_route(self):
         s = self.server()
         self.assertEqual(s.get("/monitor?x=1")[0], 200)
@@ -377,6 +421,46 @@ class Limits(WiringCase):
         a, b = web._Limits(), web._Limits()
         self.assertEqual(sum(a.allow(monitor_web.LIMIT_KEY) for _ in range(50)), 10)
         self.assertTrue(b.allow(monitor_web.LIMIT_KEY), "another server's bucket is full")
+
+    def test_the_bucket_refills_at_two_a_second_and_never_holds_more_than_ten(self):
+        # Fake clock, so the refill is measured and not slept for. RateLimiter reads its clock from its third argument, and
+        # web._Limits builds it through secure.RateLimiter, so the clock goes in there. Steps are binary fractions: no rounding.
+        clock = FakeClock()
+        real = secure.RateLimiter
+        with mock.patch.object(secure, "RateLimiter", lambda rate, burst: real(rate, burst, clock)):
+            limits = web._Limits()
+
+        def allow():
+            return limits.allow(monitor_web.LIMIT_KEY)
+
+        def drain():
+            n = 0
+            while allow():
+                n += 1
+                self.assertLessEqual(n, 10, "more than the burst in one go")
+            return n
+
+        self.assertEqual(drain(), 10, "the burst")
+        clock.now += 0.25
+        self.assertFalse(allow(), "a quarter second is half a token")
+        clock.now += 0.25
+        self.assertTrue(allow(), "half a second is one token at 2 a second")
+        self.assertFalse(allow(), "and that token is spent")
+        # Sustained: asked every quarter second the bucket lets every other request through, 20 in 10 seconds.
+        passed = 0
+        for _ in range(40):
+            clock.now += 0.25
+            passed += allow()
+        self.assertEqual(passed, 20, "2 a second, sustained")
+        # The page asks every 2 seconds: that is never refused, however long it goes on.
+        drain()
+        for _ in range(60):
+            clock.now += 2.0
+            self.assertTrue(allow())
+        # A long quiet spell refills to the burst and no further.
+        drain()
+        clock.now += 3600
+        self.assertEqual(drain(), 10)
 
     def test_the_route_answers_429_when_the_bucket_is_empty(self):
         fake = self.fake_monitor()
