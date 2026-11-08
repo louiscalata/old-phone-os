@@ -27,6 +27,9 @@ earlier work and are not current instructions or evidence about the current sour
 
 - [OPOS on postmarketOS](pmos.md): package inputs, local-source staging, QEMU development and validation limits.
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
+<!-- track: integrate -->
+- [The Duo OS as it stands](duo-os-final.md): what the Surface Duo OS does now, the switches, what is still simulated or not known (calls and texts, battery life, stability, RAM-boot only), and the live checks in order; none of it measured on a phone yet.
+<!-- end track: integrate -->
 <!-- track: qa -->
 - [Duo OS acceptance](duo-acceptance.md): the automated suite (`opos-selftest` on the phone, `deploy/duo-acceptance.ps1` from the PC) and the owner's eyes-on-the-glass checklist; written and tested against fakes, not yet run on a phone.
 <!-- end track: qa -->
