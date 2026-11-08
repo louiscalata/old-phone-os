@@ -382,6 +382,7 @@ case "$1 $2" in
 "-m opos.web")
     echo $$ > "$T/server.$4.pid"
     echo "$4 $OPOS_OSK$OPOS_NETWORK$OPOS_FIRSTRUN" >> "$T/server.started"
+    echo "$4 ${OPOS_MONITOR-unset}" >> "$T/server.monitor"
     read -r mode < "$T/server_mode"
     [ "$mode" = hang ] && exec /bin/sleep 300
     exec "$PYBIN" "$T/server.py" "$4";;
@@ -437,9 +438,10 @@ class WholeScriptServers(unittest.TestCase):
             except (ValueError, ProcessLookupError, PermissionError):
                 pass
 
-    def start(self, hostile_port=None, mode="serve"):
+    def start(self, hostile_port=None, mode="serve", extra_env=None):
         (self.t / "server_mode").write_text(mode + "\n")
         env = {"PATH": "%s:/usr/bin:/bin" % self.bin, "TMPDIR": str(self.tmpdir), "T": str(self.t), "PYBIN": sys.executable}
+        env.update(extra_env or {})
         if hostile_port:
             env["HOSTILE_PORT"] = str(hostile_port)
         def default_signals():  # an ignored signal cannot be trapped by a shell, and a runner started in the background may pass them on ignored
@@ -469,9 +471,19 @@ class WholeScriptServers(unittest.TestCase):
         self.assertTrue(all(p not in ("18999", "18998", "18996", "18997") for p in ports))
         self.assertNotEqual(ports[2], ports[3], "the monitor's two servers run at the same time, on two ports")
         self.assertEqual((self.t / "server.started").read_text().splitlines()[1].split(" ", 1)[1], "111", "the second server has the three switches")
+        monitor = [ln.split(" ", 1)[1] for ln in (self.t / "server.monitor").read_text().splitlines()]
+        self.assertEqual(monitor, ["unset", "unset", "unset", "1"], "only the monitor's second server has the Inference page on")
         for pid in self.server_pids():
             self.assertFalse(alive(pid), "a server outlived the script")
         self.assertEqual(self.work_dirs(), [])
+
+    def test_a_switch_left_on_in_the_callers_environment_reaches_no_server(self):
+        # root's shell may have OPOS_* set: the "off" servers must be off, and only the arguments of serve() switch a piece on
+        self.finish(self.start(extra_env={"OPOS_MONITOR": "1", "OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"}))
+        started = (self.t / "server.started").read_text().splitlines()
+        self.assertEqual([ln.split(" ", 1)[1] if " " in ln else "" for ln in started], ["", "111", "", ""])
+        monitor = [ln.split(" ", 1)[1] for ln in (self.t / "server.monitor").read_text().splitlines()]
+        self.assertEqual(monitor, ["unset", "unset", "unset", "1"])
 
     def test_a_listener_on_the_port_before_the_server_starts_fails_the_check_and_is_never_read(self):
         # a hostile or stale listener answers on the port the script picked: it must not stand in for the image's server

@@ -413,6 +413,38 @@ class KioskScriptTest(unittest.TestCase):
         self.assertEqual(len(self.runs()), 1)
         self.assertTrue(any("does not answer after 120 tries" in m for m in self.logged()))
 
+    def numbered_python3(self, fail_calls=()):
+        """A python3 that counts its calls in $T/py_calls and fails the numbered ones: the kiosk's wait for the server is its only caller."""
+        p = self.bin / "python3"
+        p.write_text('#!/bin/sh\nc=0\n[ -r "$T/py_calls" ] && read -r c < "$T/py_calls"\nc=$((c + 1))\necho "$c" > "$T/py_calls"\n'
+                     'for x in $(cat "$T/py_fail_calls" 2>/dev/null); do [ "$x" = "$c" ] && exit 1; done\nexit 0\n')
+        (self.t / "py_fail_calls").write_text(" ".join(str(c) for c in fail_calls) + "\n")
+
+    def py_calls(self):
+        return int((self.t / "py_calls").read_text())
+
+    def test_the_wait_for_the_server_comes_before_every_start_of_chromium_not_only_the_first(self):
+        # An update restarts the server and stops the browser together: the browser the loop starts next must wait for the server.
+        self.numbered_python3(fail_calls=[2])  # the second wait (before the second start) finds the server down for one try
+        self.run_kiosk([(0, 100), (0, 100)])
+        self.assertEqual(len(self.runs()), 2, "the two planned runs; the third start (not logged) ends the script")
+        self.assertEqual(self.py_calls(), 4, "one wait per start, one extra try for the server that was down")
+        self.assertEqual(self.sleeps(), [2, 1, 2], "the pause after the first run, the extra try's second, then the pause after the second run")
+
+    def test_the_wait_is_not_part_of_the_run_that_decides_a_quick_exit(self):
+        # Five tries of the wait (5 s) before a Chromium that then runs 17 s: if the wait were inside the measured run it would
+        # be 22 s, not quick. It is quick, because the wait runs before the start time is taken.
+        self.numbered_python3(fail_calls=[2, 3, 4, 5, 6])
+        self.run_kiosk([(0, 100), (1, 17)])
+        self.assertIn("-t opos-kiosk chromium exited with status 1 after 17s (quick exits in a row: 1); starting it again in 2s", self.logged())
+
+    def test_the_wait_does_not_run_after_the_kiosk_has_given_up(self):
+        self.numbered_python3()
+        self.run_kiosk([(1, 1)] * 6, returncode=1)
+        self.assertTrue(self.marker.exists())
+        self.assertEqual(len(self.runs()), 6)
+        self.assertEqual(self.py_calls(), 6, "one wait per start and none once the marker is written")
+
     def test_a_failing_logger_falls_back_to_stderr(self):
         (self.t / "logger_rc").write_text("1\n")
         r = self.run_kiosk([(3, 1)])
@@ -744,6 +776,37 @@ class ImageScriptsTest(unittest.TestCase):
         v = (DUO / "verify-image.sh").read_text()
         for s in ("try-restart phosh.service opos.service", "unset WAYLAND_SOCKET", "SingletonLock", "OPOS_KIOSK_DEBUG_PORT=9222", "authorized_keys"):
             self.assertIn(s, v)
+
+    def test_verify_image_checks_that_the_kiosk_waits_inside_the_loop_before_the_start_time_and_chromium(self):
+        """The check's own condition, run against the shipped kiosk (passes) and against calls that sit in the wrong place (fail)."""
+        v = (DUO / "verify-image.sh").read_text()
+        line = next(ln for ln in v.splitlines() if ln.startswith('check "the kiosk waits for the server before every start'))
+        kiosk = (DUO / "opos-kiosk").read_text()
+        call = "    wait_for_server # track ota: before every start, and before t0 below so the wait is not counted as a quick exit\n"
+        chromium = '    chromium "$@" ${gpu:+--disable-gpu} "$url"\n'
+        self.assertIn(call, kiosk)
+        self.assertIn(chromium, kiosk)
+
+        def verdict(text):
+            with tempfile.TemporaryDirectory() as d:
+                k = Path(d) / "opos-kiosk"
+                k.write_text(text)
+                script = 'k=%s\ncheck() { if eval "$2"; then echo PASS; else echo FAIL; fi; }\n%s\n' % (k, line)
+                return subprocess.run(["sh", "-c", script], capture_output=True, text=True).stdout.strip()
+
+        self.assertEqual(verdict(kiosk), "PASS")
+        without = kiosk.replace(call, "")
+        for what, text in {
+            "no call at all": without,
+            "a call in a comment only": without.replace("    t0=$(now)\n", "    # wait_for_server\n    t0=$(now)\n", 1),
+            "a call before the loop only": without.replace("while :; do\n", "wait_for_server\nwhile :; do\n", 1),
+            "a call after the browser has run": without.replace(chromium, chromium + "    wait_for_server\n", 1),
+            "a call after the start time is taken": without.replace("    t0=$(now)\n", "    t0=$(now)\n    wait_for_server\n", 1),
+            "a call only in the give-up": without.replace("    exit 1\n}\nset --", "    wait_for_server\n    exit 1\n}\nset --", 1),
+        }.items():
+            with self.subTest(what):
+                self.assertNotEqual(text, kiosk, "the variant changed the script")
+                self.assertEqual(verdict(text), "FAIL", what)
 
     def test_verify_image_checks_the_give_up_chain_against_the_shipped_files(self):
         """The check's own condition, run against the shipped files (passes) and against each part taken away (fails)."""
