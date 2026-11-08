@@ -87,6 +87,8 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 Every boot of this image is a RAM-boot from a PC: `fastboot boot boot.img`. Nothing is installed to the phone's
 boot partitions, on purpose.
 
+A gated, read-only-first experiment to find out whether the kernel can live in the phone's own storage is planned in [docs/duo-persistent-install.md](../../docs/duo-persistent-install.md); it has not been run.
+
 - This phone's bootloader refuses flashes of the boot partition with `Device Error` even when unlocked
   (`boot_a`, recorded October 31, 2026; vbmeta is reported to be refused the same way), and the port's own
   notes forbid flashing boot, vbmeta, dtbo or recovery in any case. `fastboot boot` works. No tool here writes
