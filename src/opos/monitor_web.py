@@ -28,9 +28,11 @@ LINK = ('<section aria-labelledby="set-inference"><h3 id="set-inference">Inferen
         'style="display:inline-block;min-height:48px;line-height:48px;padding:0 16px;border:1px solid;color:inherit">'
         'Inference page</a></section>')
 LIMIT_KEY = "monitor"  # the rate-limit bucket web._Limits keeps for GET /api/monitor (an absent key is refused, never allowed)
-# Where the battery's health came from (opos.hw.live_battery health_source). Only these two are readings; "assumed"
-# is a placeholder and "OPOS_BATTERY_HEALTH" is a number the owner typed, and neither may be shown as the Duo's health.
-MEASURED_HEALTH = frozenset({"sysfs", "charge-counter"})
+# Where the battery's health came from (opos.hw.live_battery health_source). Only "sysfs" is a reading: the gauge's own full-charge
+# over design capacity. "charge-counter" is an estimate (counter / level / a design capacity from a model table or
+# OPOS_BATTERY_DESIGN_MAH, clamped to 0.1..1.0), "assumed" is a placeholder and "OPOS_BATTERY_HEALTH" is a number the owner typed.
+# local_state() has no way to label an estimate, and the page prints a bare "Battery health NN%", so none of those is shown.
+MEASURED_HEALTH = frozenset({"sysfs"})
 _HEAD_END = re.compile(r"</style>\s*</head>")
 
 
@@ -87,8 +89,9 @@ def local_state(snap, health=None):
     """The local_state dict Monitor.snapshot() takes, from one Phone.state() snapshot and the live battery's health (0 to 1).
 
     {"percent", "healthPercent", "source"}, each only when it is the phone's own reading: a phone running on the
-    simulation (no battery_source in its state) has no battery to report, a health that is assumed or typed in by
-    the owner is left out, and anything that is not a plain number in range is left out. The page says "Not reported"
+    simulation (no battery_source in its state) has no battery to report, a health that is estimated (from the charge
+    counter), assumed or typed in by the owner is left out, and anything that is not a plain number in range is left out.
+    The page says "Not reported"
     for a missing key; it never shows 0 for one.
     """
     out = {}

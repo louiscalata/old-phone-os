@@ -173,8 +173,9 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
 
 Settings > Inference opens `/monitor` (`src/opos/monitor.py`, `src/opos/monitor_web.py`, `src/opos/web_static/monitor*`), a read-only
 page in two parts. **This Duo** says whether a model server on the phone's own loopback (`127.0.0.1:8080`) lists a model (it asks
-`GET /models`; no prompt is sent) and shows the battery percent, health and source; a health that is assumed or typed in
-(`OPOS_BATTERY_HEALTH`) reads "Not reported". **AGIW monitor** is optional: what an AGIW Inference Monitor on a computer you own
+`GET /models`; no prompt is sent) and shows the battery percent, health and source. Health is shown only when the battery's own gauge
+reports it (sysfs full-charge over design capacity); the page cannot label an estimate, so a health that is estimated from the charge
+counter, assumed, or typed in (`OPOS_BATTERY_HEALTH`) reads "Not reported". **AGIW monitor** is optional: what an AGIW Inference Monitor on a computer you own
 says about its machines, fetched read-only. `opos-server.service` sets `OPOS_MONITOR=1`; unset (or anything but `1`) neither `/monitor`
 nor `/api/monitor` answers. `/etc/opos/monitor.env` is optional and absent from the image; `/etc/opos/monitor.env.example` shows it, and
 with no file nothing is fetched:

@@ -328,7 +328,7 @@ class SwitchOn(WiringCase):
         fake = self.fake_monitor()
         for state, health, want in (
             (live_state(63, "sysfs", "sysfs"), 0.873, {"percent": 63, "healthPercent": 87.3, "source": "sysfs"}),
-            (live_state(41, "termux-api", "charge-counter"), 0.5, {"percent": 41, "healthPercent": 50.0, "source": "termux-api"}),
+            (live_state(41, "termux-api", "charge-counter"), 0.5, {"percent": 41, "source": "termux-api"}),  # an estimate: not shown
             (live_state(63, "sysfs", "assumed"), 1.0, {"percent": 63, "source": "sysfs"}),
             (live_state(63, "sysfs", "OPOS_BATTERY_HEALTH"), 0.9, {"percent": 63, "source": "sysfs"}),
             ({"battery": {"percent": 60}}, 0.6, {}),
@@ -490,11 +490,22 @@ class LocalState(unittest.TestCase):
     def test_a_measured_health_is_passed_on(self):
         for hs in sorted(monitor_web.MEASURED_HEALTH):
             self.assertEqual(monitor_web.local_state(live_state(63, "sysfs", hs), 0.873), {"percent": 63, "healthPercent": 87.3, "source": "sysfs"})
-        self.assertEqual(monitor_web.MEASURED_HEALTH, {"sysfs", "charge-counter"})
+        self.assertEqual(monitor_web.MEASURED_HEALTH, {"sysfs"}, "only the gauge's own reading; the charge-counter figure is an estimate")
 
-    def test_an_assumed_or_typed_in_health_is_left_out(self):
-        for hs in ("assumed", "OPOS_BATTERY_HEALTH", "", None, "Sysfs", 7, ["sysfs"], {"sysfs": 1}):
+    def test_an_estimated_assumed_or_typed_in_health_is_left_out(self):
+        # live_battery.counter_health is counter / level / design capacity (a model-table constant or OPOS_BATTERY_DESIGN_MAH),
+        # clamped to 0.1..1.0: an estimate, and local_state has no way to label one, so the page would print it as a reading.
+        for hs in ("charge-counter", "assumed", "OPOS_BATTERY_HEALTH", "", None, "Sysfs", 7, ["sysfs"], {"sysfs": 1}):
             self.assertEqual(monitor_web.local_state(live_state(63, "termux-api", hs), 0.9), {"percent": 63, "source": "termux-api"}, hs)
+
+    def test_the_estimate_the_live_battery_makes_is_not_a_reading(self):
+        # The real producer, not a hand-written state: a Termux:API reading with a charge counter and no sysfs health.
+        from opos.hw import live_battery
+        with mock.patch.object(live_battery, "read_battery", return_value={"health": None}):
+            health, where = live_battery._health({}, "/", {"level": 80.0, "charge_counter_uah": 2_000_000}, 4000)
+        self.assertEqual(where, "charge-counter", "this is the label the live battery gives an estimate")
+        self.assertAlmostEqual(health, 0.625)
+        self.assertEqual(monitor_web.local_state(live_state(80, "termux-api", where), health), {"percent": 80, "source": "termux-api"})
 
     def test_a_simulated_battery_reports_nothing(self):
         self.assertEqual(monitor_web.local_state({"battery": {"percent": 60}}, 0.6), {})
@@ -603,6 +614,18 @@ class LocalUrlBelongsToTheHelper(unittest.TestCase):
         self.assertIn("(`OPOS_AGIW_URL`, `OPOS_AGIW_HOST`;", entry)
         self.assertNotIn("`OPOS_AGIW_HOST`, `OPOS_LOCAL_URL`", entry)
         self.assertIn("only if you already set it for the Helper, and setting it changes the Helper too", entry)
+
+
+class HealthIsOnlyTheGauges(unittest.TestCase):
+    def test_the_readme_says_an_estimated_health_is_not_shown(self):
+        text = (ROOT / "packaging/duo-os/README.md").read_text(encoding="utf-8")
+        section = text.split("\n## Inference page\n", 1)[1].split("\n## ", 1)[0]
+        flat = " ".join(section.split())
+        self.assertIn('a health that is estimated from the charge counter, assumed, or typed in (`OPOS_BATTERY_HEALTH`) reads "Not reported"', flat)
+
+    def test_the_changelog_says_so_too(self):
+        entry = next(x for x in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines() if x.startswith("- Inference page ("))
+        self.assertIn("only when the battery's own gauge reports it, never an estimated, assumed or typed-in value", entry)
 
 
 if __name__ == "__main__":
