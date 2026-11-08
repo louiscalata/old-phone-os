@@ -56,6 +56,8 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_KIOSK_DEFAULTS` | unset (`/etc/default/opos-kiosk`) | which file `opos-kiosk` reads the DevTools port from; a hook for tests |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | unset | only for `opos-osk` (the opt-in Wayland keyboard): the binary, seconds to wait for phoc's socket (120), and `0` to leave gsettings alone |
 | `OPOS_BATTERY`, `OPOS_ON_PHONE` | `live`, `1` | the sysfs battery source and the phone-only behaviour |
+| `OPOS_UPDATE_SIGNERS` | unset (a build input) | a file of public keys (`ssh-ed25519 ...`) that `build-image.sh` installs as the image's only trust for over-the-air updates; without it the image accepts no update |
+| `OPOS_UPDATE_URL` | unset (a build input) | `https://host/folder/latest.json`, written to `/etc/opos/update.json` so the Updates page may look there, only when asked; without it the phone fetches nothing |
 
 ## What is still simulated
 
@@ -78,8 +80,10 @@ Set by the image's units; unset means the page and every route are byte for byte
   to. With all three switches on the server also injects a Settings link for each of the Network page and the time zone, and the
   keyboard's two tags: about 590 bytes, so the page the Duo is sent is about 102,900 bytes, roughly 500 bytes over 102,400.
   `tests/test_duo_final.py` pins the injection at 650 bytes. Whether that is acceptable, or one link should go, is the owner's call.
-- **Over-the-air updates are not here** ([ota-update.md](ota-update.md) is a design only); the selftest SKIPs `ota.updater`. The clock
-  floor, measured drain, the hinge layout (`OPOS_SPAN`, off until checked on the phone), the kiosk units with their restart loop and
+- **Over-the-air updates are built but not seen on the phone** ([ota-update.md](ota-update.md), [ota-release-howto.md](ota-release-howto.md)):
+  the root updater, the `/update` page, the release tool and the USB push script are tested on a computer against stand-ins for systemd,
+  runuser and the browser. An image built without `OPOS_UPDATE_SIGNERS` accepts no update, and the selftest's `ota.updater` says so (WARN).
+  The clock floor, measured drain, the hinge layout (`OPOS_SPAN`, off until checked on the phone), the kiosk units with their restart loop and
   debug port, and the install docs are merged with the pieces above and tested with them on a computer, not yet on the phone. The
   first run's clock sentence still tests only for a year before 2026 (`clockcheck.py`); the server's own `clock_ok` also treats the
   image's floor as a guess, so on a first boot the setup does not yet say so.
@@ -109,7 +113,7 @@ addresses and passwords appear in some of it.
 2. **Boot** from the PC as before, wait five minutes (the boot dump is due 90 s after multi-user.target).
 3. **The suite, from the PC:** `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key> -OutDir <folder>`; on the phone,
    `/usr/sbin/opos-selftest ; echo rc=$?`. Expect no FAIL. Expected WARNs on a first boot of a dev image: `battery.temp`, `clock.year`
-   (1970, or the image's floor until network time or a set time), `clock.timezone` (UTC), `dev.*`, possibly `svc.system`. Expected SKIPs: `ota.updater`, and `clock.kiosk-tz` until a zone is chosen; `kiosk.restarts` reports the exits `opos-kiosk` logged this boot.
+   (1970, or the image's floor until network time or a set time), `clock.timezone` (UTC), `dev.*`, possibly `svc.system`. Expected WARN: `ota.updater` on an image built without `OPOS_UPDATE_SIGNERS` (no update is accepted). Expected SKIP: `clock.kiosk-tz` until a zone is chosen; `kiosk.restarts` reports the exits `opos-kiosk` logged this boot.
    Expected PASS: `osk.keyboard`, `net.page`, `net.permissions` (WARN means NetworkManager will refuse; see step 5),
    `firstrun.flag`, `firstrun.routes` (it says first run PENDING). Any FAIL or surprise in a format is a finding: send the report.
    `page.png` exists only if the kiosk has a DevTools port, which comes from another branch.

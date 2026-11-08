@@ -856,7 +856,12 @@ class Contracts(unittest.TestCase):
         script = rd(PKG / "opos-kiosk").replace(chr(92) + chr(10), " ")  # join the shell line continuations
         line = re.search(r"^\s+(chromium .*)$", script, re.M).group(1)
         home = "/" + "home" + "/droidian"  # written in pieces: the repository guard refuses home-directory literals
-        cmd = " ".join(line.replace("$url", "http://127.0.0.1:8765/").replace('"$HOME/', home + "/").replace('"', "").split())
+        if '"$@"' in line:  # the flags are in the script's `set -- --kiosk ...` line; the loop adds only the GPU switch (when needed) and the url
+            flags = re.search(r"^set -- (--kiosk .*)$", script, re.M).group(1)
+            line = "chromium " + flags + " $url"
+            script_dir = re.search(r"^dir=(\S+)$", script, re.M).group(1)  # dir=$HOME/.cache/opos-kiosk
+            line = line.replace('"$dir"', '"' + script_dir + '"')
+        cmd = " ".join(line.replace("$url", "http://127.0.0.1:8765/").replace("$HOME/", home + "/").replace('"', "").split())
         pattern = U.Config().kiosk_pattern
         self.assertRegex(cmd, pattern)
         self.assertRegex("/usr/lib/chromium/" + cmd, pattern)

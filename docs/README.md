@@ -37,7 +37,7 @@ evidence about the current source.
 <!-- end track: qa -->
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
 - [Over-the-air updates](ota-update.md): the contract for signed, rollback-safe updates of the OPOS app and its own files on the Duo OS image, and what was built to it; implemented and tested on Linux with stand-ins for systemd, runuser and the browser, not tested on the phone.
-- [Releasing over-the-air updates](ota-release-howto.md): the owner's how-to for the release key, `tools/opos-release.py` (build, verify, index), hosting, the USB push script, key rotation and recovery; tested on a PC with throw-away keys against the real updater code, not yet run on the phone.
+- [Releasing over-the-air updates](ota-release-howto.md): the owner's how-to for the release key, `tools/opos-release.py` (build, verify, index), hosting, the USB push script, key rotation and recovery; tested on a PC with throw-away keys against the real updater code; none of it has run on a phone.
 - [OPOS OS for the Surface Duo](../packaging/duo-os/README.md): OPOS as the only interface of a Linux image, RAM-booted on the owner's Duo on November 7, 2026 (it worked, per the owner); what was and was not observed, the RAM-boot-only rule and the misc brake, the dev ssh key, boot logs, known issues and restoring Android. Installed by `deploy/duo-opos-boot.ps1`.
 <!-- track: network -->
 - [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.

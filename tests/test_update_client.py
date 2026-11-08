@@ -1621,10 +1621,11 @@ class MainPageIsUntouched(Env):
     """The main page is at its size budget and frozen: only the one link to /update (Settings, About) may differ from the base."""
 
     # page(token "t"*43, nonce "n"*22) with the build id fixed to 12 f's. At base e471cf4 (before the update client) these were
-    # 9cf38030... and 29878bcd...; since then the page differs by the Settings link to /update, the one CSS rule of the link, and
-    # a shortened code comment in phone-b.js that paid for the link's bytes (the page is at its size budget).
-    MAIN_SHA256 = "6b3d7b7c3f632f1b4674a106e51f0b9987e7f0f008e5772830869d4ee82ae5b1"
-    DEMO_SHA256 = "02bfa2edbad42b37aaf6e5402f0a33f6e72255a08e8bea0423177a19c93d38f1"
+    # 9cf38030... and 29878bcd...; on ota/final (df2a4e0) 6b3d7b7c... and 02bfa2ed.... Re-recorded when ota/final was merged into
+    # duo-acceptance (which had removed dead CSS and shortened the same phone-b.js comment): against duo-acceptance 702c4d3 the
+    # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
+    MAIN_SHA256 = "fde0645de6f182beb46bc50f4304f3da0ce67a7d434e922b5b942579e9aabf1e"
+    DEMO_SHA256 = "896327bddc61c221dccbe27ad5fc5630535219fbb56ff3a857e5411906528438"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
