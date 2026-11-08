@@ -3297,6 +3297,46 @@ class TestUnits(unittest.TestCase):
             self.assertNotIn('AF_PACKET', values(u, 'Service', 'RestrictAddressFamilies')[0])
 
 
+@unittest.skipUnless(shutil.which('systemd-analyze') and os.path.isfile('/usr/lib/systemd/system/multi-user.target'),
+                     'needs systemd-analyze and the stock multi-user.target')
+class TestSystemdOrdering(unittest.TestCase):
+    """Review finding 4 said opos-update-confirm.service (After=multi-user.target, WantedBy=multi-user.target) is an ordering
+    cycle that systemd breaks by dropping the job. Asked of a real systemd (systemd-analyze verify on the units laid out as
+    build-image.sh installs them) it is not: for a unit that is itself After= a target, systemd leaves out the implicit
+    "the target waits for what it wants", which is the idiom for "run once the system is up" (opos-diag.service already uses
+    it on the phone). The probe below can see a cycle (the control), so this keeps it that way."""
+
+    UNITS = ('opos-update.path', 'opos-update.service', 'opos-update-boot.service', 'opos-update-confirm.service')
+
+    def verify(self, confirm_extra=''):
+        d = tempfile.mkdtemp(prefix='opos-units-')
+        self.addCleanup(shutil.rmtree, d, True)
+        os.mkdir(os.path.join(d, 'multi-user.target.wants'))
+        for n in self.UNITS:
+            text = (PKG / 'updater' / n).read_text()
+            if n == 'opos-update-confirm.service' and confirm_extra:
+                text = text.replace('[Service]', confirm_extra + '\n\n[Service]', 1)
+            wr(os.path.join(d, n), text)
+            os.chmod(os.path.join(d, n), 0o644)
+        shutil.copyfile(PKG / 'opos-server.service', os.path.join(d, 'opos-server.service'))
+        os.chmod(os.path.join(d, 'opos-server.service'), 0o644)
+        for n in ('opos-update.path', 'opos-update-boot.service', 'opos-update-confirm.service', 'opos-server.service'):
+            os.symlink('../' + n, os.path.join(d, 'multi-user.target.wants', n))
+        env = dict(os.environ, SYSTEMD_UNIT_PATH=d + ':')
+        r = subprocess.run(['systemd-analyze', 'verify', '--man=no', 'multi-user.target'], env=env, capture_output=True, text=True, timeout=120)
+        return r.stdout + r.stderr
+
+    def test_the_confirm_unit_is_not_part_of_an_ordering_cycle_with_multi_user_target(self):
+        out = self.verify()
+        self.assertNotIn('ordering cycle', out)
+        self.assertNotIn('deleted to break', out)
+
+    def test_the_probe_does_see_a_cycle_when_there_is_one(self):
+        out = self.verify('[Unit]\nBefore=multi-user.target')
+        self.assertIn('ordering cycle', out)
+        self.assertIn('opos-update-confirm.service', out)
+
+
 def extract_block(path, what):
     text = path.read_text()
     m = re.search(r'^# ---- BEGIN OPOS OTA %s.*?\n(.*?)^# ---- END OPOS OTA %s' % (what, what), text, re.S | re.M)
