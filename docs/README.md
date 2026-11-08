@@ -31,6 +31,9 @@ earlier work and are not current instructions or evidence about the current sour
 - [Over-the-air updates](ota-update.md): design for signed, rollback-safe updates of the OPOS app and its own files on the Duo OS image; design only, not yet implemented.
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; prepared, not yet run on the phone.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
+<!-- track: qa -->
+- [Duo OS acceptance](duo-acceptance.md): the automated suite (`opos-selftest` on the phone, `deploy/duo-acceptance.ps1` from the PC) and the owner's eyes-on-the-glass checklist; written and tested against fakes, not yet run on a phone.
+<!-- end track: qa -->
 
 ## Security and privacy
 
