@@ -149,6 +149,128 @@ async function measure(p, extra) {
   return Object.assign(m, extra || {});
 }
 
+// The pressed state. docs/jaryo-panes.md section 3.3: a pressed control is the inverted fill of its own pane, so its label (the pane's
+// background) must read on its fill (the pane's ink). Every visible control is measured twice: with :active forced by the DevTools
+// protocol (whatever sits on top of it), and, on request, with a real mouse-down on it (only where nothing covers it), which also
+// takes a picture of the button and asks whether any text is left in it.
+const CONTROLS = 'button,a.btn,[role=button],.osk-key';
+const TAG = `(function(){var n=0;[].forEach.call(document.querySelectorAll('${CONTROLS}'),function(e){e.removeAttribute('data-pt');
+ if(e.closest('#demo')&&!e.closest('#demo[data-demo]'))return;
+ var r=e.getBoundingClientRect(),cs=getComputedStyle(e);if(r.width<=0||r.height<=0||cs.visibility==='hidden'||cs.display==='none')return;
+ e.setAttribute('data-pt',String(n++))});return n})()`;
+const UNTAG = `[].forEach.call(document.querySelectorAll('[data-pt]'),function(e){e.removeAttribute('data-pt')})`;
+// One entry per tagged control (or the one named): its label colour and the fill under it, and whether anything covers its middle.
+const readPressed = only => `(function(){
+ function rgb(s){var m=/rgba?\\(([^)]+)\\)/.exec(s);if(!m)return null;var p=m[1].split(',').map(Number);return {r:p[0],g:p[1],b:p[2],a:p.length>3?p[3]:1}}
+ function lum(c){function f(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)}return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b)}
+ function cr(a,b){var x=lum(a),y=lum(b),h=Math.max(x,y),l=Math.min(x,y);return (h+0.05)/(l+0.05)}
+ function str(c){return 'rgb('+c.r+','+c.g+','+c.b+')'}
+ var root=document.documentElement,L=rgb(getComputedStyle(root,'::before').backgroundColor),R=rgb(getComputedStyle(root).backgroundColor);
+ if(!L||L.a<0.99)L=R;
+ function fillOf(n,cx){for(;n&&n!==root&&n.nodeType===1;n=n.parentElement){var b=rgb(getComputedStyle(n).backgroundColor);if(b&&b.a>0.99)return b}return cx<${(P1 + P2) / 2}?L:R}
+ var out=[];
+ [].forEach.call(document.querySelectorAll(${JSON.stringify(only == null ? '[data-pt]' : `[data-pt="${only}"]`)}),function(e){
+  var r=e.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,min=null,fg=null,bg=null,seen=[],tw=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);
+  while(tw.nextNode()){var t=tw.currentNode,q=t.parentElement;if(!t.nodeValue.trim()||!q||seen.indexOf(q)>=0)continue;seen.push(q);
+   var f=rgb(getComputedStyle(q).color),g=fillOf(q,cx),c=cr(f,g);if(min===null||c<min){min=c;fg=str(f);bg=str(g)}}
+  var hit=cx>=0&&cy>=0&&cx<innerWidth&&cy<innerHeight?document.elementFromPoint(cx,cy):null;
+  out.push({pt:+e.getAttribute('data-pt'),who:e.id||(e.dataset.open&&'open:'+e.dataset.open)||(e.dataset.go&&'go:'+e.dataset.go)||(e.getAttribute('aria-label')||e.className||e.tagName).toString().slice(0,24),
+   txt:(e.textContent||'').trim().slice(0,24),dis:!!e.disabled,ap:e.getAttribute('aria-pressed'),fg:fg,bg:bg,cr:min,fill:str(rgb(getComputedStyle(e).backgroundColor)||{r:0,g:0,b:0,a:0}),active:e.matches(':active'),
+   x:r.left,y:r.top,w:r.width,h:r.height,cx:cx,cy:cy,hit:!!hit&&(e===hit||e.contains(hit))})});
+ return out})()`;
+
+// A state change made from outside the page (a forced :active, a mouse-down) is not in a computed style until the page has drawn a frame.
+const frame = p => p.ev('new Promise(function(r){requestAnimationFrame(function(){requestAnimationFrame(function(){r(1)})})})');
+
+// Forcing :active needs the nodes' DevTools ids, and the page may rebuild a list between asking for them and using them (its own
+// timers do): then the whole pass is run again.
+async function pressedForced(p) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await pressedForcedOnce(p); }
+    catch (e) { if (attempt >= 4 || !/Could not find node|re-rendered/.test(e.message)) throw e; await p.ev(UNTAG); await sleep(200); }
+  }
+}
+async function pressedForcedOnce(p) {
+  if (!(await p.ev(TAG))) return [];
+  const rest = await p.ev(readPressed());
+  await p.s('DOM.enable'); await p.s('CSS.enable');
+  const out = [];
+  try {
+    const { root } = await p.s('DOM.getDocument', { depth: 0 });
+    for (const r of rest) {  // one control at a time: forcing many at once left some of them unstyled when read
+      const { nodeId } = await p.s('DOM.querySelector', { nodeId: root.nodeId, selector: `[data-pt="${r.pt}"]` });
+      if (!nodeId) throw new Error('the page was re-rendered under the pass');
+      try {
+        let d;
+        for (let tries = 0; tries < 3; tries++) {  // the browser sometimes restyles late: a control that did not change is forced again
+          await p.s('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['active'] });
+          await frame(p);
+          [d] = await p.ev(readPressed(r.pt));
+          if (!d || d.bg !== r.bg || d.dis || d.ap === 'true' || !d.txt) break;  // (the others are not expected to change)
+          await p.s('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+        }
+        if (!d) throw new Error('the page was re-rendered under the pass');
+        out.push({ who: d.who, txt: d.txt, dis: d.dis, ap: d.ap, fg: d.fg, bg: d.bg, cr: d.cr, rfg: r.fg, rbg: r.bg, active: d.active, inv: d.bg !== r.bg });
+      } finally { await p.s('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }).catch(() => {}); }
+    }
+    return out;
+  } finally {
+    await p.s('CSS.disable').catch(() => {}); await p.s('DOM.disable').catch(() => {});
+    await p.ev(UNTAG);
+  }
+}
+
+// The pixels of a button: the contrast between its lightest and darkest pixel inside the border. With the label gone (ink on ink) that
+// is 1; with a label it is the contrast of the two inks.
+function inkContrast(png) {
+  const img = decode(png);
+  let lo = 2, hi = -1;
+  for (let y = 0; y < img.h; y++) for (let x = 0; x < img.w; x++) { const l = lum(img.px(x, y)); if (l < lo) lo = l; if (l > hi) hi = l; }
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+async function pressedReal(p, name) {
+  if (!(await p.ev(TAG))) return [];
+  const list = await p.ev(readPressed());
+  const done = [];
+  // A press is not a click: the page must stay where it is, so clicks are stopped before they reach the page.
+  await p.ev(`window.__pb=function(e){e.preventDefault();e.stopImmediatePropagation()};addEventListener('click',window.__pb,true)`);
+  try {
+    for (const c of list) {
+      if (!c.hit || c.w < 12 || c.h < 12) continue;
+      await p.s('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c.cx, y: c.cy });
+      await p.s('Input.dispatchMouseEvent', { type: 'mousePressed', x: c.cx, y: c.cy, button: 'left', buttons: 1, clickCount: 1 });
+      let d;
+      for (let tries = 0; tries < 4; tries++) {  // as above: a few frames for the press to show in the style
+        await frame(p);
+        [d] = await p.ev(readPressed(c.pt));
+        if (!d || d.bg !== c.bg || d.dis || d.ap === 'true' || !d.txt) break;
+        await sleep(60);
+      }
+      if (!d) { await p.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.cx, y: c.cy, button: 'left', buttons: 0, clickCount: 1 }); continue; }  // the page rebuilt it: not measured
+      const inset = 4, clip = { x: Math.floor(c.x) + inset, y: Math.floor(c.y) + inset, width: Math.floor(c.w) - 2 * inset, height: Math.floor(c.h) - 2 * inset, scale: 1 };
+      const shot = Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip })).data, 'base64');
+      const whole = SHOTS && name && SHOT_IDS.has(c.who) ? await p.png() : null;
+      await p.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.cx, y: c.cy, button: 'left', buttons: 0, clickCount: 1 });
+      if (whole) {
+        save(`pressed-${name}-${c.who}.png`, whole);
+        const z = { x: Math.max(0, Math.floor(c.x) - 24), y: Math.max(0, Math.floor(c.y) - 24), width: Math.floor(c.w) + 48, height: Math.floor(c.h) + 48, scale: 2 };
+        save(`pressed-${name}-${c.who}-zoom.png`, Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip: z })).data, 'base64'));
+      }
+      done.push({ who: d.who, txt: d.txt, dis: d.dis, ap: d.ap, fg: d.fg, bg: d.bg, cr: d.cr, rbg: c.bg, active: d.active, inv: d.bg !== c.bg, pix: inkContrast(shot) });
+    }
+  } finally {
+    await p.s('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    await p.ev(`removeEventListener('click',window.__pb,true);delete window.__pb;` + UNTAG);
+  }
+  return done;
+}
+
+// PANES_SHOTS=dir: also save pictures of what the run looked at (here the four primary buttons while pressed).
+const SHOTS = process.env.PANES_SHOTS;
+const SHOT_IDS = new Set(['back', 'apps-close', 'unlock', 'lock-call']), SHOT_STATES = new Set(['phone', 'allapps', 'lock-start']);
+const save = (name, buf) => { if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); fs.writeFileSync(SHOTS + '/' + name, buf); } };
+
 const out = { states: {}, hand: {}, off: {}, os: {}, osk: {}, motion: {}, logs: {} };
 const MAIN = BASE + '/?firstrun=later';
 // What each page needs before it is measured: the kiosk page can open an app; the Network page has read its radios and scanned; the
@@ -163,7 +285,10 @@ try {
   if (want('states')) for (const scheme of ['light', 'dark']) for (const hand of ['right', 'left']) {
     const p = await open({ url: MAIN, w: 1392, h: 900, scheme, ready: APP_READY });
     await p.ev(setStore(hand, scheme)); await p.reload();
-    const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(500); out.states[`${scheme}/${hand}/${name}`] = await measure(p); };
+    const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(500);
+      const m = await measure(p);  // then every control pressed: forced :active everywhere, a real mouse-down in the dark run
+      m.press = { forced: await pressedForced(p), real: scheme === 'dark' ? await pressedReal(p, SHOT_STATES.has(name) ? `${hand}-${name}` : null) : [] };
+      out.states[`${scheme}/${hand}/${name}`] = m; };
     await st('lock-start');
     await st('home', `oposUI.unlock&&oposUI.unlock();oposUI.openApp('home')`);
     await st('allapps', `oposUI.openApp('home');document.getElementById('allapps').click()`);
@@ -214,7 +339,10 @@ try {
   if (want('os')) for (const hand of ['right', 'left']) for (const scheme of ['light', 'dark']) {
     const p = await open({ url: BASE + '/network', w: 1392, h: 900, scheme, ready: NET_READY });
     await p.ev(setStore(hand, scheme)); await p.nav(BASE + '/network');
-    const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(400); out.os[`${scheme}/${hand}/${name}`] = await measure(p); };
+    const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(400);
+      const m = await measure(p);
+      m.press = { forced: await pressedForced(p), real: scheme === 'dark' ? await pressedReal(p, null) : [] };
+      out.os[`${scheme}/${hand}/${name}`] = m; };
     await st('net-idle');
     await st('net-select', `(function(){var s=document.getElementById('sel');s.hidden=false;document.getElementById('sel-t').textContent='Cafe wifi';document.getElementById('prow').hidden=false;document.getElementById('srow').hidden=false;var m=document.getElementById('msg');m.textContent='Could not join. Check the password.';m.toggleAttribute('data-bad',true);var u=document.getElementById('nets');u.textContent='';['Home 5G - strong','Cafe wifi - open'].forEach(function(t){var l=document.createElement('li'),b=document.createElement('button');b.type='button';b.textContent=t;l.appendChild(b);u.appendChild(l)})})()`);
     await p.nav(BASE + '/firstrun', FIRST_READY); await st('first-welcome');
@@ -269,6 +397,7 @@ try {
 } finally {
   shutdown();
   await sleep(1500);  // let the browser release its profile before the test removes it
+    if (out.osk[hand]) out.osk[hand].press = await pressedForced(p);
 }
 fs.writeFileSync(OUTFILE, JSON.stringify(out));
 process.exit(0);

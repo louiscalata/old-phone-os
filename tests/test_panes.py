@@ -103,6 +103,19 @@ class Sheet(unittest.TestCase):
 
     def test_span_rewrites_it_exactly_as_span_py_does(self):
         out = self.served(DUO)
+    def test_a_button_is_never_given_a_colour_by_a_role(self):
+        # A `color` stated on Home, Close, Unlock or Call by the role rules (two ids) out-specifies `button:active` and leaves ink on ink
+        # while the button is pressed. Roles state the two tokens for everything and `color` only for what is not a button.
+        out = re.sub(r"/\*.*?\*/", "", (STATIC / "panes.css").read_text(encoding="utf-8"), flags=re.S)
+        for m in re.finditer(r"(?:^|\})\s*([^{}@]*#phone>[^{}]*|[^{}@]*#lock>[^{}]*)\{([^}]*)\}", out):
+            sel, body = m.group(1), m.group(2)
+            if re.search(r"(?:^|;)color:", body):
+                self.assertIn(":not(button)", sel, sel)
+        self.assertIn(":is(#phone>*,#lock>*):not(button){color:var(--jp-lst-ink)}", out)
+        # the OS pages' Home link is an anchor with the .btn pressed rule of the page: it states no colour either
+        home = re.search(r"body>header>#home\{([^}]*)\}", out).group(1)
+        self.assertNotRegex(home, r"(?:^|;)color:")
+
         self.assertTrue(out.startswith(spanmod.variables(DUO)))
         self.assertNotIn("viewport-segment", out)
         self.assertIn("@media (min-width:1055px){", out)

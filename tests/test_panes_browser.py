@@ -90,7 +90,7 @@ class PanesBrowser(unittest.TestCase):
                 threading.Thread(target=server.serve_forever, daemon=True).start()
                 try:
                     p = subprocess.run([NODE, str(DRIVER), chrome, "http://127.0.0.1:%d" % server.server_address[1], str(free_port()),
-                                        str(Path(d) / "profile"), str(outfile)], capture_output=True, text=True, timeout=400)
+                                        str(Path(d) / "profile"), str(outfile)], capture_output=True, text=True, timeout=1200)
                 finally:
                     server.shutdown()
                     server.server_close()
@@ -217,6 +217,72 @@ class PanesBrowser(unittest.TestCase):
         for key, o in self.r["off"].items():
             self.assertEqual((o["before"], o["after"], o["handDisplay"], o["themeAfter"]), ("none", "none", "none", "none"), key)
             self.assertEqual(o["handRect"], 0, key)
+    # -- the pressed state --------------------------------------------------------------------------------------------------
+    # docs/jaryo-panes.md section 3.3: a pressed control is the inverted fill of its own pane, so its label (the pane's background) must
+    # read on its fill (the pane's ink). The driver presses every visible control of every state two ways: ":active" forced through the
+    # DevTools protocol (light and dark), and, in the dark run, a real mouse-down, which it also photographs.
+    PRIMARY = {"back": ("phone", "messages", "helper", "settings"), "apps-close": ("allapps",), "unlock": ("lock-start", "lock"), "lock-call": ("lock-start", "lock")}
+    PRESSED_ON_BLACK = ("rgb(0,0,0)", "rgb(230,226,217)")  # label, fill: the black pane's inverted fill
+
+    def pressed(self, kind):
+        """(page, state key, state name, item) for every pressed control of the main page and the OS pages."""
+        for prefix in ("states", "os"):
+            for k, scheme, hand, name, m in self.states(prefix):
+                for it in m["press"][kind]:
+                    yield prefix, k, name, it
+
+    def test_a_pressed_control_never_loses_its_label(self):
+        seen = 0
+        for prefix, k, name, it in self.pressed("forced"):
+            if it["cr"] is None:  # no text: the battery gauge
+                continue
+            seen += 1
+            self.assertGreaterEqual(it["cr"], 15, (k, it["who"], it["txt"], it["fg"], "on", it["bg"]))
+            if not it["dis"] and it["ap"] != "true":  # a dashed disabled button and a toggle that is already on do not change
+                self.assertTrue(it["inv"], (k, it["who"], it["txt"], "does not invert when pressed"))
+        self.assertGreater(seen, 400)
+        for hand, o in self.r["osk"].items():
+            for it in o["press"]:
+                if it["cr"] is not None:
+                    self.assertGreaterEqual(it["cr"], 15, ("keyboard", hand, it["who"], it["txt"]))
+
+    def test_home_close_unlock_and_call_are_black_on_the_inverted_fill_while_pressed(self):
+        want = {(hand, name, who) for who, names in self.PRIMARY.items() for name in names for hand in ("right", "left")}
+        for kind in ("forced", "real"):
+            found = {}
+            for k, scheme, hand, name, m in self.states():
+                if kind == "real" and scheme != "dark":
+                    continue
+                for it in m["press"][kind]:
+                    if it["who"] in self.PRIMARY and name in self.PRIMARY[it["who"]]:
+                        found.setdefault((hand, name, it["who"], scheme), it)
+            for hand, name, who in want:
+                for scheme in (("dark",) if kind == "real" else ("light", "dark")):
+                    it = found.get((hand, name, who, scheme))
+                    self.assertIsNotNone(it, (kind, hand, name, who, scheme, "was not pressed"))
+                    self.assertEqual((it["fg"], it["bg"]), self.PRESSED_ON_BLACK, (kind, hand, name, who, scheme))
+                    self.assertTrue(it["inv"], (kind, hand, name, who))
+                    if kind == "real":
+                        self.assertTrue(it["active"], (hand, name, who, "the browser did not see a press"))
+                        self.assertGreaterEqual(it["pix"], 10, (hand, name, who, "no label in the picture of the pressed button"))
+
+    def test_the_os_pages_home_link_is_black_on_the_inverted_fill_while_pressed(self):
+        for kind in ("forced", "real"):
+            homes = [(k, it) for prefix, k, name, it in self.pressed(kind) if prefix == "os" and it["who"] == "home" and name.startswith("net-")]
+            self.assertGreaterEqual(len(homes), 4, kind)
+            for k, it in homes:
+                self.assertEqual((it["fg"], it["bg"]), self.PRESSED_ON_BLACK, (kind, k))
+
+    def test_a_real_mouse_down_leaves_a_label_in_every_pressed_control(self):
+        seen = 0
+        for prefix, k, name, it in self.pressed("real"):
+            seen += 1
+            self.assertTrue(it["active"], (k, it["who"], "the browser did not see a press"))
+            if it["cr"] is not None:
+                self.assertGreaterEqual(it["cr"], 15, (k, it["who"], it["txt"], it["fg"], "on", it["bg"]))
+            self.assertGreaterEqual(it["pix"], 10, (k, it["who"], it["txt"], "the picture of the pressed button has no label in it"))
+        self.assertGreater(seen, 150)
+
         self.assertIsNone(self.r["off"]["one_pane"]["ff"])
         self.assertIsNone(self.r["off"]["below_gate"]["ff"])
         self.assertEqual(self.r["off"]["slab"]["ff"], "slab")

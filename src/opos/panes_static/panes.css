@@ -16,9 +16,14 @@ html[data-panes=two][data-hand=left]{--jp-l:var(--jp-k);--jp-l-ink:var(--jp-k-in
 html[data-panes=two]::before{content:"";position:fixed;z-index:-1;top:0;bottom:0;left:0;width:var(--jp-x1);background:var(--jp-l);pointer-events:none}
 html[data-panes=two]::after{content:"";position:fixed;z-index:1000;top:0;bottom:0;left:var(--jp-x1);width:calc(var(--jp-x2) - var(--jp-x1));background:var(--jp-k);pointer-events:none}
 html[data-panes=two] :is(body,#phone){background:transparent}
-/* 3. Roles: every child of #phone and #lock is a list item (white) unless it is named here as an active item (black). */
-html[data-panes=two] :is(#phone>*,#lock>*){--jaryo-bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);color:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
-html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),#lock>button,#jaryo-status-row,#reload-shell,#demo){--jaryo-bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+/* 3. Roles: every child of #phone and #lock is a list item (white) unless it is named here as an active item (black). A role sets the two
+   tokens; jaryo.css paints with them. `color` is set only on what is not a button: a button takes its label from jaryo.css's own
+   `button{color:var(--jaryo-fg)}` and `button:active{color:var(--jaryo-bg)}`, and a `color` stated here for Home, Close, Unlock or Call
+   (two ids) would out-specify `button:active` and leave ink on ink while the button is pressed. */
+html[data-panes=two] :is(#phone>*,#lock>*){--jaryo-bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
+html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),#lock>button,#jaryo-status-row,#reload-shell,#demo){--jaryo-bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+html[data-panes=two] :is(#phone>*,#lock>*):not(button){color:var(--jp-lst-ink)}
+html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),#lock>button,#jaryo-status-row,#reload-shell,#demo):not(button){color:var(--jp-act-ink)}
 /* 4. Placement (Hand: Right): list items in the first column, active items in the second. */
 html[data-panes=two][data-ff] #phone>:is(#threads,#helper){grid-column:1}
 html[data-panes=two][data-ff] #phone>:is(#home,#apps-list,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),
@@ -52,7 +57,7 @@ html[data-panes=two] main:not(.cols)>section:nth-of-type(1){grid-column:1;paddin
 html[data-panes=two] main:not(.cols)>section:nth-of-type(2){grid-column:3;padding:0 16px;--fg:var(--jp-act-ink);--bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);--jaryo-bg:var(--jp-act);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
 html[data-panes=two] body>header{border-bottom:0}
 html[data-panes=two] body>header>h1{grid-column:1;padding:0 16px .4rem;border-bottom:3px solid var(--fg);--fg:var(--jp-lst-ink);--bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);--jaryo-bg:var(--jp-lst);color:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
-html[data-panes=two] body>header>#home{grid-column:3;justify-self:start;margin:0 16px;--fg:var(--jp-act-ink);--bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);--jaryo-bg:var(--jp-act);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+html[data-panes=two] body>header>#home{grid-column:3;justify-self:start;margin:0 16px;--fg:var(--jp-act-ink);--bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);--jaryo-bg:var(--jp-act);color-scheme:var(--jp-act-cs)}
 html[data-panes=two] #gap{display:none}
 html[data-panes=two] .note:empty{display:none}
 /* 11. Native controls take the pane's ink: no UA grey, no placeholder dimming. Checked = inverted fill. */

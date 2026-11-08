@@ -150,6 +150,7 @@ html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,
 ```
 
 - Default is the list pane, so any child that a later branch adds to `#phone` is white with dark ink and sits in column 1 until someone lists it.
+- `color` is stated only on what is not a button (`:not(button)`). A button takes its label from `jaryo.css` (`button{color:var(--jaryo-fg)}`, `button:active{color:var(--jaryo-bg)}`), and a `color` stated on `#back`, `#apps-close`, `#unlock` or `#lock-call` by the rules above (two ids, so more specific than `button:active`) left the label in the pane's ink on a fill that had just become the pane's ink: the label vanished while pressed. The same holds for the Home link of `/network` in rule 9. The browser test presses every visible control (section 8) so a control added later cannot repeat it.
 - `color-scheme` follows the pane, so native `select`, `input[type=time]` and scrollbars draw for the right background.
 - "Pressed, active, on = inverted fill" is `button:active, [aria-pressed="true"] { background: var(--jaryo-fg); color: var(--jaryo-bg) }` in `jaryo.css`, so it inverts relative to the pane it sits in: in the black pane a pressed button is `#000` text on a `#e6e2d9` fill; in the white pane it is `#f3f0e8` text on a `#1a1a1a` fill. Measured: "Helper: On" in the Shade (white pane) is the second; the selected region chip in the first-run time zone step (black pane) is the first.
 - Focus ring `outline: 3px solid var(--jaryo-fg); outline-offset: 3px` takes the pane's ink the same way.
