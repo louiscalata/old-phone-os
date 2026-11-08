@@ -58,6 +58,7 @@ evidence about the current source.
 ## Design
 
 - [Jaryo design specification](jaryo.md): **historical** interface proposal followed by implementation notes.
+- [Jaryo panes](jaryo-panes.md): a black screen and a white screen on the window that spans both panels of the Duo, the Hand setting, and the text-button rules for the Duo OS pages (`OPOS_PANES=1`); checked in headless Chromium at 1392 x 900, not yet on the phone.
 - [Demo scene plan](storyboard.md): a proposed demo sequence that keeps simulation, model answers and recordings apart.
 
 ## Project records
