@@ -42,12 +42,14 @@ With a span set, the server serves the page as if the browser had reported two v
 Foldable rules apply with the first pane 675 px wide, the hinge as the gap and the second pane taking the rest;
 Auto picks Foldable; and the status line, the shade's handle and the lock screen are moved off the hinge. All of it
 applies only while the window is at least 1055 px wide (the first pane, the hinge and half a second pane), so a window
-on one panel (675 px) keeps the phone layout. A Device type chosen in Settings is still honoured, and Settings reads
-"Auto looks like: two screens" and then the window's size while the window spans both panels. Unset, the served page is
-byte-for-byte what it was. The service file carries the setting commented out, to be enabled once the layout has been
-checked on the phone. Not handled: a rotated window (the hinge would run across it), a phone folded with one panel
-dark, and two things that still cross the hinge: the thin battery bar along the top edge and, while it plays, the
-240 ms zoom from a tile to its app.
+on one panel (675 px) keeps the phone layout. A Device type chosen in Settings is still honoured. Settings reads
+"Auto looks like: two screens" while the window spans both panels, and whatever the window's width it adds the window's
+size, the output scale and the span it was given ("Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675."), again after
+every resize, so the numbers can be checked on the phone. Unset, the served page is byte-for-byte what it was. The
+service file carries the setting commented out, to be enabled once the layout has been checked on the phone. Not
+handled: a rotated window (the hinge would run across it), a phone folded with one panel dark, and two things that
+still cross the hinge: the thin battery bar along the top edge and, while it plays, the 240 ms zoom from a tile to its
+app.
 
 ## Build and check
 

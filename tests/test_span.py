@@ -331,6 +331,14 @@ class Wiring(unittest.TestCase):
         self.assertEqual(parse("675,42"), DUO)
 
 
+class Docs(unittest.TestCase):
+    def test_readme_says_the_window_readout_is_shown_whatever_the_width(self):
+        text = " ".join((ROOT / "packaging" / "duo-os" / "README.md").read_text(encoding="utf-8").split())
+        self.assertIn("whatever the window's width it adds the window's size, the output scale and the span it was given", text)
+        self.assertIn("again after every resize", text)
+        self.assertNotIn("while the window spans both panels. Unset", text)  # the old sentence tied the size to it
+
+
 # Runs in the browser page: every visible piece of text, button and field against the hinge, plus the numbers
 # that show where the layout put things.
 MEASURE = r"""(function(){
@@ -496,6 +504,9 @@ class Browser(unittest.TestCase):
             self.assertIsNone(m["ff"], k)
             self.assertEqual(m["display"], "flex", k)
             self.assertLessEqual(m["scroll"], 675, k)
+            # The readout is not tied to the window spanning: it is also what shows a window that does not.
+            self.assertNotIn("two screens", m["auto"], k)
+            self.assertTrue(m["auto"].endswith(". Window 675 x 900 CSS px at 1x, span 675 + 42 + 675."), m["auto"])
 
     def test_the_readout_follows_the_window_when_it_resizes(self):
         # A resize event, then a real change of the window's height: the line is written again each time and the
