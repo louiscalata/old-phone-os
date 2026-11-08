@@ -43,7 +43,9 @@ NetworkManager as the unprivileged user the server runs as (`droidian`). Nothing
   network replaces the saved entry only after the new one is up: a failed join (a wrong password, no address, the network gone) keeps
   the old entry and deletes only the profile that attempt itself left behind, so a wrong password is not retried forever and a
   right one is not lost. "Forget" and that cleanup look at every saved Wi-Fi profile, not the first few that the page lists, and
-  say "gone" or "Nothing was saved" only when they have checked.
+  say "gone" or "Nothing was saved" only when they have checked: a saved profile whose network name NetworkManager will not give
+  could be an entry for the network being joined, so after a failed join the text then says that OPOS could not read every saved
+  network and cannot tell whether this one is saved, as "Forget" does.
 - **Limits.** A Wi-Fi password is 8 to 63 characters (or 64 hex digits). Networks that need a user name (802.1X, "company or school")
   and WEP are listed but not joinable. Hidden networks can be joined by typing the name. Names starting with a dash are refused.
 

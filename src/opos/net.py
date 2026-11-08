@@ -759,7 +759,7 @@ class Net:
 
     def _join(self, ssid, password, hidden):
         q = _Q(self, JOIN_WAIT_S + 60)
-        listed, _ = self._wifi_profiles(q)  # all of them: a saved network must not be missed because it is the 21st
+        listed, complete = self._wifi_profiles(q)  # all of them: a saved network must not be missed because it is the 21st
         saved = [p for p in listed or [] if p["ssid"] == ssid]
         op = "connect" if saved and not password else "join"
         gs, err = self._ready(q, op)
@@ -786,7 +786,7 @@ class Net:
             return _ok(msg)
         msg = explain(r, password)
         if password:
-            msg += self._after_failed_join(q, ssid, listed, saved)
+            msg += self._after_failed_join(q, ssid, listed, saved, complete)
         return _bad(msg)
 
     def _drop_replaced(self, q, saved, r):
@@ -801,9 +801,10 @@ class Net:
                 stuck += 1
         return " The older saved entry for this network could not be removed." if stuck else ""
 
-    def _after_failed_join(self, q, ssid, listed, saved):
+    def _after_failed_join(self, q, ssid, listed, saved, complete=True):
         """After a failed join with a password: delete what this attempt left behind (profiles that did not exist before), never what
-        was saved. Says only what was checked."""
+        was saved. Says only what was checked: `complete` is the first listing's, and a profile whose SSID could not be read may be
+        a saved entry for this very network that `saved` cannot see, so "Nothing was saved" needs a listing without such a gap."""
         keep = " Your saved entry for this network was kept." if saved else ""
         if listed is None:
             return keep + " OPOS could not check whether the attempt left an entry behind."
@@ -817,7 +818,11 @@ class Net:
                 unresolved += 1
         if unresolved:
             return keep + " OPOS could not remove everything the attempt left behind."
-        return keep or " Nothing was saved."
+        if keep:
+            return keep
+        if not complete:
+            return " OPOS could not read every saved network, so it cannot tell whether " + ssid + " is saved."
+        return " Nothing was saved."
 
     def forget(self, ssid):
         """Delete every saved Wi-Fi entry for `ssid` (this also disconnects it)."""

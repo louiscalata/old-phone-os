@@ -873,6 +873,35 @@ class Join(unittest.TestCase):
         self.assertNotIn("Nothing was saved", r["error"])
         self.assertIn("could not check whether the attempt left an entry behind", r["error"])
 
+    def test_nothing_was_saved_is_not_claimed_while_a_saved_profile_cannot_be_read(self):
+        # "Old hotspot" may well be a saved entry for Neighbor 5G (its SSID cannot be read), and its name is not the SSID, so it is
+        # invisible to the match: the attempt's own leftover is removed, and the text must not say nothing is saved
+        uid = "55555555-5555-4555-8555-555555555555"
+        self.f.put("connections", self.f.read("connections") + f"Old hotspot:{uid}:wifi:\n")  # no ssid_<uuid> file: nmcli fails for it
+        self.f.put("leave_profile")
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertNotIn("Nothing was saved", r["error"])
+        self.assertNotIn("kept", r["error"], "no entry was matched, so none can be said to be kept either")
+        self.assertTrue(r["error"].endswith("OPOS could not read every saved network, so it cannot tell whether Neighbor 5G is saved."), r["error"])
+        self.assertEqual(self.f.read("deleted").split(), [UUID_NEW], "the attempt's own leftover is still removed, and only that")
+        self.assertIn(uid, self.f.read("connections"))
+
+    def test_nothing_was_saved_is_still_said_when_every_profile_could_be_read(self):
+        self.f.put("leave_profile")
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertTrue(r["error"].endswith("Nothing was saved."), r["error"])
+
+    def test_a_listing_that_fails_before_the_join_claims_nothing_and_deletes_nothing(self):
+        self.f.put("leave_profile")
+        self.f.put("list_fails_after", "0")  # NetworkManager lists nothing at all, before or after
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["error"].endswith("OPOS could not check whether the attempt left an entry behind."), r["error"])
+        self.assertNotIn("Nothing was saved", r["error"])
+        self.assertEqual(self.f.read("deleted"), "", "without the list from before the attempt, nothing can be told apart from what was there")
+        self.assertIn(UUID_NEW, self.f.read("connections"))
+
     def test_hidden_network(self):
         r = self.f.net().join("Secret Net", PW, hidden=True)
         self.assertTrue(r["ok"], r)
