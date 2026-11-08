@@ -26,7 +26,7 @@ c.document.addEventListener=function(){};
 get('time-left').scrollIntoView=function(){calls.push('battery')};
 c.window=c;""")
 HARNESS = HARNESS.replace(
-    "c.oposUI={lock(){calls.push('lock')},openApp(name){calls.push(name)}};",
+    "c.oposUI=Object.assign(c.oposUI||{},{lock(){calls.push('lock')},openApp(name){calls.push(name)}});",
     "c.oposUI.openApp=function(name){calls.push(name)};")
 HARNESS += r"""
 const out={},render=s=>c.oposHooks.forEach(f=>f(s));
@@ -134,6 +134,22 @@ class TestPrivateLockShade(unittest.TestCase):
         self.assertEqual(out['dismissType'], 'button')
         self.assertEqual(out['remaining'], ['secret demo text'])
         self.assertEqual(out['afterPoll'], ['secret demo text'])
+
+    def test_a_notice_is_stamped_with_the_pages_own_clock(self):
+        """The Shade's Recent notices use the one clock rule (W1-04): a browser clock before 2026 stamps "--:--", never a guessed time."""
+        if not NODE:
+            self.skipTest('node not installed')
+        stamps = {}
+        for year in (2026, 1970):
+            harness = HARNESS.replace(
+                "setInterval(){},navigator:{onLine:true},",
+                "setInterval(){},navigator:{onLine:true},Date:class extends Date{constructor(){super(%d,10,3,16,0)}}," % year, 1)
+            self.assertIn('Date:class extends Date', harness)
+            result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', harness, str(JS)],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            stamps[year] = json.loads(result.stdout)['item'][1][1]
+        self.assertEqual(stamps, {2026: '16:00', 1970: '--:--'})
 
     def test_helper_state_and_unavailable(self):
         out = self.run_js()

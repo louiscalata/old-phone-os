@@ -98,7 +98,7 @@ G('qs-helper').setAttribute('aria-pressed',s.helper_visible?'true':'false');
 G('qs-settings').hidden=!G('settings');
 var notice=typeof s.notice==='string'?s.notice.trim():'';
 if(notice&&notice!==lastNotice&&!String(s.status||'').startsWith('error:')){
-var at=new Date();notices.unshift({text:s.notice,at:at,clock:demoTime?s.clock:('0'+at.getHours()).slice(-2)+':'+('0'+at.getMinutes()).slice(-2)});
+var at=new Date();notices.unshift({text:s.notice,at:at,clock:demoTime?s.clock:window.oposUI.hhmm(at)});
 notices=notices.slice(0,5);
 renderNotices();
 }
