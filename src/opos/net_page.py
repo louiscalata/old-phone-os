@@ -10,6 +10,7 @@ import threading
 from html import escape
 
 from opos import net, secure
+from opos.firstrun_page import CSS as _BASE
 
 ACTIONS = frozenset({"net_status", "net_scan", "net_join", "net_forget", "net_wifi"})
 _SERVICE = None
@@ -71,7 +72,7 @@ def handle(action, data, svc=None):
 
 
 LINK = ('<section aria-labelledby="set-net"><h3 id="set-net">Network</h3><a id="net-link" href="/network" '
-        'style="display:inline-block;min-height:48px;line-height:48px;color:#9ecbff">Wi-Fi and radios</a></section>')
+        'style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline">Wi-Fi and radios</a></section>')
 ANCHOR = '<section aria-labelledby="set-about">'
 
 
@@ -82,32 +83,8 @@ def add_settings_link(html, env):
     return html.replace(ANCHOR, LINK + ANCHOR, 1)
 
 
-PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="opos-token" content="@@TOKEN@@"><title>Network - Old Phone OS Interface</title><link rel="icon" href="/favicon.ico" type="image/png"><style>
-:root{--hinge:42px;color-scheme:dark}
-*{box-sizing:border-box}
-[hidden]{display:none!important}
-body{margin:0;background:#111;color:#eee;font:20px/1.4 system-ui,sans-serif}
-header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid #333}
-h1{font-size:1.4em;margin:0}h2{font-size:1.1em;margin:0 0 8px}h3{margin:0 0 8px}
-#home{color:#9ecbff;min-height:48px;line-height:46px;padding:0 16px;text-decoration:none;border:1px solid #555;border-radius:8px}
-main{display:block;padding:12px 20px}
-section{padding:8px 0}
-#gap{display:none}
-@media (min-width:1200px){main{display:grid;grid-template-columns:minmax(0,1fr) var(--hinge) minmax(0,1fr);padding:12px 0}#gap{display:block}main>section{padding:8px 20px}}
-ul{list-style:none;margin:0;padding:0}
-#st li{padding:8px 0;border-bottom:1px solid #2a2a2a}
-button{font:inherit;min-height:48px;padding:0 16px;margin:4px 8px 4px 0;background:#2a2a2a;color:#eee;border:1px solid #666;border-radius:8px}
-button.go{background:#9ecbff;color:#111;border-color:#9ecbff}
-button:disabled{opacity:.45}
-#nets button{display:block;width:100%;text-align:left;margin:4px 0}
-input[type=password],input[type=text]{font:inherit;min-height:48px;width:100%;background:#1b1b1b;color:#eee;border:1px solid #666;border-radius:8px;padding:0 12px}
-input[type=checkbox]{width:24px;height:24px;vertical-align:middle}
-label{display:block;margin:8px 0}
-#sel{background:#1b1b1b;border:1px solid #444;border-radius:12px;padding:12px;margin-top:12px}
-.note{color:#bbb;font-size:.9em}
-#msg{min-height:1.4em;font-weight:bold}
-</style></head><body>
-<header><a id="home" href="/">Home</a><h1>Network</h1></header>
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="opos-token" content="@@TOKEN@@"><title>Network - Old Phone OS Interface</title><link rel="icon" href="/favicon.ico" type="image/png"><style>@@CSS@@</style><script>try{var t=localStorage.getItem('jaryo_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head><body>
+<header><a id="home" class="btn" href="/">Home</a><h1>Network</h1></header>
 <main>
 <section aria-labelledby="h-st"><h2 id="h-st">This phone</h2><ul id="st"><li>Reading the radios...</li></ul><p class="note" id="sim"></p><p class="note" id="ctl"></p><ul class="note" id="notes"></ul></section>
 <div id="gap" aria-hidden="true"></div>
@@ -115,7 +92,7 @@ label{display:block;margin:8px 0}
 <div><button id="scan" type="button">Scan</button><button id="tog" type="button" disabled>Turn Wi-Fi off</button><button id="disc" type="button" hidden>Disconnect</button><button id="hid" type="button" disabled>Hidden network</button></div>
 <p id="msg" role="status" aria-live="polite"></p>
 <ul id="nets"></ul>
-<div id="sel" hidden><h3 id="sel-t"></h3><label id="hrow" hidden>Network name<input id="ssid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32"></label><p class="note" id="sel-n"></p><label id="prow"><span id="pwl">Password</span><input id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64"></label><label id="srow"><input id="show" type="checkbox"> Show the password</label><div><button id="b-join" type="button" class="go">Join</button><button id="b-forget" type="button">Forget</button><button id="b-disc" type="button">Disconnect</button><button id="b-cancel" type="button">Cancel</button></div></div>
+<div id="sel" hidden><h3 id="sel-t"></h3><label id="hrow" hidden>Network name<input id="ssid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32"></label><p class="note" id="sel-n"></p><label id="prow"><span id="pwl">Password</span><input id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64"></label><label id="srow"><input id="show" type="checkbox"> Show the password</label><div><button id="b-join" type="button" class="main">Join</button><button id="b-forget" type="button">Forget</button><button id="b-disc" type="button">Disconnect</button><button id="b-cancel" type="button">Cancel</button></div></div>
 <p class="note">The password is passed to the phone's network service and is not kept by OPOS. A failed join is not saved.</p>
 </section>
 </main>
@@ -129,7 +106,7 @@ if(r.status===429)return{error:'Too many tries in a row. Wait a few seconds, the
 if(r.status===403)return{error:'This page is out of date. Reload it, then try again.'};
 if(r.status>=500)return{error:'Something went wrong in OPOS. Try again in a minute.'};
 return j})}).catch(function(){return{error:'OPOS is not responding. Wait a few seconds, then reload this page.'}})}
-function say(t,bad){var m=G('msg');m.textContent=t||'';m.style.color=bad?'#ffb4a9':'#eee'}
+function say(t,bad){var m=G('msg');m.textContent=t||'';m.toggleAttribute('data-bad',!!bad)}
 function li(ul,t){var l=document.createElement('li');l.textContent=t;ul.appendChild(l)}
 function lock(){['tog','hid','b-join','b-forget','b-disc'].forEach(function(i){G(i).disabled=busy||!can});G('scan').disabled=busy}
 function paint(s){var u=G('st');u.textContent='';
@@ -172,6 +149,27 @@ setInterval(function(){if(!document.hidden&&!busy&&G('sel').hidden)refresh()},10
 </script></body></html>"""
 
 
+_NET_CSS = """
+header{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:3px solid var(--fg)}
+header h1{border:0;padding:0;margin:0}
+main{display:block;padding:12px 16px}
+section{padding:8px 0}
+section+section{border-top:1px solid var(--fg)}
+#gap{display:none}
+@media (min-width:1000px){main{display:grid;grid-template-columns:minmax(0,1fr) var(--hinge) minmax(0,1fr);padding:12px 0}#gap{display:block}main>section{padding:8px 16px;border-top:0}}
+ul{list-style:none;margin:0;padding:0}
+#st li{padding:8px 0;border-bottom:1px solid var(--fg)}
+#nets button{display:block;width:100%;text-align:left;margin:8px 0}
+input[type=password],input[type=text]{width:100%;min-height:48px;margin:8px 0;padding:8px 12px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
+label{display:block;margin:8px 0}
+#srow{display:flex;align-items:center;gap:12px;min-height:48px}
+#sel{border:1px solid var(--fg);padding:12px;margin-top:12px}
+#msg{min-height:1.4em;font-weight:700}#msg[data-bad]{border:3px double var(--fg);padding:8px 12px}
+button:disabled::after{content:" unavailable"}
+.note:empty{display:none}
+"""
+
+
 def render(token, nonce):
     """The page, with the session token and the CSP nonce on its inline style and script."""
-    return secure.add_nonce(PAGE.replace("@@TOKEN@@", escape(token, quote=True)), nonce)
+    return secure.add_nonce(PAGE.replace("@@CSS@@", _BASE + _NET_CSS).replace("@@TOKEN@@", escape(token, quote=True)), nonce)
