@@ -194,6 +194,8 @@ class Phone:
         self.live = live_battery is not None
         self.sim = live_battery if self.live else DrainSim(60.0, health=0.6, temp_c=30.0, speed=1.0)  # Saver at start: the helper answers, maps and photos backup rest
         self.dash = Dashboard(self.runtime.tasks)
+        if self.live:
+            self.runtime.estimator = self.sim.rate_estimator()  # reserve and hours_left follow measured discharge, not raw level steps
         self.clock_s = _local_clock_s() if self.live else 43200
         self.charging = bool(self.sim.charging) if self.live else False
         self.running = False
@@ -287,8 +289,15 @@ class Phone:
         free, rss, engine = self._environment()
         if self.visible:
             out["helper"] = {"mode": d.mode.name, "allowed": list(d.allowed), "paused": list(d.deferred), "hours_left": None if math.isinf(tick.hours_left) else round(tick.hours_left, 1), "reserve": round(tick.reserve, 1), "source": "router" if d.reason.startswith("router") else "rules", "engine": engine}
+        drain, drain_info = tick.drain_per_h, None
+        if self.live:
+            drain, drain_info = self.sim.drain_rate(drain)  # the phone's measured discharge once trusted, else the model's
         out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason,
-                                        deferred=d.deferred, steps=tick.steps, drain_per_h=tick.drain_per_h)
+                                        deferred=d.deferred, steps=tick.steps, drain_per_h=drain)
+        if drain_info is not None:
+            out["battery"]["drain"] = drain_info
+            if "why" in out["battery"] and not self.charging:
+                out["battery"]["why"] += "; " + self.sim.drain_words(drain_info)
         reasons = self._paused_reasons(tick, goal_met=out["battery"]["goal_met"])
         held = set(tick.held)
         for item in out["battery"]["paused"]:
