@@ -818,7 +818,8 @@ class Web(unittest.TestCase):
             nonce = re.search(r"script-src 'nonce-([A-Za-z0-9_-]+)'", csp).group(1)
             self.assertIn(f'<script nonce="{nonce}">', html)
             self.assertIn(f'<style nonce="{nonce}">', html)
-            self.assertEqual(html.count("<script"), 1)
+            self.assertEqual(html.count("<script"), 2)  # the theme loader in the head and the page script, both under the nonce
+            self.assertEqual(html.count(f'<script nonce="{nonce}">'), 2)
             self.assertNotRegex(html, r"\son[a-z]+=")
             self.assertNotIn("innerHTML", html)
             self.assertIn("not kept by OPOS", html)
