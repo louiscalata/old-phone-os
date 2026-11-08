@@ -711,17 +711,20 @@ def check_usb(c):
 
 
 def sshd_settings(c):
-    """First-match-wins global settings and Match blocks from sshd_config and its Include files (as configured, not probed)."""
-    glob_, matches, seen = {}, [], set()
+    """First-match-wins global settings and Match blocks from sshd_config and its Include files (as configured, not probed).
 
-    def one(path):
-        if path in seen or len(seen) > 40:
+    As in OpenSSH, an Include inside a Match block puts the included file's settings in that block, a Match line in an included
+    file opens a block of its own that ends with that file, and after the Include the including file is back in its own block."""
+    glob_, matches, stack, reads = {}, [], [], [0]
+
+    def one(path, cur):
+        if path in stack or len(stack) > 10 or reads[0] > 40:
             return
-        seen.add(path)
+        reads[0] += 1
         text = c.rd(path)
         if text is None:
             return
-        cur = None
+        stack.append(path)
         for line in text.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -737,12 +740,13 @@ def sshd_settings(c):
                     d, _, fn = pat.rpartition("/")
                     for f in sorted(c.ls(d) or []):
                         if fnmatch.fnmatch(f, fn):
-                            one(d + "/" + f)
+                            one(d + "/" + f, cur)
             elif cur is not None:
                 cur["set"].setdefault(k, v.lower())
             else:
                 glob_.setdefault(k, v.lower())
-    one("/etc/ssh/sshd_config")
+        stack.pop()
+    one("/etc/ssh/sshd_config", None)
     return glob_, matches
 
 
@@ -968,6 +972,16 @@ def saved_zone(c):
     return ((c.rd(home + "/.config/opos/timezone") or "").strip().splitlines() or [""])[0].strip() if home else ""
 
 
+def timezone_shape_ok(z):
+    """/api/timezone as src/opos/firstrun.py sends it: zone names, where they came from, the saved and the active zone, the clock.
+    The setup page loads this together with /api/firstrun, so without a good answer it cannot open."""
+    if not isinstance(z, dict):
+        return False
+    zones, saved = z.get("zones"), z.get("saved")
+    return (isinstance(zones, list) and bool(zones) and all(isinstance(n, str) and n for n in zones) and z.get("source") in ("system", "builtin")
+            and (saved is None or isinstance(saved, str)) and isinstance(z.get("active"), str) and isinstance(z.get("clock"), dict))
+
+
 def api_json(c, path, token):
     """(status, parsed JSON or None) for GET /<path> with the page token."""
     st, body, ms, err = http_get(urljoin(c.url, path), {"X-OPOS-Token": token} if token else None)
@@ -1004,17 +1018,19 @@ def check_firstrun(c):
         st, state = api_json(c, "api/firstrun", m.group(1))
         gate = http_get(urljoin(c.url, "api/firstrun"))[0]
         zst, zone = api_json(c, "api/timezone", m.group(1))
+        zok = zst == 200 and timezone_shape_ok(zone)
         link = 'href="/timezone"' in page
         pending, clock = (state or {}).get("pending"), (state or {}).get("clock")
-        ev = "GET /firstrun -> %s, /timezone -> %s, /api/firstrun -> %s (no token -> %s); Settings links to /timezone: %s" % (
-            fr[0] or fr[3], tz[0] or tz[3], st, gate, "yes" if link else "NO")
+        ev = "GET /firstrun -> %s, /timezone -> %s, /api/firstrun -> %s (no token -> %s), /api/timezone -> %s%s; Settings links to /timezone: %s" % (
+            fr[0] or fr[3], tz[0] or tz[3], st, gate, zst, "" if zok or zst != 200 else " (not JSON in the shape the setup page needs)", "yes" if link else "NO")
         if isinstance(pending, bool) and isinstance(clock, dict):
             ev += "; first run %s" % ("PENDING: the next screen start shows the setup" if pending else "done")
-        if zone is not None:
+        if zok:
             ev += "; zone saved %s, server uses %s" % (zone.get("saved") or "none", zone.get("active") or "its default")
-        good = fr[0] == 200 and tz[0] == 200 and state is not None and isinstance(pending, bool) and isinstance(clock, dict) and gate == 403 and link
+        good = (fr[0] == 200 and tz[0] == 200 and state is not None and isinstance(pending, bool) and isinstance(clock, dict) and gate == 403 and link
+                and zok)
         if good:
-            skew = zone is not None and zone.get("saved") and zone.get("active") != zone.get("saved")
+            skew = zone.get("saved") and zone.get("active") != zone.get("saved")
             c.emit("WARN" if skew else "PASS", "firstrun.routes", ev + ("; the server has not applied the saved zone: restart opos-server" if skew else ""))
         else:
             c.emit("FAIL", "firstrun.routes", ev)

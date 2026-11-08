@@ -298,6 +298,10 @@ class Handler(BaseHTTPRequestHandler):
     pending = False
     zone_saved = None
     zone_active = None
+    tz_status = 200  # what /api/timezone answers with, so that route can fail on its own
+    tz_raw = None  # the raw body to send instead of the good one
+    tz_zones = ["Europe/Berlin", "UTC"]
+    tz_source = "system"
 
     def log_message(self, *a):
         pass
@@ -328,7 +332,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(403, '{"error":"forbidden"}')
             if self.path == "/api/firstrun":
                 return self.send(200, json.dumps({"pending": self.pending, "clock": {"plausible": True}, "goal": {}, "helper": "off", "timezone": {"saved": self.zone_saved}}))
-            return self.send(200, json.dumps({"zones": [], "source": "system", "saved": self.zone_saved, "active": self.zone_active or "", "clock": {}}))
+            if self.tz_raw is not None:
+                return self.send(self.tz_status, self.tz_raw)
+            return self.send(self.tz_status, json.dumps({"zones": self.tz_zones, "source": self.tz_source, "saved": self.zone_saved,
+                                                         "active": self.zone_active or "", "clock": {}}))
         if self.path == "/api/state":
             if self.gate and self.headers.get("X-OPOS-Token") != "tok123":
                 return self.send(403, '{"error":"forbidden"}')
@@ -933,6 +940,52 @@ class Ssh(SelftestCase):
         self.f.rm("etc/ssh/sshd_config")
         self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
 
+    # OpenSSH applies an Include inside a Match block within that block. Reading it as global let the earlier "no" hide a "yes".
+    def test_a_password_yes_included_from_a_match_user_block_is_not_global_and_not_missed(self):
+        self.f.put("etc/ssh/sshd_config", SSHD + "Match User droidian\n    Include /etc/ssh/extra-pw.conf\n")
+        self.f.put("etc/ssh/extra-pw.conf", "PasswordAuthentication yes\n")
+        r = self.run_st()
+        self.assertEqual(r.status("ssh.auth"), "WARN", r.ev("ssh.auth"))
+        self.assertIn("User droidian", r.ev("ssh.auth"))
+        self.assertIn("non-private", r.ev("ssh.auth"))
+
+    def test_the_same_include_from_a_private_address_block_is_fine_and_named(self):
+        self.f.put("etc/ssh/sshd_config", SSHD + "Match Address %s\n    Include extra-pw.conf\n" % USB_NET)
+        self.f.put("etc/ssh/extra-pw.conf", "PasswordAuthentication yes\n")
+        r = self.run_st()
+        self.assertEqual(r.status("ssh.auth"), "PASS", r.ev("ssh.auth"))
+        self.assertIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
+
+    def test_an_include_in_a_match_block_of_a_dropin_and_a_glob(self):
+        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+                   "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch User droidian\n    Include /etc/ssh/extra.d/*.conf\n")
+        self.f.put("etc/ssh/extra.d/a.conf", "# nothing\n")
+        self.f.put("etc/ssh/extra.d/b.conf", "KbdInteractiveAuthentication yes\n")
+        r = self.run_st()
+        self.assertEqual(r.status("ssh.auth"), "WARN", r.ev("ssh.auth"))
+        self.assertIn("User droidian", r.ev("ssh.auth"))
+
+    def test_a_match_line_in_an_included_file_ends_with_that_file(self):
+        # the included file opens its own block; the lines after the Include are back in the including file's block
+        self.f.put("etc/ssh/sshd_config", SSHD + "Match User droidian\n    Include /etc/ssh/inc.conf\n    PasswordAuthentication yes\n")
+        self.f.put("etc/ssh/inc.conf", "Match Address %s\n    PermitEmptyPasswords no\n" % USB_NET)
+        r = self.run_st()
+        self.assertEqual(r.status("ssh.auth"), "WARN", r.ev("ssh.auth"))
+        self.assertIn("User droidian", r.ev("ssh.auth"), "the later yes belongs to Match User, not to the Address block of the included file")
+        self.assertNotIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
+
+    def test_a_global_include_still_sets_global_values_and_a_loop_ends(self):
+        self.f.put("etc/ssh/sshd_config", "Include /etc/ssh/loop.conf\n" + SSHD)
+        self.f.put("etc/ssh/loop.conf", "PasswordAuthentication yes\nInclude /etc/ssh/loop.conf\n")
+        self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
+
+    def test_a_list_with_a_public_entry_after_a_private_one_is_not_private(self):
+        # Match Address takes a list; looking only at the first entry would call this private
+        a = "10." + "0.1.0/24"
+        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+                   "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s,203.0.113.0/24\n  PasswordAuthentication yes\n" % a)
+        self.assertEqual(self.run_st().status("ssh.auth"), "WARN")
+
 
 class Updater(SelftestCase):
     def build(self, phase="idle", signers=1, path="active"):
@@ -1152,6 +1205,29 @@ class FirstRun(PieceCase):
         r = self.on(handler_with(osk=True, network=True, firstrun=False), **SERVER_ENV).run()
         self.assertEqual(r.status("firstrun.routes"), "FAIL")
         self.assertIn("GET /firstrun -> 404", r.ev("firstrun.routes"))
+
+    def test_a_failing_timezone_api_fails_the_check_on_its_own(self):
+        """The setup page loads /api/firstrun and /api/timezone together, so it cannot open without both. Everything else here is fine."""
+        bad = {"a 500": dict(tz_status=500, tz_raw='{"error":"boom"}'), "a 404": dict(tz_status=404, tz_raw="{}"),
+               "invalid JSON": dict(tz_raw="<html>oops</html>"), "an empty body": dict(tz_raw=""), "a JSON list": dict(tz_raw="[]"),
+               "no zones": dict(tz_zones=[]), "zones that are not names": dict(tz_zones=[1, 2]), "an unknown source": dict(tz_source="guess"),
+               "a missing key": dict(tz_raw=json.dumps({"zones": ["UTC"], "source": "system", "saved": None, "clock": {}}))}
+        for name, attrs in bad.items():
+            with self.subTest(name):
+                r = self.on(handler_with(osk=True, network=True, firstrun=True, **attrs), **SERVER_ENV).run()
+                self.assertEqual(r.status("firstrun.routes"), "FAIL", r.ev("firstrun.routes"))
+                self.assertIn("/api/timezone ->", r.ev("firstrun.routes"))
+                self.assertIn("GET /firstrun -> 200, /timezone -> 200, /api/firstrun -> 200 (no token -> 403)", r.ev("firstrun.routes"), "the other routes were fine")
+                self.assertEqual(r.rc, 1)
+        r = self.on(handler_with(osk=True, network=True, firstrun=True, tz_status=500, tz_raw="{}"), **SERVER_ENV).run()
+        self.assertIn("/api/timezone -> 500", r.ev("firstrun.routes"))
+        r = self.on(handler_with(osk=True, network=True, firstrun=True, tz_raw="<html>"), **SERVER_ENV).run()
+        self.assertIn("/api/timezone -> 200 (not JSON in the shape the setup page needs)", r.ev("firstrun.routes"))
+
+    def test_a_builtin_zone_list_and_a_saved_zone_are_good_answers(self):
+        r = self.on(handler_with(osk=True, network=True, firstrun=True, tz_source="builtin", zone_saved="UTC", zone_active="UTC"), **SERVER_ENV).run()
+        self.assertEqual(r.status("firstrun.routes"), "PASS", r.ev("firstrun.routes"))
+        self.assertIn("/api/timezone -> 200;", r.ev("firstrun.routes"))
 
     def test_the_server_must_have_applied_the_saved_zone(self):
         f = self.on(handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Europe/Paris"), **SERVER_ENV)
