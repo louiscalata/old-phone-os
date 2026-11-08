@@ -44,6 +44,7 @@ LOCAL_TOTAL = 2.0      # the whole local probe: headers, 1xx lines and body
 STALE_AFTER = CACHE_SECONDS + LOCAL_TOTAL + TOTAL_DEADLINE + 2   # a collection older than this is not current
 MAX_MACHINES = 8
 MAX_MODELS = 8
+MAX_LOOKUPS = 4        # name lookups that may be running at once, abandoned ones included
 MORE = "and more"
 
 # Built from octets so the repository's privacy guard does not read them as addresses.
@@ -71,6 +72,7 @@ FETCH_WORDS = {
     "unreachable": ("UNREACHABLE", "The monitor did not answer."),
     "timeout": ("TIMED OUT", "The monitor took too long to answer."),
     "certificate": ("REFUSED", "This phone does not trust the monitor's certificate."),
+    "certificate-date": ("REFUSED", "The monitor's certificate is outside its dates, or this phone's clock is wrong."),
     "redirect": ("REFUSED", "The monitor tried to send this phone somewhere else. Redirects are not followed."),
     "status": ("UNKNOWN", "The monitor answered with an error."),
     "type": ("UNKNOWN", "The monitor answered with something that is not JSON."),
@@ -127,7 +129,7 @@ def clean_int(value, low, high):
 def reason_words(code):
     if not isinstance(code, str) or not _REASON.fullmatch(code):
         return "not observed"
-    return REASON_WORDS.get(code, code.replace("_", " "))
+    return REASON_WORDS.get(code) or " ".join(code.split("_")).strip() or "not observed"
 
 
 def _rate(value):
@@ -193,8 +195,17 @@ def address_allowed(ip):
     return ip.is_loopback or ip.is_link_local or any(ip in net for net in _PRIVATE_NETS)
 
 
+_LOOKUPS = threading.BoundedSemaphore(MAX_LOOKUPS)
+
+
 def _resolve_bounded(host, port, resolver, seconds):
-    """A name lookup that cannot hold the caller longer than `seconds` (getaddrinfo has no timeout of its own)."""
+    """A name lookup that cannot hold the caller longer than `seconds` (getaddrinfo has no timeout of its own).
+
+    A lookup that is abandoned keeps its thread until the resolver returns, so at most MAX_LOOKUPS run at once;
+    past that a new one is refused at once as a timeout instead of piling up threads.
+    """
+    if not _LOOKUPS.acquire(blocking=False):
+        raise FetchError("timeout")
     box = {}
 
     def work():
@@ -202,9 +213,16 @@ def _resolve_bounded(host, port, resolver, seconds):
             box["infos"] = resolver(host, port, type=socket.SOCK_STREAM)
         except BaseException as error:  # handed back to the caller's thread
             box["error"] = error
+        finally:
+            _LOOKUPS.release()
 
     worker = threading.Thread(target=work, daemon=True)
-    worker.start()
+    try:
+        worker.start()
+    except BaseException:
+        # No thread, so nothing will ever release this permit: give it back, or four failures end every lookup.
+        _LOOKUPS.release()
+        raise
     worker.join(max(0.0, seconds))
     if worker.is_alive():
         raise FetchError("timeout")
@@ -234,6 +252,12 @@ def resolve_allowed(host, port, resolver=socket.getaddrinfo, timeout=DNS_DEADLIN
 
 # ---------------------------------------------------------------- fetching
 
+def boot_clock():
+    """Seconds since boot, including time spent suspended where the platform has such a clock (Linux)."""
+    clock_id = getattr(time, "CLOCK_BOOTTIME", None)
+    return time.clock_gettime(clock_id) if clock_id is not None else time.monotonic()
+
+
 def _cut(connection):
     """Shuts down the socket a connection owns, from any thread, whatever phase it is in."""
     live = getattr(connection, "live", None)
@@ -251,8 +275,11 @@ class _Pinned(http.client.HTTPConnection):
     says Connection: close, so a watchdog reading `self.sock` would miss a body or trailer that drips.
     """
 
-    def __init__(self, family, sockaddr, host, port, tls, connect_timeout=CONNECT_TIMEOUT):
-        super().__init__(host, port, timeout=READ_TIMEOUT)
+    def __init__(self, family, sockaddr, host, port, tls, connect_timeout=CONNECT_TIMEOUT, read_timeout=None, abort=None):
+        self._abort = abort
+        self.connected = False
+        self._read_timeout = READ_TIMEOUT if read_timeout is None else read_timeout
+        super().__init__(host, port, timeout=self._read_timeout)
         self._pin = (family, sockaddr)
         self._tls = tls
         self._tls_host = host
@@ -263,18 +290,27 @@ class _Pinned(http.client.HTTPConnection):
         family, sockaddr = self._pin
         sock = self.live = socket.socket(family, socket.SOCK_STREAM)
         try:
+            # The watchdog sets `abort` before it cuts `live`. If it fired while this socket did not exist yet, the
+            # cut found nothing to cut, so it is checked here, right after the socket is in `live`, and again after TLS.
+            self._check_abort()
             sock.settimeout(self._connect_timeout)
             sock.connect(sockaddr)
-            sock.settimeout(READ_TIMEOUT)
+            self.connected = True
+            sock.settimeout(self._read_timeout)
             if self._tls:
                 # The handshake is done by hand so the watchdog can cut a handshake that drips, too.
                 sock = ssl.create_default_context().wrap_socket(sock, server_hostname=self._tls_host, do_handshake_on_connect=False)
                 self.live = sock
+                self._check_abort()
                 sock.do_handshake()
         except BaseException:
             self.live.close()
             raise
         self.sock = sock
+
+    def _check_abort(self):
+        if self._abort is not None and self._abort.is_set():
+            raise OSError("cut by the deadline")
 
 
 def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
@@ -286,14 +322,14 @@ def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
     addresses = resolve_allowed(remote.host, remote.port, resolver, min(DNS_DEADLINE, TOTAL_DEADLINE))
     host_header = remote.host_header or (f"{remote.host}:{remote.port}" if ":" not in remote.host else f"[{remote.host}]:{remote.port}")
     last = "unreachable"
-    untrusted = False
+    untrusted = None
     for family, sockaddr in addresses:
         remaining = deadline - clock()
         if remaining <= 0:
             raise FetchError("timeout")
-        conn = _Pinned(family, sockaddr, remote.host, remote.port, remote.scheme == "https",
-                       connect_timeout=min(CONNECT_TIMEOUT, remaining))
         cut = threading.Event()
+        conn = _Pinned(family, sockaddr, remote.host, remote.port, remote.scheme == "https",
+                       connect_timeout=min(CONNECT_TIMEOUT, remaining), abort=cut)
 
         def watchdog(conn=conn, cut=cut):
             cut.set()
@@ -345,12 +381,15 @@ def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
                 last = error.code
                 continue
             raise
-        except ssl.SSLCertVerificationError:
+        except ssl.SSLCertVerificationError as error:
             # Before OSError: it is one. A name the phone does not trust is not a monitor that did not answer.
             if cut.is_set():
                 raise FetchError("timeout") from None
-            last = "certificate"
-            untrusted = True
+            # OpenSSL 9 and 10: not yet valid, expired. A phone whose clock still reads 1970 meets 9 on every https monitor.
+            word = "certificate-date" if getattr(error, "verify_code", None) in (9, 10) else "certificate"
+            # An untrusted chain wins over a date problem on another address: fixing the clock would not help.
+            untrusted = untrusted if untrusted == "certificate" else word
+            last = untrusted
         except (socket.timeout, TimeoutError):
             last = "timeout"
         except (OSError, http.client.HTTPException, ssl.SSLError) as error:
@@ -366,7 +405,7 @@ def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
             timer.cancel()
             conn.close()
     # An untrusted certificate on one address is not hidden by a later address that simply did not answer.
-    raise FetchError("certificate" if untrusted and last == "unreachable" else last)
+    raise FetchError(untrusted if untrusted and last == "unreachable" else last)
 
 
 def _reject_constant(_name):
@@ -400,38 +439,16 @@ def local_models_url(env):
     return parts.hostname, port, path
 
 
-class _Live(http.client.HTTPConnection):
-    """Keeps its own reference to the socket, for the same reason as _Pinned."""
-
-    live = None
-
-    def connect(self):
-        super().connect()
-        self.live = self.sock
-
-
-def _every_address_refuses(host, port, resolver=socket.getaddrinfo):
-    """True only if every address the name resolves to actively refuses a connection."""
+def _loopback_addresses(host, port):
+    """The loopback addresses of the configured host. `localhost` is not looked up: RFC 6761 says what it is, and a
+    lookup would share (and could be starved of) the slots the remote's name lookups use."""
     try:
-        infos = resolver(host, port, type=socket.SOCK_STREAM)
-    except (OSError, UnicodeError):
-        return False
-    if not infos:
-        return False
-    for family, _kind, _proto, _name, sockaddr in infos:
-        sock = socket.socket(family, socket.SOCK_STREAM)
-        try:
-            sock.settimeout(LOCAL_TIMEOUT)
-            sock.connect(sockaddr)
-        except ConnectionRefusedError:
-            continue
-        except OSError:
-            return False
-        else:
-            return False
-        finally:
-            sock.close()
-    return True
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        return [(socket.AF_INET, ("127.0.0.1", port)), (socket.AF_INET6, ("::1", port, 0, 0))] if host == "localhost" else []
+    if not literal.is_loopback:
+        return []
+    return [(socket.AF_INET6, (host, port, 0, 0)) if literal.version == 6 else (socket.AF_INET, (host, port))]
 
 
 def _probe_request(conn, path):
@@ -458,38 +475,57 @@ def _probe_request(conn, path):
     return ("model", ids) if ids else ("empty", [])
 
 
-def probe_local(env=None, resolver=socket.getaddrinfo):
+def probe_local(env=None):
     """('model', [ids]) | ('empty', []) | ('none', []) | ('unknown', []).
 
-    'none' means every address of the configured port actively refused: the only answer that justifies saying
-    no model server is there. A probe that is cut by its deadline is always 'unknown'.
+    'none' means EVERY loopback address of the configured host actively refused: the only answer that justifies
+    saying no model server is there. On connect only two outcomes are decisive: a refusal (counted, next address)
+    and a timeout (a hung listener: unknown, stop). Any other connect failure, such as an unusable ::1, skips to the
+    next address and leaves the answer unknown unless a later address answers. Once connected, any failure is unknown.
+    A probe cut by its deadline is always 'unknown'.
     """
     host, port, path = local_models_url(env)
-    conn = _Live(host, port, timeout=LOCAL_TIMEOUT)
     fired = threading.Event()
+    current = {"conn": None}
 
     def watchdog():
         fired.set()
-        _cut(conn)
+        if current["conn"] is not None:
+            _cut(current["conn"])
 
     timer = threading.Timer(LOCAL_TOTAL, watchdog)
     timer.daemon = True
     timer.start()
     try:
-        outcome = _probe_request(conn, path)
-    except ConnectionRefusedError:
-        outcome = ("refused", [])
-    except (OSError, http.client.HTTPException, ValueError, RecursionError):
-        outcome = ("unknown", [])
+        addresses = _loopback_addresses(host, port)
+        if not addresses:
+            return "unknown", []
+        refused, outcome = 0, None
+        for family, sockaddr in addresses:
+            if fired.is_set():
+                break
+            conn = _Pinned(family, sockaddr, host, port, False, connect_timeout=LOCAL_TIMEOUT, read_timeout=LOCAL_TIMEOUT, abort=fired)
+            current["conn"] = conn
+            try:
+                outcome = _probe_request(conn, path)
+                break
+            except ConnectionRefusedError:
+                refused += 1
+            except (OSError, http.client.HTTPException, ValueError, RecursionError) as error:
+                if conn.connected or isinstance(error, (TimeoutError, socket.timeout)):
+                    outcome = ("unknown", [])
+                    break
+                # Could not even connect (no route, address not available, family unsupported): try the next address.
+            finally:
+                conn.close()
+        if fired.is_set():
+            # A cut read can return a short body without an error; it must never become "model" or "none".
+            return "unknown", []
+        if outcome is not None:
+            return outcome
+        return ("none", []) if refused == len(addresses) else ("unknown", [])
     finally:
         timer.cancel()
-        conn.close()
-    if fired.is_set():
-        # A cut read can return a short body without an error; it must never become "model" or "none".
-        return "unknown", []
-    if outcome[0] == "refused":
-        return ("none", []) if _every_address_refuses(host, port, resolver) else ("unknown", [])
-    return outcome
 
 
 # ---------------------------------------------------------------- remote document to plain rows
@@ -512,6 +548,20 @@ def machine_rows(document):
         platform_raw = entry.get("platform")
         platform = platform_raw if isinstance(platform_raw, str) and platform_raw in _PLATFORMS else None
         host = clean_text(entry.get("host"), 24)
+        code = entry.get("reasonCode")
+        if state == "UP":
+            # Observed only when the row says nothing or says so. Any other word contradicts "up": it is shown in
+            # its own words and the row does not count toward LIVE.
+            confirmed = degraded or code is None or code == "observed"
+            reason = "reported degraded" if degraded else "observed" if confirmed else reason_words(code)
+        else:
+            confirmed = False
+            reason = "reported down" if state == "DOWN" and code is None else reason_words(code)
+            if code in ("observed", "reported_degraded"):
+                # "Observed" on a row that is not up contradicts the row: it is not an observation of anything.
+                reason = "not observed"
+        if not confirmed and reason == "observed":
+            reason = "unrecognised reason"
         complete = entry.get("modelsComplete") is True
         loaded = clean_int(entry.get("loadedCount"), 0, 256) if complete else None
         busy = clean_int(entry.get("busyCount"), 0, 256) if complete else None
@@ -523,7 +573,8 @@ def machine_rows(document):
             "name": _PLATFORMS.get(platform) or (host or "MACHINE").upper()[:12],
             "host": host,
             "state": "DEGRADED" if degraded else state,
-            "reason": "observed" if state == "UP" and not degraded else reason_words(entry.get("reasonCode")),
+            "reason": reason,
+            "confirmed": confirmed,
             "trust": trust,
             "age": age,
             "freshFor": fresh_for,
@@ -548,7 +599,9 @@ def peer_map(rows, fresh):
         if state == "UNKNOWN":
             parts.append(row["reason"])
         elif state == "DOWN":
-            parts.append("reported down")
+            parts.append(row["reason"])
+        elif not row["confirmed"]:
+            parts.append(row["reason"])
         elif row["loaded"] is not None:
             parts.append(f"{row['loaded']} loaded / {row['busy'] if row['busy'] is not None else '?'} busy")
         else:
@@ -571,11 +624,19 @@ def peer_map(rows, fresh):
     return "\n".join(lines)
 
 
-def remote_section(document, label, fetched_ago, stale=False):
+def remote_section(document, label, fetched_ago, stale=False, took=0.0, landed_ago=None):
     rows = machine_rows(document)
     hub = rows[0] if rows else None
-    fresh = bool(hub and hub["state"] in ("UP", "DEGRADED") and hub["age"] is not None
-                 and hub["freshFor"] is not None and hub["age"] <= hub["freshFor"]) and not stale
+    # How old the row can be when it is shown: its own age, plus the time the fetch took (it may have been sampled at the start
+    # of the fetch), plus the time since the answer landed beyond CACHE_SECONDS. That last allowance is the monitor's own response
+    # cache: polled every 2 s, every other poll is a cache hit, and that much extra age is expected and must not flip LIVE to STALE.
+    # The allowance is on the time since landing only, so a row whose own age already exceeds its freshFor is never LIVE.
+    since_landing = fetched_ago if landed_ago is None else landed_ago
+    since_landing = max(0.0, clean_number(since_landing, 0, 7 * 86400) or 0.0)
+    took = max(0.0, clean_number(took, 0, 7 * 86400) or 0.0)
+    fresh = bool(hub and hub["state"] in ("UP", "DEGRADED") and hub["confirmed"] and hub["age"] is not None
+                 and hub["freshFor"] is not None
+                 and hub["age"] + took + max(0.0, since_landing - CACHE_SECONDS) <= hub["freshFor"]) and not stale
     if hub is None:
         status, glyph = "UNKNOWN", "[?]"
     elif fresh:
@@ -589,6 +650,8 @@ def remote_section(document, label, fetched_ago, stale=False):
         lines.append("This answer is old, so these numbers are not live.")
     elif hub["state"] == "DEGRADED":
         lines.append("This monitor reports itself degraded.")
+    elif hub["state"] == "UP" and not hub["confirmed"]:
+        lines.append(f"The monitor's own row says {hub['reason']}, which does not fit an up machine, so its numbers are not live.")
     elif not fresh:
         lines.append("The monitor's own sample is old or unverified, so its numbers are not live.")
     raw_machines = document.get("machines")
@@ -598,6 +661,14 @@ def remote_section(document, label, fetched_ago, stale=False):
     for row in rows:
         name = row["name"]
         facts.append([name, f"{row['state']} · {row['reason']}"])
+        measured = row["confirmed"] and row["state"] in ("UP", "DEGRADED")
+        if not measured:
+            # Counts and rates from a row that is not confirmed up are not shown as if they were measurements.
+            facts.append([f"{name} models", "Not measured"])
+            facts.append([f"{name} prompts", "Not measured"])
+            facts.append([f"{name} writing", "Not measured"])
+            facts.append([f"{name} age", _seconds(row["age"])])
+            continue
         if row["loaded"] is not None:
             facts.append([f"{name} models", f"{row['loaded']} loaded" + (f" ({row['busy']} busy)" if row["busy"] is not None else "")])
         else:
@@ -670,7 +741,7 @@ def _checking_section(title, what):
 class Monitor:
     """Caches one collection for CACHE_SECONDS and lets one caller at a time do the collecting."""
 
-    def __init__(self, env=None, *, fetch=fetch_snapshot, probe=probe_local, clock=time.monotonic):
+    def __init__(self, env=None, *, fetch=fetch_snapshot, probe=probe_local, clock=boot_clock):
         self._env = dict(os.environ if env is None else env)
         self._fetch, self._probe, self._clock = fetch, probe, clock
         self._lock = threading.Lock()
@@ -691,31 +762,43 @@ class Monitor:
             local = ("unknown", [])
         local_at = self._clock()
         remote = ("off", None)
+        remote_at = self._clock()
         if self._config_error:
             remote = ("error", "bad-config")
         elif self._remote is not None:
             with self._lock:
-                if self._cache is None:
-                    # First look: show the phone's own answer now instead of waiting for the remote fetch.
-                    self._cache = {"at": local_at, "local_at": local_at, "local": local, "remote": ("checking", None)}
+                # Publish the phone's own answer now, whatever the remote does next. The remote's last answer, or
+                # CHECKING on the first look, stays as it was with its own age.
+                before = self._cache
+                self._cache = {"at": local_at, "local_at": local_at, "local": local,
+                               "remote": before["remote"] if before else ("checking", None),
+                               "remote_at": before.get("remote_at", before["at"]) if before else local_at,
+                               "remote_done": before.get("remote_done", before["at"]) if before else local_at}
+            # Stamped before the fetch: a fetch that takes 6 s produced data that is at least that old when it lands.
+            remote_at = self._clock()
             try:
                 remote = ("ok", self._fetch(self._remote))
             except FetchError as error:
                 remote = ("error", error.code)
             except Exception:
                 remote = ("error", "unreachable")
-        return {"at": self._clock(), "local_at": local_at, "local": local, "remote": remote}
+        done = self._clock()
+        return {"at": done, "local_at": local_at, "local": local, "remote": remote, "remote_at": remote_at, "remote_done": done}
 
     def _view(self, cache, local_state, now):
         ago = max(0, round(now - cache["at"]))
         local_ago = max(0, round(now - cache.get("local_at", cache["at"])))
+        remote_ago = max(0, round(now - cache.get("remote_at", cache["at"])))
+        remote_took = max(0.0, cache.get("remote_done", cache["at"]) - cache.get("remote_at", cache["at"]))
+        remote_landed = max(0.0, now - cache.get("remote_done", cache["at"]))
         address = "%s:%s" % local_models_url(self._env)[:2]
         sections = [_local_section(cache["local"], local_state, local_ago, address, stale=local_ago > STALE_AFTER)]
         kind, value = cache["remote"]
         label = self._remote.label if self._remote else None
         try:
             if kind == "ok":
-                sections.append(remote_section(value, label, ago, stale=ago > STALE_AFTER))
+                sections.append(remote_section(value, label, remote_ago, stale=remote_ago > STALE_AFTER,
+                                                  took=remote_took, landed_ago=remote_landed))
             elif kind == "error":
                 sections.append(_remote_error_section(value, label))
             elif kind == "checking":

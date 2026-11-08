@@ -99,7 +99,11 @@ class TemplateTests(unittest.TestCase):
         self.assertNotRegex(css, r"font-size:\s*\d+px")
         self.assertNotRegex(css, r"font:\s*[^;}]*?\b\d+px")
         self.assertIn("position:sticky", css.split("#mon-status")[1].split("}")[0])
-        self.assertIn("#mon-body.mon-stale", css)
+        self.assertIn("#mon-body.mon-stale{opacity:.7}", css)
+        # Facts: the label column is at most half the pane and may wrap, so nothing scrolls sideways at 200% text.
+        self.assertIn(".mon-facts{display:grid;grid-template-columns:fit-content(50%) minmax(0,1fr)", css)
+        self.assertIn(".mon-facts dt{font-weight:700;overflow-wrap:anywhere}", css)
+        self.assertNotIn("max-content", css)
         # The status line spans the page, so in two panes it is held to one column; long unbroken text wraps.
         segments = css.split("@media(horizontal-viewport-segments:2){")[1].split("\n}")[0]
         self.assertIn("#mon-status{max-width:calc((100% - var(--hinge) - 24px)/2)}", segments)
@@ -217,6 +221,7 @@ const ctx={document,console,performance:{now:()=>scenario.clock?scenario.clock[M
  setTimeout:()=>1,clearTimeout:()=>{},AbortController,
  fetch:(url,opt)=>{calls.push({url,opt:{method:opt.method,headers:opt.headers}});
   const reply=scenario.replies[Math.min(calls.length-1,scenario.replies.length-1)];
+  if(reply.hang)return new Promise(()=>{});
   if(reply.reject)return Promise.reject(new Error('net'));
   return Promise.resolve({status:reply.status,ok:reply.status>=200&&reply.status<300,
     json:()=>reply.badjson?Promise.reject(new SyntaxError('x')):Promise.resolve(reply.doc)})}};
@@ -230,8 +235,10 @@ const dump=n=>({tag:n.tag,cls:n.className,t:n.t,w:n.writes,c:n.children.map(dump
    body:ids['mon-body'].children.map(dump),created});
  shot();
  for(let i=1;i<(scenario.polls||1);i++){step=i;if(intervals[0])intervals[0].f();await settle();shot()}
- if(scenario.visibleAgain&&listeners.visibilitychange){document.visibilityState='visible';listeners.visibilitychange();await settle()}
- console.log(JSON.stringify({calls,intervals:intervals.map(x=>x.ms),cleared,listeners:Object.keys(listeners),shots,total:calls.length}));
+ let final=null;
+ if(scenario.visibleAgain&&listeners.visibilitychange){if(scenario.visibleStep!==undefined)step=scenario.visibleStep;document.visibilityState='visible';listeners.visibilitychange();await settle();
+   final={status:ids['mon-status'].t,live:ids['mon-live'].t,bodyClass:ids['mon-body'].className}}
+ console.log(JSON.stringify({final,calls,intervals:intervals.map(x=>x.ms),cleared,listeners:Object.keys(listeners),shots,total:calls.length}));
 })();
 """
 
@@ -397,6 +404,86 @@ class ScriptSmokeTests(unittest.TestCase):
     def test_a_visible_page_polls_again_when_it_returns_to_the_foreground(self):
         out = self.run_script(OK(doc(sec())), visibleAgain=True)
         self.assertEqual(out["total"], 2)
+
+    def test_a_request_is_called_slow_only_after_ten_seconds_measured_from_its_own_start(self):
+        # Poll 2 starts at t=2 s and never answers. A tick at 9 s (a 7 s old request) says nothing; one at 13 s (11 s old) does.
+        out = self.run_script([OK(doc(sec())), {"hang": True}, {"hang": True}, {"hang": True}], polls=4, clock=[0, 2000, 9000, 13000])
+        first, second, third, fourth = out["shots"]
+        for shot in (second, third):
+            self.assertEqual(shot["live"], "", "a slow request is not an announcement")
+            self.assertEqual(shot["bodyClass"], "")
+        self.assertEqual(fourth["live"], "OPOS is slow to answer.")
+        self.assertEqual(fourth["status"], "OPOS is slow to answer. Last good answer 13 s ago.")
+        self.assertEqual(fourth["bodyClass"], "mon-stale")
+
+    def test_the_old_rule_measured_from_the_last_good_answer_would_have_cried_wolf(self):
+        # The last good answer is 9 s old at the tick, but the request in flight is only 1 s old: not slow.
+        out = self.run_script([OK(doc(sec())), {"hang": True}, {"hang": True}], polls=3, clock=[0, 8000, 9000])
+        self.assertEqual(out["shots"][2]["live"], "")
+        self.assertEqual(out["shots"][2]["bodyClass"], "")
+
+    def test_an_old_answer_is_shown_as_old_even_when_the_request_replacing_it_is_young(self):
+        """R3-1: the answer on screen is judged by its own age, not by the age of the request in flight."""
+        out = self.run_script([OK(doc(sec())), {"hang": True}], polls=2, clock=[0, 20000])
+        second = out["shots"][1]
+        self.assertEqual(second["status"], "Last good answer 20 s ago.")
+        self.assertEqual(second["bodyClass"], "mon-stale")
+        self.assertEqual(second["live"], "", "marking an answer old is not an announcement")
+
+    def test_a_young_answer_is_not_marked_old(self):
+        out = self.run_script([OK(doc(sec())), {"hang": True}], polls=2, clock=[0, 14000])
+        self.assertEqual(out["shots"][1]["bodyClass"], "")
+        self.assertEqual(out["shots"][1]["status"], "Updated 1 s ago.")
+
+    def test_coming_back_to_the_foreground_marks_an_old_answer_before_the_new_one_arrives(self):
+        out = self.run_script([OK(doc(sec())), {"hang": True}], polls=1, visibleAgain=True, visibleStep=1, clock=[0, 60000])
+        self.assertEqual(out["final"]["status"], "Last good answer 60 s ago.")
+        self.assertEqual(out["final"]["bodyClass"], "mon-stale")
+
+    def test_slow_is_not_announced_again_after_a_failure_with_no_good_answer_since(self):
+        """R3-9: 'Could not reach OPOS.' was announced; a later slow request must not talk over it."""
+        out = self.run_script([OK(doc(sec())), {"reject": True}, {"hang": True}, {"hang": True}], polls=4,
+                              clock=[0, 2000, 4000, 20000])
+        self.assertEqual(out["shots"][1]["live"], "Could not reach OPOS.")
+        fourth = out["shots"][3]
+        self.assertEqual(fourth["live"], "Could not reach OPOS.")
+        self.assertTrue(fourth["status"].startswith("OPOS is slow to answer."))
+
+    def test_the_failure_text_stays_in_front_of_the_age_when_the_answer_gets_old(self):
+        """r4 regression: the 2 s timer rewrote the whole status line and wiped the failure about three polls in four."""
+        out = self.run_script([OK(doc(sec())), {"reject": True}, {"hang": True}], polls=3, clock=[0, 2000, 20000])
+        self.assertEqual(out["shots"][1]["status"], "Could not reach OPOS. Last good answer 2 s ago.")
+        self.assertEqual(out["shots"][2]["status"], "Could not reach OPOS. Last good answer 20 s ago.")
+        self.assertEqual(out["shots"][2]["bodyClass"], "mon-stale")
+
+    def test_after_a_refused_token_no_counted_age_is_shown_because_nothing_will_refresh_it(self):
+        """r5 low: 'Last good answer 2 s ago' must not sit frozen on a page that will never update."""
+        out = self.run_script([OK(doc(sec())), {"status": 403, "doc": {}}, {"hang": True}], polls=3, clock=[0, 2000, 38000])
+        message = "This page is out of date. Tap Back to the phone, then open Inference again."
+        self.assertEqual(out["shots"][1]["status"], message)
+        self.assertEqual(out["shots"][2]["status"], message, "the timer must not append an age later either")
+        self.assertEqual(out["shots"][1]["bodyClass"], "mon-stale", "the old answer is still dimmed")
+
+    def test_a_good_answer_clears_the_remembered_failure(self):
+        out = self.run_script([OK(doc(sec())), {"reject": True}, OK(doc(sec())), {"hang": True}], polls=4, clock=[0, 2000, 4000, 40000])
+        self.assertEqual(out["shots"][3]["status"], "Last good answer 36 s ago.", "the old failure text must not come back")
+
+    def test_the_request_is_given_up_on_well_after_the_servers_own_deadlines(self):
+        js = read("monitor.js")
+        self.assertIn("var SLOW_MS=10000,GIVE_UP_MS=15000,STALE_MS=15000;", js)
+        self.assertIn("setTimeout(function(){if(ctl)ctl.abort()},GIVE_UP_MS)", js)
+        self.assertIn("now()-reqAt>SLOW_MS", js)
+        from opos import monitor
+        worst = monitor.LOCAL_TOTAL + monitor.TOTAL_DEADLINE
+        self.assertGreater(10, worst, "SLOW_MS (10 s) must sit above the server's own worst case")
+
+    def test_the_page_title_may_break_anywhere_so_it_cannot_overflow_at_200_percent(self):
+        """R3-6"""
+        import re
+        css = read("monitor.css")
+        rule = re.search(r"(?m)^h1\{([^}]*)\}", css)
+        self.assertIsNotNone(rule)
+        self.assertIn("overflow-wrap:anywhere", rule.group(1))
 
     def test_a_missing_or_empty_token_sends_nothing_and_says_so(self):
         for token in (None, ""):

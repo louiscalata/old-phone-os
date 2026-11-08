@@ -3,6 +3,7 @@
 import ipaddress
 import json
 import socket
+import sys
 import ssl
 import threading
 import time
@@ -547,30 +548,73 @@ class ProbeLocalTests(unittest.TestCase):
 
 
 @needs_loopback
-class EveryAddressRefusesTests(unittest.TestCase):
-    """'No model' needs every address of the name to refuse; one hung listener means we do not know."""
+class LocalhostProbeTests(unittest.TestCase):
+    """'No model' needs every loopback address of the name to refuse; one hung listener means we do not know."""
 
     def setUp(self):
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             self.closed = probe.getsockname()[1]
-        try:
-            self.hold = Hold()
-        except OSError as error:
-            self.skipTest(f"cannot bind loopback: {error}")
+        self.hold = Hold()
         self.addCleanup(self.hold.close)
+        self.env = {"OPOS_LOCAL_URL": f"http://localhost:{self.closed}/v1"}
 
-    def resolver(self, *ports):
-        return lambda host, port, type=0: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", p)) for p in ports]
+    def addresses(self, *ports):
+        found = [(socket.AF_INET, ("127.0.0.1", p)) for p in ports]
+        return mock.patch.object(monitor, "_loopback_addresses", lambda host, port: found)
 
     def test_only_unanimous_refusal_is_none(self):
-        self.assertTrue(monitor._every_address_refuses("h", 1, self.resolver(self.closed, self.closed)))
+        with self.addresses(self.closed, self.closed):
+            self.assertEqual(monitor.probe_local(self.env), ("none", []))
         with mock.patch.object(monitor, "LOCAL_TIMEOUT", 0.3):
-            self.assertFalse(monitor._every_address_refuses("h", 1, self.resolver(self.hold.port, self.closed)))
-            self.assertFalse(monitor._every_address_refuses("h", 1, self.resolver(self.closed, self.hold.port)))
+            with self.addresses(self.hold.port, self.closed):
+                self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
+            with self.addresses(self.closed, self.hold.port):
+                self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
 
-    def test_an_address_that_times_out_or_cannot_be_reached_is_not_a_refusal(self):
-        for error in (TimeoutError("timed out"), OSError(65, "No route to host"), OSError(51, "Network is unreachable")):
+    def test_no_loopback_address_is_unknown_and_nothing_is_dialled(self):
+        def never(*args, **kwargs):
+            raise AssertionError("must not connect")
+        with mock.patch.object(monitor, "_Pinned", never):
+            with self.addresses():
+                self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
+
+    def test_localhost_is_never_looked_up(self):
+        """R3-5/R3-12: the name has a fixed meaning (RFC 6761), so the probe cannot be starved of lookup slots."""
+        def never(*args, **kwargs):
+            raise AssertionError("must not resolve")
+        with mock.patch.object(monitor.socket, "getaddrinfo", never):
+            self.assertEqual(monitor._loopback_addresses("localhost", 80),
+                             [(socket.AF_INET, ("127.0.0.1", 80)), (socket.AF_INET6, ("::1", 80, 0, 0))])
+            self.assertEqual(monitor._loopback_addresses("::1", 80), [(socket.AF_INET6, ("::1", 80, 0, 0))])
+            self.assertEqual(monitor._loopback_addresses("127.0.0.2", 80), [(socket.AF_INET, ("127.0.0.2", 80))])
+            self.assertEqual(monitor._loopback_addresses("8.8.8.8", 80), [])
+
+    @unittest.skipIf(sys.platform == "win32", "Windows takes about 2 s to report a refused loopback connection, longer than the 1 s probe timeout")
+    def test_slots_taken_by_name_lookups_do_not_affect_the_probe(self):
+        taken = [monitor._LOOKUPS.acquire(blocking=False) for _ in range(monitor.MAX_LOOKUPS)]
+        self.addCleanup(lambda: [monitor._LOOKUPS.release() for ok in taken if ok])
+        self.assertEqual(monitor.probe_local(self.env), ("none", []))
+
+    def test_an_address_that_times_out_stops_the_probe(self):
+        class Fake:
+            def __init__(self, *args):
+                pass
+
+            def settimeout(self, _seconds):
+                pass
+
+            def connect(self, _address):
+                raise TimeoutError("timed out")
+
+            def close(self):
+                pass
+        with mock.patch.object(monitor.socket, "socket", Fake), self.addresses(1, 2):
+            self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
+
+    def test_an_address_that_cannot_be_used_is_skipped_not_decisive(self):
+        """R3-4/R3-10: an unusable ::1 must neither stop the probe nor count as a refusal."""
+        for error in (OSError(65, "No route to host"), OSError(51, "Network is unreachable"), OSError(99, "Cannot assign")):
             class Fake:
                 def __init__(self, *args):
                     pass
@@ -583,31 +627,256 @@ class EveryAddressRefusesTests(unittest.TestCase):
 
                 def close(self):
                     pass
-            with mock.patch.object(monitor.socket, "socket", Fake):
-                self.assertFalse(monitor._every_address_refuses("h", 1, self.resolver(self.closed, self.closed)), repr(error))
-        class Refusing(Fake):
+            with mock.patch.object(monitor.socket, "socket", Fake), self.addresses(1, 2):
+                self.assertEqual(monitor.probe_local(self.env), ("unknown", []), repr(error))
+
+        class Mixed:
+            def __init__(self, *args):
+                pass
+
+            def settimeout(self, _seconds):
+                pass
+
+            def connect(self, address):
+                if address[1] == 1:
+                    raise OSError(65, "No route to host")
+                raise ConnectionRefusedError()
+
+            def close(self):
+                pass
+        with mock.patch.object(monitor.socket, "socket", Mixed), self.addresses(1, 2):
+            # One refusal and one unusable address: not every address refused, so "none" would be a guess.
+            self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
+
+        class Refusing(Mixed):
             def connect(self, _address):
                 raise ConnectionRefusedError()
-        with mock.patch.object(monitor.socket, "socket", Refusing):
-            self.assertTrue(monitor._every_address_refuses("h", 1, self.resolver(1, 2)))
+        with mock.patch.object(monitor.socket, "socket", Refusing), self.addresses(1, 2):
+            self.assertEqual(monitor.probe_local(self.env), ("none", []))
 
-    def test_no_addresses_or_a_failed_lookup_is_not_a_refusal(self):
-        self.assertFalse(monitor._every_address_refuses("h", 1, lambda *a, **k: []))
+    def test_an_unusable_first_address_still_lets_a_later_one_answer(self):
+        server = Recorder(json_reply({"data": [{"id": "m1"}]}))
+        self.addCleanup(server.close)
+        real = socket.socket
 
+        def Picky(*args, **kwargs):
+            if args and args[0] == socket.AF_INET6 and not kwargs:
+                raise OSError(97, "Address family not supported")
+            return real(*args, **kwargs)
+        found = [(socket.AF_INET6, ("::1", server.port, 0, 0)), (socket.AF_INET, ("127.0.0.1", server.port))]
+        with mock.patch.object(monitor.socket, "socket", Picky), \
+                mock.patch.object(monitor, "_loopback_addresses", lambda host, port: found):
+            self.assertEqual(monitor.probe_local(self.env), ("model", ["m1"]))
+
+    def test_the_first_address_that_answers_decides(self):
+        server = Recorder(json_reply({"data": [{"id": "m1"}]}))
+        self.addCleanup(server.close)
+        with self.addresses(self.closed, server.port):
+            self.assertEqual(monitor.probe_local(self.env), ("model", ["m1"]))
+
+
+class WorkerStartFailureTests(unittest.TestCase):
+    def test_a_thread_that_cannot_start_gives_its_permit_back(self):
+        """R3-2/R3-3: four failed starts must not end every later lookup."""
+        before = [monitor._LOOKUPS.acquire(blocking=False) for _ in range(monitor.MAX_LOOKUPS)]
+        for ok in before:
+            if ok:
+                monitor._LOOKUPS.release()
+        self.assertTrue(all(before))
+
+        class Broken:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                raise RuntimeError("can't start new thread")
+        with mock.patch.object(monitor.threading, "Thread", Broken):
+            for _ in range(monitor.MAX_LOOKUPS + 2):
+                with self.assertRaises(RuntimeError):
+                    monitor._resolve_bounded("h.invalid", 80, lambda *a, **k: [], 1)
+        after = [monitor._LOOKUPS.acquire(blocking=False) for _ in range(monitor.MAX_LOOKUPS)]
+        for ok in after:
+            if ok:
+                monitor._LOOKUPS.release()
+        self.assertTrue(all(after), "a permit was leaked")
+
+
+class AbortEventTests(unittest.TestCase):
+    """R3-11: a cut that fires before the socket exists must still end the attempt."""
+
+    def test_an_abort_that_fired_before_the_socket_existed_stops_the_connect(self):
+        abort = threading.Event()
+        abort.set()
+        connects = []
+        with mock.patch.object(socket.socket, "connect", lambda self, address: connects.append(address)):
+            conn = monitor._Pinned(socket.AF_INET, ("127.0.0.1", 9), "h", 9, False, abort=abort)
+            with self.assertRaises(OSError):
+                conn.connect()
+        self.assertEqual(connects, [], "no connection may be made after the deadline")
+        self.assertFalse(conn.connected)
+
+    def test_an_abort_during_connect_stops_the_tls_handshake(self):
+        abort = threading.Event()
+
+        def connect(self_, address):
+            abort.set()
+
+        class Wrapped:
+            def do_handshake(self):
+                raise AssertionError("the handshake must not start after the deadline")
+
+            def close(self):
+                pass
+        context = mock.Mock()
+        context.wrap_socket.return_value = Wrapped()
+        with mock.patch.object(socket.socket, "connect", connect), \
+                mock.patch.object(monitor.ssl, "create_default_context", lambda: context):
+            conn = monitor._Pinned(socket.AF_INET, ("127.0.0.1", 9), "h", 9, True, abort=abort)
+            with self.assertRaises(OSError):
+                conn.connect()
+
+    def test_without_an_abort_event_nothing_changes(self):
+        connects = []
+        with mock.patch.object(socket.socket, "connect", lambda self, address: connects.append(address)):
+            conn = monitor._Pinned(socket.AF_INET, ("127.0.0.1", 9), "h", 9, False)
+            conn.connect()
+            conn.close()
+        self.assertEqual(len(connects), 1)
+
+
+class AbortWiringTests(unittest.TestCase):
+    """R3-11 at the call sites: each caller must hand its watchdog's Event to _Pinned, or the guard inside it is never reached."""
+
+    def spy(self):
+        seen = []
+
+        class Spy(monitor._Pinned):
+            def __init__(self, *args, **kwargs):
+                seen.append(kwargs.get("abort"))
+                super().__init__(*args, **kwargs)
+        return seen, Spy
+
+    @needs_loopback
+    def test_probe_local_passes_its_event(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            closed = probe.getsockname()[1]
+        seen, spy = self.spy()
+        with mock.patch.object(monitor, "_Pinned", spy), \
+                mock.patch.object(monitor, "_loopback_addresses", lambda host, port: [(socket.AF_INET, ("127.0.0.1", closed))]):
+            monitor.probe_local({"OPOS_LOCAL_URL": f"http://localhost:{closed}/v1"})
+        self.assertEqual(len(seen), 1)
+        self.assertIsInstance(seen[0], threading.Event)
+
+    @needs_loopback
+    def test_fetch_snapshot_passes_its_event(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            closed = probe.getsockname()[1]
+        seen, spy = self.spy()
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", closed))]
+        with mock.patch.object(monitor, "_Pinned", spy):
+            with self.assertRaises(monitor.FetchError):
+                monitor.fetch_snapshot(monitor.parse_remote(f"http://h.invalid:{closed}"), resolver=resolver)
+        self.assertEqual(len(seen), 1)
+        self.assertIsInstance(seen[0], threading.Event)
+
+
+class LookupCapTests(unittest.TestCase):
+    def test_abandoned_lookups_are_capped_not_piled_up(self):
+        release = threading.Event()
+
+        def stall(*args, **kwargs):
+            release.wait(10)
+            return []
+        with mock.patch.object(monitor, "_LOOKUPS", threading.BoundedSemaphore(2)):
+            for _ in range(2):
+                with self.assertRaises(monitor.FetchError) as raised:
+                    monitor._resolve_bounded("h", 1, stall, 0.05)
+                self.assertEqual(raised.exception.code, "timeout")
+            before = threading.active_count()
+            started = time.monotonic()
+            for _ in range(20):
+                with self.assertRaises(monitor.FetchError) as raised:
+                    monitor._resolve_bounded("h", 1, stall, 5.0)
+                self.assertEqual(raised.exception.code, "timeout")
+            self.assertLess(time.monotonic() - started, 1.0, "past the cap a lookup is refused at once")
+            self.assertEqual(threading.active_count(), before, "no thread is started past the cap")
+            release.set()
+            time.sleep(0.3)
+            self.assertEqual(monitor._resolve_bounded("h", 1, lambda *a, **k: [("x",)], 1.0), [("x",)], "slots are given back")
+
+    def test_a_finished_lookup_gives_its_slot_back_even_when_it_raises(self):
         def broken(*args, **kwargs):
-            raise socket.gaierror("nope")
-        self.assertFalse(monitor._every_address_refuses("h", 1, broken))
+            raise socket.gaierror("no")
+        with mock.patch.object(monitor, "_LOOKUPS", threading.BoundedSemaphore(1)):
+            for _ in range(5):
+                with self.assertRaises(monitor.FetchError) as raised:
+                    monitor._resolve_bounded("h", 1, broken, 1.0)
+                self.assertEqual(raised.exception.code, "unreachable")
 
-    def test_the_probe_says_none_for_localhost_only_when_every_address_refuses(self):
-        # The first stage (http.client's own connect) is made hermetic: whatever localhost lists on this host, it refuses.
-        env = {"OPOS_LOCAL_URL": f"http://localhost:{self.closed}/v1"}
 
-        def refuse(self_):
-            raise ConnectionRefusedError()
-        with mock.patch.object(monitor._Live, "connect", refuse):
-            self.assertEqual(monitor.probe_local(env, resolver=self.resolver(self.closed)), ("none", []))
-            with mock.patch.object(monitor, "LOCAL_TIMEOUT", 0.3):
-                self.assertEqual(monitor.probe_local(env, resolver=self.resolver(self.hold.port, self.closed)), ("unknown", []))
+class CertificateDateTests(unittest.TestCase):
+    def fetch(self, errors):
+        calls = []
+
+        def connect(self_, *args):
+            error = errors[len(calls)]
+            calls.append(1)
+            raise error
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 1 + i)) for i in range(len(errors))]
+        with mock.patch.object(monitor._Pinned, "connect", connect):
+            with self.assertRaises(monitor.FetchError) as raised:
+                monitor.fetch_snapshot(monitor.parse_remote("https://h.invalid:8443"), resolver=resolver)
+        return raised.exception.code
+
+    def cert(self, code):
+        error = ssl.SSLCertVerificationError(1, "certificate verify failed")
+        error.verify_code = code
+        return error
+
+    def test_a_date_problem_has_its_own_word_and_a_wrong_chain_keeps_the_old_one(self):
+        self.assertEqual(self.fetch([self.cert(9)]), "certificate-date", "not yet valid: what a phone with a 1970 clock sees")
+        self.assertEqual(self.fetch([self.cert(10)]), "certificate-date", "expired")
+        self.assertEqual(self.fetch([self.cert(18)]), "certificate", "self-signed")
+        self.assertEqual(self.fetch([self.cert(20)]), "certificate")
+        self.assertEqual(self.fetch([self.cert(None)]), "certificate")
+        self.assertEqual(self.fetch([self.cert(9), ConnectionRefusedError()]), "certificate-date", "kept across a later silent address")
+        # R3-14: an untrusted chain on any address wins; fixing the clock would not help it.
+        self.assertEqual(self.fetch([self.cert(18), self.cert(10)]), "certificate")
+        self.assertEqual(self.fetch([self.cert(10), self.cert(18)]), "certificate")
+        self.assertEqual(self.fetch([self.cert(18), self.cert(10), ConnectionRefusedError()]), "certificate")
+        word, text = monitor.FETCH_WORDS["certificate-date"]
+        self.assertEqual(word, "REFUSED")
+        self.assertIn("clock", text)
+
+
+class BootClockTests(unittest.TestCase):
+    def test_the_clock_counts_suspended_time_where_it_can_and_never_goes_backwards(self):
+        first = monitor.boot_clock()
+        self.assertGreaterEqual(monitor.boot_clock(), first)
+        if hasattr(time, "CLOCK_BOOTTIME"):
+            self.assertAlmostEqual(monitor.boot_clock(), time.clock_gettime(time.CLOCK_BOOTTIME), delta=0.5)
+        with mock.patch.object(monitor.time, "CLOCK_BOOTTIME", None, create=True):
+            self.assertAlmostEqual(monitor.boot_clock(), time.monotonic(), delta=0.5)
+
+    def test_with_a_boottime_clock_it_is_the_one_read(self):
+        # On Linux CLOCK_BOOTTIME exists; here it is faked so the choice is tested on every host.
+        calls = []
+
+        def fake(clock_id):
+            calls.append(clock_id)
+            return 1234.5
+        with mock.patch.object(monitor.time, "CLOCK_BOOTTIME", 7, create=True), mock.patch.object(monitor.time, "clock_gettime", fake, create=True):
+            self.assertEqual(monitor.boot_clock(), 1234.5)
+        self.assertEqual(calls, [7])
+
+    def test_the_monitor_uses_it_by_default(self):
+        self.assertIs(monitor.Monitor.__init__.__kwdefaults__["clock"], monitor.boot_clock)
 
 
 if __name__ == "__main__":

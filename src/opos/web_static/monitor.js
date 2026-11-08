@@ -5,7 +5,12 @@ var status=document.getElementById('mon-status');
 var live=document.getElementById('mon-live');
 var meta=document.querySelector('meta[name=opos-token]');
 var token=meta?meta.content:'';
-var drawn=false,busy=false,timer=null,okAt=0,lastFailure=null,shape='',boxes=[];
+// The reply can take as long as the server's own deadlines (about 8 s); only a request older than SLOW_MS is called slow,
+// and the request is aborted after GIVE_UP_MS, well past anything the server does on purpose.
+// An answer older than STALE_MS is shown as old even while a new request is still in flight (or the page was hidden).
+var SLOW_MS=10000,GIVE_UP_MS=15000,STALE_MS=15000;
+var SLOW='OPOS is slow to answer.';
+var ended=false,shown='',drawn=false,busy=false,timer=null,okAt=0,reqAt=0,lastFailure=null,shape='',boxes=[];
 
 function now(){return typeof performance==='object'&&performance&&performance.now?performance.now():Date.now()}
 function el(tag,cls,text){
@@ -76,6 +81,7 @@ function render(doc){
     shape=key;
   }
   okAt=now();
+  shown='';
   body.className='';
   var ago=doc.updatedAgoSeconds;
   status.textContent=(typeof ago==='number'&&isFinite(ago))?'Updated '+Math.max(0,Math.round(ago))+' s ago.':'Checking.';
@@ -84,14 +90,27 @@ function render(doc){
 }
 
 // The age lives in the visible status line only; the live region is told about a change of state, once.
-function failed(message){
+function failed(message,noAge){
   var text=message;
   if(drawn){
-    text+=' Last good answer '+Math.max(0,Math.round((now()-okAt)/1000))+' s ago.';
+    // After a refused token nothing will ever refresh the page, so a counted age would freeze and mislead: it is left out.
+    if(!noAge)text+=' Last good answer '+Math.max(0,Math.round((now()-okAt)/1000))+' s ago.';
     body.className='mon-stale';
   }
+  shown=message;
   status.textContent=text;
-  if(lastFailure!==message){lastFailure=message;speak(message)}
+  // "Slow" never repeats a failure that was already announced and has had no good answer since.
+  if(lastFailure===null||(message!==SLOW&&lastFailure!==message)){lastFailure=message;speak(message)}
+}
+
+// The age of the answer on screen is judged on its own, not by the age of the request that is trying to replace it.
+function markOld(){
+  if(ended)return;
+  if(drawn&&now()-okAt>STALE_MS){
+    body.className='mon-stale';
+    // The failure that is being reported stays in front of the age; the timer must not wipe it every 2 s.
+    status.textContent=(shown?shown+' ':'')+'Last good answer '+Math.max(0,Math.round((now()-okAt)/1000))+' s ago.';
+  }
 }
 
 function stop(){if(timer!==null){clearInterval(timer);timer=null}}
@@ -99,8 +118,9 @@ function stop(){if(timer!==null){clearInterval(timer);timer=null}}
 function poll(){
   if(busy)return;
   busy=true;
+  reqAt=now();
   var ctl=typeof AbortController==='function'?new AbortController():null;
-  var cut=setTimeout(function(){if(ctl)ctl.abort()},8000);
+  var cut=setTimeout(function(){if(ctl)ctl.abort()},GIVE_UP_MS);
   fetch('/api/monitor',{method:'GET',headers:{'X-OPOS-Token':token},cache:'no-store',credentials:'same-origin',signal:ctl?ctl.signal:undefined})
     .then(function(r){
       if(r.status===403)throw new Error('stale');
@@ -110,7 +130,7 @@ function poll(){
     .then(render)
     .catch(function(e){
       var m=e&&e.message;
-      if(m==='stale'){stop();failed('This page is out of date. Tap Back to the phone, then open Inference again.')}
+      if(m==='stale'){ended=true;stop();failed('This page is out of date. Tap Back to the phone, then open Inference again.',true)}
       else if(m==='bad')failed('OPOS answered with an error.');
       else failed('Could not reach OPOS.');
     })
@@ -119,14 +139,15 @@ function poll(){
 
 function tick(){
   if(document.visibilityState==='hidden')return;
-  if(busy){if(drawn&&now()-okAt>6000)failed('OPOS is slow to answer.');return}
+  markOld();
+  if(busy){if(drawn&&now()-reqAt>SLOW_MS)failed(SLOW);return}
   poll();
 }
 
 if(!token){
   status.textContent='This page has no access token. Tap Back to the phone, then open Inference again.';
 }else{
-  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&timer!==null)poll()});
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&timer!==null){markOld();poll()}});
   timer=setInterval(tick,2000);
   poll();
 }

@@ -123,7 +123,7 @@ class RemoteTests(unittest.TestCase):
         self.assertIn("went silent", remote["pre"])
         facts = dict(map(tuple, remote["facts"]))
         self.assertEqual((facts["MAC models"], facts["MAC prompts"], facts["PC"], facts["PC models"]),
-                         ("2 loaded (1 busy)", "812 tok/s", "UNKNOWN · went silent", "Model list incomplete"))
+                         ("2 loaded (1 busy)", "812 tok/s", "UNKNOWN · went silent", "Not measured"))
         self.assertIn("never observed", monitor.peer_map(monitor.machine_rows(snapshot({**PC_ROW, "reasonCode": "not_observed"}, AGIW_ROW)), True))
         self.assertEqual(calls["fetch"], 1)
 
@@ -302,8 +302,8 @@ class CacheTests(unittest.TestCase):
         worker.start()
         self.assertTrue(started.wait(5))
         served = view.snapshot()
-        self.assertEqual(served["updatedAgoSeconds"], 10)
-        self.assertIn("fetched 10 s ago", section(served, "remote")["lines"][0])
+        self.assertEqual(served["updatedAgoSeconds"], 0, "the phone's own answer was just taken")
+        self.assertIn("fetched 10 s ago", section(served, "remote")["lines"][0], "the remote's answer keeps its own age")
         gate.set()
         worker.join(5)
 
@@ -376,7 +376,7 @@ class StaleTests(unittest.TestCase):
         view, clock, gate, worker, first = self.hung(snapshot(AGIW_ROW))
         self.assertEqual(section(first, "duo")["status"], "MODEL LISTED")
         self.assertEqual(section(first, "remote")["status"], "LIVE")
-        clock.now += monitor.STALE_AFTER - 3 + 1
+        clock.now += monitor.STALE_AFTER + 1
         stale = view.snapshot()
         duo, remote = section(stale, "duo"), section(stale, "remote")
         self.assertEqual((duo["status"], duo["glyph"]), ("UNKNOWN", "[?]"))
@@ -388,12 +388,21 @@ class StaleTests(unittest.TestCase):
         gate.set()
         worker.join(5)
 
-    def test_right_at_the_limit_it_is_still_current(self):
-        view, clock, gate, worker, _first = self.hung(snapshot(AGIW_ROW))
-        clock.now += monitor.STALE_AFTER - 3
+    def test_right_at_the_limit_it_is_still_current_and_each_part_ages_from_its_own_stamp(self):
+        # A long freshFor on purpose: this test is about the collection's own age (STALE_AFTER). The row's age against its
+        # freshFor, with the cache in the picture, is FreshnessIncludesFetchAgeTests below.
+        view, clock, gate, worker, _first = self.hung(snapshot(dict(AGIW_ROW, freshForSeconds=3600)))
+        # The remote was last heard at t=1000 and the phone last probed at t=1003 (the second collection started).
+        clock.now = 1000 + monitor.STALE_AFTER
         current = view.snapshot()
         self.assertEqual(section(current, "duo")["status"], "MODEL LISTED")
         self.assertEqual(section(current, "remote")["status"], "LIVE")
+        clock.now += 1
+        later = view.snapshot()
+        self.assertEqual(section(later, "duo")["status"], "MODEL LISTED", "the phone's own answer is younger than the remote's")
+        self.assertEqual(section(later, "remote")["status"], "STALE")
+        clock.now = 1003 + monitor.STALE_AFTER + 1
+        self.assertEqual(section(view.snapshot(), "duo")["status"], "UNKNOWN")
         gate.set()
         worker.join(5)
 
@@ -407,7 +416,8 @@ class StaleTests(unittest.TestCase):
         out = view.snapshot()
         facts = dict(map(tuple, section(out, "duo")["facts"]))
         self.assertEqual(facts["Model server checked"], "5 s ago")
-        self.assertIn("fetched 0 s ago", section(out, "remote")["lines"][0])
+        # r5: the remote's age counts from when its fetch started, so a 5 s fetch is "fetched 5 s ago" the moment it lands.
+        self.assertIn("fetched 5 s ago", section(out, "remote")["lines"][0])
         self.assertEqual(out["updatedAgoSeconds"], 0)
 
     def test_the_first_look_publishes_the_phones_answer_before_the_remote_fetch_ends(self):
@@ -555,6 +565,175 @@ class HubTests(unittest.TestCase):
             self.assertEqual(facts["MAC models"], "Model list incomplete", repr(complete))
         facts = dict(map(tuple, self.remote({**AGIW_ROW, "modelsComplete": True})["facts"]))
         self.assertEqual(facts["MAC models"], "2 loaded (1 busy)")
+
+
+class ReasonTests(unittest.TestCase):
+    """An up row with a reason that contradicts up is shown in its own words and never makes the section LIVE."""
+
+    def remote(self, *rows):
+        return section(make(remote=snapshot(*rows))[0].snapshot(), "remote")
+
+    def test_only_a_silent_observed_or_degraded_reason_counts_as_observed(self):
+        for ok in (None, "observed"):
+            row = {k: v for k, v in AGIW_ROW.items() if k != "reasonCode"} if ok is None else {**AGIW_ROW, "reasonCode": ok}
+            out = self.remote(row)
+            self.assertEqual(out["status"], "LIVE", ok)
+            self.assertEqual(dict(map(tuple, out["facts"]))["MAC"], "UP · observed")
+        self.assertEqual(self.remote({**AGIW_ROW, "reasonCode": "reported_degraded"})["status"], "LIVE")
+        for code in ("host_key_mismatch", "untrusted", "clock_skew", "not_connected", "stale", "share_unmounted", "asleep",
+                     "schema_invalid", "some_new_code", "Bad word!", "", 5, [], {}, True):
+            out = self.remote({**AGIW_ROW, "reasonCode": code})
+            self.assertEqual(out["status"], "STALE", repr(code))
+            self.assertNotEqual(dict(map(tuple, out["facts"]))["MAC"], "UP · observed", repr(code))
+            self.assertIn("does not fit an up machine", " ".join(out["lines"]), repr(code))
+            self.assertNotIn("[x]", out["pre"])
+
+    def test_the_contradicting_words_are_the_rows_own(self):
+        out = self.remote({**AGIW_ROW, "reasonCode": "host_key_mismatch"})
+        self.assertEqual(dict(map(tuple, out["facts"]))["MAC"], "UP · host key changed")
+        self.assertIn("host key changed", out["pre"].split("\n")[0])
+        self.assertNotIn("loaded", out["pre"].split("\n")[0], "no count is claimed for a row that is not confirmed")
+
+    def test_a_down_row_shows_its_true_reason_in_the_map_and_the_facts(self):
+        for code, words in (("reported_down", "reported down"), ("share_unmounted", "share not mounted"), ("clock_skew", "clock out of step"),
+                            (None, "reported down"), ("some_new_code", "some new code")):
+            row = {**PC_ROW, "state": "down", "reasonCode": code}
+            if code is None:
+                row = {k: v for k, v in row.items() if k != "reasonCode"}
+            out = self.remote(AGIW_ROW, row)
+            self.assertEqual(dict(map(tuple, out["facts"]))["PC"], f"DOWN · {words}", repr(code))
+            self.assertIn(words, out["pre"].split("\n")[1], repr(code))
+
+
+class PublicationTests(unittest.TestCase):
+    def test_a_second_viewer_sees_the_phones_fresh_answer_while_the_remote_drips(self):
+        clock = Clock()
+        gate, started = threading.Event(), threading.Event()
+        probes = [("model", ["m1"]), ("none", [])]
+        count = [0]
+
+        def probe(_env):
+            return probes[min(count[0], 1)]
+
+        def fetch(_remote):
+            count[0] += 1
+            if count[0] == 2:
+                started.set()
+                gate.wait(5)
+            return snapshot(AGIW_ROW)
+        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch, probe=probe, clock=clock)
+        first = view.snapshot()
+        self.assertEqual(section(first, "duo")["status"], "MODEL LISTED")
+        count[0] = 1
+        clock.now += 3
+        worker = threading.Thread(target=view.snapshot, daemon=True)
+        worker.start()
+        self.assertTrue(started.wait(5))
+        second = view.snapshot()
+        self.assertEqual(section(second, "duo")["status"], "NO MODEL", "the new probe is published before the remote fetch ends")
+        self.assertEqual(section(second, "remote")["status"], "LIVE")
+        self.assertIn("fetched 3 s ago", section(second, "remote")["lines"][0])
+        gate.set()
+        worker.join(5)
+
+class FreshnessIncludesFetchAgeTests(unittest.TestCase):
+    """R3-13, corrected in r5: a row's own age plus the time since the fetch must fit its freshFor, allowing for the monitor's own cache."""
+
+    def test_a_row_that_is_old_by_the_time_it_is_shown_is_not_live(self):
+        row = dict(AGIW_ROW, ageSeconds=1.0, freshForSeconds=3)
+        for fetched in range(0, 5):
+            self.assertEqual(monitor.remote_section(snapshot(row), "x", fetched)["status"], "LIVE", fetched)
+        self.assertEqual(monitor.remote_section(snapshot(row), "x", 5)["status"], "STALE")
+        young = dict(AGIW_ROW, ageSeconds=0.5, freshForSeconds=3)
+        self.assertEqual(monitor.remote_section(snapshot(young), "x", 5)["status"], "STALE", "a genuinely old sample is still caught")
+
+    def poll_words(self, row, *, step, polls=24, fetch_takes=0.0):
+        """Poll a real Monitor through its real cache; returns the remote section's words and how many fetches happened."""
+        clock = Clock()
+        fetches = [0]
+
+        def fetch(_remote):
+            fetches[0] += 1
+            clock.now += fetch_takes
+            return snapshot(row)
+        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch,
+                               probe=lambda _e: ("none", []), clock=clock)
+        words = []
+        for _ in range(polls):
+            words.append(section(view.snapshot(), "remote")["status"])
+            clock.now += step
+        return words, fetches[0]
+
+    def test_a_healthy_monitor_polled_every_two_seconds_stays_live_through_its_own_cache(self):
+        """r4 regression. A step just under the cache window makes real cache hits; exactly 2.0 would collect every time."""
+        row = dict(AGIW_ROW, ageSeconds=1.2, freshForSeconds=3)
+        for step in (1.99, 1.0, 0.5):
+            words, fetches = self.poll_words(row, step=step)
+            self.assertEqual(set(words), {"LIVE"}, (step, words))
+            self.assertLess(fetches, len(words), f"step {step}: the cache must actually be hit, or this proves nothing")
+        words, fetches = self.poll_words(row, step=2.0)
+        self.assertEqual(set(words), {"LIVE"}, words)
+
+    def test_a_slow_remote_does_not_make_the_word_alternate(self):
+        """r5 low: the fetch time is in the age. It may keep a slow remote STALE; it must never flip LIVE and STALE."""
+        quick = dict(AGIW_ROW, ageSeconds=0.5, freshForSeconds=3)
+        for step in (2.0, 1.99):
+            words, _ = self.poll_words(quick, step=step, fetch_takes=2.5)
+            self.assertEqual(set(words), {"LIVE"}, (step, words))
+        slow = dict(AGIW_ROW, ageSeconds=1.2, freshForSeconds=3)
+        for step in (2.0, 1.99):
+            words, _ = self.poll_words(slow, step=step, fetch_takes=3.3)
+            self.assertEqual(set(words), {"STALE"}, (step, words))
+
+    def test_a_row_older_than_its_own_freshness_window_is_never_live(self):
+        for age, fresh_for, expect in ((3.5, 3, "STALE"), (3.0, 3, "LIVE"), (100, 3, "STALE")):
+            row = dict(AGIW_ROW, ageSeconds=age, freshForSeconds=fresh_for)
+            for fetched in (0, 1, 2):
+                got = monitor.remote_section(snapshot(row), "x", fetched)["status"]
+                self.assertEqual(got, expect if fetched <= 2 else "STALE", (age, fetched))
+        self.assertEqual(monitor.remote_section(snapshot(dict(AGIW_ROW, ageSeconds=100, freshForSeconds=3)), "x", 50)["status"], "STALE")
+
+    def test_the_time_the_fetch_took_counts_toward_the_age(self):
+        """The remote's age is stamped before the fetch starts, so a slow fetch cannot read 'fetched 0 s ago'."""
+        clock = Clock()
+
+        def slow(_remote):
+            clock.now += 6
+            return snapshot(AGIW_ROW)
+        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=slow,
+                               probe=lambda _e: ("none", []), clock=clock)
+        remote = section(view.snapshot(), "remote")
+        self.assertIn("fetched 6 s ago", remote["lines"][0])
+        self.assertEqual(remote["status"], "STALE", "1.2 s old at the fetch, 6 s since: past freshFor 3 plus the cache allowance")
+
+
+class UnconfirmedRowWordsTests(unittest.TestCase):
+    """R3-7, R3-8, R3-15: a row that is not confirmed up never reads as a measurement or an observation."""
+
+    def facts(self, row):
+        return dict(map(tuple, monitor.remote_section(snapshot(row), "x", 0)["facts"]))
+
+    def test_counts_and_rates_of_a_row_that_is_not_up_are_not_measured(self):
+        for row in (dict(AGIW_ROW, state="down"), dict(AGIW_ROW, state="unknown"), dict(AGIW_ROW, reasonCode="not_connected")):
+            facts = self.facts(row)
+            self.assertEqual((facts["MAC models"], facts["MAC prompts"], facts["MAC writing"]), ("Not measured",) * 3, row)
+
+    def test_a_confirmed_row_still_shows_its_numbers(self):
+        facts = self.facts(AGIW_ROW)
+        self.assertEqual((facts["MAC models"], facts["MAC prompts"]), ("2 loaded (1 busy)", "812 tok/s"))
+
+    def test_observed_on_a_row_that_is_not_up_is_not_called_observed(self):
+        for state in ("down", "unknown"):
+            for code in ("observed", "reported_degraded"):
+                rows = monitor.machine_rows(snapshot(dict(AGIW_ROW, state=state, reasonCode=code)))
+                self.assertEqual(rows[0]["reason"], "not observed", (state, code))
+
+    def test_a_reason_with_edge_underscores_is_not_read_as_observed(self):
+        for code in ("observed_", "_observed", "observed__"):
+            rows = monitor.machine_rows(snapshot(dict(AGIW_ROW, reasonCode=code)))
+            self.assertNotEqual(rows[0]["reason"], "observed", code)
+            self.assertFalse(rows[0]["confirmed"], code)
+        self.assertEqual(monitor.machine_rows(snapshot(dict(AGIW_ROW, reasonCode="observed_")))[0]["reason"], "unrecognised reason")
 
 
 if __name__ == "__main__":
