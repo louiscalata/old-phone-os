@@ -14,3 +14,6 @@ src/opos/_build_info.py
 build/
 dist/
 *.egg-info/
+*.opos-update
+*_ed25519
+*.pem
