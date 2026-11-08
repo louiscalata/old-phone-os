@@ -118,7 +118,7 @@ from the revision in `/opt/opos/REVISION`; `build-image.sh` creates the release-
 
 Boot-time: `opos-update-boot.service` applies `pending_boot` (steps 5-6 without restarts); `opos-update-confirm.service`
 checks health after boot and rolls back after two consecutive failed boots (counter in `state.json`). A rollback request
-is an empty file `inbox/rollback.request` or `opos-updater rollback`.
+is an empty file `inbox/rollback.request` (limited, see the trust model) or `opos-updater rollback` (root, not limited).
 
 ## Client (unprivileged, in OPOS)
 
@@ -188,7 +188,8 @@ Where the code is stricter or more specific than the text above. Every item is a
 - **What the updater touches.** It asks systemd for `daemon-reload`, `restart opos-server.service` and `is-active
   opos-server.service` and nothing else, so never `opos.service`; it kills the kiosk's Chromium with `pkill`, and
   `opos-kiosk` waits for the server before every start of the browser. Exit codes: 0 done or nothing to do, 3 a bundle or
-  request was refused or rolled back (the unit accepts it), 75 another run holds the lock, 1 fatal, 2 usage.
+  request was refused or rolled back and 75 another run holds the lock (the unit accepts both: `SuccessExitStatus=3 75`),
+  1 fatal, 2 usage.
 - **Hosting.** The client follows a redirect only within one scheme, host and port, so a phone cannot fetch from GitHub
   release assets (served from another host); use a static site on one host. The image build takes
   `OPOS_UPDATE_SIGNERS=<public keys file>` (no key: nothing is accepted) and `OPOS_UPDATE_URL=<address of latest.json>` (no
@@ -198,4 +199,4 @@ Where the code is stricter or more specific than the text above. Every item is a
 
 No kernel, initramfs, vendor-layer or Debian updates; no update of the updater or its trust keys over the air; no
 Android/Termux support; no revocation of a release key; not tested on the phone (see the status line); there is no hosted
-update server yet.
+update server yet. Any process running as `droidian` can still ask for one step back per update (trust model).

@@ -7,7 +7,7 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 
 ### Added
 
-- Over-the-air updates for the Surface Duo OS image ([design and as-built notes](docs/ota-update.md)): a root updater with its systemd units, installed by `packaging/duo-os/build-image.sh` (`OPOS_UPDATE_SIGNERS`, `OPOS_UPDATE_URL`); an opt-in update client and `/update` page in OPOS; `tools/opos-release.py` and `deploy/duo-push-update.ps1` to build, sign and push a release ([how-to](docs/ota-release-howto.md)). Implemented and tested on Linux with stand-ins for systemd, runuser and the browser; not tested on the phone.
+- Over-the-air updates for the Surface Duo OS image ([design and as-built notes](docs/ota-update.md)): a root updater with its systemd units, installed by `packaging/duo-os/build-image.sh` (`OPOS_UPDATE_SIGNERS`, `OPOS_UPDATE_URL`); an opt-in update client and `/update` page in OPOS; `tools/opos-release.py` and `deploy/duo-push-update.ps1` to build, sign and push a release ([how-to](docs/ota-release-howto.md)). Settings, About has an Updates link to the page. Review fixes: the update service has no start limit that a writer of the inbox could trip; the smoke test uses a port the kernel picks; a rollback requested through the inbox is limited to one step back per applied update and does not burn the serial. Implemented and tested on Linux with stand-ins for systemd, runuser and the browser; not tested on the phone.
 
 ### Changed
 
