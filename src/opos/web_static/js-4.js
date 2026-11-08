@@ -1,13 +1,15 @@
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function healReload(){fetch('/',{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;location.reload()}).catch(()=>showNotice('Still not reachable. Try again in a moment.'))}
 async function render(s){
 if(!s)return;
 if(s.error){
 const errorNotice=document.getElementById('notice');
 if(errorNotice){
-errorNotice.textContent=s.error==='forbidden'?'This page is out of date. Reload it.':s.error==='offline'?'Phone service not reachable. Reload the page.':s.error==='too many requests'?'Too many taps. Wait a few seconds, then try again.':'That did not work. Reload the page, then try again.';
+errorNotice.textContent=s.error==='forbidden'?'Restarting the screen. One moment.':s.error==='offline'?'Not updating. Values shown may be old. Tap Reload.':s.error==='too many requests'?'Too many taps. Wait a few seconds, then try again.':'That did not work. Try again.';
 errorNotice.hidden=false;
 errorNotice.dataset.tone='';
 }
+if(s.error==='forbidden')try{if(Date.now()-(sessionStorage.opos_h||0)>1e4){sessionStorage.opos_h=Date.now();setTimeout(healReload,500)}}catch(e){}
 return;
 }
 running=!!s.running;vis=!!s.helper_visible;

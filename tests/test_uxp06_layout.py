@@ -60,8 +60,9 @@ class UXP06Layout(unittest.TestCase):
         for f in sorted(STATIC.glob("*.js")) + sorted(STATIC.glob("body-*.html")):
             base += f.read_text(encoding="utf-8")
         baseline = base.count("location.reload")
-        # UXP10 adds one explicit Reload-shell action; resize still must not reload.
-        self.assertEqual(baseline, 3)
+        # W1-02: one place reloads, healReload (js-4.js): the Reload button, the one-per-10-s self-heal after a 403 and the wait
+        # after "Restart helper" all call it, and it reloads only when the server answers. Resize still must not reload.
+        self.assertEqual(baseline, 1)
         out = page("t" * 32, "n")
         self.assertEqual(out.count("location.reload"), baseline)
         for m in re.finditer(r"resize|orientationchange", out):

@@ -211,9 +211,12 @@ var reload=document.getElementById('reload-shell'),failures=0;
 if(!reload)return;
 function stateResult(failed){try{
 failures=failed?failures+1:0;
-reload.hidden=failures<2;
+reload.toggleAttribute('hidden',failures<2);
+document.body.toggleAttribute('data-stale',failures>1);
+if(failures===2)render({error:'offline'});
 }catch(e){}}
-reload.onclick=function(){try{location.reload();}catch(e){}};
+window.oposPoll=ok=>stateResult(!ok);
+reload.onclick=healReload;
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(){stateResult(false);});
 if(typeof window.api==='function'){

@@ -125,9 +125,9 @@ async function eachView(views, sizes, fn) {
 
 const CHECKS = {
   async touch_targets() {
-    return eachView(['full', 'home'], VIEWPORTS, () => ev(`(function(){var U=__u,A=(window.__uxrAllow||{}).size||{},out=[],els=U.inter(),R=els.map(function(e){return e.getBoundingClientRect()});
+    return eachView(['full', 'home'], VIEWPORTS, () => ev(`(function(){var U=__u,A=(window.__uxrAllow||{}).size||{},O=(window.__uxrAllow||{}).overlap||[],out=[],els=U.inter(),R=els.map(function(e){return e.getBoundingClientRect()});
      els.forEach(function(e,i){var s=U.sel(e),min=s in A?A[s]:48,r=R[i];if(r.width<min||r.height<min)out.push(s+' size '+Math.round(r.width)+'x'+Math.round(r.height)+' < '+min+' "'+U.txt(e)+'"')});
-     for(var i=0;i<els.length;i++)for(var j=i+1;j<els.length;j++){if(els[i].contains(els[j])||els[j].contains(els[i]))continue;var a=R[i],b=R[j];
+     for(var i=0;i<els.length;i++)for(var j=i+1;j<els.length;j++){if(els[i].contains(els[j])||els[j].contains(els[i]))continue;if(O.indexOf(U.sel(els[i]))>=0||O.indexOf(U.sel(els[j]))>=0)continue;var a=R[i],b=R[j];
       var g=Math.max(b.left-a.right,a.left-b.right,b.top-a.bottom,a.top-b.bottom);if(g<8)out.push(U.sel(els[i])+' <-> '+U.sel(els[j])+' gap '+Math.round(g)+'px < 8')}
      return out})()`));
   },

@@ -129,3 +129,13 @@ The explanatory text of six full-line `//` comments was moved out of the page sc
 ```js
 // jaryo-layout.js: Jaryo layout screens
 ```
+
+## The page heals itself when the server goes away or restarts (W1-02)
+
+Where: `js-4.js` (`healReload`, the error branch of `render`), `js-8.js` (`fetchState`, `pollTick`, `oposPoll`), `phone-a.js` (the reload block), `jaryo.css` (the banner), the "Restart helper" handler in `web.py`.
+
+- Every poll reports how it went. `pollTick` calls `oposPoll(1)` after a render that did not throw and `oposPoll(0)` when the request failed (`fetchState` gives up after 8 s: `AbortSignal.timeout`, so a request that never answers cannot freeze the poll). `oposPoll` is a no-op in `js-8.js` until `phone-a.js` installs the real one. An answer with an error in it (a 403 after a restart) is still an answer: the server is there, so the miss count is not touched.
+- Two misses in a row (also two failed taps) do three things: the Reload button appears at the bottom right, `data-stale` goes on `<body>`, and the error branch of `render` is asked for the `offline` text. `jaryo.css` turns that into a fixed boxed banner under the status bar (3 px double border, the Jaryo tokens, never wider than one pane when the window spans two: `max-width:var(--pane,100%)`) and a "?" before the battery figure. One good answer clears all three. The banner is a `position:fixed` box, so showing it moves nothing.
+- A 403 means the server restarted with a new token. The error branch says "Restarting the screen. One moment." and, once per 10 s (`sessionStorage.opos_h`, in try/catch; without storage there is no guard, so no reload), calls `healReload` after 0.5 s. `healReload` fetches `/` and reloads only if the server answers 200, otherwise it says "Still not reachable. Try again in a moment." and the page stays where it is. A page that reloaded into a stopped server would be a browser error page, and the phone has no keyboard. The same function is the Reload button and the wait after "Restart helper" (every 2 s until the server answers; the old fixed 6 s landed on a refused connection whenever the server was late).
+- Do not remove the 10 s guard or the fetch: together they keep this from becoming a reload loop. `/` is served with `Cache-Control: no-store`, so the probe is never answered from the cache.
+- With a persisted token (`--token-file`, W1-03) a plain restart of the server never reaches the 403 branch: the open page just goes on.
