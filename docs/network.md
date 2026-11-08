@@ -18,7 +18,7 @@ main page is at its size budget. It reads, never raising when a tool is missing 
 | Bluetooth: on, off, blocked, no controller | `rfkill list`, `bluetoothctl show`, and `read_radios` (sysfs) |
 | Modem, SIM card | `mmcli -K -m any`: state, operator, technology, signal, SIM present or locked. No IMEI, IMSI, ICCID or number is read into the state |
 | Mobile data | NetworkManager's `gsm` connection. The port switches it off while Wi-Fi is connected, and the page says so |
-| Airplane mode | every radio blocked in `rfkill`, or switched off in NetworkManager |
+| Airplane mode | every radio blocked in `rfkill`, or switched off in NetworkManager or (when `rfkill` does not list it) off in `bluetoothctl`. A radio whose state was not read keeps the answer at "unknown"; it is never counted as blocked |
 | USB network | `ip -br addr`: `usb0`, `rndis0`, `ncm0` and the like, and their address |
 
 Calls and texts are **still simulated**: `src/opos/mm_modem.py` is not wired in yet. The page says so under the status, and every
@@ -40,7 +40,10 @@ NetworkManager as the unprivileged user the server runs as (`droidian`). Nothing
   the password into a pseudo terminal instead. The password is not kept, logged or returned by OPOS: NetworkManager stores the
   profile (so it is on the phone, in NetworkManager's connection file) and "Forget" deletes it. It is not part of `/api/state`, so
   the helper never sees it, and no network name, saved or visible, is part of the state the helper reads. A password for a saved
-  network replaces the saved entry. A failed join is deleted again, so a wrong password is not retried forever.
+  network replaces the saved entry only after the new one is up: a failed join (a wrong password, no address, the network gone) keeps
+  the old entry and deletes only the profile that attempt itself left behind, so a wrong password is not retried forever and a
+  right one is not lost. "Forget" and that cleanup look at every saved Wi-Fi profile, not the first few that the page lists, and
+  say "gone" or "Nothing was saved" only when they have checked.
 - **Limits.** A Wi-Fi password is 8 to 63 characters (or 64 hex digits). Networks that need a user name (802.1X, "company or school")
   and WEP are listed but not joinable. Hidden networks can be joined by typing the name. Names starting with a dash are refused.
 
@@ -48,6 +51,11 @@ If NetworkManager does not allow the user to change Wi-Fi, build the image with 
 `packaging/duo-os/50-opos-network.rules`, or install it by hand. It lets `droidian` do four NetworkManager actions without being
 asked. They also let that user connect or disconnect any connection and add, change or delete system connections (mobile data and
 VPNs included), so it is opt-in and off by default.
+
+**Who can change Wi-Fi.** The page token is served on `GET /network` like the home page, so any local user or process on the phone
+can read it and change Wi-Fi as `droidian`: the accepted posture is a single-user phone, where every local process is the owner's.
+The optional polkit rule is wider than Wi-Fi: it also lets the server activate, modify and delete every NetworkManager connection,
+mobile data and VPN profiles included.
 
 ## Files and settings
 
