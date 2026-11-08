@@ -23,6 +23,8 @@ HERE = Path(__file__).resolve().parent
 STATIC = HERE.parent / "src" / "opos" / "web_static"
 NODE = shutil.which("node")
 WIDE = "@media (min-width:840px){"
+# The Helper screen's rest line (phone-b.js REST). UXP22Browser skips without Chromium, so UXP22Static checks this copy against the source.
+REST = "The helper is resting to save power. Plug the phone in, then ask again."
 X = "html:not([data-ff=slab]):not([data-ff=foldable])"
 RULES = (
     X + " #phone[data-app=settings]," + X + " #phone[data-app=helper]{max-width:960px}",
@@ -49,6 +51,11 @@ class UXP22Static(unittest.TestCase):
         outside = text.replace(wide[0], "")
         self.assertNotIn(X, outside)
         self.assertNotIn("max-width:960px", outside)
+
+    def test_pinned_rest_line_is_the_one_the_page_ships(self):
+        src = (STATIC / "phone-b.js").read_text(encoding="utf-8")
+        self.assertTrue("REST='" + REST + "'" in src, "phone-b.js REST differs from the line this test pins")
+        self.assertTrue(REST in page(), "page() does not carry the pinned rest line")
 
     def test_narrow_width_and_summary_targets(self):
         style = page().split("</style>", 1)[0]
@@ -319,7 +326,7 @@ class UXP22Browser(unittest.TestCase):
         self.assertEqual(m["rendered_mode"], "CRITICAL")
         self.assertTrue(m["send_disabled"])
         self.assertTrue(m["cancel_disabled"])
-        self.assertEqual(m["rest_status"], "Resting to save power. Calls and messages still work.")
+        self.assertEqual(m["rest_status"], REST)
         self.assertTrue(m["plan_enabled"])
         self.assertTrue(m["why_enabled"])
         self.assertTrue(m["clear_enabled"])
