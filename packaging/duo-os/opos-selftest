@@ -797,7 +797,7 @@ def check_ssh(c):
     elif odd:
         c.emit("WARN", "ssh.auth", "password logins are also allowed for a non-private match (%s). %s" % (", ".join(odd), ev))
     else:
-        c.emit("PASS", "ssh.auth", "key-only except as listed. " + ev)
+        c.emit("PASS", "ssh.auth", ("key-only except as listed. " if allowed else "key-only everywhere. ") + ev)
 
 
 def check_network(c):

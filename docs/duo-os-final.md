@@ -62,6 +62,20 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_UPDATE_SIGNERS` | unset (a build input) | a file of public keys (`ssh-ed25519 ...`) that `build-image.sh` installs as the image's only trust for over-the-air updates; without it the image accepts no update |
 | `OPOS_UPDATE_URL` | unset (a build input) | `https://host/folder/latest.json`, written to `/etc/opos/update.json` so the Updates page may look there, only when asked; without it the phone fetches nothing |
 
+## Removed on purpose
+
+Two doors the port leaves open, closed by `build-image.sh` in every image with no switch (the `usb hardening` block, checked by `verify-image.sh`; details in the
+image README under "Removed on purpose: the USB root shell and the password login"):
+
+- the root telnet shell on the USB link: the port's `sfduo-usb-gadget.sh` ended by starting busybox `telnetd` with `/bin/bash` as its login program, so anything on
+  the cable had a root shell with no login. The line is now a comment.
+- the sshd password login for the USB subnet: the port's `10-item-password-usb-only.conf` let a password in for every client whose source address was in that
+  /24, on any interface, Wi-Fi included once joined. The drop-in is key-only now, so ssh takes a key from every address and `opos-selftest` `ssh.auth` says
+  `key-only everywhere`. A dev image gets its key from `OPOS_DEV_SSH_PUBKEY` and, if built with `OPOS_DEV_SUDO=1`, root through sudo.
+
+`adbd` in the Android container is not touched: it listens on TCP 5555 on every interface and requires an authorised key (`ro.adb.secure=1`); the freshly
+formatted userdata has none. Not yet seen on the phone.
+
 ## What is still simulated
 
 - **Calls and texts are simulated.** The base has ModemManager (through ofono2mm) and `mmcli` can read the modem and SIM, so the

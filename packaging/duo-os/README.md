@@ -367,10 +367,11 @@ less guarded route.
 `~/.ssh/authorized_keys` of the `droidian` user in the image (the directory is made 0700, the file 0600) and prints a
 `DEV IMAGE` line; `verify-image.sh` notes how many keys the image holds. It grants **a shell as `droidian` to
 whoever holds the matching private key**, over the USB network and over any other network where the phone's
-sshd can be reached (the port's sshd is not limited to the USB link; keys are accepted from any address,
-passwords only from the port's own USB subnet, 172.16.42.x). It is meant for reading logs and testing live;
+sshd can be reached (the port's sshd is not limited to the USB link; keys are accepted from any address, and
+since the image takes no password at all, a key is the only way in; see
+[Removed on purpose](#removed-on-purpose-the-usb-root-shell-and-the-password-login)). It is meant for reading logs and testing live;
 leave it unset for an image that will be carried. With the variable unset the image adds no login of its own,
-but the port's password rule stays as it is.
+and no password login either.
 
 Remove it from a running phone with `rm ~/.ssh/authorized_keys` as `droidian` (this deletes every key in the
 file, not only the one the build added) or by deleting that one line. Rebuilding without the variable gives an
@@ -401,6 +402,29 @@ requires its absence (unset requires nothing; under `sudo`, `sudo env OPOS_DEV_S
 
 Remove it from a running phone with `sudo rm /etc/sudoers.d/90-opos-dev`; the next sudo asks for a password again. Check it from the PC with
 `ssh droidian@<phone> sudo -n true`.
+
+## Removed on purpose: the USB root shell and the password login
+
+Two doors that the community port leaves open need no key, and `build-image.sh` closes both in **every image** (no knob; the block is `usb hardening`):
+
+- **A root shell on the USB cable.** The port's `/usr/local/sbin/sfduo-usb-gadget.sh`, which `sfduo-usb.service` runs at every boot, ends by starting
+  busybox `telnetd` with `/bin/bash` as its login program on the USB link's address (port 23): a root shell with no login for anything on the cable.
+  The build replaces that one line with a comment saying so. The rest of the script (the RNDIS gadget, the static address, the trailing `exit 0`)
+  and the file's mode and owner stay as the port has them; the script is rewritten in place, and the build stops if the result does not parse.
+- **A password from the whole USB subnet.** The port's `/etc/ssh/sshd_config.d/10-item-password-usb-only.conf` turned `PasswordAuthentication` off and
+  then on again in a `Match Address` block for the USB link's /24 (`droidian` has a password, a four-digit PIN). sshd matches the client's *source
+  address*, not the interface, so any client with an address in that /24 could try the PIN on any interface, Wi-Fi included once one is joined. The build rewrites that
+  drop-in (same name, mode and owner) to say only `PasswordAuthentication no` and `KbdInteractiveAuthentication no`. sshd takes keys only, from every address.
+
+ssh with a key (`OPOS_DEV_SSH_PUBKEY`, and `OPOS_DEV_SUDO` for root, see above) replaces both. `verify-image.sh` fails an image whose gadget script has a
+non-comment `telnetd` line, whose other scripts, configs or units start `telnetd`, or whose sshd files set `PasswordAuthentication`,
+`KbdInteractiveAuthentication` or `ChallengeResponseAuthentication` to `yes` anywhere (a `Match` block that takes no password is fine); a package upgrade of the
+port that puts either file back is therefore reported. On the phone `opos-selftest` `ssh.auth` reads `key-only everywhere` for the result, and
+`ss -ltn` as `droidian` must list nothing on port 23. Text checks only: `sshd -T` cannot run on the builder against the image, and none of this has been
+looked at on the phone yet.
+
+**Not touched: `adbd`.** The Android container's `adbd` listens on TCP 5555 on every interface and needs an authorised key (`ro.adb.secure=1` in the container);
+a freshly formatted userdata holds no authorised adb key, so nothing can use it until one is added. Whoever adds one opens that door on purpose.
 
 ## Boot evidence: persistent journal and opos-diag
 

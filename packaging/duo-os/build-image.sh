@@ -243,6 +243,54 @@ if [ "${OPOS_DEV_SUDO:-}" = 1 ] && [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
 fi
 # --- dev sudo: END
 
+# --- usb hardening: BEGIN (always, no knob; packaging/duo-os/README.md, "Removed on purpose: the USB root shell and the password login")
+# Two ways into the base that need no key, both removed from every image:
+#  1. The port's USB gadget script (sfduo-usb-gadget.sh, run at every boot by sfduo-usb.service) ends by starting busybox telnetd with /bin/bash as its login program
+#     on the USB link's address: a root shell with no authentication for anyone on the cable. Its one line is replaced by a comment; everything else in the script,
+#     the trailing exit 0 and the file's mode and owner stay (the script is rewritten in place, not replaced).
+#  2. The port's sshd drop-in 10-item-password-usb-only.conf lets a password in (droidian has one, a four-digit PIN) for every client whose source address is in the
+#     USB link's /24, on ANY interface: Wi-Fi too, once one is joined. The drop-in becomes key-only. A Match block cannot be overridden from another file (its
+#     keywords override the global section), so the port's file itself is rewritten, under its own name and with its own mode and owner.
+# ssh with a key (OPOS_DEV_SSH_PUBKEY, and OPOS_DEV_SUDO for root) replaces both. adbd is not touched here: it listens on TCP 5555 on every interface and needs an
+# authorised key (ro.adb.secure=1), and a freshly formatted userdata has none.
+ug=$r/usr/local/sbin/sfduo-usb-gadget.sh
+[ -f "$ug" ] && [ ! -L "$ug" ] && [ -x "$ug" ] || { echo "base rootfs has no executable sfduo-usb-gadget.sh (the port's USB gadget script)" >&2; exit 1; }
+ug_lines=$(wc -l < "$ug")
+ug_tmp=$(mktemp)
+awk '/^[ \t]*#/ { print; next } /telnetd/ { print "# OPOS: the root telnet shell that was started here, with no login, was removed by the OPOS image build (build-image.sh); ssh with a key is the way in."; next } { print }' "$ug" > "$ug_tmp"
+if cmp -s "$ug_tmp" "$ug"; then
+    echo "sfduo-usb-gadget.sh starts no telnet shell; leaving it as it is"
+else
+    cat "$ug_tmp" > "$ug"
+    echo "USB: the root telnet shell in sfduo-usb-gadget.sh was removed (no login was asked on the USB link)"
+fi
+rm -f "$ug_tmp"
+if grep -v '^[[:space:]]*#' "$ug" | grep -q telnetd || ! sh -n "$ug" || [ "$(wc -l < "$ug")" -ne "$ug_lines" ]; then
+    echo "the sfduo-usb-gadget.sh edit did not take" >&2; exit 1
+fi
+sd=$r/etc/ssh/sshd_config.d
+sf=$sd/10-item-password-usb-only.conf
+if [ -e "$sf" ] || [ -L "$sf" ]; then
+    [ -f "$sf" ] && [ ! -L "$sf" ] || { echo "base rootfs: $sf is not a plain file" >&2; exit 1; }
+else
+    install -d -m 0755 "$sd"
+    install -m 0644 /dev/null "$sf"
+fi
+sf_tmp=$(mktemp)
+printf '%s\n' '# OPOS image: ssh logs in with a key only, from every address. The port'"'"'s version of this file let a password in (a Match Address block with' \
+    '# PasswordAuthentication yes) for any client whose source address is in the USB link'"'"'s /24, on any interface, Wi-Fi included once one is joined; the' \
+    '# block was removed on purpose by build-image.sh. A key is added with OPOS_DEV_SSH_PUBKEY. A package upgrade of the port may put the original back;' \
+    '# verify-image.sh reports that.' \
+    'PasswordAuthentication no' 'KbdInteractiveAuthentication no' > "$sf_tmp"
+cat "$sf_tmp" > "$sf"
+rm -f "$sf_tmp"
+if grep -hsiE '^[[:space:]]*(PasswordAuthentication|KbdInteractiveAuthentication|ChallengeResponseAuthentication)[[:space:]=]+yes' "$r/etc/ssh/sshd_config" "$sd"/*.conf | grep -q .; then
+    echo "base rootfs: another sshd setting turns a password login on; the OPOS key-only edit is not enough" >&2; exit 1
+fi
+( cd "$r" && sha256sum usr/local/sbin/sfduo-usb-gadget.sh etc/ssh/sshd_config.d/10-item-password-usb-only.conf )
+echo "USB: ssh is key-only (the password login for the USB link's subnet was removed from 10-item-password-usb-only.conf)"
+# --- usb hardening: END
+
 # ---- BEGIN OPOS OTA updates (self-contained; needs $r and $here; docs/ota-update.md) ----------------------------
 # Release layout (/opt/opos -> /opt/opos-releases/0-<rev12>), the update state and inbox directories, the trust
 # anchor (/etc/opos/update/allowed_signers, public keys only) and the root updater with its units. Over-the-air

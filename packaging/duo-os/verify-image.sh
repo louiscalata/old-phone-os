@@ -196,6 +196,28 @@ case ${OPOS_DEV_SUDO:-} in
     0) check "OPOS_DEV_SUDO=0: no dev sudoers file is in the image" "[ ! -e $dsf ] && [ ! -L $dsf ]" ;;
 esac
 # --- dev sudo: END
+# --- usb hardening: BEGIN (build-image.sh, "usb hardening"; packaging/duo-os/README.md, "Removed on purpose: the USB root shell and the password login")
+# Every image, dev or not: the port's USB gadget script starts no telnet shell (busybox telnetd with /bin/bash as its login program: a root shell with no
+# authentication on the USB link), no other script or unit of the image does, and sshd takes no password from anyone (the port's Match block for the USB link's
+# subnet, which let a password in from any interface, is gone). Text checks of the files; sshd -T cannot run here. A package upgrade of the port that puts either
+# file back is a FAIL.
+ugs=$r/usr/local/sbin/sfduo-usb-gadget.sh
+telnet_lines() { grep -v '^[[:space:]]*#' "$ugs" | grep telnetd; }
+telnet_elsewhere() { grep -rIlE '^[[:space:]]*(telnetd|[^#[:space:]].*telnetd)' "$r/usr/local" "$r/etc" "$r/usr/lib/systemd" "$r/lib/systemd" 2>/dev/null; }
+gadget_ok() { [ -f "$ugs" ] && [ ! -L "$ugs" ] && [ -x "$ugs" ] && [ "$(stat -c %u:%g "$ugs")" = 0:0 ] && sh -n "$ugs" && ! telnet_lines | grep -q . && [ "$(tail -n 1 "$ugs")" = 'exit 0' ]; }
+sshd_files() { echo "$r/etc/ssh/sshd_config"; ls "$r"/etc/ssh/sshd_config.d/*.conf 2>/dev/null; }
+sshd_opt() { sshd_files | while IFS= read -r sshd_f; do sed -n "s/^[[:space:]]*$1[[:space:]=][[:space:]=]*\\([^[:space:]#]*\\).*/\\1/Ip" "$sshd_f" 2>/dev/null; done | tr 'A-Z' 'a-z'; }
+sshd_key_only() {
+    for sshd_o in passwordauthentication kbdinteractiveauthentication challengeresponseauthentication; do
+        ! sshd_opt "$sshd_o" | grep -qx yes || return 1
+    done
+    sshd_opt passwordauthentication | grep -qx no && sshd_opt kbdinteractiveauthentication | grep -qx no
+}
+check "USB: the gadget script starts no telnet shell (no non-comment line with telnetd), is an executable root-owned script that parses, and still ends with exit 0" "gadget_ok"
+check "USB: no other script, config or unit under /usr/local, /etc or the systemd directories starts telnetd" "! telnet_elsewhere | grep -q ."
+check "ssh: key-only everywhere: no PasswordAuthentication, KbdInteractiveAuthentication or ChallengeResponseAuthentication yes in sshd_config or its drop-ins (a Match block with one would be a password path from the USB link's subnet), and the first two are set to no" "sshd_key_only"
+echo "NOTE: ssh takes keys only; the port's root telnet shell on the USB link and its USB-subnet password login are removed from this image (adbd is not touched: it listens on TCP 5555 and wants an authorised key)"
+# --- usb hardening: END
 # --- track osk: the on-screen keyboard (packaging/duo-os/OSK.md) ---
 o=$r/opt/opos/src/opos
 check "the in-page on-screen keyboard is in the image (osk.py, osk.js, osk.css)" "[ -s $o/osk.py ] && [ -s $o/osk_static/osk.js ] && [ -s $o/osk_static/osk.css ]"
