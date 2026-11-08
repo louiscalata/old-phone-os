@@ -220,7 +220,7 @@ class TestStaleBannerCss(unittest.TestCase):
         self.assertIn(self.BANNER, out)
         self.assertIn('[data-stale] #sb-batt::before{content:"? "}', out)
         self.assertNotRegex(self.BANNER, r'#[0-9a-fA-F]{3,8}\b|rgb|hsl')
-        self.assertLess(out.index('#notice{font-size'), out.index(self.BANNER), 'it wins by source order and by specificity')
+        self.assertLess(out.index('#notice{text-align:center'), out.index(self.BANNER), 'it wins by source order and by specificity')
 
     def test_reload_sits_at_the_bottom_right_and_nothing_is_pushed_for_it(self):
         out = page()
