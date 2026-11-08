@@ -251,13 +251,14 @@ async function pressedReal(p, name) {
       if (!d) { await p.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.cx, y: c.cy, button: 'left', buttons: 0, clickCount: 1 }); continue; }  // the page rebuilt it: not measured
       const inset = 4, clip = { x: Math.floor(c.x) + inset, y: Math.floor(c.y) + inset, width: Math.floor(c.w) - 2 * inset, height: Math.floor(c.h) - 2 * inset, scale: 1 };
       const shot = Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip })).data, 'base64');
-      const whole = SHOTS && name && SHOT_IDS.has(c.who) ? await p.png() : null;
-      await p.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.cx, y: c.cy, button: 'left', buttons: 0, clickCount: 1 });
-      if (whole) {
-        save(`pressed-${name}-${c.who}.png`, whole);
+      let whole = null, zoom = null;  // pictures while the button is still down
+      if (SHOTS && name && SHOT_IDS.has(c.who)) {
+        whole = await p.png();
         const z = { x: Math.max(0, Math.floor(c.x) - 24), y: Math.max(0, Math.floor(c.y) - 24), width: Math.floor(c.w) + 48, height: Math.floor(c.h) + 48, scale: 2 };
-        save(`pressed-${name}-${c.who}-zoom.png`, Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip: z })).data, 'base64'));
+        zoom = Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip: z })).data, 'base64');
       }
+      await p.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.cx, y: c.cy, button: 'left', buttons: 0, clickCount: 1 });
+      if (whole) { save(`pressed-${name}-${c.who}.png`, whole); save(`pressed-${name}-${c.who}-zoom.png`, zoom); }
       done.push({ who: d.who, txt: d.txt, dis: d.dis, ap: d.ap, fg: d.fg, bg: d.bg, cr: d.cr, rbg: c.bg, active: d.active, inv: d.bg !== c.bg, pix: inkContrast(shot) });
     }
   } finally {
