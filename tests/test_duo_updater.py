@@ -2020,7 +2020,13 @@ def scn_rollback_command(env):
     return lambda: env.updater().rollback_command()
 
 
-SCENARIOS = {'app update': scn_app, 'health failure': scn_health_fail, 'boot-scope staging': scn_boot_scope_stage, 'boot-time apply': scn_boot_apply,
+def scn_cancel_staged(env):
+    env.apply(bundle(7, 'boot'))
+    env.request_rollback()
+    return lambda: env.updater().apply_inbox()
+
+
+SCENARIOS = {'cancel of a staged update': scn_cancel_staged, 'app update': scn_app, 'health failure': scn_health_fail, 'boot-scope staging': scn_boot_scope_stage, 'boot-time apply': scn_boot_apply,
              'boot-time rollback': scn_boot_rollback, 'rollback request': scn_rollback_request, 'rollback command': scn_rollback_command}
 
 
@@ -2605,6 +2611,121 @@ class TestSerialFloor(EnvCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(U.main(['apply-inbox'], e.cfg), 1, bad)
 
+
+@needs_keygen
+class TestStagedUpdateCancellation(EnvCase):
+    """Finding 11: the first staged boot update could not be cancelled while the phone had no previous release.
+
+    The request file is inbox/rollback.request. Empty: roll back, and drop a staged boot update (works with no previous release).
+    The text `cancel-staged`: drop the staged boot update and nothing else. The client must create the second form as
+    rollback.request.partial, fsync it and rename it, so that the updater never sees it half written."""
+    fast = True
+
+    def stage(self, serial=3):
+        self.assertEqual(self.env.apply(make_bundle(serial, scope='boot'), 'opos-%d.opos-update' % serial), 0)
+        self.assertEqual(self.env.state()['pending_boot']['serial'], serial)
+
+    def request(self, text):
+        e = self.env
+        part = os.path.join(e.inbox, 'rollback.request.partial')
+        wr(part, text, 'wb')
+        os.rename(part, os.path.join(e.inbox, 'rollback.request'))
+
+    def test_the_first_staged_update_is_cancelled_by_a_plain_request_with_no_previous_release(self):
+        e = self.env
+        self.stage(1)
+        self.assertEqual(e.state()['previous'], [])
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        st = e.state()
+        self.assertEqual((st['pending_boot'], st['current']['serial'], st['failed'], st['stepped_back']), (None, 0, [], None))
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+        self.assertIn('staged update 1', e.status()['message'])
+        self.assertIn('cancelled', e.status()['message'])
+        self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+        self.assertNotIn(release_name(1), os.listdir(e.releases))
+        e.boot = 'boot-2'                                           # the cancelled update does not apply at the next boot
+        self.assertEqual(e.updater().apply_pending_boot(), 0)
+        self.assertEqual((e.consistent(), e.marker()), (0, 'build 0'))
+        self.assertEqual(e.apply(make_bundle(1, scope='boot'), 'opos-1.opos-update'), 0)   # not burned: the same signed release can be staged again
+
+    def test_cancel_staged_leaves_the_installed_releases_alone(self):
+        e = self.env
+        for s in (1, 2):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0)
+        self.stage(3)
+        before = e.live()['files']
+        self.request(b'cancel-staged\n')
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        st = e.state()
+        self.assertEqual((st['pending_boot'], st['current']['serial'], [p['serial'] for p in st['previous']], st['stepped_back']), (None, 2, [1, 0], None))
+        self.assertEqual((e.marker(), e.live()['files']), ('build 2', before))
+        self.assertEqual(e.consistent(), 2)
+
+    def test_a_plain_request_still_cancels_the_staged_update_and_goes_back_when_it_can(self):
+        e = self.env
+        for s in (1, 2):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0)
+        self.stage(3)
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual((e.state()['pending_boot'], e.consistent()), (None, 1))
+
+    def test_the_one_step_limit_does_not_stop_a_cancellation(self):
+        e = self.env
+        for s in (1, 2):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0)
+        e.request_rollback()
+        e.updater().apply_inbox()
+        self.assertEqual(e.state()['stepped_back'], 2)
+        self.stage(3)
+        e.request_rollback()                                        # the installed release may not go back again, the staged one may be dropped
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual((e.state()['pending_boot'], e.consistent(), e.state()['stepped_back']), (None, 1, 2))
+
+    def test_cancel_staged_with_nothing_staged_changes_nothing(self):
+        e = self.env
+        e.apply(make_bundle(1), 'opos-1.opos-update')
+        before = e.live()
+        self.request(b'cancel-staged\n')
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('nothing is staged', e.status()['message'])
+        self.assertEqual(e.live(), before)
+        self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+
+    def test_a_request_that_is_neither_form_is_refused_and_removed(self):
+        e = self.env
+        e.apply(make_bundle(1), 'opos-1.opos-update')
+        self.stage(2)
+        before = e.live()
+        for label, text in (('other words', b'rollback now\n'), ('too long', b'cancel-staged' + b' ' * 100 + b'x'), ('binary', b'\0\1\2')):
+            with self.subTest(label):
+                self.request(text)
+                self.assertEqual(e.updater().apply_inbox(), 3)
+                self.assertEqual(e.status()['phase'], 'failed')
+                self.assertIn('not understood', e.status()['message'])
+                self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+                self.assertEqual(e.live(), before)
+
+    def test_a_request_that_is_not_a_regular_file_is_never_read(self):
+        e = self.env
+        self.stage(1)
+        path = os.path.join(e.inbox, 'rollback.request')
+        os.mkfifo(path)                                             # a reader that opens it blocking would hang for ever
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertFalse(os.path.lexists(path))
+        self.assertEqual(e.state()['pending_boot']['serial'], 1)
+
+    def test_the_root_rollback_command_drops_a_staged_update_too(self):
+        e = self.env
+        self.stage(1)
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)
+        self.assertEqual((e.state()['pending_boot'], e.state()['failed']), (None, []))
+        self.assertEqual(U.main(['rollback'], e.cfg), 1)            # and with nothing staged and nothing before, there still is nothing to do
+
+
+# ============================================================================================ smoke test and probes (findings 7, 10)
 
 FLOOD_PY = b'''import sys, time
 while True:

@@ -58,7 +58,9 @@ MAX_FAILED = 64            # serials kept in state.json's `failed` list (the `fl
 # about 13 MB; a reader with a smaller limit than the writer once threw a valid backup away (review finding 2).
 MAX_INDEX = 16 << 20
 BLOCK = 512                # the tar block size
+MAX_REQUEST = 64           # bytes of a request file that are read
 CHUNK = 1 << 20
+REQUEST_ROLLBACK, CANCEL_STAGED = 'rollback', 'cancel-staged'  # what inbox/rollback.request can ask for
 Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
 
 
@@ -833,6 +835,35 @@ class Updater:
         self.bad += 1
         self.status('failed', 'rejected: inbox entry %r is %s' % (name[:60], why))
 
+    def take_request(self, dfd):
+        """Read and remove inbox/rollback.request. An empty file asks for a rollback (which also cancels a staged boot update);
+        the text `cancel-staged` asks to cancel the staged boot update and nothing else. Anything else is refused: a request
+        file is written by the unprivileged side, so only these two things are understood and at most MAX_REQUEST bytes are
+        read. Returns REQUEST_ROLLBACK, CANCEL_STAGED, or None for a refused request (removed and reported)."""
+        name = 'rollback.request'
+        data, ident = None, None
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dfd)
+        except OSError:
+            fd = None
+        if fd is not None:
+            try:
+                st = os.fstat(fd)
+                ident = (st.st_dev, st.st_ino)
+                if stat.S_ISREG(st.st_mode):
+                    data = os.read(fd, MAX_REQUEST + 1)
+            finally:
+                os.close(fd)
+        self.drop(dfd, name, ident)
+        text = data.strip() if data is not None and len(data) <= MAX_REQUEST else None
+        if text == b'':
+            return REQUEST_ROLLBACK
+        if text == CANCEL_STAGED.encode():
+            return CANCEL_STAGED
+        self.log('rollback request refused and removed: it is not an empty file or %r' % CANCEL_STAGED)
+        self.status('failed', 'rejected: the rollback request is not understood')
+        return None
+
     def copy_in(self, dfd, name, run_dir):
         """Copy the inbox file into root-owned staging, with O_NOFOLLOW and a size cap, before anything reads it."""
         cfg = self.cfg
@@ -1392,21 +1423,48 @@ class Updater:
             cfg.sleep(cfg.health_interval)
 
     # -- rollback
-    def rollback(self, reason, restart, requested=False):
-        """Go back to the previous release. requested: asked for through the inbox, so by a process that is not root. That is
-        honoured once per applied update (stepped_back) and does not burn the serial, so the same signed release can be
-        installed again; every other rollback (failed health or boot check, `opos-updater rollback`) burns it."""
+    def cancel_staged(self, why):
+        """Drop the staged boot-scope update. Nothing live was touched by staging, so this is bookkeeping only; the serial is
+        not burned (the owner can deliver the same signed release again)."""
         st = self.st
+        pb = st['pending_boot']
+        st['pending_boot'] = None
+        self.serial = pb['serial']
+        self.save()
+        self.step('staged-cancelled')
+        self.status('rolled-back', 'staged update %d (%s) cancelled (%s); the phone keeps running release %s'
+                    % (pb['serial'], pb.get('version', '?'), why, st['current']['release']))
+        self.gc()
+
+    def rollback(self, reason, restart, requested=False, cancel_only=False):
+        """Go back to the previous release, and drop a staged boot update. requested: asked for through the inbox, so by a
+        process that is not root. That is honoured once per applied update (stepped_back) and does not burn the serial, so the
+        same signed release can be installed again; every other rollback (failed health or boot check, `opos-updater
+        rollback`) burns it. A staged boot update is cancelled on its own account, before and without regard to the installed
+        releases: it needs no previous release to exist and the one-step limit does not apply to it (review finding 11).
+        cancel_only: do nothing but that."""
+        st = self.st
+        staged = bool(st['pending_boot'])
+        if staged:
+            self.cancel_staged(reason)
+            if cancel_only:
+                return True
+        elif cancel_only:
+            self.status('failed', 'nothing is staged, so there is nothing to cancel')
+            return False
         if not st['previous']:
-            self.status('failed', 'nothing to roll back to')
-            return False
+            if not staged:
+                self.status('failed', 'nothing to roll back to')
+            return staged
         if requested and st['stepped_back'] is not None:
-            self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
-            return False
+            if not staged:
+                self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
+            return staged
         target = st['previous'][0]
         if not os.path.isdir(os.path.join(self.cfg.releases, target['release'])):
-            self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
-            return False
+            if not staged:
+                self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
+            return staged
         st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': st['current']['release'], 'to': target['release'],
                      'requested': bool(requested)}
         self.save()
@@ -1445,10 +1503,13 @@ class Updater:
                 if rollback:
                     dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
                     try:
-                        self.drop(dfd, 'rollback.request')
+                        kind = self.take_request(dfd)
                     finally:
                         os.close(dfd)
-                    self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True) else 1
+                    if kind is None:
+                        self.bad += 1
+                    else:
+                        self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True, cancel_only=kind == CANCEL_STAGED) else 1
                 done = False
                 for name in bundles:
                     dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
