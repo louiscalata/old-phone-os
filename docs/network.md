@@ -77,4 +77,4 @@ a WPA join but does stop secure websites and updates until the time is set.
 
 No airplane-mode switch, no Bluetooth pairing, no mobile-data switch, no SIM PIN entry, no VPN, no enterprise (802.1X) Wi-Fi, and
 no change of the NetworkManager or polkit configuration other than the opt-in rule. Wi-Fi joining in the setup wizard
-(`src/opos/setup`) is still record-only. Typing a password needs an on-screen keyboard, which is another track's work.
+(`src/opos/setup`) is still record-only. Typing a password uses the image's on-screen keyboard (`OPOS_OSK`, [packaging/duo-os/OSK.md](../packaging/duo-os/OSK.md)): `/network` is served through the same injector as the home page, so the password field gets it; seen in a desktop browser, not on the phone.

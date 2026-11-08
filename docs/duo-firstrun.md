@@ -82,8 +82,10 @@ online; whether it does on the phone is not checked here.
 
 The Wi-Fi step asks the server whether `/network` exists (`HEAD /network`). If it answers 200 the step shows "Open Wi-Fi
 setup" linking to it; otherwise it says joining a network is not available on this screen yet and that the step can be
-skipped. Nothing else is needed to hook a network page in: serve `/network`. Until then Wi-Fi is joined from a shell with
-NetworkManager's `nmcli`.
+skipped. The Duo OS image serves `/network` (docs/network.md), so the link is there. Leaving for `/network` and coming back
+through its Home link returns to this page at the Wi-Fi step with the earlier answers kept (they are held in `sessionStorage`
+for this tab for 30 minutes, and dropped when the setup is finished or skipped). Without a `/network` route Wi-Fi is joined
+from a shell with NetworkManager's `nmcli`.
 
 ## Routes and files other work can rely on
 
