@@ -1,0 +1,44 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Option A of the on-screen keyboard, opt-in: the port's phosh-osk-stevia as a second Wayland client beside the kiosk
+# Chromium in OPOS's phoc session. Run by opos-osk.service, which is enabled but idle: this script does nothing unless
+# /etc/default/opos-osk says OPOS_OSK=stevia. With that setting opos-server serves no in-page keyboard (src/opos/osk.py),
+# so exactly one keyboard runs. Untested on the phone; packaging/duo-os/OSK.md has the reasons and the live checks.
+#   OPOS_OSK_BIN        the keyboard binary (default /usr/bin/phosh-osk-stevia)
+#   OPOS_OSK_WAIT       seconds to wait for phoc's Wayland socket (default 120)
+#   OPOS_OSK_GSETTINGS  0: do not touch gsettings (the unit tests use this)
+case ${OPOS_OSK:-1} in
+stevia) ;;
+*) echo "opos-osk: OPOS_OSK=${OPOS_OSK:-1}, so the in-page keyboard is in use and there is nothing to start"; exit 0 ;;
+esac
+bin=${OPOS_OSK_BIN:-/usr/bin/phosh-osk-stevia}
+if [ ! -x "$bin" ]; then
+    echo "opos-osk: $bin is not installed; set OPOS_OSK=1 in /etc/default/opos-osk to use the in-page keyboard"
+    exit 0
+fi
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+# phoc's socket: wayland-0 on this image, found rather than assumed; a *.lock file beside it is not a socket.
+n=0 sock=
+while [ "$n" -lt "${OPOS_OSK_WAIT:-120}" ]; do
+    for s in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
+        if [ -S "$s" ]; then sock=$s; fi
+    done
+    [ -z "$sock" ] || break
+    n=$((n + 1))
+    sleep 1
+done
+if [ -z "$sock" ]; then
+    echo "opos-osk: no Wayland socket in $XDG_RUNTIME_DIR after ${n}s (is opos.service running?)" >&2
+    exit 1
+fi
+export WAYLAND_DISPLAY=${sock##*/}
+export GDK_BACKEND=wayland
+# Stevia only needs a session bus to own sm.puri.OSK0 and to reach dconf; phoc's own bus (from dbus-run-session) is not
+# needed, because Chromium and the keyboard talk through phoc, not through D-Bus.
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+# Without phosh nothing sets this a11y key, and stevia stays hidden while it is false.
+if [ "${OPOS_OSK_GSETTINGS:-1}" != 0 ] && command -v gsettings >/dev/null 2>&1; then
+    gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true 2>/dev/null || true
+fi
+echo "opos-osk: starting $bin on $WAYLAND_DISPLAY"
+exec "$bin" --allow-replacement
