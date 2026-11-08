@@ -205,7 +205,7 @@ class StaticPins(unittest.TestCase):
         final = " ".join(read("docs/duo-os-final.md").split())
         for phrase in ("Removed on purpose", "telnetd", "key-only", "adbd", "TCP 5555", "authorised key"):
             self.assertIn(phrase, final)
-        self.assertIn("telnet", read("CHANGELOG.md"))
+        self.assertIn("root telnet shell on the USB link", read("CHANGELOG.md"))
 
 
 @unittest.skipUnless(SH and os.name == "posix", "needs a POSIX sh")
@@ -446,6 +446,7 @@ class VerifyBlock(unittest.TestCase):
         for rel, text in (("usr/local/sbin/other.sh", "#!/bin/sh\nbusybox telnetd -l /bin/sh\n"), ("etc/rc.local", "telnetd &\n"),
                           ("etc/systemd/system/t.service", "[Service]\nExecStart=/usr/local/bin/busybox telnetd -F\n"),
                           ("usr/lib/systemd/system/t2.service", "[Service]\nExecStart=/usr/sbin/in.telnetd\n"),
+                          ("lib/systemd/system/t3.service", "[Service]\nExecStart=/usr/local/bin/busybox telnetd -F\n"),
                           ("etc/xinetd.d/telnet", "service telnet\n{\n  server = /usr/sbin/in.telnetd\n}\n")):
             with self.subTest(rel=rel):
                 f = self.r / rel
