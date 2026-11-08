@@ -155,6 +155,12 @@ def state(phone=None, env=None):
             "timezone": {"saved": timezone.load_setting(env)}}
 
 
+def _goal_clock(phone):
+    """The time of day a goal may be read against: the Phone says None while its live clock is a guess (web.Phone._goal_clock)."""
+    own = getattr(phone, "_goal_clock", None)
+    return own() if callable(own) else phone.clock_s
+
+
 def apply_answers(data, phone=None, lock=None, env=None):
     """Save and apply the choices in data (zone, goal, helper; a missing or null key is left alone).
 
@@ -179,7 +185,7 @@ def apply_answers(data, phone=None, lock=None, env=None):
         if isinstance(g, dict) and type(g.get("enabled")) is bool and isinstance(g.get("time"), str) and _GOAL_TIME.fullmatch(g["time"]):
             try:
                 _save_goal(g["enabled"], g["time"], env)
-                live(lambda: phone.dash.set_goal(g["time"] if g["enabled"] else None, phone.clock_s))
+                live(lambda: phone.dash.set_goal(g["time"] if g["enabled"] else None, _goal_clock(phone)))
                 saved["goal"] = {"enabled": g["enabled"], "time": g["time"]}
             except (ValueError, OSError, setup_config.ConfigError):
                 errors.append("daily goal")
@@ -394,8 +400,8 @@ def install(web, env=None):
         if not route_post(self):
             post(self)
 
-    def _page(token="", nonce="", *, demo=False):
-        return decorate(page(token, nonce, demo=demo))
+    def _page(token="", nonce="", *, demo=False, **kw):
+        return decorate(page(token, nonce, demo=demo, **kw))  # kw: span, the two-screen layout (OPOS_SPAN)
 
     handler._get, handler._post, web.page, handler._firstrun_hooked = _get, _post, _page, True
 

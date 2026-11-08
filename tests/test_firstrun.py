@@ -180,6 +180,18 @@ class Answers(Env):
         self.assertIsNone(self.phone.dash.goal)
         self.assertEqual({"enabled": False, "time": "23:00"}, setup_config.load(setup_config.config_path())["goal"])
 
+    def test_a_goal_answered_while_the_live_clock_is_a_guess_is_read_against_no_clock(self):
+        # The same rule as the goal action in the shade (web.apply_phone_action): a guessed clock (the image's floor, or
+        # before 2026) must not decide whether the goal was set inside its own grace window.
+        self.phone.clock_ok = False
+        self.phone.clock_s = 18 * 3600  # two hours after a 16:00 goal: inside the grace window if this clock were believed
+        firstrun.apply_answers({"goal": {"enabled": True, "time": "16:00"}}, self.phone, self.lock)
+        self.assertEqual("16:00", self.phone.dash.goal)
+        self.assertTrue(self.phone.dash._goal_armed)
+        self.phone.clock_ok = True
+        firstrun.apply_answers({"goal": {"enabled": True, "time": "16:00"}}, self.phone, self.lock)
+        self.assertFalse(self.phone.dash._goal_armed)
+
     def test_an_existing_config_keeps_everything_but_the_goal(self):
         cfg = setup_config.default_config()
         cfg["device"] = {"id": "my-phone", "name": "My phone", "source": "manual", "battery_health": 0.8, "form_factor": "slab"}
@@ -422,6 +434,15 @@ class On(Http):
         self.assertEqual(self.orig, (web.Handler._get, web.Handler._post, web.page))
         self.assertFalse(hasattr(web.Handler, "_firstrun_hooked"))
         self.undo()  # and undoing twice is harmless
+
+    def test_the_hooked_page_still_takes_the_two_screen_span(self):
+        from opos import span as span_mod
+        out = web.page("t", "n", span=span_mod.parse("675,42"))
+        self.assertIn("--pane:675px;--hinge:42px", out)
+        self.assertIn('id="tz-link"', out)
+        plain = web.page("t", "n")
+        self.assertNotIn("--pane:675px", plain)
+        self.assertIn('id="tz-link"', plain)
 
     def test_a_script_that_probes_the_root_still_gets_the_home_page(self):
         for headers in ({}, {"Accept": "*/*"}, {"Accept": "application/json"}):
