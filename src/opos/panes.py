@@ -5,8 +5,9 @@ OPOS_PANES=1 (in the server's environment) makes the served pages carry two extr
 this server and both under the page's own CSP nonce, and makes the server answer /panes.css and /panes.js. On a window that
 covers both panels (OPOS_SPAN, or a browser that reports two viewport segments) the style sheet paints the thumb pane (the
 app or detail pane) black with white text and the other pane (the list, the masthead, the shade) white with black text, and the
-Hand setting decides which physical pane is the thumb pane. On a one-pane window nothing changes. With OPOS_PANES unset the
-page and every route are exactly what they were. docs/jaryo-panes.md has the model.
+Hand setting decides which physical pane is the thumb pane. On a one-pane window nothing changes. In short: with OPOS_PANES unset the
+panes assets and tags are absent and page() is unchanged; the Network, first-run and time zone pages carry the Jaryo conformance
+fixes either way. docs/jaryo-panes.md has the model.
 
 Like opos.osk this never touches web.page(), so the main page's size budget is untouched: pages pass their finished bytes through
 inject_bytes, which returns them unchanged while the flag is off.

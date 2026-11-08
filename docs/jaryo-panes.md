@@ -5,7 +5,7 @@
 
 ## 0. In one screen
 
-- `OPOS_PANES=1` (an environment flag, off by default) makes the server answer `/panes.css` and `/panes.js` and add two tags to the pages that already take the on-screen keyboard's tags. `web.page()` does not change by a single byte. Unset, the pages and every route are what they were.
+- `OPOS_PANES=1` (an environment flag, off by default) makes the server answer `/panes.css` and `/panes.js` and add two tags to the pages that already take the on-screen keyboard's tags. `web.page()` does not change by a single byte. In short: with OPOS_PANES unset the panes assets and tags are absent and page() is unchanged; the Network, first-run and time zone pages carry the Jaryo conformance fixes either way (section 5), because those fixes are in the pages' own styles and not behind the flag.
 - On the Duo window that spans both panels (`OPOS_SPAN=675,42`, 1392 x 900 CSS px), each screen is strictly black and white. The **thumb pane** (the app or detail pane, where you act) is black with light text. The **list pane** (masthead, lists, the Shade) is white with dark text. The hinge strip is black. A **Hand** setting (Right by default, Left) says which physical pane is the thumb pane and mirrors the layout.
 - Pressed, active and on controls keep the Jaryo rule "inverted fill" relative to their own pane, because every Jaryo rule already reads `--jaryo-fg` and `--jaryo-bg`; the panes only change what those two names mean inside each pane.
 - The pane colours REPLACE Light/Dark/System while the window spans two panels. On a one-pane window nothing changes: `jaryo.css` paints exactly what it paints today.

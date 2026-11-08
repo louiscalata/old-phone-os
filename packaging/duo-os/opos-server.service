@@ -22,7 +22,8 @@ Environment=OPOS_ON_PHONE=1
 # sudo systemctl restart opos-server, then pkill chromium as the droidian user (opos-kiosk starts it again).
 #Environment=OPOS_SPAN=675,42
 # >>> track panes: black and white pane surfaces and the Hand setting (src/opos/panes.py, docs/jaryo-panes.md). They paint only on a window
-# that spans both panels, so they do nothing until OPOS_SPAN above is on; unset, the pages and routes are byte-identical to before.
+# that spans both panels, so they do nothing until OPOS_SPAN above is on. In short: with OPOS_PANES unset the panes assets and tags are
+# absent and page() is unchanged; the Network, first-run and time zone pages carry the Jaryo conformance fixes either way.
 # OPOS_PANES=1,pure is the strict #000/#fff pair; OPOS_PANES=invert swaps the colours for the left hand without mirroring the layout.
 Environment=OPOS_PANES=1
 # <<< track panes

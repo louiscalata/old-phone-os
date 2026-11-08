@@ -171,6 +171,31 @@ class Sheet(unittest.TestCase):
             self.assertEqual(page(span=DUO), page(span=DUO))
 
 
+class FlagOffWording(unittest.TestCase):
+    """What the docs, the module and the unit say about the flag being off is what is true (the tests above and test_panes_pages hold the
+    facts: no assets, no tags, page() unchanged, the OS pages restyled either way)."""
+    SENTENCE = ("with OPOS_PANES unset the panes assets and tags are absent and page() is unchanged; "
+                "the Network, first-run and time zone pages carry the Jaryo conformance fixes either way")
+
+    @staticmethod
+    def flat(text):
+        return " ".join(re.sub(r"^\s*#\s?", "", text, flags=re.M).split())
+
+    def read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_the_spec_the_module_and_the_unit_say_it(self):
+        self.assertIn(self.SENTENCE, self.flat(self.read("docs/jaryo-panes.md")))
+        self.assertIn(self.SENTENCE, self.flat(panes.__doc__))
+        self.assertIn(self.SENTENCE, self.flat(self.read("packaging/duo-os/opos-server.service")))
+
+    def test_nothing_still_promises_that_every_page_and_route_is_what_it_was(self):
+        for rel, promise in (("docs/jaryo-panes.md", "every route are what they were"), ("packaging/duo-os/opos-server.service", "byte-identical to before"),
+                             ("docs/duo-os-final.md", "every page is byte-identical"), ("CHANGELOG.md", "every page is byte-identical")):
+            self.assertNotIn(promise, self.flat(self.read(rel)), rel)
+        self.assertNotIn("every route are exactly what they were", self.flat(panes.__doc__))
+
+
 class Inject(unittest.TestCase):
     def test_off_is_the_same_object(self):
         body = "<html><head></head><body>é</body></html>".encode("utf-8")
