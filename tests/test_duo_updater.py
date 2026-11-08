@@ -2546,6 +2546,66 @@ class TestRestoreNeedsNoRoom(EnvCase):
         self.assertEqual(e.file_info('usr/libexec/opos/opos-kiosk'), (sha(OLD_OVERLAY['usr/libexec/opos/opos-kiosk'][0]), 0o755))
 
 
+@needs_keygen
+class TestSerialFloor(EnvCase):
+    """Finding 8: only the highest 64 failed serials were kept, so an authentic old bundle could be replayed once its serial
+    fell out of the list. The floor is the highest serial that ever failed and never goes down."""
+    fast = True
+
+    def test_a_serial_that_fell_out_of_the_failed_list_is_still_refused(self):
+        e = self.env
+        st = e.state()
+        st['failed'] = list(range(2, 66))      # what a phone that burned 1..65 kept under the old cut-off: serial 1 is gone
+        st.pop('floor', None)
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+        self.reject(make_bundle(1), 'highest serial that failed', 'opos-1.opos-update')
+        self.reject(make_bundle(65), 'failed on this phone before', 'opos-65.opos-update')      # still in the list: the list's own message
+        self.assertEqual(e.state()['floor'], 65)
+        self.assertEqual(e.apply(make_bundle(66), 'opos-66.opos-update'), 0)
+        self.assertEqual(e.state()['floor'], 65)
+
+    def test_the_floor_survives_the_list_being_cut_and_rollbacks(self):
+        e = self.env
+        with mock.patch.object(U, 'MAX_FAILED', 3):
+            for s in range(1, 7):
+                self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0, s)
+                self.assertEqual(U.main(['rollback'], e.cfg), 0)          # root's rollback burns the serial it leaves
+        st = e.state()
+        self.assertEqual((st['failed'], st['floor'], st['current']['serial']), ([4, 5, 6], 6, 0))
+        for s in (1, 2, 3, 6):
+            with self.subTest(s):
+                self.reject(make_bundle(s), 'serial', 'opos-%d.opos-update' % s)
+        self.assertEqual(e.apply(make_bundle(7), 'opos-7.opos-update'), 0)
+        self.assertEqual(e.state()['floor'], 6)
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)
+        self.assertEqual(e.state()['floor'], 7)
+
+    def test_a_requested_rollback_does_not_raise_the_floor(self):
+        e = self.env
+        self.assertEqual(e.apply(make_bundle(1), 'opos-1.opos-update'), 0)
+        self.assertEqual(e.apply(make_bundle(2), 'opos-2.opos-update'), 0)
+        e.request_rollback()
+        e.updater().apply_inbox()
+        st = e.state()
+        self.assertEqual((st['current']['serial'], st['failed'], st['floor']), (1, [], 0))
+        self.assertEqual(e.apply(make_bundle(2), 'opos-2.opos-update'), 0)     # the documented way to undo a request
+
+    def test_a_failed_health_check_raises_the_floor_and_a_state_without_one_reads(self):
+        e = self.env
+        self.assertEqual(e.apply(make_bundle(5, app={**default_app(5), 'src/opos/BROKEN': (b'', 0o644)}), 'opos-5.opos-update'), 3)
+        self.assertEqual((e.state()['failed'], e.state()['floor']), ([5], 5))
+        self.reject(make_bundle(4), 'serial', 'opos-4.opos-update')
+        st = e.state()
+        del st['floor']
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+        self.reject(make_bundle(4), 'serial', 'opos-4.opos-update')
+        for bad in (-1, 'x', True, 1.5):
+            st['floor'] = bad
+            wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(U.main(['apply-inbox'], e.cfg), 1, bad)
+
+
 FLOOD_PY = b'''import sys, time
 while True:
     try:

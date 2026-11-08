@@ -52,6 +52,8 @@ RESERVED = frozenset({'REVISION', 'manifest.json', 'manifest.json.sig', 'overlay
 MODES = {'0644': 0o644, '0755': 0o755}
 MAX_MANIFEST = 8 << 20
 MAX_SIG = 16 << 10
+MAX_STATE = 1 << 20
+MAX_FAILED = 64            # serials kept in state.json's `failed` list (the `floor` is what never forgets)
 # One limit for the writer and the reader of overlay-backup/index.json. 20,000 entries of at most about 650 bytes each is
 # about 13 MB; a reader with a smaller limit than the writer once threw a valid backup away (review finding 2).
 MAX_INDEX = 16 << 20
@@ -585,7 +587,7 @@ def outer_header(block, index, name):
 # ---- the updater -------------------------------------------------------------------------------------------
 
 def _new_state(cur):
-    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'pending_boot': None, 'trial': None, 'txn': None,
+    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'floor': 0, 'pending_boot': None, 'trial': None, 'txn': None,
             'stepped_back': None}
 
 
@@ -687,7 +689,7 @@ class Updater:
 
     def read_state(self):
         try:
-            st = json.loads(read_small(self.cfg.state_file, 1 << 20))
+            st = json.loads(read_small(self.cfg.state_file, MAX_STATE))
         except FileNotFoundError:
             return None
         except (ValueError, OSError, Reject):
@@ -698,7 +700,19 @@ class Updater:
             raise Fatal('state.json has an unexpected shape; refusing to guess')
         for k, v in _new_state(None).items():
             st.setdefault(k, v)
+        if type(st['floor']) is not int or st['floor'] < 0:
+            raise Fatal('state.json has an unexpected shape; refusing to guess')
+        # A state file from before the floor existed gets the highest serial in its list, which the floor is at least.
+        st['floor'] = max(st['floor'], max(st['failed'], default=0))
         return st
+
+    def burn(self, serial):
+        """A serial that failed here is never accepted again. The list keeps the newest MAX_FAILED for display; the floor
+        (the highest serial that ever failed) never goes down and refuses everything at or below it, so a serial that falls
+        out of the list is still refused (review finding 8). Rollback does not lower it."""
+        st = self.st
+        st['failed'] = sorted(set(st['failed']) | {serial})[-MAX_FAILED:]
+        st['floor'] = max(st['floor'], serial)
 
     def base_level(self):
         try:
@@ -929,6 +943,8 @@ class Updater:
         serial = mf['serial']
         if serial in st['failed']:
             raise Reject('serial %d failed on this phone before; use a new serial' % serial)
+        if serial <= st['floor']:
+            raise Reject('serial %d is not above %d, the highest serial that failed on this phone; use a new serial' % (serial, st['floor']))
         if serial <= st['current']['serial']:
             raise Reject('serial %d is not newer than the running serial %d' % (serial, st['current']['serial']))
         if st['pending_boot'] and serial <= st['pending_boot']['serial']:
@@ -1207,7 +1223,7 @@ class Updater:
         rdir = os.path.join(self.cfg.releases, txn['release'])
         self.serial = txn['serial']
         note = self.put_back(rdir, txn['from'], 'undo-switched', restart)
-        st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
+        self.burn(txn['serial'])
         if txn.get('boot'):
             st['pending_boot'] = None
         st['txn'] = None
@@ -1408,7 +1424,7 @@ class Updater:
             st['current'] = st['previous'][0]
             st['previous'] = st['previous'][1:]
         if not txn.get('requested'):
-            st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
+            self.burn(txn['serial'])
         st['stepped_back'] = txn['serial']
         st['trial'] = None
         st['pending_boot'] = None
@@ -1482,7 +1498,7 @@ class Updater:
             except (Reject, OSError) as e:
                 self.log('staged update %d dropped: %s' % (pb['serial'], e))
                 st['pending_boot'] = None
-                st['failed'] = sorted(set(st['failed']) | {pb['serial']})[-64:]
+                self.burn(pb['serial'])
                 self.save()
                 self.serial = pb['serial']
                 self.status('failed', 'staged update dropped: %s' % e)
