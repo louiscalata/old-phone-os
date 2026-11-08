@@ -118,6 +118,7 @@ class Limits:
     index_deadline: float = 30.0  # the whole index fetch
     bundle_deadline: float = 3600.0  # the whole bundle download
     headroom: int = 32 * 1024 * 1024  # free space to leave after the bundle
+    space_step: int = 1024 * 1024  # bytes written between two looks at the free space while a bundle streams in
 
 
 @dataclass(frozen=True)
@@ -485,8 +486,9 @@ class UpdateClient:
         return int(n)
 
     @staticmethod
-    def _chunks(resp, limit: int, deadline: float):
-        """Yield the body in pieces, never more than limit bytes in all and never past the deadline."""
+    def _chunks(resp, limit: int, deadline: float, over: UpdateError | None = None):
+        """Yield the body in pieces, never more than limit bytes in all and never past the deadline. The piece that would
+        pass the limit is not yielded: `over` (default: the server sent more than OPOS accepts) is raised instead."""
         total = 0
         read = getattr(resp, "read1", resp.read)  # read1 returns after one receive, so the deadline is checked on a slow trickle too
         while True:
@@ -498,7 +500,7 @@ class UpdateClient:
                 return
             total += len(piece)
             if total > limit:
-                raise UpdateError("too_large", "The update server sent more data than OPOS accepts.", 502)
+                raise over or UpdateError("too_large", "The update server sent more data than OPOS accepts.", 502)
             if time.monotonic() > deadline:
                 raise UpdateError("fetch", "The update server was too slow.", 502)
             yield piece
@@ -635,15 +637,13 @@ class UpdateClient:
             declared = self._length(resp, cap, "update")
             if idx.size is not None and declared is not None and declared != idx.size:
                 raise UpdateError("mismatch", "The update is not the size its list promised.", 502)
-            want = idx.size if idx.size is not None else declared
-            if want is not None:
-                try:
-                    if shutil.disk_usage(inbox).free < want + self.limits.headroom:
-                        raise UpdateError("space", "There is not enough free space for the update.", 409)
-                except OSError:
-                    pass
+            # What the download may add up to: a size the index or the server committed to, else only the cap. Either way the
+            # free space is looked at before the first byte and again while the bytes arrive, and a promised size is a ceiling
+            # for the stream, so a response without a length (or with a small promise) cannot fill the phone.
+            promised = idx.size if idx.size is not None else declared
             with contextlib.suppress(FileNotFoundError):
-                os.unlink(part)
+                os.unlink(part)  # a leftover is not counted against the room
+            self._room(inbox, promised)
             try:
                 fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o660)
             except OSError:
@@ -652,15 +652,20 @@ class UpdateClient:
             try:
                 with os.fdopen(fd, "wb") as f:
                     h = hashlib.sha256()
-                    n = 0
+                    n = looked = 0
                     head = bytearray()
-                    for piece in self._chunks(resp, cap, deadline):
+                    over = UpdateError("mismatch", "The update is bigger than its list promised.", 502) if idx.size is not None else None
+                    for piece in self._chunks(resp, promised if promised is not None else cap, deadline, over):
                         h.update(piece)
                         f.write(piece)
                         n += len(piece)
                         if len(head) < 512:
                             head += piece[:512 - len(head)]
                         self._set_job(bytes=n)
+                        if n - looked >= self.limits.space_step:
+                            looked = n
+                            f.flush()  # so that what the file system reports is what has been written
+                            self._room(inbox, None if promised is None else promised - n)
                     if (declared is not None and n != declared) or (idx.size is not None and n != idx.size):
                         raise UpdateError("mismatch", "The download stopped early or ran long.", 502)
                     if idx.sha256 is not None and h.hexdigest() != idx.sha256:
@@ -677,6 +682,15 @@ class UpdateClient:
                         os.unlink(part)
         self._sync_dir(inbox)
         return final
+
+    def _room(self, inbox: str, still: int | None) -> None:
+        """Refuse when `still` more bytes (nothing known: none) would leave less than the headroom free in the inbox's filesystem."""
+        try:
+            free = shutil.disk_usage(inbox).free
+        except OSError:
+            return  # cannot tell; the caps on the size still hold
+        if free < (still or 0) + self.limits.headroom:
+            raise UpdateError("space", "There is not enough free space for the update.", 409)
 
     @staticmethod
     def _sync_dir(path: str) -> None:

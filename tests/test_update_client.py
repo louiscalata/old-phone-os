@@ -802,6 +802,81 @@ class Download(Env):
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
         self.assertIn("free space", c.job()["message"])
 
+    # Review finding 9: a response with no length, or an index with no (or a small) size, used to skip the space check or stream
+    # far past what was promised. The stand-in below reports `free` bytes minus what the inbox already holds, like a real disk.
+    def disk(self, free):
+        usage = collections.namedtuple("usage", "total used free")
+        held = lambda: sum(os.path.getsize(os.path.join(self.paths.inbox, n)) for n in os.listdir(self.paths.inbox))
+        return mock.patch("shutil.disk_usage", lambda path: usage(free, held(), free - held()))
+
+    def chunked(self, body, path="/opos-7.opos-update", piece=1024):
+        """Serve `body` with Transfer-Encoding: chunked, so there is no Content-Length."""
+        def serve(h):
+            h.send_response(200)
+            h.send_header("Transfer-Encoding", "chunked")
+            h.end_headers()
+            try:
+                for i in range(0, len(body), piece):
+                    h.wfile.write(b"%x\r\n%s\r\n" % (len(body[i:i + piece]), body[i:i + piece]))
+                h.wfile.write(b"0\r\n\r\n")
+            except OSError:
+                pass  # the client hung up, which is what it should do
+        self.src.routes[path] = serve
+
+    def test_a_response_with_no_length_still_keeps_the_headroom_while_it_streams(self):
+        body = tar_bundle(7, pad=300000)
+        self.publish(7, body, size=False, sha=False)
+        self.chunked(body)
+        with self.disk(250000):  # 100 KB of headroom: about 150 KB of the 300 KB may be written
+            c = self.run_job(headroom=100000, space_step=8192)
+        self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
+        self.assertIn("free space", c.job()["message"])
+        self.assertLess(c.job()["bytes"], 150000 + 8192 + uc.CHUNK, "it stopped when the headroom was reached, not at the end")
+
+    def test_a_response_with_no_length_is_refused_before_a_byte_when_there_is_no_headroom(self):
+        body = tar_bundle(7)
+        self.publish(7, body, size=False, sha=False)
+        self.chunked(body)
+        with self.disk(99999):
+            c = self.run_job(headroom=100000)
+        self.assertEqual((c.job()["phase"], c.job()["bytes"], self.inbox()), ("failed", 0, []))
+        self.assertIn("free space", c.job()["message"])
+        with self.disk(100000):  # exactly the headroom is enough for a bundle of unknown length that then turns out small
+            c = self.run_job(headroom=100000)
+        self.assertEqual((c.job()["phase"], self.inbox()), ("done", ["opos-7.opos-update"]))
+
+    def test_a_promised_size_is_reserved_up_front_and_with_the_headroom(self):
+        body = tar_bundle(7, pad=50000)
+        for with_index_size in (True, False):  # the index's size, or only the server's Content-Length
+            self.publish(7, body, size=with_index_size, sha=False)
+            with self.subTest(index_size=with_index_size):
+                with self.disk(len(body) + 1000 - 1):
+                    c = self.run_job(headroom=1000)
+                self.assertEqual((c.job()["phase"], c.job()["bytes"], self.inbox()), ("failed", 0, []))
+                with self.disk(len(body) + 1000):
+                    c = self.run_job(headroom=1000)
+                self.assertEqual((c.job()["phase"], self.inbox()), ("done", ["opos-7.opos-update"]))
+                os.unlink(os.path.join(self.paths.inbox, "opos-7.opos-update"))
+
+    def test_a_promised_size_is_a_ceiling_for_the_stream(self):
+        """The index says 5 KB; the server sends 300 KB with no length. The client stops at 5 KB, not after all 300 KB."""
+        small = tar_bundle(7)
+        self.publish(7, small, sha=False)
+        self.chunked(small + b"\0" * 300000)
+        c = self.run_job()
+        self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
+        self.assertIn("bigger than its list promised", c.job()["message"])
+        self.assertLessEqual(c.job()["bytes"], len(small), "no byte past the promise was written")
+
+    def test_a_stale_partial_does_not_count_against_the_room(self):
+        body = tar_bundle(7)
+        self.publish(7, body)
+        with open(os.path.join(self.paths.inbox, "opos-7.opos-update.partial"), "wb") as f:
+            f.write(b"x" * 100000)
+        with self.disk(len(body) + 1000 + 50000):  # room for the bundle and the headroom, but only once the 100 KB leftover is gone
+            c = self.run_job(headroom=1000)
+        self.assertEqual((c.job()["phase"], self.inbox()), ("done", ["opos-7.opos-update"]))
+
     def test_missing_inbox(self):
         self.publish(7)
         shutil.rmtree(self.paths.inbox)
