@@ -46,6 +46,8 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_NET_TTY` | unset | `1` hands the Wi-Fi password to `nmcli` through a pseudo-terminal, if a pipe is not accepted on the phone |
 | `OPOS_NET_POLKIT` | unset (a build input) | `1` at build time installs the polkit rule that lets `droidian` change Wi-Fi without being asked |
 | `OPOS_FIRSTRUN` | `1` (`opos-server.service`) | the first-run setup, `/timezone`, and applying the saved zone at start |
+| `OPOS_MONITOR` | `1` (`opos-server.service`) | the Inference page: the Settings link to `/monitor`, and the routes `/monitor` and `/api/monitor`; `/monitor` and `/api/monitor` answer 404 without it |
+| `OPOS_AGIW_URL`, `OPOS_AGIW_HOST`, `OPOS_LOCAL_URL` | unset (optional `/etc/opos/monitor.env`; the image ships only `monitor.env.example`) | where the Inference page looks for an AGIW monitor on a computer you own (loopback or private network; unset: nothing is fetched), the `Host` header to send it, and where the phone's own model server listens; see the Inference page section of the image README |
 | `OPOS_KIOSK_RESTART` | unset (on) | `0` stops the server restarting Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | unset (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_SPAN` | unset (a commented line in `opos-server.service`) | `675,42`: pane and hinge widths in CSS pixels for the window that covers both panels, so the page lays out for two screens; `off` disables it; the same as `--span`. Not yet measured on the phone |
@@ -119,7 +121,7 @@ addresses and passwords appear in some of it.
    `timedatectl show -p Timezone -p NTPSynchronized`; `nmcli -t -f DEVICE,TYPE,STATE device`; `ip -4 -o addr show dev usb0`;
    `ls /var/log/journal/*/`; `head -3 /var/log/opos-boot-diag.txt`.
 5. **Network layer, before touching the screen:** `export PYTHONPATH=/opt/opos/src; cd /opt/opos/src; id` (groups include `netdev`);
-   `systemctl show opos-server -p Environment` (shows `OPOS_NETWORK=1`, `OPOS_FIRSTRUN=1`, `OPOS_OSK=1`);
+   `systemctl show opos-server -p Environment` (shows `OPOS_NETWORK=1`, `OPOS_FIRSTRUN=1`, `OPOS_OSK=1`, `OPOS_MONITOR=1`);
    `python3 -m opos.net probe | tee /tmp/net-probe.txt` (every block `rc=0`; an `mmcli` "couldn't find modem" is a finding, not an error);
    `nmcli -t general permissions | grep -E 'enable-disable-wifi|network-control|settings.modify.system|wifi.scan'` (four lines ending `:yes`;
    `:auth` or `:no` means rebuild with `OPOS_NET_POLKIT=1`, or as root install `packaging/duo-os/50-opos-network.rules` into

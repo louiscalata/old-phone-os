@@ -78,6 +78,8 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_KIOSK_RESTART` | not set | `0`: do not restart Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
+| `OPOS_MONITOR` | `opos-server.service` (`1`) | the Settings link to `/monitor` and the routes `/monitor` and `/api/monitor` (see Inference page) |
+| `OPOS_AGIW_URL`, `OPOS_AGIW_HOST`, `OPOS_LOCAL_URL` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor and for the phone's own model server |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
 | `OPOS_KIOSK_DEBUG_PORT` | `/etc/default/opos-kiosk`, written only by a dev image | the Chromium DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
 | `OPOS_DEV_SSH_PUBKEY` | build input | a public key file; the image then lets that key log in as `droidian` (a dev image) |
@@ -140,7 +142,8 @@ sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 
 `verify-image.sh` checks the unit wiring, that phoc is not started in shell mode, phoc's `-E` startup command and
 the journal settings, runs the OPOS server from the image with the image's own aarch64 python3 under
-qemu-user, and starts a second one with the keyboard, the Network page and the first run all on to ask it for each page.
+qemu-user, starts a second one with the keyboard, the Network page and the first run all on to ask it for each page, and two
+more, with the Inference page off (its two routes answer 404) and on (they answer 200).
 It is not a boot, display or battery test.
 `tests/test_duo_kiosk.py` runs the kiosk script under `sh` with a fake `chromium` (locks, back-off, the no-GPU retry).
 
@@ -165,6 +168,37 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
   server applies the zone; the kiosk exports it to Chromium on every start. See [docs/duo-firstrun.md](../../docs/duo-firstrun.md).
 - **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key>` from
   the PC, then the owner's checklist. See [docs/duo-acceptance.md](../../docs/duo-acceptance.md).
+
+## Inference page
+
+Settings > Inference opens `/monitor` (`src/opos/monitor.py`, `src/opos/monitor_web.py`, `src/opos/web_static/monitor*`), a read-only
+page in two parts. **This Duo** says whether a model server on the phone's own loopback (`127.0.0.1:8080`) lists a model (it asks
+`GET /models`; no prompt is sent) and shows the battery percent, health and source; a health that is assumed or typed in
+(`OPOS_BATTERY_HEALTH`) reads "Not reported". **AGIW monitor** is optional: what an AGIW Inference Monitor on a computer you own
+says about its machines, fetched read-only. `opos-server.service` sets `OPOS_MONITOR=1`; unset (or anything but `1`) neither `/monitor`
+nor `/api/monitor` answers. `/etc/opos/monitor.env` is optional and absent from the image; `/etc/opos/monitor.env.example` shows it, and
+with no file nothing is fetched:
+
+| Variable | Meaning |
+|---|---|
+| `OPOS_AGIW_URL` | `http(s)://host[:port]` of the monitor; every address it resolves to must be loopback or on a private network; unset: NOT CONFIGURED |
+| `OPOS_AGIW_HOST` | the `Host` header to send (a monitor behind a tunnel answers only for its own address) |
+| `OPOS_LOCAL_URL` | where the phone's own model server listens (http on `127.0.0.1` or `localhost`); default `http://127.0.0.1:8080/v1` |
+
+Only loopback egress works on the hardened server units (`deploy/opos-server.service` and the postmarketOS unit set
+`IPAddressDeny=any` and `IPAddressAllow=localhost`): there a LAN address reads TIMED OUT or UNREACHABLE, and a reverse tunnel to the
+phone's loopback is the way. This image's `opos-server.service` has no such filter, so a private-network address works here too, but
+over plain http the answer is not authenticated. The tunnel, from the computer that runs the monitor on its `127.0.0.1:8767`, over
+the dev ssh key:
+
+```sh
+ssh -N -R 127.0.0.1:18767:127.0.0.1:8767 droidian@<phone>   # the phone's 127.0.0.1:18767 is now the computer's monitor
+# on the phone, once:
+sudo cp /etc/opos/monitor.env.example /etc/opos/monitor.env   # then remove the # from the OPOS_AGIW_URL and OPOS_AGIW_HOST lines
+sudo systemctl restart opos-server                            # and tap Settings > Inference
+```
+
+Written from the sources and tried against fakes and loopback servers only; not seen on the phone.
 
 ## Looking at the page on a dev image
 
