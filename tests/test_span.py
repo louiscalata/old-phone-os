@@ -231,6 +231,22 @@ class ServedPage(unittest.TestCase):
         self.assertEqual(out.count("window.addEventListener('resize',guess)"), 1)
         self.assertLess(out.index("window.addEventListener('resize',guess)"), out.index(readout))
 
+    def test_readout_is_added_once_when_a_resize_comes_before_load(self):
+        # A compositor configure during start-up can deliver resize before load; nothing rewrites the line in between,
+        # so the second call must see the readout already there.
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        body = spanmod.readout(DUO)[len("<script>"):-len("</script>")]
+        driver = ("var h={},e={textContent:'Auto looks like: two screens'};"
+                  "var addEventListener=function(t,f){h[t]=f};"
+                  "var document={getElementById:function(){return e}};"
+                  "var innerWidth=1392,innerHeight=900,devicePixelRatio=1;"
+                  + body + ";h.resize();h.load();console.log(e.textContent)")
+        out = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=30).stdout.strip()
+        self.assertEqual(out.count(". Window "), 1, out)
+        self.assertIn("span 675 + 42 + 675.", out)
+
 
 @contextlib.contextmanager
 def serving(**kw):
