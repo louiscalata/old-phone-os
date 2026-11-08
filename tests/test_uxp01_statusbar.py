@@ -41,7 +41,8 @@ class TestStatusBar(unittest.TestCase):
         self.assertIn('setInterval(tick,15000)', js)
         # Normal status bar time follows the visitor's local clock. The demo
         # notice clock is intentionally sourced from simulated state.
-        self.assertIn("time.textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);", js)
+        self.assertIn("time.textContent=demoTime||ui.hhmm(new Date());", js)
+        self.assertIn("ui.hhmm=function(d){return ui.clockOk()?('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2):'--:--'};", js)
         hook = js[js.index('window.oposHooks.push(function(s){try{', js.index('var time=G(\'sb-time\')')):]
         self.assertIn('var {clock}=s;if(demoTime&&clock)demoTime=\'Demo time \'+clock;', hook)
         self.assertIn('tick();', hook)
@@ -74,6 +75,60 @@ class TestStatusBar(unittest.TestCase):
         self.assertIn('phone.inert=false', unlock)
         self.assertNotIn('fetch', unlock)
         self.assertNotIn('api(', unlock)
+
+    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    def test_unknown_clock_is_drawn_as_unknown(self):
+        """The server's "--:--" (or a year before 2026) is shown as unknown: status bar, and the Home dateline's own refresh."""
+        static = Path(__file__).resolve().parents[1] / 'src/opos/web_static'
+        harness = r"""
+const fs=require('fs'),vm=require('vm'),root=process.argv[1];
+let year=2026,calls=0;
+const ids={};for(const id of ['sb-time','sb-net','sb-engine','sb-batt'])ids[id]={textContent:''};
+const window={oposHooks:[],oposUI:{dateline(){calls++}}};
+class D extends Date{constructor(){super(year,10,3,8,5)}}
+vm.runInNewContext(fs.readFileSync(root+'/phone-a.js','utf8'),{document:{getElementById:id=>ids[id]||null},window,navigator:{onLine:true},Date:D,setInterval(){}});
+const hooks=s=>window.oposHooks.forEach(f=>f(s)),read=()=>ids['sb-time'].textContent,out={};
+out.boot=read();
+hooks({clock:'--:--',battery:{percent:30}});out.unset=[read(),window.oposUI.clockOk()];
+hooks({clock:'08:05',battery:{percent:30}});out.set=[read(),window.oposUI.clockOk()];
+year=1970;hooks({clock:'08:05',battery:{percent:30}});out.epoch=[read(),window.oposUI.clockOk()];
+year=2026;hooks({battery:{percent:30}});out.noClock=read();
+out.dateline=calls>0;
+console.log(JSON.stringify(out));
+"""
+        proc = subprocess.run(['node', '-e', harness, str(static)], capture_output=True, text=True, timeout=15)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = json.loads(proc.stdout)
+        self.assertEqual(out['boot'], '08:05')
+        self.assertEqual(out['unset'], ['--:--', False])
+        self.assertEqual(out['set'], ['08:05', True])
+        self.assertEqual(out['epoch'], ['--:--', False])
+        self.assertEqual(out['noClock'], '08:05')
+        self.assertTrue(out['dateline'], 'tick() refreshes the Home dateline')
+
+    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    def test_home_dateline_says_time_not_set_and_recovers(self):
+        static = Path(__file__).resolve().parents[1] / 'src/opos/web_static'
+        harness = r"""
+const fs=require('fs'),vm=require('vm'),root=process.argv[1];
+class El{constructor(t){this.tag=t;this.kids=[];this.classList={contains(){return false},add(){}}}
+ appendChild(c){this.kids.push(c);return c}insertBefore(c){this.kids.unshift(c);return c}
+ get firstChild(){return this.kids[0]||null}querySelectorAll(){return[]}}
+const phone=new El('div');let ok=true,writes=0;
+const ctx={document:{readyState:'complete',getElementById:id=>id==='phone'?phone:null,createElement:t=>{
+  const e=new El(t);let text='';Object.defineProperty(e,'textContent',{get:()=>text,set:v=>{text=String(v);writes++}});return e},
+  addEventListener(){},documentElement:{dataset:{}}},oposUI:{date:()=>ok?'Tuesday, March 3':'Time not set'},
+ oposHooks:[],matchMedia:()=>({matches:false}),localStorage:{getItem:()=>null,setItem(){},removeItem(){}}};
+ctx.window=ctx;vm.createContext(ctx);vm.runInContext(fs.readFileSync(root+'/jaryo.js','utf8'),ctx);
+const mast=phone.kids[0],date=mast.kids[2],out={known:date.textContent==='Tuesday, March 3'};
+ok=false;ctx.oposUI.dateline();out.unset=date.textContent;
+const w=writes;ctx.oposUI.dateline();out.quiet=writes===w;
+ok=true;ctx.oposUI.dateline();out.back=date.textContent==='Tuesday, March 3';
+console.log(JSON.stringify(out));
+"""
+        proc = subprocess.run(['node', '-e', harness, str(static)], capture_output=True, text=True, timeout=15)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {'known': True, 'unset': 'Time not set', 'quiet': True, 'back': True})
 
     def test_quiet_mode_has_no_engine(self):
         self.assertNotIn('helper', Phone(visible=False).state())

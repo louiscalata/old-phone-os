@@ -113,13 +113,18 @@ var time=G('sb-time');
 var net=G('sb-net');
 var engine=G('sb-engine');
 var batt=G('sb-batt');
+var ui=window.oposUI=window.oposUI||{};
+ui.clockOk=function(){return ui.known!==false&&new Date().getFullYear()>=2026};
+ui.hhmm=function(d){return ui.clockOk()?('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2):'--:--'};
+ui.date=function(d){return ui.clockOk()?d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}):'Time not set'};
 function tick(){try{
-var d=new Date();
-time.textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+time.textContent=demoTime||ui.hhmm(new Date());
+if(ui.dateline)ui.dateline();
 }catch(e){}}
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(s){try{
 var {clock}=s;if(demoTime&&clock)demoTime='Demo time '+clock;
+ui.known=clock!=='--:--';
 tick();
 net.textContent=navigator.onLine===false?'Offline':'';
 batt.textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
@@ -136,8 +141,8 @@ if(!cover||!phone)return;
 var first=true,startY=null;
 function lockTick(){try{
 var d=new Date();
-document.getElementById('lock-time').textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-document.getElementById('lock-date').textContent=d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+document.getElementById('lock-time').textContent=demoTime||window.oposUI.hhmm(d);
+document.getElementById('lock-date').textContent=window.oposUI.date(d);
 }catch(e){window.oposUI.unlock();}}
 window.oposUI=window.oposUI||{};
 function ownerOpen(name){

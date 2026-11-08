@@ -50,7 +50,7 @@ function run(o={}){
     window:win,navigator:{onLine:true},location:{search:o.demoQuery?'?demo=1':''},URLSearchParams,
     G:el,meterEl:el('meter'),barM:undefined,barE:undefined,
     handleEl:el('handle'),titleEl:el('title'),timeEl:el('time'),gripEl:el('grip'),scrimEl:el('scrim'),
-    closeSheet(){},Date:class{getHours(){return +wall.slice(0,2)}getMinutes(){return +wall.slice(3)}},
+    closeSheet(){},Date:class{getHours(){return +wall.slice(0,2)}getMinutes(){return +wall.slice(3)}getFullYear(){return 2026}},
     setInterval(f,ms){timers.push({f,ms})},
     MutationObserver:class{constructor(f){this.f=f}observe(e,options){if(!options.childList)throw Error('Clock text not observed');e.observers.push(this)}},
     localStorage:{getItem(k){if(o.blocked)throw Error('denied');return store[k]??null},
