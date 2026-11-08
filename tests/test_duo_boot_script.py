@@ -170,6 +170,40 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertIn("$net + $PreferHost", find)
         self.assertIn("-ne $OwnIp", find)
 
+    def test_preflight_checks_each_throw_and_no_native_fastboot_call_can_bypass_the_wrapper(self):
+        body = code()
+        checks = {"product": ("surfaceduo", "not a Surface Duo 1"),
+                  "current-slot": ("current-slot:", "current slot is not a"),
+                  "unlocked": ("unlocked:", "bootloader is not unlocked")}
+        for var, (pattern, notice) in checks.items():
+            with self.subTest(getvar=var):
+                lines = [line for line in body.splitlines() if "Fb getvar %s)" % var in line]
+                self.assertEqual(len(lines), 1)
+                self.assertIn("-notmatch", lines[0])
+                self.assertIn(pattern, lines[0])
+                self.assertIn("throw '%s'" % notice, lines[0])
+        battery = [line for line in body.splitlines() if "[int]$bat -lt 20" in line]
+        self.assertEqual(len(battery), 1)
+        self.assertIn("throw", battery[0])
+        # Every fastboot and adb command names the phone by serial.
+        for name in ("Fb", "Ab"):
+            with self.subTest(wrapper=name):
+                self.assertIn("@('-s', $script:Serial)", function_text(name))
+        # The only places that run fastboot.exe are the Fb wrapper and the device listing; the PATH check only looks.
+        outside = body.replace(function_text("Fb"), "").replace(function_text("FastbootSerials"), "")
+        for line in outside.splitlines():
+            if "fastboot.exe" in line:
+                with self.subTest(line=line.strip()):
+                    self.assertIn("Get-Command $t", line)
+                    self.assertNotRegex(line, r"&|Native|Start-Process")
+        self.assertEqual(body.count("Native 'fastboot.exe'"), 1)
+        self.assertIn("Native 'fastboot.exe'", function_text("Fb"))
+        self.assertIn("& fastboot.exe devices", function_text("FastbootSerials"))
+        self.assertNotRegex(body, r"(?i)Start-Process|Invoke-Expression|\biex\b|&\s*['\"]?\$?fastboot\b(?!\.exe devices)")
+        # The one adb call outside the wrapper (the push) names the serial too.
+        for call in re.findall(r"Native 'adb\.exe' @\(([^)]*)\)", body):
+            self.assertTrue(call.startswith("'-s', $Serial"), call)
+
     def test_phone_ip_and_prefer_host_are_checked_first(self):
         body = code()
         self.assertIn("throw '-PhoneIp must be an IPv4 address'", body)
