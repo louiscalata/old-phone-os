@@ -12,6 +12,8 @@ With it set, opos.web.main() calls install(), which
 
 Setup can never block the phone: Skip setup, "Open Home" and /?firstrun=later all reach the home screen; if the config
 directory cannot be written there is no first run at all; and a failure while deciding falls through to the home page.
+/?firstrun=later changes nothing on the server: it only makes that one response the home page. "Not now" for the whole
+server run is an authenticated POST ({"action": "later"}) that the page's "Open Home" button sends first.
 """
 import contextlib
 import json
@@ -89,7 +91,7 @@ def _writable(env=None):
 
 
 def defer():
-    """Not now: no redirect to the setup page until the server restarts."""
+    """Not now: no redirect to the setup page until the server restarts. Only an authenticated POST or a failed write may call this."""
     global _later
     _later = True
 
@@ -282,8 +284,7 @@ def route_get(h, path):
     if path == "/":
         try:
             if urllib.parse.parse_qs(urllib.parse.urlsplit(h.path).query).get("firstrun") == ["later"]:
-                defer()
-                return False
+                return False  # this response only, and the usual handler (which checks the Host) answers it: no server state changes
             go = _wants_page(h) and pending() and secure.host_ok(h.headers.get("Host"), h.port)
         except Exception:
             log.warning("first run check failed; showing home")
@@ -339,6 +340,9 @@ def _post_firstrun(h, data):
         if not flag:
             defer()  # the flag cannot be written: do not send the owner back to setup in a loop
         h._json({"ok": True, "done": flag, "restart": False})
+    elif action == "later":
+        defer()
+        h._json({"ok": True, "done": False, "restart": False})
     elif action == "finish":
         saved, errors = apply_answers(data, getattr(h, "phone", None), getattr(h, "lock", None))
         flag = mark_done()
@@ -363,11 +367,13 @@ def route_post(h):
         return False
     if not _host_ok(h):
         return True
-    for ok, code, msg, why in ((secure.origin_ok(h.headers.get("Origin"), h.port), 403, "forbidden", "origin"),
-                               (secure.json_type_ok(h.headers.get("Content-Type")), 415, "unsupported media type", "type"),
-                               (secure.token_ok(h.headers.get("X-OPOS-Token"), h.token), 403, "forbidden", "token"),
-                               (h.limiter.allow("post"), 429, "too many requests", "rate")):
-        if not ok:
+    # One check at a time, in this order, as opos.web does: the shared "post" budget is charged only to a request that has
+    # passed Host, Origin, Content-Type and the token, so rejected requests cannot use up the owner's.
+    for test, code, msg, why in ((lambda: secure.origin_ok(h.headers.get("Origin"), h.port), 403, "forbidden", "origin"),
+                                 (lambda: secure.json_type_ok(h.headers.get("Content-Type")), 415, "unsupported media type", "type"),
+                                 (lambda: secure.token_ok(h.headers.get("X-OPOS-Token"), h.token), 403, "forbidden", "token"),
+                                 (lambda: h.limiter.allow("post"), 429, "too many requests", "rate")):
+        if not test():
             h._deny(code, msg, why)
             return True
     try:

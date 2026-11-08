@@ -169,6 +169,7 @@ if(d>0&&cur===last)return finish();show(Math.max(0,Math.min(last,cur+d)))}
 $('next').onclick=function(){go(1)};$('back').onclick=function(){go(-1)};
 $('skip').onclick=function(){if(cur===1)A.zone=null;if(cur===2)A.goal=null;if(cur===3)A.helper=null;show(cur+1)};
 $('skipall').onclick=function(){api('/api/firstrun',{action:'skip'}).then(function(){forget();location.href='/'},function(){location.href='/?firstrun=later'})};
+$('home').onclick=function(e){e.preventDefault();var out=function(){location.href='/?firstrun=later'};api('/api/firstrun',{action:'later'}).then(out,out)};
 $('goal-on').onclick=function(){g.on=!g.on;goalPaint()};
 $('hm').onclick=function(){g.min=(g.min+1440-60)%1440;goalPaint()};$('hp').onclick=function(){g.min=(g.min+60)%1440;goalPaint()};
 $('mm').onclick=function(){g.min=(g.min+1440-15)%1440;goalPaint()};$('mp').onclick=function(){g.min=(g.min+15)%1440;goalPaint()};
