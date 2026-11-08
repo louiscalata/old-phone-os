@@ -9,10 +9,11 @@ Follow-up, not done here: nothing on the main page links to /update (the page is
 its bytes), so on the kiosk the page is reached by address only. A "Software updates" link in Settings needs about 50 bytes
 of page budget.
 """
+import json
 from html import escape
 from pathlib import Path
 
-from opos import secure
+from opos import secure, update_client
 
 _STATIC = Path(__file__).with_name("web_static")
 
@@ -37,7 +38,7 @@ progress{display:block;width:100%;height:16px;accent-color:var(--jaryo-fg)}
 
 _JS = """
 (function(){
-var G=function(i){return document.getElementById(i)},D=document.documentElement,tok='',until=0,timer=null,armed=false,armT=null,last=null,where='u-note',tn=false;
+var ONCE=@@ONCE@@,G=function(i){return document.getElementById(i)},D=document.documentElement,tok='',until=0,timer=null,armed=false,armT=null,last=null,where='u-note',tn=false;
 try{tok=document.querySelector('meta[name=opos-token]').content}catch(e){}
 try{var t=localStorage.getItem('jaryo_theme');if(t==='light'||t==='dark')D.dataset.theme=t;
 var x=localStorage.getItem('opos_text');if(x==='s'||x==='l'||x==='xl')D.dataset.text=x}catch(e){}
@@ -66,10 +67,10 @@ H('u-go',!(o.configured&&c&&c.newer));G('u-go').disabled=busy||p.length>0;
 H('u-prog',!busy);H('u-prog-t',!busy);
 if(busy){var pr=G('u-prog');pr.max=j.total||100;pr.value=j.total?j.bytes:0;if(!j.total)pr.removeAttribute('value');T('u-prog-t',mb(j.bytes)+(j.total?' of '+mb(j.total):''))}
 T('u-job',busy?'':(j.phase==='failed'||j.phase==='done'?j.message:'')+(p.length?' Waiting to be applied: '+p.join(', ')+'.':''));
-T('u-phase',st?st.phase:'none yet');T('u-msg',st?st.message:'No update has run on this phone yet.');
+T('u-phase',st?st.phase:'none yet');T('u-msg',st?st.message:'No update has run on this phone yet.');H('u-stall',!s.stalled);
 var rq=G('u-rb');rq.disabled=!rb.possible||!!rb.requested;
 if(!armed)T('u-rb',rb.requested?'Rollback requested':'Request rollback');
-T('u-rb-why',rb.requested?'Waiting for the updater.':rb.possible?'':'There is no earlier version to go back to.')}
+T('u-rb-why',rb.requested?'Waiting for the updater.':rb.possible?'':rb.once?ONCE:'There is no earlier version to go back to.')}
 function N(v){T('u-note','');T('u-rb-note','');T(where,v)}
 function tick(){load().then(function(r){if(r.s===200){if(tn){N('');tn=false}show(r.j);if(!settled(r.j)&&Date.now()<until)again(1000)}
 else{N(msg(r));tn=true}},function(){N('OPOS is not answering. It may be restarting to finish an update. Trying again.');tn=true;if(Date.now()<until)again(3000)})}
@@ -115,7 +116,8 @@ def page(token="", nonce="", snap=None):
     if rb.get("requested"):
         rb_label, rb_why = "Rollback requested", "Waiting for the updater."
     else:
-        rb_label, rb_why = "Request rollback", "" if rb.get("possible") else "There is no earlier version to go back to."
+        rb_label = "Request rollback"
+        rb_why = "" if rb.get("possible") else update_client.ONCE_ONLY if rb.get("once") else "There is no earlier version to go back to."
     job_text = _e(job.get("message") if job.get("phase") in ("failed", "done") else "")
     if pend:
         job_text += _e(f" Waiting to be applied: {', '.join(pend)}.")
@@ -142,12 +144,13 @@ def page(token="", nonce="", snap=None):
 <p id="u-job" role="status" aria-live="polite">{job_text}</p></section>
 <section aria-labelledby="u-h-last"><h2 id="u-h-last">Last update</h2>
 <p>Phase: <span id="u-phase">{_e(st["phase"] if st else "none yet")}</span></p>
-<p id="u-msg" role="status" aria-live="polite">{_e(st["message"] if st else "No update has run on this phone yet.")}</p></section>
+<p id="u-msg" role="status" aria-live="polite">{_e(st["message"] if st else "No update has run on this phone yet.")}</p>
+<p id="u-stall" role="alert"{"" if s.get("stalled") else " hidden"}>The updater has not picked up what was delivered for several minutes, so it may not be running. Restart the phone to start it again.</p></section>
 <section aria-labelledby="u-h-rb"><h2 id="u-h-rb">Go back</h2>
 <p>Asks the updater to return to the earlier version. The OPOS server restarts.</p>
 <p><button type="button" id="u-rb"{"" if rb.get("possible") and not rb.get("requested") else " disabled"}>{rb_label}</button></p>
 <p id="u-rb-why">{rb_why}</p><p id="u-rb-note" role="status" aria-live="polite"></p></section>
 </div>
 <noscript><p>The buttons on this page need JavaScript. The facts above are current as of loading.</p></noscript>
-</main><script>{_JS}</script></body></html>"""
+</main><script>{_JS.replace("@@ONCE@@", json.dumps(update_client.ONCE_ONLY))}</script></body></html>"""
     return secure.add_nonce(html, nonce) if nonce else html

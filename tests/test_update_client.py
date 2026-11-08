@@ -137,9 +137,9 @@ class Env(unittest.TestCase):
     def conf(self, **kw):
         self.put(self.paths.config, {"url": self.src.url(), "allow_lan_http": True, **kw})
 
-    def state(self, serial=0, previous=(), failed=(), **cur):
+    def state(self, serial=0, previous=(), failed=(), stepped_back=None, **cur):
         self.put(self.paths.state, {"base": 1, "current": {"serial": serial, "version": "0.1.0", "revision": "a" * 40, "release": f"{serial}-aaaaaaaaaaaa", **cur},
-                                    "previous": list(previous), "failed": list(failed), "pending_boot": None})
+                                    "previous": list(previous), "failed": list(failed), "pending_boot": None, "stepped_back": stepped_back})
 
     def status(self, **kw):
         self.put(self.paths.status, {"phase": "idle", "message": "", "serial": None, "time": "2026-11-08T12:00:00Z", **kw})
@@ -858,6 +858,24 @@ class RollbackRequest(Env):
         self.assertEqual(self.inbox(), [])
         self.assertEqual(c.snapshot()["rollback"], {"possible": False, "requested": False})
 
+    def test_only_one_step_back_per_applied_update(self):
+        """Review finding: any process of the service user could ask again and again and walk the phone back through its
+        releases. Root honours one request per applied update; the client says so and does not even write the file."""
+        self.state(1, previous=["0-aaaaaaaaaaaa"], stepped_back=2)
+        c = self.client()
+        with self.assertRaises(uc.UpdateError) as cm:
+            c.request_rollback()
+        self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.message), ("no_rollback", 409, uc.ONCE_ONLY))
+        self.assertEqual(self.inbox(), [])
+        self.assertEqual(c.snapshot()["rollback"], {"possible": False, "requested": False, "once": True})
+        self.state(1, previous=["0-aaaaaaaaaaaa"], stepped_back=None)  # an update was applied since: the marker is gone
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False})
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": False})
+
+    def test_nothing_earlier_beats_the_once_note(self):
+        self.state(0, previous=[], stepped_back=3)
+        self.assertEqual(self.client().snapshot()["rollback"], {"possible": False, "requested": False})
+
     def test_not_on_an_install_without_the_update_folder(self):
         shutil.rmtree(self.paths.root)
         with self.assertRaises(uc.UpdateError) as cm:
@@ -924,7 +942,7 @@ class StatusAndVersion(Env):
         self.status(phase="done", serial=3, message="Updated.")
         snap = self.client().snapshot()
         json.dumps(snap)
-        self.assertEqual(set(snap), {"available", "message", "running", "source", "check", "job", "pending", "rollback", "status"})
+        self.assertEqual(set(snap), {"available", "message", "running", "source", "check", "job", "pending", "stalled", "rollback", "status"})
         self.assertTrue(snap["available"])
         self.assertIsNone(snap["message"])
         self.assertEqual(snap["status"]["message"], "Updated.")
@@ -996,6 +1014,47 @@ class AutoCheck(Env):
         self.assertGreaterEqual(uc.AUTO_FIRST_S, 60)
 
 
+class Stalled(Env):
+    """A delivered bundle or rollback request that root has not taken for minutes means the updater is not running."""
+
+    def put_file(self, name):
+        p = os.path.join(self.paths.inbox, name)
+        with open(p, "wb") as f:
+            f.write(b"x")
+        return p
+
+    def test_fresh_files_are_not_stalled(self):
+        self.state(0, previous=["0-aaaaaaaaaaaa"])
+        self.put_file("opos-8.opos-update")
+        self.put_file("rollback.request")
+        self.assertFalse(self.client().snapshot()["stalled"])
+
+    def test_an_old_bundle_or_request_is_stalled_even_if_its_mtime_was_kept_old(self):
+        self.state(0, previous=["0-aaaaaaaaaaaa"])
+        later = lambda: time.time() + uc.STALL_S + 60  # noqa: E731
+        for name in ("opos-8.opos-update", "rollback.request"):
+            with self.subTest(name):
+                p = self.put_file(name)
+                c = uc.UpdateClient(self.paths, uc.Limits(), clock=later)
+                self.assertTrue(c.snapshot()["stalled"])
+                self.assertFalse(self.client().snapshot()["stalled"])
+                os.utime(p, (1, 1))  # `cp -p` of an old file: the change time still says it was delivered just now
+                self.assertFalse(self.client().snapshot()["stalled"])
+                os.unlink(p)
+                self.assertFalse(c.snapshot()["stalled"])
+
+    def test_partial_files_and_other_names_are_not_deliveries(self):
+        self.state(0)
+        for name in ("opos-8.opos-update.partial", "notes.txt"):
+            self.put_file(name)
+        later = lambda: time.time() + uc.STALL_S + 60  # noqa: E731
+        self.assertFalse(uc.UpdateClient(self.paths, uc.Limits(), clock=later).snapshot()["stalled"])
+
+    def test_not_on_an_install_without_the_update_folder(self):
+        shutil.rmtree(self.paths.root)
+        self.assertIs(self.client().snapshot()["stalled"], False)
+
+
 class Page(unittest.TestCase):
     def snap(self, **kw):
         base = {"available": True, "message": None, "running": {"version": "0.1.0", "revision": "ab" * 20, "serial": 0, "release": "0-abababababab"},
@@ -1004,6 +1063,24 @@ class Page(unittest.TestCase):
                 "pending": [], "rollback": {"possible": True, "requested": False}, "status": {"phase": "idle", "message": "", "serial": None, "time": None}}
         base.update(kw)
         return base
+
+    def test_once_only_rollback_is_explained_not_called_missing(self):
+        h = update_page.page("t" * 43, "n" * 22, self.snap(rollback={"possible": False, "requested": False, "once": True}))
+        self.assertIn(uc.ONCE_ONLY, h.split('<p id="u-rb-why">', 1)[1].split("</p>", 1)[0])
+        self.assertIn('id="u-rb" disabled', h)
+        h = update_page.page("t" * 43, "n" * 22, self.snap(rollback={"possible": False, "requested": False}))
+        self.assertIn("There is no earlier version to go back to.", h.split('<p id="u-rb-why">', 1)[1].split("</p>", 1)[0])
+        script = h.split("</main>", 1)[1]
+        self.assertIn("rb.once?ONCE:", script)
+        self.assertIn("var ONCE=" + json.dumps(uc.ONCE_ONLY) + ",", script)
+        self.assertNotIn("@@ONCE@@", h)
+
+    def test_a_stalled_updater_is_said_out_loud(self):
+        quiet = update_page.page("t" * 43, "n" * 22, self.snap(stalled=False))
+        loud = update_page.page("t" * 43, "n" * 22, self.snap(stalled=True))
+        self.assertIn('<p id="u-stall" role="alert" hidden>', quiet)
+        self.assertIn('<p id="u-stall" role="alert">The updater has not picked up what was delivered', loud)
+        self.assertIn("H('u-stall',!s.stalled)", quiet)
 
     def test_facts_are_in_the_html(self):
         h = update_page.page("t" * 43, "n" * 22, self.snap(check={"time": "2026-11-08 12:00:00Z", "ok": True, "newer": True, "serial": 7, "version": "0.7.0",

@@ -19,8 +19,13 @@ the index itself, so it never trusts an old check; it answers at once and a thre
 
 snapshot() keys: available, message, running {version, revision, serial, release}, source {configured, url, auto_check,
 allow_lan_http, error}, check (the last check: time, ok, newer, serial, version, size, message; or null), job {kind,
-phase, bytes, total, serial, message}, pending (bundles waiting in the inbox), rollback {possible, requested}, status
-(status.json: phase, message, serial, time; or null).
+phase, bytes, total, serial, message}, pending (bundles waiting in the inbox), stalled (a bundle or rollback request has
+waited so long that the updater is probably not running), rollback {possible, requested, and once: true when the only
+thing against it is that the phone already went back once since the last update; see below}, status (status.json:
+phase, message, serial, time; or null).
+
+A rollback request is the one thing this unprivileged side can ask of root that moves the phone to older code, so it
+is limited: root honours one per applied update and does not burn the serial it leaves (docs/ota-update.md, trust model).
 """
 from __future__ import annotations
 
@@ -53,9 +58,11 @@ MAX_SERIAL = 2 ** 31 - 1
 CHUNK = 64 * 1024
 BUNDLE_EXT = ".opos-update"
 ROLLBACK_REQUEST = "rollback.request"
+STALL_S = 300.0  # a delivered bundle or request that root has not taken in this long: the updater is not running
 AUTO_FIRST_S = 120.0
 AUTO_EVERY_S = 6 * 3600.0
 NOT_AVAILABLE = "Updates are not available on this install."
+ONCE_ONLY = "This phone already went back once since its last update. Install an update before going back again."
 NOT_CONFIGURED = "No update source is set. OPOS contacts no server for updates until one is set in /etc/opos/update.json."
 _PHASES = ("idle", "verifying", "applying", "checking", "done", "rolled-back", "failed")
 _URL_OK = re.compile(r"[\x21-\x5b\x5d-\x7e]{1,2048}")  # printable ASCII; no space, control character or backslash
@@ -345,6 +352,7 @@ class UpdateClient:
             "revision": revision if isinstance(revision, str) and _REVISION.fullmatch(revision) else None,
             "release": release if isinstance(release, str) and _RELEASE.fullmatch(release) else None,
             "previous": len(previous) if isinstance(previous, list) else 0,
+            "stepped_back": _int(d.get("stepped_back")),
             "failed": sorted({n for n in (_int(x) for x in failed) if n is not None}) if isinstance(failed, list) else [],
         }
 
@@ -388,6 +396,19 @@ class UpdateClient:
             return []
         return sorted(n for n in names if n.endswith(BUNDLE_EXT) and _NAME.fullmatch(n))[:8]
 
+    def stalled(self) -> bool:
+        """A bundle or rollback request has sat in the inbox for STALL_S seconds. The updater takes one within seconds,
+        so this means its path unit is not running (stopped, failed or never enabled)."""
+        now = self._clock()
+        for n in self.pending() + [ROLLBACK_REQUEST]:
+            try:
+                st = os.lstat(os.path.join(self.paths.inbox, n))
+            except OSError:
+                continue
+            if now - max(st.st_mtime, st.st_ctime) > STALL_S:  # ctime: a rename or a copy that kept an old mtime still counts as new
+                return True
+        return False
+
     def _source(self) -> dict:
         try:
             cfg = self.config()
@@ -409,6 +430,8 @@ class UpdateClient:
         if check and check["ok"]:  # the answer may have changed since the check (an update was applied)
             check["newer"], check["message"] = self._verdict(check["serial"], check["version"])
         requested = avail and os.path.lexists(os.path.join(self.paths.inbox, ROLLBACK_REQUEST))
+        earlier = bool(st and st["previous"] > 0)
+        once = earlier and st["stepped_back"] is not None
         return {
             "available": avail,
             "message": None if avail else NOT_AVAILABLE,
@@ -417,7 +440,8 @@ class UpdateClient:
             "check": check,
             "job": job,
             "pending": self.pending() if avail else [],
-            "rollback": {"possible": bool(st and st["previous"] > 0), "requested": bool(requested)},
+            "stalled": bool(avail and self.stalled()),
+            "rollback": dict({"possible": earlier and not once, "requested": bool(requested)}, **({"once": True} if once else {})),
             "status": self.read_status() if avail else None,
         }
 
@@ -674,6 +698,8 @@ class UpdateClient:
             raise UpdateError("no_rollback", "OPOS cannot read which versions are installed, so it will not ask for a rollback.", 409)
         if st["previous"] < 1:
             raise UpdateError("no_rollback", "There is no earlier version to go back to.", 409)
+        if st["stepped_back"] is not None:
+            raise UpdateError("no_rollback", ONCE_ONLY, 409)
         path = os.path.join(self.paths.inbox, ROLLBACK_REQUEST)
         try:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o660)
