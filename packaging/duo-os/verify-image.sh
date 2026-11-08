@@ -25,10 +25,20 @@ check "the shell is bound to the vendor composer and switches VT before starting
 check "the vendor composer is still started at boot" "[ -L $w/graphical.target.wants/android-service@hwcomposer.service ]"
 check "journal is persistent, so a failed boot leaves evidence" "grep -q '^Storage=persistent' $r/etc/systemd/journald.conf.d/50-opos-persistent.conf && [ -d $r/var/log/journal ]"
 check "boot diagnostics dump is enabled" "[ -L $w/multi-user.target.wants/opos-diag.service ] && [ -x $r/usr/libexec/opos/opos-diag ]"
+k=$r/usr/libexec/opos/opos-kiosk
+check "the kiosk and session scripts parse" "sh -n $k && sh -n $r/usr/libexec/opos/opos-session"
+check "the kiosk clears stale profile locks, drops WAYLAND_SOCKET, logs, backs off and can drop the GPU" "grep -q SingletonLock $k && grep -q 'unset WAYLAND_SOCKET' $k && grep -q 'logger -t opos-kiosk' $k && grep -q -- '--disable-gpu' $k && grep -q 'sleep \"\$delay\"' $k"
+check "the composer watchdog restarts OPOS as well as phosh (a package upgrade of the port reverts this)" "grep -qF 'systemctl try-restart phosh.service opos.service' $r/usr/local/sbin/sfduo-composer-watchdog && sh -n $r/usr/local/sbin/sfduo-composer-watchdog"
+check "a Chromium DevTools port exists only together with a dev ssh key" "[ ! -e $r/etc/default/opos-kiosk ] || { [ -f $r/home/droidian/.ssh/authorized_keys ] && grep -qx 'OPOS_KIOSK_DEBUG_PORT=9222' $r/etc/default/opos-kiosk; }"
 if [ -f "$r/home/droidian/.ssh/authorized_keys" ]; then
     echo "NOTE: DEV image: droidian has $(wc -l < "$r/home/droidian/.ssh/authorized_keys") authorized ssh key(s)"
 else
     echo "NOTE: no ssh key in this image (nothing new can log in)"
+fi
+if [ -e "$r/etc/default/opos-kiosk" ]; then
+    echo "NOTE: DEV image: the kiosk Chromium serves DevTools on 127.0.0.1 ($(grep -v '^#' "$r/etc/default/opos-kiosk" | tr '\n' ' '))"
+else
+    echo "NOTE: no DevTools port in this image"
 fi
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"

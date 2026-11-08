@@ -225,6 +225,65 @@ class ImageScriptsTest(unittest.TestCase):
                 self.assertIn("# SPDX-License-Identifier: GPL-3.0-or-later", head)
                 self.assertNotIn(b"\r", p.read_bytes())
 
+    def build_block(self, start, end):
+        text = (DUO / "build-image.sh").read_text()
+        i = text.index(start)
+        j = text.index(end, i) + len(end)
+        return text[i:j]
+
+    def edit_watchdog(self, script):
+        block = self.build_block("wd=$r/usr/local/sbin/sfduo-composer-watchdog", "edit did not take\" >&2; exit 1\nfi\n")
+        with tempfile.TemporaryDirectory() as r:
+            wd = Path(r) / "usr" / "local" / "sbin" / "sfduo-composer-watchdog"
+            wd.parent.mkdir(parents=True)
+            wd.write_text(script)
+            wd.chmod(0o755)
+            res = subprocess.run(["sh", "-eu", "-c", block], env={"r": r, "PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+            return res, wd.read_text(), oct(wd.stat().st_mode & 0o777)
+
+    def test_watchdog_edit_restarts_opos_too(self):
+        script = ("#!/bin/sh\nif master_ok; then\n    echo \"composer reacquired DRM master - restarting phosh\"\n"
+                  "    systemctl try-restart phosh.service 2>/dev/null || true\n    exit 0\nfi\nexit 1\n")
+        res, new, mode = self.edit_watchdog(script)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("    systemctl try-restart phosh.service opos.service 2>/dev/null || true\n", new)
+        self.assertIn("restarting the shell (phosh or opos)\"", new)
+        self.assertEqual(mode, "0o755")
+        self.assertEqual(new.count("try-restart"), 1)
+
+    def test_watchdog_edit_refuses_a_script_it_was_not_written_for(self):
+        res, new, _ = self.edit_watchdog("#!/bin/sh\nsystemctl restart phosh.service\n")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("not the script the OPOS edit is written for", res.stderr)
+        self.assertEqual(new, "#!/bin/sh\nsystemctl restart phosh.service\n")
+
+    def test_debug_port_file_is_written_only_for_a_dev_image(self):
+        text = (DUO / "build-image.sh").read_text()
+        i = text.index('if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then')
+        j = text.index("\nfi\n", i)
+        dev = text[i:j]
+        self.assertEqual(text.count("OPOS_KIOSK_DEBUG_PORT=9222"), 1)
+        before, after = dev.split("\nelse\n")
+        self.assertIn("OPOS_KIOSK_DEBUG_PORT=9222", before)
+        self.assertIn('> "$r/etc/default/opos-kiosk"', before)
+        self.assertEqual(after.strip(), 'rm -f "$r/etc/default/opos-kiosk"')
+        # the lines that write it, run as written
+        m = re.search(r"(    printf '%s\\n'.*?\n    chmod 0644 \"\$r/etc/default/opos-kiosk\"\n)", before, re.S)
+        self.assertTrue(m)
+        with tempfile.TemporaryDirectory() as r:
+            (Path(r) / "etc" / "default").mkdir(parents=True)
+            res = subprocess.run(["sh", "-eu", "-c", m.group(1)], env={"r": r, "PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            f = Path(r) / "etc" / "default" / "opos-kiosk"
+            self.assertIn("OPOS_KIOSK_DEBUG_PORT=9222\n", f.read_text())
+            self.assertTrue(f.read_text().startswith("# DEV IMAGE"))
+            self.assertEqual(oct(f.stat().st_mode & 0o777), "0o644")
+
+    def test_verify_image_checks_what_the_build_adds(self):
+        v = (DUO / "verify-image.sh").read_text()
+        for s in ("try-restart phosh.service opos.service", "unset WAYLAND_SOCKET", "SingletonLock", "OPOS_KIOSK_DEBUG_PORT=9222", "authorized_keys"):
+            self.assertIn(s, v)
+
     def test_the_unit_keeps_the_settings_the_fallback_depends_on(self):
         u = (DUO / "opos.service").read_text()
         for s in ("RestartMode=direct", "OnFailure=opos-fallback.service", "StartLimitBurst=3", "ExecStartPre=+chvt 7"):
