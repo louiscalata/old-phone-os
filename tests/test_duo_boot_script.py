@@ -281,19 +281,26 @@ $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.Us
 [pscustomobject]@{ errors = @($errors | ForEach-Object { $_.Message }); boots = $boots; mandatory = $mandatory; names = $names; version = "$($PSVersionTable.PSVersion)" } | ConvertTo-Json -Compress -Depth 4
 """
 
-# The phone is host 82 of a /24 around this PC's own address; loopback stands in for that /24.
+# The phone is host 82 of a /24 around this PC's own address; loopback stands in for that /24. A second
+# listener on host 20 (same port) is something else that answers on TCP 22: it tells "the preferred host was
+# probed first and alone" from "the sweep happened to find it".
 DISCOVER = AST + r"""
 . ([scriptblock]::Create((FunctionText 'Test-Tcp')))
 . ([scriptblock]::Create((FunctionText 'Find-PhoneSsh')))
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.82'), 0)
 try { $listener.Start() } catch { '{"skip": "cannot bind 127.0.0.82"}'; exit 0 }
 $port = $listener.LocalEndpoint.Port
+$second = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.20'), $port)
+try { $second.Start() } catch { $listener.Stop(); '{"skip": "cannot bind 127.0.0.20 on the same port"}'; exit 0 }
 $swept = @(Find-PhoneSsh '127.0.0.147' 200 $port 2500)
 $preferred = @(Find-PhoneSsh '127.0.0.147' 82 $port 2500)
+$preferred_other = @(Find-PhoneSsh '127.0.0.147' 20 $port 2500)
+$second.Stop()
+$only = @(Find-PhoneSsh '127.0.0.147' 200 $port 2500)
 $listener.Stop()
 $sw = [Diagnostics.Stopwatch]::StartNew()
 $none = @(Find-PhoneSsh '127.0.0.147' 82 $port 1000)
-[pscustomobject]@{ swept = $swept; preferred = $preferred; none = $none.Count; none_ms = $sw.ElapsedMilliseconds } | ConvertTo-Json -Compress
+[pscustomobject]@{ swept = $swept; preferred = $preferred; preferred_other = $preferred_other; only = $only; none = $none.Count; none_ms = $sw.ElapsedMilliseconds } | ConvertTo-Json -Compress
 """
 
 
@@ -422,9 +429,13 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         got = run_powershell(DISCOVER)
         if "skip" in got:
             self.skipTest(got["skip"])
-        for key in ("swept", "preferred"):
-            value = got[key]
-            self.assertEqual([value] if isinstance(value, str) else value, ["127.0.0.82"], key)
+        # Two things answer on the port. With no preferred host in range the sweep reports both, in address order.
+        self.assertEqual(as_list(got["swept"]), ["127.0.0.20", "127.0.0.82"])
+        # The preferred host is probed on its own first, so it comes back alone, whichever of the two it is.
+        self.assertEqual(as_list(got["preferred"]), ["127.0.0.82"])
+        self.assertEqual(as_list(got["preferred_other"]), ["127.0.0.20"])
+        # With the other one gone the sweep still finds the phone.
+        self.assertEqual(as_list(got["only"]), ["127.0.0.82"])
         self.assertEqual(got["none"], 0)
         self.assertLess(got["none_ms"], 10000)
 
