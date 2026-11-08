@@ -133,16 +133,36 @@ class TestWebTokenFile(unittest.TestCase):
             self.assertEqual(self.start_with(path), first)
             self.assertEqual(sorted(os.listdir(d)), ["token"], "no temporary file is left behind")
 
-    def test_main_missing_directory_still_exits_2(self):
+    def test_main_uncreatable_file_still_starts_with_a_token_for_this_run(self):
+        """A full disk or a read-only state directory must not keep the phone from showing its screen (Restart=always would
+        otherwise crash-loop every 3 s with no page at all)."""
         with tempfile.TemporaryDirectory() as d:
-            path = os.path.join(d, "no-such-directory", "token")
-            buf = io.StringIO()
-            with contextlib.redirect_stderr(buf):
+            for how in ("missing directory", "disk full"):
+                with self.subTest(how=how):
+                    path = os.path.join(d, "no-such-directory", "token")
+                    patch = unittest.mock.patch("opos.tokenfile.ensure", side_effect=OSError(errno.ENOSPC, "full")) if how == "disk full" else contextlib.nullcontext()
+                    err = io.StringIO()
+                    with patch, unittest.mock.patch("opos.web.make_server") as mk:
+                        mk.return_value.serve_forever = unittest.mock.Mock()
+                        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                            opos.web.main(["--token-file", path])
+                    self.assertTrue(mk.called, "the server started")
+                    self.assertIsNone(mk.call_args.kwargs["token"], "make_server draws a token for this run")
+                    self.assertRegex(err.getvalue(), r"^opos: cannot make the token file \(\w+\); this run keeps its token in memory only\n")
+                    self.assertNotIn("cannot read session token", err.getvalue())
+                    self.assertEqual(os.listdir(d), [], "nothing was made")
+
+    def test_main_unreadable_existing_path_still_exits_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            os.mkdir(path)  # something is there, but it is not a token
+            err = io.StringIO()
+            with unittest.mock.patch("opos.web.make_server") as mk, contextlib.redirect_stderr(err):
                 with self.assertRaises(SystemExit) as cm:
                     opos.web.main(["--token-file", path])
             self.assertEqual(cm.exception.code, 2)
-            self.assertEqual(buf.getvalue(), "opos: cannot read session token\n")
-            self.assertEqual(os.listdir(d), [])
+            self.assertEqual(err.getvalue(), "opos: cannot read session token\n")
+            mk.assert_not_called()
 
     def test_main_short_token_file(self):
         short = "short123"
@@ -270,6 +290,27 @@ class TestTokenFileModule(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(OSError):
                 tokenfile.ensure(os.path.join(d, "nope", "token"))
+
+    def test_a_temporary_file_left_by_a_dead_start_with_this_pid_does_not_stop_the_next(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            with open("%s.%d.new" % (path, os.getpid()), "w", encoding="utf-8") as f:
+                f.write("half")
+            self.assertTrue(tokenfile.ensure(path))
+            text = self.read(path)
+            self.assertEqual(opos.web._validate_token(text.strip()), text.strip())
+            self.assertEqual(os.listdir(d), ["token"], "the stale file is gone")
+
+    def test_usable_says_why_and_reports_no_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            err = io.StringIO()
+            self.assertFalse(tokenfile.usable(os.path.join(d, "nope", "token"), err))
+            self.assertEqual(err.getvalue(), "opos: cannot make the token file (FileNotFoundError); this run keeps its token in memory only\n")
+            made = os.path.join(d, "token")
+            err = io.StringIO()
+            self.assertTrue(tokenfile.usable(made, err))
+            self.assertTrue(tokenfile.usable(made, err), "an existing file is usable and untouched")
+            self.assertEqual(err.getvalue(), "")
 
 
 class TestServerUnit(unittest.TestCase):

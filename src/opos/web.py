@@ -1163,9 +1163,8 @@ def main(argv=None):
             print("opos: no readable battery (termux-battery-status or sysfs); using the simulation", file=sys.stderr)
             live = None
     token = None
-    if args.token_file is not None:
+    if args.token_file is not None and tokenfile.usable(args.token_file, sys.stderr):  # first start: make it, mode 0600, so a restart keeps the token
         try:
-            tokenfile.ensure(args.token_file)  # first start: make it, mode 0600, so a restart keeps the token
             with open(args.token_file, encoding="utf-8") as f:
                 token = f.read().strip()
             _validate_token(token)

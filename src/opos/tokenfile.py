@@ -23,6 +23,10 @@ def ensure(path):
         return False
     token = (secure.new_token() + "\n").encode("ascii")
     tmp = "%s.%d.new" % (path, os.getpid())
+    try:
+        os.unlink(tmp)  # a start that had this pid and died between making the file and removing it left one behind
+    except FileNotFoundError:
+        pass
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
         with os.fdopen(fd, "wb") as f:
@@ -46,3 +50,17 @@ def ensure(path):
             os.unlink(tmp)
         except OSError:
             pass
+
+
+def usable(path, err):
+    """Make the file if it is missing; True when there is a file at `path` afterwards.
+
+    A phone whose state directory cannot be written (a full disk, a read-only mount) must still show its screen: the server
+    then keeps a token for this run only, as it did before there was a token file, and says so on `err`. A file that exists
+    but cannot be read, or holds a bad token, is not this case: the caller refuses to start on it.
+    """
+    try:
+        ensure(path)
+    except OSError as e:
+        print("opos: cannot make the token file (%s); this run keeps its token in memory only" % type(e).__name__, file=err)
+    return os.path.lexists(path)
