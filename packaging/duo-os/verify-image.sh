@@ -102,6 +102,9 @@ tail -n 1 /tmp/opos-verify-osk.txt
 kill "$(cat /tmp/opos-verify.pid)" 2>/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port" 2>/dev/null || break; sleep 1; done
 head -5 /tmp/opos-verify.log
+# --- qa: BEGIN (opos-selftest; docs/duo-acceptance.md)
+check "opos-selftest is installed with its /usr/sbin wrapper, and the image's own python3 can start it" "[ -x $mnt/usr/libexec/opos/opos-selftest ] && [ -x $mnt/usr/sbin/opos-selftest ] && sh -n $mnt/usr/sbin/opos-selftest && grep -q '^exec /usr/libexec/opos/opos-selftest' $mnt/usr/sbin/opos-selftest && py $mnt/usr/libexec/opos/opos-selftest --help | grep -q 'Changes nothing'"
+# --- qa: END
 umount "$mnt"; rmdir "$mnt"
 [ $fail -eq 0 ] && echo "VERIFY: PASS (offline; not a boot or display test)" || echo "VERIFY: FAIL"
 exit $fail

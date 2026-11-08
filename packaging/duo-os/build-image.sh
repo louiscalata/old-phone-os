@@ -47,6 +47,15 @@ rm -f "$r/etc/systemd/system/graphical.target.wants/phosh.service" "$r/etc/syste
 ln -sf /etc/systemd/system/opos.service "$r/etc/systemd/system/graphical.target.wants/opos.service"
 ln -sf /etc/systemd/system/opos-server.service "$r/etc/systemd/system/multi-user.target.wants/opos-server.service"
 
+# --- qa: BEGIN (opos-selftest; docs/duo-acceptance.md)
+# The acceptance script the PC (deploy/duo-acceptance.ps1) and the owner run on the phone as droidian: read-only, no root.
+# /usr/sbin/opos-selftest is a two-line wrapper; both paths are OPOS-owned, so an over-the-air update can replace the script.
+install -m 0755 "$here/opos-selftest" "$r/usr/libexec/opos/opos-selftest"
+printf '%s\n' '#!/bin/sh' '# SPDX-License-Identifier: GPL-3.0-or-later' 'exec /usr/libexec/opos/opos-selftest "$@"' > "$r/usr/sbin/opos-selftest"
+chmod 0755 "$r/usr/sbin/opos-selftest"
+( cd "$r" && sha256sum usr/libexec/opos/opos-selftest usr/sbin/opos-selftest )
+# --- qa: END
+
 # Boot evidence that survives a failed boot: the rootfs lives on userdata, so a persistent journal and one
 # diagnostics dump (opos-diag, 90 s after boot) can be read afterwards over ssh or from TWRP.
 mkdir -p "$r/var/log/journal" "$r/etc/systemd/journald.conf.d"
