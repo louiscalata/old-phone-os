@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -51,7 +52,8 @@ class StaticPins(unittest.TestCase):
         self.assertIn('work=$(mktemp -d "${TMPDIR:-/tmp}/opos-verify.XXXXXX")', TEXT)
         self.assertIn("umask 077", TEXT)
         self.assertIn("""[ "$(stat -c '%u %a' "$work")" = "0 700" ]""", TEXT)
-        self.assertIn("""trap 'cd /; rm -rf "$work"' EXIT""", TEXT)
+        self.assertIn("trap cleanup EXIT", TEXT)
+        self.assertIn('    rm -rf "$work"\n}', TEXT, "the cleanup removes the private directory")
         self.assertIn('cd "$work" || exit 2', TEXT)
         # all of it before the first mount and before anything runs from the image
         self.assertLess(TEXT.index('cd "$work"'), TEXT.index("mount -o ro"))
@@ -78,6 +80,23 @@ class StaticPins(unittest.TestCase):
         for ln in code_lines():
             self.assertNotRegex(ln, r"cd /tmp", ln)
         self.assertRegex(TEXT, r'(?m)^py\(\) \{ PYTHONPATH="\$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 "\$q" -L "\$mnt" "\$mnt/usr/bin/python3" "\$@"; \}$')
+
+    def test_servers_use_picked_ports_and_are_stopped_by_pid_alone(self):
+        code = "\n".join(code_lines())
+        self.assertNotRegex(code, r"1899[89]", "a fixed loopback port can be held by a stale or hostile listener")
+        commands = "\n".join(ln for ln in code_lines() if not ln.startswith("check "))  # a check may name the tools it looks for in the image
+        for word in ("pkill", "killall", "pgrep"):
+            self.assertNotIn(word, commands, "servers are stopped by the pid this script started, never by name or command line")
+        self.assertEqual(code.count("=$(pick_port)"), 2, "the smoke server and the integration server each get a picked port")
+        self.assertEqual(code.count("-m opos.web"), 1, "one function starts a server")
+        self.assertEqual(len(re.findall(r"^\s*if serve ", code, re.M)), 2, "and both servers are started through it")
+
+    def test_every_way_out_runs_the_same_cleanup(self):
+        for line in ("trap cleanup EXIT", "trap 'exit 130' INT", "trap 'exit 143' TERM", "trap 'exit 129' HUP"):
+            self.assertIn(line, TEXT)
+        cleanup = TEXT[TEXT.index("cleanup() {"):TEXT.index("trap cleanup EXIT")]
+        for part in ("kill \"$p\"", "kill -9 \"$p\"", "umount \"$mnt\"", "rmdir \"$mnt\"", 'rm -rf "$work"', "trap '' INT TERM HUP"):
+            self.assertIn(part, cleanup)
 
     def test_the_script_parses_and_keeps_its_header(self):
         if POSIX:
@@ -324,6 +343,195 @@ class StateProbe(unittest.TestCase):
         rc, out = self.probe(port)
         self.assertEqual(rc, 0, out)
         self.assertIn("PASS the authenticated /api/state", out)
+
+
+SERVER_PY = r'''
+import json, sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+GOOD = {"battery": {"percent": 61.5}, "lock_story": "All good", "helper": {"mode": "NORMAL"}}
+
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        if self.path == "/":
+            body, status = b'<meta name="opos-token" content="tok123">', 200
+        elif self.path == "/api/state" and self.headers.get("X-OPOS-Token") == "tok123":
+            body, status = json.dumps(GOOD).encode(), 200
+        else:
+            body, status = b"", 404
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+'''
+
+QEMU_STUB = '''#!/bin/sh
+# qemu-aarch64-static -L ROOT PYTHON ARGS...: what py() and serve() in verify-image.sh run. Only "-m opos.web --port N" does anything.
+shift 3
+case "$1 $2" in
+"-m opos.web")
+    echo $$ > "$T/server.$4.pid"
+    echo "$4 $OPOS_OSK$OPOS_NETWORK$OPOS_FIRSTRUN" >> "$T/server.started"
+    read -r mode < "$T/server_mode"
+    [ "$mode" = hang ] && exec /bin/sleep 300
+    exec "$PYBIN" "$T/server.py" "$4";;
+esac
+exit 0
+'''
+
+
+def alive(pid):
+    try:
+        state = Path("/proc/%d/stat" % pid).read_text().rsplit(")", 1)[1].split()[0]
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    return state != "Z"
+
+
+@unittest.skipUnless(POSIX and os.path.isdir("/proc") and shutil.which("ps"), "needs Linux and ps")
+class WholeScriptServers(unittest.TestCase):
+    """The whole of verify-image.sh run against stubs (qemu, mount, strings, a stand-in image directory): everything about
+    its two servers. The stub qemu starts a real HTTP server for "-m opos.web" (or hangs, if told to) and does nothing else."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.t = Path(self._tmp.name)
+        self.bin = self.t / "bin"
+        self.bin.mkdir()
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="opos-verify-test-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+        (self.t / "server.py").write_text(SERVER_PY)
+        (self.t / "server_mode").write_text("serve\n")
+        self.fake("qemu-aarch64-static", QEMU_STUB.split("\n", 1)[1])
+        for name in ("mount", "umount", "strings"):
+            self.fake(name, "exit 0")
+        self.fake("mountpoint", "exit 1")
+        # python3 for the builder's own probes; the free-port question can be answered with a port somebody else holds
+        self.fake("python3", 'case "$*" in\n*\'s.bind(("127.0.0.1", 0))\'*) if [ -n "${HOSTILE_PORT:-}" ]; then echo "$HOSTILE_PORT"; exit 0; fi;;\nesac\nexec "$PYBIN" "$@"')
+        if os.geteuid() != 0:  # the script insists on root: pretend, and report the owner of the private directory as root
+            self.fake("id", "echo 0")
+            real = subprocess.run(["sh", "-c", "command -v stat"], capture_output=True, text=True).stdout.strip()
+            self.fake("stat", 'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"' % (real, os.geteuid()))
+        self.addCleanup(self.reap)
+
+    def fake(self, name, body):
+        p = self.bin / name
+        p.write_text("#!/bin/sh\n" + body + "\n")
+        p.chmod(0o755)
+
+    def reap(self):
+        for f in self.t.glob("server.*.pid"):
+            try:
+                os.kill(int(f.read_text()), signal.SIGKILL)
+            except (ValueError, ProcessLookupError, PermissionError):
+                pass
+
+    def start(self, hostile_port=None, mode="serve"):
+        (self.t / "server_mode").write_text(mode + "\n")
+        env = {"PATH": "%s:/usr/bin:/bin" % self.bin, "TMPDIR": str(self.tmpdir), "T": str(self.t), "PYBIN": sys.executable}
+        if hostile_port:
+            env["HOSTILE_PORT"] = str(hostile_port)
+        def default_signals():  # an ignored signal cannot be trapped by a shell, and a runner started in the background may pass them on ignored
+            for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                signal.signal(sig, signal.SIG_DFL)
+
+        return subprocess.Popen(["sh", str(SCRIPT), "OUT.img"], env=env, cwd=str(self.t), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, start_new_session=True, preexec_fn=default_signals)
+
+    def finish(self, p, timeout=120):
+        out, err = p.communicate(timeout=timeout)
+        return p.returncode, out, err
+
+    def server_pids(self):
+        return [int(f.read_text()) for f in sorted(self.t.glob("server.*.pid"))]
+
+    def work_dirs(self):
+        return list(self.tmpdir.glob("opos-verify.*"))
+
+    def test_with_free_ports_the_servers_answer_and_are_gone_afterwards(self):
+        rc, out, err = self.finish(self.start())
+        self.assertIn("PASS OPOS server from the image answers HTTP 200", out, out + err)
+        self.assertIn("PASS the authenticated /api/state answers", out, out)
+        ports = [ln.split()[0] for ln in (self.t / "server.started").read_text().splitlines()]
+        self.assertEqual(len(ports), 2, "the smoke server and the integration server")
+        self.assertTrue(all(p.isdigit() and 1024 <= int(p) < 65536 for p in ports))
+        self.assertTrue(all(p not in ("18999", "18998") for p in ports))
+        self.assertEqual((self.t / "server.started").read_text().splitlines()[1].split(" ", 1)[1], "111", "the second server has the three switches")
+        for pid in self.server_pids():
+            self.assertFalse(alive(pid), "a server outlived the script")
+        self.assertEqual(self.work_dirs(), [])
+
+    def test_a_listener_on_the_port_before_the_server_starts_fails_the_check_and_is_never_read(self):
+        # a hostile or stale listener answers on the port the script picked: it must not stand in for the image's server
+        class Canned(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                body = b'<meta name="opos-token" content="tok123">' if self.path == "/" else json.dumps(GOOD).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Canned)
+        th = threading.Thread(target=srv.serve_forever, daemon=True)
+        th.start()
+        self.addCleanup(lambda: (srv.shutdown(), srv.server_close(), th.join(10)))
+        port = srv.server_address[1]
+        rc, out, err = self.finish(self.start(hostile_port=port))
+        self.assertEqual(rc, 1, out + err)
+        self.assertIn("FAIL something already answers on 127.0.0.1:%d before the image's server was started" % port, out)
+        self.assertIn("FAIL OPOS server from the image answers HTTP 200", out)
+        self.assertIn("FAIL the authenticated /api/state was not probed", out)
+        self.assertNotIn("PASS OPOS server from the image", out)
+        self.assertNotIn("PASS the authenticated /api/state", out)
+        self.assertIn("duo pieces FAILED: the image's server did not start", out)
+        self.assertIn("VERIFY: FAIL", out)
+        self.assertFalse((self.t / "server.started").exists(), "no server was started on a port that already answers")
+
+    def test_a_signal_stops_the_servers_and_removes_everything(self):
+        for name, sig, status in (("INT", signal.SIGINT, 130), ("TERM", signal.SIGTERM, 143), ("HUP", signal.SIGHUP, 129)):
+            with self.subTest(name):
+                for f in self.t.glob("server.*"):
+                    f.unlink()
+                p = self.start(mode="hang")  # the server never answers: the script sits in its readiness loop
+                for _ in range(100):
+                    if list(self.t.glob("server.*.pid")):
+                        break
+                    time.sleep(0.1)
+                pids = self.server_pids()
+                self.assertEqual(len(pids), 1, "one server, started by pid")
+                self.assertTrue(alive(pids[0]))
+                time.sleep(0.5)
+                os.kill(p.pid, sig)  # the script alone, not its process group
+                rc, out, err = self.finish(p, timeout=60)
+                self.assertEqual(rc, status, out + err)
+                for _ in range(50):
+                    if not alive(pids[0]):
+                        break
+                    time.sleep(0.1)
+                self.assertFalse(alive(pids[0]), "the server outlived the signal")
+                self.assertEqual(self.work_dirs(), [])
+                self.assertNotIn("VERIFY:", out, "it was interrupted, not finished")
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash for exec -a")
+    def test_only_its_own_server_is_stopped(self):
+        # processes whose command lines look like the old fixed-port servers, started before the script, are left alone
+        decoys = [subprocess.Popen(["bash", "-c", "exec -a 'qemu-aarch64-static python3 -m opos.web --port %d' /bin/sleep 300" % port],
+                                   start_new_session=True) for port in (18999, 18998)]
+        for d in decoys:
+            self.addCleanup(lambda d=d: (d.kill(), d.wait()))
+        time.sleep(0.3)
+        self.finish(self.start())
+        self.assertEqual([d.poll() for d in decoys], [None, None], "the script killed a process it did not start")
 
 
 if __name__ == "__main__":

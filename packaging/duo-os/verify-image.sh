@@ -16,7 +16,35 @@ q=$(command -v qemu-aarch64-static) || { echo "needs qemu-aarch64-static" >&2; e
 umask 077
 work=$(mktemp -d "${TMPDIR:-/tmp}/opos-verify.XXXXXX") || { echo "verify-image.sh: cannot make a private work directory" >&2; exit 2; }
 [ -d "$work" ] && [ ! -L "$work" ] && [ "$(stat -c '%u %a' "$work")" = "0 700" ] || { echo "verify-image.sh: $work is not a private root-owned directory" >&2; exit 2; }
-trap 'cd /; rm -rf "$work"' EXIT
+# What this script started is stopped, and what it made is removed, whichever way it ends: the end, an error, or INT, TERM or
+# HUP (those run the same cleanup through exit). Servers are stopped by the pid this script started, never by a name or
+# a command line, so a server somebody else runs is never touched. A second signal does not interrupt the cleanup.
+pids='' mnt=''
+# up PID: succeeds while PID runs (a child that has exited and not been waited for is a zombie: not running)
+up() { up_s=$(ps -o stat= -p "$1" 2>/dev/null) && case $up_s in Z* | '') false ;; esac; }
+cleanup() {
+    trap '' INT TERM HUP
+    cd /
+    for p in $pids; do kill "$p" 2>/dev/null; done
+    n=0
+    while [ "$n" -lt 50 ]; do
+        alive=0
+        for p in $pids; do up "$p" && alive=1; done
+        [ "$alive" -eq 0 ] && break
+        sleep 0.1
+        n=$((n + 1))
+    done
+    for p in $pids; do kill -9 "$p" 2>/dev/null; done
+    if [ -n "$mnt" ]; then
+        mountpoint -q "$mnt" 2>/dev/null && umount "$mnt" 2>/dev/null
+        rmdir "$mnt" 2>/dev/null
+    fi
+    rm -rf "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 cd "$work" || exit 2
 # The image's python3 must not import from the working directory, the user site or the caller's environment:
 # PYTHONSAFEPATH (python 3.11 and later) keeps the directory of the script or -c/-m out of sys.path, PYTHONNOUSERSITE
@@ -99,7 +127,46 @@ umount "$mnt"
 # Server smoke test: qemu-user with the read-only image as its sysroot (-L), so the image's own
 # aarch64 python3 loads its own standard library and runs /opt/opos from the image.
 mount -o ro,loop,noload "$img" "$mnt" || exit 1
-port=18999
+# --- servers: BEGIN (loopback ports, and the servers' lifetime)
+# The servers below listen on loopback ports that this builder's python3 picks (bind to port 0 and read it back) instead of
+# fixed ones: a stale server from an aborted run, or a local user's listener on a fixed port, would answer the readiness loop
+# and the state probe with its own data, and the checks would pass without the image's server. A port that already answers
+# is a FAIL and nothing is started on it. Each server is started so that its pid is the process itself (a subshell that execs
+# it), and is stopped by that pid alone, here or by the cleanup trap above.
+pick_port() { python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+port_answers() { python3 -I -c 'import socket, sys; s = socket.socket(); s.settimeout(2); sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)' "$1"; }
+# serve PORT LOGFILE [NAME=value ...]: the image's OPOS server on 127.0.0.1:PORT in the background, its pid in $sv_pid and in $pids.
+serve() {
+    sv_port=$1 sv_log=$2
+    shift 2
+    if port_answers "$sv_port"; then
+        echo "FAIL something already answers on 127.0.0.1:$sv_port before the image's server was started, so its answers would not be the image's"
+        fail=1
+        return 1
+    fi
+    (
+        for sv_kv in "$@"; do export "$sv_kv"; done
+        export PYTHONPATH="$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1
+        exec "$q" -L "$mnt" "$mnt/usr/bin/python3" -m opos.web --port "$sv_port" > "$sv_log" 2>&1
+    ) &
+    sv_pid=$!
+    pids="$pids $sv_pid"
+}
+# stop_server PID: TERM, up to 5 s, KILL; PID leaves $pids so the cleanup never signals a number that may have been reused
+stop_server() {
+    kill "$1" 2>/dev/null
+    n=0
+    while up "$1" && [ "$n" -lt 50 ]; do
+        sleep 0.1
+        n=$((n + 1))
+    done
+    kill -9 "$1" 2>/dev/null
+    keep=''
+    for p in $pids; do [ "$p" = "$1" ] || keep="$keep $p"; done
+    pids=$keep
+}
+# --- servers: END
+port=$(pick_port) && [ -n "$port" ] || { echo "verify-image.sh: cannot pick a free loopback port" >&2; exit 2; }
 py() { PYTHONPATH="$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 "$q" -L "$mnt" "$mnt/usr/bin/python3" "$@"; }
 py -c "import sys; print(sys.version.split()[0], sys.platform)" | sed 's/^/image python3 /'
 # >>> track firstboot: first run and time zone (src/opos/firstrun.py, timezone.py). Static wiring, then the image's own python3 and zone files under qemu-user.
@@ -118,13 +185,17 @@ else
     echo "NOTE: no /usr/share/zoneinfo in this image: OPOS offers only its short built-in zone list"
 fi
 # <<< track firstboot
-( py -m opos.web --port $port >"$work/opos-verify.log" 2>&1 & echo $! > "$work/opos-verify.pid" )
-ok=1
-for i in $(seq 1 60); do
-    if python3 -I -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$port/', timeout=2).status == 200 else 1)" 2>/dev/null; then ok=0; break; fi
-    sleep 1
-done
+ok=1 i=0 smoke_pid=''
+if serve "$port" "$work/opos-verify.log"; then
+    smoke_pid=$sv_pid
+    for i in $(seq 1 60); do
+        up "$smoke_pid" || break  # the server ended: whatever answers on the port now is not the image's
+        if python3 -I -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$port/', timeout=2).status == 200 else 1)" 2>/dev/null; then ok=0; break; fi
+        sleep 1
+    done
+fi
 check "OPOS server from the image answers HTTP 200 (qemu-user, ${i}s)" "[ $ok -eq 0 ]"
+if [ $ok -eq 0 ]; then
 # --- state probe: BEGIN (the authenticated /api/state; its exit status is a check, it is not only printed)
 # An image whose "/" works but whose /api/state raises, answers 500, sends malformed JSON or lacks the fields the page reads
 # must FAIL here. The probe prints "state: ..." only after every field it reads has been validated.
@@ -165,6 +236,10 @@ EOF
 check "the authenticated /api/state answers with the fields the page reads (battery percent, lock story)" "[ $sp -eq 0 ] && grep -q '^state: ' \"\$work/opos-verify-state.txt\""
 cat "$work/opos-verify-state.txt"
 # --- state probe: END
+else  # nothing of the image's answers (or the port was taken): probing it would read somebody else's data
+    echo "FAIL the authenticated /api/state was not probed: the image's server did not start or did not answer"
+    fail=1
+fi
 # --- track osk: the image's own python3 reads the keyboard's files and builds the page tags (no server needed) ---
 py -c "
 import os
@@ -177,15 +252,16 @@ assert '/osk.js' in t and '/osk.css' in t and 'nonce=' in t
 print('on-screen keyboard assets: osk.js', len(js[0]), 'bytes, osk.css', len(css[0]), 'bytes')" > "$work/opos-verify-osk.txt" 2>&1
 check "the image's python3 serves the on-screen keyboard's files" "grep -q 'on-screen keyboard assets' \"\$work/opos-verify-osk.txt\""
 tail -n 1 "$work/opos-verify-osk.txt"
-kill "$(cat "$work/opos-verify.pid")" 2>/dev/null
-for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port" 2>/dev/null || break; sleep 1; done
+[ -z "$smoke_pid" ] || stop_server "$smoke_pid"
 head -5 "$work/opos-verify.log"
 # --- track integrate: BEGIN (the keyboard, the Network page and the first run in one server; docs/duo-os-final.md)
 # A second server from the image, started with the three switches opos-server.service and its drop-in set, asked for every page
 # the pieces add: they must be wired into the same server, not merely present on disk. Offline, like the smoke test above.
-cfgd=$(mktemp -d "$work/cfg.XXXXXX"); port2=18998
-( export OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 OPOS_CONFIG_DIR=$cfgd; py -m opos.web --port $port2 >"$work/opos-verify-duo.log" 2>&1 & echo $! > "$work/opos-verify-duo.pid" )
-python3 -I - "$port2" > "$work/opos-verify-duo.txt" 2>&1 <<'EOF'
+cfgd=$(mktemp -d "$work/cfg.XXXXXX")
+port2=$(pick_port) && [ -n "$port2" ] || { echo "verify-image.sh: cannot pick a free loopback port" >&2; exit 2; }
+if serve "$port2" "$work/opos-verify-duo.log" OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 "OPOS_CONFIG_DIR=$cfgd"; then
+    duo_pid=$sv_pid
+    python3 -I - "$port2" > "$work/opos-verify-duo.txt" 2>&1 <<'EOF'
 import sys, time, urllib.request
 base = "http://127.0.0.1:%s" % sys.argv[1]
 def get(path, accept=None):
@@ -211,8 +287,10 @@ need.append(("a script asking for / is not", get("/")[1] == base + "/"))
 bad = [n for n, ok in need if not ok]
 print("duo pieces ok" if not bad else "duo pieces FAILED: " + "; ".join(bad))
 EOF
-kill "$(cat "$work/opos-verify-duo.pid")" 2>/dev/null
-for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port2" 2>/dev/null || break; sleep 1; done
+    stop_server "$duo_pid"
+else
+    echo "duo pieces FAILED: the image's server did not start" > "$work/opos-verify-duo.txt"
+fi
 rm -rf "$cfgd"
 check "the keyboard, the Network page and the first run answer together in one server from the image" "grep -q '^duo pieces ok' \"\$work/opos-verify-duo.txt\""
 tail -n 2 "$work/opos-verify-duo.txt"
