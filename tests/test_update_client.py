@@ -1379,6 +1379,23 @@ class MainPageIsUntouched(Env):
         self.assertEqual(server.RequestHandlerClass.updater.paths, uc.Paths())  # production defaults
 
 
+class MainStartsAutoCheck(unittest.TestCase):
+    def test_main_asks_the_updater_to_start_its_optional_check_once(self):
+        srv = mock.Mock()
+        with mock.patch.object(webclient.web, "make_server", return_value=srv) as make:
+            webclient.web.main(["--port", "0"])
+        make.assert_called_once()
+        self.assertNotIn("updater", make.call_args.kwargs)  # the server builds its own, so main's call is unchanged
+        srv.RequestHandlerClass.updater.start_auto_check.assert_called_once_with()
+        srv.serve_forever.assert_called_once_with()
+
+    def test_make_server_attaches_the_given_updater(self):
+        mine = uc.UpdateClient(uc.Paths(root="/nonexistent/opos-update"))
+        server = webclient.web.make_server(0, webclient.web.Phone(), updater=mine)
+        self.addCleanup(server.server_close)
+        self.assertIs(server.RequestHandlerClass.updater, mine)
+
+
 class Defaults(unittest.TestCase):
     def test_production_paths(self):
         p = uc.Paths()

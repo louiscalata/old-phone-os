@@ -1039,9 +1039,8 @@ def main(argv=None):
     goal = cfg["goal"]
     phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
     _route_with_glimmer(phone, os.environ)
-    updater = update_client.UpdateClient()
-    server = make_server(args.port, phone, token=token, updater=updater)
-    updater.start_auto_check()  # only when /etc/opos/update.json opts in with auto_check; it checks, never downloads
+    server = make_server(args.port, phone, token=token)
+    server.RequestHandlerClass.updater.start_auto_check()  # only when /etc/opos/update.json opts in with auto_check; it checks, never downloads
     if live is not None:
         print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{args.port}/ (Ctrl-C to stop)", flush=True)
     else:
