@@ -634,8 +634,7 @@ let helperCtl=null;let helperTimer=null;async function helperCall(o,ans){let exp
 function helperReset(){if(helperCtl){helperCtl.abort();helperCtl=null}if(helperTimer){clearInterval(helperTimer);helperTimer=null}let e=G('helperwait');if(e&&e.parentNode)e.parentNode.removeChild(e);let c=G('helpercancel');if(c&&c.parentNode)c.parentNode.removeChild(c);let ans=G('answer');if(ans)ans.textContent='Ready.';let rb=G('helperrestart');if(rb)rb.hidden=false}G('helperreset').onclick=helperReset;G('helperrestart').onclick=function(){helperReset();let ans=G('answer');if(ans)ans.textContent='Restarting the helper... this page reloads in a few seconds.';const back=()=>setInterval(healReload,2000);api({action:'restart_helper'}).then(r=>{if(r&&r.error){if(ans)ans.textContent=r.error;return}back()}).catch(back)};
 @@OPOS:js-4.js@@
 @@OPOS:js-5.js@@
- document.querySelectorAll('#threads button').forEach(b=>b.onclick=async()=>{G('number').value=b.dataset.n;render(await api({action:'open',number:b.dataset.n}))});
- G('thread').innerHTML='<b>Thread</b><br>'+(s.thread||[]).map(x=>esc(typeof x==='string'?x:(x.text||JSON.stringify(x)))).join('<br>');
+ sync(G('thread'),'<b>Thread</b><br>'+(s.thread||[]).map(x=>esc(typeof x==='string'?x:(x.text||JSON.stringify(x)))).join('<br>'));
 @@OPOS:js-6.js@@
    let bv=document.getElementById('battery-val');if(!bv){bv=document.createElement('span');bv.id='battery-val';G('battery').insertAdjacentElement('afterend',bv)}
    if(document.activeElement!==document.getElementById('battery')){document.getElementById('battery').value=s.battery.percent;document.getElementById('battery-val').textContent=Math.round(s.battery.percent)+'%'}

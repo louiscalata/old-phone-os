@@ -1,5 +1,6 @@
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function healReload(){fetch('/',{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;location.reload()}).catch(()=>showNotice('Still not reachable. Try again in a moment.'))}
+const sync=(el,html,wire)=>{if(el._k!==html){el._k=html;el.innerHTML=html;wire&&wire(el)}};
 async function render(s){
 if(!s)return;
 if(s.error){
