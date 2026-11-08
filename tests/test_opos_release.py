@@ -53,9 +53,9 @@ def tool(*args):
     return code, out.getvalue(), err.getvalue()
 
 
-def keygen(path):
+def keygen(path, comment="opos-test"):
     path.parent.mkdir(parents=True, exist_ok=True)
-    proc = run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "opos-test", "-f", path)
+    proc = run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", comment, "-f", path)
     assert proc.returncode == 0, proc.stderr
     return path
 
@@ -807,6 +807,120 @@ class IndexTest(ReleaseCase):
         self.assertEqual(json.loads(latest.read_text())["serial"], 7)
 
 
+def marker_samples():
+    """One example of every kind of private key material the tool knows. Built from pieces, so this file is not a hit itself."""
+    pem = lambda kind: b"-----BEGIN " + kind + b" PRIVATE " + b"KEY-----\nMIIB\n-----END " + kind + b" PRIVATE " + b"KEY-----\n"
+    return {
+        "openssh": pem(b"OPENSSH"), "rsa": pem(b"RSA"), "ec": pem(b"EC"), "pkcs8": b"-----BEGIN PRIVATE " + b"KEY-----\nMIIB\n",
+        "encrypted pkcs8": pem(b"ENCRYPTED"), "pgp": b"-----BEGIN PGP PRIVATE " + b"KEY BLOCK-----\n",
+        "putty": b"PuTTY-User-Key-File-" + b"3: ssh-ed25519\nEncryption: none\n", "putty lines": b"Private-" + b"Lines: 1\nAAAA\n",
+        "armor stripped": b"b3BlbnNzaC1rZXktdjE" + b"AAAAABG5vbmU\n", "ssh2": b"---- BEGIN SSH2 ENCRYPTED PRIVATE " + b"KEY ----\n",
+    }
+
+
+class PrivateKeyLeakTest(ReleaseCase):
+    """Review finding 1: a bundle is public. A private key under any name, `.pub` included, must stop the build, and `verify`
+    must refuse a bundle that carries one, whoever built it."""
+
+    def build_dir(self, rel_path, data, *extra, key=None, signers=True):
+        tree = self.new_dir("tree") / "t"
+        shutil.copytree(self.repo, tree, ignore=shutil.ignore_patterns(".git"))
+        (tree / rel_path).parent.mkdir(parents=True, exist_ok=True)
+        (tree / rel_path).write_bytes(data)
+        out = self.new_dir("out")
+        key = tree / rel_path if key == "tree" else key or self.key  # "tree": sign with the file that was just written
+        args = ["build", "--dir", tree, "--revision", self.rev, "--created", STAMP, "--serial", 7, "--version", "1", "--key", key,
+                "--out", out, *extra] + (["--allowed-signers", self.signers] if signers else [])
+        return tool(*args) + (out, tree)
+
+    def assertNoKeyLeak(self, code, se, out, name):
+        self.assertEqual(code, 1, se)
+        self.assertIn(name, se, "the refusal names the file")
+        self.assertIn("private key", se)
+        self.assertNotIn("failed its own check", se, "stopped before anything was signed, not by the check after building")
+        self.assertEqual(list(out.iterdir()), [], "nothing is written for a refused build")
+
+    def test_a_private_key_in_the_tree_is_refused_by_content_whatever_it_is_called(self):
+        private = self.key.read_bytes()
+        for name in ("src/opos/release.pub", "src/opos/web_static/notes.txt", "src/opos/data.bin", "src/opos/id_ed25519", "THIRD_PARTY.md", "LICENSE"):
+            with self.subTest(name):
+                code, so, se, out, tree = self.build_dir(name, private)
+                self.assertNoKeyLeak(code, se, out, name)
+                for line in private.decode().strip().splitlines()[1:-1]:
+                    self.assertNotIn(line, so + se, "the key itself is never printed")
+
+    def test_a_private_key_in_an_overlay_file_is_refused(self):
+        code, so, se, out, tree = self.build_dir("packaging/duo-os/opos-kiosk", b"#!/bin/sh\n" + self.key.read_bytes(), "--overlay", "opos-kiosk")
+        self.assertNoKeyLeak(code, se, out, "packaging/duo-os/opos-kiosk")
+
+    def test_a_private_key_committed_in_a_ref_is_refused(self):
+        repo = self.new_dir("keyrepo")
+        make_repo(repo)
+        (repo / "src" / "opos" / "release.pub").write_bytes(self.key.read_bytes())
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "oops", GIT_AUTHOR_DATE=COMMIT_DATE, GIT_COMMITTER_DATE=COMMIT_DATE)
+        out = self.new_dir("out")
+        code, so, se = tool("build", "--repo", repo, "--serial", 7, "--version", "1", "--key", self.key, "--allowed-signers", self.signers, "--out", out)
+        self.assertNoKeyLeak(code, se, out, "src/opos/release.pub")
+
+    def test_every_known_kind_of_private_key_is_recognised_and_public_things_are_not(self):
+        for label, data in marker_samples().items():
+            with self.subTest(label):
+                self.assertTrue(rel.private_key_marker(b"x" * 3 + data + b"y"))
+                code, so, se, out, tree = self.build_dir("src/opos/web_static/page.css", b"body{}\n" + data)
+                self.assertNoKeyLeak(code, se, out, "src/opos/web_static/page.css")
+        pub = (self.key.with_name("release.pub")).read_bytes()
+        for fine in (pub, b"-----BEGIN " + b"CERTIFICATE-----\nMIIB\n", b"-----BEGIN PUBLIC " + b"KEY-----\nMIIB\n", b"private key handling\n", b""):
+            self.assertIsNone(rel.private_key_marker(fine), fine[:30])
+
+    def test_the_tool_and_the_repository_scan_know_the_same_markers(self):
+        self.assertEqual({rx.pattern for _, rx in rel.PRIVATE_MARKERS}, {rx.pattern for rx in NoPrivateKeysTest.MARKERS})
+
+    def test_a_public_key_in_the_tree_is_not_a_leak(self):
+        pub = self.key.with_name("release.pub").read_bytes()
+        code, so, se, out, tree = self.build_dir("src/opos/release.pub", pub)
+        self.assertEqual(code, 0, se)
+        bundle = out / "opos-7.opos-update"
+        with tarfile.open(fileobj=io.BytesIO(dict(members(bundle))["payload.tar.gz"])) as tf:
+            self.assertEqual(tf.extractfile("opt/opos/src/opos/release.pub").read(), pub)
+
+    def test_a_key_file_called_pub_must_be_a_public_key(self):
+        """The `.pub` name lifts the 'key is inside the repository' rule; the content has to earn it."""
+        private = self.key.read_bytes()
+        kind, b64 = self.key.with_name("release.pub").read_text().split()[:2]
+        good = ("%s %s\n" % (kind, b64)).encode()
+        samples = {"a private key": private, "empty": b"", "words": b"ssh-ed25519 not-base64!!\n", "no blob": b"ssh-ed25519\n",
+                   "a blob of another type": ("ssh-rsa %s\n" % b64).encode(), "a type nobody has": ("ssh-nope %s\n" % b64).encode(),
+                   "binary": bytes(range(256)), "a good line then junk": good + b"rubbish\n", "a good line then a private key": good + private,
+                   "a truncated blob": ("%s %s\n" % (kind, b64[:20])).encode(), "a huge file": b"# " + b"x" * 20000 + b"\n" + good}
+        for label, data in samples.items():
+            for where in ("outside the tree", "inside the tree"):
+                with self.subTest(label + ", " + where):
+                    key = self.top / "keys" / "decoy.pub" if where == "outside the tree" else "tree"
+                    if key != "tree":
+                        key.write_bytes(data)
+                    code, so, se, out, tree = self.build_dir("src/opos/release.pub", data, key=key)
+                    self.assertEqual(code, 1, so)
+                    self.assertIn("is not an OpenSSH public key", se)
+                    self.assertIn("release.pub" if key == "tree" else "decoy.pub", se, "the refusal names the file")
+                    self.assertEqual(list(out.iterdir()), [])
+                    for line in private.decode().strip().splitlines()[1:-1]:
+                        self.assertNotIn(line, so + se)
+
+    def test_verify_refuses_a_bundle_that_carries_a_private_key(self):
+        """The second line: whoever built the bundle, and whatever it is called inside, `verify` (and the build's own check) say no."""
+        private = self.key.read_bytes()
+        for name in ("opt/opos/src/opos/release.pub", "opt/opos/src/opos/notes.txt"):
+            with self.subTest(name):
+                files = dict(BASE_FILES, **{name: (private, 0o644)})
+                bundle = self.signed(files=files)
+                self.assertRefused(bundle, name + " contains a PEM or OpenSSH private key")
+        files = dict(BASE_FILES)
+        files["opt/opos/src/opos/straddle.bin"] = (b"x" * ((1 << 20) - 9) + marker_samples()["openssh"], 0o644)
+        self.assertRefused(self.signed(files=files), "opt/opos/src/opos/straddle.bin contains")
+        self.assertOk(self.signed(files=dict(BASE_FILES, **{"opt/opos/src/opos/release.pub": (self.key.with_name("release.pub").read_bytes(), 0o644)})))
+
+
 class KeygenHelpTest(ReleaseCase):
     def test_help_text(self):
         code, so, se = tool("keygen-help")
@@ -827,6 +941,86 @@ class KeygenHelpTest(ReleaseCase):
         for private_line in self.key.read_text().strip().splitlines()[1:-1]:
             self.assertNotIn(private_line, so + se)
         self.assertEqual(tool("keygen-help", "--pub", self.top / "absent")[0], 1)
+
+    def test_a_file_that_only_looks_like_a_public_key_gets_no_line(self):
+        """Review finding 1: two words and a known prefix were enough before; now the blob has to be a key of that type."""
+        kind, b64 = self.key.with_name("release.pub").read_text().split()[:2]
+        for label, text in (("not base64", "ssh-ed25519 not-base64!!\n"), ("two words", "hello world\n"), ("other type", "ssh-rsa %s\n" % b64),
+                            ("a good line then a banner", "ssh-ed25519 %s\n-----BEGIN %s PRIVATE %s-----\n" % (b64, "OPENSSH", "KEY"))):
+            with self.subTest(label):
+                f = self.top / "keys" / "lookalike.pub"
+                f.write_text(text)
+                code, so, se = tool("keygen-help", "--pub", f)
+                self.assertEqual(code, 1, so)
+                self.assertIn("not an OpenSSH public key", se)
+                self.assertNotIn("allowed_signers line for", so)
+
+
+class AccentedCommentTest(ReleaseCase):
+    """A public key whose comment is not ASCII is a public key: ssh-keygen -C with an accented name makes one, and so does the
+    default comment (user@host) of a person whose user or host name has an accent. The type and the base64 blob stay strict."""
+    COMMENT = "jos\u00e9@laptop \u00dcber-host"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.accent = keygen(cls.top / "keys" / "accent", cls.COMMENT)
+        cls.accent_pub = cls.accent.with_name("accent.pub")
+        assert cls.COMMENT.encode("utf-8") in cls.accent_pub.read_bytes(), "ssh-keygen kept the comment as UTF-8"
+        cls.accent_signers = cls.top / "accent_signers"
+        cls.accent_signers.write_text(cls.line(cls.accent_pub))
+
+    @staticmethod
+    def line(pub):
+        kind, blob = pub.read_bytes().decode("utf-8").split()[:2]
+        return "opos-release %s %s\n" % (kind, blob)
+
+    def test_keygen_help_prints_the_line_for_it(self):
+        code, so, se = tool("keygen-help", "--pub", self.accent_pub)
+        self.assertEqual(code, 0, se)
+        self.assertEqual(so.rstrip().splitlines()[-1], self.line(self.accent_pub).strip(), "the line carries the type and the blob, not the comment")
+
+    def test_a_build_checks_itself_against_an_allowed_signers_file_made_from_it(self):
+        code, so, se = tool("keygen-help", "--pub", self.accent_pub)
+        self.assertEqual(code, 0, se)
+        signers = self.top / "accent_made_signers"
+        signers.write_text(so.rstrip().splitlines()[-1] + "\n")
+        code, so, se, bundle = self.build(key=self.accent, extra=["--allowed-signers", signers])
+        self.assertEqual(code, 0, se)
+        self.assertEqual(self.verify_cmd(bundle, signers=signers)[0], 0)
+        self.assertNotEqual(self.verify_cmd(bundle)[0], 0, "the release key's file does not take a bundle signed by this one")
+        # the whole .pub line as `cat release.pub >> allowed_signers` leaves it, comment and all
+        full = self.top / "accent_full_signers"
+        full.write_bytes(b"opos-release " + self.accent_pub.read_bytes())
+        code, so, se, bundle = self.build(key=self.accent, extra=["--allowed-signers", full])
+        self.assertEqual(code, 0, se)
+
+    def test_the_default_check_after_signing_finds_the_public_key_beside_the_key(self):
+        code, so, se, bundle = self.build(key=self.accent)
+        self.assertEqual(code, 0, se)
+        self.assertNotIn("not checked after signing", se, "the .pub beside the key was read, not skipped")
+        self.assertEqual(self.verify_cmd(bundle, signers=self.accent_signers)[0], 0)
+
+    def test_only_the_comment_may_be_more_than_ascii(self):
+        kind, b64 = self.accent_pub.read_bytes().decode("utf-8").split()[:2]
+        refused = {"a comment that is not UTF-8": ("%s %s jos" % (kind, b64)).encode() + b"\xe9@laptop\n",
+                   "a type with an accent": ("%s\u00e9 %s\n" % (kind, b64)).encode(),
+                   "a blob with an accent": ("%s %s\u00e9 comment\n" % (kind, b64)).encode(),
+                   "a no-break space between the fields": ("%s\u00a0%s comment\n" % (kind, b64)).encode(),
+                   "a good line then an accented junk line": ("%s %s\n\u00e9crou\n" % (kind, b64)).encode()}
+        for label, data in refused.items():
+            with self.subTest(label):
+                f = self.top / "keys" / "odd.pub"
+                f.write_bytes(data)
+                code, so, se = tool("keygen-help", "--pub", f)
+                self.assertEqual(code, 1, so)
+                self.assertIn("not an OpenSSH public key", se)
+                self.assertNotIn("allowed_signers line for", so)
+        f = self.top / "keys" / "two.pub"
+        f.write_bytes(self.accent_pub.read_bytes() + self.key.with_name("release.pub").read_bytes())
+        code, so, se = tool("keygen-help", "--pub", f)
+        self.assertEqual(code, 0, se)
+        self.assertEqual(so.rstrip().splitlines()[-1], self.line(self.accent_pub).strip(), "the first key is the one that is printed")
 
 
 class ToolHygieneTest(unittest.TestCase):
@@ -965,7 +1159,7 @@ class PushScriptTextTest(unittest.TestCase):
         self.assertIn("[int]$TimeoutS = 300", self.text)
 
     def test_input_checks_and_ssh_options(self):
-        for needle in ("^opos-[0-9]{1,9}\\.opos-update$", "^[a-z_][a-z0-9_-]{0,31}$", "268435456", "BatchMode=yes", "IdentitiesOnly=yes",
+        for needle in ("^opos-[0-9]{1,10}\\.opos-update$", "^[a-z_][a-z0-9_-]{0,31}$", "268435456", "BatchMode=yes", "IdentitiesOnly=yes",
                        "StrictHostKeyChecking=accept-new", "ConnectTimeout=10", '"-i", $Key'):
             self.assertIn(needle, self.text)
         self.assertNotIn("StrictHostKeyChecking=no", self.text)
@@ -979,9 +1173,20 @@ class PushScriptTextTest(unittest.TestCase):
             self.assertNotRegex(self.text, pattern)
         self.assertEqual(re.findall(r"fe80\S*", self.text), ["fe80::1%8,"], "the one address is the documentation example in the header")
 
-    def test_the_bundle_and_the_key_are_never_read(self):
+    def test_the_key_is_never_read_and_the_bundle_only_for_its_serial(self):
         self.assertNotRegex(self.text, r"Get-Content[^\n]*\$(Key|Bundle)")
         self.assertNotRegex(self.text, r"ReadAll|\[IO\.File\]::Read")
+        self.assertEqual(re.findall(r"\$Key\b", self.text), ["$Key"] * 3, "the key is tested for existence and handed to ssh with -i, nothing else")
+        self.assertEqual(self.text.count("[IO.File]::OpenRead"), 1, "one reader, and it stops after the manifest")
+        self.assertIn("-gt 8388608", self.text, "the manifest is read only up to the updater's own limit")
+
+    def test_only_a_status_that_is_matched_to_the_bundle_can_end_the_wait(self):
+        """Review finding 12, structure only; what it does is in PushScriptRunTest."""
+        loop = self.text.split("while ((Get-Date) -lt $deadline)", 1)[1].split("if ($null -eq $final)", 1)[0]
+        self.assertEqual(loop.count("$final ="), 1)
+        self.assertIn('if ($ours -and $settled -contains $phase) { $final = $st; break }', loop)
+        self.assertIn('"$($st.serial)" -eq "$serial"', loop)
+        self.assertIn('"checking $($file.Name)"', loop)
 
 
 def powershells(native_only=False):
@@ -1046,7 +1251,8 @@ sys.stderr.write("unexpected remote command: " + remote + "\\n")
 sys.exit(99)
 '''
 
-    def stubbed(self, exe, cat, args=(), name="opos-8.opos-update", scp_rc=0, timeout="30", units="active active"):
+    def stubbed(self, exe, cat, args=(), name="opos-8.opos-update", scp_rc=0, timeout="30", units="active active", content=None):
+        """Run the script against the stand-in ssh and scp. `content`: the bundle's bytes (default: a tar whose manifest says the serial in `name`)."""
         with tempfile.TemporaryDirectory() as td:
             top = Path(td)
             (top / "bin").mkdir()
@@ -1060,7 +1266,8 @@ sys.exit(99)
                     f.write_text('#!/bin/sh\nexec "%s" "%s" %s "$@"\n' % (sys.executable, top / "stub.py", tool_name))
                     f.chmod(f.stat().st_mode | stat.S_IXUSR)
             bundle, key = top / name, top / "login-key"
-            bundle.write_bytes(b"not a real bundle\n")
+            digits = re.search(r"\d+", name)
+            bundle.write_bytes(self.bundle_bytes(int(digits.group()) if digits else 0) if content is None else content)
             key.write_text("not a key\n")
             env = dict(os.environ, STUB_DIR=str(top), STUB_SCP_RC=str(scp_rc), STUB_UNITS=units, PATH=str(top / "bin") + os.pathsep + os.environ["PATH"])
             cmd = [exe, "-NoProfile", "-NonInteractive", "-File", str(PUSH), "-Bundle", str(bundle), "-Host", "fe80::1%8", "-Key", str(key),
@@ -1068,6 +1275,11 @@ sys.exit(99)
             proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=240)
             log = top / "calls.log"
             return proc, ([json.loads(line) for line in log.read_text().splitlines()] if log.exists() else [])
+
+    @staticmethod
+    def bundle_bytes(serial):
+        """A tar in the release tool's layout whose manifest says `serial`. Not signed: the push script never looks at that."""
+        return make_tar([info("manifest.json", as_json({"format": 1, "serial": serial})), info("manifest.json.sig", b"sig"), info("payload.tar.gz", b"x")])
 
     def native(self):
         shells = powershells(native_only=os.name != "nt")
@@ -1079,27 +1291,41 @@ sys.exit(99)
     def status(phase, time, serial=8, message=""):
         return json.dumps({"phase": phase, "message": message or phase, "serial": serial, "time": time})
 
+    # What the updater really writes (packaging/duo-os/updater/opos-updater, Updater.status): "verifying" has no serial yet and names
+    # the inbox file; so does a refusal before the manifest is read. Everything after the manifest carries the bundle's serial.
+    @classmethod
+    def verifying(cls, time, name="opos-8.opos-update"):
+        return cls.status("verifying", time, None, "checking " + name)
+
+    @classmethod
+    def refused(cls, time, why="signature check failed: Could not verify signature."):
+        return cls.status("failed", time, None, "rejected: " + why)
+
     def test_done(self):
         for exe in self.native():
             with self.subTest(exe):
-                proc, calls = self.stubbed(exe, [self.status("idle", "t0", 7), self.status("verifying", "t1"), self.status("applying", "t2"),
+                # the first read (is the phone there?), the read just before the hand-over, then one read per poll
+                proc, calls = self.stubbed(exe, [self.status("idle", "t0", 7), self.status("idle", "t0", 7), self.verifying("t1"), self.status("applying", "t2"),
                                                  self.status("checking", "t3"), self.status("done", "t4", message="ok")])
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertIn("result: phase=done serial=8 message=ok", proc.stdout)
+                self.assertIn("verifying: checking opos-8.opos-update", proc.stdout)
                 self.assertNotIn("idle", proc.stdout, "the status from before the push is not reported as progress")
-                self.assertEqual([c[0] for c in calls[:3]], ["ssh", "scp", "ssh"])
+                self.assertNotIn("not this update", proc.stdout)
+                self.assertEqual([c[0] for c in calls[:4]], ["ssh", "scp", "ssh", "ssh"])
                 self.assertEqual(calls[0][-2:], ["droidian@fe80::1%8", "cat /var/lib/opos-update/status.json"])
                 self.assertEqual(calls[1][-1], "droidian@[fe80::1%8]:/var/lib/opos-update/inbox/opos-8.opos-update.partial")
                 self.assertTrue(calls[1][-2].endswith("opos-8.opos-update"))
                 self.assertIn("-q", calls[1])
-                self.assertEqual(calls[2][-1], "mv /var/lib/opos-update/inbox/opos-8.opos-update.partial /var/lib/opos-update/inbox/opos-8.opos-update")
+                self.assertEqual(calls[2][-1], "cat /var/lib/opos-update/status.json", "the baseline is read after the copy, just before the rename")
+                self.assertEqual(calls[3][-1], "mv /var/lib/opos-update/inbox/opos-8.opos-update.partial /var/lib/opos-update/inbox/opos-8.opos-update")
                 for c in calls:
                     if c[0] == "ssh":
                         self.assertTrue(c[-1].startswith(("cat ", "mv ")), c)
                         self.assertIn("BatchMode=yes", c)
                         self.assertIn("-i", c)
-                self.assertEqual(len(calls), 3 + 4)
-                self.assertTrue(all(c[0] == "ssh" and c[-1].startswith("cat ") for c in calls[3:]))
+                self.assertEqual(len(calls), 4 + 4)
+                self.assertTrue(all(c[0] == "ssh" and c[-1].startswith("cat ") for c in calls[4:]))
 
     def test_an_earlier_done_is_not_mistaken_for_this_update(self):
         old, exe = self.status("done", "old", 7), self.native()[0]
@@ -1109,6 +1335,107 @@ sys.exit(99)
         proc, calls = self.stubbed(exe, [old], timeout="3")
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("no settled status within 3 s", proc.stderr)
+
+    def test_another_updates_end_between_two_polls_is_not_this_updates_end(self):
+        """Review finding 12. Serial 7 is applying when serial 8 is handed over; a poll then sees 7 change to a terminal state. The old script
+        took any changed terminal status for its own and exited 0 here, with serial 8 not yet verified, let alone installed."""
+        busy = self.status("applying", "a0", 7)
+        cases = ((self.status("done", "a1", 7, "update 7 is installed and healthy"), "done"),
+                 (self.status("rolled-back", "a1", 7, "update 7 failed its health check"), "rolled-back"),
+                 (self.status("failed", "a1", 7, "rejected: serial 7 is not newer"), "failed"))
+        for exe in self.native():
+            for theirs, label in cases[:1] if exe != self.native()[0] else cases:  # every shell sees the case of the review; the first sees all
+                with self.subTest("%s, then this one succeeds (%s)" % (label, os.path.basename(exe))):
+                    proc, calls = self.stubbed(exe, [busy, busy, theirs, self.verifying("a2"), self.status("applying", "a3"), self.status("done", "a4", message="ok")])
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertIn("result: phase=done serial=8 message=ok", proc.stdout)
+                    self.assertIn("(not this update, serial 7) " + label, proc.stdout, "the other update's end is shown, and marked as not this one")
+                    self.assertEqual(len([c for c in calls if c[-1].startswith("cat ")]), 2 + 4, "it kept waiting past the other update's end")
+        exe = self.native()[0]
+        with self.subTest("then this one fails"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.status("done", "a1", 7), self.status("applying", "a3"), self.status("rolled-back", "a4", message="health")])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("result: phase=rolled-back serial=8 message=health", proc.stdout)
+        with self.subTest("then nothing more is heard"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.status("done", "a1", 7, "update 7 is installed and healthy")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("no settled status within 3 s for serial 8", proc.stderr)
+            self.assertIn("does not name serial 8", proc.stderr)
+            self.assertIn("update 7 is installed and healthy", proc.stderr, "what the updater said last is quoted, so the owner can see why")
+            self.assertNotIn("result:", proc.stdout)
+
+    def test_a_status_for_this_serial_that_was_already_there_is_not_this_push(self):
+        """The same serial pushed again (it failed before): its old failure is the baseline, not the answer."""
+        exe = self.native()[0]
+        old = self.status("failed", "old", 8, "rejected: serial 8 failed on this phone before")
+        proc, calls = self.stubbed(exe, [old, old, old, old], timeout="3")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        proc, calls = self.stubbed(exe, [old, old, old, self.status("failed", "new", 8, "rejected: serial 8 is not newer than the running serial 8")])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("not newer", proc.stdout)
+
+    def test_a_refusal_before_the_manifest_has_no_serial_and_is_attributed_with_care(self):
+        """A bad signature is refused before the serial is known. The script takes it for this bundle's only when the updater was idle at the
+        hand-over, or was seen verifying this file; otherwise another bundle's refusal could be taken for this one."""
+        exe = self.native()[0]
+        idle, busy = self.status("done", "i0", 7), self.status("verifying", "b0", None, "checking opos-7.opos-update")
+        with self.subTest("idle at the hand-over: the refusal is this bundle's, even if the verifying status was missed between two polls"):
+            proc, calls = self.stubbed(exe, [idle, idle, self.refused("r1")])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("result: phase=failed serial= message=rejected: signature check failed", proc.stdout)
+        with self.subTest("busy at the hand-over: a refusal with no serial is somebody else's until this file is seen verifying"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.refused("r1", "bad signature of the other bundle")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("(not this update, serial ) failed: rejected: bad signature of the other bundle", proc.stdout)
+            self.assertIn("rejected: bad signature of the other bundle", proc.stderr)
+        with self.subTest("idle at the first read, busy by the hand-over (the copy took a while): the baseline is the later read"):
+            # (a working phase with no serial and no file name: nothing a poll could use to tell, so only the baseline can)
+            working = self.status("applying", "w0", None, "working")
+            proc, calls = self.stubbed(exe, [idle, working, self.refused("r1", "the other one")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertEqual([c[0] for c in calls[:4]], ["ssh", "scp", "ssh", "ssh"], "read, copy, read again, rename")
+        with self.subTest("busy at the hand-over, then this file is seen verifying, then refused"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.status("done", "b1", 7), self.verifying("v1"), self.refused("r1")])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("result: phase=failed serial= message=rejected: signature check failed", proc.stdout)
+        with self.subTest("idle, but the updater is then seen on another file: a later refusal is not this one's"):
+            other = self.verifying("v1", "opos-9.opos-update")
+            proc, calls = self.stubbed(exe, [idle, idle, other, self.refused("r1", "the other one")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        with self.subTest("idle, but another serial is then seen working: a later refusal is not this one's"):
+            proc, calls = self.stubbed(exe, [idle, idle, self.status("applying", "o1", 7), self.refused("r1", "the other one")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertNotIn("result:", proc.stdout)
+        with self.subTest("a status with no serial is never a success"):
+            proc, calls = self.stubbed(exe, [idle, idle, self.status("done", "d1", None, "something")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+
+    def test_the_serial_comes_from_the_manifest_and_must_agree_with_the_name(self):
+        exe = self.native()[0]
+        for label, name, content in (("name and manifest disagree", "opos-8.opos-update", self.bundle_bytes(9)),
+                                     ("not a tar", "opos-8.opos-update", b"not a real bundle\n"),
+                                     ("manifest is not first", "opos-8.opos-update", make_tar([info("payload.tar.gz", b"x"), info("manifest.json", as_json({"serial": 8}))])),
+                                     ("no serial", "opos-8.opos-update", make_tar([info("manifest.json", as_json({"format": 1}))])),
+                                     ("empty manifest", "opos-8.opos-update", make_tar([info("manifest.json", b"")])),
+                                     ("manifest cut short", "opos-8.opos-update", self.bundle_bytes(8)[:520])):
+            with self.subTest(label):
+                proc, calls = self.stubbed(exe, [2], name=name, content=content)
+                self.assertEqual((proc.returncode, calls), (3, []), proc.stdout + proc.stderr)
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 123456789)], name="opos-123456789.opos-update")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 1000000000)], name="opos-1000000000.opos-update")
+        self.assertEqual(proc.returncode, 0, "ten digits: the release tool and the updater both allow them\n" + proc.stdout + proc.stderr)
+
+    def test_a_bundle_the_release_tool_built_is_read_the_same_way(self):
+        """The tool's own manifest layout (serial in the second place, indent 2), not a test's."""
+        payload = make_payload(BASE_FILES)
+        bundle = rel.make_bundle(as_json(manifest_for(BASE_FILES, payload, {"serial": 12})), b"-----BEGIN SSH SIGNATURE-----\n", payload, EPOCH)
+        exe = self.native()[0]
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 12, "ok")], name="opos-12.opos-update", content=bundle)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("queued as serial 12", proc.stdout)
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 13, "ok")], name="opos-12.opos-update", content=bundle, timeout="3")
+        self.assertEqual(proc.returncode, 2, "a status for another serial does not end it\n" + proc.stdout + proc.stderr)
 
     def test_a_timeout_says_whether_the_update_path_unit_is_running(self):
         """Review finding: a path unit that the start limit had failed left the push waiting 300 s for nothing, with no reason."""
@@ -1125,7 +1452,7 @@ sys.exit(99)
                 asked = [c[-1] for c in calls if c[-1].startswith("systemctl")]
                 self.assertEqual(asked, ["systemctl is-active opos-update.path opos-update.service"])
                 self.assertEqual(calls[-1][-1], asked[0], "asked once, after the last status read")
-        proc, calls = self.stubbed(exe, [old, self.status("applying", "n1"), self.status("done", "n2")])
+        proc, calls = self.stubbed(exe, [old, old, self.status("applying", "n1"), self.status("done", "n2")])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual([c for c in calls if c[-1].startswith("systemctl")], [], "a push that settles never asks")
 
@@ -1133,7 +1460,7 @@ sys.exit(99)
         exe = self.native()[0]
         for phase in ("failed", "rolled-back"):
             with self.subTest(phase):
-                proc, calls = self.stubbed(exe, [2, self.status("applying", "a"), self.status(phase, "b", message="health check failed")])
+                proc, calls = self.stubbed(exe, [2, 2, self.status("applying", "a"), self.status(phase, "b", message="health check failed")])
                 self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
                 self.assertIn("phase=" + phase, proc.stdout)
 

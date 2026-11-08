@@ -10,6 +10,7 @@ verifying run the OpenSSH `ssh-keygen -Y` commands, reading the source tree runs
 
 `verify` is its own implementation of the checks the phone's updater must make; it shares no code with it."""
 import argparse
+import base64
 import calendar
 import contextlib
 import datetime
@@ -55,6 +56,17 @@ HEX40, HEX64 = re.compile(r"[0-9a-f]{40}"), re.compile(r"[0-9a-f]{64}")
 STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z._+-]{0,63}")
 URLPATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*")
+# Private key material is found by what a file holds, never by what it is called (a private key saved as release.pub is still
+# one). The patterns are split so that this file does not match them itself; tests/test_opos_release.py checks the same list.
+PRIVATE_MARKERS = (
+    ("a PEM or OpenSSH private key", re.compile(rb"-----BEGIN [A-Z0-9 ]*PRIVATE " + rb"KEY[A-Z ]*-----")),
+    ("a PGP private key", re.compile(rb"-----BEGIN PGP PRIVATE " + rb"KEY BLOCK-----")),
+    ("a PuTTY private key", re.compile(rb"PuTTY-User-Key-File-\d+:")),
+    ("a PuTTY private key", re.compile(rb"Private-" + rb"Lines:")),
+    ("an OpenSSH private key without its armor", re.compile(rb"b3BlbnNzaC1rZXktdjE" + rb"A")),  # base64 of "openssh-key-v1"
+    ("an SSH2 private key", re.compile(rb"---- BEGIN SSH2 ENCRYPTED PRIVATE " + rb"KEY ----")),
+)
+PUBKEY_TYPE = re.compile(r"(?:sk-)?(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp(?:256|384|521))(?:@openssh\.com)?")
 HERE = Path(__file__).resolve().parent
 
 
@@ -64,6 +76,51 @@ class Refused(Exception):
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def private_key_marker(data):
+    """What kind of private key material the bytes hold (a short label, never the bytes), or None."""
+    for label, rx in PRIVATE_MARKERS:
+        if rx.search(data):
+            return label
+    return None
+
+
+def public_key_fields(data, name):
+    """(type, base64 blob) of the first key in the bytes of an OpenSSH public key file, or Refused naming `name`.
+
+    Every line must be a public key (a type, a base64 blob that starts with that same type, an optional comment); a private
+    key, an empty file or anything else is refused. A file that is exempt from a private-key rule because it is called
+    .pub must pass this first. Only the comment may be more than ASCII (it is UTF-8 text: ssh-keygen -C with an accented name, or the
+    default user@host of a person whose user or host name has one); the type and the blob are ASCII and the fields are split
+    at ASCII white space only."""
+    bad = Refused("%s is not an OpenSSH public key file (never give this tool a private key)" % name)
+    if len(data) > 16384 or private_key_marker(data):  # the marker scan is on the raw bytes, whatever the text encoding
+        raise bad
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise bad
+    lines = [l for l in data.splitlines() if l.strip() and not l.lstrip().startswith(b"#")]  # bytes: ASCII line ends and blanks only
+    first = None
+    for line in lines:
+        fields = line.split(None, 2)  # type, blob, and the comment as one piece
+        try:
+            kind, b64 = fields[0].decode("ascii"), fields[1].decode("ascii")  # a UnicodeDecodeError is a ValueError
+            blob = base64.b64decode(b64, validate=True)
+        except (IndexError, ValueError):
+            raise bad
+        parts, i = [], 0  # the blob is a run of length-prefixed strings: the type name, then the key's numbers
+        while i + 4 <= len(blob) and i + 4 + int.from_bytes(blob[i:i + 4], "big") <= len(blob):
+            n = int.from_bytes(blob[i:i + 4], "big")
+            parts.append(blob[i + 4:i + 4 + n])
+            i += 4 + n
+        if not PUBKEY_TYPE.fullmatch(kind) or i != len(blob) or len(parts) < 2 or parts[0] != kind.encode():
+            raise bad
+        first = first or (kind, b64)
+    if first is None:
+        raise bad
+    return first
 
 
 def classify(path):
@@ -278,11 +335,17 @@ def check_signature(manifest, sig, signers, identity):
     return out
 
 
-def hash_stream(fh):
-    h, n = hashlib.sha256(), 0
+def hash_stream(fh, found=None):
+    """(sha256 hex, length) of a stream. With a list as `found`, the kind of any private key material in it is appended."""
+    h, n, tail = hashlib.sha256(), 0, b""
     while chunk := fh.read(1 << 20):
         h.update(chunk)
         n += len(chunk)
+        if found is not None and not found:
+            why = private_key_marker(tail + chunk)
+            if why:
+                found.append(why)
+            tail = chunk[-256:]  # a marker can straddle two reads
     return h.hexdigest(), n
 
 
@@ -305,9 +368,12 @@ def check_payload(fh, m):
                 total += t.size
                 if total > MAX_UNPACKED:
                     raise Refused("payload unpacks to more than %d bytes" % MAX_UNPACKED)
-                digest, n = hash_stream(tf.extractfile(t))
+                leaks = []
+                digest, n = hash_stream(tf.extractfile(t), leaks)
                 if digest != f["sha256"] or n != f["size"]:
                     raise Refused("%s: content does not match the manifest hash" % t.name)
+                if leaks:
+                    raise Refused("%s contains %s; a bundle is public and must never carry one" % (t.name, leaks[0]))
                 seen.add(t.name)
             rest = tf.fileobj.read(1 << 20)
             if rest.count(0) != len(rest) or len(rest) == 1 << 20:
@@ -473,8 +539,11 @@ def signers_for(a, key):
         yield a.allowed_signers
         return
     pub = key if key.suffix == ".pub" else key.with_name(key.name + ".pub")
-    fields = pub.read_text().split() if pub.is_file() else []
-    if len(fields) < 2 or "PRIVATE" in fields[0]:
+    try:
+        fields = public_key_fields(pub.read_bytes(), pub) if pub.is_file() else None
+    except Refused:
+        fields = None
+    if fields is None:
         print("opos-release: note: no public key beside the signing key; the signature was not checked after signing", file=sys.stderr)
         yield None
         return
@@ -489,6 +558,8 @@ def cmd_build(a):
     key = Path(os.path.abspath(Path(a.key).expanduser()))  # ssh-keygen runs in a scratch directory, so the path must not be relative
     if not key.is_file():
         raise Refused("--key %s: no such file" % key)
+    if key.suffix == ".pub":  # the exemption below is for public keys only, so prove that this one is
+        public_key_fields(key.read_bytes(), key)
     overlays = [parse_overlay(s) for s in a.overlay]
     if len({d for _, d in overlays}) != len(overlays):
         raise Refused("--overlay lists the same destination twice")
@@ -503,6 +574,10 @@ def cmd_build(a):
         stamp = explicit
     if key.suffix != ".pub" and inside(key, root):
         raise Refused("--key %s is inside the repository being built; keep the private key outside it" % key)
+    for rel in sorted(src):  # by content, whatever the file is called and wherever the signing key is
+        why = private_key_marker(src[rel][0])
+        if why:
+            raise Refused("%s contains %s; a bundle is public, so take the key out of the tree (and of its git history) before building" % (rel, why))
     entries = {}
     for rel, (data, exe) in src.items():
         if rel.startswith("packaging/"):
@@ -627,11 +702,8 @@ Details: docs/ota-release-howto.md"""
 def cmd_keygen_help(a):
     print(KEYGEN_HELP % a.identity)
     if a.pub:
-        text = Path(a.pub).read_text()
-        fields = text.split()
-        if "PRIVATE" in text or len(fields) < 2 or not fields[0].startswith(("ssh-ed25519", "sk-ssh-ed25519", "ecdsa-", "ssh-rsa", "sk-ecdsa")):
-            raise Refused("%s is not an OpenSSH public key file (never give this command a private key)" % a.pub)
-        print("\nallowed_signers line for %s:\n\n%s %s %s" % (a.pub, a.identity, fields[0], fields[1]))
+        kind, blob = public_key_fields(Path(a.pub).read_bytes(), a.pub)
+        print("\nallowed_signers line for %s:\n\n%s %s %s" % (a.pub, a.identity, kind, blob))
 
 
 def parser():

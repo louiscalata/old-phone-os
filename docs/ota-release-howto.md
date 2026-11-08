@@ -26,8 +26,13 @@ Use a passphrase. This makes `opos-release-key` (private) and `opos-release-key.
 ssh-agent.
 
 - The private key stays off the repository, off the phone and out of every image, chat and backup that is not yours.
-  `tools/opos-release.py build` refuses a key that sits inside the repository it is building. Keep two offline copies:
-  a lost key means no more updates for any image that trusts it, and a new image is the only fix.
+  `tools/opos-release.py build` refuses a key that sits inside the repository it is building, and a `--key` file called
+  `.pub` that is not an OpenSSH public key (the `.pub` name is what lets a key sit in the repository, so the content has to
+  be one). It also refuses to build when any file it would ship, the app tree and the overlay files you name, holds private
+  key material, whatever the file is called: it looks for PEM, OpenSSH, PGP and PuTTY private-key headers in the bytes, so a
+  private key saved as `src/opos/release.pub` or `notes.txt` stops the build, and the message names the file. `verify`
+  makes the same check on a finished bundle. A key that was ever committed is still in git history; treat it as exposed.
+  Keep two offline copies: a lost key means no more updates for any image that trusts it, and a new image is the only fix.
 - A stolen key is as bad as it sounds: a signed bundle can replace the app, the OPOS scripts and the OPOS systemd units,
   and some of those run as root. Treat the key like a root password for every phone that trusts it.
 - The `allowed_signers` file is what the phone and `verify` check against: one line per trusted key,
@@ -125,11 +130,19 @@ powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Hos
 
 `-Host` is the phone's address on the USB network (an IPv6 link-local address needs its zone, as in the example; see
 [duo-usb-install.md](duo-usb-install.md)), `-Key` the login key (not the release key), `-User` defaults to `droidian`. The
-script copies to `opos-8.opos-update.partial` in `/var/lib/opos-update/inbox`, renames it on the phone so the path unit
-never sees half a file, then reads `/var/lib/opos-update/status.json` every two seconds until the phase is `done`,
-`rolled-back` or `failed`, or `-TimeoutS` (300) runs out. On the phone it runs only `cat` and `mv`; the phone's own updater
-does the verifying and applying, so the script cannot make it accept anything unsigned. Exit codes: 0 done, 1 rolled back or
-failed, 2 timed out waiting, 3 could not deliver.
+script reads the serial from the bundle's manifest (and refuses a bundle whose file name says another), copies to
+`opos-8.opos-update.partial` in `/var/lib/opos-update/inbox`, renames it on the phone so the path unit never sees half a
+file, then reads `/var/lib/opos-update/status.json` every two seconds until the phase is `done`, `rolled-back` or `failed`
+**for that serial**, or `-TimeoutS` (300) runs out. A status for another serial is printed as "not this update" and never ends
+the wait, so if serial 7 is still applying when you push serial 8, 7 finishing is not reported as 8 finishing. On the phone
+it runs only `cat` and `mv`; the phone's own updater does the verifying and applying, so the script cannot make it accept
+anything unsigned. Exit codes: 0 done, 1 rolled back or failed, 2 timed out waiting, 3 could not deliver.
+
+One case cannot be matched by serial: a bundle refused before its manifest is read, a bad signature above all, leaves no
+serial in `status.json`. The script takes that refusal for your bundle's when the updater was idle just before the hand-over
+(the usual case, and the quick answer for a wrong key) or when it saw the updater verifying your file first; if the updater
+was busy with something else, it keeps waiting and, at the timeout, prints what the updater said last. Read `status.json`
+yourself then. (The updater would make this exact by writing the inbox file name or the bundle's sha256 into every status.)
 
 The first connection records the phone's host key (`StrictHostKeyChecking=accept-new`). A freshly built image has a new host
 key, so after re-imaging run `ssh-keygen -R <address>` once.
@@ -164,7 +177,11 @@ reuse) and a new bundle. To go back to the previous release on purpose, create a
 the inbox (over ssh as the login user; this is also what the Update page's button does), or run `opos-updater rollback` as
 root on the phone. The inbox request is honoured once per applied update and does not burn the serial it leaves, so pushing
 that same bundle again undoes it; the root command goes back as often as you ask and does burn the serial. A `boot`-scope update that
-fails two boots in a row rolls itself back. If the phone is unusable, re-image it from the PC with `build-image.sh`; the
+fails two boots in a row rolls itself back. A `boot`-scope update that is staged and has not run yet can be cancelled from the
+Update page ("Cancel staged update", offered even on the first update, when there is nothing to go back to, on an image whose
+updater knows the form; an older image keeps the old rules), or by hand on such an image: write the
+text `cancel-staged` into `rollback.request.partial` in the inbox and rename it to `rollback.request`. That drops the staged update
+and leaves what is installed alone; its serial is not burned, so the same bundle can be delivered again. If the phone is unusable, re-image it from the PC with `build-image.sh`; the
 image starts again from its own baked-in release.
 
 ### A rollback that did not finish

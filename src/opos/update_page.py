@@ -14,6 +14,10 @@ from pathlib import Path
 from opos import secure, update_client
 
 _STATIC = Path(__file__).with_name("web_static")
+_BACK = "Asks the updater to return to the earlier version. The OPOS server restarts."
+_STAGED = "Update {} is staged and installs at the next restart. The button cancels it; what is installed stays as it is."  # {} is its serial
+_CANCEL = "This asks the updater to cancel the staged update."
+_LABELS = {"back": ("Request rollback", "Rollback requested"), "cancel": ("Cancel staged update", "Cancel requested")}
 
 _CSS = """
 html[data-text="s"]{font-size:87.5%}html[data-text="l"]{font-size:125%}html[data-text="xl"]{font-size:150%}
@@ -36,7 +40,7 @@ progress{display:block;width:100%;height:16px;accent-color:var(--jaryo-fg)}
 
 _JS = """
 (function(){
-var ONCE=@@ONCE@@,G=function(i){return document.getElementById(i)},D=document.documentElement,tok='',until=0,timer=null,armed=false,armT=null,last=null,where='u-note',tn=false;
+var ONCE=@@ONCE@@,BACK=@@BACK@@,STAGED=@@STAGED@@,CANCEL=@@CANCEL@@,LAB=@@LABELS@@,G=function(i){return document.getElementById(i)},D=document.documentElement,tok='',until=0,timer=null,armed=false,armT=null,last=null,where='u-note',tn=false;
 try{tok=document.querySelector('meta[name=opos-token]').content}catch(e){}
 try{var t=localStorage.getItem('jaryo_theme');if(t==='light'||t==='dark')D.dataset.theme=t;
 var x=localStorage.getItem('opos_text');if(x==='s'||x==='l'||x==='xl')D.dataset.text=x}catch(e){}
@@ -66,8 +70,8 @@ H('u-prog',!busy);H('u-prog-t',!busy);
 if(busy){var pr=G('u-prog');pr.max=j.total||100;pr.value=j.total?j.bytes:0;if(!j.total)pr.removeAttribute('value');T('u-prog-t',mb(j.bytes)+(j.total?' of '+mb(j.total):''))}
 T('u-job',busy?'':(j.phase==='failed'||j.phase==='done'?j.message:'')+(p.length?' Waiting to be applied: '+p.join(', ')+'.':''));
 T('u-phase',st?st.phase:'none yet');T('u-msg',st?st.message:'No update has run on this phone yet.');H('u-stall',!s.stalled);
-var rq=G('u-rb');rq.disabled=!rb.possible||!!rb.requested;
-if(!armed)T('u-rb',rb.requested?'Rollback requested':'Request rollback');
+var rq=G('u-rb');rq.disabled=!rb.possible||!!rb.requested;T('u-rb-intro',rb.staged==null?BACK:STAGED.replace('{}',String(rb.staged)));
+if(!armed)T('u-rb',LAB[rb.staged==null?'back':'cancel'][rb.requested?1:0]);
 T('u-rb-why',rb.requested?'Waiting for the updater.':rb.possible?'':rb.once?ONCE:'There is no earlier version to go back to.')}
 function N(v){T('u-note','');T('u-rb-note','');T(where,v)}
 function tick(){load().then(function(r){if(r.s===200){if(tn){N('');tn=false}show(r.j);if(!settled(r.j)&&Date.now()<until)again(1000)}
@@ -79,13 +83,20 @@ post(a).then(function(r){if(r.s===200){N('');show(r.j);until=Date.now()+600000;i
 else{N(msg(r));unlock()}},function(){N('OPOS is not responding. Wait a few seconds, reload this page, then try again.');unlock()})}
 G('u-check').onclick=function(){go('update_check','Checking...','u-note')};
 G('u-go').onclick=function(){go('update_download','Starting the download...','u-note')};
-G('u-rb').onclick=function(){if(!armed){armed=true;T('u-rb','Press again to confirm');where='u-rb-note';N('This asks the updater to go back to the earlier version. OPOS restarts its server.');
+G('u-rb').onclick=function(){if(!armed){armed=true;T('u-rb','Press again to confirm');where='u-rb-note';N(last&&last.rollback&&last.rollback.staged!=null?CANCEL:'This asks the updater to go back to the earlier version. OPOS restarts its server.');
 clearTimeout(armT);armT=setTimeout(function(){armed=false;N('');if(last)show(last)},8000);return}
 armed=false;clearTimeout(armT);go('update_rollback','Asking for a rollback...','u-rb-note')};
 G('u-reload').onclick=function(){location.reload()};
 until=Date.now()+600000;tick();
 })();
 """
+
+
+def _js():
+    out = _JS
+    for key, value in (("ONCE", update_client.ONCE_ONLY), ("BACK", _BACK), ("STAGED", _STAGED), ("CANCEL", _CANCEL), ("LABELS", _LABELS)):
+        out = out.replace("@@%s@@" % key, json.dumps(value))
+    return out
 
 
 def _e(v):
@@ -111,11 +122,14 @@ def page(token="", nonce="", snap=None):
     else:
         result = ""
     newer = bool(src.get("configured") and chk and chk.get("newer"))
+    asking, asked = _LABELS["back" if rb.get("staged") is None else "cancel"]
     if rb.get("requested"):
-        rb_label, rb_why = "Rollback requested", "Waiting for the updater."
+        rb_label, rb_why = asked, "Waiting for the updater."
     else:
-        rb_label = "Request rollback"
+        rb_label = asking
         rb_why = "" if rb.get("possible") else update_client.ONCE_ONLY if rb.get("once") else "There is no earlier version to go back to."
+    staged = rb.get("staged")
+    rb_intro = _STAGED.format(_e(staged)) if staged is not None else _BACK
     job_text = _e(job.get("message") if job.get("phase") in ("failed", "done") else "")
     if pend:
         job_text += _e(f" Waiting to be applied: {', '.join(pend)}.")
@@ -145,10 +159,10 @@ def page(token="", nonce="", snap=None):
 <p id="u-msg" role="status" aria-live="polite">{_e(st["message"] if st else "No update has run on this phone yet.")}</p>
 <p id="u-stall" role="alert"{"" if s.get("stalled") else " hidden"}>The updater has not picked up what was delivered for several minutes, so it may not be running. Restart the phone to start it again.</p></section>
 <section aria-labelledby="u-h-rb"><h2 id="u-h-rb">Go back</h2>
-<p>Asks the updater to return to the earlier version. The OPOS server restarts.</p>
+<p id="u-rb-intro">{rb_intro}</p>
 <p><button type="button" id="u-rb"{"" if rb.get("possible") and not rb.get("requested") else " disabled"}>{rb_label}</button></p>
 <p id="u-rb-why">{rb_why}</p><p id="u-rb-note" role="status" aria-live="polite"></p></section>
 </div>
 <noscript><p>The buttons on this page need JavaScript. The facts above are current as of loading.</p></noscript>
-</main><script>{_JS.replace("@@ONCE@@", json.dumps(update_client.ONCE_ONLY))}</script></body></html>"""
+</main><script>{_js()}</script></body></html>"""
     return secure.add_nonce(html, nonce) if nonce else html
