@@ -46,19 +46,10 @@ var s2=E('span'),u=window.oposUI=window.oposUI||{};
 div.appendChild(s1);
 div.appendChild(br);
 div.appendChild(s2);
-if(phone.firstChild){
 phone.insertBefore(div,phone.firstChild);
-}else{
-phone.appendChild(div);
-}
 }
 var heads=phone.querySelectorAll('h1,h2');
-for(var i=0;i<heads.length;i++){
-var h=heads[i];
-if(!h.classList.contains('jaryo-head')){
-h.classList.add('jaryo-head');
-}
-}
+for(var i=0;i<heads.length;i++)heads[i].classList.add('jaryo-head');
 }catch(e){}
 };
 if(document.readyState==='loading'){
