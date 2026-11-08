@@ -17,11 +17,12 @@ class PolishStatic(unittest.TestCase):
         self.assertRegex(out, r'#phone\{width:100%;max-width:none;box-sizing:border-box;padding:16px')
         self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', out)
         # JRY04: the notice is the front-page lede directly under the tiles (margin-top:0, no void). The old grey
-        # card with a yellow bar (phone-a.css) is neutralised by the later jaryo.css rule (docs/jaryo.md 2.3), so
-        # this no longer pins background:#1e1e1e; it checks the override wins by source order.
-        old = out.index('#home-notice{background:#1e1e1e')
-        new = out.index('#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);')
-        self.assertLess(old, new)
+        # card with a yellow bar (phone-a.css) is gone (B-03 of the interface plan); the Jaryo rule (docs/jaryo.md 2.3)
+        # is the only one that sets its colours.
+        self.assertNotIn('#1e1e1e', out)
+        self.assertNotIn('#f2c14e', out)
+        self.assertNotRegex(out, r'#home-notice\{(?:[^}]*;)?(?:background|color):#')
+        self.assertIn('#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);', out)
         self.assertIn('Calls and messages are on.', out)
         self.assertIn('Paused to save power: ', out)
 
@@ -43,7 +44,10 @@ class PolishStatic(unittest.TestCase):
         self.assertIn('#features:empty', out)
         self.assertIn('scrollbar-width:none', out)
         self.assertIn('percent<=15', out)
-        self.assertIn('#sb-batt[data-low="true"]{color:#ff7075;font-weight:700}', out)
+        # The low-battery chip is bold with a double border; its colour is the Jaryo ink (jaryo.css), not #ff7075.
+        self.assertIn('#sb-batt[data-low="true"]{font-weight:700}', out)
+        self.assertRegex(out, r'#sb-batt\[data-low="true"\][^{}]*\{[^}]*color:var\(--jaryo-fg\)')
+        self.assertNotIn('#ff7075', out)
 
 
 CHECK = r"""

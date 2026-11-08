@@ -102,7 +102,9 @@ class TestPageNotice(unittest.TestCase):
         self.assertIn('aria-live="polite"', h)
         self.assertIn("hidden", h)
         self.assertIn("s.notice", h)
-        self.assertIn("font-size: 13px", h.replace("font-size:13px", "font-size: 13px"))
+        # The notice is sized by the Jaryo rule (jaryo.css, in rem so the Text size setting scales it); the old 13px was dead.
+        self.assertRegex(h, r"#notice\b[^{}]*\{[^}]*font-size:[\d.]+rem")
+        self.assertNotIn("font-size:13px", h)
         self.assertIn("text-align: center", h.replace("text-align:center", "text-align: center"))
         self.assertIn("padding: 4px 8px", h.replace("padding:4px 8px", "padding: 4px 8px"))
 

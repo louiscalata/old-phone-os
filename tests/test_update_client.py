@@ -1624,8 +1624,10 @@ class MainPageIsUntouched(Env):
     # 9cf38030... and 29878bcd...; on ota/final (df2a4e0) 6b3d7b7c... and 02bfa2ed.... Re-recorded when ota/final was merged into
     # duo-acceptance (which had removed dead CSS and shortened the same phone-b.js comment): against duo-acceptance 702c4d3 the
     # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
-    MAIN_SHA256 = "fde0645de6f182beb46bc50f4304f3da0ce67a7d434e922b5b942579e9aabf1e"
-    DEMO_SHA256 = "896327bddc61c221dccbe27ad5fc5630535219fbb56ff3a857e5411906528438"
+    # Every change to page() re-records these two, in the same commit (they were re-recorded for the interface plan's dead-rule
+    # removal, B-03, and its sources-as-text change, W2-16). docs/ui-byte-ledger.md says how to measure the page.
+    MAIN_SHA256 = "1e59ad73442937c7b8a4e07aa9d1df86543a92c4b9eb7315270f3b3f30f56a64"
+    DEMO_SHA256 = "cd34e135f9692e3ab7d6f3734c7129b9b05e2f0b986da64072f10287bb9b8e0b"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
