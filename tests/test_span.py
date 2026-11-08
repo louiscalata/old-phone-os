@@ -333,6 +333,8 @@ return {ff:document.documentElement.dataset.ff||null,w:innerWidth,scroll:documen
  display:cs.display,cols:cs.gridTemplateColumns,gap:cs.columnGap,pane:root.getPropertyValue('--pane').trim(),hinge:root.getPropertyValue('--hinge').trim(),
  auto:(document.getElementById('ff-detected')||{}).textContent||''}})()"""
 
+# The browser start-up, DevTools plumbing and canned state are the UXP21 driver's; only its cases are replaced.
+assert "async function run(" in CDP, "tests/test_uxp21_profiles.py's driver changed; update HEAD here"
 HEAD = CDP.split("async function run(", 1)[0]
 MAIN = r"""
 const MEASURE2 = %s;
@@ -358,6 +360,8 @@ async function run(url, w, h, q, after) {
     const {targetId} = await sendTo(null, 'Target.createTarget', {url: 'about:blank'});
     ({sessionId: session} = await sendTo(null, 'Target.attachToTarget', {targetId, flatten: true}));
     await send('Page.enable'); await send('Runtime.enable');
+    // Where things rest, not where they pass: the Jaryo zoom from a tile to its app (240 ms) travels across the hinge.
+    await send('Emulation.setEmulatedMedia', {features: [{name: 'prefers-reduced-motion', value: 'reduce'}]});
     await send('Page.addScriptToEvaluateOnNewDocument', {source: PRE});
     const q = '?lock=0&stub=1';
     for (const app of ['home', 'phone', 'messages', 'helper', 'settings'])
