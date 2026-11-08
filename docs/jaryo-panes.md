@@ -335,15 +335,15 @@ The page, the budget and the hook:
 - The served response gains 137 bytes (two tags with a 22-character nonce), outside `page()`.
 - The new CSS and JS are separate assets, served only with the flag on, as the keyboard's are.
 
-### 6.2 New files (about 16.4 KB, none loaded with the flag off)
+### 6.2 New files (about 17.5 KB, none loaded with the flag off)
 
 | File | Bytes | Role |
 |---|---|---|
-| `src/opos/panes.py` | 5,253 | flag words, `css_text`, `asset`, `tags`, `inject`, `inject_bytes`, `serve` (mirrors `osk.py`) |
-| `src/opos/panes_static/panes.css` | 7,606 | surfaces, roles, placement, chrome, OS pages, native controls (`@MIRROR@` inside the media block) |
+| `src/opos/panes.py` | 5,473 | flag words, `css_text`, `asset`, `tags`, `inject`, `inject_bytes`, `serve` (mirrors `osk.py`) |
+| `src/opos/panes_static/panes.css` | 8,250 | surfaces, roles, placement, chrome, OS pages, native controls (`@MIRROR@` inside the media block) |
 | `src/opos/panes_static/panes-mirror.css` | 1,780 | the Left mirror; omitted by `invert` |
-| `src/opos/panes_static/panes.js` | 1,683 | Hand button, `data-hand`, `data-panes` switch |
-| `tests/test_panes.py`, `tests/panes_dom_test.js` | 11.8 KB, 5.8 KB | section 8 |
+| `src/opos/panes_static/panes.js` | 1,973 | Hand button, `data-hand`, `data-panes` switch |
+| `tests/test_panes.py`, `tests/panes_dom_test.js` | 17.1 KB, 7.2 KB | section 8 |
 
 The files themselves are the reference: `src/opos/panes_static/panes.css` is the style sheet of sections 3, 4 and 5, `panes-mirror.css` the Left mirror of section 4.3 and `panes.js` the Hand button and the two-pane switch of section 4. This file keeps no second copy of them.
 
@@ -425,6 +425,7 @@ All stdlib, run on Linux (WSL) with the usual shim; skip when `node` or a headle
    - Injection: before the first `</head>`, after the page's `<style>`; idempotent; same object when off; bad nonce raises; chained through `osk.inject_bytes` with the keyboard on, off, and `web.osk = None`.
    - Routes (`webclient.Running`): flag off is 404 `{"error": "not found"}` for both files and a byte-identical page; flag on serves both with `no-store`, `nosniff`, correct content type, HEAD empty; `/network` carries the tags; the page minus the tags equals `page()`.
    - `runtime-files.txt` lists the four new files, sorted.
+   - `touch` is not a flag word (alone or in a list); the root takes the right pane's ink in soft and in `pure`; no role rule states `color` on a button (section 3.3); the flag-off sentence of section 0 is pinned in this file, in the `panes.py` docstring and in `opos-server.service`, and the older wordings are pinned out of those and of `docs/duo-os-final.md` and `CHANGELOG.md`.
 2. **`tests/panes_dom_test.js` (node vm, fake DOM)**: default Right and no write; label `Hand: Right`; button right after `#jaryo-theme`; a tap flips to Left, stores `left`, relabels; tap again; reload reads the stored value in the head before the DOM exists (`readyState 'loading'`); garbage in storage is Right; throwing storage does not throw and the tap still flips the page; a `storage` event re-reads; other keys ignored; `data-panes` is `two` for `/` only with `data-ff=foldable` (and follows `data-ff` arriving or leaving), always for the three OS pages, never for other paths; no button without `#jaryo-theme`; one button after repeated `DOMContentLoaded`. 31 assertions pass in the prototype.
 3. **`tests/test_panes_browser.py` with `tests/panes_browser_driver.mjs` (browser geometry)**: serve with `OPOS_PANES=1` and `Span(675,42)`; headless Chromium driven over the DevTools port by node 22+ (the global `WebSocket`; the shared UXP21 driver speaks the pipe, which Windows Chrome and Edge do not), 1392 x 900, `deviceScaleFactor` 1 (CSS px equal at 2); each of lock, home, All apps, phone, messages, helper, settings, shade; each of Right and Left; each of light and dark (`jaryo_theme`). For each:
    - `data-ff="foldable"`, `data-panes="two"`, `data-hand` as set.
@@ -439,6 +440,10 @@ All stdlib, run on Linux (WSL) with the usual shim; skip when `node` or a headle
    - OS pages (`/network`, `/firstrun` at the welcome and time zone steps, `/timezone`): the same checks, plus `main`'s columns are 675 / 42 / 675.
    - Keyboard (with `OPOS_OSK=1`, a touch tap on `#msg`): the left half's keys are `#1a1a1a` on `#f3f0e8` in Right and `#e6e2d9` on `#000` in Left; the right half the reverse.
    - Motion smoke: with `prefers-reduced-motion: no-preference`, open and close Messages, Phone, Helper and Settings from Home: no console error, animations end, focus returns to the tile, positions as in 2.4.
+   - Pressed: every visible control of every state (the main page, the OS pages, the keyboard) is pressed with `:active` forced through the DevTools protocol, in both themes and both hands, and, in the dark run, with a real mouse-down that is also photographed (clicks are stopped before they reach the page). Each label reads at least 15:1 on its fill; every enabled control that is not already on inverts; Home, Close, Unlock, Call and the Network Home link are black on `#e6e2d9`; the picture of a pressed button still has a label in it (the browser restyles a pressed control a frame late, so the driver waits a frame and presses again before it believes "no change").
+   - The root's computed `color` and `caret-color` are the right pane's ink (`#e6e2d9` in Right, `#1a1a1a` in Left).
+   - The Network page's password checkbox, unchecked and checked, at 390 x 844 and 1000 x 700 in both themes (the panes do not paint there) and at 1392 x 900 in both hands: appearance none, 24 px, 2 px ink border, square corners, and in the pixels of the box only the page's two colours (the ink in the border and, checked, in the middle).
+   - The driver waits for the page it loaded, never a fixed time (`tests/panes_wait.mjs`, unit-tested by `tests/panes_wait_test.mjs`); a server that answers three seconds late must not break it.
 4. **Conformance tests for the OS pages** (`tests/test_panes_pages.py`, a new file so that the branches that edit `test_net.py` and `test_firstrun.py` do not conflict): the net page CSS has no colour literal outside the four tokens, no `border-radius` other than 0, no `opacity`, contains `button:disabled::after`, `#msg[data-bad]`, `.note:empty`; its JS has no `style.color`; the `Join` button has class `main`; `LINK` has no `#9ecbff`; the first-run CSS has `::placeholder` and the disabled label rule.
 5. **Existing tests that must keep passing** (run, do not edit): `test_osk` (identity of `inject_bytes` while off), `test_span` (all), `test_uxp30_budget`, `test_uxp22_twopane`, `test_net` (12,000 byte limit, `len(LINK) < 300`), `test_firstrun` (`Pages`), `test_duo_final` and `test_runtime_source_archive` inventories (the digest failure is the known one).
 
@@ -475,21 +480,22 @@ Chromium at output scale 2, the real hinge mask and the native `env(viewport-seg
 
 | Run | Result |
 |---|---|
-| `tests/test_panes.py` | 19 tests: flag words, tokens, no forbidden CSS, the gate on every rule, span rewriting, modes, the injection and its chain through `osk.py`, routes on and off (flag off serves `/` and `/network` byte for byte as `page()` and `net_page.render()` build them), the runtime inventory |
-| `tests/panes_dom_test.js` (run by `test_panes`) | 31 assertions |
-| `tests/test_panes_pages.py` | 12 tests: the OS pages' colours, corners, opacity, disabled, primary, notice and link rules |
-| `tests/test_panes_browser.py` (15 tests, Edge) | 36 main-page and 20 OS-page state, hand and theme combinations: surfaces and hinge pixels `#000000`, 0 text or controls on the hinge, 0 targets under 48 px, minimum contrast at least 15, only the four palette colours, mirror positions, the Hand button (tap, reload, Enter), the one-pane windows unchanged, keyboard halves, motion smoke, 0 console errors |
+| `tests/test_panes.py` | 24 tests (19 first; then `touch` off, the root's ink, no role `color` on a button, two for the flag-off wording): flag words, tokens, no forbidden CSS, the gate on every rule, span rewriting, modes, the injection and its chain through `osk.py`, routes on and off (flag off serves `/` and `/network` byte for byte as `page()` and `net_page.render()` build them), the runtime inventory |
+| `tests/panes_dom_test.js` (run by `test_panes`) | 36 assertions (the Hand button with a throwing store and with a store whose writes fail) |
+| `tests/test_panes_pages.py` | 13 tests: the OS pages' colours, corners, opacity, disabled, primary, notice and link rules, the password checkbox rule |
+| `tests/test_panes_browser.py` (23 tests, Edge: 21 of the pages and 2 of the driver's waiting; about 225 s) | the pressed state of every visible control (forced and a real mouse-down), the root's ink, the password checkbox at three window sizes, and: 36 main-page and 20 OS-page state, hand and theme combinations: surfaces and hinge pixels `#000000`, 0 text or controls on the hinge, 0 targets under 48 px, minimum contrast at least 15, only the four palette colours, mirror positions, the Hand button (tap, reload, Enter), the one-pane windows unchanged, keyboard halves, motion smoke, 0 console errors |
 | Existing, WSL Ubuntu | `test_osk` 29, `test_span` 43 (7 browser tests skipped: no Chromium in WSL), `test_uxp30_budget` (`page()` 100,641 B of 102,400), `test_net` 71, `test_firstrun` 82, `test_firstrun_wiring`, `test_uxp22_twopane`, `test_duo_final`, `test_docs_claims`, `test_duo_os_docs`, `test_duo_os_clock`, `test_selftest`, `test_web_security`, `test_duo_kiosk`, `test_lean_image` and the docs tests pass |
+| After the independent check (2026-11-08) | Six findings fixed (pressed label on Home, Close, Unlock, Call and the Network Home link; the Network checkbox with the panes off; the Hand label with storage blocked; the flag-off wording; the `touch` word and the root colour; the driver's fixed wait). Windows Python 3.13 and headless Edge: `test_panes`, `test_panes_pages`, `test_panes_browser`, 60 tests OK. WSL Ubuntu, Python 3.14.4, a native copy of the branch tip, the Windows node behind a shim: those three modules plus `test_net`, `test_firstrun`, `test_osk`, `test_uxp30_budget`, `test_docs_claims`, `test_docs_script_paths`, 260 tests OK (23 skipped: no Chromium in WSL). With the four source files of the fixes put back as they were, 13 of the new tests fail and the other 47 pass. |
 | Environment failures on `/mnt/c` only | `test_net` `test_actions_are_rate_limited` (wall-clock refill on a saturated VM), `test_firstrun` `Flag.test_the_flag_is_private_and_no_temp_file_is_left` and three `test_duo_kiosk` file-mode checks (drvfs reports 0777); all pass on ext4. `test_runtime_source_archive` fails on the release recipe digest, as it did before this branch |
 
-Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or without the flag, 100,573 B with a span):
+Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or without the flag, 100,573 B with a span; the `/network` and `/panes.*` rows were measured again after the checkbox rule, the root colour and the Hand fix, the rest are as first measured):
 
 | Response | Flag off | `OPOS_PANES=1` | Duo image (`OSK`, `NETWORK`, `FIRSTRUN`, `PANES`, span) |
 |---|---|---|---|
 | `/` | 100,870 (100,833 with a span) | 101,006 (+136, the two tags) | 101,605 |
-| `/network` | 10,648 | 10,784 (+136) | 10,938 |
+| `/network` | 10,906 | 11,042 (+136) | 11,196 |
 | `/firstrun`, `/timezone` (with `OPOS_FIRSTRUN=1`) | 13,765 and 7,840 | +136 each | 14,055 and 8,130 |
-| `/panes.css`, `/panes.js` | 404 | 9,388 and 1,677 | 9,388 and 1,677 |
+| `/panes.css`, `/panes.js` | 404 | 10,032 and 1,967 | 10,032 and 1,967 |
 
 The keyboard adds 154 B to each full page and serves `/osk.js` (30,642 B) and `/osk.css` (2,663 B); the Network link adds 229 B to `/` and the time zone link 253 B, only where those flags are on.
 
