@@ -8,6 +8,7 @@ tests/test_uxr_acceptance.py; skips without it or without node).
 
 import contextlib
 import http.client
+import importlib.util
 import io
 import json
 import os
@@ -23,6 +24,7 @@ from unittest import mock
 from opos import span as spanmod, web
 from opos.span import Span, apply, parse, rewrites, squeeze, variables
 from opos.web import Phone, page
+from tests import test_uxp21_profiles as profiles
 from tests.test_uxp21_profiles import CDP, blocks
 from tests.test_uxp30_budget import PAGE_BUDGET, rules
 from tests.test_uxr_acceptance import find_chrome
@@ -345,8 +347,6 @@ return {ff:document.documentElement.dataset.ff||null,w:innerWidth,scroll:documen
  auto:(document.getElementById('ff-detected')||{}).textContent||''}})()"""
 
 # The browser start-up, DevTools plumbing and canned state are the UXP21 driver's; only its cases are replaced.
-assert "async function run(" in CDP, "tests/test_uxp21_profiles.py's driver changed; update HEAD here"
-HEAD = CDP.split("async function run(", 1)[0]
 MAIN = r"""
 const MEASURE2 = %s;
 const plainUrl = process.argv[5];  // argv: chrome, span page, state file, plain page
@@ -401,13 +401,50 @@ async function run(url, w, h, q, after) {
   process.stdout.write(JSON.stringify(out) + '\n', () => process.exit(0));
 })().catch(e => { process.stderr.write(String(e && e.stack || e) + '\n'); process.exit(2); });
 """ % json.dumps(MEASURE)
-DRIVER = HEAD + MAIN
+
+
+def driver():
+    """The UXP21 driver up to its cases, then this file's.
+
+    Another track may change that driver. Looked up when the browser tests start, not when this file is imported, so
+    the loss costs those six tests (an error naming the cause, whether or not a browser is installed) and not the
+    parse, served-page and wiring tests next to them."""
+    head, sep, _ = CDP.partition("async function run(")
+    if not sep:
+        raise AssertionError("tests/test_uxp21_profiles.py's driver changed: it has no 'async function run(' for "
+                             "tests/test_span.py to replace; update MAIN here to match")
+    return head + MAIN
+
+
+class DriverDrift(unittest.TestCase):
+    def test_a_changed_shared_driver_costs_only_the_browser_tests(self):
+        # The same file loaded again while the UXP21 driver no longer has the part this file replaces: the import must
+        # still work (it used to fail on an assert, taking every test in the module with it).
+        spec = importlib.util.spec_from_file_location("tests.test_span_changed_driver", __file__)
+        copy = importlib.util.module_from_spec(spec)
+        with mock.patch.object(profiles, "CDP", "// rewritten: nothing named run any more"):
+            spec.loader.exec_module(copy)
+        with self.assertRaises(AssertionError) as ctx:
+            copy.Browser.setUpClass()
+        self.assertIn("async function run(", str(ctx.exception))
+        result = unittest.TextTestRunner(stream=io.StringIO()).run(unittest.defaultTestLoader.loadTestsFromTestCase(copy.Parse))
+        self.assertGreater(result.testsRun, 0)
+        self.assertTrue(result.wasSuccessful())
+
+    def test_the_driver_is_the_shared_start_up_then_these_cases(self):
+        script = driver()
+        self.assertTrue(script.endswith(MAIN))
+        head = script[:-len(MAIN)]
+        self.assertTrue(head and CDP.startswith(head))
+        self.assertNotIn("async function run(", head)
+        self.assertEqual(script.count("async function run("), 1)
 
 
 class Browser(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.r = None
+        script = driver()
         chrome = find_chrome()
         if not chrome or not NODE:
             return
@@ -419,7 +456,7 @@ class Browser(unittest.TestCase):
             state = Path(d) / "state.json"
             state.write_text(json.dumps({"hidden": Phone().state(), "visible": Phone(visible=True).state()}, default=str), encoding="utf-8")
             drv = Path(d) / "cdp.js"
-            drv.write_text(DRIVER, encoding="utf-8")
+            drv.write_text(script, encoding="utf-8")
             p = subprocess.run([NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri()],
                                capture_output=True, text=True, timeout=90, env=dict(os.environ, TMPDIR=d))
             if p.returncode:
