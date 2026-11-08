@@ -130,11 +130,19 @@ powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Hos
 
 `-Host` is the phone's address on the USB network (an IPv6 link-local address needs its zone, as in the example; see
 [duo-usb-install.md](duo-usb-install.md)), `-Key` the login key (not the release key), `-User` defaults to `droidian`. The
-script copies to `opos-8.opos-update.partial` in `/var/lib/opos-update/inbox`, renames it on the phone so the path unit
-never sees half a file, then reads `/var/lib/opos-update/status.json` every two seconds until the phase is `done`,
-`rolled-back` or `failed`, or `-TimeoutS` (300) runs out. On the phone it runs only `cat` and `mv`; the phone's own updater
-does the verifying and applying, so the script cannot make it accept anything unsigned. Exit codes: 0 done, 1 rolled back or
-failed, 2 timed out waiting, 3 could not deliver.
+script reads the serial from the bundle's manifest (and refuses a bundle whose file name says another), copies to
+`opos-8.opos-update.partial` in `/var/lib/opos-update/inbox`, renames it on the phone so the path unit never sees half a
+file, then reads `/var/lib/opos-update/status.json` every two seconds until the phase is `done`, `rolled-back` or `failed`
+**for that serial**, or `-TimeoutS` (300) runs out. A status for another serial is printed as "not this update" and never ends
+the wait, so if serial 7 is still applying when you push serial 8, 7 finishing is not reported as 8 finishing. On the phone
+it runs only `cat` and `mv`; the phone's own updater does the verifying and applying, so the script cannot make it accept
+anything unsigned. Exit codes: 0 done, 1 rolled back or failed, 2 timed out waiting, 3 could not deliver.
+
+One case cannot be matched by serial: a bundle refused before its manifest is read, a bad signature above all, leaves no
+serial in `status.json`. The script takes that refusal for your bundle's when the updater was idle just before the hand-over
+(the usual case, and the quick answer for a wrong key) or when it saw the updater verifying your file first; if the updater
+was busy with something else, it keeps waiting and, at the timeout, prints what the updater said last. Read `status.json`
+yourself then. (The updater would make this exact by writing the inbox file name or the bundle's sha256 into every status.)
 
 The first connection records the phone's host key (`StrictHostKeyChecking=accept-new`). A freshly built image has a new host
 key, so after re-imaging run `ssh-keygen -R <address>` once.

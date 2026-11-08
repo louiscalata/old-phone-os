@@ -1092,7 +1092,7 @@ class PushScriptTextTest(unittest.TestCase):
         self.assertIn("[int]$TimeoutS = 300", self.text)
 
     def test_input_checks_and_ssh_options(self):
-        for needle in ("^opos-[0-9]{1,9}\\.opos-update$", "^[a-z_][a-z0-9_-]{0,31}$", "268435456", "BatchMode=yes", "IdentitiesOnly=yes",
+        for needle in ("^opos-[0-9]{1,10}\\.opos-update$", "^[a-z_][a-z0-9_-]{0,31}$", "268435456", "BatchMode=yes", "IdentitiesOnly=yes",
                        "StrictHostKeyChecking=accept-new", "ConnectTimeout=10", '"-i", $Key'):
             self.assertIn(needle, self.text)
         self.assertNotIn("StrictHostKeyChecking=no", self.text)
@@ -1106,9 +1106,20 @@ class PushScriptTextTest(unittest.TestCase):
             self.assertNotRegex(self.text, pattern)
         self.assertEqual(re.findall(r"fe80\S*", self.text), ["fe80::1%8,"], "the one address is the documentation example in the header")
 
-    def test_the_bundle_and_the_key_are_never_read(self):
+    def test_the_key_is_never_read_and_the_bundle_only_for_its_serial(self):
         self.assertNotRegex(self.text, r"Get-Content[^\n]*\$(Key|Bundle)")
         self.assertNotRegex(self.text, r"ReadAll|\[IO\.File\]::Read")
+        self.assertEqual(re.findall(r"\$Key\b", self.text), ["$Key"] * 3, "the key is tested for existence and handed to ssh with -i, nothing else")
+        self.assertEqual(self.text.count("[IO.File]::OpenRead"), 1, "one reader, and it stops after the manifest")
+        self.assertIn("-gt 8388608", self.text, "the manifest is read only up to the updater's own limit")
+
+    def test_only_a_status_that_is_matched_to_the_bundle_can_end_the_wait(self):
+        """Review finding 12, structure only; what it does is in PushScriptRunTest."""
+        loop = self.text.split("while ((Get-Date) -lt $deadline)", 1)[1].split("if ($null -eq $final)", 1)[0]
+        self.assertEqual(loop.count("$final ="), 1)
+        self.assertIn('if ($ours -and $settled -contains $phase) { $final = $st; break }', loop)
+        self.assertIn('"$($st.serial)" -eq "$serial"', loop)
+        self.assertIn('"checking $($file.Name)"', loop)
 
 
 def powershells(native_only=False):
@@ -1173,7 +1184,8 @@ sys.stderr.write("unexpected remote command: " + remote + "\\n")
 sys.exit(99)
 '''
 
-    def stubbed(self, exe, cat, args=(), name="opos-8.opos-update", scp_rc=0, timeout="30", units="active active"):
+    def stubbed(self, exe, cat, args=(), name="opos-8.opos-update", scp_rc=0, timeout="30", units="active active", content=None):
+        """Run the script against the stand-in ssh and scp. `content`: the bundle's bytes (default: a tar whose manifest says the serial in `name`)."""
         with tempfile.TemporaryDirectory() as td:
             top = Path(td)
             (top / "bin").mkdir()
@@ -1187,7 +1199,8 @@ sys.exit(99)
                     f.write_text('#!/bin/sh\nexec "%s" "%s" %s "$@"\n' % (sys.executable, top / "stub.py", tool_name))
                     f.chmod(f.stat().st_mode | stat.S_IXUSR)
             bundle, key = top / name, top / "login-key"
-            bundle.write_bytes(b"not a real bundle\n")
+            digits = re.search(r"\d+", name)
+            bundle.write_bytes(self.bundle_bytes(int(digits.group()) if digits else 0) if content is None else content)
             key.write_text("not a key\n")
             env = dict(os.environ, STUB_DIR=str(top), STUB_SCP_RC=str(scp_rc), STUB_UNITS=units, PATH=str(top / "bin") + os.pathsep + os.environ["PATH"])
             cmd = [exe, "-NoProfile", "-NonInteractive", "-File", str(PUSH), "-Bundle", str(bundle), "-Host", "fe80::1%8", "-Key", str(key),
@@ -1195,6 +1208,11 @@ sys.exit(99)
             proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=240)
             log = top / "calls.log"
             return proc, ([json.loads(line) for line in log.read_text().splitlines()] if log.exists() else [])
+
+    @staticmethod
+    def bundle_bytes(serial):
+        """A tar in the release tool's layout whose manifest says `serial`. Not signed: the push script never looks at that."""
+        return make_tar([info("manifest.json", as_json({"format": 1, "serial": serial})), info("manifest.json.sig", b"sig"), info("payload.tar.gz", b"x")])
 
     def native(self):
         shells = powershells(native_only=os.name != "nt")
@@ -1206,27 +1224,41 @@ sys.exit(99)
     def status(phase, time, serial=8, message=""):
         return json.dumps({"phase": phase, "message": message or phase, "serial": serial, "time": time})
 
+    # What the updater really writes (packaging/duo-os/updater/opos-updater, Updater.status): "verifying" has no serial yet and names
+    # the inbox file; so does a refusal before the manifest is read. Everything after the manifest carries the bundle's serial.
+    @classmethod
+    def verifying(cls, time, name="opos-8.opos-update"):
+        return cls.status("verifying", time, None, "checking " + name)
+
+    @classmethod
+    def refused(cls, time, why="signature check failed: Could not verify signature."):
+        return cls.status("failed", time, None, "rejected: " + why)
+
     def test_done(self):
         for exe in self.native():
             with self.subTest(exe):
-                proc, calls = self.stubbed(exe, [self.status("idle", "t0", 7), self.status("verifying", "t1"), self.status("applying", "t2"),
+                # the first read (is the phone there?), the read just before the hand-over, then one read per poll
+                proc, calls = self.stubbed(exe, [self.status("idle", "t0", 7), self.status("idle", "t0", 7), self.verifying("t1"), self.status("applying", "t2"),
                                                  self.status("checking", "t3"), self.status("done", "t4", message="ok")])
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertIn("result: phase=done serial=8 message=ok", proc.stdout)
+                self.assertIn("verifying: checking opos-8.opos-update", proc.stdout)
                 self.assertNotIn("idle", proc.stdout, "the status from before the push is not reported as progress")
-                self.assertEqual([c[0] for c in calls[:3]], ["ssh", "scp", "ssh"])
+                self.assertNotIn("not this update", proc.stdout)
+                self.assertEqual([c[0] for c in calls[:4]], ["ssh", "scp", "ssh", "ssh"])
                 self.assertEqual(calls[0][-2:], ["droidian@fe80::1%8", "cat /var/lib/opos-update/status.json"])
                 self.assertEqual(calls[1][-1], "droidian@[fe80::1%8]:/var/lib/opos-update/inbox/opos-8.opos-update.partial")
                 self.assertTrue(calls[1][-2].endswith("opos-8.opos-update"))
                 self.assertIn("-q", calls[1])
-                self.assertEqual(calls[2][-1], "mv /var/lib/opos-update/inbox/opos-8.opos-update.partial /var/lib/opos-update/inbox/opos-8.opos-update")
+                self.assertEqual(calls[2][-1], "cat /var/lib/opos-update/status.json", "the baseline is read after the copy, just before the rename")
+                self.assertEqual(calls[3][-1], "mv /var/lib/opos-update/inbox/opos-8.opos-update.partial /var/lib/opos-update/inbox/opos-8.opos-update")
                 for c in calls:
                     if c[0] == "ssh":
                         self.assertTrue(c[-1].startswith(("cat ", "mv ")), c)
                         self.assertIn("BatchMode=yes", c)
                         self.assertIn("-i", c)
-                self.assertEqual(len(calls), 3 + 4)
-                self.assertTrue(all(c[0] == "ssh" and c[-1].startswith("cat ") for c in calls[3:]))
+                self.assertEqual(len(calls), 4 + 4)
+                self.assertTrue(all(c[0] == "ssh" and c[-1].startswith("cat ") for c in calls[4:]))
 
     def test_an_earlier_done_is_not_mistaken_for_this_update(self):
         old, exe = self.status("done", "old", 7), self.native()[0]
@@ -1236,6 +1268,107 @@ sys.exit(99)
         proc, calls = self.stubbed(exe, [old], timeout="3")
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("no settled status within 3 s", proc.stderr)
+
+    def test_another_updates_end_between_two_polls_is_not_this_updates_end(self):
+        """Review finding 12. Serial 7 is applying when serial 8 is handed over; a poll then sees 7 change to a terminal state. The old script
+        took any changed terminal status for its own and exited 0 here, with serial 8 not yet verified, let alone installed."""
+        busy = self.status("applying", "a0", 7)
+        cases = ((self.status("done", "a1", 7, "update 7 is installed and healthy"), "done"),
+                 (self.status("rolled-back", "a1", 7, "update 7 failed its health check"), "rolled-back"),
+                 (self.status("failed", "a1", 7, "rejected: serial 7 is not newer"), "failed"))
+        for exe in self.native():
+            for theirs, label in cases[:1] if exe != self.native()[0] else cases:  # every shell sees the case of the review; the first sees all
+                with self.subTest("%s, then this one succeeds (%s)" % (label, os.path.basename(exe))):
+                    proc, calls = self.stubbed(exe, [busy, busy, theirs, self.verifying("a2"), self.status("applying", "a3"), self.status("done", "a4", message="ok")])
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertIn("result: phase=done serial=8 message=ok", proc.stdout)
+                    self.assertIn("(not this update, serial 7) " + label, proc.stdout, "the other update's end is shown, and marked as not this one")
+                    self.assertEqual(len([c for c in calls if c[-1].startswith("cat ")]), 2 + 4, "it kept waiting past the other update's end")
+        exe = self.native()[0]
+        with self.subTest("then this one fails"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.status("done", "a1", 7), self.status("applying", "a3"), self.status("rolled-back", "a4", message="health")])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("result: phase=rolled-back serial=8 message=health", proc.stdout)
+        with self.subTest("then nothing more is heard"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.status("done", "a1", 7, "update 7 is installed and healthy")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("no settled status within 3 s for serial 8", proc.stderr)
+            self.assertIn("does not name serial 8", proc.stderr)
+            self.assertIn("update 7 is installed and healthy", proc.stderr, "what the updater said last is quoted, so the owner can see why")
+            self.assertNotIn("result:", proc.stdout)
+
+    def test_a_status_for_this_serial_that_was_already_there_is_not_this_push(self):
+        """The same serial pushed again (it failed before): its old failure is the baseline, not the answer."""
+        exe = self.native()[0]
+        old = self.status("failed", "old", 8, "rejected: serial 8 failed on this phone before")
+        proc, calls = self.stubbed(exe, [old, old, old, old], timeout="3")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        proc, calls = self.stubbed(exe, [old, old, old, self.status("failed", "new", 8, "rejected: serial 8 is not newer than the running serial 8")])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("not newer", proc.stdout)
+
+    def test_a_refusal_before_the_manifest_has_no_serial_and_is_attributed_with_care(self):
+        """A bad signature is refused before the serial is known. The script takes it for this bundle's only when the updater was idle at the
+        hand-over, or was seen verifying this file; otherwise another bundle's refusal could be taken for this one."""
+        exe = self.native()[0]
+        idle, busy = self.status("done", "i0", 7), self.status("verifying", "b0", None, "checking opos-7.opos-update")
+        with self.subTest("idle at the hand-over: the refusal is this bundle's, even if the verifying status was missed between two polls"):
+            proc, calls = self.stubbed(exe, [idle, idle, self.refused("r1")])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("result: phase=failed serial= message=rejected: signature check failed", proc.stdout)
+        with self.subTest("busy at the hand-over: a refusal with no serial is somebody else's until this file is seen verifying"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.refused("r1", "bad signature of the other bundle")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("(not this update, serial ) failed: rejected: bad signature of the other bundle", proc.stdout)
+            self.assertIn("rejected: bad signature of the other bundle", proc.stderr)
+        with self.subTest("idle at the first read, busy by the hand-over (the copy took a while): the baseline is the later read"):
+            # (a working phase with no serial and no file name: nothing a poll could use to tell, so only the baseline can)
+            working = self.status("applying", "w0", None, "working")
+            proc, calls = self.stubbed(exe, [idle, working, self.refused("r1", "the other one")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertEqual([c[0] for c in calls[:4]], ["ssh", "scp", "ssh", "ssh"], "read, copy, read again, rename")
+        with self.subTest("busy at the hand-over, then this file is seen verifying, then refused"):
+            proc, calls = self.stubbed(exe, [busy, busy, self.status("done", "b1", 7), self.verifying("v1"), self.refused("r1")])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("result: phase=failed serial= message=rejected: signature check failed", proc.stdout)
+        with self.subTest("idle, but the updater is then seen on another file: a later refusal is not this one's"):
+            other = self.verifying("v1", "opos-9.opos-update")
+            proc, calls = self.stubbed(exe, [idle, idle, other, self.refused("r1", "the other one")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        with self.subTest("idle, but another serial is then seen working: a later refusal is not this one's"):
+            proc, calls = self.stubbed(exe, [idle, idle, self.status("applying", "o1", 7), self.refused("r1", "the other one")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertNotIn("result:", proc.stdout)
+        with self.subTest("a status with no serial is never a success"):
+            proc, calls = self.stubbed(exe, [idle, idle, self.status("done", "d1", None, "something")], timeout="3")
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+
+    def test_the_serial_comes_from_the_manifest_and_must_agree_with_the_name(self):
+        exe = self.native()[0]
+        for label, name, content in (("name and manifest disagree", "opos-8.opos-update", self.bundle_bytes(9)),
+                                     ("not a tar", "opos-8.opos-update", b"not a real bundle\n"),
+                                     ("manifest is not first", "opos-8.opos-update", make_tar([info("payload.tar.gz", b"x"), info("manifest.json", as_json({"serial": 8}))])),
+                                     ("no serial", "opos-8.opos-update", make_tar([info("manifest.json", as_json({"format": 1}))])),
+                                     ("empty manifest", "opos-8.opos-update", make_tar([info("manifest.json", b"")])),
+                                     ("manifest cut short", "opos-8.opos-update", self.bundle_bytes(8)[:520])):
+            with self.subTest(label):
+                proc, calls = self.stubbed(exe, [2], name=name, content=content)
+                self.assertEqual((proc.returncode, calls), (3, []), proc.stdout + proc.stderr)
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 123456789)], name="opos-123456789.opos-update")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 1000000000)], name="opos-1000000000.opos-update")
+        self.assertEqual(proc.returncode, 0, "ten digits: the release tool and the updater both allow them\n" + proc.stdout + proc.stderr)
+
+    def test_a_bundle_the_release_tool_built_is_read_the_same_way(self):
+        """The tool's own manifest layout (serial in the second place, indent 2), not a test's."""
+        payload = make_payload(BASE_FILES)
+        bundle = rel.make_bundle(as_json(manifest_for(BASE_FILES, payload, {"serial": 12})), b"-----BEGIN SSH SIGNATURE-----\n", payload, EPOCH)
+        exe = self.native()[0]
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 12, "ok")], name="opos-12.opos-update", content=bundle)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("queued as serial 12", proc.stdout)
+        proc, calls = self.stubbed(exe, [2, 2, self.status("done", "x", 13, "ok")], name="opos-12.opos-update", content=bundle, timeout="3")
+        self.assertEqual(proc.returncode, 2, "a status for another serial does not end it\n" + proc.stdout + proc.stderr)
 
     def test_a_timeout_says_whether_the_update_path_unit_is_running(self):
         """Review finding: a path unit that the start limit had failed left the push waiting 300 s for nothing, with no reason."""
@@ -1252,7 +1385,7 @@ sys.exit(99)
                 asked = [c[-1] for c in calls if c[-1].startswith("systemctl")]
                 self.assertEqual(asked, ["systemctl is-active opos-update.path opos-update.service"])
                 self.assertEqual(calls[-1][-1], asked[0], "asked once, after the last status read")
-        proc, calls = self.stubbed(exe, [old, self.status("applying", "n1"), self.status("done", "n2")])
+        proc, calls = self.stubbed(exe, [old, old, self.status("applying", "n1"), self.status("done", "n2")])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual([c for c in calls if c[-1].startswith("systemctl")], [], "a push that settles never asks")
 
@@ -1260,7 +1393,7 @@ sys.exit(99)
         exe = self.native()[0]
         for phase in ("failed", "rolled-back"):
             with self.subTest(phase):
-                proc, calls = self.stubbed(exe, [2, self.status("applying", "a"), self.status(phase, "b", message="health check failed")])
+                proc, calls = self.stubbed(exe, [2, 2, self.status("applying", "a"), self.status(phase, "b", message="health check failed")])
                 self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
                 self.assertIn("phase=" + phase, proc.stdout)
 
