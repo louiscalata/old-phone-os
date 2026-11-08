@@ -693,6 +693,9 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "forbidden", "host")
             return
         path = urllib.parse.urlsplit(self.path).path
+        from opos import osk  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
+        if osk.serve(self, path):
+            return
         if path in ("/", "/favicon.ico"):
             nonce = secrets.token_urlsafe(16)
             body = FAVICON if path == "/favicon.ico" else page(self.token, nonce).encode()
@@ -700,6 +703,8 @@ class Handler(BaseHTTPRequestHandler):
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)
             self.send_header("Content-Type", "image/png" if path == "/favicon.ico" else "text/html; charset=utf-8")
+            if path == "/":
+                body = osk.inject_bytes(body, nonce)  # track osk: adds the keyboard's two tags while OPOS_OSK=1, else the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
