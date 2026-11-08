@@ -7,7 +7,7 @@ and what comes next. Plans are intentions, not promises.
 ## Working today
 
 - Battery governor: Normal, Saver and Critical modes from battery level, battery health,
-  temperature and a daily goal; calls, messages and alarms stay on in every mode.
+  temperature and a daily goal; calls and messages stay on in every mode.
 - Helper with Meta Muse Glimmer 30B on your own computer: supports Why?, Plan and Ask using plain
   facts about the phone. In the final November 3 desktop capture, all four Ask and all four Why?
   requests returned Muse Glimmer within 115 s, with no fallback. Ask took 51.699/53.077 s in dark
