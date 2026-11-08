@@ -26,8 +26,13 @@ Use a passphrase. This makes `opos-release-key` (private) and `opos-release-key.
 ssh-agent.
 
 - The private key stays off the repository, off the phone and out of every image, chat and backup that is not yours.
-  `tools/opos-release.py build` refuses a key that sits inside the repository it is building. Keep two offline copies:
-  a lost key means no more updates for any image that trusts it, and a new image is the only fix.
+  `tools/opos-release.py build` refuses a key that sits inside the repository it is building, and a `--key` file called
+  `.pub` that is not an OpenSSH public key (the `.pub` name is what lets a key sit in the repository, so the content has to
+  be one). It also refuses to build when any file it would ship, the app tree and the overlay files you name, holds private
+  key material, whatever the file is called: it looks for PEM, OpenSSH, PGP and PuTTY private-key headers in the bytes, so a
+  private key saved as `src/opos/release.pub` or `notes.txt` stops the build, and the message names the file. `verify`
+  makes the same check on a finished bundle. A key that was ever committed is still in git history; treat it as exposed.
+  Keep two offline copies: a lost key means no more updates for any image that trusts it, and a new image is the only fix.
 - A stolen key is as bad as it sounds: a signed bundle can replace the app, the OPOS scripts and the OPOS systemd units,
   and some of those run as root. Treat the key like a root password for every phone that trusts it.
 - The `allowed_signers` file is what the phone and `verify` check against: one line per trusted key,

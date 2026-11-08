@@ -807,6 +807,120 @@ class IndexTest(ReleaseCase):
         self.assertEqual(json.loads(latest.read_text())["serial"], 7)
 
 
+def marker_samples():
+    """One example of every kind of private key material the tool knows. Built from pieces, so this file is not a hit itself."""
+    pem = lambda kind: b"-----BEGIN " + kind + b" PRIVATE " + b"KEY-----\nMIIB\n-----END " + kind + b" PRIVATE " + b"KEY-----\n"
+    return {
+        "openssh": pem(b"OPENSSH"), "rsa": pem(b"RSA"), "ec": pem(b"EC"), "pkcs8": b"-----BEGIN PRIVATE " + b"KEY-----\nMIIB\n",
+        "encrypted pkcs8": pem(b"ENCRYPTED"), "pgp": b"-----BEGIN PGP PRIVATE " + b"KEY BLOCK-----\n",
+        "putty": b"PuTTY-User-Key-File-" + b"3: ssh-ed25519\nEncryption: none\n", "putty lines": b"Private-" + b"Lines: 1\nAAAA\n",
+        "armor stripped": b"b3BlbnNzaC1rZXktdjE" + b"AAAAABG5vbmU\n", "ssh2": b"---- BEGIN SSH2 ENCRYPTED PRIVATE " + b"KEY ----\n",
+    }
+
+
+class PrivateKeyLeakTest(ReleaseCase):
+    """Review finding 1: a bundle is public. A private key under any name, `.pub` included, must stop the build, and `verify`
+    must refuse a bundle that carries one, whoever built it."""
+
+    def build_dir(self, rel_path, data, *extra, key=None, signers=True):
+        tree = self.new_dir("tree") / "t"
+        shutil.copytree(self.repo, tree, ignore=shutil.ignore_patterns(".git"))
+        (tree / rel_path).parent.mkdir(parents=True, exist_ok=True)
+        (tree / rel_path).write_bytes(data)
+        out = self.new_dir("out")
+        key = tree / rel_path if key == "tree" else key or self.key  # "tree": sign with the file that was just written
+        args = ["build", "--dir", tree, "--revision", self.rev, "--created", STAMP, "--serial", 7, "--version", "1", "--key", key,
+                "--out", out, *extra] + (["--allowed-signers", self.signers] if signers else [])
+        return tool(*args) + (out, tree)
+
+    def assertNoKeyLeak(self, code, se, out, name):
+        self.assertEqual(code, 1, se)
+        self.assertIn(name, se, "the refusal names the file")
+        self.assertIn("private key", se)
+        self.assertNotIn("failed its own check", se, "stopped before anything was signed, not by the check after building")
+        self.assertEqual(list(out.iterdir()), [], "nothing is written for a refused build")
+
+    def test_a_private_key_in_the_tree_is_refused_by_content_whatever_it_is_called(self):
+        private = self.key.read_bytes()
+        for name in ("src/opos/release.pub", "src/opos/web_static/notes.txt", "src/opos/data.bin", "src/opos/id_ed25519", "THIRD_PARTY.md", "LICENSE"):
+            with self.subTest(name):
+                code, so, se, out, tree = self.build_dir(name, private)
+                self.assertNoKeyLeak(code, se, out, name)
+                for line in private.decode().strip().splitlines()[1:-1]:
+                    self.assertNotIn(line, so + se, "the key itself is never printed")
+
+    def test_a_private_key_in_an_overlay_file_is_refused(self):
+        code, so, se, out, tree = self.build_dir("packaging/duo-os/opos-kiosk", b"#!/bin/sh\n" + self.key.read_bytes(), "--overlay", "opos-kiosk")
+        self.assertNoKeyLeak(code, se, out, "packaging/duo-os/opos-kiosk")
+
+    def test_a_private_key_committed_in_a_ref_is_refused(self):
+        repo = self.new_dir("keyrepo")
+        make_repo(repo)
+        (repo / "src" / "opos" / "release.pub").write_bytes(self.key.read_bytes())
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "oops", GIT_AUTHOR_DATE=COMMIT_DATE, GIT_COMMITTER_DATE=COMMIT_DATE)
+        out = self.new_dir("out")
+        code, so, se = tool("build", "--repo", repo, "--serial", 7, "--version", "1", "--key", self.key, "--allowed-signers", self.signers, "--out", out)
+        self.assertNoKeyLeak(code, se, out, "src/opos/release.pub")
+
+    def test_every_known_kind_of_private_key_is_recognised_and_public_things_are_not(self):
+        for label, data in marker_samples().items():
+            with self.subTest(label):
+                self.assertTrue(rel.private_key_marker(b"x" * 3 + data + b"y"))
+                code, so, se, out, tree = self.build_dir("src/opos/web_static/page.css", b"body{}\n" + data)
+                self.assertNoKeyLeak(code, se, out, "src/opos/web_static/page.css")
+        pub = (self.key.with_name("release.pub")).read_bytes()
+        for fine in (pub, b"-----BEGIN " + b"CERTIFICATE-----\nMIIB\n", b"-----BEGIN PUBLIC " + b"KEY-----\nMIIB\n", b"private key handling\n", b""):
+            self.assertIsNone(rel.private_key_marker(fine), fine[:30])
+
+    def test_the_tool_and_the_repository_scan_know_the_same_markers(self):
+        self.assertEqual({rx.pattern for _, rx in rel.PRIVATE_MARKERS}, {rx.pattern for rx in NoPrivateKeysTest.MARKERS})
+
+    def test_a_public_key_in_the_tree_is_not_a_leak(self):
+        pub = self.key.with_name("release.pub").read_bytes()
+        code, so, se, out, tree = self.build_dir("src/opos/release.pub", pub)
+        self.assertEqual(code, 0, se)
+        bundle = out / "opos-7.opos-update"
+        with tarfile.open(fileobj=io.BytesIO(dict(members(bundle))["payload.tar.gz"])) as tf:
+            self.assertEqual(tf.extractfile("opt/opos/src/opos/release.pub").read(), pub)
+
+    def test_a_key_file_called_pub_must_be_a_public_key(self):
+        """The `.pub` name lifts the 'key is inside the repository' rule; the content has to earn it."""
+        private = self.key.read_bytes()
+        kind, b64 = self.key.with_name("release.pub").read_text().split()[:2]
+        good = ("%s %s\n" % (kind, b64)).encode()
+        samples = {"a private key": private, "empty": b"", "words": b"ssh-ed25519 not-base64!!\n", "no blob": b"ssh-ed25519\n",
+                   "a blob of another type": ("ssh-rsa %s\n" % b64).encode(), "a type nobody has": ("ssh-nope %s\n" % b64).encode(),
+                   "binary": bytes(range(256)), "a good line then junk": good + b"rubbish\n", "a good line then a private key": good + private,
+                   "a truncated blob": ("%s %s\n" % (kind, b64[:20])).encode(), "a huge file": b"# " + b"x" * 20000 + b"\n" + good}
+        for label, data in samples.items():
+            for where in ("outside the tree", "inside the tree"):
+                with self.subTest(label + ", " + where):
+                    key = self.top / "keys" / "decoy.pub" if where == "outside the tree" else "tree"
+                    if key != "tree":
+                        key.write_bytes(data)
+                    code, so, se, out, tree = self.build_dir("src/opos/release.pub", data, key=key)
+                    self.assertEqual(code, 1, so)
+                    self.assertIn("is not an OpenSSH public key", se)
+                    self.assertIn("release.pub" if key == "tree" else "decoy.pub", se, "the refusal names the file")
+                    self.assertEqual(list(out.iterdir()), [])
+                    for line in private.decode().strip().splitlines()[1:-1]:
+                        self.assertNotIn(line, so + se)
+
+    def test_verify_refuses_a_bundle_that_carries_a_private_key(self):
+        """The second line: whoever built the bundle, and whatever it is called inside, `verify` (and the build's own check) say no."""
+        private = self.key.read_bytes()
+        for name in ("opt/opos/src/opos/release.pub", "opt/opos/src/opos/notes.txt"):
+            with self.subTest(name):
+                files = dict(BASE_FILES, **{name: (private, 0o644)})
+                bundle = self.signed(files=files)
+                self.assertRefused(bundle, name + " contains a PEM or OpenSSH private key")
+        files = dict(BASE_FILES)
+        files["opt/opos/src/opos/straddle.bin"] = (b"x" * ((1 << 20) - 9) + marker_samples()["openssh"], 0o644)
+        self.assertRefused(self.signed(files=files), "opt/opos/src/opos/straddle.bin contains")
+        self.assertOk(self.signed(files=dict(BASE_FILES, **{"opt/opos/src/opos/release.pub": (self.key.with_name("release.pub").read_bytes(), 0o644)})))
+
+
 class KeygenHelpTest(ReleaseCase):
     def test_help_text(self):
         code, so, se = tool("keygen-help")
@@ -827,6 +941,19 @@ class KeygenHelpTest(ReleaseCase):
         for private_line in self.key.read_text().strip().splitlines()[1:-1]:
             self.assertNotIn(private_line, so + se)
         self.assertEqual(tool("keygen-help", "--pub", self.top / "absent")[0], 1)
+
+    def test_a_file_that_only_looks_like_a_public_key_gets_no_line(self):
+        """Review finding 1: two words and a known prefix were enough before; now the blob has to be a key of that type."""
+        kind, b64 = self.key.with_name("release.pub").read_text().split()[:2]
+        for label, text in (("not base64", "ssh-ed25519 not-base64!!\n"), ("two words", "hello world\n"), ("other type", "ssh-rsa %s\n" % b64),
+                            ("a good line then a banner", "ssh-ed25519 %s\n-----BEGIN %s PRIVATE %s-----\n" % (b64, "OPENSSH", "KEY"))):
+            with self.subTest(label):
+                f = self.top / "keys" / "lookalike.pub"
+                f.write_text(text)
+                code, so, se = tool("keygen-help", "--pub", f)
+                self.assertEqual(code, 1, so)
+                self.assertIn("not an OpenSSH public key", se)
+                self.assertNotIn("allowed_signers line for", so)
 
 
 class ToolHygieneTest(unittest.TestCase):
