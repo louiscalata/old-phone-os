@@ -212,9 +212,10 @@ class UXP13SettingsRuntime(unittest.TestCase):
         self.assertFalse(r["settingsAfterBack"])
         self.assertTrue(r["homeAfterBack"])
 
-    def test_about_uses_helper_label_or_name(self):
+    def test_about_does_not_repeat_the_status_bar_helper_label(self):
+        # The bar says only "Helper on" (the configured engine is not a verified one), so About has nothing to copy from it.
         self.assertEqual(self.r["empty"]["about"], "Old Phone OS Interface")
-        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface. Helper set to on this phone")
+        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface")
 
 
 class UXP13Wizard(unittest.TestCase):

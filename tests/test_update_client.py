@@ -1624,8 +1624,8 @@ class MainPageIsUntouched(Env):
     # 9cf38030... and 29878bcd...; on ota/final (df2a4e0) 6b3d7b7c... and 02bfa2ed.... Re-recorded when ota/final was merged into
     # duo-acceptance (which had removed dead CSS and shortened the same phone-b.js comment): against duo-acceptance 702c4d3 the
     # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
-    MAIN_SHA256 = "06e28ebbdb85d601ab7de23db88b5b1b89a3dd9b44e56ef60ac90376360193a7"
-    DEMO_SHA256 = "b957100a918df88362b91e178a3a63028c6decb4cd459ecde7024edc0df07e8d"
+    MAIN_SHA256 = "47f9dbede85280792dd53ee2a1a3d832385500c57ba8b23386a46f794eb1a160"
+    DEMO_SHA256 = "7b47b961c228337dd138e45c2eaa3130a715c302a25f2dc3221203c024af015f"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):

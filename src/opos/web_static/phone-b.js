@@ -78,8 +78,6 @@ function set(x){if(T.indexOf(x)<0)x='n';d.dataset.text=x;if(s)s.value=x;return x
 try{v=localStorage.getItem('opos_text')}catch(e){}
 set(v);
 if(s)s.addEventListener('change',function(){var x=set(s.value);try{localStorage.setItem('opos_text',x)}catch(e){}});
-var a=G('about'),g=G('sb-engine');
-if(a&&g)(window.oposHooks=window.oposHooks||[]).push(function(){var e=(g.textContent||'').trim();a.textContent=e?'Old Phone OS Interface. '+(/^Helper set to /.test(e)?e:'Helper set to '+e):'Old Phone OS Interface'});
 })()}catch(e){}
 try{(function(){
 var n=G('demo-phone-note');if(!n)return;

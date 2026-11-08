@@ -126,9 +126,11 @@ window.oposHooks.push(function(s){try{
 var {clock}=s;if(demoTime&&clock)demoTime='Demo time '+clock;
 ui.known=clock!=='--:--';
 tick();
-net.textContent=navigator.onLine===false?'Offline':'';
-batt.textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
-engine.textContent=s.helper&&typeof s.helper.engine==='string'&&s.helper.engine?'Helper set to '+s.helper.engine:'';
+var p=s.battery&&s.battery.percent,n=typeof p==='number'&&isFinite(p);
+net.textContent=s.in_call?'In call':s.status_note||(navigator.onLine===false?'Offline':'');
+batt.textContent=n?(p<=15?'LOW ':'')+Math.round(p)+'%':'—';
+batt.setAttribute('data-low',n&&p<=15?'true':'false');
+engine.textContent=s.helper?'Helper on':'';
 }catch(e){}});
 tick();
 setInterval(tick,15000);
@@ -307,8 +309,6 @@ var paused=((s.battery&&s.battery.paused)||[]).map(function(p){return p.name||p}
 var notice='Calls and messages are on.'+(paused.length?'\nPaused to save power: '+paused.join(', ')+'.':'');
 if(card&&card.textContent!==notice)card.textContent=notice;
 jl=s;jsc();
-var percent=s.battery&&s.battery.percent;
-$('sb-batt').setAttribute('data-low',typeof percent==='number'&&isFinite(percent)&&percent<=15?'true':'false');
 var technical=$('shade-technical');['events'].forEach(function(id){technical.appendChild($(id))});
 ['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length)});
 ['headline','time-left','goal-note','why'].forEach(function(id){var e=$(id);e.hidden=!known(e.textContent)});

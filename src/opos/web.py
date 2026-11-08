@@ -61,6 +61,7 @@ try:  # track monitor: the Inference page is optional; a runtime shipped without
     from opos import monitor, monitor_web
 except ImportError:
     monitor = monitor_web = None
+from opos import statusbar  # track: status (the status bar's note, the call line on Home)
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -361,6 +362,7 @@ class Phone:
         out["clock"] = f"{h:02d}:{m:02d}" if self.clock_ok else "--:--"
         out["lean"] = {"opos_mb": rss, "free_mb": free}
         out["poll_ms"] = poll_ms(d.mode.name, free, self._in_call)
+        statusbar.apply(self, out)  # track: status
         return out
     def _preferences(self):
         """Host preferences for the local UI; isolated simulations override this seam."""

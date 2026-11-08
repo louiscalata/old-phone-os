@@ -75,6 +75,7 @@ src/opos/setup/services.py
 src/opos/setup/wizard_page.py
 src/opos/sim.py
 src/opos/span.py
+src/opos/statusbar.py
 src/opos/storyboard.py
 src/opos/timezone.py
 src/opos/ui.py

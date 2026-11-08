@@ -45,7 +45,7 @@ button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active{back
 button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-disabled="true"],#goal-clear:disabled{background:var(--jaryo-bg);color:var(--jaryo-fg);opacity:1;border-style:dashed}
 #screen{border:1px solid var(--jaryo-fg);border-radius:0;filter:none!important}
 #sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#answer a,#demo label{color:var(--jaryo-fg)}
-#sb-batt[data-low="true"]{border:3px double var(--jaryo-fg)}
+#sb-batt[data-low="true"]{border:3px double var(--jaryo-fg);box-sizing:border-box;line-height:20px}
 #answer a{text-decoration:underline}
 #meter{background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)}
 #meter[data-tone] #meter-fill,.feature-fill{background:var(--jaryo-fg);box-shadow:none}
