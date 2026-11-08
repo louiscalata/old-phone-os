@@ -24,6 +24,15 @@ if [ "${OPOS_DEV_SPAN:-}" = 1 ] && [ -z "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
     exit 2
 fi
 # --- dev span: CHECK END
+# --- dev sudo: CHECK BEGIN (OPOS_DEV_SUDO; the block that acts on it is "dev sudo: BEGIN" below)
+# Refused before OUT is touched, exactly as OPOS_DEV_SPAN is: OPOS_DEV_SUDO is 1, or unset/empty/0, and 1 is a dev-image option that only works together
+# with OPOS_DEV_SSH_PUBKEY. An image with passwordless root for the login user is never an image to carry, so it is not offered without the dev key.
+case ${OPOS_DEV_SUDO:-} in '' | 0 | 1) ;; *) echo "build-image.sh: OPOS_DEV_SUDO must be 1 (or unset)" >&2; exit 2 ;; esac
+if [ "${OPOS_DEV_SUDO:-}" = 1 ] && [ -z "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    echo "build-image.sh: OPOS_DEV_SUDO=1 is a dev-image option: it needs OPOS_DEV_SSH_PUBKEY=<file.pub> as well" >&2
+    exit 2
+fi
+# --- dev sudo: CHECK END
 mnt=$(mktemp -d)
 cleanup() { umount "$mnt" 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -206,6 +215,33 @@ if [ "${OPOS_DEV_SPAN:-}" = 1 ] && [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
     echo "DEV IMAGE: opos-server runs with OPOS_SPAN=675,42 (drop-in 30-opos-dev-span.conf; remove it to go back to the one-window layout)"
 fi
 # --- dev span: END
+
+# --- dev sudo: BEGIN (OPOS_DEV_SUDO; packaging/duo-os/README.md, "Dev options: passwordless sudo")
+# DEV ONLY, and only together with OPOS_DEV_SSH_PUBKEY (the check at the top refuses the other cases). In the base, droidian is in the sudo group but
+# sudo asks for a password that nobody has, and root cannot log in, so a developer who can ssh in cannot become root to install a file, restart a
+# service or read a root-only log. OPOS_DEV_SUDO=1 writes one sudoers file, /etc/sudoers.d/90-opos-dev, 0440 root:root, holding exactly the
+# line below. It is validated with visudo -cf when the builder has visudo, before it goes into the image. EVERYTHING that runs as droidian (the
+# OPOS server, the kiosk Chromium, any ssh session) is then root: an image built this way must never be carried, lent or shared, and the
+# over-the-air design (which assumes an unprivileged droidian) does not protect it. A BASE that is an earlier dev-sudo image loses the file unless the
+# variable is set again. On a running phone: sudo rm /etc/sudoers.d/90-opos-dev.
+rm -f "$r/etc/sudoers.d/90-opos-dev"
+if [ "${OPOS_DEV_SUDO:-}" = 1 ] && [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    awk -F: '$1=="droidian"{f=1} END{exit !f}' "$r/etc/passwd" || { echo "base rootfs has no droidian user" >&2; exit 1; }
+    sudo_tmp=$(mktemp)
+    printf '%s\n' 'droidian ALL=(ALL) NOPASSWD:ALL' > "$sudo_tmp"
+    chmod 0440 "$sudo_tmp"
+    if command -v visudo >/dev/null 2>&1 && ! visudo -cf "$sudo_tmp" >/dev/null; then
+        rm -f "$sudo_tmp"
+        echo "build-image.sh: visudo rejects the dev sudoers line" >&2
+        exit 1
+    fi
+    install -d -m 0755 "$r/etc/sudoers.d"
+    install -m 0440 "$sudo_tmp" "$r/etc/sudoers.d/90-opos-dev"
+    rm -f "$sudo_tmp"
+    ( cd "$r" && sha256sum etc/sudoers.d/90-opos-dev )
+    echo "DEV: passwordless sudo for droidian (/etc/sudoers.d/90-opos-dev, 0440 root:root); this image must never be carried or shared"
+fi
+# --- dev sudo: END
 
 # ---- BEGIN OPOS OTA updates (self-contained; needs $r and $here; docs/ota-update.md) ----------------------------
 # Release layout (/opt/opos -> /opt/opos-releases/0-<rev12>), the update state and inbox directories, the trust

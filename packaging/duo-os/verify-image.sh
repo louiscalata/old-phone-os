@@ -8,6 +8,12 @@ set -u
 [ $# -ge 1 ] || { echo "usage: sudo sh verify-image.sh OUT.img" >&2; exit 2; }
 img=$1
 case $img in /*) ;; *) img=$PWD/$img ;; esac
+# --- expect: CHECK BEGIN (OPOS_DEV_SUDO, as build-image.sh took it)
+# Optional. A file in the image cannot say whether the build meant to put it there, so a build knob that adds a file may be given here too, with the
+# value the build had: 1 then requires the file and 0 requires its absence. Unset (the default) reads the image as it is: a file that is there must be
+# exactly what the build would have written, and nothing is required. Anything else is refused before the image is touched.
+case ${OPOS_DEV_SUDO:-} in '' | 0 | 1) ;; *) echo "verify-image.sh: OPOS_DEV_SUDO must be 1, 0 or unset" >&2; exit 2 ;; esac
+# --- expect: CHECK END
 q=$(command -v qemu-aarch64-static) || { echo "needs qemu-aarch64-static" >&2; exit 2; }
 # This script is root. Everything it runs (the image's python3 under qemu-user, this builder's python3) starts in, and
 # keeps its HOME and every scratch file in, ONE private directory that only root can enter: mktemp -d makes it
@@ -160,6 +166,36 @@ else
     check "no ssh key: the time-file drop is not enabled" "[ ! -L $w/multi-user.target.wants/opos-clock-set.path ]"
 fi
 # --- clock: END
+# --- dev sudo: BEGIN (OPOS_DEV_SUDO in build-image.sh; packaging/duo-os/README.md, "Dev options: passwordless sudo")
+# The sudoers file a DEV image gets from OPOS_DEV_SUDO=1. Present: a plain root-owned 0440 file holding exactly one line, 'droidian ALL=(ALL) NOPASSWD:ALL',
+# in an image that has the dev ssh key (the build refuses the knob without it), and no other sudoers file grants NOPASSWD. Absent: nothing in /etc/sudoers
+# or /etc/sudoers.d grants NOPASSWD. With OPOS_DEV_SUDO set in this script's own environment (to what the build took), the image is held to it both ways.
+dsf=$r/etc/sudoers.d/90-opos-dev
+nopasswd_lines() { grep -hsE '^[[:space:]]*[^#[:space:]].*NOPASSWD' "$r/etc/sudoers" "$r"/etc/sudoers.d/* 2>/dev/null; }
+dev_sudo_ok() {
+    [ -f "$dsf" ] && [ ! -L "$dsf" ] && [ "$(stat -c %a "$dsf")" = 440 ] && [ "$(stat -c %u:%g "$dsf")" = 0:0 ] || return 1
+    [ -f "$r$chome/.ssh/authorized_keys" ] || return 1
+    printf '%s\n' 'droidian ALL=(ALL) NOPASSWD:ALL' | cmp -s - "$dsf"
+}
+dev_sudo_only() { [ "$(nopasswd_lines)" = 'droidian ALL=(ALL) NOPASSWD:ALL' ]; }
+if [ -e "$dsf" ] || [ -L "$dsf" ]; then
+    check "DEV sudo: /etc/sudoers.d/90-opos-dev is a plain root-owned 0440 file holding exactly 'droidian ALL=(ALL) NOPASSWD:ALL', and the dev ssh key is in the image" "dev_sudo_ok"
+    check "DEV sudo: no other line in /etc/sudoers or /etc/sudoers.d grants NOPASSWD" "dev_sudo_only"
+    if command -v visudo >/dev/null 2>&1; then
+        check "DEV sudo: visudo accepts the file" "visudo -cf $dsf >/dev/null 2>&1"
+    else
+        echo "NOTE: no visudo on this builder: the sudoers line was not parsed (its text is compared byte for byte instead)"
+    fi
+    echo "NOTE: DEV image: droidian has passwordless sudo (/etc/sudoers.d/90-opos-dev); this image must never be carried or shared"
+else
+    check "no dev sudo: nothing in /etc/sudoers or /etc/sudoers.d grants NOPASSWD" "! nopasswd_lines | grep -q ."
+    echo "NOTE: no passwordless sudo in this image (droidian is in the sudo group and has to type a password)"
+fi
+case ${OPOS_DEV_SUDO:-} in
+    1) check "OPOS_DEV_SUDO=1: the dev sudoers file is in the image" "[ -e $dsf ] || [ -L $dsf ]" ;;
+    0) check "OPOS_DEV_SUDO=0: no dev sudoers file is in the image" "[ ! -e $dsf ] && [ ! -L $dsf ]" ;;
+esac
+# --- dev sudo: END
 # --- track osk: the on-screen keyboard (packaging/duo-os/OSK.md) ---
 o=$r/opt/opos/src/opos
 check "the in-page on-screen keyboard is in the image (osk.py, osk.js, osk.css)" "[ -s $o/osk.py ] && [ -s $o/osk_static/osk.js ] && [ -s $o/osk_static/osk.css ]"

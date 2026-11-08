@@ -109,6 +109,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_PANES` | `opos-server.service` (`1`) | the black thumb pane, the white list pane and the Hand setting on the spanned window (`src/opos/panes.py`, [docs/jaryo-panes.md](../../docs/jaryo-panes.md)); paints only while `OPOS_SPAN` is on; `1,pure` strict `#000`/`#fff`, `invert` colour swap without the mirror, unset none |
 | `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
 | `OPOS_DEV_SPAN` | build input, dev images only | `1`, together with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): the image gets the drop-in `opos-server.service.d/30-opos-dev-span.conf`, which sets `OPOS_SPAN=675,42` for a checkpoint that is to be looked at on the phone; unset: no drop-in (see Spanning both panels) |
+| `OPOS_DEV_SUDO` | build input, dev images only | `1`, together with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): the image gets `/etc/sudoers.d/90-opos-dev` (0440 root:root, exactly `droidian ALL=(ALL) NOPASSWD:ALL`), so the dev login user is root; such an image must never be carried or shared; unset: no file (see Dev options: passwordless sudo) |
 | `OPOS_MONITOR` | `opos-server.service` (`1`) | the Settings link to `/monitor` and the routes `/monitor` and `/api/monitor` (see Inference page) |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor, and the `Host` header to send it (`OPOS_LOCAL_URL` is the Helper's, see Inference page) |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
@@ -308,7 +309,8 @@ What the image does now:
   lock-screen and status-bar times are Chromium's own `Date`, so they show the guess until it is replaced.
 
 Set the time from the PC, dev images only (built with `OPOS_DEV_SSH_PUBKEY`; the units are in every image, enabled
-only in those). The `droidian` user has no passwordless sudo and none is added. Instead a root path unit watches
+only in those). The `droidian` user has no passwordless sudo and none is added by default (the dev-only `OPOS_DEV_SUDO=1` adds it, see
+[Dev options: passwordless sudo](#dev-options-passwordless-sudo)). Instead a root path unit watches
 `~/opos-set-time`; it takes Unix seconds only, between the floor and 20 years past it, refuses symlinks and
 anything else, deletes the file and sets the clock. From a Unix shell:
 
@@ -373,6 +375,32 @@ but the port's password rule stays as it is.
 Remove it from a running phone with `rm ~/.ssh/authorized_keys` as `droidian` (this deletes every key in the
 file, not only the one the build added) or by deleting that one line. Rebuilding without the variable gives an
 image without it. The key lives in userdata until the next format.
+
+## Dev options: passwordless sudo
+
+`OPOS_DEV_SUDO=1 OPOS_DEV_SSH_PUBKEY=<file.pub> sh packaging/duo-os/build-image.sh …` gives the dev login user, `droidian`, sudo without a password. In the
+base, `droidian` is in the `sudo` group but sudo asks for a password that nobody has, and the root login is refused, so a developer who can ssh in cannot
+install a file, restart a service or read a root-only log. The build writes `/etc/sudoers.d/90-opos-dev`, mode 0440, owner root:root, holding exactly the one line
+
+```
+droidian ALL=(ALL) NOPASSWD:ALL
+```
+
+checks it with `visudo -cf` when the builder has `visudo` (the build stops if `visudo` rejects it), and prints `DEV: passwordless sudo for droidian`. The knob works
+only together with `OPOS_DEV_SSH_PUBKEY`: `OPOS_DEV_SUDO=1` without it, or any value other than `1`, `0`, empty or unset, stops the build before the output is touched
+(exit 2), exactly as `OPOS_DEV_SPAN` does. Without the variable no file is written, and a file left by an earlier dev image in the base is removed.
+
+**An image built with `OPOS_DEV_SUDO=1` must never be carried or shared.** Everything that runs as `droidian` is root on it: the OPOS server, the kiosk Chromium
+and every ssh session, so the dev ssh key becomes a root key, and the over-the-air design ([docs/ota-update.md](../../docs/ota-update.md)), which assumes an
+unprivileged `droidian`, protects nothing there. The acceptance suite warns (`dev.sudo`, with the other `dev.*` warnings) and `verify-image.sh` prints a `NOTE`.
+
+`verify-image.sh` checks the file when it is there (a plain 0440 root:root file with exactly that line, in an image that has the dev ssh key, `visudo -cf` accepts
+it, and no other sudoers line grants `NOPASSWD`) and that no sudoers line grants `NOPASSWD` when it is not. The image cannot say whether the build meant to
+write the file, so give the verifier the variable the build had to hold the image to it both ways: `OPOS_DEV_SUDO=1` requires the file and `OPOS_DEV_SUDO=0`
+requires its absence (unset requires nothing; under `sudo`, `sudo env OPOS_DEV_SUDO=1 sh packaging/duo-os/verify-image.sh …`).
+
+Remove it from a running phone with `sudo rm /etc/sudoers.d/90-opos-dev`; the next sudo asks for a password again. Check it from the PC with
+`ssh droidian@<phone> sudo -n true`.
 
 ## Boot evidence: persistent journal and opos-diag
 

@@ -1067,6 +1067,11 @@ def check_dev(c):
         c.emit("WARN", "dev.time-drop", "DEV image: opos-clock-set.path sets the clock from a file in droidian's home")
     else:
         c.emit("PASS", "dev.time-drop", "no clock-setting file drop")
+    # build-image.sh writes this one file with OPOS_DEV_SUDO=1 (dev images only); it is the whole of that knob, and nothing else is read or run here
+    if c.exists("/etc/sudoers.d/90-opos-dev"):
+        c.emit("WARN", "dev.sudo", "DEV image: droidian has passwordless sudo; an image meant to be carried has none")
+    else:
+        c.emit("PASS", "dev.sudo", "no OPOS passwordless-sudo file for droidian")
 
 
 CHECKS = (check_services, check_phoc, check_composer, check_output, check_backlight, check_kiosk, check_server, check_battery,

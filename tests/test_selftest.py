@@ -387,7 +387,7 @@ class HealthyPhone(SelftestCase):
                     "phoc.process", "phoc.no-shell-mode", "gfx.composer", "gfx.output", "gfx.backlight", "kiosk.chromium", "kiosk.gpu",
                     "server.http", "server.state", "server.token-gate", "battery.sysfs", "battery.api-match", "battery.temp",
                     "clock.year", "clock.timezone", "log.journal", "log.diag", "log.opos-errors", "res.disk", "res.mem",
-                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.ssh-key", "dev.devtools", "dev.time-drop",
+                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.ssh-key", "dev.devtools", "dev.time-drop", "dev.sudo",
                     "osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes"):
             self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
 
@@ -1352,6 +1352,10 @@ class ReadOnlyByConstruction(unittest.TestCase):
         src = SELFTEST.read_text(encoding="utf-8")
         self.assertEqual(re.findall(r'method="([A-Z]+)"', src), ["GET"])
         self.assertEqual(len(re.findall(r"subprocess\.run\(", src)), 1)
+        # The one place the word may stand is the dev.sudo marker, which only looks for the file OPOS_DEV_SUDO=1 writes and says so in words; any other
+        # sudo (a command, an argument, a string that reaches run()) still fails here, and the allow-list refuses it at run time (the test above).
+        for marker in ("dev.sudo", "/etc/sudoers.d/90-opos-dev", "has passwordless sudo", "passwordless-sudo"):
+            src = src.replace(marker, "")
         self.assertIsNone(re.search(r"\b(POST|PUT|DELETE|PATCH)\b|sudo|shell=True", src))
 
     def test_the_environment_is_read_only_for_PATH(self):
