@@ -14,6 +14,16 @@ sleep 90
     echo "== processes"; ps -eo pid,user,comm,args | grep -E 'phoc|chromium|composer|opos|python3 -m' | grep -v grep | cut -c1-240
     echo "== /dev/dri, /dev/input"; ls -l /dev/dri /dev/input 2>&1 | head -30
     echo "== network"; ip -br addr 2>&1
+    # --- track: network (read-only): what each radio reports, and what OPOS's user (droidian) may change ---
+    # No SSIDs, addresses or IMEI: connection names are left out, only the state words and the permission names are kept.
+    echo "== radios"
+    echo "radios: rfkill: $(timeout 5 rfkill list 2>&1 | tr '\n\t' '  ' | tr -s ' ')"
+    echo "radios: NetworkManager: $(timeout 5 nmcli -t -f RUNNING,STATE,CONNECTIVITY,WIFI-HW,WIFI,WWAN-HW,WWAN general status 2>&1 | head -1)"
+    echo "radios: devices: $(timeout 5 nmcli -t -f DEVICE,TYPE,STATE device status 2>&1 | tr '\n' ' ')"
+    echo "radios: modem: $(timeout 8 mmcli -K -m any 2>&1 | grep -E 'generic\.(state|power-state|sim|state-failed-reason|unlock-required)|access-technologies\.value|3gpp\.(registration-state|operator-name)|signal-quality\.value|couldn.t' | tr -s ' ' | tr '\n' ';')"
+    echo "radios: bluetooth: $(timeout 5 bluetoothctl show 2>&1 | grep -E 'Powered|No default' | tr -d '\t' | tr '\n' ' ')"
+    echo "radios: droidian may: $(timeout 5 runuser -u droidian -- nmcli -t general permissions 2>&1 | grep -E 'enable-disable-wifi|network-control|settings.modify.system|wifi.scan|rror' | sed 's/org.freedesktop.NetworkManager.//' | tr '\n' ' ')"
+    # --- end track: network ---
     echo "== power supplies"
     for d in /sys/class/power_supply/*; do echo "$d: $(cat "$d/type" 2>/dev/null) $(cat "$d/capacity" 2>/dev/null) $(cat "$d/status" 2>/dev/null)"; done
     echo "== OPOS units, this boot"

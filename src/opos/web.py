@@ -55,6 +55,7 @@ try:  # track osk: the on-screen keyboard is optional; a runtime shipped without
     from opos import osk
 except ImportError:
     osk = None
+from opos import net_page  # track: network
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -625,9 +626,29 @@ const renderBase=render;render=async function(s){const r=await renderBase(s);if(
     if demo:
         html = html.replace('<div id="demo" hidden>', '<div id="demo" data-demo="1">', 1)
     html = html.replace("<title>Old Phone OS Interface</title>", '<meta name="opos-token" content="' + html_escape(token, quote=True) + '"><title>Old Phone OS Interface</title>', 1)
+    html = net_page.add_settings_link(html, os.environ)  # track: network (OPOS_NETWORK=1 only)
     return secure.add_nonce(html, nonce) if nonce else html
 _RATE_ACTIONS = {"call": "call", "send": "send", "receive": "receive", "explain": "explain", "ask": "ask", "plan": "plan", "restart_helper": "restart_helper"}
 _INJECT_ACTIONS = ("receive",)
+# --- track: network (Wi-Fi and radio status): GET /network and the net_* actions; logic in opos.net, page in opos.net_page ---
+def _net_serve(h):
+    nonce = secrets.token_urlsafe(16)
+    body = net_page.render(h.token, nonce).encode()
+    h.send_response(200)
+    for k, v in secure.security_headers(nonce).items():
+        h.send_header(k, v)
+    h.send_header("Content-Type", "text/html; charset=utf-8")
+    h.send_header("Content-Length", str(len(body)))
+    h.end_headers()
+    if h.command != "HEAD":
+        h.wfile.write(body)
+def _net_act(h, a, data):
+    if not h.limiter.allow(a):
+        h._deny(429, "too many requests", "rate")
+        return
+    code, obj = net_page.handle(a, data)
+    h._json(obj, code)
+# --- end track: network ---
 class Handler(BaseHTTPRequestHandler):
     """Loopback web handler."""
     phone = None
@@ -698,6 +719,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urllib.parse.urlsplit(self.path).path
         if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
+            return
+        if path == "/network":  # track: network
+            _net_serve(self)
             return
         if path in ("/", "/favicon.ico"):
             nonce = secrets.token_urlsafe(16)
@@ -837,6 +861,9 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(v, str) and len(v) > m:
                 self._deny(400, "bad request", "size")
                 return
+        if a in net_page.ACTIONS:  # track: network
+            _net_act(self, a, data)
+            return
         if a == "explain":
             with self.lock:
                 req = self.phone.explain_routes()
@@ -958,6 +985,7 @@ class _Limits:
     """Per-action rate limits."""
     def __init__(self):
         self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3)}
+        self._buckets.update(net_page.buckets())  # track: network
     def allow(self, key):
         """Delegate key to its bucket."""
         b = self._buckets.get(key)

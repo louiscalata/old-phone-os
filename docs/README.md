@@ -29,6 +29,9 @@ earlier work and are not current instructions or evidence about the current sour
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
 - [Over-the-air updates](ota-update.md): design for signed, rollback-safe updates of the OPOS app and its own files on the Duo OS image; design only, not yet implemented.
+<!-- track: network -->
+- [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.
+<!-- end track: network -->
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; prepared, not yet run on the phone.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
 
