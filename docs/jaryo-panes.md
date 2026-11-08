@@ -358,7 +358,7 @@ Recommended, Option A: chain through the module every full page already passes t
 +++ b/src/opos/osk.py
 @@ -17,6 +17,10 @@
  from pathlib import Path
- 
+
  from opos import secure
 +try:  # panes: the black/white two-pane surfaces ride on this module's injection (src/opos/panes.py); optional like the keyboard
 +    from opos import panes as _panes
