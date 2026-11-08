@@ -2,6 +2,10 @@
 # After the system is up: a boot-scope update that was applied at this boot must pass the health check
 # (opos-server active, GET / and /api/state answer) to be confirmed. Two boots in a row that do not confirm
 # roll it back. Nothing to do on a boot without an update on trial.
+# After=multi-user.target together with WantedBy=multi-user.target is not an ordering cycle: for a unit that is itself after
+# the target, systemd leaves out the implicit "the target waits for what it wants" (so the target does not wait for this
+# unit's health check). A review claimed a cycle; systemd-analyze verify says no, and tests/test_duo_updater.py
+# (TestSystemdOrdering) runs that check, with a control that does see a cycle.
 [Unit]
 Description=OPOS: confirm a boot-applied update after the system is up
 After=multi-user.target opos-server.service opos-update-boot.service

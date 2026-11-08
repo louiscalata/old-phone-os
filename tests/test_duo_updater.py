@@ -10,12 +10,14 @@ import contextlib
 import errno
 import gzip
 import hashlib
+import http.client
 import importlib.machinery
 import importlib.util
 import io
 import json
 import os
 import pathlib
+import random
 import re
 import shutil
 import signal
@@ -27,6 +29,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import tracemalloc
 import unittest
 import http.server
 from unittest import mock
@@ -301,6 +304,7 @@ class Env:
 case "$1" in
  is-active) if [ -e "%(run)s/inactive" ]; then echo inactive; exit 3; fi; echo active; exit 0;;
  restart) [ -e "%(run)s/restart-fails" ] && exit 1; readlink -f "%(opt)s" > "%(run)s/running"; exit 0;;
+ daemon-reload) [ -e "%(run)s/reload-fails" ] && exit 1; exit 0;;
 esac
 exit 0''')
         self.stub('pkill', 'echo "pkill $*" >> "%(log)s"\nexit 1')
@@ -1352,15 +1356,76 @@ class TestApply(EnvCase):
         self.assertEqual(e.status()['phase'], 'rolled-back')
         self.assertEqual(e.consistent(), 0)
 
-    def test_health_failure_when_the_restart_fails(self):
+    def test_a_restart_that_fails_is_not_a_finished_rollback(self):
+        """Review finding 6: the restart after the rollback failed too (systemd rate-limited, say), and the updater cleared the
+        journal, wrote rolled-back and collected the release that holds the saved files, without a working server. Now the
+        journal stays, the next run does the rest, and only a restart that worked closes it."""
         e = self.env
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
         wr(os.path.join(e.run, 'restart-fails'), '')
-        self.assertEqual(e.apply(make_bundle(7)), 3)
-        self.assertEqual(e.status()['phase'], 'rolled-back')
-        self.assertIn('restart', e.status()['message'])
+        e.deliver(make_bundle(7))
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        st = e.state()
+        self.assertEqual(st['txn']['kind'], 'apply')                        # the journal is still there
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('not back yet', e.status()['message'])
+        self.assertEqual(st['failed'], [])                                  # the serial is burned when the undo is finished, not before
+        self.assertTrue(os.path.isdir(os.path.join(e.releases, release_name(7), 'overlay-backup')))   # and so are the saved files
+        self.assertEqual(os.path.basename(os.readlink(e.opt_link)), '0-aaaaaaaaaaaa')   # what could be put back already is
+        self.assertEqual(e.overlay_state(), e.expect_overlay(0))
+        with self.assertRaises(U.Incomplete):                               # and it goes on being retried, not forgotten
+            e.updater().apply_inbox()
+        self.assertIsNotNone(e.state()['txn'])
+        os.unlink(os.path.join(e.run, 'restart-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)
         self.assertEqual(e.consistent(), 0)
         self.assertEqual(e.state()['failed'], [7])
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+        self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))   # the server really runs the old release
+
+    def test_a_daemon_reload_that_fails_is_not_a_finished_rollback(self):
+        e = self.env
+        e.cfg.smoke = lambda cfg, d: (True, 'stub')
+        wr(os.path.join(e.run, 'reload-fails'), '')   # the update ships a unit file, so it reloads systemd; that fails, then so does the undo
+        e.deliver(make_bundle(7))
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        self.assertIsNotNone(e.state()['txn'])
+        self.assertEqual(e.state()['failed'], [])
+        self.assertEqual(e.overlay_state(), e.expect_overlay(0))
+        os.unlink(os.path.join(e.run, 'reload-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.state()['failed'], [7])
+        self.assertIn('systemctl daemon-reload', e.calls())
+
+    def test_a_pending_incomplete_undo_is_finished_before_a_new_bundle_is_looked_at(self):
+        e = self.env
+        e.cfg.smoke = lambda cfg, d: (True, 'stub')
+        wr(os.path.join(e.run, 'restart-fails'), '')
+        e.deliver(make_bundle(7))
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        e.deliver(make_bundle(8), 'opos-8.opos-update')
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        self.assertTrue(os.path.exists(os.path.join(e.inbox, 'opos-8.opos-update')))   # not touched while the undo is open
+        self.assertEqual(e.state()['txn']['serial'], 7)
+        os.unlink(os.path.join(e.run, 'restart-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)                                  # the undo is finished, then 8 is applied
+        self.assertEqual(e.consistent(), 8)
+        self.assertEqual(e.state()['failed'], [7])
+
+    def test_a_server_that_is_not_healthy_after_the_rollback_is_said_so_in_the_status(self):
+        e = self.env
+        e.cfg.smoke = lambda cfg, d: (True, 'stub')
+        e.cfg.health = lambda cfg: (False, 'still down')
+        self.assertEqual(e.apply(make_bundle(7)), 3)
+        s = e.status()
+        self.assertEqual(s['phase'], 'rolled-back')
+        self.assertIn('did not pass the health check afterwards (still down)', s['message'])
+        self.assertEqual(e.consistent(), 0)
 
     def test_health_failure_when_api_state_has_no_battery(self):
         e = self.env
@@ -1374,9 +1439,9 @@ class TestApply(EnvCase):
         e = self.env
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
         e.cfg.health_timeout = 5
-        t0 = time.time()
+        calls = [0]
 
-        def slow(cfg, calls=[0]):
+        def slow(cfg):
             calls[0] += 1
             return (calls[0] > 5, 'warming up')
         e.cfg.health = slow
@@ -1647,8 +1712,29 @@ class TestRollback(EnvCase):
         e.request_rollback()
         e.updater().apply_inbox()
         sc = [c for c in e.calls() if c.startswith('systemctl')]
-        self.assertEqual(sc, ['systemctl daemon-reload', 'systemctl restart opos-server.service'])
+        # reload (the update shipped a unit file), restart, and the bounded health check that now closes every rollback
+        self.assertEqual(sc, ['systemctl daemon-reload', 'systemctl restart opos-server.service', 'systemctl is-active opos-server.service'])
         self.assertEqual(len([c for c in e.calls() if c.startswith('pkill') and '--kiosk' in c]), 1)
+
+    def test_a_requested_rollback_whose_restart_fails_is_finished_by_the_next_run(self):
+        """Review finding 6, the requested form: the restart was rejected, the journal was cleared and rolled-back reported."""
+        e = self.env
+        wr(os.path.join(e.run, 'restart-fails'), '')
+        e.request_rollback()
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        st = e.state()
+        self.assertEqual((st['txn']['kind'], st['current']['serial']), ('rollback', 2))
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertEqual(os.path.basename(os.readlink(e.opt_link)), release_name(1))     # files and link are back already
+        self.assertTrue(os.path.isdir(os.path.join(e.releases, release_name(2), 'overlay-backup')))
+        os.unlink(os.path.join(e.run, 'restart-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 1)
+        st = e.state()
+        self.assertEqual((st['failed'], st['stepped_back']), ([], 2))
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+        self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))
 
     def test_rollback_restores_files_created_by_the_update(self):
         e = self.env
@@ -1935,7 +2021,13 @@ def scn_rollback_command(env):
     return lambda: env.updater().rollback_command()
 
 
-SCENARIOS = {'app update': scn_app, 'health failure': scn_health_fail, 'boot-scope staging': scn_boot_scope_stage, 'boot-time apply': scn_boot_apply,
+def scn_cancel_staged(env):
+    env.apply(bundle(7, 'boot'))
+    env.request_rollback()
+    return lambda: env.updater().apply_inbox()
+
+
+SCENARIOS = {'cancel of a staged update': scn_cancel_staged, 'app update': scn_app, 'health failure': scn_health_fail, 'boot-scope staging': scn_boot_scope_stage, 'boot-time apply': scn_boot_apply,
              'boot-time rollback': scn_boot_rollback, 'rollback request': scn_rollback_request, 'rollback command': scn_rollback_command}
 
 
@@ -2148,6 +2240,929 @@ class TestCrashSafety(unittest.TestCase):
                 e.updater().apply_pending_boot()
                 self.assertIn(e.consistent(), (0, 7), steps[i])
                 self.follow_up(e, 'hard kill at %s' % steps[i])
+
+
+# ============================================================================================ Astra review: updater findings
+# Findings 2, 3, 5, 6, 7, 8, 10 and 11 of the independent review of snapshot 366ac0d (finding 4 is under "units" below).
+# Each test names what went wrong; every one fails on the code before its fix.
+
+def fresh_env(case, **kw):
+    e = Env(**kw)
+    case.addCleanup(e.close)
+    return e
+
+
+@needs_keygen
+class TestBackupIndex(EnvCase):
+    """Finding 2: rollback discarded its backup index when it was larger than the reader's limit, then freed the backups."""
+    fast = True
+
+    def test_a_backup_index_of_many_files_is_read_and_restored(self):
+        e = self.env
+        n = 10000                                    # fits the 20,000-file limit; its index is bigger than the old 1 MiB reader limit
+        paths = ['etc/opos/f%05d' % i for i in range(n)]
+        for i, p in enumerate(paths):
+            e.put(os.path.join(e.root, p), ('old %d\n' % i).encode())
+        new = {p: (('new %d\n' % i).encode(), 0o644) for i, p in enumerate(paths)}
+        sizes, real = [], U.read_small
+
+        def spy(path, limit):
+            if path.endswith('index.json'):
+                sizes.append(os.path.getsize(path))
+            return real(path, limit)
+        app = {**default_app(7), 'src/opos/BROKEN': (b'', 0o644)}   # healthy for the smoke test, broken once live: it is rolled back
+        with mock.patch('os.fsync'), mock.patch.object(U, 'read_small', spy):   # 30,000 fsyncs would time the disk, not the updater
+            self.assertEqual(e.apply(make_bundle(7, app=app, overlay=new)), 3)
+        self.assertTrue(sizes and max(sizes) > 1 << 20, sizes)
+        self.assertEqual(e.status()['phase'], 'rolled-back', e.status())
+        self.assertIsNone(e.state()['txn'])
+        bad = [p for i, p in enumerate(paths) if rd(os.path.join(e.root, p)) != 'old %d\n' % i]
+        self.assertEqual(bad, [])
+        self.assertEqual(e.consistent(), 0)
+
+    def crashed_apply(self, env):
+        def hook(name):
+            if name == 'switched':
+                raise Crash(name)
+        env.cfg.hook = hook
+        env.deliver(make_bundle(7))
+        with self.assertRaises(Crash):
+            env.updater().apply_inbox()
+        env.cfg.hook = None
+        return os.path.join(env.releases, release_name(7), 'overlay-backup')
+
+    def test_an_unreadable_backup_keeps_the_transaction_and_the_backups(self):
+        damage = {
+            'missing': None,
+            'not json': b'{not json',
+            'not a list': b'{}',
+            'larger than any index can be': b' ' * ((16 << 20) + 1),
+            'path outside the updatable set': b'[{"path": "etc/passwd", "existed": false}]',
+            'path traversal': b'[{"path": "../../x", "existed": false}]',
+            'no hash for a file that existed': b'[{"path": "etc/opos/x", "existed": true, "mode": 420}]',
+            'mode out of range': ('[{"path": "etc/opos/x", "existed": true, "mode": 99999, "sha256": "%s"}]' % ('a' * 64)).encode(),
+        }
+        for label, content in damage.items():
+            with self.subTest(label):
+                e = fresh_env(self, fast=True)
+                bdir = self.crashed_apply(e)
+                index = os.path.join(bdir, 'index.json')
+                good = rd(index, 'rb')
+                if content is None:
+                    os.unlink(index)
+                else:
+                    wr(index, content, 'wb')
+                live = e.live()
+                for _ in range(2):                        # and it stays that way: every run refuses to guess
+                    with self.assertRaises(U.Fatal):
+                        e.updater().apply_inbox()
+                    self.assertIsNotNone(e.state()['txn'])
+                    self.assertTrue(os.path.isdir(bdir))
+                    self.assertTrue(os.path.isdir(os.path.join(bdir, 'files')))
+                self.assertEqual(e.live()['link'], live['link'])
+                self.assertEqual(e.live()['files'], live['files'])      # nothing was put back from a list nobody can vouch for
+                wr(index, good, 'wb')                    # repaired by hand: the very next run restores everything
+                self.assertEqual(e.updater().apply_inbox(), 0)
+                self.assertEqual(e.consistent(), 0)
+                self.assertEqual(e.state()['failed'], [7])
+
+    def test_the_writer_stops_at_the_limit_the_reader_enforces(self):
+        e = self.env
+        before = e.live()
+        with mock.patch.object(U, 'MAX_INDEX', 100):
+            self.assertEqual(e.apply(make_bundle(7)), 3)
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('saved overlay files', e.status()['message'])
+        self.assertEqual(e.live(), before)               # refused before anything live was touched
+        self.assertEqual(e.apply(make_bundle(8), 'opos-8.opos-update'), 0)
+
+
+def retype(data, flag):
+    """The first header of a tar with another type flag and a matching checksum."""
+    b = bytearray(data[:512])
+    b[156] = ord(flag)
+    return fix_checksum(b) + data[512:]
+
+
+def fix_checksum(b):
+    b[148:156] = b'        '
+    b[148:156] = ('%06o\0 ' % sum(b[:512])).encode()
+    return bytes(b)
+
+
+def tampered(data, offset, value):
+    b = bytearray(data[:512])
+    b[offset:offset + len(value)] = value
+    return fix_checksum(b) + data[512:]
+
+
+def outer_members(good):
+    with tarfile.open(fileobj=io.BytesIO(good)) as tf:
+        return [tf.extractfile(n).read() for n in ('manifest.json', 'manifest.json.sig', 'payload.tar.gz')]
+
+
+@needs_keygen
+class TestOuterArchive(EnvCase):
+    """Finding 3: Python's tarfile parses PAX and GNU extension headers (sparse maps, long names) of whatever size the
+    unsigned file declares before it yields the member, so the size and type checks came too late."""
+    fast = True
+
+    def peak_of(self, data):
+        e = self.env
+        path, run_dir = os.path.join(e.tmp, 'outer'), os.path.join(e.tmp, 'outer-run')
+        wr(path, data, 'wb')
+        shutil.rmtree(run_dir, ignore_errors=True)
+        os.mkdir(run_dir)
+        tracemalloc.start()
+        try:
+            with self.assertRaises(U.Reject) as cm:
+                e.updater().split_outer(path, run_dir)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        return peak, str(cm.exception)
+
+    def test_a_huge_sparse_map_is_refused_without_being_parsed(self):
+        m, s, p = outer_members(make_bundle(7))
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode='w', format=tarfile.PAX_FORMAT) as tf:
+            ti = tarfile.TarInfo('manifest.json')
+            ti.mtime, ti.size = 0, len(m)
+            ti.pax_headers = {'GNU.sparse.map': ','.join(['0'] * 1000000)}   # a million tiny entries; a real attack declares hundreds of MiB
+            tf.addfile(ti, io.BytesIO(m))
+            for name, data in (('manifest.json.sig', s), ('payload.tar.gz', p)):
+                ti = tarfile.TarInfo(name)
+                ti.mtime, ti.size = 0, len(data)
+                tf.addfile(ti, io.BytesIO(data))
+        data = buf.getvalue()
+        self.assertGreater(len(data), 1 << 20)
+        peak, why = self.peak_of(data)
+        self.assertIn('must be the regular file manifest.json', why)
+        self.assertLess(peak, 1 << 20, 'the sparse map was parsed before it was refused')
+        self.reject(data, 'must be the regular file manifest.json')
+
+    def test_a_huge_long_name_is_refused_without_being_read(self):
+        m, s, p = outer_members(make_bundle(7))
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode='w', format=tarfile.GNU_FORMAT) as tf:
+            ti = tarfile.TarInfo('x' * 6000000)
+            ti.mtime, ti.size = 0, len(m)
+            tf.addfile(ti, io.BytesIO(m))
+        peak, why = self.peak_of(buf.getvalue())
+        self.assertIn('must be the regular file manifest.json', why)
+        self.assertLess(peak, 1 << 20, 'the long name was read before it was refused')
+
+    def test_every_header_type_but_a_plain_file_is_refused_by_its_flag(self):
+        good = make_bundle(7)
+        for flag in 'xgLKSDMV1234567A':
+            with self.subTest(flag):
+                self.reject(retype(good, flag), 'must be the regular file manifest.json')
+
+    def test_headers_a_plain_archive_does_not_use_are_refused(self):
+        good = make_bundle(7)
+        cases = {
+            'a prefix': (345, b'dir'), 'a link name': (157, b'x'), 'the GNU extended flag': (482, b'\1'), 'a GNU real size': (483, b'0'),
+            'a different magic': (257, b'xxxxxxxx'), 'a size in base 256': (124, b'\x80' + b'\0' * 10 + b'\x10'),
+            'a size that is not octal': (124, b'0000000008\0\0'),
+        }
+        for label, (offset, value) in cases.items():
+            with self.subTest(label):
+                self.reject(tampered(good, offset, value), '')
+        flipped = bytearray(good)
+        flipped[100] ^= 1                                   # a header whose checksum no longer matches
+        self.reject(bytes(flipped), 'checksum')
+        self.reject(tampered(good, 124, b'%011o\0' % (9 << 20)), 'too large')      # declared bigger than the manifest limit; nothing is read
+        self.reject(tampered(good, 124, b'%011o\0' % (2 << 20)), 'truncated')      # declared, but the file ends first
+        self.reject(good[:512] + b'\0' * 2000, 'missing members')                # a header, zeros for its data, then the end of the archive
+
+    def test_padding_between_members_must_be_zero(self):
+        good = make_bundle(7)
+        m, _, _ = outer_members(good)
+        pad_at = 512 + len(m)                               # the first byte of the padding after manifest.json
+        if len(m) % 512:
+            dirty = good[:pad_at] + b'\1' + good[pad_at + 1:]
+            self.reject(dirty, 'after its last member')
+        self.assertEqual(self.env.apply(good), 0)
+
+    def test_an_ordinary_bundle_still_goes_through(self):
+        e = self.env
+        m, s, p = outer_members(make_bundle(7))
+        for fmt in (tarfile.USTAR_FORMAT, tarfile.GNU_FORMAT, tarfile.PAX_FORMAT):   # the release tool writes USTAR; the tests use GNU
+            with self.subTest(fmt):
+                path, run_dir = os.path.join(e.tmp, 'outer-ok'), os.path.join(e.tmp, 'outer-ok-run')
+                wr(path, plain_tar([('manifest.json', m), ('manifest.json.sig', s), ('payload.tar.gz', p)], fmt), 'wb')
+                shutil.rmtree(run_dir, ignore_errors=True)
+                os.mkdir(run_dir)
+                e.updater().split_outer(path, run_dir)
+                self.assertEqual([rd(os.path.join(run_dir, n), 'rb') for n in ('manifest.json', 'manifest.json.sig', 'payload.tar.gz')], [m, s, p])
+
+
+@needs_keygen
+class TestSpace(EnvCase):
+    """Finding 5: the space check admitted an update whose rollback could not fit."""
+    fast = True
+    BIG = 100000
+
+    def setUp(self):
+        super().setUp()
+        e = self.env
+        e.put(os.path.join(e.root, 'etc/opos/big.conf'), b'o' * self.BIG)
+        app = {'src/opos/__init__.py': (b'', 0o644), 'src/opos/web.py': (WEB_PY, 0o644)}
+        self.bundle = make_bundle(7, app=app, overlay={'etc/opos/big.conf': (b'n' * self.BIG, 0o644)})
+        self.unpacked = self.BIG + len(WEB_PY)
+        e.cfg.space_headroom = 0
+
+    def free(self, n):
+        """Free space is n everywhere but in staging (which has its own, earlier check that is not what is tested here)."""
+        e = self.env
+        e.cfg.statvfs = lambda p: 10**12 if p.startswith(e.staging) else n
+
+    def test_extraction_the_saved_original_and_the_largest_temporary_copy_must_all_fit(self):
+        e = self.env
+        # old rule: twice the unpacked size. Unpacked release + saved original + one temporary copy needs more than that.
+        self.free(2 * self.unpacked + 10)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        need = self.unpacked + self.BIG + self.BIG
+        self.free(need - 1)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        self.free(need)
+        self.assertEqual(e.apply(self.bundle), 0)
+        self.assertEqual(rd(os.path.join(e.root, 'etc/opos/big.conf'), 'rb'), b'n' * self.BIG)
+
+    def test_headroom_is_part_of_the_budget(self):
+        e = self.env
+        self.assertEqual(U.Config(root='/').space_headroom, 16 << 20)
+        e.cfg.space_headroom = 5000
+        need = self.unpacked + 2 * self.BIG
+        self.free(need + 4999)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        self.free(need + 5000)
+        self.assertEqual(e.apply(self.bundle), 0)
+
+    def test_a_file_that_does_not_exist_yet_needs_no_saved_original(self):
+        e = self.env
+        os.unlink(os.path.join(e.root, 'etc/opos/big.conf'))
+        self.free(2 * self.unpacked)       # no original to save: the unpacked release and one temporary copy fit; with the original they would not
+        self.assertEqual(e.apply(self.bundle), 0)
+
+    def test_a_staged_update_waits_at_boot_when_its_rollback_would_not_fit(self):
+        e = self.env
+        staged = make_bundle(7, scope='boot', app={'src/opos/__init__.py': (b'', 0o644), 'src/opos/web.py': (WEB_PY, 0o644)},
+                             overlay={'etc/opos/big.conf': (b'n' * self.BIG, 0o644)})
+        self.assertEqual(e.apply(staged), 0)
+        self.assertEqual(e.state()['pending_boot']['serial'], 7)
+        e.boot = 'boot-2'
+        self.free(2 * self.BIG - 1)
+        self.assertEqual(e.updater().apply_pending_boot(), 3)
+        self.assertIn('kept for the next boot', e.status()['message'])
+        st = e.state()
+        self.assertEqual((st['pending_boot']['serial'], st['failed'], st['current']['serial']), (7, [], 0))   # waits; is not burned
+        self.assertEqual(rd(os.path.join(e.root, 'etc/opos/big.conf'), 'rb'), b'o' * self.BIG)
+        e.boot = 'boot-3'
+        e.cfg.statvfs = lambda p: 10**12
+        self.assertEqual(e.updater().apply_pending_boot(), 0)
+        self.assertEqual(e.state()['current']['serial'], 7)
+
+
+def peak_by_walking(changes):
+    """The reference for U2: the peak found by following every byte count (the files replaced one by one, then a failure at
+    every point and a restore from it), not by the closed form the updater uses. changes: (old size, new size) in order."""
+    base = sum(o for o, n in changes)
+    peak = max([max(o, n) for o, n in changes], default=0)       # a temporary copy is never smaller than its file
+
+    def note(cur, temp):
+        nonlocal peak
+        peak = max(peak, sum(cur) - base + temp)
+    cur = [o for o, n in changes]
+    for i, (o, n) in enumerate(changes):
+        note(cur, n)                     # the new file's temporary copy sits beside the old one
+        cur[i] = n                       # renamed over it
+        note(cur, 0)
+    for k in range(len(changes) + 1):    # failed after k files were replaced
+        cur = [n if i < k else o for i, (o, n) in enumerate(changes)]
+        for j in range(k):
+            note(cur, changes[j][0])     # the saved original's temporary copy, beside the replaced file
+            cur[j] = changes[j][0]
+            note(cur, 0)
+    return peak
+
+
+class TestPeakSpace(unittest.TestCase):
+    """U2: check_space took the largest single temporary copy, not the growth summed across files (about 60% of random cases
+    in a model needed more than it accepted). peak_space follows the replacement order and the restore from every failure."""
+
+    def test_cases_worked_by_hand(self):
+        for changes, want in (
+                ([], 0),
+                ([(0, 5)], 5),                                      # a new file: its temporary copy; the restore only deletes it
+                ([(5, 0)], 5),                                      # shrinking: never less than the file's own copy
+                ([(1000, 100000)], 100000),
+                ([(1000, 100000), (50000, 100000)], 199000),        # the second copy sits on top of the first file's growth
+                ([(100000, 0), (0, 100000)], 100000),               # the first file gives its space back before the second needs it
+                ([(100, 200)] * 3, 400),                            # +100 each: the third copy on top of +200
+        ):
+            with self.subTest(changes=changes):
+                self.assertEqual(U.peak_space(changes), want)
+
+    def test_agrees_with_walking_every_byte_count(self):
+        rnd = random.Random(20261108)
+        for _ in range(500):
+            changes = [(rnd.choice((0, rnd.randrange(1, 300))), rnd.choice((0, rnd.randrange(1, 300)))) for _ in range(rnd.randrange(0, 8))]
+            self.assertEqual(U.peak_space(changes), peak_by_walking(changes), changes)
+
+    def test_a_great_many_files_take_no_time(self):
+        changes = [(1, 2)] * 200000
+        self.assertEqual(U.peak_space(changes), 200001)
+
+
+@needs_keygen
+class TestSpaceGrowthAcrossFiles(EnvCase):
+    """U2 through an update: two files that both grow need the growth of the first in room when the second is copied."""
+    fast = True
+    OLD = {'etc/opos/a.conf': 1000, 'etc/opos/b.conf': 50000}
+    NEW = 100000
+
+    def setUp(self):
+        super().setUp()
+        e = self.env
+        for p, n in self.OLD.items():
+            e.put(os.path.join(e.root, p), b'o' * n)
+        app = {'src/opos/__init__.py': (b'', 0o644), 'src/opos/web.py': (WEB_PY, 0o644)}
+        self.bundle = make_bundle(7, app=app, overlay={p: (b'n' * self.NEW, 0o644) for p in self.OLD})
+        unpacked = 2 * self.NEW + len(WEB_PY)
+        # unpacked release + the two saved originals + the peak: a's growth (99000) with b's temporary copy (100000) on top.
+        self.need = unpacked + sum(self.OLD.values()) + 99000 + self.NEW
+        # the earlier rule (one largest temporary copy, 100000) and the twice-the-unpacked-size rule both admit one byte less
+        self.assertGreater(self.need - 1, 2 * unpacked)
+        self.assertGreater(self.need - 1, unpacked + sum(self.OLD.values()) + self.NEW)
+        e.cfg.space_headroom = 0
+
+    def free(self, n):
+        e = self.env
+        e.cfg.statvfs = lambda p: 10**12 if p.startswith(e.staging) else n
+
+    def test_the_summed_growth_must_fit(self):
+        e = self.env
+        self.free(self.need - 1)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        self.free(self.need)
+        self.assertEqual(e.apply(self.bundle), 0)
+        for p in self.OLD:
+            self.assertEqual(rd(os.path.join(e.root, p), 'rb'), b'n' * self.NEW)
+
+
+@needs_keygen
+class TestRestoreNeedsNoRoom(EnvCase):
+    """Finding 5, the rollback half: a restore copied every saved original over its destination, also when the replacement had
+    failed for lack of space and the destination was still intact, which needs the very room that is missing."""
+    fast = True
+
+    def test_restore_does_not_copy_a_file_that_is_already_its_original(self):
+        e = self.env
+        copies, real = [], U.Updater.copy_file
+
+        def spy(self_, src, dest, mode):
+            copies.append((src, dest))
+            if dest.startswith(os.path.join(e.root, 'etc')) or dest.startswith(os.path.join(e.root, 'usr')):
+                raise OSError(errno.ENOSPC, 'No space left on device')   # no room for a temporary copy of anything live, forward or back
+            return real(self_, src, dest, mode)
+        with mock.patch.object(U.Updater, 'copy_file', spy):
+            self.assertEqual(e.apply(make_bundle(7)), 3)
+        self.assertEqual(e.status()['phase'], 'rolled-back', e.status())
+        self.assertEqual([c for c in copies if 'overlay-backup' in c[0]], [])    # nothing was copied back over an intact file
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.state()['failed'], [7])
+
+    def test_a_restore_still_copies_a_file_that_was_changed(self):
+        e = self.env
+        self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/BROKEN': (b'', 0o644)})), 3)
+        self.assertEqual(e.consistent(), 0)                         # the replaced files did come back
+        self.assertEqual(e.file_info('usr/libexec/opos/opos-kiosk'), (sha(OLD_OVERLAY['usr/libexec/opos/opos-kiosk'][0]), 0o755))
+
+
+@needs_keygen
+class TestNoJunkHoldsTheRoom(EnvCase):
+    """U1: a replacement that failed for lack of space left its half-written `<dest>.new` behind, and a restore deletes each
+    `.new` only when its loop reaches that entry, so the files before it, already replaced, needed a temporary copy while the
+    junk still held the free space (reproduced on a real 48 MiB tmpfs: 6 of 41 free-space cases stuck)."""
+    fast = True
+
+    def junk(self):
+        e = self.env
+        return sorted(os.path.relpath(os.path.join(d, n), e.root) for d, ds, fs in os.walk(e.root) for n in fs + ds if n.endswith('.new'))
+
+    def test_copy_file_removes_its_own_temporary_file_when_the_write_fails(self):
+        e = self.env
+        src, dest = os.path.join(e.tmp, 'src'), os.path.join(e.tmp, 'dest')
+        e.put(src, b'n' * 100000)
+        e.put(dest, b'old')
+        write_all = U.write_all
+
+        def half(fd, data):
+            write_all(fd, data[:4096])
+            raise OSError(errno.ENOSPC, 'No space left on device')
+        with mock.patch.object(U, 'write_all', half), self.assertRaises(OSError):
+            e.updater().copy_file(src, dest, 0o644)
+        self.assertFalse(os.path.lexists(dest + '.new'))
+        self.assertEqual(rd(dest, 'rb'), b'old')
+
+    def test_copy_file_removes_its_temporary_file_when_the_rename_fails(self):
+        e = self.env
+        src, dest = os.path.join(e.tmp, 'src'), os.path.join(e.tmp, 'dest')
+        e.put(src, b'n' * 1000)
+        e.put(os.path.join(dest, 'inside'), b'a directory in the way')
+        with self.assertRaises(OSError):
+            e.updater().copy_file(src, dest, 0o644)
+        self.assertFalse(os.path.lexists(dest + '.new'))
+        self.assertEqual(rd(os.path.join(dest, 'inside'), 'rb'), b'a directory in the way')
+
+    def test_a_restore_clears_every_half_written_copy_before_it_copies_anything(self):
+        """Whatever left the junk (a killed run, a copy_file from before), the restore removes all of it first."""
+        e = self.env
+        real, seen, copies = U.Updater.copy_file, [], []
+
+        def spy(self_, src, dest, mode):
+            if 'overlay-backup' in src:      # a restore
+                copies.append(dest)
+                seen.append(self.junk())
+                return real(self_, src, dest, mode)
+            if dest.endswith('opos-newtool'):   # the third replacement dies halfway and leaves its temporary file
+                with open(dest + '.new', 'wb') as f:
+                    f.write(b'x' * 1000)
+                raise OSError(errno.ENOSPC, 'No space left on device')
+            return real(self_, src, dest, mode)
+        with mock.patch.object(U.Updater, 'copy_file', spy):
+            self.assertEqual(e.apply(make_bundle(7)), 3)
+        self.assertEqual(len(copies), 2, copies)     # the two files that had been replaced come back by copy
+        self.assertEqual(seen, [[], []])
+        self.assertEqual(e.status()['phase'], 'rolled-back', e.status())
+        self.assertEqual(e.consistent(), 0)
+
+    def test_a_full_disk_rollback_on_a_real_small_tmpfs(self):
+        """The reproduction: two files replaced, the third fills the file system, then the restore of the first two needs room."""
+        e = self.env
+        if os.geteuid() != 0:
+            self.skipTest('mount -t tmpfs needs root')
+        kb = 1024
+        mnt = os.path.join(e.root, 'usr/libexec/opos')
+        r = subprocess.run(['mount', '-t', 'tmpfs', '-o', 'size=%dk' % (5 * 64), 'tmpfs', mnt], capture_output=True, stdin=subprocess.DEVNULL)
+        if r.returncode:
+            self.skipTest('cannot mount a tmpfs here: %s' % r.stderr.decode(errors='replace').strip())
+
+        def unmount():
+            if subprocess.run(['umount', mnt], capture_output=True, stdin=subprocess.DEVNULL).returncode:
+                subprocess.run(['umount', '-l', mnt], capture_output=True, stdin=subprocess.DEVNULL)
+        self.addCleanup(unmount)                      # runs before the Env is removed
+        names = ['usr/libexec/opos/opos-fill-%s' % c for c in 'abc']
+        for n in names:
+            e.put(os.path.join(e.root, n), b'o' * (64 * kb), 0o644)
+        # 3 x 64 KiB in use, 128 KiB free. a and b are replaced by 64 KiB files (a temporary copy fits), c by 256 KiB: ENOSPC halfway,
+        # with 128 KiB of junk. Restoring a needs 64 KiB.
+        new = {names[0]: (b'a' * (64 * kb), 0o644), names[1]: (b'b' * (64 * kb), 0o644), names[2]: (b'c' * (256 * kb), 0o644)}
+        self.assertEqual(e.apply(make_bundle(7, overlay=new)), 3, e.logs[-4:])
+        self.assertIn('No space left on device', ' '.join(e.logs))      # it did run out of room on the way forward
+        st = e.status()
+        self.assertEqual(st['phase'], 'rolled-back', st)
+        self.assertIsNone(e.state()['txn'])
+        self.assertEqual(e.state()['failed'], [7])
+        for n, c in zip(names, 'ooo'):
+            self.assertEqual(rd(os.path.join(e.root, n), 'rb'), c.encode() * (64 * kb))
+        self.assertEqual(self.junk(), [])
+
+
+@needs_keygen
+class TestStuckTransactionByHand(EnvCase):
+    """U3: the operator note in docs/ota-release-howto.md ("A rollback that did not finish"), followed step by step."""
+    fast = True
+
+    def stick(self, lose_index):
+        e = self.env
+        real = U.Updater.copy_file
+
+        def no_room_for_a_restore(self_, src, dest, mode):
+            if 'overlay-backup' in src:
+                raise OSError(errno.ENOSPC, 'No space left on device')
+            return real(self_, src, dest, mode)
+        broken = make_bundle(7, app={**default_app(7), 'src/opos/BROKEN': (b'', 0o644)})   # fails its health check, so it is undone
+        with mock.patch.object(U.Updater, 'copy_file', no_room_for_a_restore), self.assertRaises(U.Incomplete):
+            e.apply(broken)
+        txn = e.state()['txn']
+        self.assertEqual((txn['kind'], txn['serial'], txn['from']), ('apply', 7, '0-aaaaaaaaaaaa'))
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertTrue(e.status()['message'].startswith('the previous release is not back yet: cannot put '), e.status())
+        if lose_index:
+            os.unlink(os.path.join(e.releases, txn['release'], 'overlay-backup', 'index.json'))
+        return txn
+
+    def test_the_next_run_finishes_it_once_the_cause_is_gone(self):
+        e = self.env
+        self.stick(lose_index=False)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            e.updater().show_status(False)
+        self.assertIn('INTERRUPTED apply of serial 7; the next run recovers it', out.getvalue())
+        self.assertEqual(e.updater().apply_inbox(), 0)           # an empty inbox: the run only recovers
+        self.assertEqual((e.consistent(), e.state()['failed']), (0, [7]))
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+
+    def test_a_lost_index_stays_open_until_the_files_the_link_and_the_state_are_put_right_by_hand(self):
+        e = self.env
+        txn = self.stick(lose_index=True)
+        with self.assertRaises(U.Fatal) as cm:
+            e.updater().apply_inbox()
+        self.assertIn('the transaction stays open', str(cm.exception))
+        self.assertEqual(e.state()['txn'], txn)
+        # by hand, as the note says: the saved originals back (the modes are the image's), the files that did not exist deleted,
+        # the link back to txn.from, then the transaction closed the way the updater would have closed it
+        saved = os.path.join(e.releases, txn['release'], 'overlay-backup', 'files')
+        for d, _, names in os.walk(saved):
+            for n in names:
+                rel = os.path.relpath(os.path.join(d, n), saved)
+                shutil.copyfile(os.path.join(d, n), os.path.join(e.root, rel))
+                os.chmod(os.path.join(e.root, rel), OLD_OVERLAY[rel][1])
+        os.unlink(os.path.join(e.root, NEWFILE))
+        os.symlink(os.path.join('opos-releases', txn['from']), e.opt_link + '.new')
+        os.rename(e.opt_link + '.new', e.opt_link)
+        e.updater().reload_units()
+        e.updater().restart_services()
+        st = e.state()
+        st['txn'] = None
+        st['failed'] = sorted(set(st['failed']) | {txn['serial']})
+        st['floor'] = max(st['floor'], txn['serial'])
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st, indent=1, sort_keys=True) + '\n')
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.apply(make_bundle(8), 'opos-8.opos-update'), 0)     # and updates go on
+        self.assertEqual(e.consistent(), 8)
+
+
+@needs_keygen
+class TestSerialFloor(EnvCase):
+    """Finding 8: only the highest 64 failed serials were kept, so an authentic old bundle could be replayed once its serial
+    fell out of the list. The floor is the highest serial that ever failed and never goes down."""
+    fast = True
+
+    def test_a_serial_that_fell_out_of_the_failed_list_is_still_refused(self):
+        e = self.env
+        st = e.state()
+        st['failed'] = list(range(2, 66))      # what a phone that burned 1..65 kept under the old cut-off: serial 1 is gone
+        st.pop('floor', None)
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+        self.reject(make_bundle(1), 'highest serial that failed', 'opos-1.opos-update')
+        self.reject(make_bundle(65), 'failed on this phone before', 'opos-65.opos-update')      # still in the list: the list's own message
+        self.assertEqual(e.state()['floor'], 65)
+        self.assertEqual(e.apply(make_bundle(66), 'opos-66.opos-update'), 0)
+        self.assertEqual(e.state()['floor'], 65)
+
+    def test_the_floor_survives_the_list_being_cut_and_rollbacks(self):
+        e = self.env
+        with mock.patch.object(U, 'MAX_FAILED', 3):
+            for s in range(1, 7):
+                self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0, s)
+                self.assertEqual(U.main(['rollback'], e.cfg), 0)          # root's rollback burns the serial it leaves
+        st = e.state()
+        self.assertEqual((st['failed'], st['floor'], st['current']['serial']), ([4, 5, 6], 6, 0))
+        for s in (1, 2, 3, 6):
+            with self.subTest(s):
+                self.reject(make_bundle(s), 'serial', 'opos-%d.opos-update' % s)
+        self.assertEqual(e.apply(make_bundle(7), 'opos-7.opos-update'), 0)
+        self.assertEqual(e.state()['floor'], 6)
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)
+        self.assertEqual(e.state()['floor'], 7)
+
+    def test_a_requested_rollback_does_not_raise_the_floor(self):
+        e = self.env
+        self.assertEqual(e.apply(make_bundle(1), 'opos-1.opos-update'), 0)
+        self.assertEqual(e.apply(make_bundle(2), 'opos-2.opos-update'), 0)
+        e.request_rollback()
+        e.updater().apply_inbox()
+        st = e.state()
+        self.assertEqual((st['current']['serial'], st['failed'], st['floor']), (1, [], 0))
+        self.assertEqual(e.apply(make_bundle(2), 'opos-2.opos-update'), 0)     # the documented way to undo a request
+
+    def test_a_failed_health_check_raises_the_floor_and_a_state_without_one_reads(self):
+        e = self.env
+        self.assertEqual(e.apply(make_bundle(5, app={**default_app(5), 'src/opos/BROKEN': (b'', 0o644)}), 'opos-5.opos-update'), 3)
+        self.assertEqual((e.state()['failed'], e.state()['floor']), ([5], 5))
+        self.reject(make_bundle(4), 'serial', 'opos-4.opos-update')
+        st = e.state()
+        del st['floor']
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+        self.reject(make_bundle(4), 'serial', 'opos-4.opos-update')
+        for bad in (-1, 'x', True, 1.5):
+            st['floor'] = bad
+            wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(U.main(['apply-inbox'], e.cfg), 1, bad)
+
+
+@needs_keygen
+class TestStagedUpdateCancellation(EnvCase):
+    """Finding 11: the first staged boot update could not be cancelled while the phone had no previous release.
+
+    The request file is inbox/rollback.request. Empty: roll back, and drop a staged boot update (works with no previous release).
+    The text `cancel-staged`: drop the staged boot update and nothing else. The client must create the second form as
+    rollback.request.partial, fsync it and rename it, so that the updater never sees it half written."""
+    fast = True
+
+    def stage(self, serial=3):
+        self.assertEqual(self.env.apply(make_bundle(serial, scope='boot'), 'opos-%d.opos-update' % serial), 0)
+        self.assertEqual(self.env.state()['pending_boot']['serial'], serial)
+
+    def request(self, text):
+        e = self.env
+        part = os.path.join(e.inbox, 'rollback.request.partial')
+        wr(part, text, 'wb')
+        os.rename(part, os.path.join(e.inbox, 'rollback.request'))
+
+    def test_the_first_staged_update_is_cancelled_by_a_plain_request_with_no_previous_release(self):
+        e = self.env
+        self.stage(1)
+        self.assertEqual(e.state()['previous'], [])
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        st = e.state()
+        self.assertEqual((st['pending_boot'], st['current']['serial'], st['failed'], st['stepped_back']), (None, 0, [], None))
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+        self.assertIn('staged update 1', e.status()['message'])
+        self.assertIn('cancelled', e.status()['message'])
+        self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+        self.assertNotIn(release_name(1), os.listdir(e.releases))
+        e.boot = 'boot-2'                                           # the cancelled update does not apply at the next boot
+        self.assertEqual(e.updater().apply_pending_boot(), 0)
+        self.assertEqual((e.consistent(), e.marker()), (0, 'build 0'))
+        self.assertEqual(e.apply(make_bundle(1, scope='boot'), 'opos-1.opos-update'), 0)   # not burned: the same signed release can be staged again
+
+    def test_cancel_staged_leaves_the_installed_releases_alone(self):
+        e = self.env
+        for s in (1, 2):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0)
+        self.stage(3)
+        before = e.live()['files']
+        self.request(b'cancel-staged\n')
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        st = e.state()
+        self.assertEqual((st['pending_boot'], st['current']['serial'], [p['serial'] for p in st['previous']], st['stepped_back']), (None, 2, [1, 0], None))
+        self.assertEqual((e.marker(), e.live()['files']), ('build 2', before))
+        self.assertEqual(e.consistent(), 2)
+
+    def test_a_plain_request_still_cancels_the_staged_update_and_goes_back_when_it_can(self):
+        e = self.env
+        for s in (1, 2):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0)
+        self.stage(3)
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual((e.state()['pending_boot'], e.consistent()), (None, 1))
+
+    def test_the_one_step_limit_does_not_stop_a_cancellation(self):
+        e = self.env
+        for s in (1, 2):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0)
+        e.request_rollback()
+        e.updater().apply_inbox()
+        self.assertEqual(e.state()['stepped_back'], 2)
+        self.stage(3)
+        e.request_rollback()                                        # the installed release may not go back again, the staged one may be dropped
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual((e.state()['pending_boot'], e.consistent(), e.state()['stepped_back']), (None, 1, 2))
+
+    def test_cancel_staged_with_nothing_staged_changes_nothing(self):
+        e = self.env
+        e.apply(make_bundle(1), 'opos-1.opos-update')
+        before = e.live()
+        self.request(b'cancel-staged\n')
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('nothing is staged', e.status()['message'])
+        self.assertEqual(e.live(), before)
+        self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+
+    def test_a_request_that_is_neither_form_is_refused_and_removed(self):
+        e = self.env
+        e.apply(make_bundle(1), 'opos-1.opos-update')
+        self.stage(2)
+        before = e.live()
+        for label, text in (('other words', b'rollback now\n'), ('too long', b'cancel-staged' + b' ' * 100 + b'x'), ('binary', b'\0\1\2')):
+            with self.subTest(label):
+                self.request(text)
+                self.assertEqual(e.updater().apply_inbox(), 3)
+                self.assertEqual(e.status()['phase'], 'failed')
+                self.assertIn('not understood', e.status()['message'])
+                self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+                self.assertEqual(e.live(), before)
+
+    def test_a_request_that_is_not_a_regular_file_is_never_read(self):
+        e = self.env
+        self.stage(1)
+        path = os.path.join(e.inbox, 'rollback.request')
+        os.mkfifo(path)                                             # a reader that opens it blocking would hang for ever
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertFalse(os.path.lexists(path))
+        self.assertEqual(e.state()['pending_boot']['serial'], 1)
+
+    def test_the_root_rollback_command_drops_a_staged_update_too(self):
+        e = self.env
+        self.stage(1)
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)
+        self.assertEqual((e.state()['pending_boot'], e.state()['failed']), (None, []))
+        self.assertEqual(U.main(['rollback'], e.cfg), 1)            # and with nothing staged and nothing before, there still is nothing to do
+
+
+# ============================================================================================ smoke test and probes (findings 7, 10)
+
+FLOOD_PY = b'''import sys, time
+while True:
+    try:
+        sys.stderr.write("E" * 65535 + "\\n")
+        sys.stderr.flush()
+    except OSError:
+        sys.exit(1)
+    time.sleep(0.001)
+'''
+SLOW_PY = b'''import argparse, http.server, sys, time
+p = argparse.ArgumentParser()
+p.add_argument("--port", type=int, default=8765)
+p.add_argument("--live-battery", action="store_true")
+a = p.parse_args()
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Length", "4194304"); self.end_headers()
+        for _ in range(100):
+            self.wfile.write(b"x"); self.wfile.flush(); time.sleep(0.1)
+    def log_message(self, *a):
+        pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), H)
+print("stand-in server: http://127.0.0.1:%d/" % srv.server_address[1], flush=True)
+srv.serve_forever()
+'''
+
+
+class Trickle:
+    """A server that answers like a broken one: one byte at a time, so that no single receive ever times out."""
+
+    def __init__(self, where, gap=0.1, count=60):
+        self.where, self.gap, self.count = where, gap, count
+        self.sock = socket.socket()
+        self.sock.bind(('127.0.0.1', 0))
+        self.sock.listen(8)
+        self.sock.settimeout(0.1)
+        self.port = self.sock.getsockname()[1]
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.loop, daemon=True)
+        self.thread.start()
+
+    def loop(self):
+        while not self.stop.is_set():
+            try:
+                c, _ = self.sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            threading.Thread(target=self.talk, args=(c,), daemon=True).start()
+
+    def talk(self, c):
+        try:
+            c.settimeout(2)
+            buf = b''
+            while b'\r\n\r\n' not in buf:
+                d = c.recv(4096)
+                if not d:
+                    return
+                buf += d
+            if self.where == 'body':
+                c.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 4194304\r\n\r\n')
+                pieces = [b'x'] * self.count
+            else:                                   # the status line, then a header that never ends
+                c.sendall(b'HTTP/1.1 200 OK\r\n')
+                pieces = [b'X'] * self.count
+            for piece in pieces:
+                if self.stop.is_set():
+                    break
+                c.sendall(piece)
+                time.sleep(self.gap)
+        except OSError as e:   # the client gave up and hung up: that is what the tests want
+            self.hung_up = e
+        finally:
+            c.close()
+
+    def close(self):
+        self.stop.set()
+        self.thread.join(2)
+        self.sock.close()
+
+
+@needs_keygen
+class TestProbeDeadline(EnvCase):
+    """Finding 7: a per-receive timeout is satisfied for ever by a server that sends a byte a second, and the health and
+    smoke deadlines were only looked at between probes."""
+    fast = True
+
+    def trickle(self, where, count=60):
+        t = Trickle(where, count=count)
+        self.addCleanup(t.close)
+        return t
+
+    def test_http_get_stops_at_its_total_deadline(self):
+        for where in ('body', 'headers'):
+            with self.subTest(where):
+                t = self.trickle(where)
+                t0 = time.monotonic()
+                with self.assertRaises(OSError):
+                    U.http_get('127.0.0.1', t.port, '/', timeout=3.0, total=1.0)
+                self.assertLess(time.monotonic() - t0, 2.5)
+
+    def test_the_health_probe_gives_up_at_the_probe_deadline_and_calls_it_unhealthy(self):
+        e = self.env
+        e.cfg.probe_deadline = 1.0
+        for where in ('body', 'headers'):
+            with self.subTest(where):
+                t = self.trickle(where)
+                e.cfg.health_port = t.port
+                t0 = time.monotonic()
+                ok, msg = U.probe_health(e.cfg)
+                self.assertFalse(ok)
+                self.assertLess(time.monotonic() - t0, 3.0, msg)
+
+    def test_the_probe_deadline_covers_both_requests_together(self):
+        e = self.env
+        t = self.trickle('body')
+        t0 = time.monotonic()
+        ok, msg = U.probe_http('127.0.0.1', t.port, 1.0)
+        self.assertFalse(ok)
+        self.assertLess(time.monotonic() - t0, 2.5)
+
+    def test_a_complete_answer_is_still_read_in_full_and_a_cut_short_one_is_an_error(self):
+        e = self.env
+        port = e.server.server_address[1]
+        status, body = U.http_get('127.0.0.1', port, '/')
+        self.assertEqual(status, 200)
+        self.assertIn(b'opos-token', body)
+        t = self.trickle('body', count=3)             # promises 4 MiB, sends 3 bytes, hangs up
+        with self.assertRaises(http.client.IncompleteRead):
+            U.http_get('127.0.0.1', t.port, '/', timeout=3.0, total=5.0)
+
+    def test_a_server_that_answers_the_smoke_test_one_byte_at_a_time_fails_it_in_time(self):
+        e = self.env
+        e.cfg.smoke = U.run_smoke                        # the real smoke test, against a real (stand-in) server process
+        e.cfg.smoke_timeout, e.cfg.probe_deadline = 2.0, 1.0
+        t0 = time.monotonic()
+        self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/web.py': (SLOW_PY, 0o644)})), 3)
+        self.assertLess(time.monotonic() - t0, 7.0)      # not the ten seconds the server takes to finish its answer
+        self.assertIn('smoke test failed', e.status()['message'])
+        self.assertEqual(e.consistent(), 0)
+
+
+@needs_keygen
+class TestSmokeLog(EnvCase):
+    """Finding 10: the smoke server's output went to a file with no limit, and the failure message read the whole file."""
+    fast = True
+
+    def test_tail_reads_the_end_of_the_file_and_not_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'smoke.log')
+            with open(path, 'wb') as f:
+                f.write(b'first line\n')
+                f.seek(64 << 20)
+                f.write(b'one\ntwo\nlast words\n')
+            tracemalloc.start()
+            try:
+                text = U._tail(path)
+                peak = tracemalloc.get_traced_memory()[1]
+            finally:
+                tracemalloc.stop()
+            self.assertTrue(text.endswith('one | two | last words'), text)
+            self.assertLess(peak, 1 << 20)
+            self.assertEqual(U._tail(os.path.join(d, 'missing')), '')
+            wr(os.path.join(d, 'short'), 'tiny\n')
+            self.assertEqual(U._tail(os.path.join(d, 'short')), 'tiny')
+            wr(os.path.join(d, 'long'), 'x' * 5000 + '\nend\n')
+            tail = U._tail(os.path.join(d, 'long'))
+            self.assertTrue(tail.endswith(' | end') and 290 < len(tail) <= 310, tail)
+
+    def test_a_server_that_floods_its_output_is_stopped_at_the_limit(self):
+        e = self.env
+        e.cfg.smoke = U.run_smoke
+        e.cfg.smoke_log_limit = 100000
+        e.cfg.smoke_timeout = 3.0
+        sizes, real = [], U.remove_tree
+
+        def spy(path):
+            if path.endswith('smoke.log') and os.path.exists(path):
+                sizes.append(os.path.getsize(path))
+            return real(path)
+        with mock.patch.object(U, 'remove_tree', spy):
+            self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/web.py': (FLOOD_PY, 0o644)})), 3)
+        self.assertEqual(len(sizes), 1)
+        self.assertLessEqual(sizes[0], 100000)
+        self.assertGreater(sizes[0], 60000)               # it did write up to the limit: this is the limit working, not an early exit
+        self.assertIn('smoke test failed', e.status()['message'])
+        self.assertLess(len(e.status()['message']), 400)
+        self.assertEqual(e.consistent(), 0)
+
+    def test_the_production_limit_is_small_next_to_a_phone(self):
+        self.assertEqual(U.Config(root='/').smoke_log_limit, 1 << 20)
+        self.assertEqual(U.Config(root='/').probe_deadline, 8.0)
 
 
 # =============================================================================================================== lock
@@ -2523,6 +3538,46 @@ class TestUnits(unittest.TestCase):
                 self.assertIn(need, caps)
             self.assertNotIn('CAP_SYS_ADMIN', caps)
             self.assertNotIn('AF_PACKET', values(u, 'Service', 'RestrictAddressFamilies')[0])
+
+
+@unittest.skipUnless(shutil.which('systemd-analyze') and os.path.isfile('/usr/lib/systemd/system/multi-user.target'),
+                     'needs systemd-analyze and the stock multi-user.target')
+class TestSystemdOrdering(unittest.TestCase):
+    """Review finding 4 said opos-update-confirm.service (After=multi-user.target, WantedBy=multi-user.target) is an ordering
+    cycle that systemd breaks by dropping the job. Asked of a real systemd (systemd-analyze verify on the units laid out as
+    build-image.sh installs them) it is not: for a unit that is itself After= a target, systemd leaves out the implicit
+    "the target waits for what it wants", which is the idiom for "run once the system is up" (opos-diag.service already uses
+    it on the phone). The probe below can see a cycle (the control), so this keeps it that way."""
+
+    UNITS = ('opos-update.path', 'opos-update.service', 'opos-update-boot.service', 'opos-update-confirm.service')
+
+    def verify(self, confirm_extra=''):
+        d = tempfile.mkdtemp(prefix='opos-units-')
+        self.addCleanup(shutil.rmtree, d, True)
+        os.mkdir(os.path.join(d, 'multi-user.target.wants'))
+        for n in self.UNITS:
+            text = (PKG / 'updater' / n).read_text()
+            if n == 'opos-update-confirm.service' and confirm_extra:
+                text = text.replace('[Service]', confirm_extra + '\n\n[Service]', 1)
+            wr(os.path.join(d, n), text)
+            os.chmod(os.path.join(d, n), 0o644)
+        shutil.copyfile(PKG / 'opos-server.service', os.path.join(d, 'opos-server.service'))
+        os.chmod(os.path.join(d, 'opos-server.service'), 0o644)
+        for n in ('opos-update.path', 'opos-update-boot.service', 'opos-update-confirm.service', 'opos-server.service'):
+            os.symlink('../' + n, os.path.join(d, 'multi-user.target.wants', n))
+        env = dict(os.environ, SYSTEMD_UNIT_PATH=d + ':')
+        r = subprocess.run(['systemd-analyze', 'verify', '--man=no', 'multi-user.target'], env=env, capture_output=True, text=True, timeout=120)
+        return r.stdout + r.stderr
+
+    def test_the_confirm_unit_is_not_part_of_an_ordering_cycle_with_multi_user_target(self):
+        out = self.verify()
+        self.assertNotIn('ordering cycle', out)
+        self.assertNotIn('deleted to break', out)
+
+    def test_the_probe_does_see_a_cycle_when_there_is_one(self):
+        out = self.verify('[Unit]\nBefore=multi-user.target')
+        self.assertIn('ordering cycle', out)
+        self.assertIn('opos-update-confirm.service', out)
 
 
 def extract_block(path, what):

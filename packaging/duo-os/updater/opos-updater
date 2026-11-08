@@ -26,12 +26,15 @@ import json
 import os
 import pwd
 import re
+import resource
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import zlib
 
@@ -49,7 +52,15 @@ RESERVED = frozenset({'REVISION', 'manifest.json', 'manifest.json.sig', 'overlay
 MODES = {'0644': 0o644, '0755': 0o755}
 MAX_MANIFEST = 8 << 20
 MAX_SIG = 16 << 10
+MAX_STATE = 1 << 20
+MAX_FAILED = 64            # serials kept in state.json's `failed` list (the `floor` is what never forgets)
+# One limit for the writer and the reader of overlay-backup/index.json. 20,000 entries of at most about 650 bytes each is
+# about 13 MB; a reader with a smaller limit than the writer once threw a valid backup away (review finding 2).
+MAX_INDEX = 16 << 20
+BLOCK = 512                # the tar block size
+MAX_REQUEST = 64           # bytes of a request file that are read
 CHUNK = 1 << 20
+REQUEST_ROLLBACK, CANCEL_STAGED = 'rollback', 'cancel-staged'  # what inbox/rollback.request can ask for
 Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
 
 
@@ -63,6 +74,11 @@ class Busy(Exception):
 
 class Fatal(Exception):
     """The updater cannot continue (unreadable state, wrong layout)."""
+
+
+class Incomplete(Fatal):
+    """Putting the previous release back did not finish (systemd refused a reload or a restart, a file could not be copied).
+    The transaction stays open in state.json together with the saved originals it names, and the next run does the rest."""
 
 
 def _free_bytes(path):
@@ -102,8 +118,10 @@ class Config:
     smoke_port: int = 0                              # 0: the smoke server binds a port the kernel picks and reports it
     smoke_chown: bool = True                         # give the smoke server's throwaway HOME to service_user
     smoke_timeout: float = 20.0
+    smoke_log_limit: int = 1 << 20                   # the smoke server may not write a file larger than this (RLIMIT_FSIZE), its log included
     health_timeout: float = 45.0
     health_interval: float = 1.0
+    probe_deadline: float = 8.0                      # hard limit for one probe of the server: connect, headers and body
     confirm_timeout: float = 120.0
     lock_timeout: float = 120.0
     pace: float = 2.0                                # apply-inbox lingers this long after a run that did its job
@@ -114,6 +132,7 @@ class Config:
     max_unpacked: int = 256 << 20
     max_bundle: int = 272 << 20
     max_passes: int = 8
+    space_headroom: int = 16 << 20                   # free bytes left over after the whole live change, rollback included
     keep_previous: int = 2
     statvfs: object = None                           # callable(path) -> free bytes
     health: object = None                            # callable(cfg) -> (ok, message)
@@ -370,26 +389,65 @@ def parse_manifest(raw, cfg):
 
 # ---- probes ------------------------------------------------------------------------------------------------
 
-def http_get(host, port, path, headers=None, timeout=3.0):
-    c = http.client.HTTPConnection(host, port, timeout=timeout)
+def http_get(host, port, path, headers=None, timeout=3.0, total=None):
+    """GET with a hard overall deadline. `timeout` bounds every single socket operation; `total` (default twice that) bounds
+    the whole exchange: connect, status line, headers and body. A per-operation timeout alone is satisfied for ever by a
+    server that sends one byte a second, so a timer shuts the socket down when the deadline passes and the body is read in
+    pieces with the remaining time checked between them (review finding 7)."""
+    total = 2 * timeout if total is None else total
+    end = time.monotonic() + total
+    c = http.client.HTTPConnection(host, port, timeout=max(0.05, min(timeout, total)))
+    timer, fired = None, threading.Event()
     try:
+        c.connect()
+        sock = c.sock
+
+        def expire():
+            fired.set()
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+        timer = threading.Timer(max(0.0, end - time.monotonic()), expire)
+        timer.daemon = True
+        timer.start()
         c.request('GET', path, headers=headers or {})
         r = c.getresponse()
-        return r.status, r.read(4 << 20)
+        body, cap = bytearray(), 4 << 20
+        while len(body) < cap and not r.isclosed():
+            left = end - time.monotonic()
+            if left <= 0 or fired.is_set():
+                raise TimeoutError('no complete answer within %g s' % total)
+            sock.settimeout(max(0.05, min(timeout, left)))
+            chunk = r.read1(min(65536, cap - len(body)))
+            if not chunk:
+                if fired.is_set():
+                    raise TimeoutError('no complete answer within %g s' % total)
+                if r.length:  # closed before the announced length
+                    raise http.client.IncompleteRead(bytes(body), r.length)
+                break
+            body += chunk
+        return r.status, bytes(body)
     finally:
+        if timer:
+            timer.cancel()
+            timer.join(1.0)  # no thread left over when the next child process is forked
         c.close()
 
 
-def probe_http(host, port):
-    """The health contract: GET / is 200 and carries the page token; /api/state answers JSON with a battery key."""
+def probe_http(host, port, deadline=8.0):
+    """The health contract: GET / is 200 and carries the page token; /api/state answers JSON with a battery key.
+    `deadline` is the hard limit for both requests together."""
+    end = time.monotonic() + deadline
+
+    def left():
+        return max(0.05, end - time.monotonic())
     try:
-        status, body = http_get(host, port, '/')
+        status, body = http_get(host, port, '/', total=left())
         if status != 200:
             return False, 'GET / answered %d' % status
         m = re.search(rb'name="opos-token" content="([^"]{1,200})"', body)
         if not m:
             return False, 'the page has no token'
-        status, body = http_get(host, port, '/api/state', {'X-OPOS-Token': m.group(1).decode('ascii', 'replace')})
+        status, body = http_get(host, port, '/api/state', {'X-OPOS-Token': m.group(1).decode('ascii', 'replace')}, total=left())
         if status != 200:
             return False, 'GET /api/state answered %d' % status
         data = json.loads(body)
@@ -401,10 +459,10 @@ def probe_http(host, port):
 
 
 def probe_health(cfg):
-    r = run(cfg, [*cfg.systemctl, 'is-active', SERVER_UNIT])
+    r = run(cfg, [*cfg.systemctl, 'is-active', SERVER_UNIT], timeout=cfg.probe_deadline)
     if r.returncode != 0 or r.stdout.strip() != b'active':
         return False, 'opos-server is not active'
-    return probe_http(cfg.health_host, cfg.health_port)
+    return probe_http(cfg.health_host, cfg.health_port, cfg.probe_deadline)
 
 
 SMOKE_ADDR = re.compile(rb'http://127\.0\.0\.1:([0-9]{1,5})/')
@@ -444,8 +502,13 @@ def run_smoke(cfg, release_dir):
            'PYTHONDONTWRITEBYTECODE=1', 'OPOS_BATTERY=live', 'OPOS_ON_PHONE=1']
     argv = [*cfg.runuser, cfg.env_bin, '-i', *env, cfg.python, '-m', 'opos.web', '--port', str(cfg.smoke_port), '--live-battery']
     out = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
+    limit = cfg.smoke_log_limit
+
+    def cap_file_size():  # the kernel stops a server that loops on an error from filling the storage (review finding 10)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
     try:
-        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd='/', env=SAFE_ENV, start_new_session=True)
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd='/', env=SAFE_ENV, start_new_session=True,
+                                preexec_fn=cap_file_size)
     except OSError as e:
         return False, 'cannot start the server: %s' % e
     finally:
@@ -460,7 +523,7 @@ def run_smoke(cfg, release_dir):
             status = None
             if port:
                 try:
-                    status, _ = http_get(host, port, '/', timeout=2.0)
+                    status, _ = http_get(host, port, '/', timeout=2.0, total=min(cfg.probe_deadline, max(0.2, deadline - cfg.mono())))
                 except (OSError, http.client.HTTPException):
                     status = None
             if status == 200:
@@ -487,23 +550,73 @@ def run_smoke(cfg, release_dir):
         remove_tree(log)
 
 
-def _tail(path):
+def _tail(path, keep=300):
+    """The last bytes of a log, read from the end: the file may be as large as a looping server could make it."""
     try:
         with open(path, 'rb') as f:
-            return f.read()[-300:].decode('utf-8', 'replace').strip().replace('\n', ' | ')
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 4 * keep))
+            return f.read(8 * keep)[-keep:].decode('utf-8', 'replace').strip().replace('\n', ' | ')
     except OSError:
         return ''
+
+
+def _octal(field, what):
+    digits = field.strip(b'\0 ')
+    if not 1 <= len(digits) <= 11 or digits.strip(b'01234567'):
+        raise Reject('not a bundle: %s is not an octal number' % what)
+    return int(digits, 8)
+
+
+def outer_header(block, index, name):
+    """Check one 512-byte header of the outer archive: a plain (USTAR or GNU-magic) header of a regular file with exactly the
+    expected name. Returns the member's size. Extension, sparse, long-name, link, directory and device headers are all refused
+    here, by their type flag, without reading anything they point at."""
+    bad = 'bundle member %d must be the regular file %s' % (index + 1, name)
+    if len(block) < BLOCK:
+        raise Reject('bundle is truncated')
+    if _octal(block[148:156], 'the checksum') != sum(block[:148]) + 8 * 32 + sum(block[156:BLOCK]):
+        raise Reject('not a bundle: bad header checksum')
+    if block[257:265] not in (b'ustar\x0000', b'ustar  \x00'):
+        raise Reject('not a bundle: not a tar archive')
+    if block[156:157] not in (b'0', b'\0') or block[:100].split(b'\0', 1)[0] != name.encode():
+        raise Reject(bad)
+    if any(block[157:257]) or any(block[345:BLOCK]):  # link name; prefix and the GNU atime, sparse and extension fields
+        raise Reject('bundle member %s has header fields that a plain archive does not use' % name)
+    return _octal(block[124:136], 'the size')
 
 
 # ---- the updater -------------------------------------------------------------------------------------------
 
 def _new_state(cur):
-    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'pending_boot': None, 'trial': None, 'txn': None,
+    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'floor': 0, 'pending_boot': None, 'trial': None, 'txn': None,
             'stepped_back': None}
 
 
 def _iso(t):
     return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
+
+
+def peak_space(changes):
+    """The most bytes, above what the file system holds now, that the overlay files in `changes` ((old size, new size) in
+    replacement order; old is 0 for a file that does not exist yet) need while they are replaced one by one and, if the update
+    fails at any point, put back one by one in the same order. A replacement holds a temporary copy beside the old file until
+    the rename, so its peak is the growth so far plus that copy. A restore from a failure after k files holds that growth
+    while the saved original of file j < k is copied beside the replaced file, and the files before j are already back
+    (which gives space back, or takes it when they had shrunk): the growth after k files, less the growth before j, plus the
+    size of the original of j. Over all k and j that is the growth after k plus the highest (old size - growth before j)
+    among the files before k, found in one pass. Never less than the largest single temporary copy (freed space is not
+    always reusable at once)."""
+    grown, peak, lead = 0, 0, None   # growth after the files done so far; the highest need; that highest (old - growth before it)
+    for old, new in changes:
+        peak = max(peak, old, new, grown + new)
+        if lead is not None:
+            peak = max(peak, grown + lead)   # a failure before this file
+        lead = old - grown if lead is None else max(lead, old - grown)
+        grown += new - old
+    if lead is not None:
+        peak = max(peak, grown + lead)   # a failure after the last file
+    return peak
 
 
 class Updater:
@@ -600,7 +713,7 @@ class Updater:
 
     def read_state(self):
         try:
-            st = json.loads(read_small(self.cfg.state_file, 1 << 20))
+            st = json.loads(read_small(self.cfg.state_file, MAX_STATE))
         except FileNotFoundError:
             return None
         except (ValueError, OSError, Reject):
@@ -611,7 +724,19 @@ class Updater:
             raise Fatal('state.json has an unexpected shape; refusing to guess')
         for k, v in _new_state(None).items():
             st.setdefault(k, v)
+        if type(st['floor']) is not int or st['floor'] < 0:
+            raise Fatal('state.json has an unexpected shape; refusing to guess')
+        # A state file from before the floor existed gets the highest serial in its list, which the floor is at least.
+        st['floor'] = max(st['floor'], max(st['failed'], default=0))
         return st
+
+    def burn(self, serial):
+        """A serial that failed here is never accepted again. The list keeps the newest MAX_FAILED for display; the floor
+        (the highest serial that ever failed) never goes down and refuses everything at or below it, so a serial that falls
+        out of the list is still refused (review finding 8). Rollback does not lower it."""
+        st = self.st
+        st['failed'] = sorted(set(st['failed']) | {serial})[-MAX_FAILED:]
+        st['floor'] = max(st['floor'], serial)
 
     def base_level(self):
         try:
@@ -732,6 +857,35 @@ class Updater:
         self.bad += 1
         self.status('failed', 'rejected: inbox entry %r is %s' % (name[:60], why))
 
+    def take_request(self, dfd):
+        """Read and remove inbox/rollback.request. An empty file asks for a rollback (which also cancels a staged boot update);
+        the text `cancel-staged` asks to cancel the staged boot update and nothing else. Anything else is refused: a request
+        file is written by the unprivileged side, so only these two things are understood and at most MAX_REQUEST bytes are
+        read. Returns REQUEST_ROLLBACK, CANCEL_STAGED, or None for a refused request (removed and reported)."""
+        name = 'rollback.request'
+        data, ident = None, None
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dfd)
+        except OSError:
+            fd = None
+        if fd is not None:
+            try:
+                st = os.fstat(fd)
+                ident = (st.st_dev, st.st_ino)
+                if stat.S_ISREG(st.st_mode):
+                    data = os.read(fd, MAX_REQUEST + 1)
+            finally:
+                os.close(fd)
+        self.drop(dfd, name, ident)
+        text = data.strip() if data is not None and len(data) <= MAX_REQUEST else None
+        if text == b'':
+            return REQUEST_ROLLBACK
+        if text == CANCEL_STAGED.encode():
+            return CANCEL_STAGED
+        self.log('rollback request refused and removed: it is not an empty file or %r' % CANCEL_STAGED)
+        self.status('failed', 'rejected: the rollback request is not understood')
+        return None
+
     def copy_in(self, dfd, name, run_dir):
         """Copy the inbox file into root-owned staging, with O_NOFOLLOW and a size cap, before anything reads it."""
         cfg = self.cfg
@@ -775,40 +929,37 @@ class Updater:
 
     # -- verification
     def split_outer(self, bundle, run_dir):
+        """Copy the three members of the outer archive into run_dir. The archive is read here, header by header, and not by
+        tarfile: before it hands over a member, tarfile reads and parses PAX and GNU extension headers (a sparse map, a long
+        name) of any size the unauthenticated file declares, so a few hundred megabytes of them could exhaust the phone's
+        memory before the signature is even looked at (review finding 3). Only plain regular members are understood; a header
+        of any other kind is refused before its contents are touched."""
         cfg = self.cfg
         want = [('manifest.json', MAX_MANIFEST), ('manifest.json.sig', MAX_SIG), ('payload.tar.gz', cfg.max_bundle)]
-        i = 0
-        try:
-            with tarfile.open(bundle, 'r:') as tf:
-                for m in tf:
-                    if i >= 3:
-                        raise Reject('bundle has extra members')
-                    name, limit = want[i]
-                    if m.name != name or m.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):
-                        raise Reject('bundle member %d must be the regular file %s' % (i + 1, name))
-                    if m.size > limit:
-                        raise Reject('bundle member %s is too large' % name)
-                    src = tf.extractfile(m)
-                    out = os.open(os.path.join(run_dir, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-                    try:
-                        left = m.size
-                        while left:
-                            b = src.read(min(CHUNK, left))
-                            if not b:
-                                raise Reject('bundle is truncated')
-                            write_all(out, b)
-                            left -= len(b)
-                    finally:
-                        os.close(out)
-                    i += 1
-                end = tf.offset
-        except (tarfile.TarError, EOFError) as e:
-            raise Reject('not a bundle: %s' % e)
-        if i != 3:
-            raise Reject('bundle is missing members')
-        with open(bundle, 'rb') as f:  # the end-of-archive padding must be zeros
-            f.seek(end)
-            while True:
+        with open(bundle, 'rb') as f:
+            for i, (name, limit) in enumerate(want):
+                block = f.read(BLOCK)
+                if not block:
+                    raise Reject('not a bundle: empty file' if i == 0 else 'bundle is missing members')
+                if not any(block):  # the end-of-archive marker, too early
+                    raise Reject('bundle is missing members')
+                size = outer_header(block, i, name)
+                if size > limit:
+                    raise Reject('bundle member %s is too large' % name)
+                out = os.open(os.path.join(run_dir, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    left = size
+                    while left:
+                        b = f.read(min(CHUNK, left))
+                        if not b:
+                            raise Reject('bundle is truncated')
+                        write_all(out, b)
+                        left -= len(b)
+                finally:
+                    os.close(out)
+                if f.read(-size % BLOCK).strip(b'\0'):  # the padding up to the next block is zeros (a cut-short last one is harmless)
+                    raise Reject('bundle has data after its last member')
+            while True:  # nothing but zeros may follow: the end-of-archive blocks and the padding
                 b = f.read(CHUNK)
                 if not b:
                     break
@@ -845,6 +996,8 @@ class Updater:
         serial = mf['serial']
         if serial in st['failed']:
             raise Reject('serial %d failed on this phone before; use a new serial' % serial)
+        if serial <= st['floor']:
+            raise Reject('serial %d is not above %d, the highest serial that failed on this phone; use a new serial' % (serial, st['floor']))
         if serial <= st['current']['serial']:
             raise Reject('serial %d is not newer than the running serial %d' % (serial, st['current']['serial']))
         if st['pending_boot'] and serial <= st['pending_boot']['serial']:
@@ -886,6 +1039,38 @@ class Updater:
                 continue
             if not stat.S_ISREG(st.st_mode):
                 raise Reject('%s exists and is not a regular file' % e.path)
+
+    def check_space(self, entries, unpacked):
+        """Before anything live changes, check that the whole change fits, rollback included (review findings 5 and U2). What
+        it holds at its peak, per file system: the unpacked release (unless it is already unpacked), the saved originals of
+        the overlay files it replaces (in the release directory), and what peak_space finds for the overlay files on that
+        file system: the growth of the files replaced so far with the temporary copy beside the next one, and the same for
+        a restore after a failure at any point; plus some headroom (which also has to cover what the byte counts leave out:
+        block rounding, directory and journal use). The earlier check (twice the unpacked size) stays."""
+        cfg = self.cfg
+        spots = {}  # device -> [a path on it, bytes held before the first live change, (old size, new size) of its overlay files in order]
+
+        def spot(path):
+            dev = os.stat(path).st_dev
+            return spots.setdefault(dev, [path, 0, []])
+        if not unpacked:
+            spot(cfg.releases)[1] += sum(e.size for e in entries)
+        for e in entries:
+            if e.kind != 'overlay':
+                continue
+            dest = os.path.join(cfg.root, e.path)
+            try:
+                old = os.lstat(dest).st_size
+            except FileNotFoundError:
+                old = 0
+            else:
+                spot(cfg.releases)[1] += old  # the saved original lives in the release directory
+            spot(os.path.dirname(dest))[2].append((old, e.size))
+        for path, held, changes in spots.values():
+            need = held + peak_space(changes) + cfg.space_headroom
+            have = cfg.statvfs(path)
+            if have < need:
+                raise Reject('not enough free space to apply and, if need be, undo the update: %d bytes needed on %s, %d free' % (need, path, have))
 
     def extract(self, payload, entries, dest):
         """Unpack payload.tar.gz into the fresh directory dest: listed regular files only, hashes and modes checked."""
@@ -1008,6 +1193,7 @@ class Updater:
         if name in self.referenced():
             raise Reject('release %s is already installed' % name)
         self.check_overlay_targets(entries)
+        self.check_space(entries, unpacked=False)
         remove_tree(work)
         remove_tree(final)
         try:
@@ -1089,23 +1275,42 @@ class Updater:
         txn = st['txn']
         rdir = os.path.join(self.cfg.releases, txn['release'])
         self.serial = txn['serial']
-        units = self.restore_overlays(rdir)
-        if units:
-            self.reload_units(strict=False)
-        self.switch_link(txn['from'])
-        self.step('undo-switched')
-        if restart:
-            self.restart_services(strict=False)
-        st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
+        note = self.put_back(rdir, txn['from'], 'undo-switched', restart)
+        self.burn(txn['serial'])
         if txn.get('boot'):
             st['pending_boot'] = None
         st['txn'] = None
         self.save()
         self.step('undo-saved')
-        self.status('rolled-back', reason)
+        self.status('rolled-back', reason + note)
         self.gc()
-        if restart:
-            self.log('after the rollback the server is %s' % ('healthy' if self.wait_healthy(min(self.cfg.health_timeout, 20.0))[0] else 'NOT healthy'))
+
+    def put_back(self, rdir, to, step, restart):
+        """The part of every undo that touches the live system: put the saved overlay files of the release in rdir back,
+        point /opt/opos at `to`, make systemd see the restored unit files and, with restart, restart the server and wait
+        (bounded) for it to answer. It never closes the transaction: whatever fails leaves it, and the saved originals it
+        names, in place for the next run, which does all of it again (every part is idempotent; review findings 2 and 6).
+        Returns a note for the status text when the server is not healthy afterwards."""
+        try:
+            units = self.restore_overlays(rdir)
+            self.switch_link(to)
+            self.step(step)
+            try:
+                if units:
+                    self.reload_units()
+                if restart:
+                    self.restart_services()
+            except RuntimeError as e:
+                raise Incomplete('systemd did not take the restored release (%s)' % e)
+        except Fatal as e:  # the status must not stay at "applying"
+            with contextlib.suppress(OSError):
+                self.status('failed', 'the previous release is not back yet: %s%s' % (e, '; the next run tries again' if isinstance(e, Incomplete) else ''))
+            raise
+        if not restart:
+            return ''
+        ok, msg = self.wait_healthy(min(self.cfg.health_timeout, 20.0))
+        self.log('after the rollback the server is %s' % ('healthy' if ok else 'NOT healthy: ' + msg))
+        return '' if ok else '; the previous release did not pass the health check afterwards (%s)' % msg
 
     # -- overlays
     def backup_overlays(self, rdir, overlays):
@@ -1124,29 +1329,38 @@ class Updater:
             make_dirs(bdir, 'files/' + os.path.dirname(e.path))
             self.copy_file(dest, save, 0o600)
             index.append({'path': e.path, 'existed': True, 'mode': stat.S_IMODE(st.st_mode), 'sha256': hash_file(save)[1]})
-        atomic_write(os.path.join(bdir, 'index.json'), (json.dumps(index, indent=1) + '\n').encode(), 0o600)
+        data = (json.dumps(index, separators=(',', ':')) + '\n').encode()
+        if len(data) > MAX_INDEX:  # the reader refuses more than this, so never write more
+            raise Reject('the list of saved overlay files would be larger than %d bytes' % MAX_INDEX)
+        atomic_write(os.path.join(bdir, 'index.json'), data, 0o600)
         fsync_dir(bdir)
 
     def copy_file(self, src, dest, mode):
-        """Copy src to dest atomically (dest + '.new', fsync, rename)."""
+        """Copy src to dest atomically (dest + '.new', fsync, rename). Whatever stops it before the rename (a full file system
+        above all), it removes its own temporary file at once: the half-written copy holds the free space that the restore
+        of the files already replaced needs for theirs (review finding U1)."""
         tmp = dest + '.new'
         remove_tree(tmp)
-        sfd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
-            dfd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+            sfd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
             try:
-                while True:
-                    b = os.read(sfd, CHUNK)
-                    if not b:
-                        break
-                    write_all(dfd, b)
-                os.fchmod(dfd, mode)
-                os.fsync(dfd)
+                dfd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    while True:
+                        b = os.read(sfd, CHUNK)
+                        if not b:
+                            break
+                        write_all(dfd, b)
+                    os.fchmod(dfd, mode)
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
             finally:
-                os.close(dfd)
-        finally:
-            os.close(sfd)
-        os.rename(tmp, dest)
+                os.close(sfd)
+            os.rename(tmp, dest)
+        except BaseException:
+            remove_tree(tmp)
+            raise
         fsync_dir(os.path.dirname(dest))
 
     def replace_overlays(self, rdir, overlays):
@@ -1157,36 +1371,68 @@ class Updater:
             self.reload_units()
             self.step('units')
 
-    def restore_overlays(self, rdir):
-        """Put the saved originals back (idempotent). Returns True if a unit file was involved."""
-        bdir = os.path.join(rdir, 'overlay-backup')
+    def load_backup(self, bdir):
+        """The index of the saved originals of a release, checked. Every release that can be undone has one (it is written
+        before the transaction starts), so one that is missing, unreadable or malformed means the originals cannot be put
+        back: stop and keep the transaction, instead of carrying on without them and then discarding the backups."""
+        path = os.path.join(bdir, 'index.json')
         try:
-            index = json.loads(read_small(os.path.join(bdir, 'index.json'), 1 << 20))
-        except (OSError, ValueError, Reject):
-            self.log('no overlay backup in %s; only the symlink is restored' % rdir)
+            index = json.loads(read_small(path, MAX_INDEX))
+        except (OSError, ValueError, Reject, RecursionError) as e:
+            raise Fatal('the overlay backup %s is missing or unreadable (%s); refusing to guess, the transaction stays open' % (path, e))
+        good = type(index) is list
+        for it in index if good else ():
+            try:
+                good = good and type(it) is dict and classify(it.get('path'))[0] == 'overlay' and type(it.get('existed')) is bool and (
+                    not it['existed'] or (type(it.get('mode')) is int and 0 <= it['mode'] <= 0o7777 and type(it.get('sha256')) is str
+                                          and bool(HEX64.match(it['sha256']))))
+            except Reject:
+                good = False
+        if not good:
+            raise Fatal('the overlay backup %s is malformed; refusing to guess, the transaction stays open' % path)
+        return index
+
+    @staticmethod
+    def same_file(path, mode, sha256):
+        try:
+            st = os.lstat(path)
+            return stat.S_ISREG(st.st_mode) and stat.S_IMODE(st.st_mode) == mode and hash_file(path)[1] == sha256
+        except OSError:
             return False
+
+    def restore_overlays(self, rdir):
+        """Put the saved originals back (idempotent). Returns True if a unit file was involved. A file that already is its
+        original is left alone: when the replacement itself failed for lack of space the destination is still intact, and
+        copying the original over it would need the very room that is missing (review finding 5). Before any copy, every
+        `<path>.new` beside an indexed path is removed: a run that was killed halfway through a replacement leaves one, and
+        it would hold the room that the files before it need for their temporary copies (review finding U1)."""
+        bdir = os.path.join(rdir, 'overlay-backup')
+        index = self.load_backup(bdir)
         units = False
+        for it in index:
+            try:
+                remove_tree(os.path.join(self.cfg.root, it['path']) + '.new')
+            except OSError as e:
+                raise Incomplete('cannot clear %s.new: %s' % (it['path'], e))
         for i, it in enumerate(index):
             dest = os.path.join(self.cfg.root, it['path'])
             units = units or it['path'].startswith('etc/systemd/system/')
-            if it['existed']:
-                save = os.path.join(bdir, 'files', it['path'])
-                if hash_file(save)[1] != it['sha256']:
-                    raise Fatal('the backup of %s is damaged; not restoring it' % it['path'])
-                self.copy_file(save, dest, it['mode'])
-            else:
-                remove_tree(dest)
-            remove_tree(dest + '.new')
+            try:
+                if it['existed']:
+                    save = os.path.join(bdir, 'files', it['path'])
+                    if hash_file(save)[1] != it['sha256']:
+                        raise Fatal('the backup of %s is damaged; not restoring it' % it['path'])
+                    if not self.same_file(dest, it['mode'], it['sha256']):
+                        self.copy_file(save, dest, it['mode'])
+                else:
+                    remove_tree(dest)
+            except OSError as e:
+                raise Incomplete('cannot put %s back: %s' % (it['path'], e))
             self.step('restore-%d' % i)
         return units
 
-    def reload_units(self, strict=True):
-        try:
-            self.systemctl('daemon-reload')
-        except RuntimeError:
-            if strict:
-                raise
-            self.log('daemon-reload failed while restoring')
+    def reload_units(self):
+        self.systemctl('daemon-reload')
 
     def switch_link(self, name):
         cfg = self.cfg
@@ -1196,13 +1442,8 @@ class Updater:
         os.rename(tmp, cfg.opt_link)
         fsync_dir(os.path.dirname(cfg.opt_link))
 
-    def restart_services(self, strict=True):
-        try:
-            self.systemctl('restart', SERVER_UNIT)
-        except RuntimeError:
-            if strict:
-                raise
-            self.log('restarting opos-server failed')
+    def restart_services(self):
+        self.systemctl('restart', SERVER_UNIT)
         # The kiosk's loop starts a new Chromium on the restarted server. The session (opos.service) stays up.
         run(self.cfg, [*self.cfg.pkill, '-u', self.cfg.service_user, '-f', self.cfg.kiosk_pattern])
 
@@ -1216,21 +1457,48 @@ class Updater:
             cfg.sleep(cfg.health_interval)
 
     # -- rollback
-    def rollback(self, reason, restart, requested=False):
-        """Go back to the previous release. requested: asked for through the inbox, so by a process that is not root. That is
-        honoured once per applied update (stepped_back) and does not burn the serial, so the same signed release can be
-        installed again; every other rollback (failed health or boot check, `opos-updater rollback`) burns it."""
+    def cancel_staged(self, why):
+        """Drop the staged boot-scope update. Nothing live was touched by staging, so this is bookkeeping only; the serial is
+        not burned (the owner can deliver the same signed release again)."""
         st = self.st
+        pb = st['pending_boot']
+        st['pending_boot'] = None
+        self.serial = pb['serial']
+        self.save()
+        self.step('staged-cancelled')
+        self.status('rolled-back', 'staged update %d (%s) cancelled (%s); the phone keeps running release %s'
+                    % (pb['serial'], pb.get('version', '?'), why, st['current']['release']))
+        self.gc()
+
+    def rollback(self, reason, restart, requested=False, cancel_only=False):
+        """Go back to the previous release, and drop a staged boot update. requested: asked for through the inbox, so by a
+        process that is not root. That is honoured once per applied update (stepped_back) and does not burn the serial, so the
+        same signed release can be installed again; every other rollback (failed health or boot check, `opos-updater
+        rollback`) burns it. A staged boot update is cancelled on its own account, before and without regard to the installed
+        releases: it needs no previous release to exist and the one-step limit does not apply to it (review finding 11).
+        cancel_only: do nothing but that."""
+        st = self.st
+        staged = bool(st['pending_boot'])
+        if staged:
+            self.cancel_staged(reason)
+            if cancel_only:
+                return True
+        elif cancel_only:
+            self.status('failed', 'nothing is staged, so there is nothing to cancel')
+            return False
         if not st['previous']:
-            self.status('failed', 'nothing to roll back to')
-            return False
+            if not staged:
+                self.status('failed', 'nothing to roll back to')
+            return staged
         if requested and st['stepped_back'] is not None:
-            self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
-            return False
+            if not staged:
+                self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
+            return staged
         target = st['previous'][0]
         if not os.path.isdir(os.path.join(self.cfg.releases, target['release'])):
-            self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
-            return False
+            if not staged:
+                self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
+            return staged
         st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': st['current']['release'], 'to': target['release'],
                      'requested': bool(requested)}
         self.save()
@@ -1243,25 +1511,19 @@ class Updater:
         txn = st['txn']
         self.serial = txn['serial']
         self.status('applying', 'rolling back release %s' % txn['release'])
-        units = self.restore_overlays(os.path.join(self.cfg.releases, txn['release']))
-        if units:
-            self.reload_units(strict=False)
-        self.switch_link(txn['to'])
-        self.step('rollback-switched')
-        if restart:
-            self.restart_services(strict=False)
+        note = self.put_back(os.path.join(self.cfg.releases, txn['release']), txn['to'], 'rollback-switched', restart)
         if st['previous'] and st['previous'][0]['release'] == txn['to']:
             st['current'] = st['previous'][0]
             st['previous'] = st['previous'][1:]
         if not txn.get('requested'):
-            st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
+            self.burn(txn['serial'])
         st['stepped_back'] = txn['serial']
         st['trial'] = None
         st['pending_boot'] = None
         st['txn'] = None
         self.save()
         self.step('rollback-saved')
-        self.status('rolled-back', '%s: now running release %s' % (reason, st['current']['release']))
+        self.status('rolled-back', '%s: now running release %s%s' % (reason, st['current']['release'], note))
         self.gc()
 
     # -- commands
@@ -1275,10 +1537,13 @@ class Updater:
                 if rollback:
                     dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
                     try:
-                        self.drop(dfd, 'rollback.request')
+                        kind = self.take_request(dfd)
                     finally:
                         os.close(dfd)
-                    self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True) else 1
+                    if kind is None:
+                        self.bad += 1
+                    else:
+                        self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True, cancel_only=kind == CANCEL_STAGED) else 1
                 done = False
                 for name in bundles:
                     dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -1328,11 +1593,18 @@ class Updater:
             except (Reject, OSError) as e:
                 self.log('staged update %d dropped: %s' % (pb['serial'], e))
                 st['pending_boot'] = None
-                st['failed'] = sorted(set(st['failed']) | {pb['serial']})[-64:]
+                self.burn(pb['serial'])
                 self.save()
                 self.serial = pb['serial']
                 self.status('failed', 'staged update dropped: %s' % e)
                 self.gc()
+                return 3
+            try:
+                self.check_space(entries, unpacked=True)
+            except Reject as e:  # no room for the change and its rollback: do not start; it stays staged and is tried again at the next boot
+                self.log('staged update %d waits: %s' % (pb['serial'], e))
+                self.serial = pb['serial']
+                self.status('failed', 'staged update %d is kept for the next boot: %s' % (pb['serial'], e))
                 return 3
             res = self.go_live(pb, [e for e in entries if e.kind == 'overlay'], restart=False, boot=True)
             return 0 if res == 'applied' else 3
