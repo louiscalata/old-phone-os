@@ -40,6 +40,15 @@ from its own baked-in revision again.
 - Replay and downgrade: every bundle has a strictly increasing integer `serial`; the updater refuses `serial` not greater
   than the current one and any serial in its `failed` list. A downgrade is a local root action (`opos-updater rollback`),
   never a bundle.
+- **The one exception: the rollback request.** The Update page's "Request rollback" is an empty file, `inbox/rollback.request`,
+  and root honours it although it carries no signature, so any process that can write the inbox (anything running as
+  `droidian`, which is also what OPOS's own server is) can send the phone back to its previous release. That is a
+  downgrade to code the owner signed and the phone ran, never to anything else, and it is limited: root honours **one
+  requested step back per applied update** (`state.json` `stepped_back`; an applied update clears it), and a requested
+  rollback does **not** burn the serial it leaves, so installing the same signed release again undoes it. What the limit does not
+  stop: one step back per update, by anyone with that uid; and a process that keeps `opos-server` down through the
+  45-second health window of a real update gets that update rolled back and its serial burned (the owner then ships the
+  fix under a new serial). A process that can do that can already kill the UI at will, so it is accepted, not fixed.
 
 ## Bundle format (`opos-<serial>.opos-update`)
 
@@ -85,7 +94,7 @@ relative to the index's own URL.
 ```
 
 `state.json` (root-written): `{"base": 1, "current": {"serial", "version", "revision", "release"}, "previous": [...],
-"failed": [serials], "pending_boot": null}`. `status.json` (world-readable, for the UI): `{"phase": "idle|verifying|
+"failed": [serials], "pending_boot": null, "stepped_back": null}`. `status.json` (world-readable, for the UI): `{"phase": "idle|verifying|
 applying|checking|done|rolled-back|failed", "message", "serial", "time"}`. The image's initial release is serial 0 built
 from the revision in `/opt/opos/REVISION`; `build-image.sh` creates the release-directory layout.
 
@@ -157,9 +166,12 @@ Where the code is stricter or more specific than the text above. Every item is a
   root resets them. What bounds a flood instead: everything looked at is removed, and the updater lingers after each run
   (2 s; 30 s after a run that could not work: exit 1 or 75), so the path unit starts at most one run per few seconds.
 - **Serials.** A serial must be above the running one and above a staged boot update, and not in `failed`. A rolled-back
-  serial (automatic, requested, or recovered after an interrupted run) is added to `failed` and never accepted again; a
-  refused bundle and a failed smoke test are not. A newer app update supersedes a staged boot update, and a rollback cancels it.
-- **State.** `state.json` also holds `schema`, `trial` (boot scope: the failed-boot counter) and `txn` (a journal written
+  serial (after a failed health or boot check, `opos-updater rollback`, or recovered after an interrupted apply) is added to
+  `failed` and never accepted again; a refused bundle, a failed smoke test and a rollback *requested through the inbox* are
+  not (see the trust model: that one is limited to one step back per applied update, and installing the same signed release
+  again undoes it). A newer app update supersedes a staged boot update, and a rollback cancels it.
+- **State.** `state.json` also holds `schema`, `trial` (boot scope: the failed-boot counter), `stepped_back` (the serial the
+  phone last went back from, until the next update is applied) and `txn` (a journal written
   before the first live change; the next run undoes an interrupted apply or finishes an interrupted rollback). `status.json`
   also holds `epoch`, and each bundle or request that is looked at rewrites it (the USB push script waits for it to change).
   Its `message` can contain text that came from a bundle or the inbox, so the UI escapes it. A bundle refused before its

@@ -498,7 +498,8 @@ def _tail(path):
 # ---- the updater -------------------------------------------------------------------------------------------
 
 def _new_state(cur):
-    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'pending_boot': None, 'trial': None, 'txn': None}
+    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'pending_boot': None, 'trial': None, 'txn': None,
+            'stepped_back': None}
 
 
 def _iso(t):
@@ -1068,6 +1069,7 @@ class Updater:
         st['previous'] = ([st['current']] + st['previous'])[:cfg.keep_previous]
         st['current'] = new
         st['pending_boot'] = None
+        st['stepped_back'] = None
         st['trial'] = {'serial': new['serial'], 'release': new['release'], 'failed_boots': 0, 'last_boot': cfg.boot_id(), 'counted_boot': None} if boot else None
         st['txn'] = None
         self.save()
@@ -1214,16 +1216,23 @@ class Updater:
             cfg.sleep(cfg.health_interval)
 
     # -- rollback
-    def rollback(self, reason, restart):
+    def rollback(self, reason, restart, requested=False):
+        """Go back to the previous release. requested: asked for through the inbox, so by a process that is not root. That is
+        honoured once per applied update (stepped_back) and does not burn the serial, so the same signed release can be
+        installed again; every other rollback (failed health or boot check, `opos-updater rollback`) burns it."""
         st = self.st
         if not st['previous']:
             self.status('failed', 'nothing to roll back to')
+            return False
+        if requested and st['stepped_back'] is not None:
+            self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
             return False
         target = st['previous'][0]
         if not os.path.isdir(os.path.join(self.cfg.releases, target['release'])):
             self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
             return False
-        st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': st['current']['release'], 'to': target['release']}
+        st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': st['current']['release'], 'to': target['release'],
+                     'requested': bool(requested)}
         self.save()
         self.step('rollback-txn')
         self.finish_rollback(restart, reason)
@@ -1244,7 +1253,9 @@ class Updater:
         if st['previous'] and st['previous'][0]['release'] == txn['to']:
             st['current'] = st['previous'][0]
             st['previous'] = st['previous'][1:]
-        st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
+        if not txn.get('requested'):
+            st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
+        st['stepped_back'] = txn['serial']
         st['trial'] = None
         st['pending_boot'] = None
         st['txn'] = None
@@ -1267,7 +1278,7 @@ class Updater:
                         self.drop(dfd, 'rollback.request')
                     finally:
                         os.close(dfd)
-                    self.bad += 0 if self.rollback('rollback requested through the inbox', True) else 1
+                    self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True) else 1
                 done = False
                 for name in bundles:
                     dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -1380,6 +1391,8 @@ class Updater:
         print('previous  %s' % (', '.join(p['release'] for p in st['previous']) or 'none'))
         print('failed    %s' % (', '.join(map(str, st['failed'])) or 'none'))
         print('staged    %s' % (st['pending_boot']['release'] if st['pending_boot'] else 'none'))
+        if st['stepped_back'] is not None:
+            print('went back from serial %s; a rollback request through the inbox is refused until an update is applied' % st['stepped_back'])
         if st['trial']:
             print('on trial  serial %s, %d failed boot(s) of 2' % (st['trial']['serial'], st['trial']['failed_boots']))
         if st['txn']:

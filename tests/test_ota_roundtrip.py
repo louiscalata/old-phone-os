@@ -664,20 +664,26 @@ class RoundTrip(WorldCase):
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         st = w.status()
         self.assertEqual((st["phase"], st["serial"]), ("rolled-back", 2))
-        w.assert_on(self, 1, previous=[0], failed=[2])
-        self.assertEqual(w.client.snapshot()["rollback"]["requested"], False)
-        chk = w.client.check()  # the site still offers 2
-        self.assertFalse(chk["newer"])
-        self.assertIn("rolled back", chk["message"])
-        # Delivered by hand anyway (the USB push does this), root refuses the serial it rolled back from.
+        # A request is not a verdict on the release: the serial is not burned, and the phone may go back only once per update.
+        w.assert_on(self, 1, previous=[0], failed=[])
+        self.assertEqual(w.client.snapshot()["rollback"], {"possible": False, "requested": False, "once": True})
+        with self.assertRaises(uc.UpdateError) as cm:
+            w.client.request_rollback()
+        self.assertEqual(cm.exception.code, "no_rollback")
+        self.assertEqual(os.listdir(w.inbox), [])
         before = w.snapshot()
-        shutil.copy(os.path.join(w.site, "opos-2.opos-update"), os.path.join(w.inbox, "opos-2.opos-update"))
+        open(os.path.join(w.inbox, "rollback.request"), "w").close()   # a process that does not ask politely
         self.assertEqual(w.run_updater("apply-inbox"), 3)
-        self.assertIn("failed on this phone before", w.status()["message"])
+        self.assertIn("already went back", w.status()["message"])
         self.assertEqual(w.snapshot(), before)
+        chk = w.client.check()  # the site still offers 2, and the phone will take it again
+        self.assertTrue(chk["newer"])
+        self.assertEqual(w.fetch_and_apply(2), 0, w.logs)
+        w.assert_on(self, 2, previous=[1, 0], failed=[])
+        self.assertEqual(w.client.snapshot()["rollback"], {"possible": True, "requested": False})
         w.release(3)
         self.assertEqual(w.fetch_and_apply(3), 0, w.logs)
-        w.assert_on(self, 3, previous=[1, 0], failed=[2])
+        w.assert_on(self, 3, previous=[2, 1], failed=[])
 
     def test_a_boot_scope_bundle_is_staged_then_applied_at_the_next_boot(self):
         w = self.w
@@ -739,7 +745,7 @@ class RoundTrip(WorldCase):
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         code, j = call("GET", "/api/update")
         self.assertEqual((j["running"]["serial"], j["status"]["phase"], j["rollback"]["requested"]), (0, "rolled-back", False))
-        w.assert_on(self, 0, failed=[1])
+        w.assert_on(self, 0, failed=[])
 
 
 @needs_keygen

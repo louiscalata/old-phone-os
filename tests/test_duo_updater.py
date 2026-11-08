@@ -1516,7 +1516,8 @@ class TestRollback(EnvCase):
         self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
         self.assertEqual(e.consistent(), 1)
         st = e.state()
-        self.assertEqual((st['current']['serial'], [p['serial'] for p in st['previous']], st['failed']), (1, [0], [2]))
+        # a rollback asked for through the inbox is not burned: the same signed release can be installed again
+        self.assertEqual((st['current']['serial'], [p['serial'] for p in st['previous']], st['failed'], st['stepped_back']), (1, [0], [], 2))
         self.assertEqual(e.status()['phase'], 'rolled-back')
         self.assertEqual(e.marker(), 'build 1')
         self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))
@@ -1534,14 +1535,86 @@ class TestRollback(EnvCase):
         self.assertEqual(e.status()['phase'], 'failed')
         self.assertEqual(e.consistent(), 0)
 
-    def test_rolled_back_serial_cannot_be_replayed_but_a_newer_one_works(self):
+    def test_root_rollback_burns_the_serial_but_a_newer_one_works(self):
         e = self.env
-        e.request_rollback()
-        e.updater().apply_inbox()
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)
+        self.assertEqual(e.state()['failed'], [2])
         self.assertEqual(e.apply(make_bundle(2), 'again.opos-update'), 3)
         self.assertIn('failed on this phone before', e.status()['message'])
         self.assertEqual(e.apply(make_bundle(3), 'opos-3.opos-update'), 0)
         self.assertEqual(e.consistent(), 3)
+
+    def test_a_requested_rollback_does_not_burn_the_serial_it_leaves(self):
+        """Review finding: a request needs no bundle and no signature, and used to burn the release it left, so the
+        owner's own signed release could never be installed again. Now the same signed bundle is simply installed again."""
+        e = self.env
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 1)
+        self.assertEqual(e.state()['failed'], [])
+        self.assertEqual(e.apply(make_bundle(2), 'opos-2.opos-update'), 0, e.status())
+        self.assertEqual(e.consistent(), 2)
+        self.assertEqual(e.state()['failed'], [])
+
+    def test_only_one_requested_step_back_per_applied_update(self):
+        """Review finding: repeated requests walked the phone back through up to two releases and burned each serial."""
+        e = self.env
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 1)
+        before = e.live()
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertFalse(os.path.exists(os.path.join(e.inbox, 'rollback.request')))
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('already went back from update 2', e.status()['message'])
+        self.assertEqual(e.live(), before)
+        self.assertEqual(e.consistent(), 1)
+        for _ in range(3):
+            e.request_rollback()
+            e.updater().apply_inbox()
+        self.assertEqual(e.consistent(), 1)
+        self.assertEqual(e.state()['failed'], [])
+        # an applied update clears the limit: one more step back is possible again
+        self.assertEqual(e.apply(make_bundle(3), 'opos-3.opos-update'), 0)
+        self.assertIsNone(e.state()['stepped_back'])
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 1)
+        self.assertEqual(e.state()['stepped_back'], 3)
+
+    def test_the_limit_holds_whichever_way_the_phone_went_back(self):
+        e = self.env
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)   # root, on purpose
+        self.assertEqual(e.state()['stepped_back'], 2)
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertEqual(e.consistent(), 1)
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)   # root is not limited
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.state()['failed'], [1, 2])
+
+    def test_status_says_when_a_request_would_be_refused(self):
+        e = self.env
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            U.main(['status'], e.cfg)
+        self.assertNotIn('went back', out.getvalue())
+        e.request_rollback()
+        e.updater().apply_inbox()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            U.main(['status'], e.cfg)
+        self.assertIn('went back from serial 2', out.getvalue())
+
+    def test_a_state_file_from_before_the_limit_still_reads(self):
+        e = self.env
+        st = e.state()
+        del st['stepped_back']
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st))
+        e.request_rollback()
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 1)
 
     def test_rollback_restarts_only_the_server(self):
         e = self.env
@@ -1556,8 +1629,7 @@ class TestRollback(EnvCase):
         e = self.env
         e.request_rollback()
         e.updater().apply_inbox()
-        e.request_rollback()
-        e.updater().apply_inbox()
+        self.assertEqual(U.main(['rollback'], e.cfg), 0)   # a second request would be refused: one step back per update
         self.assertEqual(e.consistent(), 0)
         self.assertIsNone(e.file_info(NEWFILE))
 
@@ -1969,9 +2041,11 @@ class TestCrashSafety(unittest.TestCase):
         i = names.index('rollback-txn')
         e, pre, label = self.fault_run(scn_rollback_request, i, 'crash', 'inbox')
         self.assertEqual(e.state()['txn']['kind'], 'rollback')
+        self.assertIs(e.state()['txn']['requested'], True)
         e.updater().apply_inbox()
         self.assertEqual(e.consistent(), 6)
-        self.assertEqual(e.state()['failed'], [7])
+        self.assertEqual(e.state()['failed'], [])        # asked for through the inbox: not burned, also when finished by recovery
+        self.assertEqual(e.state()['stepped_back'], 7)
 
     def test_crash_during_recovery_then_recovery_again(self):
         names = self.steps_of(scn_app)

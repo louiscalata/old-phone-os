@@ -155,12 +155,15 @@ Read what the phone says: `ssh -i <login key> droidian@<address> cat /var/lib/op
 - `failed`: rejected before anything changed (signature, serial not above the current one, base level, free space, a bad
   bundle). Nothing was applied. Fix the cause.
 - `rolled-back`: the new release started but failed its health check; the phone went back to the previous release, and the
-  serial is now in its `failed` list.
+  serial is now in its `failed` list. (After a rollback you asked for through the inbox, `rolled-back` is also the phase, but
+  the serial is not in the list.)
 - Neither: the push timed out. The updater may still be working; read `status.json` again before doing anything.
 
 A serial that failed on a phone is never accepted again, so the fix goes out under a new serial (the next number, never a
 reuse) and a new bundle. To go back to the previous release on purpose, create an empty file named `rollback.request` in
-the inbox (over ssh as the login user), or run `opos-updater rollback` as root on the phone. A `boot`-scope update that
+the inbox (over ssh as the login user; this is also what the Update page's button does), or run `opos-updater rollback` as
+root on the phone. The inbox request is honoured once per applied update and does not burn the serial it leaves, so pushing
+that same bundle again undoes it; the root command goes back as often as you ask and does burn the serial. A `boot`-scope update that
 fails two boots in a row rolls itself back. If the phone is unusable, re-image it from the PC with `build-image.sh`; the
 image starts again from its own baked-in release.
 
