@@ -222,6 +222,17 @@ class TestAnswer(unittest.TestCase):
         expected = {"ok": False, "text": "The helper did not answer. The battery rules still work.", "engine": "none", "where": "", "sources": []}
         self.assertEqual(res, expected)
         self.assertNotIn("OPOS_LAN_URL", res["text"])
+    # What helper text must never say: alarms (no alarm app exists) and internal names (model, OPOS, AI, "on-phone").
+    UNTRUE_OR_INTERNAL_WORDS = r"(?i)alarm|\bmodel\b|\bOPOS\b|\bAI\b|on-phone"
+    def test_the_word_check_is_not_vacuous(self):
+        # A 0x08 byte once stood where each \b belongs, so only "alarm" and "on-phone" were checked.
+        self.assertNotIn("\x08", self.UNTRUE_OR_INTERNAL_WORDS)
+        for text in ("an AI model from OPOS", "Model answered", "the alarm rings", "the on-phone helper", "Alarms stay on"):
+            with self.subTest(hit=text):
+                self.assertRegex(text, self.UNTRUE_OR_INTERNAL_WORDS)
+        for text in ("Email is paused to save battery.", "Ask again once the battery recovers.", "The helper did not answer."):
+            with self.subTest(miss=text):
+                self.assertNotRegex(text, self.UNTRUE_OR_INTERNAL_WORDS)
     def test_user_text_claims_only_what_is_true(self):
         """W1-08: no alarm app exists, so no helper text promises alarms; no model or OPOS words reach the user."""
         def opener(req, timeout=None):
@@ -234,7 +245,7 @@ class TestAnswer(unittest.TestCase):
         self.assertIn("Email is paused to save battery. Calls and messages are never paused.", texts)
         for t in texts:
             with self.subTest(text=t):
-                self.assertNotRegex(t, r"(?i)alarm|model|OPOS|AI|on-phone")
+                self.assertNotRegex(t, self.UNTRUE_OR_INTERNAL_WORDS)
     def test_invalid_fact_dictionaries_return_controlled_error(self):
         circular = {}
         circular["self"] = circular
