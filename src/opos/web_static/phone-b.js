@@ -49,10 +49,10 @@ if(!first)return;first=false;if(!/(^|[?&])(demo=1|app=full)(&|$)/.test(location.
 try{(function(){
 var a=G('ask'),c=G('webq');if(!a||!a.parentNode||G('helper-where'))return;
 var w=E('p');w.id='helper-where';w.hidden=a.hidden;a.insertBefore(w,G('q').nextSibling);
-var lan=false,simulated=false;
-function set(){w.textContent=(simulated?'Demo phone. ':'')+(c&&c.checked?'Web search is on: your question is sent to Wikipedia.':lan?'Answers may be made on a computer you own. Web search is off.':'Answers are made on this phone when possible. Web search is off.')}
+var lan=false;
+function set(){w.textContent=(c&&c.checked?'Web search is on: your question is sent to Wikipedia.':lan?'Answers may be made on a computer you own. Web search is off.':'Answers are made on this phone when possible. Web search is off.')}
 set();if(c)c.addEventListener('change',set);
-(window.oposHooks=window.oposHooks||[]).push(function(s){var e=s&&s.helper&&s.helper.engine;if(typeof e!=='string')return;var x=/computer you own/.test(e),y=!!(s.simulation&&s.simulation.modem===true);if(x!==lan||y!==simulated){lan=x;simulated=y;set()}});
+(window.oposHooks=window.oposHooks||[]).push(function(s){var e=s&&s.helper&&s.helper.engine;if(typeof e!=='string')return;var x=/computer you own/.test(e);if(x!==lan){lan=x;set()}});
 try{var n=G('answer');if(n&&typeof MutationObserver==='function')new MutationObserver(function(){try{set()}catch(e){}}).observe(n,{childList:true,characterData:true})}catch(e){}
 })()}catch(e){}
 try{(function(){
@@ -83,7 +83,7 @@ if(a&&g)(window.oposHooks=window.oposHooks||[]).push(function(){var e=(g.textCon
 })()}catch(e){}
 try{(function(){
 var n=G('demo-phone-note');if(!n)return;
-function set(s){n.textContent=s&&s.simulation&&s.simulation.modem===true?'Demo: calls and texts are simulated.':'Calls and texts may use your configured phone connection.'}
+function set(s){n.textContent=s&&s.simulation&&s.simulation.modem===true?'Practice only: this phone cannot make real calls or send real texts yet.':''}
 set();(window.oposHooks=window.oposHooks||[]).push(set);
 })()}catch(e){}
 // UXP31:

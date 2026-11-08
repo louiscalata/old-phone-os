@@ -285,7 +285,7 @@ const reloadAndWait = async (cdp) => {
       await apiPost({ action: 'call', number: '+15550100' }); await reloadAndWait(cdp); await waitTone(cdp);
       const v = await evalJs(cdp, "(() => { const n = document.querySelector('#notice'); const phone = document.querySelector('#phone'); const demo = document.querySelector('#demo'); const cs = n ? getComputedStyle(n) : null; return { text: n ? n.textContent : null, visible: !!n && cs.display !== 'none' && cs.visibility !== 'hidden' && n.offsetHeight > 0, inPhone: !!(n && phone && phone.contains(n)), inDemo: !!(n && demo && demo.contains(n)), fontSize: cs ? parseFloat(cs.fontSize) : null }; })()");
       if (!v.visible) throw new Error('notice not visible');
-      if (v.text !== 'In call') throw new Error(`notice ${v.text}`);
+      if (v.text !== 'Practice call. No real call is made.') throw new Error(`notice ${v.text}`);
       if (!v.inPhone) throw new Error('notice not in phone');
       if (v.inDemo) throw new Error('notice in demo');
       if (!(v.fontSize < 16)) throw new Error(`font-size ${v.fontSize}`);

@@ -298,14 +298,13 @@ try{new MutationObserver(function(){try{jsc()}catch(e){}}).observe($('phone'),{a
 window.oposHooks.push(function(s){try{
 var home=$('home'),card=$('home-notice');
 if(home&&!card){var fav=E('div');fav.id='home-favourites';card=E('div');card.id='home-notice';card.setAttribute('role','status');while(home.firstChild)fav.appendChild(home.firstChild);home.appendChild(fav);home.appendChild(card);home.classList.add('polished');$('phone').classList.add('polished')}
-var paused=((s.battery&&s.battery.paused)||[]).map(function(p){return p.name||p}).filter(known);
-var notice='Calls and messages are on.'+(paused.length?'\nPaused to save power: '+paused.join(', ')+'.':'');
+var notice=s.home_note||'';
 if(card&&card.textContent!==notice)card.textContent=notice;
 jl=s;jsc();
 var percent=s.battery&&s.battery.percent;
 $('sb-batt').setAttribute('data-low',typeof percent==='number'&&isFinite(percent)&&percent<=15?'true':'false');
 var technical=$('shade-technical');['events'].forEach(function(id){technical.appendChild($(id))});
-['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length)});
+['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length>1)});
 ['headline','time-left','goal-note','why'].forEach(function(id){var e=$(id);e.hidden=!known(e.textContent)});
 ['paused-list','features','events'].forEach(function(id){Array.prototype.forEach.call($(id).children,function(row){var label=row.querySelector('span');row.hidden=!known(label?label.textContent:row.textContent)})});
 var helper=$('helper'),button=helper.querySelector('button');

@@ -238,11 +238,10 @@ class UXP31HelperScreenJS(unittest.TestCase):
 
     def test_simulation_disclosure_requires_explicit_server_signal(self):
         r = self.r["backends"]
-        self.assertEqual(r["simulated"], "Demo: calls and texts are simulated.")
-        self.assertTrue(r["helper"].startswith("Demo phone. "))
+        self.assertEqual(r["simulated"], "Practice only: this phone cannot make real calls or send real texts yet.")
+        self.assertEqual(r["helper"], "Answers are made on this phone when possible. Web search is off.")  # no "Demo phone." in front
         for key in ("absent", "external", "unknown"):
-            self.assertEqual(r[key], "Calls and texts may use your configured phone connection.")
-            self.assertNotIn("simulated", r[key])
+            self.assertEqual(r[key], "")
 
     def test_slow_reply_is_not_aborted_at_fifteen_seconds(self):
         r = self.r["slowreply"]

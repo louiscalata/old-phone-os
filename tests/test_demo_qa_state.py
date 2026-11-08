@@ -143,7 +143,9 @@ process.stdout.write(JSON.stringify(out));
 """, {'histories': histories, 'fragment': fragment})
         self.assertEqual(histories[-1][-1], 30)
         self.assertEqual(len(set(rendered)), len(histories))
-        for points in rendered:
+        self.assertEqual(len(histories[0]), 1)
+        self.assertEqual(rendered[0], '')  # W1-07: one sample draws no line (it used to draw a flat "last hour")
+        for points in rendered[1:]:
             vertices = [tuple(map(float, point.split(','))) for point in points.split()]
             self.assertEqual(vertices[0][0], 0)
             self.assertEqual(vertices[-1][0], 100)
