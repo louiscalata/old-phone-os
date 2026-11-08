@@ -188,6 +188,16 @@ class TestAnswer(unittest.TestCase):
         res = assist.answer("hello?", web=False, env={}, opener=opener, free=1000)
         self.assertFalse(res["ok"])
         self.assertEqual(res["text"], "The helper did not answer. The phone has only about 1000 MB of free memory and the helper needs 1536 MB.")
+    def test_low_memory_is_not_blamed_when_a_configured_server_failed(self):
+        # The memory sentence is about the on-phone helper; if the owner pointed OPOS at another computer, memory is not why it failed.
+        def opener(req, timeout=None):
+            raise OSError("down")
+        for name, env in (("lan", {"OPOS_LAN_URL": "http://" + BUSY_RFC1918_HOST + ":1234/v1"}), ("glimmer", {"OPOS_GLIMMER_URL": "http://127.0.0.1:4321/v1"})):
+            with self.subTest(route=name):
+                res = assist.answer("hello?", web=False, env=env, opener=opener, free=900)
+                self.assertEqual(res["text"], "The helper did not answer. The battery rules still work.")
+        res = assist.answer("hello?", web=False, env={"OPOS_LOCAL_URL": "http://127.0.0.1:8080/v1"}, opener=opener, free=900)
+        self.assertEqual(res["text"], "The helper did not answer. The phone has only about 900 MB of free memory and the helper needs 1536 MB.")
     def test_empty(self):
         res = assist.answer("   ", web=False, env={}, free=2000)
         self.assertFalse(res["ok"])

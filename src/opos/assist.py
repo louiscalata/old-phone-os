@@ -246,6 +246,7 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
     if sources:
         return {"ok": True, "text": "The helper did not answer, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
     detail = "The helper did not answer. "
-    if free is not None and free < MIN_MB_1B:
+    # Memory only explains the failure when the on-phone helper was the one route; a LAN or Glimmer server the owner set up does not run here.
+    if free is not None and free < MIN_MB_1B and lan_route(env) is None and not env.get("OPOS_GLIMMER_URL"):
         return {"ok": False, "text": detail + f"The phone has only about {free} MB of free memory and the helper needs {MIN_MB_1B} MB.", "engine": "none", "where": "", "sources": []}
     return {"ok": False, "text": detail + "The battery rules still work.", "engine": "none", "where": "", "sources": []}
