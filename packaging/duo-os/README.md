@@ -58,6 +58,17 @@ both); none of it was measured on the phone.
 - Why it did nothing on the first boot is not established: no journal from that boot is in this repository.
   `opos-clock` now writes what it finds (does `ats_1` exist, what `timekeep` holds, the hardware clock's value, the two
   services' results) to the persistent journal at every boot: `journalctl -b -u opos-clock`.
+- A clean shutdown can make a wrong guess stick. This is a reviewer's reading of the two unit files, not measured on the
+  phone. `timekeeper` treats a stored value under about 31 years as "no offset", and at a clean shutdown it stores
+  whatever the clock reads. After a shutdown from a clock that `opos-clock` raised, `/data/time/timekeep` holds a time far
+  above that, and `item-clock-seed` leaves a `timekeep` that already holds a time alone. If the unexplained 1970 was
+  only a race with the persist mount (`ats_1` present, the seed skipped), the first clean shutdown would turn a retryable
+  state into a stuck one: Android's offset in `ats_1` could never replace the guess on a later boot. `opos-clock`
+  cannot undo that, because it has to stop before `timekeeper` stores. To let the seed try again, on the phone, with the
+  owner's own password: `sudo sh -c 'echo -1 > /data/time/timekeep'`. A clean shutdown stores the clock again, so as read
+  the next boot has to follow a power-off that skips the store (hold the power key), not a Reboot.
+  So the first device check records the `ats_1` line before any shutdown:
+  `journalctl -b -u opos-clock | grep 'evidence: persist'` ("present, N bytes" or "absent").
 - `systemd-timesyncd` is the only network time service in the base (no chrony), enabled and unmasked. It needs a
   network that reaches the Debian NTP pool. The hardware clock is never written (`hwclock.service` is masked in the base).
 
@@ -94,7 +105,8 @@ ssh droidian@<phone-address> "echo $([DateTimeOffset]::UtcNow.ToUnixTimeSeconds(
 The `$(...)` is expanded on the PC inside the double quotes, so the phone gets the PC's time; the `mv` makes the file
 appear whole. Check with `ssh droidian@<phone-address> date -u`, which should match the PC's UTC time within a few seconds.
 Anything running as `droidian` can use the same file, which is why the path unit is not enabled in other images.
-Not yet checked on a phone: the boot ordering, the path unit's trigger on the `mv`, and whether timesyncd steps a guessed clock.
+Not yet checked on a phone: the boot ordering, the path unit's trigger on the `mv`, whether timesyncd steps a guessed
+clock, and the `timekeep` trap and its recovery above.
 
 ## Install, once USB data works
 

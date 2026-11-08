@@ -332,6 +332,17 @@ class ImageFilesTests(unittest.TestCase):
         self.assertIn("mv ~/.opos-time ~/opos-set-time", readme)
         self.assertIn("OPOS_DEV_SSH_PUBKEY", readme.split("## The clock")[1])
 
+    def test_the_readme_warns_of_a_stuck_guess_as_a_reading_and_says_how_to_recover(self):
+        clock = " ".join(self.read("README.md").split("## The clock")[1].split("\n## ")[0].split())
+        bullet = clock[clock.index("A clean shutdown can make a wrong guess stick"):].split(" - ")[0]
+        self.assertIn("reading of the two unit files, not measured", bullet)
+        for word in ("`timekeeper`", "`item-clock-seed`", "`ats_1`", "`/data/time/timekeep`", "`opos-clock` cannot undo"):
+            self.assertIn(word, bullet)
+        self.assertIn("sudo sh -c 'echo -1 > /data/time/timekeep'", bullet)
+        self.assertIn("grep 'evidence: persist'", bullet)
+        self.assertIn("before any shutdown", bullet)
+        self.assertIn("the `timekeep` trap and its recovery", clock.split("Not yet checked on a phone:")[1])
+
     def test_the_blocks_are_delimited_in_both_scripts(self):
         for name in ("build-image.sh", "verify-image.sh"):
             text = self.read(name)
