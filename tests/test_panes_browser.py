@@ -205,25 +205,6 @@ class PanesBrowser(unittest.TestCase):
         for k, scheme, hand, name, m in self.states("os"):
             self.assertEqual(m["cols"], "675px 42px 675px", k)
 
-    # -- Hand ------------------------------------------------------------------------------------------------------------
-    def test_hand_button_taps_flips_persists_and_takes_the_keyboard(self):
-        h = self.r["hand"]
-        self.assertEqual((h["start"]["hand"], h["start"]["stored"], h["start"]["label"], h["start"]["prev"]), ("right", None, "Hand: Right", "jaryo-theme"))
-        self.assertGreaterEqual(h["start"]["btnH"], 48)
-        self.assertGreaterEqual(h["start"]["btnW"], 48)
-        self.assertEqual(h["start"]["mastheadL"], 0)
-        self.assertGreaterEqual(h["start"]["settingsL"], 717)
-        self.assertEqual(h["start"]["themeAfter"], '" (one screen only)"')
-        self.assertEqual((h["tap"]["hand"], h["tap"]["stored"], h["tap"]["label"]), ("left", "left", "Hand: Left"))
-        self.assertEqual((h["tap"]["mastheadL"], h["tap"]["settingsL"] < 675), (717, True))
-        self.assertEqual((h["reload"]["hand"], h["reload"]["label"]), ("left", "Hand: Left"))
-        self.assertEqual((h["tapAgain"]["hand"], h["tapAgain"]["stored"]), ("right", "right"))
-        self.assertEqual((h["enter"]["hand"], h["enter"]["stored"], h["enter"]["label"]), ("left", "left", "Hand: Left"))
-
-    def test_one_pane_windows_are_what_jaryo_paints(self):
-        for key, o in self.r["off"].items():
-            self.assertEqual((o["before"], o["after"], o["handDisplay"], o["themeAfter"]), ("none", "none", "none", "none"), key)
-            self.assertEqual(o["handRect"], 0, key)
     # -- the pressed state --------------------------------------------------------------------------------------------------
     # docs/jaryo-panes.md section 3.3: a pressed control is the inverted fill of its own pane, so its label (the pane's background) must
     # read on its fill (the pane's ink). The driver presses every visible control of every state two ways: ":active" forced through the
@@ -290,6 +271,25 @@ class PanesBrowser(unittest.TestCase):
             self.assertGreaterEqual(it["pix"], 10, (k, it["who"], it["txt"], "the picture of the pressed button has no label in it"))
         self.assertGreater(seen, 150)
 
+    # -- Hand ------------------------------------------------------------------------------------------------------------
+    def test_hand_button_taps_flips_persists_and_takes_the_keyboard(self):
+        h = self.r["hand"]
+        self.assertEqual((h["start"]["hand"], h["start"]["stored"], h["start"]["label"], h["start"]["prev"]), ("right", None, "Hand: Right", "jaryo-theme"))
+        self.assertGreaterEqual(h["start"]["btnH"], 48)
+        self.assertGreaterEqual(h["start"]["btnW"], 48)
+        self.assertEqual(h["start"]["mastheadL"], 0)
+        self.assertGreaterEqual(h["start"]["settingsL"], 717)
+        self.assertEqual(h["start"]["themeAfter"], '" (one screen only)"')
+        self.assertEqual((h["tap"]["hand"], h["tap"]["stored"], h["tap"]["label"]), ("left", "left", "Hand: Left"))
+        self.assertEqual((h["tap"]["mastheadL"], h["tap"]["settingsL"] < 675), (717, True))
+        self.assertEqual((h["reload"]["hand"], h["reload"]["label"]), ("left", "Hand: Left"))
+        self.assertEqual((h["tapAgain"]["hand"], h["tapAgain"]["stored"]), ("right", "right"))
+        self.assertEqual((h["enter"]["hand"], h["enter"]["stored"], h["enter"]["label"]), ("left", "left", "Hand: Left"))
+
+    def test_one_pane_windows_are_what_jaryo_paints(self):
+        for key, o in self.r["off"].items():
+            self.assertEqual((o["before"], o["after"], o["handDisplay"], o["themeAfter"]), ("none", "none", "none", "none"), key)
+            self.assertEqual(o["handRect"], 0, key)
         self.assertIsNone(self.r["off"]["one_pane"]["ff"])
         self.assertIsNone(self.r["off"]["below_gate"]["ff"])
         self.assertEqual(self.r["off"]["slab"]["ff"], "slab")

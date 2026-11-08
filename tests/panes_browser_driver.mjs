@@ -365,6 +365,7 @@ try {
     await waitFor(() => p.ev(`(function(){var k=document.getElementById('opos-osk');return !!k&&!k.hidden})()`), { what: 'the keyboard', timeout: 5000 }).catch(() => {});  // none: the result says so
     await sleep(300);
     out.osk[hand] = await p.ev(`(function(){var k=document.getElementById('opos-osk');if(!k)return null;return {hidden:k.hidden,panels:[].slice.call(k.querySelectorAll('.osk-panel')).map(function(e){var r=e.getBoundingClientRect(),key=e.querySelector('.osk-key');return {l:Math.round(r.left),r:Math.round(r.right),keyBg:getComputedStyle(key).backgroundColor,keyFg:getComputedStyle(key).color}})}})()`);
+    if (out.osk[hand]) out.osk[hand].press = await pressedForced(p);
     out.logs['osk/' + hand] = p.logs;
     await p.close();
   }
@@ -398,7 +399,6 @@ try {
 } finally {
   shutdown();
   await sleep(1500);  // let the browser release its profile before the test removes it
-    if (out.osk[hand]) out.osk[hand].press = await pressedForced(p);
 }
 fs.writeFileSync(OUTFILE, JSON.stringify(out));
 process.exit(0);

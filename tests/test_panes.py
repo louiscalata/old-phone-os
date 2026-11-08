@@ -103,15 +103,6 @@ class Sheet(unittest.TestCase):
         # the one rule outside the gate hides the Hand button
         self.assertTrue(out.split("@media")[0].strip().splitlines()[-1].startswith("#jaryo-hand{display:none}"))
 
-    def test_gate_and_geometry_without_a_span(self):
-        out = self.served()
-        self.assertEqual(out.count("@media (horizontal-viewport-segments:2){"), 1)
-        self.assertIn("--jp-x1:env(viewport-segment-width 0 0);--jp-x2:env(viewport-segment-left 1 0)", out)
-        self.assertNotIn("--pane", out)
-        self.assertNotIn("var(--pane)", out)
-
-    def test_span_rewrites_it_exactly_as_span_py_does(self):
-        out = self.served(DUO)
     def test_a_button_is_never_given_a_colour_by_a_role(self):
         # A `color` stated on Home, Close, Unlock or Call by the role rules (two ids) out-specifies `button:active` and leaves ink on ink
         # while the button is pressed. Roles state the two tokens for everything and `color` only for what is not a button.
@@ -125,6 +116,15 @@ class Sheet(unittest.TestCase):
         home = re.search(r"body>header>#home\{([^}]*)\}", out).group(1)
         self.assertNotRegex(home, r"(?:^|;)color:")
 
+    def test_gate_and_geometry_without_a_span(self):
+        out = self.served()
+        self.assertEqual(out.count("@media (horizontal-viewport-segments:2){"), 1)
+        self.assertIn("--jp-x1:env(viewport-segment-width 0 0);--jp-x2:env(viewport-segment-left 1 0)", out)
+        self.assertNotIn("--pane", out)
+        self.assertNotIn("var(--pane)", out)
+
+    def test_span_rewrites_it_exactly_as_span_py_does(self):
+        out = self.served(DUO)
         self.assertTrue(out.startswith(spanmod.variables(DUO)))
         self.assertNotIn("viewport-segment", out)
         self.assertIn("@media (min-width:1055px){", out)
