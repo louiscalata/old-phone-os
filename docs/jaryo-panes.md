@@ -203,7 +203,7 @@ Checked is the inverted fill, not a tick glyph. Placeholders are full ink and it
 
 ### 4.2 Persistence and the attribute
 
-- `localStorage['jaryo_hand']` is `right` or `left`. Absent, or any other string, means Right. Every read and write is wrapped in try/catch, and the page works with storage blocked.
+- `localStorage['jaryo_hand']` is `right` or `left`. Absent, or any other string, means Right. Every read and write is wrapped in try/catch, and the page works with storage blocked: storage gives the first value and receives each tap, but the label and the next tap go by the page's own `html[data-hand]`, so with storage blocked or full a tap still flips the layout and the label together (it used to read the hand back from storage, so the label stayed "Hand: Right" and every tap set Left).
 - `html[data-hand]` is always `right` or `left` once `panes.js` has run. `panes.js` is loaded in the head (a normal, blocking script), so `data-hand` is set before the first paint: no flash of the wrong mirror for a left-handed owner.
 - A `storage` event for the key re-applies it (two tabs, or the OS pages open in another tab). All four pages share one origin, so `/network`, `/firstrun` and `/timezone` honour the same value.
 - Not stored: nothing is written until the owner taps (no default is persisted).

@@ -4,11 +4,11 @@
 'use strict';
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const SRC = fs.readFileSync(process.argv[2], 'utf8').replace('@MODES@', '1');
-function world({store = {}, path = '/', ff = null, throwing = false, theme = true, loading = false} = {}) {
+function world({store = {}, path = '/', ff = null, throwing = false, writeThrows = false, theme = true, loading = false} = {}) {
   const listeners = {}, attrs = {}, ds = {}; if (ff) ds.ff = ff;
   const observers = [];
   const ls = throwing ? {getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }} :
-    {getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; }};
+    {getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { if (writeThrows) throw new Error('quota'); store[k] = String(v); }, removeItem: k => { delete store[k]; }};
   const els = {};
   function el(tag) { const e = {tag, id: '', type: '', textContent: '', onclick: null, parent: null, after: null,
     insertAdjacentElement(where, n) { assert.strictEqual(where, 'afterend'); n.parent = e.parent; e.after = n; return n; }}; return e; }
@@ -47,11 +47,24 @@ w.fire('doc:DOMContentLoaded');
 ok(w.els['jaryo-hand'].textContent === 'Hand: Left', 'label follows the stored value after DOMContentLoaded');
 // 4. garbage in storage means Right
 for (const bad of ['', 'LEFT', '1', 'both', 'null']) { w = world({store: {jaryo_hand: bad}}); ok(w.ds.hand === 'right', 'garbage ' + JSON.stringify(bad) + ' -> right'); }
-// 5. storage that throws: still right, tap still flips the page for this visit, nothing throws
+// 5. storage that throws: still right, nothing throws, and the button follows the PAGE, not the storage: every tap flips the page and
+// the label says what the page is (it used to read the hand back from storage, so it stayed "Hand: Right" and every tap set Left)
 w = world({throwing: true});
 ok(w.ds.hand === 'right', 'throwing storage -> right');
+ok(w.els['jaryo-hand'].textContent === 'Hand: Right', 'label before any tap');
+const flips = [];
+for (let i = 0; i < 4; i++) { w.els['jaryo-hand'].onclick(); flips.push(w.ds.hand + '/' + w.els['jaryo-hand'].textContent); }
+ok(flips.join() === 'left/Hand: Left,right/Hand: Right,left/Hand: Left,right/Hand: Right', 'throwing storage: four taps flip the page and the label together: ' + flips.join());
+// the same when only the write fails (a full or read-only store): a read finds the old value, the page still goes by itself
+w = world({store: {jaryo_hand: 'left'}, writeThrows: true});
+ok(w.ds.hand === 'left' && w.els['jaryo-hand'].textContent === 'Hand: Left', 'read works, write fails: starts Left');
 w.els['jaryo-hand'].onclick();
-ok(w.ds.hand === 'right' || w.ds.hand === 'left', 'tap does not throw');
+ok(w.ds.hand === 'right' && w.els['jaryo-hand'].textContent === 'Hand: Right' && w.store.jaryo_hand === 'left', 'write fails: the page flips to Right, the label agrees');
+w.els['jaryo-hand'].onclick();
+ok(w.ds.hand === 'left' && w.els['jaryo-hand'].textContent === 'Hand: Left', 'and back to Left');
+// a page whose hand was set by something else (another script, a storage event) is flipped from what it is
+w = world(); w.html.dataset.hand = 'left'; w.els['jaryo-hand'].onclick();
+ok(w.ds.hand === 'right' && w.els['jaryo-hand'].textContent === 'Hand: Right', 'a tap flips the hand the page has');
 // 6. another tab changes the key
 w = world(); w.store.jaryo_hand = 'left'; w.fire('win:storage', {key: 'jaryo_hand'});
 ok(w.ds.hand === 'left' && w.els['jaryo-hand'].textContent === 'Hand: Left', 'storage event re-reads');
