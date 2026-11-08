@@ -47,6 +47,7 @@ SCAN_WAIT_S = 3.0
 USB_IFACES = ("usb", "rndis", "ncm", "enx")
 PROFILE_MAX = 20
 SCAN_MAX = 30
+MODEM_ON = ("registered", "connected", "searching", "enabled")  # ModemManager states in which the radio is on
 
 
 class Run(NamedTuple):
@@ -423,7 +424,7 @@ class Net:
         modem, sim = self._modem(q)
         bt = self._bluetooth(q, rf, radios)
         s = {"ok": True, "wifi": wifi, "bluetooth": bt, "modem": modem, "sim": sim,
-             "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf, bt, radios), "usb": self._usb(ips, radios),
+             "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf, bt, radios, modem), "usb": self._usb(ips, radios),
              "control": self._control(q, gs, perms), "simulated": SIMULATED, "notes": []}
         if self._wall() < 1.6e9:
             s["notes"].append("The phone's clock is not set yet, so secure websites and updates may fail until it is.")
@@ -575,20 +576,28 @@ class Net:
             d["state"], d["summary"] = "off", "Mobile data: off"
         return d
 
-    def _airplane(self, gs, rf, bt=None, radios=None):
+    def _airplane(self, gs, rf, bt=None, radios=None, modem=None):
         """Airplane mode is "every radio is blocked", so it needs every radio's state. Wi-Fi and mobile data come from rfkill or
-        NetworkManager's switches, Bluetooth from rfkill or else from what BlueZ said (bt, the Bluetooth status). A radio that
-        exists but whose state was not established keeps the answer at unknown: it is never counted as blocked."""
+        NetworkManager's switches, Bluetooth from rfkill or else from what BlueZ said (bt, the Bluetooth status), and the modem,
+        when neither of those says anything about it, from ModemManager (modem, the modem status). A radio that exists but whose
+        state was not established keeps the answer at unknown: it is never counted as blocked."""
         kinds = [x for x in rf or [] if x["type"] in ("wlan", "bluetooth", "wwan")]
         flags = [x["soft"] or x["hard"] for x in kinds]
         unknown = []
+        present = (radios or {}).get("radios_present", ())
         if gs is not None:  # NetworkManager's own switches stand in for radios rfkill does not list
             if not any(x["type"] == "wlan" for x in kinds):
                 flags.append(not gs["wifi"] or not gs["wifi_hw"])
             if not any(x["type"] == "wwan" for x in kinds):
                 flags.append(not gs["wwan"] or not gs["wwan_hw"])
-        if gs is None and radios and "wifi" in radios.get("radios_present", ()) and not any(x["type"] == "wlan" for x in kinds):
+        if gs is None and "wifi" in present and not any(x["type"] == "wlan" for x in kinds):
             unknown.append("Wi-Fi")  # the system shows an adapter, but neither rfkill nor NetworkManager said whether it is blocked
+        if gs is None and not any(x["type"] == "wwan" for x in kinds) and ("wwan" in present or (modem or {}).get("present") is True):
+            # a modem the system or ModemManager shows, and nobody else says whether it is blocked: only a modem that is on says so
+            if (modem or {}).get("state") in MODEM_ON:
+                flags.append(False)
+            else:
+                unknown.append("mobile data")
         if bt is not None and not any(x["type"] == "bluetooth" for x in kinds):
             if bt.get("enabled") is not None:
                 flags.append(not bt["enabled"])
@@ -599,7 +608,7 @@ class Net:
         if any(not f for f in flags):  # some radio is known to be working, so not every radio is blocked
             state, on = ("partly", None) if any(flags) else ("off", False)
         elif unknown:
-            return {"on": None, "state": "unknown", "summary": "Airplane mode: unknown (the state of " + " and ".join(unknown) + " could not be read, "
+            return {"on": None, "state": "unknown", "summary": "Airplane mode: unknown (the state of " + ", ".join(unknown[:-1]) + (" and " if len(unknown) > 1 else "") + unknown[-1] + " could not be read, "
                                                                 "so it cannot be said that every radio is blocked)"}
         else:
             state, on = "on", True

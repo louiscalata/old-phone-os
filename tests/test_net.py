@@ -423,11 +423,80 @@ class Status(unittest.TestCase):
         f = Fake(self)
         f.put("nm_down")  # NetworkManager says nothing about Wi-Fi or mobile data
         f.put("rfkill_out", "1: hci0: Bluetooth\n\tSoft blocked: yes\n\tHard blocked: no\n")  # rfkill lists only Bluetooth, and it is blocked
+        (f.bin / "mmcli").unlink()  # and this phone has no modem to be read: only the Wi-Fi radio is in doubt
         s = f.net().status(True)
         self.assertEqual(s["bluetooth"]["state"], "off")
         self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"))
         self.assertIn("Wi-Fi", s["airplane"]["summary"])
         self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+
+    def modem_case(self, mmcli_state=None, mmcli_rc=None, mmcli_out=None, wwan_iface=True, rfkill=None):
+        """NetworkManager down, Wi-Fi and Bluetooth blocked in rfkill, which lists no Wireless WAN row (the normal Droidian
+        case); the phone has a modem (an rmnet interface and/or ModemManager's answer), but nothing has said whether it is blocked."""
+        f = Fake(self)
+        f.put("nm_down")
+        f.put("rfkill_out", rfkill if rfkill is not None else RFKILL.replace("Soft blocked: no", "Soft blocked: yes"))
+        if wwan_iface:
+            (f.root / "sys/class/net/rmnet_data0").mkdir()
+        if mmcli_state:
+            f.put("mmcli_out", MMCLI.replace("registered", mmcli_state, 1))
+        if mmcli_rc is not None:
+            f.put("mmcli_rc", str(mmcli_rc))
+            f.put("mmcli_out", mmcli_out or "")
+        return f.net().status(True)
+
+    def test_a_modem_nobody_reported_on_keeps_airplane_unknown(self):
+        for how, kw in {"mmcli fails": dict(mmcli_rc=1), "ModemManager sees no modem": dict(mmcli_rc=1, mmcli_out="error: couldn't find modem")}.items():
+            with self.subTest(how):
+                s = self.modem_case(**kw)
+                self.assertEqual(s["bluetooth"]["state"], "off")
+                self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"), s["airplane"])
+                self.assertIn("mobile data", s["airplane"]["summary"])
+                self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+
+    def test_a_modem_that_is_on_means_airplane_mode_is_not_all_radios_blocked(self):
+        for state in ("registered", "connected", "searching", "enabled"):
+            with self.subTest(state):
+                s = self.modem_case(mmcli_state=state, wwan_iface=False)  # ModemManager alone shows the modem
+                self.assertEqual(s["modem"]["state"], state)
+                self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "partly"), s["airplane"])
+                self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+
+    def test_a_modem_whose_state_says_nothing_about_the_radio_keeps_airplane_unknown(self):
+        for state in ("disabled", "locked", "failed", "initializing", "unknown"):
+            with self.subTest(state):
+                s = self.modem_case(mmcli_state=state)
+                self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"), s["airplane"])
+                self.assertIn("mobile data", s["airplane"]["summary"])
+
+    def test_the_same_case_with_the_modem_read_as_on_is_the_status_the_page_shows_for_the_modem(self):
+        s = self.modem_case()  # the default ModemManager answer: registered on Example Mobile
+        self.assertIn("registered", s["modem"]["summary"])
+        self.assertNotIn("all radios are blocked", s["airplane"]["summary"], "the page must not say both")
+
+    def test_rfkill_listing_the_modem_decides_whatever_modemmanager_says(self):
+        both = RFKILL.replace("Soft blocked: no", "Soft blocked: yes") + "2: wwan0: Wireless WAN\n\tSoft blocked: yes\n\tHard blocked: no\n"
+        s = self.modem_case(rfkill=both)  # registered per mmcli, blocked per rfkill: rfkill is the switch
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (True, "on"))
+
+    def test_a_phone_without_a_modem_has_nothing_unknown_about_one(self):
+        f = Fake(self)
+        f.put("nm_down")
+        f.put("rfkill_out", RFKILL.replace("Soft blocked: no", "Soft blocked: yes"))
+        (f.bin / "mmcli").unlink()  # no ModemManager tool, and no wwan interface in the fixture: there is no modem to be unsure about
+        s = f.net().status(True)
+        self.assertIn("mmcli", s["tools_missing"])
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (True, "on"))
+
+    def test_unknown_radios_are_listed_in_plain_words(self):
+        f = Fake(self)
+        f.put("nm_down")
+        f.put("rfkill_rc", "1")
+        f.put("bluetoothctl_out", "")
+        f.put("mmcli_rc", "1")
+        (f.root / "sys/class/net/rmnet_data0").mkdir()
+        s = f.net().status(True)["airplane"]
+        self.assertIn("the state of Wi-Fi, mobile data and Bluetooth could not be read", s["summary"])
 
     def test_bluetooth_cases(self):
         f = Fake(self)
