@@ -553,6 +553,7 @@ def page(token="", nonce="", *, demo=False):
 @@OPOS:css-4.css@@
 .box{background:#222;border-radius:8px;padding:8px;margin:6px 12px;white-space:pre-wrap}
 #answer a{color:#9ecbff;display:inline-block;min-height:44px;line-height:44px}
+#upd{display:block;line-height:48px;color:inherit}
 label,input,button{font-size:1rem;margin:4px 0}
 input[type=text],input[type=range]{width:100%}
 input[type=range]{min-height:44px}input[type=checkbox]{width:24px;height:24px}

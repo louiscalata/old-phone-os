@@ -5,9 +5,7 @@ It looks like the rest of OPOS because it inlines web_static/jaryo.css (the colo
 ring, light and dark). The facts are rendered here, escaped, so the page reads without its script; the script only
 adds the buttons and a live refresh from /api/update. Text size and theme follow the main page's saved choices.
 
-Follow-up, not done here: nothing on the main page links to /update (the page is frozen at its byte budget and a test holds
-its bytes), so on the kiosk the page is reached by address only. A "Software updates" link in Settings needs about 50 bytes
-of page budget.
+The main page reaches it with one link in Settings, About ("Updates"); a full-page navigation, and "Back to the phone" returns.
 """
 import json
 from html import escape

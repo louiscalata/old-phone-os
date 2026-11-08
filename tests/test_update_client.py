@@ -1379,11 +1379,14 @@ class Routes(Env):
 
 
 class MainPageIsUntouched(Env):
-    """The main page is at its size budget and frozen: this change must not alter a byte of it."""
+    """The main page is at its size budget and frozen: only the one link to /update (Settings, About) may differ from the base."""
 
-    # Recorded at base e471cf4 (before the update client): page(token "t"*43, nonce "n"*22) with the build id fixed to 12 f's.
-    MAIN_SHA256 = "9cf38030d8c168b34788a0939c30be87701f80023ba5901e92d0d623ca95c460"
-    DEMO_SHA256 = "29878bcd6196d6afd29afe1a8010e708c9d9262df14bac55284ee9eea6632626"
+    # page(token "t"*43, nonce "n"*22) with the build id fixed to 12 f's. At base e471cf4 (before the update client) these were
+    # 9cf38030... and 29878bcd...; since then the page differs by the Settings link to /update, the one CSS rule of the link, and
+    # a shortened code comment in phone-b.js that paid for the link's bytes (the page is at its size budget).
+    MAIN_SHA256 = "6b3d7b7c3f632f1b4674a106e51f0b9987e7f0f008e5772830869d4ee82ae5b1"
+    DEMO_SHA256 = "02bfa2edbad42b37aaf6e5402f0a33f6e72255a08e8bea0423177a19c93d38f1"
+    LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
         page = webclient.web.page
@@ -1393,10 +1396,33 @@ class MainPageIsUntouched(Env):
         self.assertEqual(hashlib.sha256(main).hexdigest(), self.MAIN_SHA256, "the main page changed; if that is intended, record the new digest")
         self.assertEqual(hashlib.sha256(demo).hexdigest(), self.DEMO_SHA256)
 
-    def test_it_knows_nothing_about_updates(self):
+    def test_it_knows_nothing_about_updates_but_one_link(self):
         text = webclient.web.page("t" * 43, "n" * 22, demo=True)
-        for needle in ("/update", "update_check", "update_download", "update_rollback", "api/update", "opos-update"):
+        for needle in ("update_check", "update_download", "update_rollback", "api/update", "opos-update"):
             self.assertNotIn(needle, text)
+        self.assertEqual(text.count("/update"), 1)
+        self.assertEqual(text.count(self.LINK), 1)
+
+    def test_the_link_is_in_settings_about_and_leads_back_from_the_page(self):
+        text = webclient.web.page("t" * 43, "n" * 22)
+        settings = text[text.index('<section id="settings"'):]
+        settings = settings[:settings.index("</section></section>")]
+        self.assertIn('<h3 id="set-about">About</h3>' + self.LINK + '<p id="about">', settings)
+        self.assertRegex(text, r"#upd\{[^}]*display:block[^}]*line-height:48px[^}]*\}")  # a 48 px touch target, like the buttons
+        # a plain full-page navigation: no script handles it, no attribute that would make it open elsewhere
+        self.assertNotRegex(self.LINK, r"target=|onclick|download|rel=")
+        snap = {"available": False, "message": "x"}
+        self.assertIn('<a id="u-back" href="/">Back to the phone</a>', update_page.page("t" * 43, "", snap))
+
+    def test_the_link_fits_the_page_budget_with_the_served_token_sizes(self):
+        with mock.patch("opos.notices.BUILD", "f" * 12):
+            size = len(webclient.web.page("t" * 43, "n" * 22, demo=True).encode("utf-8"))
+        self.assertLessEqual(size, 100 * 1024)
+
+    def test_the_public_demo_has_no_link_to_a_page_it_does_not_serve(self):
+        from opos import public_demo
+        for demo in (False, True):
+            self.assertNotIn("/update", public_demo.landing("t" * 43, "n" * 22, demo=demo))
 
     def test_served_main_page_equals_page_whether_or_not_updates_exist(self):
         self.conf()

@@ -128,7 +128,8 @@ is an empty file `inbox/rollback.request` or `opos-updater rollback`.
   no background polling unless `auto_check` is true.
 - `check` fetches `latest.json` and compares serials; `download` fetches the bundle to `inbox/<name>.partial`, fsyncs,
   renames to `.opos-update`; progress and results come from `status.json`. It never verifies for trust: root does.
-- UI: a separate small page at `/update` (not the main page, which is at its size budget) showing the running
+- UI: a separate small page at `/update` (not the main page, which is at its size budget; the main page has one link to it,
+  "Updates" in Settings under About, and the page's "Back to the phone" returns) showing the running
   version/revision/serial, check, download/apply, the last status and a rollback request. Existing token, origin and
   rate-limit rules for POSTs apply. Without `/var/lib/opos-update` (desktop demo, Android) the page says updates are not
   available on this install.

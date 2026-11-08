@@ -187,6 +187,7 @@ class IPLimits:
 def landing(token, nonce, demo=False):
     """Compose around the unchanged phone page; its byte budget stays independent."""
     page = web.page(token, nonce, demo=demo)
+    page = page.replace('<a id=upd href=/update>Updates</a>', '', 1)  # Settings' link to the software-updates page: this server has none
     page = page.replace("</head>", '<meta name="description" content="Try a simulated phone that saves battery for calls and messages. A hackathon interface prototype, not an operating system; not run on a physical phone."><meta property="og:title" content="Old Phone OS Interface"><meta property="og:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Old Phone OS Interface"><meta name="twitter:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta property="og:type" content="website">' + "</head>", 1)
     page = page.replace('<div id="about-notices">', '<div id="about-notices">'
                         '<p id="public-about">This public simulation runs on a web server. '

@@ -90,9 +90,10 @@ powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-1.opos-update -Hos
 
 The phone's side, for checking and going back: `/usr/libexec/opos-updater/opos-updater status` prints the running release
 and the last result; `/var/lib/opos-update/status.json` is the same for programs; an empty file `rollback.request` in
-`/var/lib/opos-update/inbox/` (or `/usr/libexec/opos-updater/opos-updater rollback` as root) returns to the previous release. OPOS also serves an
-update page at `http://127.0.0.1:8765/update` on the phone (check, download, rollback). The main page does not link to it yet,
-because that page is at its size budget, so the kiosk cannot reach it by touch; use the USB push until a link is added.
+`/var/lib/opos-update/inbox/` (or `/usr/libexec/opos-updater/opos-updater rollback` as root) returns to the previous release; the inbox
+request is honoured once per applied update. OPOS also serves an update page at `http://127.0.0.1:8765/update` on the phone (check,
+download, rollback); the kiosk reaches it by touch through Settings, About, Updates. With no update source set (`OPOS_UPDATE_URL`) the
+page only shows the running version, the last result and the rollback button; the USB push needs no source.
 
 Limits: nothing here has run on the phone, so expect to find problems at the first real push. A serial that failed on a phone is
 never accepted again there (the fix goes out under a new serial). There is no way to revoke a release key over the air; a lost
