@@ -983,7 +983,7 @@ class Ssh(SelftestCase):
         # Match Address takes a list; looking only at the first entry would call this private
         a = "10." + "0.1.0/24"
         self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
-                   "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s,203.0.113.0/24\n  PasswordAuthentication yes\n" % a)
+                   "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s,8.8.8.0/24\n  PasswordAuthentication yes\n" % a)
         self.assertEqual(self.run_st().status("ssh.auth"), "WARN")
 
 
