@@ -6,7 +6,8 @@ How to make the release key, cut a signed update bundle, host it and push it to 
 release side, on your PC. The tools are `tools/opos-release.py` (build, verify, index) and `deploy/duo-push-update.ps1`
 (copy to the phone over USB and wait for the result).
 
-Status: the tools are tested on a PC with throw-away keys. Nothing here has been run against the phone's updater yet;
+Status: the tools are tested on a PC with throw-away keys, and `tests/test_ota_roundtrip.py` feeds the bundles they build to
+the phone's real updater code (with stand-ins for systemd, runuser and the browser). Nothing here has run on the phone;
 see [Limits](#limits).
 
 You need a PC (Windows or Linux) with Python 3.11 or newer, git, and the OpenSSH client (`ssh-keygen`, `ssh`, `scp`).
@@ -47,6 +48,10 @@ Per the design, the image build installs `/etc/opos/update/allowed_signers` only
 ```sh
 sudo env OPOS_UPDATE_SIGNERS=allowed_signers sh packaging/duo-os/build-image.sh <base-rootfs.img> <out.img> HEAD
 ```
+
+Add `OPOS_UPDATE_URL=https://<host>/<folder>/latest.json` to the same command to write the phone's update source
+(`/etc/opos/update.json`, checks only when asked) into the image. Without it the phone fetches nothing, which is all the USB
+push below needs.
 
 For the USB push below, build the same image with `OPOS_DEV_SSH_PUBKEY=<login key>.pub` as well. That is the key you log in
 to the phone with; it is a different key from the release key and the two must never be swapped. The signers file is baked
@@ -98,8 +103,8 @@ The phone fetches `latest.json` and then the bundle it names. Put both in one fo
 
 `url` is relative to `latest.json`'s own address. Upload the bundle first and `latest.json` second, so the index never
 points at a file that is not there yet. The phone is opt-in: with no `/etc/opos/update.json` it never fetches anything;
-to use a host, write `{"url": "https://<host>/<folder>/latest.json", "auto_check": false, "allow_lan_http": false}`
-there.
+to use a host, build the image with `OPOS_UPDATE_URL` (above) or, as root on the phone, write
+`{"url": "https://<host>/<folder>/latest.json", "auto_check": false, "allow_lan_http": false}` there.
 
 - **GitHub Releases.** Attach `opos-8.opos-update` and `latest.json` to a release to keep an archive and to download the
   bundle by hand for the USB push. At the time of writing GitHub answers a release-asset download with a redirect to a

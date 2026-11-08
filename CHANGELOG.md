@@ -5,7 +5,13 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 
 ## Unreleased
 
+### Added
+
+- Over-the-air updates for the Surface Duo OS image ([design and as-built notes](docs/ota-update.md)): a root updater with its systemd units, installed by `packaging/duo-os/build-image.sh` (`OPOS_UPDATE_SIGNERS`, `OPOS_UPDATE_URL`); an opt-in update client and `/update` page in OPOS; `tools/opos-release.py` and `deploy/duo-push-update.ps1` to build, sign and push a release ([how-to](docs/ota-release-howto.md)). Implemented and tested on Linux with stand-ins for systemd, runuser and the browser; not tested on the phone.
+
 ### Changed
+
+- `opos-kiosk` waits for the OPOS server before every start of the browser, so the browser comes back only after a restarted server answers.
 
 - README now includes an illustrative older-phone vignette, new final-tree Muse Glimmer Ask and Why? captures in light and dark, with all eight measured UI response times, the quoted first dark Ask answer, and current pause status. All eight requests returned Glimmer replies within the 115-second deadline; the new Why? measurements replace the earlier rules-fallback observations for this source. Simulation wording distinguishes the profile drain runs from the worn-battery burst-shaping evaluation; postmarketOS wording separates the recorded QEMU boot from outstanding integration acceptance and untested physical-phone behavior.
 

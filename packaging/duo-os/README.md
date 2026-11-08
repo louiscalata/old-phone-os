@@ -19,11 +19,12 @@ On top of the base, `build-image.sh` adds:
 
 | Piece | Role |
 |---|---|
-| `/opt/opos` | OPOS runtime at an exact revision (`/opt/opos/REVISION`); stdlib Python on the image's python3 |
+| `/opt/opos` | OPOS runtime at an exact revision (`/opt/opos/REVISION`); stdlib Python on the image's python3. A symlink to `/opt/opos-releases/0-<rev12>`, so an update can switch releases atomically |
 | `opos-server.service` | `python3 -m opos.web --live-battery` as user `droidian`: the rules on the phone's sysfs battery |
 | `opos.service` | the shell: `phosh-session` with `PHOSH_SESSION_BIN=/usr/libexec/opos/opos-kiosk`, so `phoc` starts exactly as the port starts it (hwcomposer output, hinge seam, scale 2) with OPOS full-screen as its only client |
 | `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page, restarting it if it exits |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
+| `opos-updater`, `opos-update*.path/.service` | the root side of over-the-air updates (below): checks and applies signed bundles, rolls back a bad one |
 
 phosh and item stay installed but are not started. Calls and texts still go through OPOS's simulated modem:
 the base has ModemManager (via ofono2mm), but `src/opos/mm_modem.py` is not wired in yet.
@@ -56,6 +57,47 @@ That formats userdata as ext4, RAM-boots TWRP, pushes the image to `/data/rootfs
 returns to the bootloader and RAM-boots the port's kernel once. A RAM-boot does not survive a power cycle; see
 [docs/duo-usb-install.md](../../docs/duo-usb-install.md) for restarting safely. Making it permanent means flashing
 the port's `boot.img` and `vbmeta.img` to the active slot, which is the owner's separate decision.
+
+## Over-the-air updates
+
+Status: implemented and tested on a PC (`tests/test_ota_roundtrip.py` builds, delivers, applies, refuses and rolls back real
+signed bundles with stand-ins for systemd, runuser and the browser); **not tested on the phone**, which has not booted
+this image. The contract is [docs/ota-update.md](../../docs/ota-update.md); the owner's steps are in
+[docs/ota-release-howto.md](../../docs/ota-release-howto.md).
+
+What it does: the running phone can take a new OPOS app tree (`/opt/opos`) and new OPOS scripts and units without a new
+image. A bundle is signed on your PC (`tools/opos-release.py`, an ed25519 key and `ssh-keygen -Y sign`). The phone's root
+updater verifies the signature, serial and every file hash, starts the new tree once as a smoke test, switches
+`/opt/opos`, restarts `opos-server`, checks that it answers, and goes back by itself if it does not. It never restarts
+`opos.service` (the compositor session; restarting it has reset this phone). The kernel, initramfs, vendor layer, Debian
+packages, the updater and its trust keys change only with a new image.
+
+Build options, as environment variables of `build-image.sh`:
+
+- `OPOS_UPDATE_SIGNERS=<file>`: public keys the image trusts, one `ssh-ed25519 AAAA...` or `opos-release ssh-ed25519 AAAA...`
+  line each (`python tools/opos-release.py keygen-help --pub <key>.pub` prints one). **Without it the image accepts no update
+  at all**, and the build says so. A private key or any other line stops the build.
+- `OPOS_UPDATE_URL=https://<host>/<folder>/latest.json`: where the phone may look for updates, checked only when asked. Without
+  it the phone fetches nothing.
+- `OPOS_DEV_SSH_PUBKEY=<login key>.pub`: needed for the USB push below.
+
+Push a release over the USB network (no Wi-Fi, no host), then follow the phone's answer:
+
+```sh
+python tools/opos-release.py build --serial 1 --version 0.2.0 --key <release key> --out dist --overlay opos-kiosk
+powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-1.opos-update -Host <phone address> -Key <login key>
+```
+
+The phone's side, for checking and going back: `/usr/libexec/opos-updater/opos-updater status` prints the running release
+and the last result; `/var/lib/opos-update/status.json` is the same for programs; an empty file `rollback.request` in
+`/var/lib/opos-update/inbox/` (or `/usr/libexec/opos-updater/opos-updater rollback` as root) returns to the previous release. OPOS also serves an
+update page at `http://127.0.0.1:8765/update` on the phone (check, download, rollback). The main page does not link to it yet,
+because that page is at its size budget, so the kiosk cannot reach it by touch; use the USB push until a link is added.
+
+Limits: nothing here has run on the phone, so expect to find problems at the first real push. A serial that failed on a phone is
+never accepted again there (the fix goes out under a new serial). There is no way to revoke a release key over the air; a lost
+or stolen key means a new image. A `boot`-scope bundle is staged and applied at the next boot, and rolls back after two failed
+boots.
 
 ## Restore to Android
 

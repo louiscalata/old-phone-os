@@ -1,8 +1,13 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# OPOS over-the-air updates (design)
+# OPOS over-the-air updates
 
-Status, November 8, 2026: **design only; nothing here is implemented yet.** This document is the contract that the
-updater, the client and the release tools are built against. It describes the OPOS OS image for the Surface Duo
+Status, November 8, 2026: **implemented (root updater, client, release tools) and tested on Linux with stand-ins for systemd, runuser and the browser; not tested on the phone.**
+`tests/test_ota_roundtrip.py` builds real signed bundles with `tools/opos-release.py`, fetches them with the client from a
+loopback server, and has the updater apply, health-check, refuse and roll them back; the unit tests of each part sit
+beside it. What no test reaches: the systemd path unit and the unit hardening on systemd 257, the real `runuser`/PAM,
+the kiosk browser coming back after its restart, and the phone's kernel, flash and clock. Expect to find problems at the first
+real run. This document is the contract that the updater, the client and the release tools were built against; "As built"
+below lists where the code is stricter or more specific than the text. It describes the OPOS OS image for the Surface Duo
 (see [packaging/duo-os/README.md](../packaging/duo-os/README.md)); the Android/Termux deploy is not covered.
 
 ## What can and cannot be updated
@@ -124,7 +129,50 @@ is an empty file `inbox/rollback.request` or `opos-updater rollback`.
 copies a bundle into the phone's inbox over the USB network with the dev key and prints `status.json` until it settles. This is
 also how app-level changes reach the running phone without a new rootfs image.
 
+## As built
+
+Where the code is stricter or more specific than the text above. Every item is a tightening; the text above is the minimum.
+
+- **Layout.** `/opt/opos` is a *relative* symlink (`opos-releases/<serial>-<rev12>`, so it also resolves inside a mounted
+  image); `<rev12>` is the first 12 hex digits of the revision; the image's own release is `0-<rev12>`. A release directory
+  holds the app tree, `REVISION`, `manifest.json`, `manifest.json.sig`, `overlay/` and `overlay-backup/`; those five names
+  are reserved and a bundle may not write them. The current release and two previous ones are kept.
+- **Bundle contents.** A bundle is a complete application tree (`opt/opos/src/opos/**`, `LICENSE`, `THIRD_PARTY.md`, as
+  `git archive` gives it), never a delta; a bundle with only overlay files is refused. Overlay paths are single-level and
+  exact, as in the table above. Refused although a glob would match them: `etc/opos/update.json`, `etc/opos/base-version`,
+  anything named `opos-update*` in `usr/sbin`, `etc/systemd/system` and `etc/default`, `usr/libexec/opos-updater/**`, and
+  names ending `.new`. A path component matches `[A-Za-z0-9_][A-Za-z0-9._+-]*` (no dotfiles, spaces, `@` or non-ASCII).
+- **Manifest.** `requires_base` is a minimum (accepted when not above `/etc/opos/base-version`); `notes` is optional (at most
+  1,000 characters); no other keys; duplicate JSON keys, `NaN` and a byte-order mark are refused; modes are the strings
+  `"0644"` and `"0755"`; payload member names equal the manifest paths exactly and the tar header mode equals the manifest
+  mode. The outer tar is plain, exactly the three members in order, and only zero padding follows. Limits: 20,000 files,
+  256 MiB unpacked; the client and the release tool stop a bundle at 256 MiB, the updater at 272 MiB.
+- **Inbox.** The client writes `opos-<serial>.opos-update.partial`, fsyncs, then renames it; `rollback.request` is an empty
+  regular file. Root deletes every `*.opos-update` and `rollback.request` it looks at, accepted or not, removes `.partial`
+  files older than a day, applies the newest bundle by modification time and discards the others; a symlink, FIFO or
+  directory in the inbox is removed and reported. The path unit matches only `*.opos-update` and `rollback.request`.
+- **Serials.** A serial must be above the running one and above a staged boot update, and not in `failed`. A rolled-back
+  serial (automatic, requested, or recovered after an interrupted run) is added to `failed` and never accepted again; a
+  refused bundle and a failed smoke test are not. A newer app update supersedes a staged boot update, and a rollback cancels it.
+- **State.** `state.json` also holds `schema`, `trial` (boot scope: the failed-boot counter) and `txn` (a journal written
+  before the first live change; the next run undoes an interrupted apply or finishes an interrupted rollback). `status.json`
+  also holds `epoch`, and every run rewrites it, which the USB push script relies on. Its `message` can contain text that came
+  from a bundle or the inbox, so the UI escapes it.
+- **Health and smoke tests.** Health: `systemctl is-active opos-server.service` is `active`; `GET /` on port 8765 answers
+  200 and carries `<meta name="opos-token" content="...">`; `GET /api/state` with that token returns a JSON object with a
+  `battery` key. Boot confirmation uses the same check. Smoke test: the new release's server runs as `droidian` through
+  `runuser` on 127.0.0.1:18765 and `GET /` must answer 200 within 20 seconds.
+- **What the updater touches.** It asks systemd for `daemon-reload`, `restart opos-server.service` and `is-active
+  opos-server.service` and nothing else, so never `opos.service`; it kills the kiosk's Chromium with `pkill`, and
+  `opos-kiosk` waits for the server before every start of the browser. Exit codes: 0 done or nothing to do, 3 a bundle or
+  request was refused or rolled back (the unit accepts it), 75 another run holds the lock, 1 fatal, 2 usage.
+- **Hosting.** The client follows a redirect only within one scheme, host and port, so a phone cannot fetch from GitHub
+  release assets (served from another host); use a static site on one host. The image build takes
+  `OPOS_UPDATE_SIGNERS=<public keys file>` (no key: nothing is accepted) and `OPOS_UPDATE_URL=<address of latest.json>` (no
+  address: nothing is fetched); [the owner's how-to](ota-release-howto.md) covers the rest.
+
 ## Limits
 
 No kernel, initramfs, vendor-layer or Debian updates; no update of the updater or its trust keys over the air; no
-Android/Termux support; not tested on the phone until the updater runs there; there is no hosted update server yet.
+Android/Termux support; no revocation of a release key; not tested on the phone (see the status line); there is no hosted
+update server yet.
