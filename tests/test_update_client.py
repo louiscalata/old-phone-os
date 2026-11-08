@@ -837,6 +837,24 @@ class Download(Env):
         self.assertIn("free space", c.job()["message"])
         self.assertLess(c.job()["bytes"], 150000 + 8192 + uc.CHUNK, "it stopped when the headroom was reached, not at the end")
 
+    def test_the_production_limits_look_at_the_free_space_every_mib_while_a_bundle_streams_in(self):
+        """Every test above passes a small space_step, so a production default that was huge (or never reached) kept them all green.
+        This one uses the default Limits: 32 MiB of headroom, looked at every MiB, on a reply with no length (so nothing is
+        reserved up front and only the look while it streams can stop it)."""
+        limits = uc.Limits()
+        self.assertEqual((limits.space_step, limits.headroom), (1 << 20, 32 << 20))
+        body = tar_bundle(7, pad=5 << 20)
+        self.publish(7, body, size=False, sha=False)
+        self.chunked(body, piece=1 << 16)
+        with self.disk(limits.headroom + 9 * (1 << 18)):  # 2.25 MiB may be written; the looks at 1 and 2 MiB pass, the one at 3 MiB stops it
+            c = uc.UpdateClient(self.paths, limits)
+            c.start_download()
+            self.assertTrue(c.wait(30))
+        self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
+        self.assertIn("free space", c.job()["message"])
+        self.assertGreaterEqual(c.job()["bytes"], 3 << 20)
+        self.assertLess(c.job()["bytes"], (3 << 20) + 3 * uc.CHUNK, "it stopped at the look after 3 MiB, not at the end of the 5 MiB")
+
     def test_a_response_with_no_length_is_refused_before_a_byte_when_there_is_no_headroom(self):
         body = tar_bundle(7)
         self.publish(7, body, size=False, sha=False)
