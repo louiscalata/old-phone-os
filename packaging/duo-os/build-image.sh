@@ -55,6 +55,31 @@ install -m 0755 "$here/opos-diag" "$r/usr/libexec/opos/opos-diag"
 install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"
 ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"
 
+# --- clock: BEGIN (opos-clock, opos-clock-set; packaging/duo-os/README.md, "The clock")
+# The Duo boots at 1970 after a RAM-boot. opos-clock raises a clock earlier than a floor to it and never lowers one;
+# the floor is the OPOS commit's time, never earlier than 2026. Real time (systemd-timesyncd, kept as the base has it)
+# takes over once there is a network. The droidian user has no passwordless sudo, so a developer's PC sets the time by
+# dropping Unix seconds into ~/opos-set-time over ssh: a root path unit checks and applies them (dev images only).
+floor=$(g log -1 --format=%ct "$ref")
+case $floor in '' | *[!0-9]*) echo "cannot read the commit time of $ref" >&2; exit 1 ;; esac
+[ "$floor" -ge 1767225600 ] || floor=1767225600
+echo "$floor" > "$r/opt/opos/CLOCK_FLOOR"
+install -m 0755 "$here/opos-clock" "$r/usr/libexec/opos/opos-clock"
+install -m 0644 "$here/opos-clock.service" "$r/etc/systemd/system/opos-clock.service"
+ln -sf /etc/systemd/system/opos-clock.service "$r/etc/systemd/system/multi-user.target.wants/opos-clock.service"
+clock_home=$(awk -F: '$1=="droidian"{print $6}' "$r/etc/passwd")
+[ -n "$clock_home" ] || { echo "base rootfs has no droidian user" >&2; exit 1; }
+for u in opos-clock-set.path opos-clock-set.service; do
+    sed "s|@DROP@|$clock_home/opos-set-time|g" "$here/$u" > "$r/etc/systemd/system/$u"
+    chmod 0644 "$r/etc/systemd/system/$u"
+done
+if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    ln -sf /etc/systemd/system/opos-clock-set.path "$r/etc/systemd/system/multi-user.target.wants/opos-clock-set.path"
+    echo "DEV IMAGE: Unix seconds dropped in ~/opos-set-time over ssh set the clock (opos-clock-set.path)"
+fi
+echo "clock floor $floor ($(date -u -d "@$floor" +%FT%TZ 2>/dev/null || echo '?'))"
+# --- clock: END
+
 # DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
 # droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
 # for an image that is meant to be carried: without it nothing new can log in.

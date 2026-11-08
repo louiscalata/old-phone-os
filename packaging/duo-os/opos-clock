@@ -1,0 +1,101 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The OPOS OS clock, run by systemd as root. A RAM-booted Duo has no usable time: timekeeper has no offset to
+# restore (it sets 1970) and the base's item-clock-seed needs Android's offset in persist.
+#   opos-clock floor      at boot, after timekeeper: raise a clock earlier than the floor to it, never lower one
+#   opos-clock stop       at shutdown: remember whether the clock is still only a guess, for the next boot
+#   opos-clock set FILE   from opos-clock-set.path: set the clock to the Unix seconds in FILE, then delete FILE
+# The floor is the OPOS commit's time (build-image.sh writes /opt/opos/CLOCK_FLOOR), never earlier than 2026. A raised
+# clock is a guess: /run/opos/clock-floor says so (OPOS reads it) until systemd-timesyncd has network time or `set`
+# has run. The hardware clock is not written. OPOS_CLOCK_ROOT prefixes every path (tests only).
+set -u
+umask 022
+R=${OPOS_CLOCK_ROOT:-}
+MIN=1767225600   # 2026-01-01T00:00:00Z
+SPAN=631152000   # 20 years: how far past the floor `set` may reach
+GUESS=$R/run/opos/clock-floor
+KEEP=$R/var/lib/opos/clock-guess
+SYNCED=$R/run/systemd/timesync/synchronized
+
+say() { echo "opos-clock: $*"; }
+num() { case ${1:-} in '' | *[!0-9]*) return 1 ;; esac; [ "${#1}" -le 12 ]; }
+setclock() { date -u -s "@$1" > /dev/null; }
+
+floor_value() {
+    f=$MIN
+    v=$(head -n 1 "$R/opt/opos/CLOCK_FLOOR" 2> /dev/null | tr -d ' \t\r')
+    if num "$v" && [ "$v" -gt "$f" ]; then f=$v; fi
+    echo "$f"
+}
+
+# What the port's own clock services found, so a boot that still reads 1970 explains itself in the journal.
+evidence() {
+    a=$R/mnt/vendor/persist/time/ats_1
+    if [ -e "$a" ]; then have="present, $(stat -c %s "$a" 2> /dev/null) bytes"; else have=absent; fi
+    say "evidence: persist ats_1 $have; /data/time/timekeep '$(head -c 20 "$R/data/time/timekeep" 2> /dev/null | tr -d '\n')'; rtc0 since_epoch '$(cat "$R/sys/class/rtc/rtc0/since_epoch" 2> /dev/null)'"
+    if [ -z "$R" ] && [ -d /run/systemd/system ]; then
+        for u in timekeeper item-clock-seed; do
+            say "evidence: $u $(systemctl show -p ActiveState -p Result -p ExecMainStatus "$u.service" 2>&1 | tr '\n' ' ')"
+        done
+    fi
+}
+
+do_floor() {
+    floor=$(floor_value)
+    # The last clock systemd-timesyncd saved is a better floor, when it is a believable step past the build.
+    s=$(stat -c %Y "$R/var/lib/systemd/timesync/clock" 2> /dev/null)
+    if num "$s" && [ "$s" -gt "$floor" ] && [ "$s" -le $((floor + SPAN)) ]; then floor=$s; fi
+    cur=$(date -u +%s)
+    num "$cur" || { say "cannot read the clock"; return 1; }
+    mkdir -p "$R/run/opos" || return 1
+    evidence
+    if [ "$cur" -lt "$floor" ]; then
+        setclock "$floor" || { say "cannot set the clock to $floor"; return 1; }
+        : > "$GUESS"
+        say "the clock read $cur, before the floor $floor: raised to it; it stays a guess until network time or 'set'"
+    elif [ -e "$KEEP" ] && [ ! -e "$SYNCED" ]; then
+        : > "$GUESS"
+        say "the clock reads $cur, past the floor $floor, but it was still a guess at the last shutdown"
+    else
+        [ ! -e "$SYNCED" ] || rm -f "$KEEP"
+        say "the clock reads $cur, at or past the floor $floor: left alone"
+    fi
+}
+
+do_stop() {
+    if [ -e "$SYNCED" ]; then
+        rm -f "$KEEP"
+    elif [ -e "$GUESS" ]; then
+        mkdir -p "$R/var/lib/opos" && : > "$KEEP"
+    fi
+}
+
+do_set() {
+    f=${1:-}
+    [ -n "$f" ] || { say "set: no file given"; return 2; }
+    [ -e "$f" ] || [ -L "$f" ] || return 0   # the path unit fires again when the file is deleted
+    n=0
+    # A writer that has created the file but not yet written it: give it a moment.
+    while [ -f "$f" ] && [ ! -L "$f" ] && [ ! -s "$f" ] && [ "$n" -lt "${OPOS_CLOCK_WAIT:-3}" ]; do sleep 1; n=$((n + 1)); done
+    if [ -L "$f" ]; then rm -f "$f"; say "set: the time file is a symlink: refused"; return 1; fi
+    [ -f "$f" ] || { say "set: the time file is not a plain file: refused"; return 1; }
+    v=$(head -c 32 "$f" 2> /dev/null | tr -d '\r' | sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}')
+    rm -f "$f"
+    num "$v" || { say "set: the time file does not hold Unix seconds: refused"; return 1; }
+    floor=$(floor_value)
+    if [ "$v" -lt "$floor" ] || [ "$v" -gt $((floor + SPAN)) ]; then
+        say "set: $v is outside $floor..$((floor + SPAN)): refused"
+        return 1
+    fi
+    cur=$(date -u +%s)
+    setclock "$v" || { say "set: cannot set the clock"; return 1; }
+    rm -f "$GUESS" "$KEEP"
+    say "set: the clock read $cur, now $v"
+}
+
+case ${1:-} in
+    floor) do_floor ;;
+    stop) do_stop ;;
+    set) do_set "${2:-}" ;;
+    *) echo "usage: opos-clock floor | stop | set FILE" >&2; exit 2 ;;
+esac

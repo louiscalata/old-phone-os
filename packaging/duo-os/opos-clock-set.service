@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Started by opos-clock-set.path. Accepts only plain digits between the floor and 20 years past it, then deletes the file.
+[Unit]
+Description=OPOS: set the clock from @DROP@
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/opos/opos-clock set @DROP@
+TimeoutStartSec=30
+NoNewPrivileges=yes

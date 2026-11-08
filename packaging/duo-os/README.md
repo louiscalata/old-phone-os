@@ -24,6 +24,8 @@ On top of the base, `build-image.sh` adds:
 | `opos.service` | the shell: `phosh-session` with `PHOSH_SESSION_BIN=/usr/libexec/opos/opos-kiosk`, so `phoc` starts exactly as the port starts it (hwcomposer output, hinge seam, scale 2) with OPOS full-screen as its only client |
 | `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page, restarting it if it exits |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
+| `opos-clock.service` | raises a clock that reads before the image's floor (the OPOS commit's time, never before 2026) to it at boot, never lowers one; see [The clock](#the-clock) |
+| `opos-clock-set.path` | dev images: sets the clock from Unix seconds that the developer's PC drops into `~/opos-set-time` over ssh, with no password |
 
 phosh and item stay installed but are not started. Calls and texts still go through OPOS's simulated modem:
 the base has ModemManager (via ofono2mm), but `src/opos/mm_modem.py` is not wired in yet.
@@ -41,6 +43,58 @@ sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 
 `verify-image.sh` checks the unit wiring and phoc's `-E` startup command, and runs the OPOS server from the image
 with the image's own aarch64 python3 under qemu-user. It is not a boot, display or battery test.
+
+## The clock
+
+The first boot of this image read 1970-01-01, so the lock screen and every time-of-day goal were wrong. What follows
+about the port's own clock services comes from reading its unit files in the base and OPOS images (the same file in
+both); none of it was measured on the phone.
+
+- `timekeeper.service` (sysinit) sets the clock from the hardware clock plus an offset it keeps in `/data/time/timekeep`
+  and stores at a clean shutdown. A fresh userdata has no offset and a power cycle skips the store, so it sets 1970.
+- The base's `item-clock-seed.service` is enabled in the OPOS image exactly as in the base and is not tied to item's
+  shell. It acts only when `/mnt/vendor/persist/time/ats_1` exists, `/data/time/timekeep` holds no time yet and the
+  offset in `ats_1` is positive; otherwise it exits without a word.
+- Why it did nothing on the first boot is not established: no journal from that boot is in this repository.
+  `opos-clock` now writes what it finds (does `ats_1` exist, what `timekeep` holds, the hardware clock's value, the two
+  services' results) to the persistent journal at every boot: `journalctl -b -u opos-clock`.
+- `systemd-timesyncd` is the only network time service in the base (no chrony), enabled and unmasked. It needs a
+  network that reaches the Debian NTP pool. The hardware clock is never written (`hwclock.service` is masked in the base).
+
+What the image does now:
+
+- `opos-clock.service` runs after `timekeeper` and `item-clock-seed`. A clock earlier than the floor is set to the
+  floor (also to the last time timesyncd saved, when that is later and within 20 years); a later clock is never touched.
+  `build-image.sh` records the floor as the commit time of the OPOS revision in `/opt/opos/CLOCK_FLOOR`.
+  The unit comes after those two and before only `opos-server`; it has no `Before=` on sysinit, the time targets or the
+  network, because such an ordering on a clock unit made a cycle on the port once (NetworkManager never started).
+- A raised clock is a guess, not the time. `/run/opos/clock-floor` says so until `systemd-timesyncd` reports network time
+  (`/run/systemd/timesync/synchronized`) or the time is set below. A clean shutdown keeps the guess for the next boot
+  (`/var/lib/opos/clock-guess`), because `timekeeper` stores whatever the clock was.
+- The OPOS server reads those files. While the clock is a guess, or before 2026, `/api/state` has
+  `battery.clock_ok: false`, `clock` reads `--:--`, goals and `calls_until` are not computed against it, the governor
+  gets no goal hours, and the goal note reads "Clock not set". The demo and the public demo do not change. The page's
+  lock-screen and status-bar times are Chromium's own `Date`, so they show the guess until it is replaced.
+
+Set the time from the PC, dev images only (built with `OPOS_DEV_SSH_PUBKEY`; the units are in every image, enabled
+only in those). The `droidian` user has no passwordless sudo and none is added. Instead a root path unit watches
+`~/opos-set-time`; it takes Unix seconds only, between the floor and 20 years past it, refuses symlinks and
+anything else, deletes the file and sets the clock. From a Unix shell:
+
+```sh
+ssh droidian@<phone-address> "echo $(date -u +%s) > ~/.opos-time && mv ~/.opos-time ~/opos-set-time"
+```
+
+From PowerShell:
+
+```powershell
+ssh droidian@<phone-address> "echo $([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) > ~/.opos-time && mv ~/.opos-time ~/opos-set-time"
+```
+
+The `$(...)` is expanded on the PC inside the double quotes, so the phone gets the PC's time; the `mv` makes the file
+appear whole. Check with `ssh droidian@<phone-address> date -u`, which should match the PC's UTC time within a few seconds.
+Anything running as `droidian` can use the same file, which is why the path unit is not enabled in other images.
+Not yet checked on a phone: the boot ordering, the path unit's trigger on the `mv`, and whether timesyncd steps a guessed clock.
 
 ## Install, once USB data works
 
