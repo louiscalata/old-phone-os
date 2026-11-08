@@ -78,6 +78,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_KIOSK_RESTART` | not set | `0`: do not restart Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
+| `OPOS_PANES` | `opos-server.service` (`1`) | the black thumb pane, the white list pane and the Hand setting on the spanned window (`src/opos/panes.py`, [docs/jaryo-panes.md](../../docs/jaryo-panes.md)); paints only while `OPOS_SPAN` is on; `1,pure` strict `#000`/`#fff`, `invert` colour swap without the mirror, unset none |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
 | `OPOS_KIOSK_DEBUG_PORT` | `/etc/default/opos-kiosk`, written only by a dev image | the Chromium DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
 | `OPOS_DEV_SSH_PUBKEY` | build input | a public key file; the image then lets that key log in as `droidian` (a dev image) |
