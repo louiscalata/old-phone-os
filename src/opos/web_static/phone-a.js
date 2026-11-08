@@ -211,9 +211,12 @@ var reload=document.getElementById('reload-shell'),failures=0;
 if(!reload)return;
 function stateResult(failed){try{
 failures=failed?failures+1:0;
-reload.hidden=failures<2;
+reload.toggleAttribute('hidden',failures<2);
+document.body.toggleAttribute('data-stale',failures>1);
+if(failures===2)render({error:'offline'});
 }catch(e){}}
-reload.onclick=function(){try{location.reload();}catch(e){}};
+window.oposPoll=ok=>stateResult(!ok);
+reload.onclick=healReload;
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(){stateResult(false);});
 if(typeof window.api==='function'){
@@ -307,7 +310,7 @@ var technical=$('shade-technical');['events'].forEach(function(id){technical.app
 ['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length>1)});
 ['headline','time-left','goal-note','why'].forEach(function(id){var e=$(id);e.hidden=!known(e.textContent)});
 ['paused-list','features','events'].forEach(function(id){Array.prototype.forEach.call($(id).children,function(row){var label=row.querySelector('span');row.hidden=!known(label?label.textContent:row.textContent)})});
-var helper=$('helper'),button=helper.querySelector('button');
+var helper=$('helper'),button=helper.querySelector('details')?null:helper.querySelector('button');
 if(button){
 var lines=helper.textContent.split('\n').filter(function(line){var v=line.split(':').slice(1).join(':').trim();return v&&known(v)});
 var details=E('details'),summary=E('summary');

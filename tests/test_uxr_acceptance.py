@@ -40,6 +40,12 @@ VERBOSE = os.environ.get("OPOS_UXR_VERBOSE") == "1"
 ALLOW_SIZE = {
     "#meter": (0, "4px visual bar; taps land on the 44px #meter-hit laid over it"),
 }
+# test_touch_targets: selectors that float over other controls on purpose. The 8 px gap rule skips every pair that has one of them;
+# the size rule still applies to them.
+ALLOW_OVERLAP = {
+    "#reload-shell": "the Reload button of a stale or unreachable page is a fixed 48 px button at the bottom right (W1-02); it floats "
+                     "over whatever scrolls under it, at 360x640 over part of #number, and the page is not usable until it is pressed",
+}
 # test_real_controls: selector -> reason for a non-native element that may be clickable.
 ALLOW_CONTROLS = {}
 
@@ -136,7 +142,7 @@ class TestUxrAcceptance(unittest.TestCase):
         Path(cls.state).write_text(json.dumps({
             "hidden": Phone().state(),
             "visible": Phone(visible=True).state(),
-            "allow": {"size": {k: v[0] for k, v in ALLOW_SIZE.items()}, "controls": dict(ALLOW_CONTROLS)},
+            "allow": {"size": {k: v[0] for k, v in ALLOW_SIZE.items()}, "controls": dict(ALLOW_CONTROLS), "overlap": sorted(ALLOW_OVERLAP)},
         }, default=str), encoding="utf-8")
 
     @classmethod

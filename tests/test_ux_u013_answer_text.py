@@ -8,7 +8,7 @@ class WhyFallbackLabel(unittest.TestCase):
     def test_why_fallback_label(self):
         text = web_text()
         start_tag = "b.textContent='Why?'"
-        end_tag = "h.appendChild(document.createElement('br'))"
+        end_tag = "h.appendChild(E('br'))"
         start = text.index(start_tag)
         end = text.index(end_tag, start)
         snippet = text[start:end]

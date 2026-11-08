@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import unittest
 
@@ -53,6 +54,49 @@ class PolishStatic(unittest.TestCase):
         self.assertNotIn('#ff7075', out)
 
 
+class KeyedSyncStatic(unittest.TestCase):
+    """W1-09: a node is rebuilt only when its markup changed, so a tap or the focus on it survives a poll."""
+
+    def test_lists_are_rebuilt_only_when_their_markup_changed(self):
+        out = page()
+        self.assertEqual(out.count("const sync=(el,html,wire)=>{if(el._k!==html){el._k=html;el.innerHTML=html;wire&&wire(el)}};"), 1)
+        for el in ("contacts", "threads", "thread", "features", "events"):
+            self.assertIn("sync(G('%s')," % el, out, el)
+            self.assertNotIn("G('%s').innerHTML" % el, out, el)
+            self.assertNotIn("getElementById('%s').innerHTML" % el, out, el)
+        # the buttons are wired inside the callback, not by a second pass over the document on every poll
+        self.assertNotIn("document.querySelectorAll('#contacts button')", out)
+        self.assertNotIn("document.querySelectorAll('#threads button')", out)
+
+    def test_the_helper_box_is_rebuilt_once_per_change_and_enhanced_once(self):
+        out = page()
+        self.assertIn("const h=G('helper'),hk=JSON.stringify(s.helper);", out)
+        self.assertIn("if(h._k!==hk){h._k=hk;h.textContent='Helper", out)
+        self.assertIn("else{h.hidden=true;h.textContent='';h._k=''}", out)
+        # phone-a.js: an enhanced box holds a details element; its button branch would take Reset or Restart for "Why?"
+        self.assertIn("button=helper.querySelector('details')?null:helper.querySelector('button')", out)
+
+    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    def test_sync_writes_and_wires_only_on_a_change(self):
+        src = (Path(__file__).resolve().parent.parent / 'src/opos/web_static/js-4.js').read_text(encoding='utf-8')
+        line = next(l for l in src.splitlines() if l.startswith('const sync='))
+        code = line + r"""
+const el={writes:0,set innerHTML(v){this.writes++;this.html=v}};let wired=0;
+sync(el,'<b>a</b>',()=>wired++);sync(el,'<b>a</b>',()=>wired++);sync(el,'<b>a</b>');
+const same=[el.writes,wired];
+sync(el,'<b>b</b>',()=>wired++);sync(el,'<b>b</b>',()=>wired++);
+sync(el,'',()=>wired++);sync(el,'');
+console.log(JSON.stringify({same,after:[el.writes,wired],last:el.html}));
+"""
+        r = subprocess.run(['node', '-e', code], capture_output=True, text=True, timeout=20)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        import json
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(out['same'], [1, 1], 'three identical renders: one write, one wiring')
+        self.assertEqual(out['after'], [3, 3], 'a changed markup, then an emptied one: one write and one wiring each')
+        self.assertEqual(out['last'], '')
+
+
 CHECK = r"""
 CHECKS.polish = async function() {
   await load('home',720,1280,false);
@@ -97,6 +141,19 @@ CHECKS.polish = async function() {
     technical.open=true;
     if(!why.checkVisibility()||!__u.vis(why)||why.textContent!==s.battery.why)out.push('Battery explanation missing from open details');
     technical.open=false;
+    return out;
+  })()`));
+  out.push(...await ev(`(async function(){
+    var out=[],s=await (await fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content}})).json();s.running=false;
+    await render(s);
+    var snap=function(){return {contact:document.querySelector('#contacts button'),why:document.getElementById('whybtn'),details:document.querySelector('#helper details'),feature:document.querySelector('#features>*'),event:document.querySelector('#events>*')}};
+    var a=snap();await render(s);await render(s);var b=snap();
+    ['contact','why','details'].forEach(function(k){if(!a[k])out.push('missing '+k);else if(a[k]!==b[k])out.push('rebuilt by an unchanged render: '+k)});
+    ['feature','event'].forEach(function(k){if(a[k]&&a[k]!==b[k])out.push('rebuilt by an unchanged render: '+k)});
+    s.helper=Object.assign({},s.helper,{hours_left:123.4});await render(s);
+    if(document.querySelectorAll('#helper details').length!==1)out.push('changed helper: details x'+document.querySelectorAll('#helper details').length);
+    if(document.querySelectorAll('#whybtn').length!==1)out.push('changed helper: whybtn x'+document.querySelectorAll('#whybtn').length);
+    if(document.querySelectorAll('.helper-actions button').length!==3)out.push('changed helper: actions '+document.querySelectorAll('.helper-actions button').length);
     return out;
   })()`));
   await sleep(350);

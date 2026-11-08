@@ -123,7 +123,7 @@ class DemoQAState(unittest.TestCase):
             phone.set_battery(level)
             histories.append(phone.state()['battery']['history'])
         source = (STATIC / 'js-7.js').read_text()
-        fragment = source[source.index('const poly='):source.index('const feats=')]
+        fragment = source[source.index('const poly='):source.index("sync(G('features')")]
         rendered = node_json(self, r"""
 const vm = require('node:vm'), fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));

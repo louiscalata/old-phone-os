@@ -27,7 +27,7 @@ class UnitsTest(unittest.TestCase):
         self.assertIn("EnvironmentFile=-/etc/default/opos-osk", ls)
         self.assertLess(ls.index("[Service]"), ls.index("Environment=OPOS_OSK=1"), "in [Service]")
         self.assertLess(ls.index("[Service]"), ls.index("EnvironmentFile=-/etc/default/opos-osk"))
-        self.assertLess(ls.index("Environment=OPOS_OSK=1"), ls.index("ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery"))
+        self.assertLess(ls.index("Environment=OPOS_OSK=1"), ls.index("ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery --token-file %S/opos/token"))
 
     def test_osk_unit_is_enabled_but_idle_and_never_starts_beside_phosh(self):
         ls = lines("opos-osk.service")

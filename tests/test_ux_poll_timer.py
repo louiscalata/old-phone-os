@@ -53,8 +53,18 @@ class TestPollTimerSource(unittest.TestCase):
         self.assertIn("clearTimeout(pollTimer)", self.js)
         self.assertEqual(len(re.findall(r"\bpollTimer=setTimeout\(", self.js)), 1)
 
-    def test_rejected_request_uses_notice(self):
-        self.assertIn("catch(e){await renderShown({error:", self.js)
+    def test_poll_outcome_goes_to_the_page_not_to_an_error_render(self):
+        # W1-02: a request that fails no longer renders an error line (hidden below the screen's edge). The page is
+        # told (oposPoll), counts the misses, and draws its own banner after two (tests/test_uxp10_reliable.py).
+        tick = re.search(r"async function pollTick\(\)\{.*?\n", self.js).group(0)
+        self.assertNotIn("renderShown({error:", self.js)
+        self.assertIn("oposPoll(1)}catch(e){oposPoll(0)}finally{", tick)
+        self.assertLess(tick.find("await render(await fetchState())"), tick.find("oposPoll(1)"))
+        self.assertIn("var oposPoll=()=>0;", self.js, "a no-op until phone-a.js installs the counter")
+
+    def test_a_hung_state_request_gives_up_after_eight_seconds(self):
+        fetch_state = re.search(r"function fetchState\(\)\{.*?\n", self.js).group(0)
+        self.assertIn("signal:AbortSignal.timeout?.(8000)", fetch_state)
 
     def test_initial_load_preserved(self):
         self.assertIn("fetch('/api/state',", self.js)
@@ -79,6 +89,7 @@ globalThis.setTimeout=(f,ms)=>{const id=nextId++;timers.push({id,f,at:now+ms});r
 globalThis.clearTimeout=id=>{timers=timers.filter(t=>t.id!==id)};
 const el=()=>({onclick:null,oninput:null,onchange:null,addEventListener(){},textContent:'',value:'',dataset:{}});
 globalThis.document={getElementById:()=>el(),querySelector:()=>({content:'t'.repeat(43)}),querySelectorAll:()=>[]};
+let polls=[];
 globalThis.fetch=(url,options)=>{stateReads++;if(url!=='/api/state'||options.headers['X-OPOS-Token']!=='t'.repeat(43))throw new Error('bad state request');return stateReads===1?new Promise(()=>{}):Promise.resolve({json:async()=>({helper:{paused_by_glimmer:['email']}})})};
 var running=true,vis=false;
 var api=async o=>{calls++;if(fail)throw new Error('down');return replies.shift()||{poll_ms:5000}};
@@ -88,13 +99,14 @@ function go(){} function toggleSim(){}
 
 DRIVER = r"""
 const flush=()=>new Promise(r=>setImmediate(r));
+oposPoll=ok=>polls.push(ok);
 async function advance(ms){const end=now+ms;for(;;){timers.sort((a,b)=>a.at-b.at);const t=timers[0];if(!t||t.at>end)break;timers.shift();now=t.at;t.f();for(let i=0;i<5;i++)await flush()}now=end}
 (async()=>{
  const out={};
  out.start=timers.length;
  await advance(1000); out.afterFirst={calls,pending:timers.length,due:timers[0].at-now};
  await render({poll_ms:1000}); out.rearm={pending:timers.length,due:timers[0].at-now};
- fail=true; await advance(1000); out.fail={notices:notices.length,pending:timers.length};
+ fail=true; await advance(1000); out.fail={notices:notices.length,pending:timers.length,polls:polls.slice()};
  fail=false; running=false; const c=calls; await advance(1000); out.stopped={calls:calls-c,pending:timers.length,stateReads,states};
  console.log(JSON.stringify(out));
 })();
@@ -111,7 +123,8 @@ class TestPollTimerStub(unittest.TestCase):
         self.assertEqual(out["start"], 1)
         self.assertEqual(out["afterFirst"], {"calls": 1, "pending": 1, "due": 5000})
         self.assertEqual(out["rearm"], {"pending": 1, "due": 1000})
-        self.assertEqual(out["fail"], {"notices": 1, "pending": 1})
+        # one good poll, then the failing one: the page is told "not ok" and no error is rendered
+        self.assertEqual(out["fail"], {"notices": 0, "pending": 1, "polls": [1, 0]})
         self.assertEqual(out["stopped"], {"calls": 0, "pending": 1, "stateReads": 2, "states": [{"paused_by_glimmer": ["email"]}]})
 
 

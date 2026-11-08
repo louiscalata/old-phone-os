@@ -50,7 +50,7 @@ from opos.sim import DrainSim
 from opos.ui import ScreenModem
 from opos.dashboard import ROUGH, Dashboard, _format_goal_12h
 from opos.router import HOT_C
-from opos import notices, practice, secure, update_client, update_page
+from opos import notices, practice, secure, tokenfile, update_client, update_page
 from opos.span import apply as apply_span, parse as parse_span
 try:  # track osk: the on-screen keyboard is optional; a runtime shipped without src/opos/osk.py serves what it always served
     from opos import osk
@@ -645,11 +645,10 @@ window.oposHooks=window.oposHooks||[];
 @@OPOS:js-2.js@@
 @@OPOS:js-3.js@@
 let helperCtl=null;let helperTimer=null;async function helperCall(o,ans){let expected=60;try{let v=parseInt(localStorage.getItem('opos_helper_s_'+o.action),10);if(isFinite(v)){expected=Math.max(5,Math.min(300,v))}}catch(e){}if(document.getElementById('helperwait'))return null;if(helperTimer){clearInterval(helperTimer);helperTimer=null}let oldP=G('helperwait');if(oldP&&oldP.parentNode)oldP.parentNode.removeChild(oldP);let oldB=G('helpercancel');if(oldB&&oldB.parentNode)oldB.parentNode.removeChild(oldB);let prog=E('progress');prog.id='helperwait';prog.setAttribute('aria-label','Waiting for the helper');prog.max=expected;prog.value=0;ans.parentNode.insertBefore(prog,ans.nextSibling);let btn=E('button');btn.id='helpercancel';btn.textContent='Cancel';ans.parentNode.insertBefore(btn,prog.nextSibling);let start=Date.now();let elapsed=0;let act='Thinking';if(o.web){act='Searching Wikipedia and thinking'}else if(o.action==='plan'){act='Planning'}else if(o.action==='explain'){act='Explaining'}function tick(){elapsed=Math.floor((Date.now()-start)/1000);if(elapsed<expected){ans.textContent=(act==='Thinking'?'Thinking... about ':act+'... about ')+(expected-elapsed)+' s left';prog.value=elapsed}else{ans.textContent=(act==='Thinking'?'Still thinking... ':'Still '+act.toLowerCase()+'... ')+elapsed+' s so far';prog.removeAttribute('value')}}tick();helperTimer=setInterval(tick,1000);helperCtl=new AbortController();const fin=()=>{clearInterval(helperTimer);helperTimer=null;if(prog.parentNode)prog.parentNode.removeChild(prog);if(btn.parentNode)btn.parentNode.removeChild(btn)};btn.onclick=function(){helperCtl.abort();fin();ans.textContent='Cancelled. Nothing changed on the phone.'};try{let r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':document.querySelector('meta[name=opos-token]').content},body:JSON.stringify(o),signal:helperCtl.signal});let j=await r.json();clearInterval(helperTimer);helperTimer=null;if(prog.parentNode)prog.parentNode.removeChild(prog);if(btn.parentNode)btn.parentNode.removeChild(btn);if(r.status===429){j={error:'Too many questions in a row. Wait a few seconds, then try again.'}}else if(r.status===403){j={error:'This page is out of date. Reload it, then try again.'}}else if(r.status>=500){j={error:'Something went wrong. Try again in a minute.'}}if(!j.error&&j.engine!=='rules'&&j.engine!=='none'&&j.engine!=='fixed order'){try{let s=Math.max(1,Math.round((Date.now()-start)/1000));localStorage.setItem('opos_helper_s_'+o.action,String(s))}catch(e){}}return j}catch(e){fin();if(e.name==='AbortError')return null;return{error:'The helper did not reply. Wait a few seconds, then try again.'}}}
-function helperReset(){if(helperCtl){helperCtl.abort();helperCtl=null}if(helperTimer){clearInterval(helperTimer);helperTimer=null}let e=G('helperwait');if(e&&e.parentNode)e.parentNode.removeChild(e);let c=G('helpercancel');if(c&&c.parentNode)c.parentNode.removeChild(c);let ans=G('answer');if(ans)ans.textContent='Ready.';let rb=G('helperrestart');if(rb)rb.hidden=false}G('helperreset').onclick=helperReset;document.getElementById('helperrestart').onclick=function(){helperReset();let ans=G('answer');if(ans)ans.textContent='Restarting the helper... this page reloads in a few seconds.';api({action:'restart_helper'}).then(r=>{if(r&&r.error){if(ans)ans.textContent=r.error;return}setTimeout(()=>location.reload(),6000)}).catch(()=>{setTimeout(()=>location.reload(),6000)})};
+function helperReset(){if(helperCtl){helperCtl.abort();helperCtl=null}if(helperTimer){clearInterval(helperTimer);helperTimer=null}let e=G('helperwait');if(e&&e.parentNode)e.parentNode.removeChild(e);let c=G('helpercancel');if(c&&c.parentNode)c.parentNode.removeChild(c);let ans=G('answer');if(ans)ans.textContent='Ready.';let rb=G('helperrestart');if(rb)rb.hidden=false}G('helperreset').onclick=helperReset;G('helperrestart').onclick=function(){helperReset();let ans=G('answer');if(ans)ans.textContent='Restarting the helper... this page reloads in a few seconds.';const back=()=>setInterval(healReload,2000);api({action:'restart_helper'}).then(r=>{if(r&&r.error){if(ans)ans.textContent=r.error;return}back()}).catch(back)};
 @@OPOS:js-4.js@@
 @@OPOS:js-5.js@@
- document.querySelectorAll('#threads button').forEach(b=>b.onclick=async()=>{G('number').value=b.dataset.n;render(await api({action:'open',number:b.dataset.n}))});
- G('thread').innerHTML='<b>Thread</b><br>'+(s.thread||[]).map(x=>esc(typeof x==='string'?x:(x.text||JSON.stringify(x)))).join('<br>');
+ sync(G('thread'),'<b>Thread</b><br>'+(s.thread||[]).map(x=>esc(typeof x==='string'?x:(x.text||JSON.stringify(x)))).join('<br>'));
 @@OPOS:js-6.js@@
    let bv=document.getElementById('battery-val');if(!bv){bv=document.createElement('span');bv.id='battery-val';G('battery').insertAdjacentElement('afterend',bv)}
    if(document.activeElement!==document.getElementById('battery')){document.getElementById('battery').value=s.battery.percent;document.getElementById('battery-val').textContent=Math.round(s.battery.percent)+'%'}
@@ -1178,7 +1177,7 @@ def main(argv=None):
             print("opos: no readable battery (termux-battery-status or sysfs); using the simulation", file=sys.stderr)
             live = None
     token = None
-    if args.token_file is not None:
+    if args.token_file is not None and tokenfile.usable(args.token_file, sys.stderr):  # first start: make it, mode 0600, so a restart keeps the token
         try:
             with open(args.token_file, encoding="utf-8") as f:
                 token = f.read().strip()

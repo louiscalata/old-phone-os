@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import contextlib
+import errno
 import http.client
 import io
 import json
 import os
+import stat
 import tempfile
 import threading
 import time
 import unittest
 import unittest.mock
+from opos import tokenfile
 from opos.web import Phone, make_server
 import opos.web
 
@@ -80,18 +83,22 @@ class TestWebTokenFile(unittest.TestCase):
         cases = [chr(97) * 31, chr(97) * 129]
         for ch in forb:
             cases.append(base + ch + chr(97))
-        for value in cases:
-            with self.subTest(token=value):
-                m = unittest.mock.mock_open(read_data=value)
-                with unittest.mock.patch("builtins.open", m):
+        with tempfile.TemporaryDirectory() as d:
+            for i, value in enumerate(cases):
+                with self.subTest(token=value):
+                    path = os.path.join(d, "token%d" % i)
+                    with open(path, "w", encoding="utf-8", newline="") as f:
+                        f.write(value)
                     with unittest.mock.patch("opos.web.make_server") as mk:
                         buf = io.StringIO()
                         with contextlib.redirect_stderr(buf):
                             with self.assertRaises(SystemExit) as cm:
-                                opos.web.main(["--token-file", "unused"])
+                                opos.web.main(["--token-file", path])
                         self.assertEqual(cm.exception.code, 2)
                         self.assertEqual(buf.getvalue(), "opos: cannot read session token\n")
                         mk.assert_not_called()
+                    with open(path, encoding="utf-8", newline="") as f:
+                        self.assertEqual(f.read(), value, "a bad file is refused, never replaced")
 
     def test_page_escapes_token_attribute(self):
         tok = chr(120) + chr(34) + " autofocus=" + chr(34) + "y" + chr(60) + chr(38) + chr(39) + chr(62)
@@ -100,21 +107,62 @@ class TestWebTokenFile(unittest.TestCase):
         self.assertIn(exp, out)
         self.assertNotIn('<meta name="opos-token" content="' + tok + '">', out)
 
-    def test_main_missing_file(self):
-        missing = os.path.join(tempfile.gettempdir(), "opos-missing-fake-xyz")
-        if os.path.exists(missing):
-            os.unlink(missing)
-        for argv in (["opos", "--token-file", missing], ["--token-file", missing]):
+    def start_with(self, path):
+        """Run main() against a mocked server; return the token it handed to make_server."""
+        with unittest.mock.patch("opos.web.make_server") as mk:
+            mk.return_value.serve_forever = unittest.mock.Mock()
             buf = io.StringIO()
-            with contextlib.redirect_stderr(buf):
-                try:
-                    opos.web.main(argv)
-                except SystemExit as e:
-                    err = buf.getvalue()
-                    if e.code == 2 and "opos: cannot read session token" in err:
-                        self.assertNotIn("a" * 32, err)
-                        return
-        self.fail("missing file should exit 2")
+            with contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
+                opos.web.main(["--token-file", path])
+            self.assertTrue(mk.called)
+            mk.return_value.serve_forever.assert_called()
+            token = mk.call_args.kwargs["token"]
+            self.assertNotIn(token, buf.getvalue())
+            return token
+
+    def test_main_missing_file_is_created_private_and_kept(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            first = self.start_with(path)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read().strip(), first)
+            self.assertEqual(opos.web._validate_token(first), first)
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            # a restart reads the same file: the page that is still open keeps a token the server accepts
+            self.assertEqual(self.start_with(path), first)
+            self.assertEqual(sorted(os.listdir(d)), ["token"], "no temporary file is left behind")
+
+    def test_main_uncreatable_file_still_starts_with_a_token_for_this_run(self):
+        """A full disk or a read-only state directory must not keep the phone from showing its screen (Restart=always would
+        otherwise crash-loop every 3 s with no page at all)."""
+        with tempfile.TemporaryDirectory() as d:
+            for how in ("missing directory", "disk full"):
+                with self.subTest(how=how):
+                    path = os.path.join(d, "no-such-directory", "token")
+                    patch = unittest.mock.patch("opos.tokenfile.ensure", side_effect=OSError(errno.ENOSPC, "full")) if how == "disk full" else contextlib.nullcontext()
+                    err = io.StringIO()
+                    with patch, unittest.mock.patch("opos.web.make_server") as mk:
+                        mk.return_value.serve_forever = unittest.mock.Mock()
+                        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                            opos.web.main(["--token-file", path])
+                    self.assertTrue(mk.called, "the server started")
+                    self.assertIsNone(mk.call_args.kwargs["token"], "make_server draws a token for this run")
+                    self.assertRegex(err.getvalue(), r"^opos: cannot make the token file \(\w+\); this run keeps its token in memory only\n")
+                    self.assertNotIn("cannot read session token", err.getvalue())
+                    self.assertEqual(os.listdir(d), [], "nothing was made")
+
+    def test_main_unreadable_existing_path_still_exits_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            os.mkdir(path)  # something is there, but it is not a token
+            err = io.StringIO()
+            with unittest.mock.patch("opos.web.make_server") as mk, contextlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as cm:
+                    opos.web.main(["--token-file", path])
+            self.assertEqual(cm.exception.code, 2)
+            self.assertEqual(err.getvalue(), "opos: cannot read session token\n")
+            mk.assert_not_called()
 
     def test_main_short_token_file(self):
         short = "short123"
@@ -170,3 +218,118 @@ class TestWebTokenFile(unittest.TestCase):
             self.fail("valid token file should call make_server")
         finally:
             os.unlink(tf.name)
+
+
+class TestTokenFileModule(unittest.TestCase):
+    def read(self, path):
+        with open(path, encoding="utf-8", newline="") as f:
+            return f.read()
+
+    def test_creates_a_private_file_with_a_valid_token(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            self.assertTrue(tokenfile.ensure(path))
+            text = self.read(path)
+            self.assertTrue(text.endswith("\n"))
+            self.assertEqual(opos.web._validate_token(text.strip()), text.strip())
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            self.assertEqual(os.listdir(d), ["token"])
+
+    def test_two_files_get_two_tokens(self):
+        with tempfile.TemporaryDirectory() as d:
+            for n in ("a", "b"):
+                tokenfile.ensure(os.path.join(d, n))
+            self.assertNotEqual(self.read(os.path.join(d, "a")), self.read(os.path.join(d, "b")))
+
+    def test_an_existing_file_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            for content in ("", "short", "a" * 40 + "\n"):
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    f.write(content)
+                self.assertFalse(tokenfile.ensure(path))
+                self.assertEqual(self.read(path), content)
+
+    @unittest.skipUnless(hasattr(os, "symlink") and os.name == "posix", "symbolic links")
+    def test_a_symbolic_link_is_not_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "elsewhere")
+            path = os.path.join(d, "token")
+            os.symlink(target, path)
+            self.assertFalse(tokenfile.ensure(path))
+            self.assertFalse(os.path.exists(target))
+
+    def test_losing_the_race_keeps_the_other_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            real_link = os.link
+
+            def other_wins(src, dst, **kw):
+                with open(dst, "w", encoding="utf-8", newline="") as f:
+                    f.write("b" * 43 + "\n")
+                return real_link(src, dst, **kw)  # raises FileExistsError
+
+            with unittest.mock.patch("os.link", other_wins):
+                self.assertFalse(tokenfile.ensure(path))
+            self.assertEqual(self.read(path), "b" * 43 + "\n")
+            self.assertEqual(os.listdir(d), ["token"])
+
+    def test_without_hard_links_the_file_is_made_in_place(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            with unittest.mock.patch("os.link", side_effect=OSError(errno.EPERM, "no links")):
+                self.assertTrue(tokenfile.ensure(path))
+            text = self.read(path)
+            self.assertEqual(opos.web._validate_token(text.strip()), text.strip())
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            self.assertEqual(os.listdir(d), ["token"])
+
+    def test_a_missing_directory_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(OSError):
+                tokenfile.ensure(os.path.join(d, "nope", "token"))
+
+    def test_a_temporary_file_left_by_a_dead_start_with_this_pid_does_not_stop_the_next(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "token")
+            with open("%s.%d.new" % (path, os.getpid()), "w", encoding="utf-8") as f:
+                f.write("half")
+            self.assertTrue(tokenfile.ensure(path))
+            text = self.read(path)
+            self.assertEqual(opos.web._validate_token(text.strip()), text.strip())
+            self.assertEqual(os.listdir(d), ["token"], "the stale file is gone")
+
+    def test_usable_says_why_and_reports_no_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            err = io.StringIO()
+            self.assertFalse(tokenfile.usable(os.path.join(d, "nope", "token"), err))
+            self.assertEqual(err.getvalue(), "opos: cannot make the token file (FileNotFoundError); this run keeps its token in memory only\n")
+            made = os.path.join(d, "token")
+            err = io.StringIO()
+            self.assertTrue(tokenfile.usable(made, err))
+            self.assertTrue(tokenfile.usable(made, err), "an existing file is usable and untouched")
+            self.assertEqual(err.getvalue(), "")
+
+
+class TestServerUnit(unittest.TestCase):
+    """The Duo image's unit keeps the token across restarts: the state directory and the file in it."""
+
+    def unit(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "packaging", "duo-os", "opos-server.service"), encoding="utf-8") as f:
+            return f.read().splitlines()
+
+    def test_the_unit_has_a_state_directory_and_passes_the_token_file(self):
+        ls = self.unit()
+        self.assertEqual(ls.count("StateDirectory=opos"), 1)
+        self.assertEqual(ls.count("StateDirectoryMode=0700"), 1)
+        execs = [x for x in ls if x.startswith("ExecStart=")]
+        self.assertEqual(len(execs), 1)
+        self.assertIn(" -m opos.web ", execs[0])
+        self.assertEqual(execs[0].split()[-2:], ["--token-file", "%S/opos/token"], "%S is /var/lib for a system unit, where StateDirectory=opos lives")
+        self.assertLess(ls.index("[Service]"), ls.index("StateDirectory=opos"))
+        self.assertLess(ls.index("StateDirectory=opos"), ls.index(execs[0]))
+        self.assertLess(ls.index(execs[0]), ls.index("[Install]"))
+        self.assertEqual(ls.count("Restart=always"), 1, "this is why the token must not change at a restart")

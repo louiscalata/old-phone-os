@@ -57,10 +57,12 @@ def variables(span):
 
 # What the segment-aware rules leave on the hinge or out of place. The status line's middle text is centred
 # across the whole window and the shade's grab handle sits at 50%: both move into the first pane. The segment
-# rules also top-align the lock screen; the wide Foldable layout centres it.
+# rules also top-align the lock screen; the wide Foldable layout centres it. The stale-page banner is a fixed box under the
+# status bar that would run across the hinge, so it stops at the end of the first pane.
 EXTRA = ('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}'
          "#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}"
-         "#meter-hit::after{left:calc(var(--pane)/2)}")
+         "#meter-hit::after{left:calc(var(--pane)/2)}"
+         "[data-stale] #notice:not([hidden]){box-sizing:border-box;max-width:var(--pane)}")
 
 
 def readout(span):

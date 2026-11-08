@@ -14,7 +14,8 @@ let pollMs=1000,pollTimer=null,pollDue=0,pollAt=performance.now();
 function armPoll(ms){clearTimeout(pollTimer);pollDue=Date.now()+ms;pollTimer=setTimeout(pollTick,ms)}
 const renderShown=render;
 render=async s=>{await renderShown(s);if(s&&!s.error){pollMs=s.poll_ms||1000;if(pollTimer!==null&&Date.now()+pollMs<pollDue)armPoll(pollMs)}};
-async function pollTick(){pollTimer=null;const n=performance.now(),real_s=(n-pollAt)/1000;pollAt=n;try{if(running)await render(await api({action:'tick',real_s}));else await render(await fetchState())}catch(e){await renderShown({error:'request failed'})}finally{if(pollTimer===null)armPoll(pollMs)}}
+var oposPoll=()=>0;
+async function pollTick(){pollTimer=null;const n=performance.now(),real_s=(n-pollAt)/1000;pollAt=n;try{if(running)await render(await api({action:'tick',real_s}));else await render(await fetchState());oposPoll(1)}catch(e){oposPoll(0)}finally{if(pollTimer===null)armPoll(pollMs)}}
 armPoll(pollMs);
-function fetchState(){return fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content}}).then(r=>r.json())}
+function fetchState(){return fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content},signal:AbortSignal.timeout?.(8000)}).then(r=>r.json())}
 fetchState().then(s=>{if(!s||s.error)throw new Error('bad state');return render(s)}).catch(()=>{document.getElementById('screen').textContent='Could not reach Old Phone OS Interface. Reload the page in a few seconds.'});

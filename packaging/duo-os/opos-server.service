@@ -36,7 +36,11 @@ Environment=OPOS_FIRSTRUN=1
 Environment=OPOS_MONITOR=1
 EnvironmentFile=-/etc/opos/monitor.env
 # <<< track monitor
-ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery
+# The page token lives in /var/lib/opos/token (mode 0600, made on the first start by opos.web). A new token at every start of the
+# server would strand the open page after each restart (Restart=always, an update, Restart helper); this one stays the same.
+StateDirectory=opos
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery --token-file %S/opos/token
 Restart=always
 RestartSec=3s
 
