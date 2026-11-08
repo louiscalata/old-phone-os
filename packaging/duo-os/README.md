@@ -178,7 +178,7 @@ reports it (sysfs full-charge over design capacity); the page cannot label an es
 counter, assumed, or typed in (`OPOS_BATTERY_HEALTH`) reads "Not reported". **AGIW monitor** is optional: what an AGIW Inference Monitor on a computer you own
 says about its machines, fetched read-only. `opos-server.service` sets `OPOS_MONITOR=1`; unset (or anything but `1`) neither `/monitor`
 nor `/api/monitor` answers. `/etc/opos/monitor.env` is optional and absent from the image; `/etc/opos/monitor.env.example` shows it, and
-with no file nothing is fetched:
+with no file no AGIW monitor is fetched (the page still asks the phone's own loopback model port):
 
 | Variable | Meaning |
 |---|---|
