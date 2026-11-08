@@ -13,6 +13,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -64,6 +65,13 @@ def free_port():
         return s.getsockname()[1]
 
 
+def clean_env(config_dir, **extra):
+    """The environment of a test server: no OPOS_PANES, OPOS_OSK, OPOS_FIRSTRUN, OPOS_NETWORK or OPOS_CONFIG_DIR from outside."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OPOS_PANES", "OPOS_OSK", "OPOS_FIRSTRUN", "OPOS_NETWORK", "OPOS_CONFIG_DIR"))}
+    env.update(OPOS_CONFIG_DIR=config_dir, **extra)
+    return env
+
+
 class PanesBrowser(unittest.TestCase):
     r = None
 
@@ -74,8 +82,7 @@ class PanesBrowser(unittest.TestCase):
             return
         d = tempfile.mkdtemp(prefix="opos-panes-")
         try:
-            env = {k: v for k, v in os.environ.items() if not k.startswith(("OPOS_PANES", "OPOS_OSK", "OPOS_FIRSTRUN", "OPOS_NETWORK", "OPOS_CONFIG_DIR"))}
-            env.update(OPOS_PANES="1", OPOS_OSK="1", OPOS_NETWORK="1", OPOS_FIRSTRUN="1", OPOS_CONFIG_DIR=d)
+            env = clean_env(d, OPOS_PANES="1", OPOS_OSK="1", OPOS_NETWORK="1", OPOS_FIRSTRUN="1")
             outfile = Path(d) / "out.json"
             with mock.patch.dict(os.environ, env, clear=True):
                 undo = firstrun.install(web)  # the /firstrun and /timezone routes, as opos.web.main installs them
@@ -244,6 +251,43 @@ class PanesBrowser(unittest.TestCase):
     def test_no_console_error_and_no_csp_violation_anywhere(self):
         for key, logs in self.r["logs"].items():
             self.assertEqual(logs, [], key)
+
+
+class DriverWaits(unittest.TestCase):
+    """The driver waits for the page it loaded, never for a fixed time (a busy machine once made it call oposUI.openApp too early)."""
+
+    @unittest.skipUnless(NODE, "no node")
+    def test_the_readiness_conditions_and_the_poll(self):
+        p = subprocess.run([NODE, str(ROOT / "tests" / "panes_wait_test.mjs")], capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr[-2000:])
+        self.assertIn("assertions passed", p.stdout)
+
+    def test_a_page_that_takes_three_seconds_is_waited_for(self):
+        chrome = browser()
+        if not chrome or not node_has_websocket():
+            self.skipTest("no node 22+ or headless chromium")
+        real_page = web.page
+
+        def slow(*args, **kw):
+            time.sleep(3)  # longer than the old fixed 1.4 s wait, on the first load and on every reload
+            return real_page(*args, **kw)
+
+        d = tempfile.mkdtemp(prefix="opos-panes-slow-")
+        try:
+            outfile = Path(d) / "out.json"
+            with mock.patch.dict(os.environ, clean_env(d, OPOS_PANES="1"), clear=True), mock.patch.object(web, "page", slow):
+                server = web.make_server(0, web.Phone(), span=DUO)
+                threading.Thread(target=server.serve_forever, daemon=True).start()
+                try:
+                    p = subprocess.run([NODE, str(DRIVER), chrome, "http://127.0.0.1:%d" % server.server_address[1], str(free_port()),
+                                        str(Path(d) / "profile"), str(outfile), "ready"], capture_output=True, text=True, timeout=120)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+            self.assertEqual(p.returncode, 0, "browser driver failed: " + (p.stderr or p.stdout)[-3000:])
+            self.assertEqual(json.loads(outfile.read_text(encoding="utf-8"))["ready"], {"app": "settings", "ff": "foldable", "panes": "two"})
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

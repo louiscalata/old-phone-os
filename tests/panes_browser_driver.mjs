@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The browser half of tests/test_panes_browser.py: headless Chromium over the DevTools port (node 22+ for the global WebSocket) at
 // 1392x900 CSS px, against a real server started with OPOS_PANES=1 and a 675,42 span. It measures; the test file asserts.
-// usage: node panes_browser_driver.mjs CHROME BASE_URL DEBUG_PORT PROFILE_DIR OUT_JSON
+// usage: node panes_browser_driver.mjs CHROME BASE_URL DEBUG_PORT PROFILE_DIR OUT_JSON [SECTIONS]
+// SECTIONS is a comma list of the parts to run (states, hand, off, os, osk, motion, ready); without it every part but `ready` runs.
+// After a load it waits for the page (tests/panes_wait.mjs), never for a fixed time.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
+import { APP_READY, DOC_READY, sleep, waitFor } from './panes_wait.mjs';
 
-const [CHROME, BASE, PORT, PROFILE, OUTFILE] = process.argv.slice(2);
+const [CHROME, BASE, PORT, PROFILE, OUTFILE, ONLY] = process.argv.slice(2);
+const want = k => (ONLY ? ONLY.split(',').includes(k) : k !== 'ready');
 const P1 = 675, P2 = 717;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const headless = /headless[_-]shell/.test(CHROME) ? '--headless' : '--headless=new';
 const flags = [headless, '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=' + PORT,
   '--user-data-dir=' + PROFILE, ...(process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : []), 'about:blank'];
@@ -53,11 +56,21 @@ async function open(o) {
     // The server rate-limits /api (HTTP 429) and this run loads many pages in a few seconds: that is the run, not the page.
     if (d.method === 'Log.entryAdded' && d.params.entry.level === 'error' && !/status of 429/.test(d.params.entry.text)) logs.push('log ' + d.params.entry.text + ' ' + (d.params.entry.url || ''));
   });
-  await s('Page.navigate', { url: o.url }); await sleep(o.settle || 1400);
-  return { s, logs,
-    ev: async expr => { const r = await s('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
-      if (r.exceptionDetails) throw new Error('page error: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text)); return r.result.value; },
-    nav: async url => { await s('Page.navigate', { url }); await sleep(1400); },
+  const ev = async expr => { const r = await s('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) throw new Error('page error: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text)); return r.result.value; };
+  // Run `action` (a navigation or a reload), then wait until the page it loads says `cond`. The old document is marked first, so the
+  // page being replaced is never taken for the new one; a check that fails while the documents change just polls again.
+  const go = async (action, cond) => {
+    await ev('window.__opos_old=1').catch(() => {});
+    await action();
+    await waitFor(() => ev(`typeof window.__opos_old==='undefined'&&(${cond})`), { what: cond });
+    await sleep(o.settle ?? 300);  // a moment for the first paint; the page itself was waited for above
+  };
+  const ready = o.ready || DOC_READY;
+  await go(() => s('Page.navigate', { url: o.url }), ready);
+  return { s, logs, ev,
+    reload: () => go(() => s('Page.reload'), ready),
+    nav: (url, cond) => go(() => s('Page.navigate', { url }), cond || ready),
     png: async () => Buffer.from((await s('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
     close: () => raw('Target.closeTarget', { targetId }) };
 }
@@ -138,13 +151,18 @@ async function measure(p, extra) {
 
 const out = { states: {}, hand: {}, off: {}, os: {}, osk: {}, motion: {}, logs: {} };
 const MAIN = BASE + '/?firstrun=later';
+// What each page needs before it is measured: the kiosk page can open an app; the Network page has read its radios and scanned; the
+// first-run page has its choices and the time zone page its list (both come from the server after the page has loaded).
+const NET_READY = DOC_READY + "&&document.getElementById('st').textContent.indexOf('Reading the radios')<0&&!!(document.querySelector('#nets li')||document.getElementById('msg').textContent)";
+const FIRST_READY = DOC_READY + "&&!!document.getElementById('next')&&!document.getElementById('next').disabled";
+const ZONE_READY = DOC_READY + "&&!!document.querySelector('#tzbox .list button')";
 const setStore = (hand, scheme) => `(function(){try{localStorage.setItem('jaryo_theme','${scheme}');${hand ? `localStorage.setItem('jaryo_hand','${hand}')` : "localStorage.removeItem('jaryo_hand')"}}catch(e){}})()`;
 
 try {
   await launch();
-  for (const scheme of ['light', 'dark']) for (const hand of ['right', 'left']) {
-    const p = await open({ url: MAIN, w: 1392, h: 900, scheme });
-    await p.ev(setStore(hand, scheme)); await p.s('Page.reload'); await sleep(1500);
+  if (want('states')) for (const scheme of ['light', 'dark']) for (const hand of ['right', 'left']) {
+    const p = await open({ url: MAIN, w: 1392, h: 900, scheme, ready: APP_READY });
+    await p.ev(setStore(hand, scheme)); await p.reload();
     const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(500); out.states[`${scheme}/${hand}/${name}`] = await measure(p); };
     await st('lock-start');
     await st('home', `oposUI.unlock&&oposUI.unlock();oposUI.openApp('home')`);
@@ -160,15 +178,15 @@ try {
     await p.close();
   }
 
-  { // Hand: the button, a tap, a reload, Enter
-    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark', init: "try{if(!sessionStorage.getItem('fresh')){sessionStorage.setItem('fresh','1');localStorage.removeItem('jaryo_hand')}}catch(e){}" });
+  if (want('hand')) { // Hand: the button, a tap, a reload, Enter
+    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark', ready: APP_READY, init: "try{if(!sessionStorage.getItem('fresh')){sessionStorage.setItem('fresh','1');localStorage.removeItem('jaryo_hand')}}catch(e){}" });
     const Q = `(function(){var r=document.documentElement,b=document.getElementById('jaryo-hand'),s=document.getElementById('settings').getBoundingClientRect(),n=document.getElementById('jaryo-masthead').getBoundingClientRect();
       return {hand:r.dataset.hand,stored:localStorage.getItem('jaryo_hand'),label:b&&b.textContent,btnW:b&&Math.round(b.getBoundingClientRect().width),btnH:b&&Math.round(b.getBoundingClientRect().height),prev:b&&b.previousElementSibling&&b.previousElementSibling.id,settingsL:Math.round(s.left),mastheadL:Math.round(n.left),theme:(document.getElementById('jaryo-theme')||{}).textContent,themeAfter:getComputedStyle(document.getElementById('jaryo-theme'),'::after').content}})()`;
     await p.ev(`oposUI.unlock&&oposUI.unlock();oposUI.openApp('settings')`); await sleep(500);
     out.hand.start = await p.ev(Q);
     await p.ev(`document.getElementById('jaryo-hand').click()`); await sleep(300);
     out.hand.tap = await p.ev(Q);
-    await p.s('Page.reload'); await sleep(1500); await p.ev(`oposUI.unlock&&oposUI.unlock();oposUI.openApp('settings')`); await sleep(500);
+    await p.reload(); await p.ev(`oposUI.unlock&&oposUI.unlock();oposUI.openApp('settings')`); await sleep(500);
     out.hand.reload = await p.ev(Q);
     await p.ev(`document.getElementById('jaryo-hand').click()`); await sleep(300);
     out.hand.tapAgain = await p.ev(Q);
@@ -185,45 +203,47 @@ try {
     return {w:innerWidth,ff:r.dataset.ff||null,panes:r.dataset.panes||null,before:getComputedStyle(r,'::before').content,after:getComputedStyle(r,'::after').content,
      handDisplay:h?getComputedStyle(h).display:'(none)',handRect:h?Math.round(h.getBoundingClientRect().width):0,themeAfter:t?getComputedStyle(t,'::after').content:null,
      htmlBg:getComputedStyle(r).backgroundColor,sheetW:Math.round(document.getElementById('sheet').getBoundingClientRect().width)}})()`;
-  for (const [key, w, h, ff] of [['one_pane', 675, 900, null], ['below_gate', 1000, 700, null], ['slab', 1392, 900, 'slab'], ['foldable_675', 675, 900, 'foldable']]) {
-    const p = await open({ url: MAIN, w, h, scheme: 'dark', init: `try{localStorage.setItem('jaryo_hand','left');${ff ? `localStorage.setItem('opos_ff','${ff}')` : "localStorage.removeItem('opos_ff')"}}catch(e){}` });
+  if (want('off')) for (const [key, w, h, ff] of [['one_pane', 675, 900, null], ['below_gate', 1000, 700, null], ['slab', 1392, 900, 'slab'], ['foldable_675', 675, 900, 'foldable']]) {
+    const p = await open({ url: MAIN, w, h, scheme: 'dark', ready: APP_READY, init: `try{localStorage.setItem('jaryo_hand','left');${ff ? `localStorage.setItem('opos_ff','${ff}')` : "localStorage.removeItem('opos_ff')"}}catch(e){}` });
     await p.ev(`oposUI.unlock&&oposUI.unlock();oposUI.openApp('settings')`); await sleep(600);
     out.off[key] = await p.ev(OFFQ);
     await p.close();
   }
 
   // The three OS pages, in both hands.
-  for (const hand of ['right', 'left']) for (const scheme of ['light', 'dark']) {
-    const p = await open({ url: BASE + '/network', w: 1392, h: 900, scheme });
+  if (want('os')) for (const hand of ['right', 'left']) for (const scheme of ['light', 'dark']) {
+    const p = await open({ url: BASE + '/network', w: 1392, h: 900, scheme, ready: NET_READY });
     await p.ev(setStore(hand, scheme)); await p.nav(BASE + '/network');
     const st = async (name, fn) => { if (fn) await p.ev(fn); await sleep(400); out.os[`${scheme}/${hand}/${name}`] = await measure(p); };
     await st('net-idle');
     await st('net-select', `(function(){var s=document.getElementById('sel');s.hidden=false;document.getElementById('sel-t').textContent='Cafe wifi';document.getElementById('prow').hidden=false;document.getElementById('srow').hidden=false;var m=document.getElementById('msg');m.textContent='Could not join. Check the password.';m.toggleAttribute('data-bad',true);var u=document.getElementById('nets');u.textContent='';['Home 5G - strong','Cafe wifi - open'].forEach(function(t){var l=document.createElement('li'),b=document.createElement('button');b.type='button';b.textContent=t;l.appendChild(b);u.appendChild(l)})})()`);
-    await p.nav(BASE + '/firstrun'); await st('first-welcome');
+    await p.nav(BASE + '/firstrun', FIRST_READY); await st('first-welcome');
     await st('first-zone', `document.getElementById('next').click()`);
-    await p.nav(BASE + '/timezone'); await st('timezone');
+    await p.nav(BASE + '/timezone', ZONE_READY); await st('timezone');
     out.logs[`os/${scheme}/${hand}`] = p.logs;
     await p.close();
   }
 
   // The keyboard's halves take the surface they sit on.
-  for (const hand of ['right', 'left']) {
-    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark' });
-    await p.ev(setStore(hand, 'dark')); await p.s('Page.reload'); await sleep(1800);
+  if (want('osk')) for (const hand of ['right', 'left']) {
+    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark', ready: APP_READY });
+    await p.ev(setStore(hand, 'dark')); await p.reload();
     await p.ev(`oposUI.unlock&&oposUI.unlock();oposUI.openApp('messages')`); await sleep(500);
     await p.s('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     const c = await p.ev(`(function(){var r=document.getElementById('msg').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()`);
     await p.s('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: c[0], y: c[1] }] }); await sleep(60);
-    await p.s('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(1500);
+    await p.s('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitFor(() => p.ev(`(function(){var k=document.getElementById('opos-osk');return !!k&&!k.hidden})()`), { what: 'the keyboard', timeout: 5000 }).catch(() => {});  // none: the result says so
+    await sleep(300);
     out.osk[hand] = await p.ev(`(function(){var k=document.getElementById('opos-osk');if(!k)return null;return {hidden:k.hidden,panels:[].slice.call(k.querySelectorAll('.osk-panel')).map(function(e){var r=e.getBoundingClientRect(),key=e.querySelector('.osk-key');return {l:Math.round(r.left),r:Math.round(r.right),keyBg:getComputedStyle(key).backgroundColor,keyFg:getComputedStyle(key).color}})}})()`);
     out.logs['osk/' + hand] = p.logs;
     await p.close();
   }
 
   // Motion: with animation on, opening and closing the four apps from Home ends, raises no error and puts the app on the thumb side.
-  for (const hand of ['right', 'left']) {
-    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark', motion: 'no-preference' });
-    await p.ev(setStore(hand, 'dark') + `;try{localStorage.removeItem('jaryo_motion')}catch(e){}`); await p.s('Page.reload'); await sleep(1600);
+  if (want('motion')) for (const hand of ['right', 'left']) {
+    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark', motion: 'no-preference', ready: APP_READY });
+    await p.ev(setStore(hand, 'dark') + `;try{localStorage.removeItem('jaryo_motion')}catch(e){}`); await p.reload();
     await p.ev(`oposUI.unlock&&oposUI.unlock()`); await sleep(500);
     const res = [];
     for (const app of ['messages', 'phone', 'helper', 'settings']) {
@@ -235,6 +255,15 @@ try {
     }
     out.motion[hand] = res;
     out.logs['motion/' + hand] = p.logs;
+    await p.close();
+  }
+
+  // A slow page: the driver waits for the page, not for a fixed time (tests/test_panes_browser.py serves this one slowly on purpose).
+  if (want('ready')) {
+    const p = await open({ url: MAIN, w: 1392, h: 900, scheme: 'dark', ready: APP_READY });
+    await p.ev(setStore('right', 'dark')); await p.reload();
+    await p.ev(`oposUI.unlock&&oposUI.unlock();oposUI.openApp('settings')`); await sleep(300);
+    out.ready = await p.ev(`(function(){var r=document.documentElement;return {app:document.getElementById('phone').dataset.app,ff:r.dataset.ff||null,panes:r.dataset.panes||null}})()`);
     await p.close();
   }
 } finally {
