@@ -17,6 +17,10 @@ import re
 from pathlib import Path
 
 from opos import secure
+try:  # panes: the black/white two-pane surfaces ride on this module's injection (src/opos/panes.py); optional like the keyboard
+    from opos import panes as _panes
+except ImportError:
+    _panes = None
 
 _STATIC = Path(__file__).with_name("osk_static")
 _ASSETS = {"/osk.js": ("osk.js", "text/javascript; charset=utf-8"), "/osk.css": ("osk.css", "text/css; charset=utf-8")}
@@ -82,6 +86,8 @@ def inject(html, nonce, env=None):
 
 def inject_bytes(body, nonce, env=None):
     """inject() for an encoded page; the very same bytes object while the keyboard is off."""
+    if _panes is not None:
+        body = _panes.inject_bytes(body, nonce, env)  # panes: the same bytes object while OPOS_PANES is unset
     if not enabled(env):
         return body
     return inject(body.decode("utf-8"), nonce, env).encode("utf-8")
@@ -91,7 +97,7 @@ def serve(handler, path, env=None):
     """Answer GET/HEAD for /osk.js and /osk.css on a web.Handler; False (nothing sent) for any other path or while off."""
     a = asset(path, env)
     if a is None:
-        return False
+        return _panes is not None and _panes.serve(handler, path, env)  # panes: /panes.css and /panes.js, only while OPOS_PANES is set
     body, ctype = a
     handler.send_response(200)
     for k, v in secure.security_headers().items():

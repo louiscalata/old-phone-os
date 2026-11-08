@@ -44,6 +44,10 @@ src/opos/notices.py
 src/opos/osk.py
 src/opos/osk_static/osk.css
 src/opos/osk_static/osk.js
+src/opos/panes.py
+src/opos/panes_static/panes-mirror.css
+src/opos/panes_static/panes.css
+src/opos/panes_static/panes.js
 src/opos/power.py
 src/opos/profiles.py
 src/opos/public_demo.py

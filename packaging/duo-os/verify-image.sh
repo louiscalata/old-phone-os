@@ -321,6 +321,23 @@ assert '/osk.js' in t and '/osk.css' in t and 'nonce=' in t
 print('on-screen keyboard assets: osk.js', len(js[0]), 'bytes, osk.css', len(css[0]), 'bytes')" > "$work/opos-verify-osk.txt" 2>&1
 check "the image's python3 serves the on-screen keyboard's files" "grep -q 'on-screen keyboard assets' \"\$work/opos-verify-osk.txt\""
 tail -n 1 "$work/opos-verify-osk.txt"
+# >>> track panes: the black and white pane surfaces (src/opos/panes.py, docs/jaryo-panes.md)
+po=$r/opt/opos/src/opos
+check "the pane surfaces are in the image (panes.py, panes.css, panes-mirror.css, panes.js)" "[ -s $po/panes.py ] && [ -s $po/panes_static/panes.css ] && [ -s $po/panes_static/panes-mirror.css ] && [ -s $po/panes_static/panes.js ]"
+check "opos-server turns the pane surfaces on (they paint only once OPOS_SPAN is on)" "grep -qx 'Environment=OPOS_PANES=1' $w/opos-server.service"
+py -c "
+import os
+os.environ['OPOS_PANES'] = '1'
+from opos import panes, span
+css, js = panes.asset('/panes.css', span.Span(675, 42)), panes.asset('/panes.js')
+assert css and js and len(css[0]) > 5000 and len(js[0]) > 1000, 'pane assets missing or tiny'
+t = panes.tags('n' * 22)
+assert '/panes.css' in t and '/panes.js' in t and 'nonce=' in t
+assert b'min-width:1055px' in css[0] and b'viewport-segment' not in css[0], 'the span geometry was not applied'
+print('pane assets: panes.css', len(css[0]), 'bytes, panes.js', len(js[0]), 'bytes')" > "$work/opos-verify-panes.txt" 2>&1
+check "the image's python3 serves the pane surfaces' files and builds their geometry from the span" "grep -q 'pane assets' \"\$work/opos-verify-panes.txt\""
+tail -n 1 "$work/opos-verify-panes.txt"
+# <<< track panes
 [ -z "$smoke_pid" ] || stop_server "$smoke_pid"
 head -5 "$work/opos-verify.log"
 # --- track integrate: BEGIN (the keyboard, the Network page and the first run in one server; docs/duo-os-final.md)
