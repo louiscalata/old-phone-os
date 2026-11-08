@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from opos import osk
 from opos.span import Span
 from opos.web import Phone, page
 from tests import test_uxp21_profiles as profiles
@@ -53,6 +54,69 @@ class LongWords(unittest.TestCase):
         self.assertEqual(declarations(inline_css(), "#phone").get("overflow-wrap"), "break-word")
 
 
+class Keyboard(unittest.TestCase):
+    """W1-12: Send, Call and the Helper field end up under or far from the on-screen keyboard (OPOS_OSK=1 publishes its height as --osk-h)."""
+
+    def test_the_scroller_keeps_the_keyboards_height_clear(self):
+        # With this, the browser's own scroll-into-view (the keyboard's reveal() calls it) puts a field above the keyboard, not above the
+        # bottom of the window. It does not add scroll room: the keyboard's own padding element (#opos-osk-pad) does that.
+        self.assertEqual(declarations(inline_css(), "body").get("scroll-padding-bottom"), "var(--osk-h,0px)")
+
+    def test_a_field_leaves_room_for_the_buttons_under_it(self):
+        # Send and Call sit 97 to 133 px below the bottom of their field; the Helper's Send bar 64 px.
+        for sel in ("#number", "#msg", "#q"):
+            self.assertEqual(declarations(inline_css(), sel).get("scroll-margin-bottom"), "140px", sel)
+        # Only text fields: a margin on every input would also move checkboxes and sliders when they take focus.
+        self.assertIsNone(declarations(inline_css(), "input").get("scroll-margin-bottom"))
+
+    def test_the_helper_log_has_a_fixed_height_and_scrolls_inside(self):
+        # A fixed height, not a maximum: the log is above the field, so every line it gained used to push the field down 60 to 140 px.
+        d = declarations(inline_css(), "#hs-log")
+        self.assertEqual((d.get("height"), d.get("overflow-y")), ("35dvh", "auto"))
+
+    def test_sticky_controls_were_tried_and_are_not_used(self):
+        # position:sticky on #controls is the plan's first idea: in the spanned grid the bar is stretched to its grid row and cannot leave
+        # it (Send ended above the field), and without the keyboard it covers #msg. A scroll margin does the job without either.
+        css = re.sub(r'html\[data-ff="slideout"\][^{}]*\{[^{}]*\}', "", (STATIC / "phone-b.css").read_text(encoding="utf-8"))
+        self.assertNotIn("sticky", css)
+
+
+HELPER_FOLLOWS = r"""
+ async followlog(){const w=world();w.hooks();await w.open('helper');const log=()=>w.$('hs-log');const reveals=[];w.ids.q.scrollIntoView=o=>reveals.push(o);
+  w.queue.push('ok','ok');await w.ask('first');log().scrollHeight=500;
+  const unfocused={scrollTop:log().scrollTop,reveals:reveals.length};
+  w.ctx.document.activeElement=w.ids.q;log().scrollHeight=777;await w.ask('second');
+  return{unfocused,scrollTop:log().scrollTop,reveals,rows:log().children.length}},
+"""
+
+
+@unittest.skipUnless(NODE, "node not installed")
+class HelperLog(unittest.TestCase):
+    """The log has a fixed height now, so the newest turn has to be scrolled into it, and a focused field has to stay above the keyboard."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests import test_uxp31_helper_screen as h
+        from opos import assist
+        script = h.HARNESS.replace("const S={", "const S={" + HELPER_FOLLOWS, 1)
+        assert script != h.HARNESS, "tests/test_uxp31_helper_screen.py's harness changed: no 'const S={' to add a scenario to"
+        p = subprocess.run([NODE, "-e", script, str(STATIC / "phone-b.js"), h.WHY,
+                            json.dumps(assist.answer("what is paused?", env={}, free=0, context={"mode": "CRITICAL"}))],
+                           capture_output=True, text=True, timeout=60)
+        assert p.returncode == 0, p.stderr
+        cls.r = json.loads(p.stdout.strip().splitlines()[-1])
+
+    def test_the_newest_turn_is_scrolled_into_the_log(self):
+        self.assertNotIn("error", self.r)
+        self.assertEqual(self.r["followlog"]["scrollTop"], 777)
+
+    def test_a_focused_field_is_scrolled_back_above_the_keyboard_when_the_log_grows_but_a_resting_one_is_left_alone(self):
+        r = self.r["followlog"]
+        self.assertEqual(r["unfocused"]["reveals"], 0)
+        self.assertGreater(len(r["reveals"]), 0)
+        self.assertTrue(all(o == {"block": "nearest"} for o in r["reveals"]))
+
+
 class ScrollTop(unittest.TestCase):
     def test_the_app_switch_resets_the_scroller_that_exists(self):
         js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
@@ -66,7 +130,7 @@ class ScrollTop(unittest.TestCase):
 # The browser run: the UXP21 driver up to its cases (start-up, DevTools plumbing, the canned /api state), then this file's cases.
 MAIN = r"""
 const LINK = %s;
-const plainUrl = process.argv[5];  // argv: chrome, span page, state file, plain page
+const plainUrl = process.argv[5], oskUrl = process.argv[6];  // argv: chrome, span page, state file, plain page, span page with the keyboard
 async function run(url, w, h, q, after) {
   await send('Emulation.setDeviceMetricsOverride', {width: w, height: h, deviceScaleFactor: 1, mobile: true,
     screenOrientation: w > h ? {type: 'landscapePrimary', angle: 90} : {type: 'portraitPrimary', angle: 0}});
@@ -77,6 +141,17 @@ async function run(url, w, h, q, after) {
   if (after) await ev(after);
   await sleep(250);
 }
+async function tap(sel) {  // a real mouse press: the keyboard opens only for a field that was tapped
+  const c = await ev(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});e.scrollIntoView({block:'nearest'});const b=e.getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()`);
+  await send('Input.dispatchMouseEvent', {type: 'mouseMoved', x: c.x, y: c.y});
+  await send('Input.dispatchMouseEvent', {type: 'mousePressed', x: c.x, y: c.y, button: 'left', clickCount: 1});
+  await send('Input.dispatchMouseEvent', {type: 'mouseReleased', x: c.x, y: c.y, button: 'left', clickCount: 1});
+  await sleep(700);
+}
+const KBD = `(()=>{const ps=[...document.querySelectorAll('#opos-osk .osk-panel')].map(e=>e.getBoundingClientRect().top),k=document.getElementById('opos-osk');
+  const top=ps.length&&k&&!k.hidden?Math.min(...ps):innerHeight;
+  const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect(),h=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return {top:b.top,bottom:b.bottom,covered:!(h===e||e.contains(h))}};
+  return {kbd:top,shown:top<innerHeight,msg:r('#msg'),send:r('[data-go=send]'),number:r('#number'),call:r('[data-go=call]'),q:r('#q'),hs:r('#hs-send')}})()`;
 const THREADS = `(()=>{const t=document.getElementById('threads'),r=[];t.querySelectorAll('button').forEach(b=>{const x=b.getBoundingClientRect();r.push({right:x.right,w:x.width})});
   return {threads:r,iw:innerWidth,sideways:document.body.scrollWidth>document.body.clientWidth+1||document.documentElement.scrollWidth>innerWidth+1}})()`;
 (async () => {
@@ -100,6 +175,32 @@ const THREADS = `(()=>{const t=document.getElementById('threads'),r=[];t.querySe
       out['scrolled_' + name] = await ev(`document.body.scrollTop`);
       await ev(`oposUI.openApp('settings')`);
       out['settings_' + name] = await ev(`document.body.scrollTop`);
+    }
+    // W1-12: with the keyboard up (a real tap on the field), the field and the button that goes with it are above the keyboard.
+    for (const [name, w, h] of [['span', 1392, 900], ['pane', 675, 900]]) {
+      await run(oskUrl, w, h, q, `oposUI.openApp('messages')`);
+      await tap('#msg');
+      out['kbd_msg_' + name] = await ev(KBD);
+      await run(oskUrl, w, h, q, `oposUI.openApp('phone')`);
+      await tap('#number');
+      out['kbd_phone_' + name] = await ev(KBD);
+      // The Helper: ask three times with the keyboard up; the field must not move when an answer arrives, and stays above the keyboard.
+      await run(oskUrl, w, h, q, `oposUI.openApp('helper')`);
+      const turns = [];
+      if (await waitFor(`document.getElementById('hs-send')&&!document.getElementById('ask').hidden`, 5000)) {
+        await sleep(400);
+        await tap('#q');
+        for (let i = 0; i < 3; i++) {
+          await ev(`document.getElementById('q').value='';`);
+          await send('Input.insertText', {text: 'What is draining my battery? ' + i});
+          await ev(`document.getElementById('hs-send').click()`);
+          await sleep(120);
+          const asked = await ev(KBD);
+          await sleep(500);
+          turns.push({asked: asked.q.top, answered: (await ev(KBD)), logs: await ev(`document.getElementById('hs-log').children.length`)});
+        }
+      }
+      out['kbd_helper_' + name] = turns;
     }
   } finally {
     clearTimeout(timer);
@@ -141,12 +242,17 @@ class Browser(unittest.TestCase):
             for name, span in (("span", DUO), ("plain", None)):
                 files[name] = Path(d) / (name + ".html")
                 files[name].write_text(page(span=span), encoding="utf-8")
+            # The keyboard's two tags point at the server's /osk.js and /osk.css; beside a file they are plain relative names.
+            for asset in ("osk.js", "osk.css"):
+                shutil.copy(Path(osk.__file__).with_name("osk_static") / asset, Path(d) / asset)
+            files["osk"] = Path(d) / "osk.html"
+            files["osk"].write_text(osk.inject(page(span=DUO), "n" * 22, {"OPOS_OSK": "1"}).replace('"/osk.', '"osk.'), encoding="utf-8")
             state = Path(d) / "state.json"
             state.write_text(json.dumps(states(), default=str), encoding="utf-8")
             drv = Path(d) / "cdp.js"
             drv.write_text(script, encoding="utf-8")
-            p = subprocess.run([NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri()],
-                               capture_output=True, text=True, timeout=120, env=dict(os.environ, TMPDIR=d))
+            p = subprocess.run([NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri(), files["osk"].as_uri()],
+                               capture_output=True, text=True, timeout=180, env=dict(os.environ, TMPDIR=d))
             if p.returncode:
                 raise AssertionError("CDP driver failed: " + p.stderr[-5000:])
             cls.r = json.loads(p.stdout.strip().splitlines()[-1])
@@ -162,6 +268,27 @@ class Browser(unittest.TestCase):
             for t in m["threads"]:
                 self.assertLessEqual(t["right"], m["iw"] - 16, name)
             self.assertFalse(m["sideways"], name)
+
+    def test_the_field_and_its_button_are_above_the_keyboard(self):
+        for name in ("span", "pane"):
+            for k, field, button in (("kbd_msg_", "msg", "send"), ("kbd_phone_", "number", "call")):
+                m = self.r[k + name]
+                self.assertTrue(m["shown"], k + name + ": the keyboard did not open")
+                for what in (field, button):
+                    self.assertLessEqual(m[what]["bottom"], m["kbd"] + 0.5, k + name + " " + what)
+                    self.assertGreaterEqual(m[what]["top"], 0, k + name + " " + what)
+                    self.assertFalse(m[what]["covered"], k + name + " " + what)
+
+    def test_the_helper_field_does_not_move_when_an_answer_arrives_and_stays_above_the_keyboard(self):
+        for name in ("span", "pane"):
+            turns = self.r["kbd_helper_" + name]
+            self.assertEqual(len(turns), 3, name + ": the Helper screen did not open")
+            for t in turns:
+                self.assertTrue(t["answered"]["shown"], name)
+                self.assertGreaterEqual(t["logs"], 1, name)
+                self.assertAlmostEqual(t["asked"], t["answered"]["q"]["top"], delta=1, msg=name + ": the field moved when the answer arrived")
+                self.assertLessEqual(t["answered"]["q"]["bottom"], t["answered"]["kbd"] + 0.5, name)
+                self.assertLessEqual(t["answered"]["hs"]["bottom"], t["answered"]["kbd"] + 0.5, name + ": Send is under the keyboard")
 
     def test_changing_app_scrolls_the_page_back_to_the_top(self):
         for name in ("phone", "pane", "span"):
