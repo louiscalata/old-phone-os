@@ -5,9 +5,27 @@
 #   sudo sh packaging/duo-os/verify-image.sh OUT.img
 set -u
 [ "$(id -u)" -eq 0 ] || { echo "verify-image.sh: run as root" >&2; exit 2; }
+[ $# -ge 1 ] || { echo "usage: sudo sh verify-image.sh OUT.img" >&2; exit 2; }
 img=$1
+case $img in /*) ;; *) img=$PWD/$img ;; esac
 q=$(command -v qemu-aarch64-static) || { echo "needs qemu-aarch64-static" >&2; exit 2; }
-mnt=$(mktemp -d)
+# This script is root. Everything it runs (the image's python3 under qemu-user, this builder's python3) starts in, and
+# keeps its HOME and every scratch file in, ONE private directory that only root can enter: mktemp -d makes it
+# new, owned by root and mode 700. Never /tmp (a local user plants /tmp/opos/__init__.py, or a symlink where a
+# fixed /tmp file name is written as root) and never the caller's directory (it may be writable by others).
+umask 077
+work=$(mktemp -d "${TMPDIR:-/tmp}/opos-verify.XXXXXX") || { echo "verify-image.sh: cannot make a private work directory" >&2; exit 2; }
+[ -d "$work" ] && [ ! -L "$work" ] && [ "$(stat -c '%u %a' "$work")" = "0 700" ] || { echo "verify-image.sh: $work is not a private root-owned directory" >&2; exit 2; }
+trap 'cd /; rm -rf "$work"' EXIT
+cd "$work" || exit 2
+# The image's python3 must not import from the working directory, the user site or the caller's environment:
+# PYTHONSAFEPATH (python 3.11 and later) keeps the directory of the script or -c/-m out of sys.path, PYTHONNOUSERSITE
+# keeps ~/.local out, and the working directory is the private one. This builder's own python3 runs with -I.
+export PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1 HOME="$work"
+unset PYTHONSTARTUP PYTHONINSPECT PYTHONHOME
+# The mount point is its own mktemp -d, not inside $work: the cleanup above removes $work recursively and must never
+# be able to walk into a mounted image.
+mnt=$(mktemp -d) || exit 2
 fail=0
 check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 mount -o ro,loop,noload "$img" "$mnt" || exit 1
@@ -80,13 +98,13 @@ umount "$mnt"
 # aarch64 python3 loads its own standard library and runs /opt/opos from the image.
 mount -o ro,loop,noload "$img" "$mnt" || exit 1
 port=18999
-py() { PYTHONPATH="$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 HOME=/tmp "$q" -L "$mnt" "$mnt/usr/bin/python3" "$@"; }
+py() { PYTHONPATH="$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 "$q" -L "$mnt" "$mnt/usr/bin/python3" "$@"; }
 py -c "import sys; print(sys.version.split()[0], sys.platform)" | sed 's/^/image python3 /'
 # >>> track firstboot: first run and time zone (src/opos/firstrun.py, timezone.py). Static wiring, then the image's own python3 and zone files under qemu-user.
 zi=$r/usr/share/zoneinfo
 fb_list() { py -c 'import sys; from opos import timezone as t; z, s = t.zones(sys.argv[1]); sys.exit(0 if s == "system" and "Europe/Berlin" in z and len(z) > 300 else 1)' "$zi"; }
 fb_tz() { [ "$( export TZ=Asia/Kolkata; py -c 'import time; print(time.strftime("%z", time.localtime(0)))' )" = +0530 ]; }
-fb_saved() { d=$(mktemp -d); ( export OPOS_CONFIG_DIR=$d; py -m opos.timezone --set Asia/Kolkata >/dev/null &&
+fb_saved() { d=$(mktemp -d "$work/cfg.XXXXXX"); ( export OPOS_CONFIG_DIR=$d; py -m opos.timezone --set Asia/Kolkata >/dev/null &&
     [ "$(py -c 'import time; from opos import timezone as t; t.apply_saved(); print(time.strftime("%z", time.localtime(0)))')" = +0530 ] ); rc=$?; rm -rf "$d"; return $rc; }
 check "first run is on: opos-server.service sets OPOS_FIRSTRUN=1" "grep -q '^Environment=OPOS_FIRSTRUN=1' $w/opos-server.service"
 check "the kiosk exports the saved time zone to Chromium" "grep -q 'track firstboot' $r/usr/libexec/opos/opos-kiosk && sh -n $r/usr/libexec/opos/opos-kiosk"
@@ -98,21 +116,53 @@ else
     echo "NOTE: no /usr/share/zoneinfo in this image: OPOS offers only its short built-in zone list"
 fi
 # <<< track firstboot
-( cd /tmp && py -m opos.web --port $port >/tmp/opos-verify.log 2>&1 & echo $! > /tmp/opos-verify.pid )
+( py -m opos.web --port $port >"$work/opos-verify.log" 2>&1 & echo $! > "$work/opos-verify.pid" )
 ok=1
 for i in $(seq 1 60); do
-    if python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$port/', timeout=2).status == 200 else 1)" 2>/dev/null; then ok=0; break; fi
+    if python3 -I -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$port/', timeout=2).status == 200 else 1)" 2>/dev/null; then ok=0; break; fi
     sleep 1
 done
 check "OPOS server from the image answers HTTP 200 (qemu-user, ${i}s)" "[ $ok -eq 0 ]"
-python3 - "$port" <<'EOF'
-import re, sys, json, urllib.request
-p = sys.argv[1]
-html = urllib.request.urlopen(f"http://127.0.0.1:{p}/", timeout=5).read().decode()
-tok = re.search(r'name="opos-token" content="([^"]+)"', html).group(1)
-s = json.load(urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{p}/api/state", headers={"X-OPOS-Token": tok}), timeout=5))
-print("state: battery %s%%, mode %s, lock '%s'" % (s["battery"]["percent"], s.get("helper", {}).get("mode", "-"), s.get("lock_story", "")))
+# --- state probe: BEGIN (the authenticated /api/state; its exit status is a check, it is not only printed)
+# An image whose "/" works but whose /api/state raises, answers 500, sends malformed JSON or lacks the fields the page reads
+# must FAIL here. The probe prints "state: ..." only after every field it reads has been validated.
+sp=0
+python3 -I - "$port" > "$work/opos-verify-state.txt" 2>&1 <<'EOF' || sp=$?
+import json, re, sys, urllib.request
+
+
+def die(why):
+    print("state probe FAILED: " + why)
+    sys.exit(1)
+
+
+base = "http://127.0.0.1:%s" % sys.argv[1]
+try:
+    html = urllib.request.urlopen(base + "/", timeout=5).read().decode("utf-8", "replace")
+    m = re.search(r'name="opos-token" content="([^"]+)"', html)
+    if not m:
+        die("no opos-token on /")
+    req = urllib.request.Request(base + "/api/state", headers={"X-OPOS-Token": m.group(1)})
+    s = json.load(urllib.request.urlopen(req, timeout=5))
+except Exception as e:  # an HTTP 500 or 403, a timeout, a refused connection, text that is not JSON
+    die("%s: %s" % (type(e).__name__, e))
+if not isinstance(s, dict):
+    die("/api/state is not a JSON object")
+b = s.get("battery")
+pct = b.get("percent") if isinstance(b, dict) else None
+if isinstance(pct, bool) or not isinstance(pct, (int, float)) or not 0 <= pct <= 100:
+    die("battery.percent is %r, not a number from 0 to 100" % (pct,))
+story = s.get("lock_story")
+if not isinstance(story, str):
+    die("lock_story is %r, not text" % (story,))
+helper = s.get("helper", {})
+if not isinstance(helper, dict):
+    die("helper is %r, not an object" % (helper,))
+print("state: battery %s%%, mode %s, lock '%s'" % (pct, helper.get("mode", "-"), story))
 EOF
+check "the authenticated /api/state answers with the fields the page reads (battery percent, lock story)" "[ $sp -eq 0 ] && grep -q '^state: ' \"\$work/opos-verify-state.txt\""
+cat "$work/opos-verify-state.txt"
+# --- state probe: END
 # --- track osk: the image's own python3 reads the keyboard's files and builds the page tags (no server needed) ---
 py -c "
 import os
@@ -122,18 +172,18 @@ js, css = osk.asset('/osk.js'), osk.asset('/osk.css')
 assert js and css and len(js[0]) > 5000 and len(css[0]) > 500, 'keyboard assets missing or tiny'
 t = osk.tags('n' * 22)
 assert '/osk.js' in t and '/osk.css' in t and 'nonce=' in t
-print('on-screen keyboard assets: osk.js', len(js[0]), 'bytes, osk.css', len(css[0]), 'bytes')" > /tmp/opos-verify-osk.txt 2>&1
-check "the image's python3 serves the on-screen keyboard's files" "grep -q 'on-screen keyboard assets' /tmp/opos-verify-osk.txt"
-tail -n 1 /tmp/opos-verify-osk.txt
-kill "$(cat /tmp/opos-verify.pid)" 2>/dev/null
+print('on-screen keyboard assets: osk.js', len(js[0]), 'bytes, osk.css', len(css[0]), 'bytes')" > "$work/opos-verify-osk.txt" 2>&1
+check "the image's python3 serves the on-screen keyboard's files" "grep -q 'on-screen keyboard assets' \"\$work/opos-verify-osk.txt\""
+tail -n 1 "$work/opos-verify-osk.txt"
+kill "$(cat "$work/opos-verify.pid")" 2>/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port" 2>/dev/null || break; sleep 1; done
-head -5 /tmp/opos-verify.log
+head -5 "$work/opos-verify.log"
 # --- track integrate: BEGIN (the keyboard, the Network page and the first run in one server; docs/duo-os-final.md)
 # A second server from the image, started with the three switches opos-server.service and its drop-in set, asked for every page
 # the pieces add: they must be wired into the same server, not merely present on disk. Offline, like the smoke test above.
-cfgd=$(mktemp -d); port2=18998
-( export OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 OPOS_CONFIG_DIR=$cfgd; cd /tmp && py -m opos.web --port $port2 >/tmp/opos-verify-duo.log 2>&1 & echo $! > /tmp/opos-verify-duo.pid )
-python3 - "$port2" > /tmp/opos-verify-duo.txt 2>&1 <<'EOF'
+cfgd=$(mktemp -d "$work/cfg.XXXXXX"); port2=18998
+( export OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 OPOS_CONFIG_DIR=$cfgd; py -m opos.web --port $port2 >"$work/opos-verify-duo.log" 2>&1 & echo $! > "$work/opos-verify-duo.pid" )
+python3 -I - "$port2" > "$work/opos-verify-duo.txt" 2>&1 <<'EOF'
 import sys, time, urllib.request
 base = "http://127.0.0.1:%s" % sys.argv[1]
 def get(path, accept=None):
@@ -159,11 +209,11 @@ need.append(("a script asking for / is not", get("/")[1] == base + "/"))
 bad = [n for n, ok in need if not ok]
 print("duo pieces ok" if not bad else "duo pieces FAILED: " + "; ".join(bad))
 EOF
-kill "$(cat /tmp/opos-verify-duo.pid)" 2>/dev/null
+kill "$(cat "$work/opos-verify-duo.pid")" 2>/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port2" 2>/dev/null || break; sleep 1; done
 rm -rf "$cfgd"
-check "the keyboard, the Network page and the first run answer together in one server from the image" "grep -q '^duo pieces ok' /tmp/opos-verify-duo.txt"
-tail -n 2 /tmp/opos-verify-duo.txt
+check "the keyboard, the Network page and the first run answer together in one server from the image" "grep -q '^duo pieces ok' \"\$work/opos-verify-duo.txt\""
+tail -n 2 "$work/opos-verify-duo.txt"
 # --- track integrate: END
 # --- qa: BEGIN (opos-selftest; docs/duo-acceptance.md)
 check "opos-selftest is installed with its /usr/sbin wrapper, and the image's own python3 can start it" "[ -x $mnt/usr/libexec/opos/opos-selftest ] && [ -x $mnt/usr/sbin/opos-selftest ] && sh -n $mnt/usr/sbin/opos-selftest && grep -q '^exec /usr/libexec/opos/opos-selftest' $mnt/usr/sbin/opos-selftest && py $mnt/usr/libexec/opos/opos-selftest --help | grep -q 'Changes nothing'"

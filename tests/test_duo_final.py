@@ -246,7 +246,7 @@ console.log(JSON.stringify(out));
 class VerifyBlock(unittest.TestCase):
     def test_the_integrate_block_passes_against_a_real_server_started_the_way_the_image_starts_it(self):
         text = (DUO / "verify-image.sh").read_text(encoding="utf-8")
-        m = re.search(r"^python3 - \"\$port2\" > /tmp/opos-verify-duo\.txt 2>&1 <<'EOF'\n(.*?)^EOF\n", text, re.S | re.M)
+        m = re.search(r"^python3 -I - \"\$port2\" > \"\$work/opos-verify-duo\.txt\" 2>&1 <<'EOF'\n(.*?)^EOF\n", text, re.S | re.M)
         self.assertIsNotNone(m, "verify-image.sh has the track integrate probe")
         cfg = tempfile.mkdtemp(prefix="opos-final-")
         self.addCleanup(shutil.rmtree, cfg, True)
@@ -263,7 +263,7 @@ class VerifyBlock(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^# --- track integrate: BEGIN", text, re.M)), 1)
         self.assertEqual(len(re.findall(r"^# --- track integrate: END", text, re.M)), 1)
         self.assertLess(text.index("# --- track integrate: BEGIN"), text.index("# --- qa: BEGIN"))
-        self.assertGreater(text.index("# --- track integrate: BEGIN"), text.index("head -5 /tmp/opos-verify.log"))
+        self.assertGreater(text.index("# --- track integrate: BEGIN"), text.index('head -5 "$work/opos-verify.log"'))
         self.assertIn("pkill -f \"opos.web --port $port2\"", text)
 
 

@@ -46,7 +46,7 @@ class Packaging(unittest.TestCase):
         shutil.copy(ROOT / "packaging/duo-os/opos-kiosk", os.path.join(r, "usr/libexec/opos"))
         os.symlink("/usr/share/zoneinfo", os.path.join(r, "usr/share/zoneinfo"))
         script = ("set -u\nfail=0\ncheck() { if eval \"$2\"; then echo \"PASS $1\"; else echo \"FAIL $1\"; fail=1; fi; }\n"
-                  f"r={r}\nw={w}\n"
+                  f"r={r}\nw={w}\nwork={d}\n"
                   f"py() {{ PYTHONPATH={ROOT / 'src'} PYTHONDONTWRITEBYTECODE=1 {sys.executable} \"$@\"; }}\n" + block + "\nexit $fail\n")
         env = {k: v for k, v in os.environ.items() if k not in ("TZ", "OPOS_CONFIG_DIR")}
         res = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env, timeout=120)
