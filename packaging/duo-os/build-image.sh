@@ -46,11 +46,17 @@ done
 # phosh, which is not running here: a phoc already on the killed composer would stay dark. Restart OPOS
 # too (try-restart leaves a unit that is not running alone). The script belongs to the port's adaptation
 # package, so a package upgrade puts the original back; verify-image.sh reports that.
+# Idempotent: a BASE that is an earlier OPOS image already has the edit, and the sed would add opos.service
+# a second time. Only a script that has neither the original line nor the edited one is refused.
 wd=$r/usr/local/sbin/sfduo-composer-watchdog
-grep -qF 'systemctl try-restart phosh.service 2>/dev/null || true' "$wd" \
-    || { echo "base rootfs: sfduo-composer-watchdog is not the script the OPOS edit is written for" >&2; exit 1; }
-sed -i -e 's|systemctl try-restart phosh\.service |systemctl try-restart phosh.service opos.service |' \
-    -e 's|reacquired DRM master - restarting phosh"|reacquired DRM master - restarting the shell (phosh or opos)"|' "$wd"
+if grep -qF 'systemctl try-restart phosh.service opos.service 2>/dev/null || true' "$wd"; then
+    echo "sfduo-composer-watchdog already restarts opos.service; leaving it as it is"
+elif grep -qF 'systemctl try-restart phosh.service 2>/dev/null || true' "$wd"; then
+    sed -i -e 's|systemctl try-restart phosh\.service |systemctl try-restart phosh.service opos.service |' \
+        -e 's|reacquired DRM master - restarting phosh"|reacquired DRM master - restarting the shell (phosh or opos)"|' "$wd"
+else
+    echo "base rootfs: sfduo-composer-watchdog is not the script the OPOS edit is written for" >&2; exit 1
+fi
 if ! grep -qF 'systemctl try-restart phosh.service opos.service 2>/dev/null || true' "$wd" || ! sh -n "$wd"; then
     echo "the sfduo-composer-watchdog edit did not take" >&2; exit 1
 fi

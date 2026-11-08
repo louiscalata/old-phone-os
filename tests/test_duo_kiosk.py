@@ -231,15 +231,30 @@ class ImageScriptsTest(unittest.TestCase):
         j = text.index(end, i) + len(end)
         return text[i:j]
 
-    def edit_watchdog(self, script):
+    def edit_watchdog_runs(self, script, times=1):
+        """The edit block run `times` times in a row on one copy of the script: [(result, text, mode)] per run."""
         block = self.build_block("wd=$r/usr/local/sbin/sfduo-composer-watchdog", "edit did not take\" >&2; exit 1\nfi\n")
+        out = []
         with tempfile.TemporaryDirectory() as r:
             wd = Path(r) / "usr" / "local" / "sbin" / "sfduo-composer-watchdog"
             wd.parent.mkdir(parents=True)
             wd.write_text(script)
             wd.chmod(0o755)
-            res = subprocess.run(["sh", "-eu", "-c", block], env={"r": r, "PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
-            return res, wd.read_text(), oct(wd.stat().st_mode & 0o777)
+            for _ in range(times):
+                res = subprocess.run(["sh", "-eu", "-c", block], env={"r": r, "PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+                out.append((res, wd.read_text(), oct(wd.stat().st_mode & 0o777)))
+        return out
+
+    def edit_watchdog(self, script):
+        return self.edit_watchdog_runs(script)[0]
+
+    # The tail of the port's sfduo-composer-watchdog (the part the edit touches), as shipped in the Droidian
+    # port's rootfs: a master_ok / composer_pid script that ends in a try-restart of phosh.
+    WATCHDOG = ("#!/bin/sh\nCLIENTS=/sys/kernel/debug/dri/0/clients\n"
+                "master_ok() {\n    awk '$1 ~ /composer/ && $4 == \"y\" {found=1} END {exit !found}' \"$CLIENTS\" 2>/dev/null\n}\n"
+                "if master_ok; then\n    echo \"composer reacquired DRM master - restarting phosh\"\n"
+                "    systemctl try-restart phosh.service 2>/dev/null || true\n    exit 0\nfi\n"
+                "echo \"composer still has no DRM master - manual attention needed\"\nexit 1\n")
 
     def test_watchdog_edit_restarts_opos_too(self):
         script = ("#!/bin/sh\nif master_ok; then\n    echo \"composer reacquired DRM master - restarting phosh\"\n"
@@ -250,6 +265,25 @@ class ImageScriptsTest(unittest.TestCase):
         self.assertIn("restarting the shell (phosh or opos)\"", new)
         self.assertEqual(mode, "0o755")
         self.assertEqual(new.count("try-restart"), 1)
+
+    def test_watchdog_edit_run_twice_changes_nothing_the_second_time(self):
+        # an incremental build uses an earlier OPOS image as BASE: the script is already edited
+        (first, once, _), (second, twice, mode) = self.edit_watchdog_runs(self.WATCHDOG, times=2)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertNotEqual(once, self.WATCHDOG)
+        self.assertEqual(twice, once)
+        self.assertIn("    systemctl try-restart phosh.service opos.service 2>/dev/null || true\n", twice)
+        self.assertEqual(twice.count("opos.service"), 1)
+        self.assertEqual(twice.count("(phosh or opos)"), 1)
+        self.assertEqual(mode, "0o755")
+
+    def test_watchdog_edit_accepts_a_script_that_already_has_it(self):
+        edited = self.WATCHDOG.replace("try-restart phosh.service ", "try-restart phosh.service opos.service ")
+        res, new, _ = self.edit_watchdog(edited)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(new, edited)
+        self.assertNotIn("not the script", res.stderr)
 
     def test_watchdog_edit_refuses_a_script_it_was_not_written_for(self):
         res, new, _ = self.edit_watchdog("#!/bin/sh\nsystemctl restart phosh.service\n")
