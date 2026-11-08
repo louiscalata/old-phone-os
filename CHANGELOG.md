@@ -20,6 +20,7 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 
 - Documentation for the Surface Duo runs: `README.md` Limits, `ROADMAP.md` and the documentation index now separate what ran on the phone (one phone, one day) from what is simulated or unmeasured, and the Droidian USB notes are labelled historical.
 - `opos-kiosk` waits for the OPOS server before every start of the browser, so the browser comes back only after a restarted server answers.
+- The Duo's `opos-server.service` keeps the page token in `/var/lib/opos/token` (`StateDirectory=opos`, `--token-file %S/opos/token`): `opos.web --token-file` now creates a missing file with mode 0600 (`src/opos/tokenfile.py`) instead of exiting, so a restart of the server, by systemd, an update or Restart helper, no longer strands the open page with a stale token.
 - README now includes an illustrative older-phone vignette, new final-tree Muse Glimmer Ask and Why? captures in light and dark, with all eight measured UI response times, the quoted first dark Ask answer, and current pause status. All eight requests returned Glimmer replies within the 115-second deadline; the new Why? measurements replace the earlier rules-fallback observations for this source. Simulation wording distinguishes the profile drain runs from the worn-battery burst-shaping evaluation; postmarketOS wording separates the recorded QEMU boot from outstanding integration acceptance and untested physical-phone behavior.
 
 ## 0.1.0 - 2026-11-03

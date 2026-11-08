@@ -77,6 +77,7 @@ src/opos/sim.py
 src/opos/span.py
 src/opos/storyboard.py
 src/opos/timezone.py
+src/opos/tokenfile.py
 src/opos/ui.py
 src/opos/update_client.py
 src/opos/update_page.py

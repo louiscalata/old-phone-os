@@ -50,7 +50,7 @@ from opos.sim import DrainSim
 from opos.ui import ScreenModem
 from opos.dashboard import Dashboard, _format_goal_12h
 from opos.router import HOT_C
-from opos import notices, secure, update_client, update_page
+from opos import notices, secure, tokenfile, update_client, update_page
 from opos.span import apply as apply_span, parse as parse_span
 try:  # track osk: the on-screen keyboard is optional; a runtime shipped without src/opos/osk.py serves what it always served
     from opos import osk
@@ -1166,6 +1166,7 @@ def main(argv=None):
     token = None
     if args.token_file is not None:
         try:
+            tokenfile.ensure(args.token_file)  # first start: make it, mode 0600, so a restart keeps the token
             with open(args.token_file, encoding="utf-8") as f:
                 token = f.read().strip()
             _validate_token(token)
