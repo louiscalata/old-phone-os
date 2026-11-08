@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Raise a clock nobody set (the Duo's reads 1970 after a RAM-boot) to the image's floor. After the port's clock
+# services and before only opos-server, never before sysinit, systemd-timesyncd or time-set.target, as the port's
+# item-clock-seed: such an ordering made a cycle on the port once (systemd dropped other jobs; NetworkManager
+# never started, 2026-10-25).
+[Unit]
+Description=OPOS: raise an unset clock to the image's floor
+After=timekeeper.service item-clock-seed.service
+Before=opos-server.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/opos/opos-clock floor
+ExecStop=/usr/libexec/opos/opos-clock stop
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

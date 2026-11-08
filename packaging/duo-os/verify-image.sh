@@ -43,6 +43,22 @@ fi
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"
+# --- clock: BEGIN
+cfloor=$(cat "$r/opt/opos/CLOCK_FLOOR" 2>/dev/null); cok=1
+case $cfloor in '' | *[!0-9]*) ;; *) [ "$cfloor" -ge 1767225600 ] && [ "$cfloor" -le $(( $(date +%s) + 86400 )) ] && cok=0 ;; esac
+check "clock floor recorded: a Unix time from 2026 on and not after this builder's tomorrow" "[ $cok -eq 0 ]"
+echo "clock floor: $cfloor"
+check "opos-clock runs at boot after the port's clock services, and parses" "[ -L $w/multi-user.target.wants/opos-clock.service ] && [ -x $r/usr/libexec/opos/opos-clock ] && sh -n $r/usr/libexec/opos/opos-clock && grep -q '^After=timekeeper.service item-clock-seed.service' $w/opos-clock.service"
+check "opos-clock has no Before= on sysinit, the time targets or the network (that made an ordering cycle on the port)" "! grep -E '^Before=.*(sysinit|basic|time-set|time-sync|timesyncd|network)' $w/opos-clock.service"
+check "network time still takes over: systemd-timesyncd enabled, not masked" "[ -L $w/sysinit.target.wants/systemd-timesyncd.service ] && [ \"\$(readlink $w/systemd-timesyncd.service)\" != /dev/null ]"
+chome=$(awk -F: '$1=="droidian"{print $6}' "$r/etc/passwd"); drop=$(sed -n 's/^PathChanged=//p' "$w/opos-clock-set.path" 2>/dev/null)
+check "the time-file drop is filled in for the droidian home, with one file name in both units" "[ -n '$chome' ] && [ '$drop' = '$chome/opos-set-time' ] && grep -q '^ExecStart=/usr/libexec/opos/opos-clock set $drop\$' $w/opos-clock-set.service && ! grep -q @DROP@ $w/opos-clock-set.path $w/opos-clock-set.service"
+if [ -f "$r$chome/.ssh/authorized_keys" ]; then
+    check "DEV image: the time-file drop is enabled" "[ -L $w/multi-user.target.wants/opos-clock-set.path ]"
+else
+    check "no ssh key: the time-file drop is not enabled" "[ ! -L $w/multi-user.target.wants/opos-clock-set.path ]"
+fi
+# --- clock: END
 umount "$mnt"
 
 # Server smoke test: qemu-user with the read-only image as its sysroot (-L), so the image's own

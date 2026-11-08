@@ -265,7 +265,7 @@ class Dashboard:
             elif charging:
                 plan_words = "Charging" if paused_names else "Charging: everything back on"
             elif hours is None:
-                plan_words = "No goal set"
+                plan_words = "No goal set" if not self.goal else "Clock not set"  # a goal with no hours means no clock
             else:
                 plan_words = plan_reason(steps, paused_names, meets_goal, in_use)
             out["why"] = reason + "; " + plan_words

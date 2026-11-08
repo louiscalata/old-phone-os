@@ -321,7 +321,8 @@ class ImageScriptsTest(unittest.TestCase):
 
     def test_debug_port_file_is_written_only_for_a_dev_image(self):
         text = (DUO / "build-image.sh").read_text()
-        i = text.index('if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then')
+        # Other blocks (the clock path unit) test the same variable, so take the one that writes the debug port.
+        i = text.rindex('if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then', 0, text.index("OPOS_KIOSK_DEBUG_PORT=9222"))
         j = text.index("\nfi\n", i)
         dev = text[i:j]
         self.assertEqual(text.count("OPOS_KIOSK_DEBUG_PORT=9222"), 1)

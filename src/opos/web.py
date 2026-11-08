@@ -184,6 +184,14 @@ def _contact(c):
 def _local_clock_s():
     t = time.localtime()
     return t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec
+CLOCK_MIN_YEAR = 2026  # an earlier year is a clock nobody set: the Duo boots at 1970
+CLOCK_GUESS = "/run/opos/clock-floor"  # the OS image's opos-clock writes it when it raised an unset clock to its floor
+CLOCK_SYNCED = "/run/systemd/timesync/synchronized"  # systemd-timesyncd touches it once it has network time
+def clock_ok(now=None, guess=CLOCK_GUESS, synced=CLOCK_SYNCED):
+    """False while the wall clock is a guess: before 2026, or only raised to the image's floor and not set since."""
+    if time.gmtime(time.time() if now is None else now).tm_year < CLOCK_MIN_YEAR:
+        return False
+    return not os.path.exists(guess) or os.path.exists(synced)
 class Phone:
     def __init__(self, visible=False, live_battery=None):
         self.visible = bool(visible)
@@ -198,6 +206,7 @@ class Phone:
         if self.live:
             self.runtime.estimator = self.sim.rate_estimator()  # reserve and hours_left follow measured discharge, not raw level steps
         self.clock_s = _local_clock_s() if self.live else 43200
+        self.clock_ok = clock_ok() if self.live else True  # the demo's clock is its own simulation
         self.charging = bool(self.sim.charging) if self.live else False
         self.running = False
         self.open_number = None
@@ -218,7 +227,12 @@ class Phone:
             self.sim.refresh()
             self.charging = bool(self.sim.charging)
             self.clock_s = _local_clock_s()
-        hours = self.dash.hours_to_goal(self.clock_s)
+            was_ok, self.clock_ok = self.clock_ok, clock_ok()
+            if self.clock_ok and not was_ok and self.dash.goal:
+                # A goal set against a guessed clock counts as set before its time. The clock is real now, so
+                # judge the goal again as if it were set just now: inside its grace window it means the next one.
+                self.dash.set_goal(self.dash.goal, self.clock_s)
+        hours = self.dash.hours_to_goal(self._goal_clock())
         def step(undone):
             return self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c,
                                      charging=self.charging, goal_hours=hours, in_use=self.dash.in_use, undone=undone)
@@ -233,6 +247,9 @@ class Phone:
             tick = step(frozenset())
         self._tick_obj = tick
         return tick
+    def _goal_clock(self):
+        """The time of day goals may read: None while the live clock is a guess, so no goal or arrival time rests on it."""
+        return self.clock_s if self.clock_ok else None
     def undo(self, name):
         """Turn a paused task back on, unless a hard floor holds it (then Undo has no effect)."""
         real_name = self.dash.task_name(name)
@@ -243,7 +260,7 @@ class Phone:
         return set(self.dash.paused_names)
     def _goal_label(self):
         """The goal still ahead as HH:MM, plus " tomorrow" past midnight; None without one."""
-        hours = self.dash.hours_to_goal(self.clock_s)
+        hours = self.dash.hours_to_goal(self._goal_clock())
         if hours is None:
             return None
         return self.dash.goal + (" tomorrow" if self.clock_s + hours * 3600 >= 86400 else "")
@@ -277,7 +294,7 @@ class Phone:
     def state(self):
         tick = self._tick()
         d = tick.decision
-        reached = self.dash.goal_reached(self.clock_s)
+        reached = self.dash.goal_reached(self._goal_clock())
         out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
         out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
@@ -293,8 +310,12 @@ class Phone:
         drain, drain_info = tick.drain_per_h, None
         if self.live:
             drain, drain_info = self.sim.drain_rate(drain)  # the phone's measured discharge once trusted, else the model's
-        out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason,
+        out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self._goal_clock(), self.visible, d.reason,
                                         deferred=d.deferred, steps=tick.steps, drain_per_h=drain)
+        if self.live:
+            out["battery"]["clock_ok"] = self.clock_ok
+            if not self.clock_ok and self.dash.goal:
+                out["battery"]["goal_note"] = "Clock not set, so the goal time is not used"
         if drain_info is not None:
             out["battery"]["drain"] = drain_info
             if "why" in out["battery"] and not self.charging:
@@ -316,7 +337,7 @@ class Phone:
             hf["usable_percent"] = int(self.sim.level * self.sim.health)  # floor: 14.7% usable must not read as 15
             hf["temp_c"] = out["temp_c"]
             hf["charging"] = out["charging"]
-            hf["goal"] = self.dash.goal
+            hf["goal"] = self.dash.goal if self.clock_ok else ""
             hf["goal_met"] = bool(out["battery"]["goal_met"])
             hf["time_left"] = out["battery"]["time_left"]
             hf["why_paused"] = why_paused(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, hf["paused"], goal_label, goal_met=hf["goal_met"], time_left=hf["time_left"], usable_percent=hf["usable_percent"])
@@ -328,7 +349,7 @@ class Phone:
                 hf["paused_by_glimmer"] = glimmer
         h = int(self.clock_s // 3600) % 24
         m = int((self.clock_s % 3600) // 60)
-        out["clock"] = f"{h:02d}:{m:02d}"
+        out["clock"] = f"{h:02d}:{m:02d}" if self.clock_ok else "--:--"
         out["lean"] = {"opos_mb": rss, "free_mb": free}
         out["poll_ms"] = poll_ms(d.mode.name, free, self._in_call)
         return out
@@ -362,7 +383,7 @@ class Phone:
         """Facts, saving steps and the ordered routes (Spark Open first when the goal is hard)."""
         s = self.state()
         h = s["helper"]
-        goal = self.dash.hours_to_goal(self.clock_s)
+        goal = self.dash.hours_to_goal(self._goal_clock())
         hard = muse.choose(muse.is_hard(goal, h["hours_left"]))
         routes = assist.explain_routes(free=assist.free_mb())
         if hard.key == "spark-open":
@@ -935,7 +956,7 @@ def apply_phone_action(phone, data):
         phone.charging = data["on"]
     elif a == "goal" and isinstance(data.get("time"), str):
         try:
-            phone.dash.set_goal(data["time"], phone.clock_s)
+            phone.dash.set_goal(data["time"], phone._goal_clock())
         except ValueError:
             bad = True
     elif a == "undo" and isinstance(data.get("name"), str):
@@ -990,6 +1011,10 @@ def _install_helper_visible(flag):
     except Exception:
         return False
 DEMO_GOAL = "16:00"  # the plain quickstart demo's goal, so the 60% / 60% health / noon demo starts in Saver with email still allowed
+def _arm_configured_goal(phone, cfg):
+    """Set the saved goal, read against the clock goals may use (none while a live clock is a guess)."""
+    goal = cfg["goal"]
+    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone._goal_clock())
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
@@ -1023,6 +1048,8 @@ def main(argv=None):
             print("opos: cannot read session token", file=sys.stderr)
             raise SystemExit(2)
     phone = Phone(visible=_install_helper_visible(args.visible), live_battery=live)
+    if live is not None and not phone.clock_ok:
+        print("opos: the clock is not set (before 2026, or only the image's floor); goal times stay off until it is", file=sys.stderr)
     try:
         cfg = setup_config.load()
         if cfg is None:
@@ -1030,8 +1057,7 @@ def main(argv=None):
             cfg["goal"] = {"enabled": True, "time": DEMO_GOAL}
     except Exception:
         cfg = setup_config.default_config()
-    goal = cfg["goal"]
-    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
+    _arm_configured_goal(phone, cfg)
     _route_with_glimmer(phone, os.environ)
     server = make_server(args.port, phone, token=token, **({} if span is None else {"span": span}))
     if span is not None:
