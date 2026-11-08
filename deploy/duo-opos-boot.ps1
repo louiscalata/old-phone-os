@@ -15,7 +15,8 @@
 #   3. back to the bootloader, re-arm the brake, RAM-boot the port's kernel ONCE;
 #   4. find the phone on the USB network (TCP 22 across the /24 of the RNDIS adapter's address, host number
 #      -PreferHost first; -PhoneIp skips the search) and, only when -Key is given, read its state and logs over
-#      ssh. Without -Key that step is skipped.
+#      ssh. Without -Key that step is skipped. -PhoneIp must be a dotted IPv4 address and -PreferHost a number
+#      from 1 to 254; both are checked at the start, before any file is read and before the phone is touched.
 #
 # Safety rules. They are the point of this script; change none without the owner's say-so.
 #   - SHA-256 of every file is checked before the first write; the rootfs is checked again on the phone.
@@ -129,9 +130,16 @@ function Invoke-Ssh([string]$ip, [string]$remote) {
     $o = (& ssh.exe -i $Key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=$kh" -o ConnectTimeout=8 "$SshUser@$ip" $remote 2>&1 | ForEach-Object { "$_" }) -join "`n"
     [pscustomobject]@{ Code = $LASTEXITCODE; Text = $o }
 }
+# A dotted-quad IPv4 literal (four decimal fields 0-255, no leading zeros), not a host name or a short form.
+function Test-Ipv4([string]$s) {
+    $o = '(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+    $s -match "^$o(\.$o){3}\z"
+}
 
 # Inputs, before anything else: nothing below has touched the phone yet.
 if ($RootfsSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw '-RootfsSha256 must be 64 hex digits' }
+if ($PhoneIp -and -not (Test-Ipv4 $PhoneIp)) { throw '-PhoneIp must be an IPv4 address' }
+if ($PreferHost -lt 1 -or $PreferHost -gt 254) { throw '-PreferHost must be a host number from 1 to 254' }
 $ImageDir = (Resolve-Path -LiteralPath $ImageDir).Path
 if (-not $LogDir) { $LogDir = Join-Path $ImageDir 'logs' }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null

@@ -27,6 +27,11 @@ def code():
     return "\n".join(line for line in text().splitlines() if not line.lstrip().startswith("#"))
 
 
+def as_list(value):
+    """ConvertTo-Json turns a one-element PowerShell array into a bare value."""
+    return [] if value is None else [value] if isinstance(value, (str, dict)) else list(value)
+
+
 def header():
     lines = text().splitlines()
     return "\n".join(lines[:next(i for i, line in enumerate(lines) if line.startswith("param("))])
@@ -158,6 +163,18 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertIn("$net + $PreferHost", find)
         self.assertIn("-ne $OwnIp", find)
 
+    def test_phone_ip_and_prefer_host_are_checked_first(self):
+        body = code()
+        self.assertIn("throw '-PhoneIp must be an IPv4 address'", body)
+        self.assertIn("throw '-PreferHost must be a host number from 1 to 254'", body)
+        for check in ("-PhoneIp must be an IPv4 address", "-PreferHost must be a host number"):
+            at = body.index(check)
+            with self.subTest(check=check):
+                for later in ("Resolve-Path", "New-Item", "Get-Command $t", "Get-FileHash", "if (-not $Yes)",
+                              "@(FastbootSerials)", "Fb getvar", "Fb erase misc", "Fb boot", "Invoke-Ssh $ip"):
+                    self.assertLess(at, body.index(later), later)
+        self.assertIn("if ($PhoneIp -and -not (Test-Ipv4 $PhoneIp))", body)
+
 
 @functools.lru_cache(maxsize=None)
 def powershell():
@@ -230,6 +247,91 @@ $none = @(Find-PhoneSsh '127.0.0.147' 82 $port 1000)
 """
 
 
+def ipv4_program(cases):
+    return (AST + ". ([scriptblock]::Create((FunctionText 'Test-Ipv4')))\n"
+            "$cases = '" + json.dumps(cases) + "' | ConvertFrom-Json\n"
+            "[pscustomobject]@{ results = @($cases | ForEach-Object { [bool](Test-Ipv4 $_) }) } | ConvertTo-Json -Compress\n")
+
+
+# The whole script, run in this PowerShell session with fastboot.exe, adb.exe, Get-PnpDevice and Start-Sleep
+# replaced by functions: every call is appended to a log, and the fake phone answers a healthy preflight. PATH is emptied
+# first, so even if a function were bypassed no real fastboot or adb could be found. The three pinned hashes in
+# the script's copy are swapped for those of small stand-in files (data only; the pinning itself is tested as
+# text above). $runs is a JSON list of {label, args}; each run starts from a clean image folder.
+FAKE_PHONE = AST + r"""
+$work = Join-Path ([IO.Path]::GetTempPath()) ('opos-duo-boot-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $work | Out-Null
+try {
+    $empty = Join-Path $work 'empty-path'
+    New-Item -ItemType Directory -Path $empty | Out-Null
+    $env:PATH = $empty
+    $global:CallLog = Join-Path $work 'calls.txt'
+    $img = Join-Path $work 'img'
+    New-Item -ItemType Directory -Path $img | Out-Null
+    foreach ($n in 'boot.img', 'surfaceduo1-twrp.img', 'misc-brake.img', 'opos-os-rootfs.img') {
+        Set-Content -LiteralPath (Join-Path $img $n) -Value ('stand-in ' + $n) -Encoding ASCII
+        $actual = (Get-FileHash -LiteralPath (Join-Path $img $n) -Algorithm SHA256).Hash.ToLower()
+        $pinned = [regex]::Match($text, "'" + [regex]::Escape($n) + "'\s*=\s*'([0-9a-f]{64})'").Groups[1].Value
+        if ($pinned) { $text = $text.Replace($pinned, $actual) } else { $rootfs = $actual }
+    }
+    if (-not $rootfs -or $text -notmatch 'hash mismatch') { throw 'harness: stand-in hashes were not set up' }
+    $global:RootfsSum = $rootfs
+    function global:fastboot.exe {
+        Add-Content -LiteralPath $global:CallLog -Value ('fastboot ' + ($args -join ' '))
+        $global:LASTEXITCODE = 0
+        $a = $args -join ' '
+        if ($a -eq 'devices') { "SER1`tfastboot" }
+        elseif ($a -match 'getvar product') { 'product: surfaceduo' }
+        elseif ($a -match 'getvar current-slot') { 'current-slot: a' }
+        elseif ($a -match 'getvar unlocked') { 'unlocked: yes' }
+        elseif ($a -match 'getvar battery-level') { 'battery-level: 80' }
+    }
+    function global:adb.exe {
+        Add-Content -LiteralPath $global:CallLog -Value ('adb ' + ($args -join ' '))
+        $global:LASTEXITCODE = 0
+        $a = $args -join ' '
+        if ($a -eq 'devices') { 'List of devices attached'; "SER1`trecovery" }
+        elseif ($a -match 'echo MOUNTED') { 'MOUNTED' }
+        elseif ($a -match 'sha256sum') { $global:RootfsSum + '  /data/rootfs.img' }
+        elseif ($a -match ' push ') { '1 file pushed' }
+    }
+    function global:Get-PnpDevice { [pscustomobject]@{ InstanceId = 'USB\VID_1D6B&PID_0104\1' } }
+    # The fake phone answers at once, so any wait means the script went somewhere it should not: stop it there
+    # (it reports "STOPPED" and exits 1) instead of letting a regression sit out its multi-minute timeouts.
+    function global:Start-Sleep { throw 'harness: the script waits for something the fake phone never gives' }
+    $tmp = Join-Path $work 'duo-opos-boot.ps1'
+    Set-Content -LiteralPath $tmp -Value $text -Encoding UTF8
+    $results = @()
+    foreach ($run in ($runs | ConvertFrom-Json)) {
+        $p = @{ ImageDir = $img; RootfsSha256 = $global:RootfsSum; WaitMinutes = 1 }
+        foreach ($prop in $run.args.PSObject.Properties) { $p[$prop.Name] = $prop.Value }
+        Remove-Item -LiteralPath $global:CallLog -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Join-Path $img 'logs') -Recurse -Force -ErrorAction SilentlyContinue
+        $global:LASTEXITCODE = $null
+        $threw = $null
+        try { & $tmp @p *> $null } catch { $threw = $_.Exception.Message }
+        $logs = Join-Path $img 'logs'
+        $logfile = Join-Path $logs 'boot-chain.log'
+        $results += [pscustomobject]@{
+            label = $run.label
+            threw = $threw
+            exit = $global:LASTEXITCODE
+            calls = @(if (Test-Path -LiteralPath $global:CallLog) { Get-Content -LiteralPath $global:CallLog | ForEach-Object { [string]$_ } })
+            logs_dir = [bool](Test-Path -LiteralPath $logs)
+            log = $(if (Test-Path -LiteralPath $logfile) { (Get-Content -LiteralPath $logfile) -join "`n" } else { '' })
+        }
+    }
+    [pscustomobject]@{ runs = @($results) } | ConvertTo-Json -Compress -Depth 6
+} finally {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+}
+"""
+
+
+def fake_phone_program(runs):
+    return "$runs = '" + json.dumps(runs).replace("'", "''") + "'\n" + FAKE_PHONE
+
+
 @unittest.skipUnless(powershell(), "needs pwsh or powershell to parse the script")
 class DuoBootScriptPowerShell(unittest.TestCase):
     def test_parses_without_errors_and_asks_only_for_the_essentials(self):
@@ -256,6 +358,48 @@ class DuoBootScriptPowerShell(unittest.TestCase):
             self.assertEqual([value] if isinstance(value, str) else value, ["127.0.0.82"], key)
         self.assertEqual(got["none"], 0)
         self.assertLess(got["none_ms"], 10000)
+
+    def test_ipv4_check_accepts_dotted_quads_only(self):
+        good = ["0.0.0.0", "127.0.0.1", "203.0.113.7", "255.255.255.255", "9.9.9.9", "1.20.200.249"]
+        bad = ["", "phone.local", "1", "1.2", "1.2.3", "1.2.3.4.5", "256.1.1.1", "1.2.3.256", "01.2.3.4", "1.2.3.04",
+               "0x7f.0.0.1", "1.2.3.4:22", "2001:db8::1", " 1.2.3.4", "1.2.3.4 ", "1.2.3.4\n", "1.2.3.-4",
+               "\u0661.2.3.4", "1,2,3,4", "203.0.113.7/24", "-1.2.3.4"]
+        got = as_list(run_powershell(ipv4_program(good + bad))["results"])
+        self.assertEqual(got, [True] * len(good) + [False] * len(bad))
+
+    def test_a_bad_phone_ip_or_prefer_host_stops_before_any_tool_runs(self):
+        """The late failure this prevents: a typo in -PhoneIp used to surface only after userdata was formatted,
+        the rootfs pushed and the one kernel RAM-boot spent. Here every fastboot and adb call is recorded."""
+        bad_ips = ["phone.local", "203.0.113", "203.0.113.256", "1", "0x7f.0.0.1", "2001:db8::1", "203.0.113.7:22",
+                   "203.0.113.07", " 203.0.113.7", "203.0.113.7 "]
+        runs = [{"label": "ip %r" % ip, "args": {"PhoneIp": ip, "Yes": True}} for ip in bad_ips]
+        runs.append({"label": "dry run", "args": {"PhoneIp": "phone.local"}})
+        runs += [{"label": "host %s" % n, "args": {"PreferHost": n, "Yes": True}} for n in (0, 255, -1, 1000)]
+        got = as_list(run_powershell(fake_phone_program(runs))["runs"])
+        self.assertEqual(len(got), len(runs))
+        for run in got:
+            with self.subTest(run=run["label"]):
+                expected = ("-PreferHost must be a host number from 1 to 254" if run["label"].startswith("host")
+                            else "-PhoneIp must be an IPv4 address")
+                self.assertEqual(run["threw"], expected)
+                self.assertEqual(as_list(run["calls"]), [], "a fastboot or adb command ran")
+                self.assertFalse(run["logs_dir"], "the script got as far as making its log folder")
+
+    def test_good_phone_ip_and_prefer_host_pass_the_check_and_a_dry_run_runs_no_tool(self):
+        runs = [{"label": "ip", "args": {"PhoneIp": "203.0.113.7"}},
+                {"label": "first host", "args": {"PreferHost": 1}},
+                {"label": "last host", "args": {"PreferHost": 254, "PhoneIp": "255.255.255.255"}},
+                {"label": "none given", "args": {}}]
+        got = as_list(run_powershell(fake_phone_program(runs))["runs"])
+        self.assertEqual(len(got), len(runs))
+        for run in got:
+            with self.subTest(run=run["label"]):
+                self.assertIsNone(run["threw"])
+                self.assertEqual(run["exit"], 0)
+                self.assertEqual(as_list(run["calls"]), [])
+                self.assertTrue(run["logs_dir"])
+                self.assertIn("hash ok boot.img", run["log"])
+                self.assertIn("dry run (no -Yes)", run["log"])
 
 
 if __name__ == "__main__":
