@@ -156,9 +156,11 @@ class TestSimulationDocs(unittest.TestCase):
 
 
 class TestReleaseDocs(unittest.TestCase):
-    def test_physical_phone_claim_is_scoped_to_this_source(self):
+    def test_physical_phone_claim_is_scoped_to_what_ran(self):
         roadmap = flat(read("ROADMAP.md"))
-        self.assertIn("This source has not been tested on a physical phone.", roadmap)
+        # The Surface Duo routes ran on a phone on 2026-11-07: a blanket "not tested on a physical phone" would be false.
+        self.assertIn("The postmarketOS kiosk has not been tested on a physical phone.", roadmap)
+        self.assertNotIn("This source has not been tested on a physical phone.", roadmap)
         self.assertNotIn("OPOS has not been tested on a physical phone", roadmap)
         if "earlier Surface Duo installation report" in flat(read("docs/pmos.md")):
             self.assertIn("Earlier Surface Duo installs ran an older snapshot on Droidian", roadmap)
