@@ -241,6 +241,7 @@ window.oposHooks.push(function(){try{bootWatch.disconnect();}catch(e){}});
 }
 })();
 }catch(e){}
+// UXP20:
 try{(function(){
 function $(id){return document.getElementById(id)}
 var saved=null,pending=false;
@@ -287,6 +288,7 @@ var sent=go('send');if(sent&&sent.catch)sent.catch(function(){});
 }catch(e){}});
 remember();
 })()}catch(e){}
+// UXP23:
 try{(function(){
 function $(id){return document.getElementById(id)}
 var helperDetails=null,resetBtn=$('helperreset'),restartBtn=$('helperrestart');
