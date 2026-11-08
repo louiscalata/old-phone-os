@@ -31,8 +31,9 @@ written; the install chain (`deploy/duo-opos-boot.ps1`) is untouched and keeps w
 
 **Prerequisites that this runbook does not solve.**
 
-1. USB data must work. The owner's Duo currently charges over USB-C but carries no data (see
-   [packaging/duo-os/README.md](../packaging/duo-os/README.md)); every command below needs fastboot and adb over USB.
+1. USB data must work: every command below needs fastboot and adb over USB. It worked on November 7 (the install chain
+   pushed a 5.7 GB image over it); it was broken before that, so check it in G0 (the
+   [packaging/duo-os/README.md](../packaging/duo-os/README.md) line that says otherwise is out of date).
 2. G4 and later need the OPOS rootfs on userdata. That is the install chain's job, it erases Android's data, and it is
    a separate decision of the owner. G0 to G3 do not touch userdata and do not need the rootfs.
 3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`, `misc-brake.img`), battery 20 percent or more,
@@ -195,8 +196,11 @@ Each partition was hashed on the phone, copied, hashed on the PC and read a seco
 
 **What it proves.** The by-name links resolve to the nodes in the October 31 partition table (`boot_a` is `sde9`, `boot_b`
 `sde26`, `vbmeta_a` `sde14`, `vbmeta_b` `sde31`, `dtbo_a` `sde15`, `dtbo_b` `sde32`, `misc` `sda5`), none of them is mounted,
-and we hold verified copies of everything G3 or G4 could change, plus the partition table head that carries the slot
-attributes. It proves nothing about whether a write would be accepted.
+and we hold verified copies of everything G3 or G4 variant B could change, plus the partition table head that carries the
+slot attributes. It does NOT cover G4 variant A: `set_active` may also change the UFS boot-LUN selector (REPORTED from the
+bootloader strings) and G1 saves only the first 1 MiB of `sde`, with no read of the other LUNs' slot bits, so variant A has
+no complete backup (the planner recommends variant B for that reason). It proves nothing about whether a write would be
+accepted.
 
 **Decision table.**
 
@@ -574,7 +578,8 @@ the Magisk-patched one, whichever the backup holds.
 
 ## G5. First unattended start with the brake still armed [OWNER SAYS GO]
 
-**Precondition.** G4 done. **The owner has said "go G5"** after being told that this is the first step that can start
+**Precondition.** G4 done. **The owner has said "go G5"**, which also covers the rollback writes listed under this gate
+(they only put the phone back to its state before G5). It was said after being told that this is the first step that can start
 stock Android on the OPOS userdata (its wipe path) or, in variant A, begin the retry countdown, and that either can cost
 the OPOS rootfs and a reinstall with the install chain. Userdata holds the OPOS rootfs. The misc brake is armed: the G1
 report says `misc` equals `misc-brake.img`. If it does not, arming it is the install chain's two commands
@@ -594,7 +599,10 @@ test that tells which:
 
 **Commands.** Phone in the bootloader menu.
 
-1. Power off: hold Power until the screen is dark (twenty to thirty seconds). Leave the data cable attached.
+1. Power off: hold Power until the screen is dark (twenty to thirty seconds). The project's recorded trap is that a
+   charger or cable plugged into an OFF phone auto-boots stock Android: so unplug the cable first, power off, and plug the
+   cable back in at the moment you choose for step 2. If the phone starts by itself with the cable attached, that counts as
+   step 2: note the time and carry on from there (the armed brake is the safety for this case).
 2. Press Power once. **Press nothing else.** Note the time. Watch the screens. (The Button steps say never to press Power
    alone at the orange warning. That rule protects the RAM-boot flow, where a normal start means stock Android. Here the
    normal start is the thing under test, which is why the brake is armed.)
