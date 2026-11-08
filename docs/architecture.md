@@ -32,6 +32,7 @@ modules.
 
 - `web.py`: loopback HTTP server, API dispatch, the simulated `Phone`, the helper's plain facts (`why_paused`) and page assembly.
 - `web_static/`: ordered CSS, HTML and JavaScript fragments.
+- `monitor.py`, `monitor_web.py`, `web_static/monitor*`: the optional Inference page (read-only; the data and its document, and the glue `web.py` calls), served only while `OPOS_MONITOR=1`.
 - `secure.py`: bind and request validation, tokens, body limits, rate limiting and security headers.
 - `dashboard.py`: battery details, goals, history, saving plans and undo state.
 - `home.py`: home-screen text and quiet-output checks.
@@ -63,7 +64,9 @@ kiosk/init integration; `deploy/` holds deployment, integrity and hardening scri
 ## Request flow
 
 The page fetches `GET /api/state` (`web_static/js-8.js`); actions send token-bearing JSON to
-`POST /api` (`js-3.js`, `web.py`). Simulator ticks run while the simulation is on.
+`POST /api` (`js-3.js`, `web.py`). Simulator ticks run while the simulation is on. Only while `OPOS_MONITOR=1`, `GET /monitor`
+serves the separate Inference document and `GET /api/monitor` (token required, rate limited) its data: `web.py` takes `Phone.state()`
+under the lock, releases it, and only then asks `monitor.get().snapshot(...)`, which may wait seconds on a slow network host.
 
 `web.Handler → Phone.state / _tick → Runtime.step → Governor.decide` computes the baseline, consults
 the Router, validates and intersects allowances, then applies runtime reserves. `web.main` normally
