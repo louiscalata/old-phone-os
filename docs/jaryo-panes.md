@@ -464,6 +464,31 @@ Open questions for Louis:
 6. Time zone list rows: 8 px gaps between boxes (strict), or rows with 1 px rules (section 4.6)?
 7. Should Settings > Display also offer "Hand" on one-pane windows (it does nothing there; currently hidden)?
 
+## 10. What was run on this branch (ui/panes, 2026-11-08)
+
+Headless Edge 157 at 1392 x 900 CSS px with `OPOS_SPAN=675,42` and `OPOS_PANES=1`, against the real server. Not run on a phone: the real Duo
+Chromium at output scale 2, the real hinge mask and the native `env(viewport-segment-*)` path (no `OPOS_SPAN`) are all still unchecked.
+
+| Run | Result |
+|---|---|
+| `tests/test_panes.py` | 19 tests: flag words, tokens, no forbidden CSS, the gate on every rule, span rewriting, modes, the injection and its chain through `osk.py`, routes on and off (flag off serves `/` and `/network` byte for byte as `page()` and `net_page.render()` build them), the runtime inventory |
+| `tests/panes_dom_test.js` (run by `test_panes`) | 31 assertions |
+| `tests/test_panes_pages.py` | 12 tests: the OS pages' colours, corners, opacity, disabled, primary, notice and link rules |
+| `tests/test_panes_browser.py` (15 tests, Edge) | 36 main-page and 20 OS-page state, hand and theme combinations: surfaces and hinge pixels `#000000`, 0 text or controls on the hinge, 0 targets under 48 px, minimum contrast at least 15, only the four palette colours, mirror positions, the Hand button (tap, reload, Enter), the one-pane windows unchanged, keyboard halves, motion smoke, 0 console errors |
+| Existing, WSL Ubuntu | `test_osk` 29, `test_span` 43 (7 browser tests skipped: no Chromium in WSL), `test_uxp30_budget` (`page()` 100,641 B of 102,400), `test_net` 71, `test_firstrun` 82, `test_firstrun_wiring`, `test_uxp22_twopane`, `test_duo_final`, `test_docs_claims`, `test_duo_os_docs`, `test_duo_os_clock`, `test_selftest`, `test_web_security`, `test_duo_kiosk`, `test_lean_image` and the docs tests pass |
+| Environment failures on `/mnt/c` only | `test_net` `test_actions_are_rate_limited` (wall-clock refill on a saturated VM), `test_firstrun` `Flag.test_the_flag_is_private_and_no_temp_file_is_left` and three `test_duo_kiosk` file-mode checks (drvfs reports 0777); all pass on ext4. `test_runtime_source_archive` fails on the release recipe digest, as it did before this branch |
+
+Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or without the flag, 100,573 B with a span):
+
+| Response | Flag off | `OPOS_PANES=1` | Duo image (`OSK`, `NETWORK`, `FIRSTRUN`, `PANES`, span) |
+|---|---|---|---|
+| `/` | 100,870 (100,833 with a span) | 101,006 (+136, the two tags) | 101,605 |
+| `/network` | 10,648 | 10,784 (+136) | 10,938 |
+| `/firstrun`, `/timezone` (with `OPOS_FIRSTRUN=1`) | 13,765 and 7,840 | +136 each | 14,055 and 8,130 |
+| `/panes.css`, `/panes.js` | 404 | 9,388 and 1,677 | 9,388 and 1,677 |
+
+The keyboard adds 154 B to each full page and serves `/osk.js` (30,642 B) and `/osk.css` (2,663 B); the Network link adds 229 B to `/` and the time zone link 253 B, only where those flags are on.
+
 ## Appendix. `panes.py` API (`src/opos/panes.py`)
 
 `modes(env=None) -> set`, `enabled(env=None) -> bool`, `css_text(span=None, env=None) -> str` (placeholders, `@MIRROR@`, then `span.rewrites` and `span.variables`), `asset(path, span=None, env=None) -> (bytes, content_type) | None`, `tags(nonce) -> str`, `inject(html, nonce, env=None) -> str`, `inject_bytes(body, nonce, env=None) -> bytes` (the same object while off), `serve(handler, path, env=None) -> bool`. Constants `SOFT`, `PURE`, `THEME` hold the surface literals.
