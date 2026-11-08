@@ -712,5 +712,27 @@ class HealthIsOnlyTheGauges(unittest.TestCase):
         self.assertIn("only when the battery's own gauge reports it, never an estimated, assumed or typed-in value", entry)
 
 
+class NoticesEvidence(unittest.TestCase):
+    CLAIM = next(c for c in notices.PRIVACY if "Inference page" in c)
+
+    def cells(self):
+        doc = (ROOT / "docs/notices-verification.md").read_text(encoding="utf-8")
+        row = next(x for x in doc.splitlines() if x.startswith("| " + self.CLAIM + " |"))
+        return [c.strip() for c in row[len("| " + self.CLAIM + " |"):].strip().strip("|").split(" | ")]
+
+    def test_the_evidence_says_the_page_always_asks_the_phones_own_loopback_port(self):
+        evidence, scope = self.cells()
+        flat = evidence.replace("`", "")
+        self.assertIn("src/opos/monitor.py sends nothing off the phone unless OPOS_AGIW_URL is set; "
+                      "it always asks the phone's own loopback model port", flat)
+        self.assertNotIn("fetches nothing", flat)
+
+    def test_it_does_ask_without_an_agiw_url(self):
+        asked = []
+        page = monitor.Monitor(env={}, probe=lambda env: asked.append(env) or ("none", []), fetch=lambda r: self.fail("fetched"))
+        page.snapshot()
+        self.assertEqual(len(asked), 1, "one uncached poll, one ask of the loopback port, with nothing configured")
+
+
 if __name__ == "__main__":
     unittest.main()
