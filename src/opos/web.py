@@ -51,6 +51,7 @@ from opos.ui import ScreenModem
 from opos.dashboard import Dashboard, _format_goal_12h
 from opos.router import HOT_C
 from opos import notices, secure
+from opos.span import apply as apply_span, parse as parse_span
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -554,7 +555,7 @@ def _about_notices():
 
 FAVICON = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000100000001008060000001ff3ff610000002a49444154789c63f8fae1c97f4a3003ba808888105e4c9401b86c1b3560d400fa1a30f049992217908a01dc7a527c28c3ed9a0000000049454e44ae426082")
 
-def page(token="", nonce="", *, demo=False):
+def page(token="", nonce="", *, demo=False, span=None):
     html = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Old Phone OS Interface</title><link rel="icon" href="/favicon.ico" type="image/png"><style>
 @@OPOS:css-1.css@@
 @@OPOS:css-2.css@@
@@ -625,7 +626,7 @@ const renderBase=render;render=async function(s){const r=await renderBase(s);if(
 <script>
 @@OPOS:jaryo-layout.js@@
 </script></body></html>"""
-    html = _inline_assets(html)
+    html = apply_span(_inline_assets(html), span)
     html = html.replace('@@ABOUT_NOTICES@@', _about_notices(), 1)
     if demo:
         html = html.replace('<div id="demo" hidden>', '<div id="demo" data-demo="1">', 1)
@@ -636,6 +637,7 @@ _INJECT_ACTIONS = ("receive",)
 class Handler(BaseHTTPRequestHandler):
     """Loopback web handler."""
     phone = None
+    span = None
     lock = threading.Lock()
     DEADLINE = 15.0
     def setup(self):
@@ -704,7 +706,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path in ("/", "/favicon.ico"):
             nonce = secrets.token_urlsafe(16)
-            body = FAVICON if path == "/favicon.ico" else page(self.token, nonce).encode()
+            body = FAVICON if path == "/favicon.ico" else page(self.token, nonce, span=self.span).encode()
             self.send_response(200)
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)
@@ -963,12 +965,13 @@ class _Limits:
         """Delegate key to its bucket."""
         b = self._buckets.get(key)
         return b.allow("all") if b is not None else False
-def make_server(port, phone, host="127.0.0.1", token=None):
+def make_server(port, phone, host="127.0.0.1", token=None, span=None):
     """Bind loopback server."""
     secure.check_bind(host)
     class Bound(Handler):
         pass
     Bound.phone = phone
+    Bound.span = span
     if token is not None:
         _validate_token(token)
     Bound.token = token if token else secure.new_token()
@@ -993,8 +996,16 @@ def main(argv=None):
     p.add_argument("--visible", action="store_true")
     p.add_argument("--token-file", default=None)
     p.add_argument("--live-battery", action="store_true", help="read this phone's battery and clock instead of simulating (also OPOS_BATTERY=live)")
+    p.add_argument("--span", metavar="PANE,HINGE", help="the window covers both panels of a two-screen phone: pane and hinge widths in CSS px, 675,42 on the Surface Duo 1 (also OPOS_SPAN; off disables)")
     args = p.parse_args(argv)
     import sys
+    span = None
+    try:
+        span = parse_span(args.span if args.span is not None else os.environ.get("OPOS_SPAN"))
+    except ValueError as e:
+        if args.span is not None:
+            p.error(f"--span: {e}")
+        print(f"opos: ignoring OPOS_SPAN: {e}", file=sys.stderr)
     live = None
     if args.live_battery or os.environ.get("OPOS_BATTERY") == "live":
         from opos.hw.live_battery import LiveBattery
@@ -1022,7 +1033,9 @@ def main(argv=None):
     goal = cfg["goal"]
     phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
     _route_with_glimmer(phone, os.environ)
-    server = make_server(args.port, phone, token=token)
+    server = make_server(args.port, phone, token=token, **({} if span is None else {"span": span}))
+    if span is not None:
+        print(f"OPOS two-screen span: {span.pane:g} + {span.hinge:g} + {span.pane:g} CSS px", flush=True)
     if live is not None:
         print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{args.port}/ (Ctrl-C to stop)", flush=True)
     else:

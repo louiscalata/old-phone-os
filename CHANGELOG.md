@@ -8,6 +8,7 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 ### Added
 
 - Measured drain for a live battery (`--live-battery`): time left, the goal check, the reserve and the helper's hours left follow an exponentially weighted discharge rate taken from the phone's own level changes (and its charge counter when readable) instead of the simulated drain model, which stays the figure until 10 minutes of discharge have been observed. The state payload gains `battery.drain` (basis, rate, sample age, observation window). Tested on synthetic discharge traces only; not yet measured on the phone.
+- `OPOS_SPAN` / `--span PANE,HINGE` (`src/opos/span.py`): for a browser window that covers both panels of a two-screen phone, the server serves the page as if the browser had reported two viewport segments, so the existing Foldable layout keeps content off the hinge. Chromium on Linux cannot report segments, so the Surface Duo OPOS OS image's server can be told where the hinge is: 675,42 from the port's 2784 x 1800 output at phoc scale 2, left commented out in `opos-server.service` because it was checked in headless Chromium at 1392 x 900 and not yet on the phone. Unset, the page is unchanged.
 
 ### Changed
 
