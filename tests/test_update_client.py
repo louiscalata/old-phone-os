@@ -1808,6 +1808,17 @@ class Defaults(unittest.TestCase):
         self.assertEqual((p.config, p.root, p.revision), ("/etc/opos/update.json", "/var/lib/opos-update", "/opt/opos/REVISION"))
         self.assertEqual((p.inbox, p.state, p.status), ("/var/lib/opos-update/inbox", "/var/lib/opos-update/state.json", "/var/lib/opos-update/status.json"))
 
+    def test_the_spec_says_the_cancel_gate_is_a_proxy_and_why_that_is_safe(self):
+        """The client offers the cancel because state.json has a `floor`: an inference about the updater, not a handshake (a review
+        note). The spec has to say so next to the gate, with the reasons it is safe, or the next reader takes it for a guarantee."""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "docs", "ota-update.md"), encoding="utf-8") as f:
+            doc = f.read()
+        start = doc.index('the button becomes "Cancel staged update"')
+        bullet = doc[start:doc.index("\n\n", start)]  # the UI bullet of the Client section
+        for needle in ("proxy", "not a handshake", "`floor`", "`cancel-staged`", 'wrong "no"', 'wrong "yes"', "`stepped_back`", "CancelStagedWithTheRealUpdater"):
+            self.assertIn(needle, bullet)
+
     def test_error_text_never_carries_a_path_or_a_traceback(self):
         for e in (uc.UpdateError("x", "m"), uc._net_error(OSError("[Errno 111] Connection refused: /var/lib/opos-update")),
                   uc._net_error(ssl.SSLCertVerificationError("bad")), uc._net_error(TimeoutError("t")), uc._net_error(http.client.BadStatusLine("x"))):

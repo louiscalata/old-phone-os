@@ -144,6 +144,26 @@ is an empty file `inbox/rollback.request` (limited, see the trust model) or `opo
   text as a plain "go back": the button is offered only when `state.json` shows an updater that knows the form (one that keeps a
   `floor`); on an older one the page behaves as before. Existing token, origin and rate-limit rules for POSTs apply. Without `/var/lib/opos-update` (desktop demo, Android) the page says updates are not
   available on this install.
+  **That gate is a proxy, not a handshake.** The client never talks to root, so it cannot ask what the updater understands;
+  all it has is the files it reads. It takes a `floor` that is an integer of 0 or more in `state.json` (the highest serial that
+  ever failed on the phone; the updater that reads `cancel-staged` keeps it) as the sign of an updater that has the form, and
+  nothing else in `state.json` stands for it. Why that is safe:
+  - *The unprivileged side cannot force the button.* Only root writes `state.json`; the client reads it and reduces it to this
+    one test. And what the button writes is checked again by root: an updater that knows the form takes an empty file or exactly
+    `cancel-staged` and removes anything else.
+  - *A wrong "no" costs a button.* Whatever the reason `state.json` has no usable `floor` (the file is missing or damaged, or the
+    updater is an old one), the page shows the plain rollback rules, as before, and sends nothing that an old updater would misread.
+  - *A wrong "yes" is bounded.* It means an updater that has a `floor` but reads any request file as "go back". The cancel then
+    does what a rollback request does: it needs an earlier release, is limited to one step back per applied update (`stepped_back`),
+    does not burn the serial it leaves, and drops the staged update too; installing the same signed release again undoes it. With
+    no earlier release the old updater refuses it and the staged update stays. Nothing is lost, and nothing the owner did not sign runs.
+    The only way to get there is a `state.json` written by a newer updater and kept by an older image (a downgrade of the image
+    that keeps `/var/lib/opos-update`; an older updater rewrites the file and leaves a key it does not know where it is), which is a local
+    root action.
+  - *What keeps the proxy true.* An updater that keeps `floor` also reads `cancel-staged`, and the other way round; a change to
+    either changes the client's gate in the same commit. `tests/test_update_client.py` (`CancelStagedWithTheRealUpdater`) runs the
+    client against the real updater and is the check that they agree; it skips itself, saying so, while the updater in the tree has
+    no `cancel-staged` request.
 
 ## Developer path (no Wi-Fi, no host)
 

@@ -365,7 +365,7 @@ class UpdateClient:
             "previous": len(previous) if isinstance(previous, list) else 0,
             "stepped_back": _int(d.get("stepped_back")),
             "staged": _int(staged.get("serial")) if isinstance(staged, dict) else None,
-            "cancels_staged": type(d.get("floor")) is int and d["floor"] >= 0,  # an updater that keeps a floor is one that reads `cancel-staged`
+            "cancels_staged": type(d.get("floor")) is int and d["floor"] >= 0,  # a proxy, not a handshake: an updater that keeps a floor reads `cancel-staged` (docs/ota-update.md, Client)
             "failed": sorted({n for n in (_int(x) for x in failed) if n is not None}) if isinstance(failed, list) else [],
         }
 
