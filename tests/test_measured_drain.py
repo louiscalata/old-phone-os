@@ -6,6 +6,7 @@ import random
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from opos.hw import live_battery as lb
 from opos.hw.live_battery import LiveBattery, MeasuredDrain
@@ -90,6 +91,8 @@ class MeasuredDrainTests(unittest.TestCase):
         three = tr.feed(2 * 3600, 0)
         self.assertLessEqual(three, 0.5)
         self.assertGreaterEqual(three, lb.DRAIN_MIN)
+        # One point per DRAIN_MIN %/h is four hours; five hours in, the cap is under the floor and the floor holds.
+        self.assertEqual(tr.feed(2 * 3600, 0), lb.DRAIN_MIN)
         self.assertNear(tr.feed(3 * 3600, 12), 12, 10)  # and it climbs back once the drain does
 
     def test_plugging_in_and_unplugging_start_over(self):
@@ -247,6 +250,7 @@ class LiveBatteryDrainTests(unittest.TestCase):
         self.level = [80.0]
         self.charging = [False]
         self.counter = [None]
+        self.counter_key = "charge_counter_uah"  # Termux:API's reading; the sysfs reader calls it "counter"
         self.unreadable = [False]
 
     def reader(self):
@@ -255,7 +259,7 @@ class LiveBatteryDrainTests(unittest.TestCase):
         r = {"level": round(self.level[0]), "temp_c": 29.0, "charging": self.charging[0], "source": "sysfs",
              "health": 0.7, "health_source": "OPOS_BATTERY_HEALTH"}
         if self.counter[0] is not None:
-            r["charge_counter_uah"] = self.counter[0]
+            r[self.counter_key] = self.counter[0]
         return r
 
     def battery(self):
@@ -315,15 +319,27 @@ class LiveBatteryDrainTests(unittest.TestCase):
         self.assertEqual((info["basis"], info["measured_per_hour"], info["window_s"]), ("model", None, 0.0))
 
     def test_counter_from_the_reader_is_used(self):
-        b = self.battery()
-        for _ in range(48):
-            self.now[0] += 15
-            self.level[0] -= 3 * 15 / 3600
-            self.counter[0] = round(self.level[0] / 100 * 3_000_000)
-            b.refresh()
-        info = b.drain_rate(23.0)[1]
-        self.assertEqual((info["basis"], info["via"]), ("measured", "counter"))
-        self.assertAlmostEqual(info["per_hour"], 3.0, delta=0.2)
+        for key in ("charge_counter_uah", "counter"):  # the Termux:API reading, and the one the sysfs reader hands over
+            with self.subTest(key=key):
+                self.counter_key, self.now[0], self.level[0], self.counter[0] = key, 0.0, 80.0, None
+                b = self.battery()
+                for _ in range(48):
+                    self.now[0] += 15
+                    self.level[0] -= 3 * 15 / 3600
+                    self.counter[0] = round(self.level[0] / 100 * 3_000_000)
+                    b.refresh()
+                info = b.drain_rate(23.0)[1]
+                self.assertEqual((info["basis"], info["via"]), ("measured", "counter"))
+                self.assertAlmostEqual(info["per_hour"], 3.0, delta=0.2)
+
+    def test_the_default_clock_is_the_boot_clock_and_a_given_one_is_kept(self):
+        # monotonic stops while the phone sleeps, so a suspend would not show up as a gap; the boot clock keeps going.
+        with mock.patch.object(lb, "_boot_clock", return_value=5000.0):
+            default = LiveBattery(reader=self.reader)
+            given = LiveBattery(reader=self.reader, clock=lambda: 7.0)
+        self.assertEqual(default.drain.t_last, 5000.0)
+        self.assertEqual(default.drain_rate(23.0)[1]["age_s"], 0.0)
+        self.assertEqual(given.drain.t_last, 7.0)
 
     def test_estimator_stands_in_for_the_runtime_one(self):
         b = self.battery()
