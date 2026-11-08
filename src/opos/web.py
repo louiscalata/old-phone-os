@@ -634,6 +634,8 @@ _INJECT_ACTIONS = ("receive",)
 def _net_serve(h):
     nonce = secrets.token_urlsafe(16)
     body = net_page.render(h.token, nonce).encode()
+    if osk is not None:
+        body = osk.inject_bytes(body, nonce)  # track osk: the password field needs the keyboard; the same bytes while OPOS_OSK is off
     h.send_response(200)
     for k, v in secure.security_headers(nonce).items():
         h.send_header(k, v)

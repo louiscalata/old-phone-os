@@ -139,7 +139,7 @@ G('sim').textContent=s.simulated||'';var c=s.control||{};can=!!c.allowed;G('ctl'
 var n=G('notes');n.textContent='';(s.notes||[]).forEach(function(t){li(n,t)});
 wifiOn=(s.wifi||{}).enabled;G('tog').textContent=wifiOn===false?'Turn Wi-Fi on':'Turn Wi-Fi off';
 G('disc').hidden=(s.wifi||{}).state!=='connected';lock()}
-function nets(r,quiet){var u=G('nets');u.textContent='';if(r.error){if(!quiet)say(r.error,true);return}if(!quiet)say(r.message);
+function nets(r,quiet){var u=G('nets');if(r.error){if(!quiet){u.textContent='';say(r.error,true)}return}u.textContent='';if(!quiet)say(r.message);
 function add(n,t){var l=document.createElement('li'),b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=function(){pick(n)};l.appendChild(b);u.appendChild(l)}
 (r.networks||[]).forEach(function(n){add(n,n.ssid+' - '+n.label)});
 (r.saved||[]).forEach(function(s){add({ssid:s,known:true,secure:true,supported:true},s+' - saved, not in range')});

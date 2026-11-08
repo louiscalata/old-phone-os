@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,6 +21,9 @@ from unittest import mock
 
 from opos import net, net_page
 from src.opos import web
+
+if sys.platform == "win32":
+    raise unittest.SkipTest("the fake tools are shell scripts and the runner reads /proc")
 
 
 class Running:
@@ -235,7 +239,7 @@ class Terse(unittest.TestCase):
     def test_validation(self):
         self.assertIsNone(net.check_ssid("HomeNet"))
         self.assertIsNone(net.check_ssid("Caf\u00e9 5G"))
-        for bad in ("", None, 5, "x" * 33, "a\nb", "-evil", "\u202eRLO", "a\x00b"):
+        for bad in ("", None, 5, "x" * 33, "a\nb", "-evil", "\u202eRLO", "a\x00b", "bad\udcff", "\ud800"):
             self.assertIsNotNone(net.check_ssid(bad), repr(bad))
         self.assertIsNone(net.check_password("12345678"))
         self.assertIsNone(net.check_password("p" * 63))
@@ -413,6 +417,15 @@ class Status(unittest.TestCase):
         f.put("device_status", DEVICES.replace("connected:HomeNet", "disconnected:"))
         f.put("connections", CONNS)
         self.assertEqual(f.net().status(True)["data"]["summary"], "Mobile data: off")
+
+    def test_mobile_data_is_off_when_nmcli_prints_dashes_for_no_device(self):
+        f = Fake(self)  # some nmcli versions print "--" in the DEVICE column of an inactive profile
+        f.put("device_status", DEVICES.replace("connected:HomeNet", "disconnected:"))
+        f.put("connections", CONNS.replace(f"{UUID_GSM}:gsm:", f"{UUID_GSM}:gsm:--"))
+        d = f.net().status(True)["data"]
+        self.assertEqual((d["on"], d["state"]), (False, "off"))
+        f.put("connections", CONNS.replace(f"{UUID_GSM}:gsm:", f"{UUID_GSM}:gsm:ril_0"))
+        self.assertTrue(f.net().status(True)["data"]["on"])
 
     def test_usb_network(self):
         f = Fake(self)
@@ -655,6 +668,14 @@ class Join(unittest.TestCase):
         r = self.f.net().join("HomeNet", "brand new pass")
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.f.read("deleted").split(), [UUID_HOME])
+
+    def test_a_wrong_new_password_for_a_saved_network_says_the_old_entry_is_gone(self):
+        self.f.put("leave_profile")
+        r = self.f.net().join("HomeNet", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertIn(UUID_HOME, self.f.read("deleted"))
+        self.assertIn("old saved entry for this network was removed", r["error"])
+        self.assertNotIn("Nothing was saved", r["error"], "the working profile was deleted, so that would be false")
 
     def test_hidden_network(self):
         r = self.f.net().join("Secret Net", PW, hidden=True)

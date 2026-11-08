@@ -203,7 +203,11 @@ def check_ssid(ssid):
     """None if usable, else why not (plain words)."""
     if not isinstance(ssid, str) or not ssid:
         return "Choose a network first."
-    if len(ssid.encode("utf-8")) > 32 or ssid != clean(ssid, 64):
+    try:
+        too_long = len(ssid.encode("utf-8")) > 32
+    except UnicodeEncodeError:  # a lone surrogate (undecodable bytes on a command line)
+        return "That network name cannot be used."
+    if too_long or ssid != clean(ssid, 64):
         return "That network name cannot be used."
     if ssid.startswith("-"):
         return "OPOS cannot join a network whose name starts with a dash yet."
@@ -365,7 +369,7 @@ class Net:
         r = q.call(["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE", "connection", "show"])
         if not r.ok:
             return None
-        return [{"name": f[0], "uuid": f[1], "type": f[2], "active": bool(f[3])} for f in _rows(r.out, 4)]
+        return [{"name": f[0], "uuid": f[1], "type": f[2], "active": f[3] not in ("", "--")} for f in _rows(r.out, 4)]  # nmcli may print -- for no device
 
     def _saved_wifi(self, q):
         """Saved Wi-Fi profiles with their SSIDs (the profile name is only a fallback), or None."""
@@ -745,7 +749,7 @@ class Net:
             kept = {p["uuid"] for p in saved}
             for p in [p for p in self._saved_wifi(q) or [] if p["ssid"] == ssid and p["uuid"] not in kept]:
                 q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]])
-            msg += " Nothing was saved."
+            msg += " The old saved entry for this network was removed; join again with the right password." if saved else " Nothing was saved."
         return _bad(msg)
 
     def forget(self, ssid):
