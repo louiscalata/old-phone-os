@@ -1,0 +1,1 @@
+(function(){try{var d=document.documentElement,t=localStorage.getItem('jaryo_theme'),x=localStorage.getItem('opos_text');if(t==='light'||t==='dark')d.dataset.theme=t;if(['s','n','l','xl'].indexOf(x)>=0)d.dataset.text=x}catch(e){}})();
