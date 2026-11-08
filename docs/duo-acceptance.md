@@ -123,7 +123,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 ### 3. Hinge column clear
 
 - How: open several screens (lock, home, Settings, a conversation). Look at the strip over the hinge (42 CSS px, 84 device px). Note
-  whether the image runs with the two-screen span setting (`OPOS_SPAN`) or without it; the `pc.viewport` line of the report gives
+  whether the image runs with the two-screen span setting (`OPOS_SPAN`; a dev image built with `OPOS_DEV_SPAN=1` has it on) or without it; the `pc.viewport` line of the report gives
   the window's size.
 - Expected: no text, button or status item sits under the hinge or is cut by it. With the span setting on, the two halves look
   like two screens with an empty gap. With it off, the page may cross the hinge: record where.

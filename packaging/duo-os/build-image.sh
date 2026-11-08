@@ -15,6 +15,15 @@ base=$1 out=$2 ref=${3:-HEAD}
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "$here/../.." && pwd)
 [ "$(readlink -f "$base")" != "$(readlink -f "$out")" ] || { echo "OUT must differ from BASE" >&2; exit 2; }
+# --- dev span: CHECK BEGIN (OPOS_DEV_SPAN; the block that acts on it is "dev span: BEGIN" below)
+# Refused before OUT is touched, so a wrong call leaves no half-built image behind: OPOS_DEV_SPAN is 1, or unset/empty/0, and 1 is a dev-image
+# option that only works together with OPOS_DEV_SSH_PUBKEY.
+case ${OPOS_DEV_SPAN:-} in '' | 0 | 1) ;; *) echo "build-image.sh: OPOS_DEV_SPAN must be 1 (or unset)" >&2; exit 2 ;; esac
+if [ "${OPOS_DEV_SPAN:-}" = 1 ] && [ -z "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    echo "build-image.sh: OPOS_DEV_SPAN=1 is a dev-image option: it needs OPOS_DEV_SSH_PUBKEY=<file.pub> as well" >&2
+    exit 2
+fi
+# --- dev span: CHECK END
 mnt=$(mktemp -d)
 cleanup() { umount "$mnt" 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -178,6 +187,25 @@ if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
 else
     rm -f "$r/etc/default/opos-kiosk"
 fi
+
+# --- dev span: BEGIN (OPOS_DEV_SPAN; packaging/duo-os/README.md, "Spanning both panels")
+# DEV ONLY, and only together with OPOS_DEV_SSH_PUBKEY (the check at the top refuses the other cases). opos-server.service ships the two-screen
+# span (OPOS_SPAN=675,42) as a commented line until the layout has been checked on the phone, and with it off the pane surfaces
+# (OPOS_PANES=1) and the hinge-aware page do not paint. A checkpoint image built to be checked there turns it on with OPOS_DEV_SPAN=1: a systemd
+# drop-in sets OPOS_SPAN=675,42 for opos-server. The unit file itself is not edited. A BASE that is an earlier dev-span image loses the
+# drop-in unless the variable is set again. On a running phone: sudo rm /etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf,
+# sudo systemctl daemon-reload, sudo systemctl restart opos-server, then pkill chromium as droidian (opos-kiosk starts it again).
+rm -f "$r/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"
+if [ "${OPOS_DEV_SPAN:-}" = 1 ] && [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    install -d -m 0755 "$r/etc/systemd/system/opos-server.service.d"
+    printf '%s\n' '# DEV IMAGE (OPOS_DEV_SPAN=1): the two-screen span, for the window that covers both panels (675 + 42 + 675 CSS px).' \
+        '# Delete this file, then daemon-reload, restart opos-server and pkill chromium as droidian, to go back to the one-window layout.' \
+        '[Service]' 'Environment=OPOS_SPAN=675,42' > "$r/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"
+    chmod 0644 "$r/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"
+    ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf )
+    echo "DEV IMAGE: opos-server runs with OPOS_SPAN=675,42 (drop-in 30-opos-dev-span.conf; remove it to go back to the one-window layout)"
+fi
+# --- dev span: END
 
 # ---- BEGIN OPOS OTA updates (self-contained; needs $r and $here; docs/ota-update.md) ----------------------------
 # Release layout (/opt/opos -> /opt/opos-releases/0-<rev12>), the update state and inbox directories, the trust

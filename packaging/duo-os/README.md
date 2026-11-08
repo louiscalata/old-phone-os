@@ -108,6 +108,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_PANES` | `opos-server.service` (`1`) | the black thumb pane, the white list pane and the Hand setting on the spanned window (`src/opos/panes.py`, [docs/jaryo-panes.md](../../docs/jaryo-panes.md)); paints only while `OPOS_SPAN` is on; `1,pure` strict `#000`/`#fff`, `invert` colour swap without the mirror, unset none |
 | `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
+| `OPOS_DEV_SPAN` | build input, dev images only | `1`, together with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): the image gets the drop-in `opos-server.service.d/30-opos-dev-span.conf`, which sets `OPOS_SPAN=675,42` for a checkpoint that is to be looked at on the phone; unset: no drop-in (see Spanning both panels) |
 | `OPOS_MONITOR` | `opos-server.service` (`1`) | the Settings link to `/monitor` and the routes `/monitor` and `/api/monitor` (see Inference page) |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor, and the `Host` header to send it (`OPOS_LOCAL_URL` is the Helper's, see Inference page) |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
@@ -156,7 +157,13 @@ on one panel (675 px) keeps the phone layout. A Device type chosen in Settings i
 "Auto looks like: two screens" while the window spans both panels, and whatever the window's width it adds the window's
 size, the output scale and the span it was given ("Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675."), again after
 every resize, so the numbers can be checked on the phone. Unset, the served page is byte-for-byte what it was. The
-service file carries the setting commented out, to be enabled once the layout has been checked on the phone. Not
+service file carries the setting commented out, to be enabled once the layout has been checked on the phone. A **dev checkpoint image**
+that is built to be checked there turns it on without editing the unit: `OPOS_DEV_SPAN=1` together with `OPOS_DEV_SSH_PUBKEY` makes
+`build-image.sh` write `/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf` (`[Service]`, `Environment=OPOS_SPAN=675,42`),
+so the hinge-aware page and the pane surfaces (`OPOS_PANES=1`) paint; `verify-image.sh` checks the drop-in and builds the page for its
+value with the image's own python3. `OPOS_DEV_SPAN` without the dev key stops the build before the output is touched, and an image built
+without it has no drop-in. On a running phone, `sudo rm` the drop-in, `sudo systemctl daemon-reload`, `sudo systemctl restart opos-server`
+and `pkill chromium` as `droidian` go back to the one-window layout. Not
 handled: a rotated window (the hinge would run across it), a phone folded with one panel dark, and two things that
 still cross the hinge: the thin battery bar along the top edge and, while it plays, the zoom from a tile to its
 app.

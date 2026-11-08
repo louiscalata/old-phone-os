@@ -52,6 +52,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_KIOSK_RESTART` | unset (on) | `0` stops the server restarting Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | unset (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_SPAN` | unset (a commented line in `opos-server.service`) | `675,42`: pane and hinge widths in CSS pixels for the window that covers both panels, so the page lays out for two screens; `off` disables it; the same as `--span`. Not yet measured on the phone |
+| `OPOS_DEV_SPAN` | unset; a build input of `build-image.sh`, dev images only | `1`, with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): writes the drop-in `opos-server.service.d/30-opos-dev-span.conf`, which sets `OPOS_SPAN=675,42` so a checkpoint image paints the two-screen page and the pane surfaces for the first look on the phone; no drop-in without it. Not yet seen on the phone |
 | `OPOS_PANES` | `1` (`opos-server.service`; it paints only while `OPOS_SPAN` is on) | the black and white pane surfaces and the Hand setting on the window that covers both panels (`/panes.css`, `/panes.js`, [jaryo-panes.md](jaryo-panes.md)); `1,pure` is the strict `#000`/`#fff` pair, `invert` swaps the colours for the left hand without mirroring; unset or `off`: no panes assets or tags and `page()` is unchanged (the Network, first-run and time zone pages carry the Jaryo conformance fixes either way). Not yet seen on the phone |
 | `OPOS_KIOSK_DEBUG_PORT` | unset; a dev image writes it into `/etc/default/opos-kiosk` | the kiosk Chromium's DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
 | `OPOS_KIOSK_DEFAULTS` | unset (`/etc/default/opos-kiosk`) | which file `opos-kiosk` reads the DevTools port from; a hook for tests |
@@ -108,7 +109,7 @@ For whoever holds the phone. Read-only unless a step says otherwise; replace `<p
 addresses and passwords appear in some of it.
 
 1. **Build and verify** (builder, root): `sudo sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD`, with
-   `OPOS_DEV_SSH_PUBKEY=<file.pub>` for a dev image you can ssh into (and `OPOS_NET_POLKIT=1` only if step 5 shows NetworkManager
+   `OPOS_DEV_SSH_PUBKEY=<file.pub>` for a dev image you can ssh into (add `OPOS_DEV_SPAN=1` to have it start with the two-screen span on; and `OPOS_NET_POLKIT=1` only if step 5 shows NetworkManager
    refusing); then `sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img`. Expect `VERIFY: PASS` and, among the lines,
    "the keyboard, the Network page and the first run answer together in one server from the image".
 2. **Boot** from the PC as before, wait five minutes (the boot dump is due 90 s after multi-user.target).

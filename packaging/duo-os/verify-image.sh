@@ -338,6 +338,40 @@ print('pane assets: panes.css', len(css[0]), 'bytes, panes.js', len(js[0]), 'byt
 check "the image's python3 serves the pane surfaces' files and builds their geometry from the span" "grep -q 'pane assets' \"\$work/opos-verify-panes.txt\""
 tail -n 1 "$work/opos-verify-panes.txt"
 # <<< track panes
+# --- dev span: BEGIN (OPOS_DEV_SPAN in build-image.sh; packaging/duo-os/README.md, "Spanning both panels")
+# opos-server.service carries the two-screen span only as a comment. A DEV image (one that holds the dev ssh key) may add the drop-in
+# 30-opos-dev-span.conf, which must be exactly [Service] and Environment=OPOS_SPAN=675,42 and the only thing in the unit or its drop-ins that
+# sets OPOS_SPAN; every other image must set none. With the drop-in present, the image's own python3 builds the page for its value.
+dsd=$w/opos-server.service.d/30-opos-dev-span.conf
+span_settings() { grep -hs '^[[:space:]]*Environment=.*OPOS_SPAN' "$w/opos-server.service" "$w"/opos-server.service.d/*.conf; }
+dev_span_ok() {
+    [ -f "$dsd" ] && [ ! -L "$dsd" ] && [ "$(stat -c %a "$dsd")" = 644 ] && [ "$(stat -c %u:%g "$dsd")" = 0:0 ] || return 1
+    [ -f "$r$chome/.ssh/authorized_keys" ] || return 1
+    [ "$(grep -v '^[[:space:]]*#' "$dsd")" = "$(printf '[Service]\nEnvironment=OPOS_SPAN=675,42')" ] || return 1
+    [ "$(span_settings)" = 'Environment=OPOS_SPAN=675,42' ]
+}
+check "the span is only a comment in opos-server.service (the unit ships it off until the layout is checked on the phone)" "grep -qx '#Environment=OPOS_SPAN=675,42' $w/opos-server.service && ! grep -q '^[[:space:]]*Environment=.*OPOS_SPAN' $w/opos-server.service"
+if [ -e "$dsd" ] || [ -L "$dsd" ]; then
+    check "DEV span: the drop-in is a plain root-owned 0644 file with only [Service] and Environment=OPOS_SPAN=675,42, nothing else turns the span on, and the dev ssh key is in the image" "dev_span_ok"
+    dsv=$(sed -n 's/^Environment=OPOS_SPAN=//p' "$dsd" 2>/dev/null)
+    py -c "
+import sys
+from opos import span, web
+s = span.parse(sys.argv[1])
+assert s is not None and (s.pane, s.hinge) == (675, 42) and span.gate(s) == 1055, 'the drop-in does not describe 675 + 42 + 675'
+h = web.page('t' * 43, 'n' * 22, span=s)
+assert '(min-width:1055px)' in h and '(horizontal-viewport-segments:2)' not in h, 'the gate was not applied'
+assert ':root{--pane:675px;--hinge:42px}' in h, 'the geometry was not applied'
+assert 'span 675 + 42 + 675.' in h and 'CSS px at ' in h, 'the Settings window readout is missing'
+print('dev span page: gate 1055 px, --pane 675px, --hinge 42px, Settings readout, built by the image python3 from', repr(sys.argv[1]))" "$dsv" > "$work/opos-verify-devspan.txt" 2>&1
+    check "DEV span: the image's python3 builds the two-screen page (gate, geometry, Settings readout) for the drop-in's value" "grep -q '^dev span page' \"\$work/opos-verify-devspan.txt\""
+    tail -n 1 "$work/opos-verify-devspan.txt"
+    echo "NOTE: DEV image: opos-server runs with OPOS_SPAN=675,42 (drop-in 30-opos-dev-span.conf)"
+else
+    check "no dev span: nothing in opos-server.service or its drop-ins sets OPOS_SPAN" "! span_settings | grep -q ."
+    echo "NOTE: no dev span in this image (the pane surfaces and the hinge-aware page stay off until OPOS_SPAN is set)"
+fi
+# --- dev span: END
 [ -z "$smoke_pid" ] || stop_server "$smoke_pid"
 head -5 "$work/opos-verify.log"
 # --- track integrate: BEGIN (the keyboard, the Network page and the first run in one server; docs/duo-os-final.md)
