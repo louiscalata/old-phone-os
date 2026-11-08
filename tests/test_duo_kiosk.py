@@ -284,6 +284,12 @@ class ImageScriptsTest(unittest.TestCase):
         for s in ("try-restart phosh.service opos.service", "unset WAYLAND_SOCKET", "SingletonLock", "OPOS_KIOSK_DEBUG_PORT=9222", "authorized_keys"):
             self.assertIn(s, v)
 
+    def test_power_note_exists_and_the_readme_points_to_it(self):
+        power = (DUO / "POWER.md").read_text()
+        self.assertTrue(power.startswith("<!-- SPDX-License-Identifier: GPL-3.0-or-later -->"))
+        self.assertIn("nothing in this note is implemented", power)
+        self.assertIn("[POWER.md](POWER.md)", (DUO / "README.md").read_text())
+
     def test_the_unit_keeps_the_settings_the_fallback_depends_on(self):
         u = (DUO / "opos.service").read_text()
         for s in ("RestartMode=direct", "OnFailure=opos-fallback.service", "StartLimitBurst=3", "ExecStartPre=+chvt 7"):
