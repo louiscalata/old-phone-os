@@ -587,7 +587,7 @@ def page(token="", nonce="", *, demo=False, span=None):
 @@OPOS:css-2.css@@
 @@OPOS:css-3.css@@
 @@OPOS:css-4.css@@
-.box{background:#222;border-radius:8px;padding:8px;margin:6px 12px;white-space:pre-wrap}
+.box{border-radius:8px;padding:8px;margin:6px 12px;white-space:pre-wrap}
 #answer a{color:#9ecbff;display:inline-block;min-height:44px;line-height:44px}
 label,input,button{font-size:1rem;margin:4px 0}
 input[type=text],input[type=range]{width:100%}
@@ -595,8 +595,7 @@ input[type=range]{min-height:44px}input[type=checkbox]{width:24px;height:24px}
 #number,#msg{width:calc(100% - 24px);box-sizing:border-box}
 button{min-height:44px;margin-right:8px}
 #controls{margin:12px}
-#demo{background:#1b1b1b;border:1px solid #333;border-radius:12px;padding:12px;margin:12px auto;max-width:420px}
-#demo label{color:#eee}
+#demo{border:1px solid #333;border-radius:12px;padding:12px;margin:12px auto;max-width:420px}
 @media (min-width:1000px){#demo{position:fixed;top:12px;left:calc(50% + 232px);width:260px;margin:0;z-index:80}}
 
 #number,#msg,#controls button,#helpertoggle,#battery,#temp,#simbtn,#visbtn{min-height:48px}
@@ -605,8 +604,8 @@ button{min-height:44px;margin-right:8px}
 #demo .box>label{display:block;margin:8px 0}
 #demo .box>label:last-child{min-height:48px;padding:12px}
 #charge{appearance:none;-webkit-appearance:none;flex:none;width:48px;height:48px;margin:0;display:grid;place-content:center;background:transparent;border:0;padding:12px}
-#charge::before{content:"";display:block;width:24px;height:24px;box-sizing:border-box;border:2px solid #aaa;border-radius:3px;background:#222}
-#charge:checked::before{content:"✓";background:#fff;color:#111;border-color:#fff;text-align:center;font-size:20px;line-height:20px}
+#charge::before{content:"";display:block;width:24px;height:24px;box-sizing:border-box;border:2px solid;border-radius:3px}
+#charge:checked::before{content:"✓";text-align:center;font-size:20px;line-height:20px}
 @@OPOS:phone-a.css@@
 @@OPOS:phone-b.css@@
 @@OPOS:jaryo.css@@

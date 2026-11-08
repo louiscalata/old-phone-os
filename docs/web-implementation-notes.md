@@ -89,3 +89,43 @@ These explanatory comments were moved out of the stylesheets to keep the served 
 ## Spanned page (opos.span)
 
 With `OPOS_SPAN` or `--span` set, the server rewrites the page it serves; the files in `web_static` are unchanged and an unset span serves them as before. The segment query `(horizontal-viewport-segments:2)` (in `phone-b.css`, `jaryo-layout.css` and the `TWO` constant of `phone-b.js`) becomes a width test, the two segment `env()` values become `--pane` and `--hinge`, and the first-state Auto seed in `jaryo.js` stops deleting the Foldable choice that `phone-b.js` just made. Each of those strings is pinned by `tests/test_span.py`, so rewording one of them fails a test instead of silently leaving the rewrite out. A few rules the segment rules do not cover (status line, shade handle, lock screen alignment) and a readout in Settings are added, and the style sheet's comments and the line breaks between its rules are dropped, which keeps the spanned page under `PAGE_BUDGET`.
+
+## Script comments
+
+The explanatory text of six full-line `//` comments was moved out of the page scripts for the same reason (about 323 bytes). The code around them is unchanged. As above, the internal change labels (UXP20, UXP23, UXP31) are left out of the text recorded here. Five of them keep a short marker in the script because tests depend on it: `tests/test_uxp20_continuity.py`, `tests/test_uxp04_launcher.py` and `tests/test_uxp31_helper_screen.py` slice `phone-a.js` and `phone-b.js` at `// UXP20:`, `// UXP23:` and `// UXP31:`, and `tests/test_uxp00_hooks.py` looks for the file names `jaryo.js` and `jaryo-layout.js` in their script elements. The comment in `js-1.js` was removed outright.
+
+## js-1.js header (removed)
+
+```js
+// G: dynamic get-by-ID; E: element factory.
+```
+
+## phone-a.js, before the viewport-change block (script keeps `// UXP20:`)
+
+```js
+// Layout stays in CSS; preserve the live controls across viewport changes.
+```
+
+## phone-a.js, before the state-render enhancement block (script keeps `// UXP23:`)
+
+```js
+// Enhance only after a successful state render; the base controls stay intact.
+```
+
+## phone-b.js, before helperAsk (script keeps `// UXP31:`)
+
+```js
+// One Ask request and error mapping shared by the conversation and fallback button.
+```
+
+## jaryo.js header (script keeps `// jaryo.js`)
+
+```js
+// jaryo.js: Jaryo theme and motion
+```
+
+## jaryo-layout.js header (script keeps `// jaryo-layout.js`)
+
+```js
+// jaryo-layout.js: Jaryo layout screens
+```

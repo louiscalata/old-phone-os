@@ -241,7 +241,7 @@ window.oposHooks.push(function(){try{bootWatch.disconnect();}catch(e){}});
 }
 })();
 }catch(e){}
-// UXP20: layout stays in CSS; preserve the live controls across viewport changes.
+// UXP20:
 try{(function(){
 function $(id){return document.getElementById(id)}
 var saved=null,pending=false;
@@ -288,7 +288,7 @@ var sent=go('send');if(sent&&sent.catch)sent.catch(function(){});
 }catch(e){}});
 remember();
 })()}catch(e){}
-// UXP23: enhance only after a successful state render; the base controls stay intact.
+// UXP23:
 try{(function(){
 function $(id){return document.getElementById(id)}
 var helperDetails=null,resetBtn=$('helperreset'),restartBtn=$('helperrestart');
