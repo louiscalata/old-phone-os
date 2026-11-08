@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Early boot, before the OPOS server and the session start: finish or undo an update that a power loss
+# interrupted, roll back an update that did not come up in two boots, and apply a staged boot-scope update.
+# It restarts nothing (nothing is running yet) and never touches the compositor.
+[Unit]
+Description=OPOS: apply a staged update before the session starts
+After=local-fs.target
+Before=opos-server.service opos.service
+ConditionPathIsDirectory=/var/lib/opos-update
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/opos-updater/opos-updater apply-pending-boot
+SuccessExitStatus=3
+# The session waits for this unit, so it must not hang: a stuck run is killed and recovered at the next boot.
+TimeoutStartSec=300
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt /var/lib/opos-update -/usr/libexec/opos -/usr/sbin -/etc/systemd/system -/etc/default -/etc/opos
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE
+UMask=0022
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

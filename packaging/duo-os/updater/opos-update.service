@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Verify and apply what is in the update inbox (docs/ota-update.md). Started by opos-update.path, never enabled.
+# The updater restarts opos-server.service only, never opos.service (restarting the session has reset this phone).
+[Unit]
+Description=OPOS: verify and apply a delivered update
+After=local-fs.target opos-update-boot.service
+ConditionPathIsDirectory=/var/lib/opos-update/inbox
+# A bad bundle is consumed on its first look, so a run per bundle is normal. More than six runs in ten minutes
+# is a loop: systemd stops starting the service until "systemctl reset-failed opos-update.service".
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/opos-updater/opos-updater apply-inbox
+# Exit 3 = a bundle was refused or rolled back; the reason is in /var/lib/opos-update/status.json.
+SuccessExitStatus=3
+TimeoutStartSec=900
+Nice=10
+IOSchedulingClass=idle
+# Hardening that leaves the job possible: it writes the release tree, its state, and the OPOS-owned overlay
+# locations; runuser needs setuid/setgid; pkill needs kill; the smoke and health checks use loopback.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt /var/lib/opos-update -/usr/libexec/opos -/usr/sbin -/etc/systemd/system -/etc/default -/etc/opos
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE
+UMask=0022
+TasksMax=128
