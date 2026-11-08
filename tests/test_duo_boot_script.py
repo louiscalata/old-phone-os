@@ -3,6 +3,7 @@
 The text tests read it as a file. The PowerShell tests parse it (and run its network probe against loopback)
 with pwsh or powershell when one is installed, and skip otherwise."""
 import base64
+import functools
 import json
 import re
 import shutil
@@ -146,20 +147,31 @@ class DuoBootScriptText(unittest.TestCase):
             with self.subTest(dead=dead):
                 self.assertNotIn(dead, body)
         for live in ("System.Net.Sockets.TcpClient", "ConnectAsync", "Get-NetIPAddress", "Remote NDIS|RNDIS",
-                     "OwnIp.LastIndexOf('.')", "1..254", "$Prefer.StartsWith($net)", "Find-PhoneSsh $own $PreferIp 22"):
+                     "OwnIp.LastIndexOf('.')", "1..254"):
             with self.subTest(live=live):
                 self.assertIn(live, body)
-        self.assertIn("[string]$PreferIp = '10.15.19.82'", body)
-        # The preferred address is probed alone before the sweep, and only inside the adapter's /24.
+        self.assertIn("[int]$PreferHost = 82", body)
+        self.assertIn("Find-PhoneSsh $own $PreferHost 22", body)
+        # The preferred host is probed alone before the sweep, and only inside the adapter's /24.
         find = body[body.index("function Find-PhoneSsh"):body.index("function RndisAddress")]
         self.assertLess(find.index("Test-Tcp @($Prefer)"), find.index("1..254"))
+        self.assertIn("$net + $PreferHost", find)
         self.assertIn("-ne $OwnIp", find)
 
 
+@functools.lru_cache(maxsize=None)
 def powershell():
+    """The first PowerShell that actually starts (a path on PATH can still be unusable, e.g. disabled WSL interop)."""
     for name in ("pwsh", "powershell", "powershell.exe"):
         found = shutil.which(name)
-        if found:
+        if not found:
+            continue
+        try:
+            done = subprocess.run([found, "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
+                                  capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if done.returncode == 0:
             return found
     return None
 
@@ -202,18 +214,18 @@ $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.Us
 [pscustomobject]@{ errors = @($errors | ForEach-Object { $_.Message }); boots = $boots; mandatory = $mandatory; names = $names; version = "$($PSVersionTable.PSVersion)" } | ConvertTo-Json -Compress -Depth 4
 """
 
-# The phone's address 10.15.19.82 lives on a /24 around this PC's own; loopback stands in for that /24.
+# The phone is host 82 of a /24 around this PC's own address; loopback stands in for that /24.
 DISCOVER = AST + r"""
 . ([scriptblock]::Create((FunctionText 'Test-Tcp')))
 . ([scriptblock]::Create((FunctionText 'Find-PhoneSsh')))
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.82'), 0)
 try { $listener.Start() } catch { '{"skip": "cannot bind 127.0.0.82"}'; exit 0 }
 $port = $listener.LocalEndpoint.Port
-$swept = @(Find-PhoneSsh '127.0.0.147' '10.15.19.82' $port 2500)
-$preferred = @(Find-PhoneSsh '127.0.0.147' '127.0.0.82' $port 2500)
+$swept = @(Find-PhoneSsh '127.0.0.147' 200 $port 2500)
+$preferred = @(Find-PhoneSsh '127.0.0.147' 82 $port 2500)
 $listener.Stop()
 $sw = [Diagnostics.Stopwatch]::StartNew()
-$none = @(Find-PhoneSsh '127.0.0.147' '127.0.0.82' $port 1000)
+$none = @(Find-PhoneSsh '127.0.0.147' 82 $port 1000)
 [pscustomobject]@{ swept = $swept; preferred = $preferred; none = $none.Count; none_ms = $sw.ElapsedMilliseconds } | ConvertTo-Json -Compress
 """
 
@@ -224,7 +236,7 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         got = run_powershell(PARSE)
         self.assertEqual(got["errors"], [], got["version"])
         self.assertEqual(sorted(got["mandatory"]), ["ImageDir", "RootfsSha256"])
-        for name in ("Key", "Serial", "PhoneIp", "PreferIp", "LogDir", "Yes", "Rootfs", "WaitMinutes"):
+        for name in ("Key", "Serial", "PhoneIp", "PreferHost", "LogDir", "Yes", "Rootfs", "WaitMinutes"):
             self.assertIn(name, got["names"])
 
     def test_the_kernel_boot_is_not_in_a_loop_or_a_retry_block(self):

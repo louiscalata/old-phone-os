@@ -13,14 +13,16 @@
 #   1. preflight, then arm the misc brake, format userdata as ext4, RAM-boot TWRP;
 #   2. push the rootfs to /data/rootfs.img and compare its SHA-256 on the phone;
 #   3. back to the bootloader, re-arm the brake, RAM-boot the port's kernel ONCE;
-#   4. find the phone on the USB network (TCP 22 across the /24 of the RNDIS adapter's address) and, only when
-#      -Key is given, read its state and logs over ssh. Without -Key that step is skipped.
+#   4. find the phone on the USB network (TCP 22 across the /24 of the RNDIS adapter's address, host number
+#      -PreferHost first; -PhoneIp skips the search) and, only when -Key is given, read its state and logs over
+#      ssh. Without -Key that step is skipped.
 #
 # Safety rules. They are the point of this script; change none without the owner's say-so.
 #   - SHA-256 of every file is checked before the first write; the rootfs is checked again on the phone.
 #   - Preflight on the phone: product surfaceduo, current-slot a, unlocked yes, battery 20 percent or more.
 #   - The misc brake (a one-shot bootonce-bootloader flag in misc) is armed before TWRP and again before the
-#     kernel, so a crash or a reboot lands in Boot Select, not in stock Android (which would wipe userdata).
+#     kernel, so a crash or a reboot should land in Boot Select, not in stock Android (which would wipe
+#     userdata). A precaution, not a guarantee.
 #   - The kernel is RAM-booted exactly ONCE and never retried, even if something after it fails. A kernel that
 #     crashed may leave the slot rejecting RAM-boots with Device Error; stop and ask, do not try again.
 #   - Only misc (erase, flash) and userdata (format) are written. Nothing is written to boot, vbmeta, dtbo or
@@ -34,7 +36,7 @@ param(
     [string]$Key = '',
     [string]$Serial = '',
     [string]$PhoneIp = '',
-    [string]$PreferIp = '10.15.19.82',
+    [int]$PreferHost = 82,
     [string]$SshUser = 'droidian',
     [string]$LogDir = '',
     [int]$WaitMinutes = 240,
@@ -94,11 +96,13 @@ function Test-Tcp([string[]]$Hosts, [int]$Port, [int]$TimeoutMs) {
     }
 }
 # The phone sets no default gateway and is not in the neighbour table until contacted, so look for it: probe the
-# preferred address first, then the rest of the /24 around this PC's own address on the USB adapter. Only that
-# /24 is probed, so nothing is sent to another network. Returns the answering addresses, preferred first.
-function Find-PhoneSsh([string]$OwnIp, [string]$Prefer, [int]$Port, [int]$TimeoutMs) {
+# preferred host number first, then the rest of the /24 around this PC's own address on the USB adapter. Only
+# that /24 is probed, so nothing is sent to another network. Returns the answering addresses, preferred first.
+function Find-PhoneSsh([string]$OwnIp, [int]$PreferHost, [int]$Port, [int]$TimeoutMs) {
     $net = $OwnIp.Substring(0, $OwnIp.LastIndexOf('.') + 1)
-    if ($Prefer -and $Prefer.StartsWith($net) -and $Prefer -ne $OwnIp) {
+    $Prefer = ''
+    if ($PreferHost -ge 1 -and $PreferHost -le 254) { $Prefer = $net + $PreferHost }
+    if ($Prefer -and $Prefer -ne $OwnIp) {
         $hit = @(Test-Tcp @($Prefer) $Port 1500)
         if ($hit.Count) { return $hit }
     }
@@ -116,8 +120,8 @@ function Find-Phone {
     if ($PhoneIp) { return @(Test-Tcp @($PhoneIp) 22 3000) }
     $own = RndisAddress
     if (-not $own) { return @() }
-    if ($script:probed -ne $own) { $script:probed = $own; Log "USB network adapter address ${own}: probing TCP 22 across its /24, $PreferIp first" }
-    @(Find-PhoneSsh $own $PreferIp 22 2500)
+    if ($script:probed -ne $own) { $script:probed = $own; Log "USB network adapter address ${own}: probing TCP 22 across its /24, host $PreferHost first" }
+    @(Find-PhoneSsh $own $PreferHost 22 2500)
 }
 function Invoke-Ssh([string]$ip, [string]$remote) {
     $ErrorActionPreference = 'Continue'

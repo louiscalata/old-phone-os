@@ -9,7 +9,7 @@ lives on userdata and starts only from a RAM-boot (see below), and a power cycle
 
 ## What was seen, and what was not
 
-Seen on November 7, 2026, from logs read off the phone over the USB network and by the owner on the panels:
+Seen on November 7, 2026, in logs read off the phone over the USB network, and by the owner looking at the panels:
 
 - the system reached `running`, and both backlights were on;
 - `phoc` ran on the `hwcomposer` backend, with GLES on the Adreno 640;
@@ -55,9 +55,9 @@ Every boot of this image is a RAM-boot from a PC: `fastboot boot boot.img`. Noth
 boot partitions, on purpose.
 
 - This phone's bootloader refuses flashes of the boot partition with `Device Error` even when unlocked
-  (`boot_a`, recorded October 31, 2026; vbmeta is reported to be refused the same way), and the port's own notes forbid
-  flashing boot, vbmeta, dtbo or recovery in any case. `fastboot boot` works. No tool here writes those
-  partitions or changes the active slot; making the image permanent would need a different, separately
+  (`boot_a`, recorded October 31, 2026; vbmeta is reported to be refused the same way), and the port's own
+  notes forbid flashing boot, vbmeta, dtbo or recovery in any case. `fastboot boot` works. No tool here writes
+  those partitions or changes the active slot; making the image permanent would need a different, separately
   decided method.
 - The **misc brake** is `misc-brake.img`, 2,048 bytes for the `misc` partition: a one-shot
   `bootonce-bootloader` flag, so the next boot lands in Boot Select instead of in stock Android. If stock
@@ -106,9 +106,9 @@ and logs over ssh. The first failure stops it and nothing is retried. The safety
 of the script.
 
 The phone sets no default gateway and is not in the PC's neighbour table until something contacts it, so the
-script derives the /24 from the address of the PC's RNDIS adapter and probes TCP port 22 across it, trying
-`10.15.19.82` first (where the phone answered on November 7, with the PC's adapter at `10.15.19.147`).
-`-PhoneIp` skips the search. The scratch version of this script ran the chain on November 7; this version
+script derives the /24 from the address of the PC's RNDIS adapter and probes TCP port 22 across it, trying host
+82 first (`-PreferHost`; on November 7 the phone was host 82 and the PC's adapter host 147 of a 10.15.19.x
+network). `-PhoneIp` skips the search. The scratch version of this script ran the chain on November 7; this version
 changes its network discovery and options and has been parsed and had its probe exercised against loopback,
 not run on a phone.
 
@@ -119,11 +119,11 @@ less guarded route.
 ## Dev options: an ssh key
 
 `OPOS_DEV_SSH_PUBKEY=<file.pub> sh packaging/duo-os/build-image.sh …` appends that public key to
-`/home/droidian/.ssh/authorized_keys` in the image (the directory is made 0700, the file 0600) and prints a
+`~/.ssh/authorized_keys` of the `droidian` user in the image (the directory is made 0700, the file 0600) and prints a
 `DEV IMAGE` line; `verify-image.sh` notes how many keys the image holds. It grants **a shell as `droidian` to
 whoever holds the matching private key**, over the USB network and over any other network where the phone's
 sshd can be reached (the port's sshd is not limited to the USB link; keys are accepted from any address,
-passwords only from the port's USB subnet, `172.16.42.0/24`). It is meant for reading logs and testing live;
+passwords only from the port's own USB subnet, 172.16.42.x). It is meant for reading logs and testing live;
 leave it unset for an image that will be carried. With the variable unset the image adds no login of its own,
 but the port's password rule stays as it is.
 
@@ -153,7 +153,7 @@ mounting userdata and loop-mounting `/data/rootfs.img`; that has not been rehear
   [docs/duo-usb-install.md](../../docs/duo-usb-install.md), "Button steps").
 - Calls and texts are simulated (see above); the real modem is not used.
 - `opos-fallback` and `opos-switch` have not been exercised on the phone.
-- One address, one run: `10.15.19.82` is where the phone answered once, not a documented constant.
+- One address, one run: host 82 of a 10.15.19.x network is where the phone answered once, not a documented constant.
 
 ## Restore to Android
 

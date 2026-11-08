@@ -7,6 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO_OS = "packaging/duo-os"
+# What guard/check.py refuses in tracked files: private network addresses and user paths.
+PRIVATE = (r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![\d.])",
+           r"(?<![\w.-])/home/[A-Za-z]", r"[A-Za-z]:\\{1,2}Users\\{1,2}", "/Users/[A-Za-z]")
+CHECKED = ("deploy/duo-opos-boot.ps1", "tests/test_duo_boot_script.py", "tests/test_duo_os_docs.py")
 LINKED = ("README.md", "ROADMAP.md", "CHANGELOG.md", "docs/README.md", "docs/duo-android.md", DUO_OS + "/README.md")
 
 
@@ -107,7 +111,7 @@ class TestDuoOsReadme(unittest.TestCase):
         for phrase in ("This erases Android and everything it stored", "without touching the phone",
                        "The first failure stops it and nothing is retried",
                        "derives the /24 from the address of the PC's RNDIS adapter", "TCP port 22",
-                       "`10.15.19.82` first", "has been parsed and had its probe exercised against loopback, not run on a phone",
+                       "trying host 82 first (`-PreferHost`", "has been parsed and had its probe exercised against loopback, not run on a phone",
                        "the less guarded route"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, install)
@@ -119,7 +123,7 @@ class TestDuoOsReadme(unittest.TestCase):
         self.assertIn("OPOS_DEV_SSH_PUBKEY", build)
         self.assertIn("OPOS_DEV_SSH_PUBKEY=<file.pub>", dev)
         self.assertIn(".ssh/authorized_keys", build)
-        self.assertIn("/home/droidian/.ssh/authorized_keys", dev)
+        self.assertIn("`~/.ssh/authorized_keys` of the `droidian` user", dev)
         self.assertIn("install -d -m 0700", build)
         self.assertIn("chmod 0600", build)
         self.assertIn("0700", dev)
@@ -216,6 +220,12 @@ class TestDuoStatusDocs(unittest.TestCase):
         android = flat(read("docs/duo-android.md"))
         self.assertIn("(../packaging/duo-os/README.md)", android)
         self.assertIn("(duo-usb-install.md) stay historical", android)
+
+    def test_no_private_addresses_or_user_paths_in_what_was_written(self):
+        for name in LINKED + CHECKED:
+            for pattern in PRIVATE:
+                with self.subTest(file=name, pattern=pattern):
+                    self.assertIsNone(re.search(pattern, read(name)))
 
     def test_links_in_the_edited_docs_resolve(self):
         link = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
