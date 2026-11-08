@@ -138,7 +138,7 @@ addresses and passwords appear in some of it.
    `systemctl show --property=LoadState,ActiveState,SubState,Result opos.service`; `pgrep -af phoc` and `pgrep -af 'composer@2.4'`
    (phoc has `-E /usr/libexec/opos/opos-kiosk` and no `-S`); `tr '\0' '\n' < /proc/$(pgrep -f -- --kiosk | head -1)/environ | grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR)='`;
    `XDG_RUNTIME_DIR=/run/user/32011 WAYLAND_DISPLAY=wayland-0 wlr-randr` (HWCOMPOSER-1, Enabled: yes, 2784x1800 px, Scale 2);
-   `cat /sys/class/backlight/panel*-backlight/bl_power /sys/class/backlight/panel*-backlight/actual_brightness`;
+   `cat /sys/class/backlight/panel*-backlight/bl_power /sys/class/backlight/panel*-backlight/brightness /sys/class/drm/card0-DSI-*/dpms` (`bl_power` 0, a level above 0, `On` twice; `actual_brightness` reads 0 on this kernel while the panels are lit, so `gfx.backlight` does not use it);
    `for s in /sys/class/power_supply/*; do echo $s $(cat $s/type) $(cat $s/capacity 2>&1) $(cat $s/status 2>&1) $(cat $s/temp 2>&1); done`;
    `timedatectl show -p Timezone -p NTPSynchronized`; `nmcli -t -f DEVICE,TYPE,STATE device`; `ip -4 -o addr show dev usb0`;
    `ls /var/log/journal/*/`; `head -3 /var/log/opos-boot-diag.txt`.

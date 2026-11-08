@@ -60,7 +60,7 @@ check cannot run yet (the diagnostics dump is only written 90 seconds after boot
 | `phoc.process`, `phoc.no-shell-mode` | `/proc/<pid>/cmdline` of phoc | no phoc, two phoc, or `-S`/`--shell` in its command line (a black shield over both panels) | |
 | `gfx.composer` | a `*composer*` binary among the processes | none | |
 | `gfx.output` | `wlr-randr` with the XDG_RUNTIME_DIR and WAYLAND_DISPLAY the kiosk Chromium itself uses | no output, or none enabled | WARN: not 2784x1800 at scale 2, or the compositor cannot be queried; SKIP: `wlr-randr` missing |
-| `gfx.backlight` | `bl_power`, brightness of `panel*-backlight` | a panel's `bl_power` is not 0 | WARN: brightness 0, or fewer than two panels |
+| `gfx.backlight` | `bl_power` and the requested `brightness` of `panel*-backlight`, and the display pipeline: the DSI connectors in `/sys/class/drm` (connected, enabled, dpms On), or the output `wlr-randr` listed when the kernel lists none. `actual_brightness` is printed but not trusted: on the Duo's kernel it reads 0 on both panels while they are lit (seen November 8, 2026: requested 90 and 200, actual 0, both connectors on) | a panel's `bl_power` is not 0 | WARN: the requested `brightness` is 0 (and `actual_brightness` shows no light), a DSI connector or the output is off while a level is requested, or fewer than two panels |
 | `kiosk.chromium`, `kiosk.gpu` | Chromium processes: one with `--kiosk`, and a `--type=gpu-process` | no kiosk Chromium, or no GPU process | WARN: `--disable-gpu` (the kiosk's fallback after repeated exits) |
 | `kiosk.restarts` | the journal lines of the kiosk script | | WARN: Chromium exited this boot; SKIP: this kiosk script does not log |
 | `server.http`, `server.state`, `server.token-gate` | the real server on loopback: the page and its token, `/api/state` with the token (battery, charging, `temp_c`, `battery_source`), `/api/state` without it | no answer, no token, a field missing or of the wrong type, a source other than `sysfs`, or the state open without the token | WARN: battery health not measured from sysfs |
@@ -140,7 +140,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 
 - How: with the screens lit, fold the phone shut for ten seconds and open it again. If you can ssh in meanwhile (over Wi-Fi, or
   over the cable if its data lines work), read `cat /sys/class/backlight/panel0-backlight/bl_power /sys/class/backlight/panel1-backlight/bl_power`
-  while it is folded (4 is off, 0 is lit), and `actual_brightness` of both after opening.
+  while it is folded (4 is off, 0 is lit), and `brightness` of both after opening (`actual_brightness` reads 0 on this kernel even when lit).
 - Expected: both panels go dark while folded and light when opened, at the brightness they had (not full), the page as you left it.
   Known gap: the port's phosh does that blanking and the OPOS image does not replace it yet (a design exists, nothing is
   implemented), so panels that stay lit while folded are the likely result today; record the `bl_power` values and keep it as a
