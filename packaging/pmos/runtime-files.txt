@@ -49,6 +49,7 @@ src/opos/panes_static/panes-mirror.css
 src/opos/panes_static/panes.css
 src/opos/panes_static/panes.js
 src/opos/power.py
+src/opos/practice.py
 src/opos/profiles.py
 src/opos/public_demo.py
 src/opos/public_static/public-demo.css

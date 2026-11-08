@@ -22,8 +22,11 @@ class PolishStatic(unittest.TestCase):
         old = out.index('#home-notice{background:#1e1e1e')
         new = out.index('#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);')
         self.assertLess(old, new)
-        self.assertIn('Calls and messages are on.', out)
-        self.assertIn('Paused to save power: ', out)
+        # W1-01: the card's words are made once, on the server (opos.practice.home_note), so a practice phone cannot say
+        # "Calls and messages are on."; the page only shows what the state carries.
+        self.assertIn("var notice=s.home_note||'';", out)
+        self.assertNotIn('Calls and messages are on.', out)
+        self.assertNotIn('Paused to save power: ', out)
 
     def test_helper_and_lock(self):
         out = page()
@@ -55,7 +58,7 @@ CHECKS.polish = async function() {
     // JRY04: the Jaryo notice may be dark on light, so take the contrast ratio in either direction.
     var a=__u.lum(__u.rgba(c.color))+.05,b=__u.lum(__u.rgba(c.backgroundColor))+.05,ratio=Math.max(a,b)/Math.min(a,b);
     if(ratio<4.5)out.push('notice contrast '+ratio);
-    if(!n.textContent.startsWith('Calls and messages are on.'))out.push('notice copy');
+    if(!n.textContent.startsWith('Practice mode: calls, texts and tasks are simulated.'))out.push('notice copy: '+n.textContent);
     return out;
   })()`);
   out.push(...await ev(`(async function(){

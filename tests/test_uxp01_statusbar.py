@@ -98,7 +98,9 @@ console.log(JSON.stringify({configured,quiet:ids['sb-engine'].textContent}));
             'configured': 'Helper set to Muse Glimmer, on this device', 'quiet': ''})
 
     def test_simulated_telephony_is_disclosed_where_controls_appear(self):
-        self.assertIn('<div id="controls"><p id="demo-phone-note">Calls and texts may use your configured phone connection.</p>', page())
+        # Nothing is claimed until the server says the modem is simulated: no "phone connection" that does not exist.
+        self.assertIn('<div id="controls"><p id="demo-phone-note"></p>', page())
+        self.assertNotIn('configured phone connection', page())
         css = (Path(__file__).resolve().parents[1] / 'src/opos/web_static/phone-b.css').read_text()
         for app, actions in (('phone', ('send', 'receive')), ('messages', ('call', 'hang_up'))):
             for action in actions:

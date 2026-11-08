@@ -298,8 +298,7 @@ try{new MutationObserver(function(){try{jsc()}catch(e){}}).observe($('phone'),{a
 window.oposHooks.push(function(s){try{
 var home=$('home'),card=$('home-notice');
 if(home&&!card){var fav=E('div');fav.id='home-favourites';card=E('div');card.id='home-notice';card.setAttribute('role','status');while(home.firstChild)fav.appendChild(home.firstChild);home.appendChild(fav);home.appendChild(card);home.classList.add('polished');$('phone').classList.add('polished')}
-var paused=((s.battery&&s.battery.paused)||[]).map(function(p){return p.name||p}).filter(known);
-var notice='Calls and messages are on.'+(paused.length?'\nPaused to save power: '+paused.join(', ')+'.':'');
+var notice=s.home_note||'';
 if(card&&card.textContent!==notice)card.textContent=notice;
 jl=s;jsc();
 var percent=s.battery&&s.battery.percent;

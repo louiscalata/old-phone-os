@@ -71,7 +71,7 @@ class UXP13SettingsStatic(unittest.TestCase):
         self.assertEqual(len(re.findall(r"<select ", self.s)), 2)
         self.assertIn('<label>Top bar<select id="topbar">', self.s)
         self.assertIn('<label><input id="night" type="checkbox" role="switch">Dim at night</label>', self.s)
-        for text, ident in (("Page brightness", "bright"), ("Volume (simulated in the demo)", "vol")):
+        for text, ident in (("Page brightness", "bright"), ("Volume (practice only; sound is not changed)", "vol")):
             self.assertIn('<label>%s<input id="%s" type="range"' % (text, ident), self.s)
 
     def test_about_default_and_quiet_words(self):

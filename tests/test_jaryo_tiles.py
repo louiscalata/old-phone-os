@@ -149,8 +149,8 @@ CHECKS.jaryo_tiles = async function() {
     var nc=getComputedStyle($('#home-notice'));
     if(nc.borderLeftWidth!=='0px'||nc.borderTopWidth!=='1px')out.push('notice rules '+nc.borderLeftWidth+'/'+nc.borderTopWidth);
     document.querySelectorAll('#home button').forEach(function(b){if(getComputedStyle(b).textAlign!=='left')out.push('tile not left: '+b.textContent)});
-    var hits=[].filter.call(document.querySelectorAll('body *'),function(e){return __u.vis(e)&&e.textContent.indexOf('Calls and messages')>=0&&![].some.call(e.children,function(c){return c.textContent.indexOf('Calls and messages')>=0})});
-    if(hits.length!==1)out.push('Calls and messages shown '+hits.length+' times');
+    var hits=[].filter.call(document.querySelectorAll('body *'),function(e){return __u.vis(e)&&e.textContent.indexOf('Practice mode')>=0&&![].some.call(e.children,function(c){return c.textContent.indexOf('Practice mode')>=0})});
+    if(hits.length!==1)out.push('Practice mode note shown '+hits.length+' times');
     if(__u.vis(document.getElementById('intro')))out.push('intro visible on home');
     var sc=document.getElementById('screen'),tick=function(){return new Promise(function(r){requestAnimationFrame(function(){requestAnimationFrame(r)})})};
     if(__u.vis(sc))out.push('screen visible with default state');

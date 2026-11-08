@@ -32,6 +32,18 @@ class TestNoticeFor(unittest.TestCase):
     def test_in_call(self):
         self.assertEqual(notice_for("in call", True), "In call")
 
+    def test_practice_wording_only_when_simulated(self):
+        self.assertEqual(notice_for("in call", True, True), "Practice call. No real call is made.")
+        self.assertEqual(notice_for("simulation running", True, True), "Practice call. No real call is made.")
+        self.assertEqual(notice_for("call ended", False, True), "Practice call ended.")
+        self.assertEqual(notice_for("sent", False, True), "Practice message. Nothing was sent.")
+        self.assertEqual(notice_for("in call", True, False), "In call")
+        self.assertEqual(notice_for("call ended", False, False), "Call ended")
+        self.assertEqual(notice_for("sent", False, False), "Message sent")
+        for status, in_call in (("error: number not valid", True), ("error: already in a call", True), ("error: battery empty, charge the phone to call", False)):
+            self.assertEqual(notice_for(status, in_call, True), notice_for(status, in_call, False))
+        self.assertEqual(notice_for("message received", False, True), "New message")
+
     def test_mapped_statuses(self):
         self.assertEqual(notice_for("call ended", False), "Call ended")
         self.assertEqual(notice_for("sent", False), "Message sent")
@@ -73,18 +85,61 @@ class TestPhoneNotice(unittest.TestCase):
         self.assertIn("notice", p.state())
 
     def test_state_notice_flows(self):
+        # The Phone's modem is the in-memory ScreenModem: nothing is dialled and nothing is sent, so the notices say practice.
         p = Phone()
         p.call("+1 555 0100")
         s = p.state()
         self.assertTrue(s["in_call"])
-        self.assertEqual(s["notice"], "In call")
+        self.assertEqual(s["notice"], "Practice call. No real call is made.")
         p.hang_up()
-        self.assertEqual(p.state()["notice"], "Call ended")
+        self.assertEqual(p.state()["notice"], "Practice call ended.")
         p.send("+15550100", "On my way")
-        self.assertEqual(p.state()["notice"], "Message sent")
+        self.assertEqual(p.state()["notice"], "Practice message. Nothing was sent.")
         p.call("abc")
         self.assertIn("error", p.state()["status"].lower())
         self.assertEqual(p.state()["notice"], "Number not valid")
+
+    def test_emergency_numbers_are_refused_not_dialled(self):
+        for number in ("911", "112", "999", "000", "1234", "(911)", " 9 1 1 "):
+            with self.subTest(number=number):
+                p = Phone()
+                p.call(number)
+                s = p.state()
+                self.assertFalse(s["in_call"])
+                self.assertEqual(s["notice"], "This phone cannot call emergency numbers. Use another phone.")
+                self.assertEqual(p.essentials.modem.events, [])
+                self.assertEqual(s["notice_app"], "phone")
+
+    def test_longer_and_international_numbers_still_make_a_practice_call(self):
+        for number in ("12345", "5550100", "+911", "+15550100", "+1 555 0100"):
+            with self.subTest(number=number):
+                p = Phone()
+                p.call(number)
+                s = p.state()
+                self.assertTrue(s["in_call"])
+                self.assertEqual(s["notice"], "Practice call. No real call is made.")
+                self.assertEqual(p.essentials.modem.events[0][0], "dial")
+
+    def test_too_short_to_be_a_number_is_still_not_valid(self):
+        p = Phone()
+        p.call("12")
+        self.assertEqual(p.state()["notice"], "Number not valid")
+
+    def test_a_modem_that_is_not_the_screen_modem_is_not_refused(self):
+        class RealishModem:
+            def dial(self, number):
+                self.number = number
+            def hang_up(self):
+                pass
+            def send_sms(self, number, text):
+                pass
+        p = Phone()
+        p.essentials.modem = RealishModem()
+        p.call("911")
+        s = p.state()
+        self.assertTrue(s["in_call"])
+        self.assertEqual(s["notice"], "In call")
+        self.assertFalse(s["simulation"]["modem"])
 
     def test_state_demo_errors_empty(self):
         p = Phone()

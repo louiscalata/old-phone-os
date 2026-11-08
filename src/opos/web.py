@@ -50,7 +50,7 @@ from opos.sim import DrainSim
 from opos.ui import ScreenModem
 from opos.dashboard import Dashboard, _format_goal_12h
 from opos.router import HOT_C
-from opos import notices, secure, update_client, update_page
+from opos import notices, practice, secure, update_client, update_page
 from opos.span import apply as apply_span, parse as parse_span
 try:  # track osk: the on-screen keyboard is optional; a runtime shipped without src/opos/osk.py serves what it always served
     from opos import osk
@@ -93,7 +93,7 @@ _EMPTY_NOTICES = {
     "error: battery empty, charge the phone to send": "Charge the phone to send",
     "call ended: battery empty": "Call ended. Charge the phone",
 }
-def notice_for(status, in_call):
+def notice_for(status, in_call, sim=False):
     if status in _EMPTY_NOTICES:
         return _EMPTY_NOTICES[status]
     if isinstance(status, str) and status.startswith("error: "):
@@ -107,6 +107,8 @@ def notice_for(status, in_call):
         if _NOTICE_FORBIDDEN_RE.search(out):
             return ""
         return out
+    if (p := practice.notice(status, in_call, sim)):  # a practice phone says so: no real call, no real text
+        return p
     if in_call:
         return "In call"
     if status == "call ended":
@@ -304,10 +306,10 @@ class Phone:
         tick = self._tick()
         d = tick.decision
         reached = self.dash.goal_reached(self._goal_clock())
-        out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
+        out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call, practice.simulated(self.essentials)), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
         out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
-        out["simulation"] = {"modem": type(getattr(self.essentials, "modem", None)) is ScreenModem}
+        out["simulation"] = {"modem": practice.simulated(self.essentials)}
         if self.live:
             out["battery_source"] = {"source": self.sim.source, "health_source": self.sim.health_source}
         out["prefs"] = self._preferences()
@@ -356,6 +358,7 @@ class Phone:
             glimmer = [n for n, cause in tick.causes if cause == "glimmer"]
             if glimmer:
                 hf["paused_by_glimmer"] = glimmer
+        out["home_note"] = practice.home_note(out["simulation"]["modem"], out["battery"]["paused"])  # the Home card, worded once here
         h = int(self.clock_s // 3600) % 24
         m = int((self.clock_s % 3600) // 60)
         out["clock"] = f"{h:02d}:{m:02d}" if self.clock_ok else "--:--"
@@ -443,6 +446,9 @@ class Phone:
         self.status = "ready"
     def call(self, number):
         self.status_app = "phone"
+        if practice.simulated(self.essentials) and practice.refuses(number):  # the practice phone must not pretend to reach 911 or 112
+            self.status = practice.REFUSED
+            return
         if round(self.sim.level) <= 0:
             self.status = "error: battery empty, charge the phone to call"
             return
@@ -1113,7 +1119,7 @@ def make_server(port, phone, host="127.0.0.1", token=None, span=None, updater=No
         _validate_token(token)
     Bound.token = token if token else secure.new_token()
     Bound.limiter = _Limits()
-    Bound.allow_inject = type(phone) is Phone
+    Bound.allow_inject = type(phone) is Phone and not phone.live  # a real phone takes no injected texts
     Bound.updater = updater if updater is not None else update_client.UpdateClient()
     server = _Server((host, port), Bound)
     Bound.port = server.server_address[1]

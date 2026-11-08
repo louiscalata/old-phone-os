@@ -57,11 +57,16 @@ class UXP04Launcher(unittest.TestCase):
         rules = _css_rules((STATIC / "phone-b.css").read_text(encoding="utf-8"))
         self.assertTrue(rules)
         hiding = 0
+        # W1-01: the two demo-only buttons are hidden unless the demo panel is shown, with or without a data-app.
+        demo_only = "body:has(#demo[hidden]) :is([data-go=receive],#helpertoggle)"
         for sel, decl in rules:
             d = decl.replace(" ", "")
             if re.search(r"display:none|visibility:hidden|opacity:0(?![.\d])", d):
                 hiding += 1
+                sel = sel.replace(demo_only, "")
                 for s in sel.split(","):
+                    if not s.strip():
+                        continue
                     # UXP31 hides Ask only after its replacement has been built.
                     self.assertTrue(s.strip().startswith("#phone[data-app") or
                                     s.strip() == "#ask[data-hs] #askbtn", s)
