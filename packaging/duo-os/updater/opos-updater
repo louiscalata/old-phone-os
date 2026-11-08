@@ -1314,25 +1314,31 @@ class Updater:
         fsync_dir(bdir)
 
     def copy_file(self, src, dest, mode):
-        """Copy src to dest atomically (dest + '.new', fsync, rename)."""
+        """Copy src to dest atomically (dest + '.new', fsync, rename). Whatever stops it before the rename (a full file system
+        above all), it removes its own temporary file at once: the half-written copy holds the free space that the restore
+        of the files already replaced needs for theirs (review finding U1)."""
         tmp = dest + '.new'
         remove_tree(tmp)
-        sfd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
-            dfd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+            sfd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
             try:
-                while True:
-                    b = os.read(sfd, CHUNK)
-                    if not b:
-                        break
-                    write_all(dfd, b)
-                os.fchmod(dfd, mode)
-                os.fsync(dfd)
+                dfd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    while True:
+                        b = os.read(sfd, CHUNK)
+                        if not b:
+                            break
+                        write_all(dfd, b)
+                    os.fchmod(dfd, mode)
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
             finally:
-                os.close(dfd)
-        finally:
-            os.close(sfd)
-        os.rename(tmp, dest)
+                os.close(sfd)
+            os.rename(tmp, dest)
+        except BaseException:
+            remove_tree(tmp)
+            raise
         fsync_dir(os.path.dirname(dest))
 
     def replace_overlays(self, rdir, overlays):
@@ -1375,10 +1381,17 @@ class Updater:
     def restore_overlays(self, rdir):
         """Put the saved originals back (idempotent). Returns True if a unit file was involved. A file that already is its
         original is left alone: when the replacement itself failed for lack of space the destination is still intact, and
-        copying the original over it would need the very room that is missing (review finding 5)."""
+        copying the original over it would need the very room that is missing (review finding 5). Before any copy, every
+        `<path>.new` beside an indexed path is removed: a run that was killed halfway through a replacement leaves one, and
+        it would hold the room that the files before it need for their temporary copies (review finding U1)."""
         bdir = os.path.join(rdir, 'overlay-backup')
         index = self.load_backup(bdir)
         units = False
+        for it in index:
+            try:
+                remove_tree(os.path.join(self.cfg.root, it['path']) + '.new')
+            except OSError as e:
+                raise Incomplete('cannot clear %s.new: %s' % (it['path'], e))
         for i, it in enumerate(index):
             dest = os.path.join(self.cfg.root, it['path'])
             units = units or it['path'].startswith('etc/systemd/system/')
@@ -1391,7 +1404,6 @@ class Updater:
                         self.copy_file(save, dest, it['mode'])
                 else:
                     remove_tree(dest)
-                remove_tree(dest + '.new')
             except OSError as e:
                 raise Incomplete('cannot put %s back: %s' % (it['path'], e))
             self.step('restore-%d' % i)

@@ -2553,6 +2553,96 @@ class TestRestoreNeedsNoRoom(EnvCase):
 
 
 @needs_keygen
+class TestNoJunkHoldsTheRoom(EnvCase):
+    """U1: a replacement that failed for lack of space left its half-written `<dest>.new` behind, and a restore deletes each
+    `.new` only when its loop reaches that entry, so the files before it, already replaced, needed a temporary copy while the
+    junk still held the free space (reproduced on a real 48 MiB tmpfs: 6 of 41 free-space cases stuck)."""
+    fast = True
+
+    def junk(self):
+        e = self.env
+        return sorted(os.path.relpath(os.path.join(d, n), e.root) for d, ds, fs in os.walk(e.root) for n in fs + ds if n.endswith('.new'))
+
+    def test_copy_file_removes_its_own_temporary_file_when_the_write_fails(self):
+        e = self.env
+        src, dest = os.path.join(e.tmp, 'src'), os.path.join(e.tmp, 'dest')
+        e.put(src, b'n' * 100000)
+        e.put(dest, b'old')
+        write_all = U.write_all
+
+        def half(fd, data):
+            write_all(fd, data[:4096])
+            raise OSError(errno.ENOSPC, 'No space left on device')
+        with mock.patch.object(U, 'write_all', half), self.assertRaises(OSError):
+            e.updater().copy_file(src, dest, 0o644)
+        self.assertFalse(os.path.lexists(dest + '.new'))
+        self.assertEqual(rd(dest, 'rb'), b'old')
+
+    def test_copy_file_removes_its_temporary_file_when_the_rename_fails(self):
+        e = self.env
+        src, dest = os.path.join(e.tmp, 'src'), os.path.join(e.tmp, 'dest')
+        e.put(src, b'n' * 1000)
+        e.put(os.path.join(dest, 'inside'), b'a directory in the way')
+        with self.assertRaises(OSError):
+            e.updater().copy_file(src, dest, 0o644)
+        self.assertFalse(os.path.lexists(dest + '.new'))
+        self.assertEqual(rd(os.path.join(dest, 'inside'), 'rb'), b'a directory in the way')
+
+    def test_a_restore_clears_every_half_written_copy_before_it_copies_anything(self):
+        """Whatever left the junk (a killed run, a copy_file from before), the restore removes all of it first."""
+        e = self.env
+        real, seen, copies = U.Updater.copy_file, [], []
+
+        def spy(self_, src, dest, mode):
+            if 'overlay-backup' in src:      # a restore
+                copies.append(dest)
+                seen.append(self.junk())
+                return real(self_, src, dest, mode)
+            if dest.endswith('opos-newtool'):   # the third replacement dies halfway and leaves its temporary file
+                with open(dest + '.new', 'wb') as f:
+                    f.write(b'x' * 1000)
+                raise OSError(errno.ENOSPC, 'No space left on device')
+            return real(self_, src, dest, mode)
+        with mock.patch.object(U.Updater, 'copy_file', spy):
+            self.assertEqual(e.apply(make_bundle(7)), 3)
+        self.assertEqual(len(copies), 2, copies)     # the two files that had been replaced come back by copy
+        self.assertEqual(seen, [[], []])
+        self.assertEqual(e.status()['phase'], 'rolled-back', e.status())
+        self.assertEqual(e.consistent(), 0)
+
+    def test_a_full_disk_rollback_on_a_real_small_tmpfs(self):
+        """The reproduction: two files replaced, the third fills the file system, then the restore of the first two needs room."""
+        e = self.env
+        if os.geteuid() != 0:
+            self.skipTest('mount -t tmpfs needs root')
+        kb = 1024
+        mnt = os.path.join(e.root, 'usr/libexec/opos')
+        r = subprocess.run(['mount', '-t', 'tmpfs', '-o', 'size=%dk' % (5 * 64), 'tmpfs', mnt], capture_output=True, stdin=subprocess.DEVNULL)
+        if r.returncode:
+            self.skipTest('cannot mount a tmpfs here: %s' % r.stderr.decode(errors='replace').strip())
+
+        def unmount():
+            if subprocess.run(['umount', mnt], capture_output=True, stdin=subprocess.DEVNULL).returncode:
+                subprocess.run(['umount', '-l', mnt], capture_output=True, stdin=subprocess.DEVNULL)
+        self.addCleanup(unmount)                      # runs before the Env is removed
+        names = ['usr/libexec/opos/opos-fill-%s' % c for c in 'abc']
+        for n in names:
+            e.put(os.path.join(e.root, n), b'o' * (64 * kb), 0o644)
+        # 3 x 64 KiB in use, 128 KiB free. a and b are replaced by 64 KiB files (a temporary copy fits), c by 256 KiB: ENOSPC halfway,
+        # with 128 KiB of junk. Restoring a needs 64 KiB.
+        new = {names[0]: (b'a' * (64 * kb), 0o644), names[1]: (b'b' * (64 * kb), 0o644), names[2]: (b'c' * (256 * kb), 0o644)}
+        self.assertEqual(e.apply(make_bundle(7, overlay=new)), 3, e.logs[-4:])
+        self.assertIn('No space left on device', ' '.join(e.logs))      # it did run out of room on the way forward
+        st = e.status()
+        self.assertEqual(st['phase'], 'rolled-back', st)
+        self.assertIsNone(e.state()['txn'])
+        self.assertEqual(e.state()['failed'], [7])
+        for n, c in zip(names, 'ooo'):
+            self.assertEqual(rd(os.path.join(e.root, n), 'rb'), c.encode() * (64 * kb))
+        self.assertEqual(self.junk(), [])
+
+
+@needs_keygen
 class TestSerialFloor(EnvCase):
     """Finding 8: only the highest 64 failed serials were kept, so an authentic old bundle could be replayed once its serial
     fell out of the list. The floor is the highest serial that ever failed and never goes down."""
