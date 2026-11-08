@@ -176,6 +176,7 @@ class ServedPage(unittest.TestCase):
         tail = css[css.rindex("@media (min-width:1055px){"):]
         self.assertIn("#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}", tail)
         self.assertIn("#meter-hit::after{left:calc(var(--pane)/2)}", tail)
+        self.assertIn("#meter{right:auto;width:var(--pane)}", tail)  # the gauge is a full-width button: it stays in the first pane
         self.assertIn('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}', tail)
 
     def test_single_pane_gets_no_new_rules(self):
@@ -364,11 +365,11 @@ function cross(r){return r.width>0&&r.height>0&&r.left<hi-0.5&&r.right>lo+0.5}
 var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
 while(w.nextNode()){var t=w.currentNode,e=t.parentElement;if(!t.nodeValue.trim()||!e||!shown(e)||/^(SCRIPT|STYLE)$/.test(e.tagName))continue;
  var rg=document.createRange();rg.selectNodeContents(t);Array.prototype.forEach.call(rg.getClientRects(),function(r){n++;if(cross(r))bad.push('text '+t.nodeValue.trim().slice(0,24)+' '+Math.round(r.left)+'-'+Math.round(r.right))})}
-Array.prototype.forEach.call(document.querySelectorAll('button,input,select,textarea,summary'),function(b){if(b.id==='meter'||!shown(b))return;var r=b.getBoundingClientRect();n++;if(cross(r))bad.push((b.id||b.tagName)+' '+Math.round(r.left)+'-'+Math.round(r.right))});
+Array.prototype.forEach.call(document.querySelectorAll('button,input,select,textarea,summary'),function(b){if(!shown(b))return;var r=b.getBoundingClientRect();n++;if(cross(r))bad.push((b.id||b.tagName)+' '+Math.round(r.left)+'-'+Math.round(r.right))});
 var p=document.getElementById('phone'),cs=getComputedStyle(p),root=getComputedStyle(document.documentElement);
 return {ff:document.documentElement.dataset.ff||null,w:innerWidth,scroll:document.documentElement.scrollWidth,n:n,bad:bad,
  display:cs.display,cols:cs.gridTemplateColumns,gap:cs.columnGap,pane:root.getPropertyValue('--pane').trim(),hinge:root.getPropertyValue('--hinge').trim(),
- auto:(document.getElementById('ff-detected')||{}).textContent||''}})()"""
+ auto:(document.getElementById('ff-detected')||{}).textContent||'',notice:(document.getElementById('notice')||{}).textContent||''}})()"""
 
 # The browser start-up, DevTools plumbing and canned state are the UXP21 driver's; only its cases are replaced.
 MAIN = r"""
@@ -401,6 +402,9 @@ async function run(url, w, h, q, after) {
     const q = '?lock=0&stub=1';
     for (const app of ['home', 'phone', 'messages', 'helper', 'settings'])
       out['span_' + app] = await run(fileUrl, 1392, 900, q, `oposUI.openApp('${app}')`);
+    // The two Phone states the first audit found a line on the hinge in: a call in progress, and a call that was refused.
+    out.span_phone_incall = await run(fileUrl, 1392, 900, q, `oposUI.openApp('phone');render(${JSON.stringify(STATE.incall)})`);
+    out.span_phone_error = await run(fileUrl, 1392, 900, q, `oposUI.openApp('phone');render(${JSON.stringify(STATE.error)})`);
     out.span_allapps = await run(fileUrl, 1392, 900, q, `oposUI.openApp('home');document.getElementById('allapps').click()`);
     out.span_lock = await run(fileUrl, 1392, 900, '?stub=1', `oposUI.lock&&oposUI.lock()`);
     out.span_shade = await run(fileUrl, 1392, 900, q, `oposUI.openApp('home');opos.open()`);
@@ -478,7 +482,11 @@ class Browser(unittest.TestCase):
                 files[name] = Path(d) / (name + ".html")
                 files[name].write_text(page(span=span), encoding="utf-8")
             state = Path(d) / "state.json"
-            state.write_text(json.dumps({"hidden": Phone().state(), "visible": Phone(visible=True).state()}, default=str), encoding="utf-8")
+            calling, refused = Phone(), Phone()
+            calling.call("+15550100")
+            refused.call("")
+            state.write_text(json.dumps({"hidden": Phone().state(), "visible": Phone(visible=True).state(),
+                                         "incall": calling.state(), "error": refused.state()}, default=str), encoding="utf-8")
             drv = Path(d) / "cdp.js"
             drv.write_text(script, encoding="utf-8")
             p = subprocess.run([NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri()],
@@ -492,7 +500,8 @@ class Browser(unittest.TestCase):
             self.skipTest("no headless chromium or node")
 
     def test_nothing_lands_on_the_hinge(self):
-        for k in ("span_home", "span_phone", "span_messages", "span_helper", "span_settings", "span_allapps", "span_lock", "span_shade", "span_xl"):
+        for k in ("span_home", "span_phone", "span_phone_incall", "span_phone_error", "span_messages", "span_helper", "span_settings",
+                  "span_allapps", "span_lock", "span_shade", "span_xl"):
             m = self.r[k]
             self.assertEqual(m["ff"], "foldable", k)
             self.assertGreater(m["n"], 0, k)
@@ -500,6 +509,13 @@ class Browser(unittest.TestCase):
             self.assertLessEqual(m["scroll"], m["w"], k)
             self.assertIn("two screens", m["auto"], k)
             self.assertIn("Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675.", m["auto"], k)
+
+    def test_the_two_phone_states_were_really_drawn(self):
+        # Without this a state that did not render would pass the hinge test above by showing nothing: each says something, and not the same.
+        incall, error = self.r["span_phone_incall"]["notice"].strip(), self.r["span_phone_error"]["notice"].strip()
+        self.assertTrue(incall)
+        self.assertTrue(error)
+        self.assertNotEqual(incall, error)
 
     def test_variables_drive_the_grid(self):
         m = self.r["span_home"]

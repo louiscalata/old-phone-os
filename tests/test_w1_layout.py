@@ -3,7 +3,7 @@
 
 Static checks on the page's own CSS and scripts. What the real layout does (a 100 character link in a thread, nothing on the hinge,
 the field and Send above the keyboard) can only be measured in a browser: tests/test_span.py does it for the hinge, and the
-measurements for this track are in docs/jaryo-panes.md section 9.
+measurements for this track are in docs/jaryo-panes.md section 11.
 """
 import json
 import os

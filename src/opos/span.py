@@ -56,11 +56,13 @@ def variables(span):
 
 
 # What the segment-aware rules leave on the hinge or out of place. The status line's middle text is centred
-# across the whole window and the shade's grab handle sits at 50%: both move into the first pane. The segment
+# across the whole window and the shade's grab handle sits at 50%: both move into the first pane, and so does
+# the battery gauge (#meter is a full-width button: its border and its fill ran across the hinge). The segment
 # rules also top-align the lock screen; the wide Foldable layout centres it.
 EXTRA = ('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}'
          "#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}"
-         "#meter-hit::after{left:calc(var(--pane)/2)}")
+         "#meter-hit::after{left:calc(var(--pane)/2)}"
+         "#meter{right:auto;width:var(--pane)}")
 
 
 def readout(span):

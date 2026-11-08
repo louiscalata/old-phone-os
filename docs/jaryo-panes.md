@@ -499,6 +499,38 @@ Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or 
 
 The keyboard adds 154 B to each full page and serves `/osk.js` (30,642 B) and `/osk.css` (2,663 B); the Network link adds 229 B to `/` and the time zone link 253 B, only where those flags are on.
 
+## 11. Wave 1, layout track (`ui/w1-layout`, 2026-11-08): the hinge, the keyboard and long words
+
+Plan items W1-10, W1-11 and W1-12 of the interface finalization plan. Headless Edge 157 at 1392 x 900 CSS px against the real server
+(`python -m opos.web --span 675,42`), the same limits as section 10: nothing here was run on the Duo, and the span is still off in
+`opos-server.service`.
+
+### 11.1 W1-11: nothing on the hinge (x 675 to 717)
+
+The check is the audit's `overHinge` rule (every visible interactive element whose box reaches into 675 to 717) plus two more, so that
+"no text, button or border" is tested as written: every visible piece of text (each line box of each text node) and every box with a
+visible border. It was run on the lock screen, Home, All apps, Phone (idle, in a call, after a refused call), Messages (empty and after
+a sent text), Helper (waiting and after an answer), Settings and the open Shade.
+
+| Configuration | Before (`11c39ba`) | After |
+|---|---|---|
+| `--span 675,42` only | 10 of 12 screens list `#meter`, the 4 px gauge button, from x 0 to 1392 (control and border); text: none | every list is empty |
+| `OPOS_PANES=1 OPOS_OSK=1`, Hand: Right | empty (`panes.css` already keeps `#meter` in the first pane) | empty |
+| the same, Hand: Left | empty | empty |
+
+Settings, Device type reads "Auto looks like: two screens. Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675." in all three.
+
+The one thing found was the gauge. `#meter` is `left:0;right:0;width:100%`, so with the span on and the panes off its border and its fill ran
+across the hinge (its caption is placed from its right edge, so it sat in the second pane). `span.EXTRA`, the block of rules the span adds
+for what the segment rules leave on the hinge, now also carries `#meter{right:auto;width:var(--pane)}`: the gauge is the first pane's, as
+the panes already made it, and its fill is a percentage of that pane. It is 38 B in the spanned page and nothing in the unspanned one
+(`page()` is unchanged by this item). `tests/test_span.py` asserts the rule and its browser test now counts `#meter` (it used to skip
+it), adds the Phone states "in a call" and "after a refused call", and checks that those two states were drawn.
+
+Not done, on purpose: `#meter-hit`, the transparent 48 px pull strip, stays full width. With Hand: Left the panes put the gauge and the
+handle in the second pane, and the handle is positioned inside `#meter-hit`; clipping the strip to the first pane would leave the
+handle outside it. The hinge-horizontal orientation (D18) was not looked at.
+
 ## Appendix. `panes.py` API (`src/opos/panes.py`)
 
 `modes(env=None) -> set`, `enabled(env=None) -> bool`, `css_text(span=None, env=None) -> str` (placeholders, `@MIRROR@`, then `span.rewrites` and `span.variables`), `asset(path, span=None, env=None) -> (bytes, content_type) | None`, `tags(nonce) -> str`, `inject(html, nonce, env=None) -> str`, `inject_bytes(body, nonce, env=None) -> bytes` (the same object while off), `serve(handler, path, env=None) -> bool`. Constants `SOFT`, `PURE`, `THEME` hold the surface literals.
