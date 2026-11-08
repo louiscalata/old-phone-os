@@ -55,6 +55,19 @@ install -m 0755 "$here/opos-diag" "$r/usr/libexec/opos/opos-diag"
 install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"
 ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"
 
+# --- track: network (Wi-Fi and radio status): Settings > Network and /network may join Wi-Fi through NetworkManager ---
+# The drop-in turns it on (without it the page only reads). The polkit rule is opt-in: install it only if, on the phone,
+# `nmcli general permissions` run as droidian shows these actions as auth or no (docs/network.md).
+install -d "$r/etc/systemd/system/opos-server.service.d"
+install -m 0644 "$here/opos-network.conf" "$r/etc/systemd/system/opos-server.service.d/20-opos-network.conf"
+if [ "${OPOS_NET_POLKIT:-0}" = 1 ]; then
+    install -d "$r/etc/polkit-1/rules.d"
+    install -m 0644 "$here/50-opos-network.rules" "$r/etc/polkit-1/rules.d/50-opos-network.rules"
+    echo "NETWORK: polkit rule installed: droidian may change Wi-Fi in NetworkManager without being asked"
+fi
+( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/20-opos-network.conf $(ls etc/polkit-1/rules.d/50-opos-network.rules 2>/dev/null) )
+# --- end track: network ---
+
 # DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
 # droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
 # for an image that is meant to be carried: without it nothing new can log in.
