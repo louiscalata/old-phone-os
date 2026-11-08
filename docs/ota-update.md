@@ -156,8 +156,9 @@ Where the code is stricter or more specific than the text above. Every item is a
   refused bundle and a failed smoke test are not. A newer app update supersedes a staged boot update, and a rollback cancels it.
 - **State.** `state.json` also holds `schema`, `trial` (boot scope: the failed-boot counter) and `txn` (a journal written
   before the first live change; the next run undoes an interrupted apply or finishes an interrupted rollback). `status.json`
-  also holds `epoch`, and every run rewrites it, which the USB push script relies on. Its `message` can contain text that came
-  from a bundle or the inbox, so the UI escapes it.
+  also holds `epoch`, and each bundle or request that is looked at rewrites it (the USB push script waits for it to change).
+  Its `message` can contain text that came from a bundle or the inbox, so the UI escapes it. A bundle refused before its
+  manifest is read (a bad signature, say) leaves `serial` empty.
 - **Health and smoke tests.** Health: `systemctl is-active opos-server.service` is `active`; `GET /` on port 8765 answers
   200 and carries `<meta name="opos-token" content="...">`; `GET /api/state` with that token returns a JSON object with a
   `battery` key. Boot confirmation uses the same check. Smoke test: the new release's server runs as `droidian` through

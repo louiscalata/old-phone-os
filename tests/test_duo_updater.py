@@ -2330,7 +2330,7 @@ class TestImageBlocks(unittest.TestCase):
                 self.assertEqual(self.build(signers=signers).returncode, 0)
                 out, fails = self.verify()
                 self.assertEqual(fails, [], out)
-                self.assertEqual(len([l for l in out.splitlines() if l.startswith(('PASS OTA', 'FAIL OTA'))]), 8)
+                self.assertEqual(len([l for l in out.splitlines() if l.startswith(('PASS OTA', 'FAIL OTA'))]), 9)  # 8 for the updater, 1 for the optional update source
 
     def test_verify_can_fail(self):
         def link(r):
