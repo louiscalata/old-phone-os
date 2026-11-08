@@ -37,7 +37,6 @@ body{padding-top:calc(48px + env(safe-area-inset-top,0px))}
 #apps-list button{width:100%;min-height:48px;margin:0;font-size:1.125rem}
 #apps-close{min-height:48px;margin:0 12px}
 #phone[data-app="home"][data-allapps] #back:not([hidden]){display:block;width:calc(100% - 24px);height:48px;min-height:48px;margin:40px 12px 0}
-#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
 @media (min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3){html:not([data-ff]) #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}}
 @media (orientation:landscape) and (max-height:520px){html:not([data-ff]) #phone[data-app] #apps-list:not([hidden]){grid-template-columns:repeat(3,1fr)}}
 html[data-ff="foldable"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}
@@ -48,9 +47,8 @@ html[data-text] label,html[data-text] input,html[data-text] button,html[data-tex
 #settings label,#phone[data-app] #settings label[for=textsize]{display:block;margin:0 0 8px}
 #bright,#vol{min-height:48px}
 #night{min-width:48px;min-height:48px;vertical-align:middle;margin-right:8px}
-#topbar,#textsize{width:100%;min-height:48px;padding:8px;background:#111;color:#fff;border:1px solid #444;border-radius:8px}
+#topbar,#textsize{width:100%;padding:8px;border:1px solid}
 #jaryo-theme{min-height:48px;min-width:48px;width:100%;margin:0 0 8px;padding:8px;font-size:1rem;white-space:normal}
-#textsize:focus-visible{outline:2px solid #fff;outline-offset:2px}
 html[data-ff="foldable"] #phone>*,html[data-ff="foldable"] #lock>*{grid-column:1}
 html[data-ff="foldable"] #phone>#threads,html[data-ff="foldable"] #phone>#threads~*,html[data-ff="foldable"] #lock>button{grid-column:2}
 @media (min-width:840px){html[data-ff="foldable"] #phone{max-width:none;display:grid;grid-template-columns:1fr 1fr;column-gap:24px;grid-auto-flow:row dense;align-content:start;align-items:start}
@@ -75,7 +73,7 @@ html[data-ff="foldable"] #phone>#jaryo-letters{padding-right:0}
 html[data-ff="foldable"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr 1fr}
 html[data-ff="foldable"] #home #allapps{grid-column:1/-1}}
 @media (orientation:landscape){html[data-ff="slideout"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr;width:240px;max-width:40%}
-html[data-ff="slideout"] #controls{position:sticky;bottom:0;z-index:5;margin:12px 0 0;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));background:#111}
+html[data-ff="slideout"] #controls{position:sticky;bottom:0;z-index:5;margin:12px 0 0;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
 html[data-ff="slideout"] #controls button{min-height:64px;flex:1 1 auto}}
 html[data-ff="tablet"] #phone{max-width:720px}html[data-ff="tablet"] #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,1fr)}html[data-ff="tablet"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}
 #phone[data-app] #home:not([hidden]),#phone #settings{margin-left:max(0px,12px - env(safe-area-inset-left,0px));margin-right:max(0px,12px - env(safe-area-inset-right,0px))}
