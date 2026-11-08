@@ -1,0 +1,66 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* OPOS two-pane surfaces (OPOS_PANES=1), served at /panes.css by opos.panes. Black and white only: the thumb pane is black with
+   light text, the other pane is white with dark text, whichever physical pane the Hand setting names. Everything is inside the
+   two-screen gate and html[data-panes=two] (panes.js), so a one-pane window is exactly what jaryo.css paints. Source form: the
+   browser's own segment names; opos.panes rewrites them through opos.span when the server was told the geometry (OPOS_SPAN). */
+#jaryo-hand{display:none}
+@media (horizontal-viewport-segments:2){
+/* 1. Surfaces: constants, physical panes (Hand: Right), roles, and where the first pane ends and the second begins. */
+html[data-panes=two]{--jp-k:@K@;--jp-k-ink:@KI@;--jp-k-cs:@KCS@;--jp-w:@W@;--jp-w-ink:@WI@;--jp-w-cs:@WCS@;
+--jp-x1:env(viewport-segment-width 0 0);--jp-x2:env(viewport-segment-left 1 0);
+--jp-l:var(--jp-w);--jp-l-ink:var(--jp-w-ink);--jp-l-cs:var(--jp-w-cs);--jp-r:var(--jp-k);--jp-r-ink:var(--jp-k-ink);--jp-r-cs:var(--jp-k-cs);
+--jp-act:var(--jp-r);--jp-act-ink:var(--jp-r-ink);--jp-act-cs:var(--jp-r-cs);--jp-lst:var(--jp-l);--jp-lst-ink:var(--jp-l-ink);--jp-lst-cs:var(--jp-l-cs);
+background:var(--jp-r);color-scheme:var(--jp-r-cs)}
+html[data-panes=two][data-hand=left]{--jp-l:var(--jp-k);--jp-l-ink:var(--jp-k-ink);--jp-l-cs:var(--jp-k-cs);--jp-r:var(--jp-w);--jp-r-ink:var(--jp-w-ink);--jp-r-cs:var(--jp-w-cs)}
+/* 2. Backdrop: the canvas is the right pane, one fixed layer is the left pane, one fixed layer is the hinge (always black). */
+html[data-panes=two]::before{content:"";position:fixed;z-index:-1;top:0;bottom:0;left:0;width:var(--jp-x1);background:var(--jp-l);pointer-events:none}
+html[data-panes=two]::after{content:"";position:fixed;z-index:1000;top:0;bottom:0;left:var(--jp-x1);width:calc(var(--jp-x2) - var(--jp-x1));background:var(--jp-k);pointer-events:none}
+html[data-panes=two] :is(body,#phone){background:transparent}
+/* 3. Roles: every child of #phone and #lock is a list item (white) unless it is named here as an active item (black). */
+html[data-panes=two] :is(#phone>*,#lock>*){--jaryo-bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);color:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
+html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),#lock>button,#jaryo-status-row,#reload-shell,#demo){--jaryo-bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+/* 4. Placement (Hand: Right): list items in the first column, active items in the second. */
+html[data-panes=two][data-ff] #phone>:is(#threads,#helper){grid-column:1}
+html[data-panes=two][data-ff] #phone>:is(#home,#apps-list,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),
+html[data-panes=two][data-ff] #phone[data-app=home][data-allapps]>#jaryo-letters{grid-column:2}
+html[data-panes=two][data-ff] #jaryo-status-row{justify-content:flex-end}
+html[data-panes=two][data-ff] #reload-shell{left:auto;right:12px}
+html[data-panes=two] #jaryo-masthead{padding-left:16px;padding-right:16px}
+/* 5. The lock screen: two surfaces, text on the list pane, buttons on the active pane. */
+html[data-panes=two] #lock:not([hidden]){background:var(--jp-r)}
+html[data-panes=two] #lock::before{content:"";position:absolute;z-index:-1;top:0;bottom:0;left:0;width:var(--jp-x1);background:var(--jp-l)}
+/* 6. Chrome that spans the window: the status bar takes each pane's surface; the gauge and the shade belong to the list pane. */
+html[data-panes=two] #sb{background:var(--jp-r)}
+html[data-panes=two] #sb::before{content:"";position:absolute;z-index:-1;top:0;bottom:0;left:0;width:var(--jp-x1);background:var(--jp-l)}
+html[data-panes=two] :is(#sb-time,#sb-net,#sb-engine){--jaryo-bg:var(--jp-l);--jaryo-fg:var(--jp-l-ink);color:var(--jp-l-ink)}
+html[data-panes=two] #sb-batt{--jaryo-bg:var(--jp-r);--jaryo-fg:var(--jp-r-ink);color:var(--jp-r-ink)}
+html[data-panes=two] #meter{left:0;right:auto;width:var(--jp-x1)}
+html[data-panes=two] #meter-hit::after{left:calc(var(--jp-x1)/2)}
+html[data-panes=two] #sheet{left:0;right:auto;width:var(--jp-x1);border:0;transform:translateX(-100%)}
+html[data-panes=two] body.sheet-open #sheet{transform:translateX(0)}
+/* 7. The keyboard's two halves take the surface they sit on. */
+html[data-panes=two] #opos-osk .osk-split>.osk-panel:first-child{--osk-bg:var(--jp-l);--osk-fg:var(--jp-l-ink);color:var(--jp-l-ink)}
+html[data-panes=two] #opos-osk .osk-split>.osk-panel:last-child{--osk-bg:var(--jp-r);--osk-fg:var(--jp-r-ink);color:var(--jp-r-ink)}
+/* 8. Settings: the theme is replaced by the two surfaces here, and Hand sits next to it. */
+html[data-panes=two] #jaryo-theme::after{content:" (one screen only)"}
+html[data-panes=two] #jaryo-hand{display:block;min-height:48px;min-width:48px;width:100%;margin:0 0 8px;padding:8px;font-size:1rem;white-space:normal}
+/* 9. Pages with their own two columns (/firstrun, /timezone, /network): the first column is the list pane, the last the active pane. */
+html[data-panes=two] :is(.cols,main,body>header){display:grid;grid-auto-flow:row dense;grid-template-columns:var(--jp-x1) calc(var(--jp-x2) - var(--jp-x1)) minmax(0,1fr);gap:0;max-width:none;margin:0;padding:16px 0}
+html[data-panes=two] .l{grid-column:1;padding:0 16px;--fg:var(--jp-lst-ink);--bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);--jaryo-bg:var(--jp-lst);color:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
+html[data-panes=two] .r{grid-column:3;padding:0 16px;--fg:var(--jp-act-ink);--bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);--jaryo-bg:var(--jp-act);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+html[data-panes=two] main:not(.cols)>section:nth-of-type(1){grid-column:1;padding:0 16px;--fg:var(--jp-lst-ink);--bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);--jaryo-bg:var(--jp-lst);color:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
+html[data-panes=two] main:not(.cols)>section:nth-of-type(2){grid-column:3;padding:0 16px;--fg:var(--jp-act-ink);--bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);--jaryo-bg:var(--jp-act);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+html[data-panes=two] body>header{border-bottom:0}
+html[data-panes=two] body>header>h1{grid-column:1;padding:0 16px .4rem;border-bottom:3px solid var(--fg);--fg:var(--jp-lst-ink);--bg:var(--jp-lst);--jaryo-fg:var(--jp-lst-ink);--jaryo-bg:var(--jp-lst);color:var(--jp-lst-ink);color-scheme:var(--jp-lst-cs)}
+html[data-panes=two] body>header>#home{grid-column:3;justify-self:start;margin:0 16px;--fg:var(--jp-act-ink);--bg:var(--jp-act);--jaryo-fg:var(--jp-act-ink);--jaryo-bg:var(--jp-act);color:var(--jp-act-ink);color-scheme:var(--jp-act-cs)}
+html[data-panes=two] #gap{display:none}
+html[data-panes=two] .note:empty{display:none}
+/* 11. Native controls take the pane's ink: no UA grey, no placeholder dimming. Checked = inverted fill. */
+html[data-panes=two] :is(input,select,progress){color:var(--jaryo-fg);accent-color:var(--jaryo-fg);outline-color:var(--jaryo-fg)}
+html[data-panes=two] :is(input[type=radio],input[type=checkbox]){-webkit-appearance:none;appearance:none;width:24px;height:24px;border:2px solid var(--jaryo-fg);background:var(--jaryo-bg);border-radius:0}
+html[data-panes=two] input[type=radio]{border-radius:50%}
+html[data-panes=two] :is(input[type=radio],input[type=checkbox]):checked{background:var(--jaryo-fg)}
+html[data-panes=two] input[type=range]{background:transparent}
+html[data-panes=two] ::placeholder{color:var(--jaryo-fg);opacity:1;font-style:italic}
+@MIRROR@
+}
