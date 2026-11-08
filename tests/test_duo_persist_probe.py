@@ -1167,6 +1167,13 @@ def fenced_blocks(doc):
     return re.findall(r"```[a-z]*\n(.*?)```", doc, re.S)
 
 
+def doc_block(doc, gate, *needles):
+    """The one fenced block of a gate that holds every needle."""
+    found = [b for b in fenced_blocks(gate_sections(doc)[gate]) if all(n in b for n in needles)]
+    assert len(found) == 1, (gate, needles, len(found))
+    return found[0]
+
+
 class PersistRunbook(unittest.TestCase):
     def setUp(self):
         self.doc = runbook()
@@ -1177,7 +1184,8 @@ class PersistRunbook(unittest.TestCase):
         self.assertNotIn("\r", self.doc)
         head = flat(self.doc[:self.doc.index("## The goal")])
         for phrase in ("a plan; none of it has been run on a phone", "tested against fake tools and file checks only",
-                       "Nothing here authorizes a write to the phone", "G3, G4 and G6 each need the owner's explicit word"):
+                       "Nothing here authorizes a write to the phone", "G3, G4, G5 and G6 each need the owner's explicit word",
+                       "G5 is the first plain power-on, which can start Android's wipe path"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, head)
 
@@ -1193,17 +1201,27 @@ class PersistRunbook(unittest.TestCase):
 
     def test_only_the_writing_gates_need_the_owners_word_and_say_so(self):
         marked = {g for g, body in self.gates.items() if "[OWNER SAYS GO]" in body.splitlines()[0]}
-        self.assertEqual(marked, {"G3", "G4", "G6"})
-        for gate in ("G3", "G4", "G6"):
+        # G5 is the first plain power-on: it can start Android's wipe path or the variant A retry countdown and cost the
+        # OPOS rootfs, so it is gated like the three gates that write.
+        self.assertEqual(marked, {"G3", "G4", "G5", "G6"})
+        for gate in ("G3", "G4", "G5", "G6"):
             pre = flat(self.gates[gate])
             with self.subTest(gate=gate):
                 self.assertIn("The owner has said \"go %s\"" % gate, pre)
-        # The read-only gates and the observation gate carry no such marker.
-        for gate in ("G0", "G1", "G2", "G5", "G7"):
+        # The read-only gates and the later design note carry no such marker.
+        for gate in ("G0", "G1", "G2", "G7"):
             self.assertNotIn("OWNER SAYS GO", self.gates[gate].splitlines()[0])
-        self.assertIn("the owner's word for G3 is the message \"go G3\"", flat(self.gates["G2"]))
-        self.assertIn("Anything else, including silence, is a no.", flat(self.gates["G2"]))
+        g2 = flat(self.gates["G2"])
+        self.assertIn("the owner's word for G3 is the message \"go G3\"", g2)
+        for word in ("go G4", "go G5", "go G6"):
+            self.assertIn('"%s"' % word, g2)
+        self.assertIn("Anything else, including silence, is a no.", g2)
         self.assertIn("relaxes his standing rule", flat(self.gates["G3"]))
+        g5 = flat(self.gates["G5"])
+        for phrase in ("first step that can start stock Android on the OPOS userdata", "its wipe path", "retry countdown",
+                       "can cost the OPOS rootfs and a reinstall with the install chain"):
+            with self.subTest(g5=phrase):
+                self.assertIn(phrase, g5)
 
     def test_each_gate_has_precondition_commands_expected_proof_decisions_and_rollback(self):
         for gate in ("G0", "G1", "G2", "G3", "G4", "G5", "G6"):
@@ -1222,9 +1240,10 @@ class PersistRunbook(unittest.TestCase):
 
     def test_the_g4_choice_names_the_mechanism_and_its_cost(self):
         g4 = flat(self.gates["G4"])
-        for phrase in ("Variant A: `fastboot set_active b`", "Variant B: no slot change", "`bootctl` in TWRP is used only to read in G2",
+        for phrase in ("Variant A: `fastboot set_active b`", "Variant B: no slot change", "`bootctl` is not in the pinned TWRP",
                        "the UFS boot LUN", "there is no rescue", "stock Android on the OPOS userdata, the wipe path",
-                       "variant B is the safer one", "The owner chooses; the operator does not.", "fastboot -s $serial set_active a"):
+                       "variant B is the safer one", "The owner chooses; the operator does not.", "Invoke-Fastboot set_active a",
+                       "**Rollback, variant A**", "**Rollback, variant B**"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, g4)
 
@@ -1245,7 +1264,7 @@ class PersistRunbook(unittest.TestCase):
             cells = [c.strip() for c in row.strip("|").split("|")]
             with self.subTest(row=cells[0]):
                 self.assertEqual(len(cells), 4)
-                self.assertRegex(cells[2], r"MEASURED|REPORTED|UNKNOWN")
+                self.assertRegex(cells[2], r"MEASURED|REPORTED|INFERRED|UNKNOWN")
         flat_table = flat(table)
         for phrase in ("One line, item 34 of the October 31, 2026 install-friction log",
                        "Nothing else about that attempt was kept", "`vbmeta` is refused the same way", "fastbootd",
@@ -1257,6 +1276,103 @@ class PersistRunbook(unittest.TestCase):
             with self.subTest(section=section):
                 self.assertIn(section + "\n", self.doc)
         self.assertIn("*why* fastboot refused", self.doc)
+
+    def known_rows(self):
+        table = self.doc[self.doc.index("| # | Claim"):self.doc.index("**What the experiment settles.**")]
+        rows = {}
+        for row in table.splitlines()[2:]:
+            if row.startswith("|"):
+                cells = [c.strip() for c in row.strip("|").split("|")]
+                rows[cells[0]] = cells
+        return rows
+
+    def test_the_known_table_says_what_each_source_really_says(self):
+        rows = self.known_rows()
+        self.assertTrue({"4", "4b", "5", "7", "10", "15", "18", "19", "20"} <= set(rows), sorted(rows))
+        # The grades are defined, including the two this revision adds.
+        legend = flat(self.doc[self.doc.index("Grades: **MEASURED**"):self.doc.index("| # | Claim")])
+        for word in ("**INFERRED**", "**HYPOTHESIS**", "**REPORTED**", "**UNKNOWN**"):
+            self.assertIn(word, legend)
+        # Row 4 is the measurement and only the measurement; the explanation is row 4b and is graded as a hypothesis.
+        four, four_b = flat(" ".join(rows["4"])), flat(" ".join(rows["4b"]))
+        self.assertEqual(rows["4"][2], "MEASURED, re-checked")
+        self.assertIn("on November 7 `erase misc`, `flash misc`, `format:ext4 userdata` and the boot of two images", four)
+        self.assertNotIn("specific to the boot slots", four)
+        self.assertNotIn("So the refusal", four)
+        self.assertEqual(rows["4b"][2], "UNKNOWN (HYPOTHESIS)")
+        for phrase in ("HYPOTHESIS: the October 31 refusal is specific to the boot slots", "a poisoned `misc`",
+                       "reject operations per slot", "per-slot RAM-boot wedge that also prints `Device Error`", "a write that only fastbootd accepts (row 10)",
+                       "`EFI_DEVICE_ERROR`", "cure order", "hold Volume-down plus Power", "RAM-boot TWRP once",
+                       "zero the first 2048 bytes of `misc` from TWRP", "never retry a crashed kernel from the last good slot"):
+            with self.subTest(row4b=phrase):
+                self.assertIn(phrase, four_b)
+        # Row 5 keeps the strongest evidence for a root-side write, with its grades.
+        five = flat(" ".join(rows["5"]))
+        for phrase in ("strongest evidence we have that a root-side block write to the boot LUN (`sde`) works while "
+                       "`fastboot flash boot_a` was refused", "It says nothing yet about a write from TWRP",
+                       "October 31 hash MEASURED", "the conclusion about a root-side write INFERRED"):
+            with self.subTest(row5=phrase):
+                self.assertIn(phrase, five)
+        # Row 7 is dated: the counters and the critical flag are as of October 9.
+        seven = flat(" ".join(rows["7"]))
+        self.assertIn("as of October 9, 2026, 17:07 UTC", seven)
+        self.assertIn("have not been read since", seven)
+        self.assertIn("MEASURED on October 9", rows["7"][2])
+        # Row 10 says what the WOA-Project page says: fastbootd via stock recovery, the plain name, no firmware, no carrier.
+        ten = flat(" ".join(rows["10"]))
+        for phrase in ("through stock recovery > \"Enter fastboot\"", "`fastboot flash boot <image>`", "It names no firmware version and no carrier",
+                       "this runbook's reading of the page's steps, not a statement on the page",
+                       "own Android build is 2022.902.48", "bootloader reports 2022.815.527", "Troubleshooting advice is a G5 row",
+                       "cannot be relocked"):
+            with self.subTest(row10=phrase):
+                self.assertIn(phrase, ten)
+        self.assertNotIn("AT&T", ten)
+        self.assertNotIn("names firmware", ten)
+        self.assertEqual(rows["10"][2], "REPORTED")
+        self.assertIn("undated page", ten)
+        self.assertIn("Troubleshooting advice (REPORTED, undated)", flat(self.gates["G5"]))
+        self.assertIn("`fastboot set_active` to the other slot and then back to the original slot", flat(self.gates["G5"]))
+        # Row 15 is a volunteer's answer with partial reports, not "no rescue exists".
+        fifteen = flat(" ".join(rows["15"]))
+        for phrase in ("volunteer's answer", "EDL mode", "not publicly released", "paid out-of-warranty repair", "partial success",
+                       "is this project's rule, not something the page states"):
+            with self.subTest(row15=phrase):
+                self.assertIn(phrase, fifteen)
+        self.assertNotIn("no EDL programmer exists publicly", fifteen)
+        self.assertTrue(rows["15"][2].startswith("REPORTED (one volunteer answer"))
+        # Rows 18 and 19: the October 9 TWRP dd to misc is MEASURED; TWRP reachability is only inferred.
+        eighteen = flat(" ".join(rows["18"]))
+        for phrase in ("`bs=2048 count=1`", "`sda5`", "attempt 3 failed, attempt 4 worked", "does not show that a write to `sde` works from TWRP"):
+            with self.subTest(row18=phrase):
+                self.assertIn(phrase, eighteen)
+        self.assertTrue(rows["18"][2].startswith("MEASURED"))
+        self.assertTrue(rows["19"][2].startswith("INFERRED, not measured"))
+        twenty = flat(" ".join(rows["20"]))
+        for phrase in ("toybox 0.7.6", "BSD-style `dd` with `conv` disabled and no `status=`", "`sgdisk`",
+                       "**`bootctl` and the boot-control HAL are absent.**"):
+            with self.subTest(row20=phrase):
+                self.assertIn(phrase, twenty)
+        # The G3 text no longer states the reachability of TWRP as a fact.
+        g3 = flat(self.gates["G3"])
+        self.assertNotIn("do not depend on the content of any boot slot", g3)
+        self.assertIn("**INFERRED, not measured:** `fastboot boot` takes its image from the PC", g3)
+        self.assertIn("(row 19)", g3)
+
+    def test_the_pinned_twrp_tools_are_stated_and_the_probe_does_not_rely_on_missing_ones(self):
+        g1 = flat(self.gates["G1"])
+        for phrase in ("Toybox 0.7.6 supplies", "`dd` is a separate BSD-style binary", "has `conv` disabled (measured on October 9) and no `status=`",
+                       "**`bootctl` and the boot-control HAL are absent**", "so the probe does not call `bootctl`",
+                       "The script does not call `getprop` or `bootctl`", "`exec-out head -c <size> <block>`",
+                       "run it again into a new folder with `-PullWith head`", "`df /tmp`"):
+            with self.subTest(g1=phrase):
+                self.assertIn(phrase, g1)
+        self.assertNotRegex(g1.replace("The script does not call `getprop` or `bootctl`", ""), r"`getprop`")
+        g2 = flat(self.gates["G2"])
+        self.assertNotIn("`bootctl` unavailable", g2)
+        self.assertIn("(`bootctl` is not probed: the pinned TWRP does not have it, row 20.)", g2)
+        self.assertIn("`df /tmp` shows less than 114688 available", g2)
+        self.assertIn("`-TimeoutSec`", flat(self.gates["G0"]))
+        self.assertIn("-PullWith", self.doc)
 
     def test_what_if_the_probes_say_no_keeps_the_ram_boot(self):
         section = flat(self.doc[self.doc.index("## What if the probes say no"):self.doc.index("## Risks")])
@@ -1290,56 +1406,141 @@ class PersistRunbook(unittest.TestCase):
 
     def test_the_code_blocks_write_only_the_partitions_the_gates_allow(self):
         blocks = "\n".join(fenced_blocks(self.doc))
-        # Every dd that names an output file, anywhere in the text, writes boot_b (G3) or boot_a (G4 variant B and rollbacks).
-        targets = re.findall(r"\bof=(\S+)", self.doc)
-        self.assertGreaterEqual(len(targets), 3)
-        for target in targets:
-            with self.subTest(target=target):
-                self.assertIn(target.rstrip("`.,;)"), ("/dev/block/sde26", "/dev/block/sde9"))
-        self.assertNotIn("of=/dev/block/sde9", self.gates["G3"])
-        for gate in ("G0", "G1", "G2", "G5", "G6", "G7"):
-            self.assertNotIn("of=", self.gates[gate], gate)
-        # Fastboot commands in the code blocks: reads, the two TWRP RAM-boots, the slot change of variant A, the misc brake.
-        for line in blocks.splitlines():
-            m = re.search(r"\bfastboot\b(?: -s \$serial)? (\S+)(?: (\S+))?", line)
-            if not m or line.lstrip().startswith("#"):
+        # The runbook has ONE dd, inside Write-BootPartition (G3, block 1). Its output file is a node taken from a
+        # two-entry table, and the function takes only boot_a or boot_b.
+        helper = doc_block(self.doc, "G3", "function Write-BootPartition")
+        self.assertEqual(blocks.count("shell dd "), 1)
+        self.assertEqual(blocks.count("of="), 1)
+        self.assertIn("\"of=$node\"", helper)
+        self.assertIn("$node = @{ boot_a = '/dev/block/sde9'; boot_b = '/dev/block/sde26' }[$Name]", helper)
+        self.assertIn("[ValidateSet('boot_a', 'boot_b')][string]$Name", helper)
+        self.assertEqual(len(re.findall(r"# WRITE", self.gates["G3"])), 1)
+        # Who calls it: G3 writes boot_b (and restores it), G4 variant B writes boot_a (and restores it), G5 only restores boot_a.
+        names = {g: set(re.findall(r"Write-BootPartition -Name (\w+)", body)) for g, body in self.gates.items()}
+        self.assertEqual(names, {"G0": set(), "G1": set(), "G2": set(), "G3": {"boot_b"}, "G4": {"boot_a"}, "G5": {"boot_a"},
+                                 "G6": set(), "G7": set()})
+        for gate, body in self.gates.items():
+            self.assertNotIn("of=", "\n".join(fenced_blocks(body)).replace("\"of=$node\"", ""), gate)
+        for line in re.findall(r"Write-BootPartition -Name [^\n]*", self.gates["G5"]):
+            self.assertIn("-Restore", line)
+        # Fastboot commands in the code blocks: reads, the TWRP RAM-boots, the slot change of variant A, the misc brake.
+        verbs = []
+        commands = "\n".join(b for b in fenced_blocks(self.doc) if "function " not in b)   # the helper definitions are not commands
+        for line in commands.splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            m = re.search(r"\bInvoke-Fastboot (\S+)(?: (\S+))?", line) or re.search(r"\bfastboot\b(?: -s \$serial)? (\S+)(?: (\S+))?", line)
+            if not m:
                 continue
             verb, arg = m.group(1), m.group(2)
+            verbs.append(verb)
             with self.subTest(line=line.strip()):
                 self.assertIn(verb, ("boot", "getvar", "set_active", "erase", "flash", "devices"))
                 if verb == "boot":
                     self.assertIn("surfaceduo1-twrp.img", line)
                 if verb in ("erase", "flash"):
                     self.assertEqual(arg, "misc")
+                if verb == "set_active":
+                    self.assertIn(arg, ("a", "b"))
+        self.assertGreater(len(verbs), 10)
         for token in ("flashing", "oem ", "format", "userdata", "vbmeta_a.img of", "fastboot flash boot", "fastboot -s $serial flash boot",
                       "systemctl reboot", "mkfs", "sgdisk -o", "wipe"):
             with self.subTest(token=token):
                 self.assertNotIn(token, blocks)
-        self.assertEqual(blocks.count("set_active"), 1, "only variant A's set_active b is in a command block")
-        self.assertIn("set_active b", self.gates["G4"])
+        self.assertEqual(blocks.count("set_active b"), 1, "only variant A's set_active b is in a command block")
+        self.assertIn("set_active b", doc_block(self.doc, "G4", "set_active b"))
+        self.assertEqual(blocks.count("set_active a"), 2, "the rollbacks of G4 and G5 go back to slot a")
         # No chain partition is named as a target in any command.
         chain = r"\b(xbl(_config)?|abl|tz|hyp|keymaster|devcfg|aop|qupfw|uefisecapp|cmnlib(64)?|sfpd|devinfo|apdp|uefivarstore|ddr|persist|modemst[12]|fsg|fsc)(_[ab])?\b"
         for match in re.finditer(chain, blocks.replace("duo-persist-probe", "")):
             self.fail("a command block names a protected partition: " + match.group(0))
 
-    def test_the_write_commands_are_guarded_by_assertions_in_the_same_block(self):
-        g3 = self.gates["G3"]
-        write_at = g3.index("dd if=/tmp/opos-boot-padded.img of=/dev/block/sde26 bs=4096")
-        before = g3[:write_at]
-        for check in (r"shell readlink -f \S+/by-name/boot_b\s+# must be /dev/block/sde26",
-                      r"shell blockdev --getsize64 /dev/block/sde26\s+# must be 100663296",
-                      r"shell blockdev --getro /dev/block/sde26\s+# must be 0",
-                      r"shell sha256sum /tmp/opos-boot-padded\.img\s+# must equal \$padHash",
-                      r"shell sha256sum /dev/block/sde26\s+# must equal boot_b\.img in the G1 SHA256SUMS"):
+    def test_write_bootpartition_checks_everything_in_code_before_its_one_dd(self):
+        helper = doc_block(self.doc, "G3", "function Write-BootPartition")
+        fn = helper[helper.index("function Write-BootPartition"):]
+        # Comment lines do not count: a check that is only a comment guards nothing.
+        fn = "\n".join(line for line in fn.splitlines() if not line.lstrip().startswith("#"))
+        dd_at = fn.index("shell dd ")
+        before, after = fn[:dd_at], fn[dd_at:]
+        checks = ("Assert-Equal 'adb state' (Invoke-Adb get-state) 'recovery'",
+                  "Assert-Equal \"size of $Image in bytes\" ([string](Get-Item -LiteralPath $Image).Length) '100663296'",
+                  "Assert-Equal \"SHA-256 of $Image on the PC\" ((Get-FileHash -Algorithm SHA256 -LiteralPath $Image).Hash.ToLower()) $ImageHash",
+                  "Assert-Equal \"where $ByName/$Name points\" (Invoke-Adb shell readlink -f \"$ByName/$Name\") $node",
+                  "Assert-Equal \"size of $node in bytes\" (Invoke-Adb shell blockdev --getsize64 $node) '100663296'",
+                  "Assert-Equal \"read-only flag of $node\" (Invoke-Adb shell blockdev --getro $node) '0'",
+                  "Assert-Equal \"mounts of $node\" ([string]$mounted.Count) '0'",
+                  "if ($PSCmdlet.ParameterSetName -eq 'Write') { Assert-Equal \"SHA-256 of $node now (its G1 backup)\" $before $CurrentHash }",
+                  "Invoke-Adb push $Image /tmp/opos-image.img",
+                  "Assert-Equal 'SHA-256 of the pushed image on the phone' (Get-PhoneSha /tmp/opos-image.img) $ImageHash")
+        order = []
+        for check in checks:
             with self.subTest(check=check):
-                self.assertRegex(before, check)
-        after = g3[write_at:]
-        self.assertIn("shell sync", after)
-        self.assertLess(after.index("shell sync"), after.index("# must equal $padHash"))
-        self.assertIn("fastboot -s $serial boot \"$images\\surfaceduo1-twrp.img\"", after)
-        self.assertIn("must still equal boot_a.img in the G1 SHA256SUMS: untouched", after)
-        # Exactly one WRITE-marked line in G3.
-        self.assertEqual(len(re.findall(r"# WRITE", g3)), 1)
+                found = re.search(r"(?m)^\s*" + re.escape(check), before)
+                self.assertIsNotNone(found, "not a code line before the dd")
+                order.append(found.start())
+        self.assertEqual(order, sorted(order))
+        # The guards are executable: a mismatch throws, case-sensitively, and nothing is a comment.
+        guard = doc_block(self.doc, "G3", "function Assert-Equal")
+        self.assertIn("if ($Got -cne $Want) { throw \"STOP: $What is '$Got', expected '$Want'. Nothing further was run.\" }", guard)
+        self.assertNotRegex(before, r"(?m)^\s*#\s*must\b")
+        self.assertNotRegex(self.gates["G3"], r"#\s*must (be|equal)")
+        # After the write: sync, cache control, and the node must hash to the image, or the block throws.
+        tail = [re.search(r"(?m)^\s*" + re.escape(x), after) for x in ("Invoke-Adb shell sync", "Invoke-Adb shell 'echo 3 > /proc/sys/vm/drop_caches'",
+                                                                      "Assert-Equal \"SHA-256 of $node after the write\" (Get-PhoneSha $node) $ImageHash")]
+        self.assertTrue(all(tail), tail)
+        self.assertEqual([m.start() for m in tail], sorted(m.start() for m in tail))
+        # The restore skips only the check against the G1 hash of the target, and says what the node holds.
+        self.assertRegex(before, r"(?m)^\s*else \{ Write-Host \"restoring: \$node holds \$before now\" \}")
+        # The two write calls pass the G1 hash of their own target.
+        self.assertIn("Write-BootPartition -Name boot_b -Image $pad -ImageHash $padHash -CurrentHash $sums['boot_b.img']", self.gates["G3"])
+        self.assertIn("Write-BootPartition -Name boot_a -Image $pad -ImageHash $padHash -CurrentHash $sums['boot_a.img']", self.gates["G4"])
+
+    def test_every_block_that_touches_the_phone_is_one_statement_that_stops_at_the_first_failed_check(self):
+        for gate in ("G3", "G4", "G5", "G6"):
+            for block in fenced_blocks(self.gates[gate]):
+                if "function " in block or not re.search(r"Invoke-(Adb|Fastboot)|Write-BootPartition", block):
+                    continue
+                with self.subTest(gate=gate, block=block.splitlines()[1].strip()):
+                    self.assertTrue(block.startswith("& {\n    $ErrorActionPreference = 'Stop'\n"), block[:60])
+                    self.assertTrue(block.rstrip().endswith("\n}"), block[-20:])
+                    self.assertEqual(block.count("\n& {"), 0)
+        # The same blocks, one per place, are what the rollbacks say; G5 repeats the G4 one verbatim.
+        g4_b = doc_block(self.doc, "G4", "-Name boot_a", "-Restore")
+        self.assertIn(g4_b, fenced_blocks(self.gates["G5"]))
+        g4_a = doc_block(self.doc, "G4", "set_active a")
+        self.assertIn(g4_a, fenced_blocks(self.gates["G5"]))
+        self.assertEqual(doc_block(self.doc, "G5", "erase misc"), doc_block(self.doc, "G6", "flash misc"))
+
+    def test_each_gate_has_its_exact_rollback_block_with_the_ram_boot_of_twrp_and_the_adb_devices_wait(self):
+        boot = r'''if (-not (Test-Recovery)) { Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null }'''
+        restore_b = r'''Write-BootPartition -Name boot_b -Image "$run\boot_b.img" -ImageHash $sums['boot_b.img'] -Restore'''
+        restore_a = r'''Write-BootPartition -Name boot_a -Image "$run\boot_a.img" -ImageHash $sums['boot_a.img'] -Restore'''
+        # boot_b in G3, boot_a in G4 (variant B) and again in G5: the RAM-boot of TWRP (unless it runs), the wait, the restore.
+        for gate, call in (("G3", restore_b), ("G4", restore_a), ("G5", restore_a)):
+            with self.subTest(gate=gate):
+                lines = [line.strip() for line in doc_block(self.doc, gate, call).splitlines()]
+                for needed in (boot, "Wait-Recovery", call):
+                    self.assertIn(needed, lines)
+                self.assertLess(lines.index(boot), lines.index("Wait-Recovery"))
+                self.assertLess(lines.index("Wait-Recovery"), lines.index(call))
+        # Waiting means polling adb devices until the phone is listed as recovery, and it gives up.
+        helpers = doc_block(self.doc, "G3", "function Write-BootPartition")
+        self.assertIn("(& adb devices | Out-String) -match", helpers)
+        self.assertIn("while (-not (Test-Recovery)) {", helpers)
+        self.assertIn("if ((Get-Date) -gt $until) { throw \"STOP: adb did not list $serial as recovery within $Seconds seconds.", helpers)
+        # Variant A goes back with set_active a and reads the slot back; the brake is re-armed with erase and flash of misc.
+        for gate in ("G4", "G5"):
+            block = doc_block(self.doc, gate, "set_active a")
+            self.assertIn("Invoke-Fastboot set_active a | Out-Null", block)
+            self.assertIn("if ((Invoke-Fastboot getvar current-slot) -notmatch 'current-slot:\\s*a\\b') { throw", block)
+        for gate in ("G5", "G6"):
+            block = doc_block(self.doc, gate, "flash misc")
+            lines = [line.strip() for line in block.splitlines()]
+            self.assertLess(lines.index("Invoke-Fastboot erase misc | Out-Null"),
+                            lines.index(r'''Invoke-Fastboot flash misc "$images\misc-brake.img" | Out-Null'''))
+        # The G3 rollback follows the table in the text, not the other way round.
+        g3 = self.gates["G3"]
+        self.assertLess(g3.index("**Rollback (restores `boot_b` to its G1 content).**"), g3.index(restore_b))
 
     def test_commands_and_pins_match_the_script_and_the_install_chain(self):
         script = text()
@@ -1365,6 +1566,10 @@ class PersistRunbook(unittest.TestCase):
             with self.subTest(file=name):
                 self.assertIn(name, self.gates["G1"])
         self.assertIn("sde-table-head.bin", script)
+        for flag in ("PullWith", "TimeoutSec"):
+            with self.subTest(flag=flag):
+                self.assertIn("-" + flag, self.doc)
+                self.assertRegex(script, r"\]\$%s\b" % flag)
         self.assertIn("100663296", self.doc)
         self.assertIn("24576+0 records", self.doc)
 
@@ -1394,6 +1599,473 @@ class PersistRunbook(unittest.TestCase):
         start = readme.index("## RAM-boot only, and the misc brake")
         self.assertLess(start, readme.index(lines[0]))
         self.assertLess(readme.index(lines[0]), readme.index("## Spanning both panels"))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The runbook's own PowerShell blocks, parsed on every PowerShell and then RUN against the stateful stand-in tools.
+PARSE_BLOCKS = r"""
+$text = [Console]::In.ReadToEnd()
+$blocks = $text | ConvertFrom-Json
+$out = @()
+foreach ($b in $blocks) {
+    $tokens = $null; $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseInput([string]$b, [ref]$tokens, [ref]$errors)
+    $t = [string]$b
+    $out += [pscustomobject]@{ errors = @($errors | ForEach-Object { $_.Message }); head = $t.Substring(0, [Math]::Min(30, $t.Length)) }
+}
+[pscustomobject]@{ results = @($out); version = "$($PSVersionTable.PSVersion)" } | ConvertTo-Json -Compress -Depth 4
+"""
+
+# Runs blocks of the runbook, in the order each scenario names them, in one session against the stand-in adb and fastboot
+# with FAKE_STORE set (pushed files and block-device writes are kept there). A block that throws ends its scenario, as it
+# would stop an operator. Reported per scenario: what each block threw, every call the stand-in saw, and what the
+# stand-in's two boot partitions and the active slot hold at the end.
+FAKE_BLOCKS = r"""
+$ErrorActionPreference = 'Stop'
+$all = [Console]::In.ReadToEnd()
+$parts = $all -split '@@@@PART@@@@'
+$cs = $parts[0]
+$spec = $parts[1] | ConvertFrom-Json
+$root = Join-Path ([IO.Path]::GetTempPath()) ('opos-persist-blocks-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $root | Out-Null
+$origPath = $env:PATH
+$origDir = (Get-Location).Path
+$results = @()
+try {
+    $bin = Join-Path $root 'bin'; New-Item -ItemType Directory -Path $bin | Out-Null
+    Add-Type -TypeDefinition $cs -OutputAssembly (Join-Path $bin 'adb.exe') -OutputType ConsoleApplication
+    Copy-Item (Join-Path $bin 'adb.exe') (Join-Path $bin 'fastboot.exe')
+    $adb = Join-Path $bin 'adb.exe'
+    $env:PATH = $bin
+    foreach ($d in 'images', 'run', 'run-nosums', 'run-corrupt', 'padwork', 'short') { New-Item -ItemType Directory -Path (Join-Path $root $d) | Out-Null }
+    $images = Join-Path $root 'images'
+    $stub = New-Object byte[] 1048576; [Text.Encoding]::ASCII.GetBytes('ANDROID!').CopyTo($stub, 0); $stub[40] = 2
+    [IO.File]::WriteAllBytes((Join-Path $images 'boot.img'), $stub)
+    [IO.File]::WriteAllBytes((Join-Path $images 'surfaceduo1-twrp.img'), (New-Object byte[] 4096))
+    [IO.File]::WriteAllBytes((Join-Path $images 'misc-brake.img'), (New-Object byte[] 2048))
+    # The G1 backup folder: the stand-in's own content for boot_a and boot_b, and the SHA256SUMS the probe script writes.
+    $run = Join-Path $root 'run'
+    & $adb fake-dump sde9 (Join-Path $run 'boot_a.img')
+    & $adb fake-dump sde26 (Join-Path $run 'boot_b.img')
+    $hashA = (Get-FileHash -Algorithm SHA256 (Join-Path $run 'boot_a.img')).Hash.ToLower()
+    $hashB = (Get-FileHash -Algorithm SHA256 (Join-Path $run 'boot_b.img')).Hash.ToLower()
+    [IO.File]::WriteAllText((Join-Path $run 'SHA256SUMS'), "$hashA  boot_a.img`n$hashB  boot_b.img`n")
+    $runNoSums = Join-Path $root 'run-nosums'
+    [IO.File]::WriteAllText((Join-Path $runNoSums 'SHA256SUMS'), ('0' * 64) + "  vbmeta_a.img`n")
+    $runCorrupt = Join-Path $root 'run-corrupt'
+    foreach ($f in 'boot_a.img', 'boot_b.img') {
+        Copy-Item (Join-Path $run $f) (Join-Path $runCorrupt $f)
+        $fsx = [IO.File]::Open((Join-Path $runCorrupt $f), 'Open', 'ReadWrite'); $fsx.Position = 7000; $byte = $fsx.ReadByte(); $fsx.Position = 7000; $fsx.WriteByte([byte]($byte -bxor 1)); $fsx.Dispose()
+    }
+    Copy-Item (Join-Path $run 'SHA256SUMS') (Join-Path $runCorrupt 'SHA256SUMS')
+    $shortPad = Join-Path $root 'short\small.img'; [IO.File]::WriteAllBytes($shortPad, (New-Object byte[] 1048576))
+    $shortHash = (Get-FileHash -Algorithm SHA256 $shortPad).Hash.ToLower()
+    $serial = 'SER1'; $repo = 'unused'; $probe = 'unused'
+    . ([scriptblock]::Create([string]$spec.blocks.helpers))
+    $padText = ([string]$spec.blocks.pad).Replace("'<a folder on the PC>'", "'" + (Join-Path $root 'padwork') + "'")
+    . ([scriptblock]::Create($padText))
+    $padHashOrig = $padHash; $padOrig = $pad; $runOrig = $run
+    $n = 0
+    foreach ($sc in $spec.scenarios) {
+        $n++
+        Get-ChildItem env: | Where-Object { $_.Name -like 'FAKE_*' } | ForEach-Object { Remove-Item -LiteralPath ('env:' + $_.Name) }
+        $store = Join-Path $root "store-$n"; New-Item -ItemType Directory -Path $store | Out-Null
+        $log = Join-Path $root "calls-$n.txt"
+        $env:FAKE_STORE = $store; $env:FAKE_LOG = $log
+        if ($sc.env) { foreach ($e in $sc.env.PSObject.Properties) { Set-Item -LiteralPath ('env:' + $e.Name) -Value ([string]$e.Value) } }
+        $pad = $padOrig; $padHash = $padHashOrig; $run = $runOrig
+        switch ([string]$sc.override) {
+            'pad-hash' { $padHash = 'f' * 64 }
+            'pad-short' { $pad = $shortPad; $padHash = $shortHash }
+            'run-nosums' { $run = $runNoSums }
+            'run-corrupt' { $run = $runCorrupt }
+        }
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $done = @()
+        foreach ($name in $sc.steps) {
+            $msg = $null
+            try { . ([scriptblock]::Create([string]$spec.blocks.$name)) *> $null } catch { $msg = $_.Exception.Message }
+            $done += [pscustomobject]@{ step = [string]$name; message = $msg }
+            if ($msg) { break }
+        }
+        $seconds = $clock.Elapsed.TotalSeconds
+        $calls = @(if (Test-Path -LiteralPath $log) { [IO.File]::ReadAllLines($log) })
+        Get-ChildItem env: | Where-Object { $_.Name -like 'FAKE_*' } | ForEach-Object { Remove-Item -LiteralPath ('env:' + $_.Name) }
+        $env:FAKE_STORE = $store
+        $slotFile = Join-Path $store 'slot'
+        $results += [pscustomobject]@{ label = [string]$sc.label; steps = @($done); calls = $calls; seconds = $seconds
+            sha26 = ((& $adb fake-sha sde26) | Out-String).Trim(); sha9 = ((& $adb fake-sha sde9) | Out-String).Trim()
+            slot = $(if (Test-Path -LiteralPath $slotFile) { [IO.File]::ReadAllText($slotFile) } else { '' }) }
+        Remove-Item -LiteralPath $store -Recurse -Force
+    }
+    $pad = $padOrig; $padHash = $padHashOrig
+    [pscustomobject]@{ pad_hash = $padHashOrig; hash_a = $hashA; hash_b = $hashB; scenarios = @($results) } | ConvertTo-Json -Compress -Depth 8
+} finally {
+    Set-Location $origDir
+    $env:PATH = $origPath
+    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+}
+"""
+
+DD_B = "adb -s <serial> shell dd if=/tmp/opos-image.img of=/dev/block/sde26 bs=4096"
+DD_A = "adb -s <serial> shell dd if=/tmp/opos-image.img of=/dev/block/sde9 bs=4096"
+BYNAME = "/dev/block/platform/soc/1d84000.ufshc/by-name"
+
+
+def runbook_blocks():
+    doc = runbook()
+    return {
+        "helpers": doc_block(doc, "G3", "function Write-BootPartition"),
+        "pad": doc_block(doc, "G3", "SetLength(100663296)"),
+        "g3_write": doc_block(doc, "G3", "Write-BootPartition -Name boot_b", "-CurrentHash"),
+        "g3_cold": doc_block(doc, "G3", "cold SHA-256 of boot_b"),
+        "g3_rollback": doc_block(doc, "G3", "-Name boot_b", "-Restore"),
+        "g4_a_write": doc_block(doc, "G4", "set_active b"),
+        "g4_a_rollback": doc_block(doc, "G4", "set_active a"),
+        "g4_b_write": doc_block(doc, "G4", "Write-BootPartition -Name boot_a", "-CurrentHash"),
+        "g4_b_cold": doc_block(doc, "G4", "cold SHA-256 of boot_a"),
+        "g4_b_rollback": doc_block(doc, "G4", "-Name boot_a", "-Restore"),
+        "g5_a_rollback": doc_block(doc, "G5", "set_active a"),
+        "g5_b_rollback": doc_block(doc, "G5", "-Name boot_a", "-Restore"),
+        "g5_rearm": doc_block(doc, "G5", "erase misc"),
+        "g6_disarm": doc_block(doc, "G6", "erase misc", "# WRITE"),
+        "g6_rearm": doc_block(doc, "G6", "flash misc"),
+        # Inline blocks for the helpers and for names the function must refuse.
+        "wait_recovery_3": "Wait-Recovery 3",
+        "name_misc": "Write-BootPartition -Name misc -Image $pad -ImageHash $padHash -Restore",
+        "name_vbmeta": "Write-BootPartition -Name vbmeta_a -Image $pad -ImageHash $padHash -Restore",
+        "name_userdata": "Write-BootPartition -Name userdata -Image $pad -ImageHash $padHash -Restore",
+        "name_node": "Write-BootPartition -Name sde26 -Image $pad -ImageHash $padHash -Restore",
+        "name_boot": "Write-BootPartition -Name boot -Image $pad -ImageHash $padHash -Restore",
+        "bad_hash": "Write-BootPartition -Name boot_b -Image $pad -ImageHash ('A' * 64) -Restore",
+        "short_hash": "Write-BootPartition -Name boot_b -Image $pad -ImageHash 'abc' -Restore",
+        "no_mode": "Write-BootPartition -Name boot_b -Image $pad -ImageHash $padHash",
+    }
+
+
+def block_scenarios():
+    S = []
+
+    def add(label, steps, env=None, override=""):
+        S.append({"label": label, "steps": steps, "env": env or {}, "override": override})
+
+    # G3 write block
+    add("g3 happy", ["g3_write", "g3_cold"])
+    add("g3 wrong link", ["g3_write"], {"FAKE_LINK_WRONG": "boot_b"})
+    add("g3 wrong size", ["g3_write"], {"FAKE_BADSIZE": "sde26"})
+    add("g3 read-only", ["g3_write"], {"FAKE_RO": "sde26"})
+    add("g3 node mounted", ["g3_write"], {"FAKE_MOUNT": "sde26"})
+    add("g3 whole LUN mounted", ["g3_write"], {"FAKE_MOUNT": "sde"})
+    add("g3 not in recovery", ["g3_write"], {"FAKE_STATE": "device"})
+    add("g3 pushed image corrupt", ["g3_write"], {"FAKE_PUSH_CORRUPT": "1"})
+    add("g3 push fails", ["g3_write"], {"FAKE_PUSH_FAIL": "1"})
+    add("g3 target differs from its backup", ["g3_write"], {"FAKE_DIFFERENT": "sde26"})
+    add("g3 padded hash wrong", ["g3_write"], override="pad-hash")
+    add("g3 padded image has the wrong size", ["g3_write"], override="pad-short")
+    add("g3 no hash for boot_b", ["g3_write"], override="run-nosums")
+    add("g3 dd fails", ["g3_write"], {"FAKE_DD_FAIL": "1"})
+    add("g3 dd does nothing", ["g3_write"], {"FAKE_DD_SILENT": "1"})
+    # The function takes boot_a and boot_b only, and a hash only in the right form.
+    for key in ("name_misc", "name_vbmeta", "name_userdata", "name_node", "name_boot", "bad_hash", "short_hash", "no_mode"):
+        add("refuse " + key, [key])
+    # G3 rollback
+    add("g3 rollback after a write", ["g3_write", "g3_rollback"])
+    add("g3 rollback from the bootloader menu", ["g3_rollback"], {"FAKE_START": "bootloader"})
+    add("g3 rollback, fastboot rejects the boot", ["g3_rollback"], {"FAKE_START": "bootloader", "FAKE_FASTBOOT_FAIL": "1"})
+    add("g3 rollback with a corrupt backup file", ["g3_rollback"], override="run-corrupt")
+    # G4 variant B
+    add("g4b happy", ["g3_write", "g4_b_write", "g4_b_cold"])
+    add("g4b wrong link", ["g4_b_write"], {"FAKE_LINK_WRONG": "boot_a"})
+    add("g4b wrong size", ["g4_b_write"], {"FAKE_BADSIZE": "sde9"})
+    add("g4b read-only", ["g4_b_write"], {"FAKE_RO": "sde9"})
+    add("g4b mounted", ["g4_b_write"], {"FAKE_MOUNT": "sde9"})
+    add("g4b pushed image corrupt", ["g4_b_write"], {"FAKE_PUSH_CORRUPT": "1"})
+    add("g4b target differs from its backup", ["g4_b_write"], {"FAKE_DIFFERENT": "sde9"})
+    add("g4b no hash for boot_a", ["g4_b_write"], override="run-nosums")
+    add("g4b dd does nothing", ["g4_b_write"], {"FAKE_DD_SILENT": "1"})
+    add("g4b rollback after a write", ["g4_b_write", "g4_b_rollback"])
+    add("g4b rollback from the bootloader menu", ["g4_b_rollback"], {"FAKE_START": "bootloader"})
+    add("g5 variant B rollback after a write", ["g4_b_write", "g5_b_rollback"])
+    add("g5 variant B rollback, TWRP not running", ["g5_b_rollback"], {"FAKE_START": "bootloader"})
+    # G4 variant A and its rollbacks
+    add("g4a happy", ["g4_a_write"])
+    add("g4a slot b unbootable", ["g4_a_write"], {"FAKE_UNBOOTABLE_B": "yes"})
+    add("g4a no retries left", ["g4_a_write"], {"FAKE_RETRY_B": "0"})
+    add("g4a set_active fails", ["g4_a_write"], {"FAKE_SET_ACTIVE_FAIL": "1"})
+    add("g4a rollback", ["g4_a_write", "g4_a_rollback"])
+    add("g5 variant A rollback", ["g4_a_write", "g5_a_rollback"])
+    # Re-arming the brake and the G6 disarm
+    add("g5 re-arm from TWRP", ["g5_rearm"])
+    add("g5 re-arm from the bootloader menu", ["g5_rearm"], {"FAKE_START": "bootloader", "FAKE_STATE": "recovery"})
+    add("g6 disarm", ["g6_disarm"])
+    add("g6 re-arm", ["g6_rearm"])
+    # Waiting is bounded
+    add("wait for recovery gives up", ["wait_recovery_3"], {"FAKE_START": "bootloader"})
+    only = [x for x in os.environ.get("OPOS_PERSIST_BLOCK_SCENARIOS", "").split("|") if x]   # a subset, for a quick local run
+    return [s for s in S if not only or s["label"] in only]
+
+
+@functools.lru_cache(maxsize=None)
+def run_blocks():
+    blocks = runbook_blocks()
+    spec = {"blocks": blocks, "scenarios": block_scenarios()}
+    return run_powershell(FAKE_BLOCKS, timeout=1800, exe=windows_powershell(),
+                          stdin=FAKE_CS.read_bytes() + PART.encode("ascii") + json.dumps(spec).encode("ascii"))
+
+
+@unittest.skipUnless(powershells(), "needs pwsh or powershell")
+class PersistRunbookBlocksParse(unittest.TestCase):
+    def test_every_powershell_block_of_the_runbook_parses_on_each_powershell(self):
+        blocks = fenced_blocks(runbook())
+        self.assertGreaterEqual(len(blocks), 20)
+        for major, exe in sorted(powershells().items()):
+            with self.subTest(powershell=major):
+                got = run_powershell(PARSE_BLOCKS, exe=exe, stdin=json.dumps(blocks).encode("ascii"))
+                self.assertEqual(len(as_list(got["results"])), len(blocks))
+                for item in as_list(got["results"]):
+                    self.assertEqual(as_list(item["errors"]), [], item["head"])
+
+
+@unittest.skipUnless(windows_powershell(), "needs Windows PowerShell 5.1 to compile the stand-in adb and fastboot")
+class PersistRunbookBlocksAgainstStandIns(unittest.TestCase):
+    """The blocks of G3 to G6 are taken out of the runbook text and RUN, in Windows PowerShell 5.1, against the stand-in tools
+    of tests/fixtures/fake_duo_tools.cs with a store: pushed files, dd onto a block device, fastboot boot and set_active are
+    kept there. A guard in the text that is only a comment would let the dd run; here it must throw first."""
+
+    @classmethod
+    def setUpClass(cls):
+        got = run_blocks()
+        cls.hash_a, cls.hash_b, cls.pad_hash = got["hash_a"], got["hash_b"], got["pad_hash"]
+        cls.by = {s["label"]: s for s in as_list(got["scenarios"])}
+
+    def sc(self, label):
+        if label not in self.by:
+            self.skipTest("scenario %r was not run (OPOS_PERSIST_BLOCK_SCENARIOS)" % label)
+        return self.by[label]
+
+    def messages(self, label):
+        return [(s["step"], s["message"]) for s in as_list(self.sc(label)["steps"])]
+
+    def calls(self, label):
+        return as_list(self.sc(label)["calls"])
+
+    def dd_calls(self, label):
+        return [c for c in self.calls(label) if " of=" in c]
+
+    def assert_boot_partitions_untouched(self, label):
+        s = self.sc(label)
+        self.assertEqual((s["sha9"], s["sha26"]), (self.hash_a, self.hash_b), "a boot partition changed")
+
+    def index(self, calls, needle, start=0):
+        for i in range(start, len(calls)):
+            if needle in calls[i]:
+                return i
+        self.fail("no call with %r after %d in %s" % (needle, start, calls))
+
+    def test_the_padded_image_is_the_pinned_image_plus_zeros(self):
+        # The pad block ran in setUpClass without a throw (the harness would have failed): its hash is a real SHA-256.
+        self.assertRegex(self.pad_hash, r"^[0-9a-f]{64}$")
+        self.assertNotIn(self.pad_hash, (self.hash_a, self.hash_b))
+
+    def test_the_g3_block_writes_boot_b_once_and_only_after_every_check(self):
+        label = "g3 happy"
+        self.assertEqual([m for _, m in self.messages(label)], [None, None])
+        self.assertEqual(self.dd_calls(label), [DD_B])
+        calls = self.calls(label)
+        at = -1
+        for needle in ("get-state", "readlink -f %s/boot_b" % BYNAME, "blockdev --getsize64 /dev/block/sde26", "blockdev --getro /dev/block/sde26",
+                       "cat /proc/mounts", "sha256sum /dev/block/sde26", "push <file> /tmp/opos-image.img", "sha256sum /tmp/opos-image.img"):
+            at2 = self.index(calls, needle, at + 1)
+            self.assertGreater(at2, at, needle)
+            at = at2
+        dd_at = calls.index(DD_B)
+        self.assertGreater(dd_at, at, "the dd came before a check")
+        after = dd_at
+        for needle in ("shell sync", "echo 3 > /proc/sys/vm/drop_caches", "sha256sum /dev/block/sde26"):
+            after = self.index(calls, needle, after + 1)
+        # The result: boot_b holds the padded image, boot_a is untouched.
+        self.assertEqual((self.sc(label)["sha26"], self.sc(label)["sha9"]), (self.pad_hash, self.hash_a))
+
+    def test_each_wrong_value_makes_the_g3_block_throw_before_any_dd(self):
+        cases = {
+            "g3 wrong link": "where %s/boot_b points is '/dev/block/sde99', expected '/dev/block/sde26'" % BYNAME,
+            "g3 wrong size": "size of /dev/block/sde26 in bytes is '100667392', expected '100663296'",
+            "g3 read-only": "read-only flag of /dev/block/sde26 is '1', expected '0'",
+            "g3 node mounted": "mounts of /dev/block/sde26 is '1', expected '0'",
+            "g3 whole LUN mounted": "mounts of /dev/block/sde26 is '1', expected '0'",
+            "g3 not in recovery": "adb state is 'device', expected 'recovery'",
+            "g3 pushed image corrupt": "SHA-256 of the pushed image on the phone is",
+            "g3 push fails": "exited with 1",
+            "g3 target differs from its backup": "SHA-256 of /dev/block/sde26 now (its G1 backup) is",
+            "g3 padded hash wrong": "on the PC is '%s', expected '%s'" % (self.pad_hash, "f" * 64),
+            "g3 padded image has the wrong size": "in bytes is '1048576', expected '100663296'",
+        }
+        for label, fragment in cases.items():
+            with self.subTest(label=label):
+                steps = self.messages(label)
+                self.assertEqual(len(steps), 1)
+                self.assertIsNotNone(steps[0][1], "the block did not throw")
+                self.assertTrue(steps[0][1].startswith("STOP: ") or "exited with" in steps[0][1], steps[0][1])
+                self.assertIn(fragment, steps[0][1])
+                self.assertEqual(self.dd_calls(label), [], "a dd was issued although a check failed")
+                self.assert_boot_partitions_untouched(label)
+
+    def test_a_missing_hash_in_the_backup_sums_stops_the_block_before_it_talks_to_the_phone(self):
+        for label, name in (("g3 no hash for boot_b", "CurrentHash"), ("g4b no hash for boot_a", "CurrentHash")):
+            with self.subTest(label=label):
+                (step, message), = self.messages(label)
+                self.assertIsNotNone(message)
+                self.assertIn(name, message)
+                # Nothing but the question whether TWRP is listed has been asked: no call names the device.
+                self.assertEqual([c for c in self.calls(label) if c != "adb devices"], [])
+                self.assert_boot_partitions_untouched(label)
+
+    def test_the_function_refuses_any_other_name_and_any_odd_hash_before_it_talks_to_the_phone(self):
+        for key in ("name_misc", "name_vbmeta", "name_userdata", "name_node", "name_boot", "short_hash", "no_mode"):
+            label = "refuse " + key
+            with self.subTest(label=label):
+                (step, message), = self.messages(label)
+                self.assertIsNotNone(message, "the call was accepted")
+                self.assertEqual(self.calls(label), [], "the phone was contacted")
+                self.assert_boot_partitions_untouched(label)
+        # An upper-case hash passes the binder's pattern but never equals the lower-case one the checks compare with.
+        (step, message), = self.messages("refuse bad_hash")
+        self.assertIn("on the PC is", message)
+        self.assertEqual(self.dd_calls("refuse bad_hash"), [])
+        self.assert_boot_partitions_untouched("refuse bad_hash")
+        for key in ("name_misc", "name_vbmeta", "name_userdata", "name_node", "name_boot"):
+            self.assertRegex(self.messages("refuse " + key)[0][1], r"boot_a,\s*boot_b")
+
+    def test_a_failed_dd_or_a_dd_that_changes_nothing_stops_the_block_and_no_read_back_passes(self):
+        (_, message), = self.messages("g3 dd fails")
+        self.assertIn("exited with 1", message)
+        self.assertEqual(self.dd_calls("g3 dd fails"), [DD_B])
+        (_, message), = self.messages("g3 dd does nothing")
+        self.assertIsNotNone(message, "the block read back an unchanged partition and went on")
+        self.assertIn("SHA-256 of /dev/block/sde26 after the write is '%s', expected '%s'" % (self.hash_b, self.pad_hash), message)
+        self.assertEqual(self.dd_calls("g3 dd does nothing"), [DD_B])
+        for label in ("g3 dd fails", "g3 dd does nothing"):
+            self.assert_boot_partitions_untouched(label)
+
+    def test_the_g3_rollback_restores_boot_b_from_the_backup_and_checks_it(self):
+        label = "g3 rollback after a write"
+        self.assertEqual([m for _, m in self.messages(label)], [None, None])
+        self.assertEqual(self.dd_calls(label), [DD_B, DD_B])
+        self.assertEqual((self.sc(label)["sha26"], self.sc(label)["sha9"]), (self.hash_b, self.hash_a))
+        calls = self.calls(label)
+        # TWRP was running, so the rollback did not try a RAM-boot.
+        self.assertFalse([c for c in calls if c.startswith("fastboot")])
+        # Push of the backup, hash check on the phone, dd, sync, drop_caches, re-read: in this order after the second dd's checks.
+        first_dd = calls.index(DD_B)
+        push = self.index(calls, "push <file> /tmp/opos-image.img", first_dd + 1)
+        check = self.index(calls, "sha256sum /tmp/opos-image.img", push + 1)
+        second_dd = self.index(calls, " of=", check + 1)
+        self.assertGreater(second_dd, check)
+        tail = second_dd
+        for needle in ("shell sync", "echo 3 > /proc/sys/vm/drop_caches", "sha256sum /dev/block/sde26"):
+            tail = self.index(calls, needle, tail + 1)
+
+    def test_the_rollbacks_start_with_a_ram_boot_of_twrp_and_an_adb_devices_wait_when_the_phone_is_in_the_menu(self):
+        for label, dd in (("g3 rollback from the bootloader menu", DD_B), ("g4b rollback from the bootloader menu", DD_A),
+                          ("g5 variant B rollback, TWRP not running", DD_A)):
+            with self.subTest(label=label):
+                self.assertEqual([m for _, m in self.messages(label)], [None])
+                calls = self.calls(label)
+                self.assertEqual(calls[0], "adb devices", "the first call finds out whether TWRP is already running")
+                boot = self.index(calls, "fastboot -s <serial> boot ")
+                self.assertTrue(calls[boot].endswith("surfaceduo1-twrp.img"))
+                wait = self.index(calls, "adb devices", boot + 1)
+                first_adb = self.index(calls, "adb -s <serial>")
+                self.assertLess(boot, wait)
+                self.assertLess(wait, first_adb)
+                self.assertEqual(self.dd_calls(label), [dd])
+        self.assertEqual(self.sc("g3 rollback from the bootloader menu")["sha26"], self.hash_b)
+        self.assertEqual(self.sc("g4b rollback from the bootloader menu")["sha9"], self.hash_a)
+
+    def test_a_rejected_ram_boot_or_a_corrupt_backup_file_stops_the_rollback_before_any_dd(self):
+        (_, message), = self.messages("g3 rollback, fastboot rejects the boot")
+        self.assertIn("STOP: fastboot boot", message)
+        self.assertIn("FAILED", message)
+        (_, message), = self.messages("g3 rollback with a corrupt backup file")
+        self.assertIn("boot_b.img on the PC is", message)
+        for label in ("g3 rollback, fastboot rejects the boot", "g3 rollback with a corrupt backup file"):
+            self.assertEqual(self.dd_calls(label), [], label)
+            self.assert_boot_partitions_untouched(label)
+
+    def test_g4_variant_b_writes_boot_a_after_its_own_checks_and_its_rollback_restores_it(self):
+        label = "g4b happy"
+        self.assertEqual([m for _, m in self.messages(label)], [None, None, None])
+        self.assertEqual(self.dd_calls(label), [DD_B, DD_A])
+        self.assertEqual((self.sc(label)["sha9"], self.sc(label)["sha26"]), (self.pad_hash, self.pad_hash))
+        calls = self.calls(label)
+        second = calls.index(DD_A)
+        self.assertGreater(self.index(calls, "readlink -f %s/boot_a" % BYNAME, calls.index(DD_B) + 1), calls.index(DD_B))
+        self.assertLess(self.index(calls, "readlink -f %s/boot_a" % BYNAME, calls.index(DD_B) + 1), second)
+        for label2, why in (("g4b wrong link", "where %s/boot_a points is '/dev/block/sde99', expected '/dev/block/sde9'" % BYNAME),
+                            ("g4b wrong size", "size of /dev/block/sde9 in bytes is '100667392'"),
+                            ("g4b read-only", "read-only flag of /dev/block/sde9 is '1'"),
+                            ("g4b mounted", "mounts of /dev/block/sde9 is '1'"),
+                            ("g4b pushed image corrupt", "SHA-256 of the pushed image on the phone is"),
+                            ("g4b target differs from its backup", "SHA-256 of /dev/block/sde9 now (its G1 backup) is")):
+            with self.subTest(label=label2):
+                (_, message), = self.messages(label2)
+                self.assertIn(why, message)
+                self.assertEqual(self.dd_calls(label2), [])
+                self.assert_boot_partitions_untouched(label2)
+        (_, message), = self.messages("g4b dd does nothing")
+        self.assertIn("SHA-256 of /dev/block/sde9 after the write is", message)
+        back = self.sc("g4b rollback after a write")
+        self.assertEqual([m for _, m in self.messages("g4b rollback after a write")], [None, None])
+        self.assertEqual((back["sha9"], back["sha26"]), (self.hash_a, self.hash_b))
+        self.assertEqual(self.dd_calls("g4b rollback after a write"), [DD_A, DD_A])
+        both = self.sc("g5 variant B rollback after a write")
+        self.assertEqual([m for _, m in self.messages("g5 variant B rollback after a write")], [None, None])
+        self.assertEqual(both["sha9"], self.hash_a)
+
+    def test_g4_variant_a_checks_the_slot_first_and_its_rollbacks_go_back_to_a(self):
+        happy = self.sc("g4a happy")
+        self.assertEqual([m for _, m in self.messages("g4a happy")], [None])
+        self.assertEqual(happy["slot"], "b")
+        calls = self.calls("g4a happy")
+        self.assertEqual([c for c in calls if "set_active" in c], ["fastboot -s <serial> set_active b"])
+        self.assertLess(self.index(calls, "getvar slot-unbootable:b"), self.index(calls, "set_active b"))
+        self.assertLess(self.index(calls, "getvar slot-retry-count:b"), self.index(calls, "set_active b"))
+        self.assertLess(self.index(calls, "set_active b"), self.index(calls, "getvar current-slot"))
+        for label, why in (("g4a slot b unbootable", "slot b is not marked bootable"), ("g4a no retries left", "slot b has no retries left")):
+            with self.subTest(label=label):
+                (_, message), = self.messages(label)
+                self.assertIn(why, message)
+                self.assertEqual([c for c in self.calls(label) if "set_active" in c], [])
+                self.assertEqual(self.sc(label)["slot"], "")
+        (_, message), = self.messages("g4a set_active fails")
+        self.assertIn("STOP: fastboot set_active b said:", message)
+        self.assertEqual(self.sc("g4a set_active fails")["slot"], "")
+        for label in ("g4a rollback", "g5 variant A rollback"):
+            with self.subTest(label=label):
+                self.assertEqual([m for _, m in self.messages(label)], [None, None])
+                self.assertEqual(self.sc(label)["slot"], "a")
+                self.assertIn("fastboot -s <serial> set_active a", self.calls(label))
+
+    def test_the_brake_blocks_erase_and_flash_only_misc_and_bring_the_phone_to_the_menu_first(self):
+        calls = self.calls("g5 re-arm from TWRP")
+        self.assertEqual([m for _, m in self.messages("g5 re-arm from TWRP")], [None])
+        order = [self.index(calls, n) for n in ("adb -s <serial> reboot bootloader", "fastboot devices", "fastboot -s <serial> erase misc",
+                                                 "fastboot -s <serial> flash misc ")]
+        self.assertEqual(order, sorted(order))
+        self.assertTrue(calls[order[-1]].endswith("misc-brake.img"))
+        from_menu = self.calls("g5 re-arm from the bootloader menu")
+        self.assertFalse([c for c in from_menu if "reboot bootloader" in c])
+        self.assertIn("fastboot -s <serial> erase misc", from_menu)
+        disarm = self.calls("g6 disarm")
+        self.assertEqual([c for c in disarm if c.startswith("fastboot")], ["fastboot -s <serial> erase misc"])
+        self.assertEqual(self.calls("g6 re-arm"), self.calls("g5 re-arm from TWRP"))
+        for label in ("g5 re-arm from TWRP", "g5 re-arm from the bootloader menu", "g6 disarm", "g6 re-arm"):
+            self.assert_boot_partitions_untouched(label)
+
+    def test_waiting_for_the_phone_is_bounded(self):
+        (_, message), = self.messages("wait for recovery gives up")
+        self.assertIn("adb did not list SER1 as recovery within 3 seconds", message)
+        self.assertLess(self.sc("wait for recovery gives up")["seconds"], 30)
 
 
 if __name__ == "__main__":
