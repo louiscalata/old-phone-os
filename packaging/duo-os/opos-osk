@@ -9,7 +9,7 @@
 #   OPOS_OSK_GSETTINGS  0: do not touch gsettings (the unit tests use this)
 case ${OPOS_OSK:-1} in
 stevia) ;;
-*) echo "opos-osk: OPOS_OSK=${OPOS_OSK:-1}, so the in-page keyboard is in use and there is nothing to start"; exit 0 ;;
+*) echo "opos-osk: OPOS_OSK=${OPOS_OSK:-1} is not stevia, so there is nothing to start (1 or web: the in-page keyboard; off: none)"; exit 0 ;;
 esac
 bin=${OPOS_OSK_BIN:-/usr/bin/phosh-osk-stevia}
 if [ ! -x "$bin" ]; then

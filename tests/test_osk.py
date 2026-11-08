@@ -255,6 +255,7 @@ class OskFilesTest(unittest.TestCase):
         self.assertIn("forced-colors", CSS)
         self.assertRegex(CSS, r"#opos-osk\{[^}]*pointer-events:none")
         self.assertRegex(CSS, r"\.osk-panel\{[^}]*pointer-events:auto")
+        self.assertRegex(CSS, r"\.osk-panel\{[^}]*touch-action:none")
         self.assertRegex(CSS, r"#opos-osk\{[^}]*z-index:2147483000")
         self.assertRegex(CSS, r"touch-action:none", "a swipe over the keys must not scroll the page or cancel a key")
 

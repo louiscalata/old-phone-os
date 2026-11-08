@@ -10,7 +10,7 @@ color:var(--osk-fg);font:600 22px/1 system-ui,-apple-system,"Segoe UI",Roboto,"N
 #opos-osk,#opos-osk *{box-sizing:border-box}
 #opos-osk .osk-grid{display:grid;align-items:end}
 #opos-osk .osk-grid.osk-split{grid-template-columns:1fr 1fr}
-#opos-osk .osk-panel{pointer-events:auto;display:flex;flex-direction:column;gap:var(--osk-gap);padding:6px;background:var(--osk-bg);border:1px solid var(--osk-fg)}
+#opos-osk .osk-panel{pointer-events:auto;touch-action:none;display:flex;flex-direction:column;gap:var(--osk-gap);padding:6px;background:var(--osk-bg);border:1px solid var(--osk-fg)}
 #opos-osk .osk-row{display:flex;gap:var(--osk-gap);min-height:var(--osk-key)}
 #opos-osk .osk-barrow{min-height:var(--osk-bar);align-items:stretch}
 #opos-osk .osk-key{flex:1 1 0;min-width:0;min-height:var(--osk-key);margin:0;padding:0 4px;display:flex;align-items:center;justify-content:center;
