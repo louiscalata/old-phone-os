@@ -290,6 +290,16 @@ function timeDigit(d) {
   if (n.length === 4) timeSet(f, timeValue(n));
 }
 
+/* Hide or a tap elsewhere with two or three digits typed: the field gets them as Done would, rather than silently dropping them. */
+function timeFlush(f) {
+  var v;
+  if (st.kind !== 'time' || st.tfresh || st.tbuf.length < 2) return;
+  v = timeValue(st.tbuf);
+  st.tbuf = timeFromValue(v);
+  st.tfresh = true;
+  if (v !== f.value) timeSet(f, v);
+}
+
 function typeChar(c) {
   var f = st.field;
   if (st.kind === 'time') { timeDigit(c); return; }
@@ -365,7 +375,7 @@ function setField(f) {
 var core = {M: M, kindFor: kindFor, insertAt: insertAt, backspaceAt: backspaceAt, autocapMode: autocapMode, wantsShift: wantsShift,
   shiftTap: shiftTap, timeAdd: timeAdd, timeShow: timeShow, timeValue: timeValue, timeFromValue: timeFromValue,
   LAYOUTS: LAYOUTS, padRows: padRows, flat: flat, sumW: sumW, minKey: minKey, geometry: geometry, plan: plan, needScroll: needScroll,
-  st: st, act: act, setField: setField, commit: commit, edit: edit,
+  st: st, act: act, setField: setField, commit: commit, edit: edit, timeFlush: timeFlush,
   setEventFactory: function (f) { mk = f; }};
 
 /* ---------- page: the keyboard itself ---------- */
@@ -560,7 +570,7 @@ function hide(blur) {
   clearTimeout(hideT);
   clearInterval(pollT);
   stopAll();
-  if (f && st.visible) commit(f);
+  if (f && st.visible) { timeFlush(f); commit(f); }
   st.visible = false;
   if (ui) {
     ui.root.hidden = true;

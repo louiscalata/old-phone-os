@@ -21,6 +21,7 @@ from opos import secure
 _STATIC = Path(__file__).with_name("osk_static")
 _ASSETS = {"/osk.js": ("osk.js", "text/javascript; charset=utf-8"), "/osk.css": ("osk.css", "text/css; charset=utf-8")}
 _NONCE_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
+_BODY_END = re.compile(r"</body\s*>", re.I)
 HINGE_DEFAULT = 42  # CSS px: the Duo's 84 device px hinge at the output scale 2 (phoc.ini)
 HINGE_MAX = 200
 
@@ -74,9 +75,9 @@ def inject(html, nonce, env=None):
     """html with the keyboard's tags before its last </body>; unchanged while the keyboard is off or already there."""
     if not enabled(env) or 'src="/osk.js"' in html:
         return html
-    i = html.lower().rfind("</body>")
+    m = list(_BODY_END.finditer(html))  # not html.lower().rfind: lower() changes the length of some characters (U+0130)
     t = tags(nonce, env)
-    return html + t if i < 0 else html[:i] + t + html[i:]
+    return html + t if not m else html[:m[-1].start()] + t + html[m[-1].start():]
 
 
 def inject_bytes(body, nonce, env=None):

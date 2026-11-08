@@ -33,6 +33,9 @@ src/opos/hw/store.py
 src/opos/mm_modem.py
 src/opos/muse.py
 src/opos/notices.py
+src/opos/osk.py
+src/opos/osk_static/osk.css
+src/opos/osk_static/osk.js
 src/opos/power.py
 src/opos/profiles.py
 src/opos/public_demo.py

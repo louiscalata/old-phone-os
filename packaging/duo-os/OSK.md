@@ -72,7 +72,7 @@ nothing unless it says `stevia`. The file ships with the setting commented out. 
   first key from a physical keyboard (a later touch shows it again). The keys never take focus from the field.
 - **What it types.** Letters (shift, caps lock on a double tap, automatic capitals after a full stop), numbers, symbols; a phone
   pad for `type=tel`/`inputmode=tel`, digits for `type=number`, and a 24-hour pad for `<input type=time>`, where the digits go into
-  a buffer and the field gets `HH:MM` (`1`, `6`, `3`, `0` makes 16:30; a first digit above 2 is taken as `0n`). Backspace repeats
+  a buffer and the field gets `HH:MM` (`1`, `6`, `3`, `0` makes 16:30; a first digit above 2 is taken as `0n`; two or three digits are filled out with zeros when you tap Done, Hide or elsewhere, one digit changes nothing). Backspace repeats
   while held. Space, Enter, Delete.
 - **Events.** For every key the field gets `keydown`, `beforeinput`, the new value and `input`, then `keyup`, so the page's own
   handlers fire (the Ask, Send and next-field handlers on Enter are the existing ones). `change` is sent when Enter is

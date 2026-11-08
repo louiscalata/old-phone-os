@@ -77,6 +77,13 @@ class OskEnvTest(unittest.TestCase):
         two = "<body></body><script>'</body>'</script></BODY>"
         self.assertTrue(osk.inject(two, "n1", on).endswith(osk.tags("n1", on) + "</BODY>"), "before the last </body>, any case")
 
+    def test_inject_survives_characters_whose_lower_case_is_longer(self):
+        on = {"OPOS_OSK": "1"}  # "İ".lower() is two characters, so an index into lower() is wrong for the original
+        html = "<html><body><p>İlker İİ</p></body></html>"
+        got = osk.inject(html, "n1", on)
+        self.assertEqual(got, "<html><body><p>İlker İİ</p>" + osk.tags("n1", on) + "</body></html>")
+        self.assertEqual(osk.inject("<BODY>İ</BODY >", "n1", on), "<BODY>İ" + osk.tags("n1", on) + "</BODY >")
+
     def test_inject_bytes_is_the_same_object_while_off(self):
         body = "<html><body>é</body></html>".encode("utf-8")
         self.assertIs(osk.inject_bytes(body, "n1", {}), body)
@@ -134,6 +141,23 @@ class OskServerTest(unittest.TestCase):
             self.assertIn(f"script-src 'nonce-{nonce}'", headers["content-security-policy"])
             self.assertIn(f"style-src 'nonce-{nonce}'", headers["content-security-policy"])
             self.assertEqual(body.count(b"/osk.js"), 1)
+
+    def test_without_the_module_the_server_serves_what_it_always_served(self):
+        # a runtime that ships web.py without src/opos/osk.py (the pmos inventory once did): no 500, no keyboard, even with the env set
+        with env_without(OPOS_OSK="1"), mock.patch.object(webclient.web, "osk", None), webclient.Running(token=TOKEN) as run:
+            status, headers, body = self.get(run)
+            nonce, page = self.expected_page(run, headers)
+            self.assertEqual((status, body), (200, page.encode("utf-8")))
+            for p in ("/osk.js", "/osk.css"):
+                self.assertEqual(self.get(run, p)[0], 404, p)
+            self.assertEqual(self.get(run, "/favicon.ico")[0], 200)
+
+    def test_the_pmos_runtime_inventory_lists_the_keyboard_files(self):
+        listed = (ROOT / "packaging/pmos/runtime-files.txt").read_text(encoding="utf-8").splitlines()
+        for f in ("src/opos/osk.py", "src/opos/osk_static/osk.css", "src/opos/osk_static/osk.js"):
+            self.assertIn(f, listed)
+        paths = [x for x in listed if x and not x.startswith("#")]
+        self.assertEqual(paths, sorted(paths), "make-runtime-source.py wants the list sorted")
 
     def test_on_the_two_files_are_served_with_the_page_hardening(self):
         with env_without(OPOS_OSK="1"), webclient.Running(token=TOKEN) as run:

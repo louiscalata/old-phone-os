@@ -51,6 +51,10 @@ from opos.ui import ScreenModem
 from opos.dashboard import Dashboard, _format_goal_12h
 from opos.router import HOT_C
 from opos import notices, secure
+try:  # track osk: the on-screen keyboard is optional; a runtime shipped without src/opos/osk.py serves what it always served
+    from opos import osk
+except ImportError:
+    osk = None
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -693,8 +697,7 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "forbidden", "host")
             return
         path = urllib.parse.urlsplit(self.path).path
-        from opos import osk  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
-        if osk.serve(self, path):
+        if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
             return
         if path in ("/", "/favicon.ico"):
             nonce = secrets.token_urlsafe(16)
@@ -703,7 +706,7 @@ class Handler(BaseHTTPRequestHandler):
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)
             self.send_header("Content-Type", "image/png" if path == "/favicon.ico" else "text/html; charset=utf-8")
-            if path == "/":
+            if path == "/" and osk is not None:
                 body = osk.inject_bytes(body, nonce)  # track osk: adds the keyboard's two tags while OPOS_OSK=1, else the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

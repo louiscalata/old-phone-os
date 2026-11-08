@@ -270,6 +270,29 @@ t('Done fills in what is there; Clear empties the field', () => {
   assert.strictEqual(h.value, '', 'less than an hour changes nothing');
 });
 
+t('Hide with two or three digits typed still sets the time; one digit or an untouched field changes nothing', () => {
+  const f = use(field({type: 'time', value: '', noSel: true}));
+  core.act({k: 'ch', v: '1'}); core.act({k: 'ch', v: '7'});
+  core.timeFlush(f); // what hide() does
+  assert.strictEqual(f.value, '17:00');
+  assert.ok(f.events.some(e => e.type === 'change'));
+  const n0 = f.events.length;
+  core.timeFlush(f);
+  assert.strictEqual(f.events.length, n0, 'a second flush sets nothing again');
+  const g = use(field({type: 'time', value: '08:15', noSel: true}));
+  core.timeFlush(g);
+  assert.strictEqual(g.value, '08:15');
+  assert.strictEqual(g.events.length, 0, 'untouched: no events');
+  const h = use(field({type: 'time', value: '', noSel: true}));
+  core.act({k: 'ch', v: '1'});
+  core.timeFlush(h);
+  assert.strictEqual(h.value, '', 'one digit is less than an hour');
+  const i = use(field({type: 'time', value: '', noSel: true}));
+  core.act({k: 'ch', v: '1'}); core.act({k: 'ch', v: '7'}); core.act({k: 'ch', v: '3'});
+  core.timeFlush(i);
+  assert.strictEqual(i.value, '17:30');
+});
+
 t('geometry: the browser, the page and the server each say where the hinge is', () => {
   assert.deepStrictEqual(core.geometry({vw: 1392, segs: [{x: 0, w: 675}, {x: 717, w: 675}], cssHinge: 0, cssPane: 0, cfgHinge: 42}), {pane: 675, hinge: 42});
   assert.deepStrictEqual(core.geometry({vw: 1392, segs: null, cssHinge: 40, cssPane: 676, cfgHinge: 42}), {pane: 676, hinge: 40}, 'OPOS_SPAN beats the server default');
