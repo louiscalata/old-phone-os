@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A live phone whose clock nobody set says so and claims no goal or arrival time against it."""
 import calendar
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -129,8 +131,31 @@ class LivePhoneClockTests(unittest.TestCase):
 
     def test_a_goal_set_over_the_api_while_the_clock_is_a_guess_counts_as_set_before_its_time(self):
         phone = self.phone(False, goal="")
-        phone.dash.set_goal("23:00", phone._goal_clock())
-        self.assertTrue(phone.dash._goal_armed)
+        # 11:00 is an hour before the guessed noon: read against that guess it would sit inside its own grace window.
+        self.assertTrue(web.apply_phone_action(phone, {"action": "goal", "time": "11:00"}))
+        self.assertEqual(phone.dash.goal, "11:00")
+        self.assertTrue(phone.dash._goal_armed, "the guessed clock was read for the goal")
+        b = phone.state()["battery"]
+        self.assertEqual(b["calls_until"], "")
+        self.assertEqual(b["goal_note"], "Clock not set, so the goal time is not used")
+
+    def test_a_goal_set_over_the_api_while_the_clock_is_trusted_is_read_against_it(self):
+        phone = self.phone(True, goal="")
+        self.assertTrue(web.apply_phone_action(phone, {"action": "goal", "time": "11:00"}))
+        self.assertFalse(phone.dash._goal_armed, "set an hour after its time, it means the next one")
+
+    def test_the_helper_request_uses_no_goal_hours_against_a_guessed_clock(self):
+        real = web.muse.is_hard
+        for ok in (False, True):
+            phone = self.phone(ok, visible=True)
+            seen = []
+            with mock.patch.object(web.muse, "is_hard", side_effect=lambda goal, left: (seen.append(goal), real(goal, left))[1]):
+                phone._helper_request()
+            self.assertEqual(len(seen), 1)
+            if ok:
+                self.assertAlmostEqual(seen[0], 11.0)  # noon to the 23:00 goal
+            else:
+                self.assertIsNone(seen[0])
 
     def test_the_goal_is_judged_again_when_the_clock_goes_from_a_guess_to_trusted(self):
         # The goal was set under a guess (as main() and the API do), and the clock is then set to 23:30, an hour and a
@@ -176,6 +201,37 @@ class LivePhoneClockTests(unittest.TestCase):
         self.assertIs(phone.dash.goal, None)
         self.assertEqual(b["goal_note"], "")
         self.assertEqual(b["goal"], "")
+
+    def test_main_arms_the_saved_goal_against_no_clock_while_the_clock_is_a_guess(self):
+        # 11:00 is an hour before the guessed noon: read against that guess it would sit inside its own grace window.
+        for ok, armed in ((False, True), (True, False)):
+            phone, err = self.run_main(ok, {"enabled": True, "time": "11:00"})
+            self.assertEqual(phone.dash.goal, "11:00")
+            self.assertIs(phone.dash._goal_armed, armed, ok)
+            self.assertEqual("clock is not set" in err, not ok, err)
+        phone, _ = self.run_main(False, {"enabled": False, "time": "11:00"})
+        self.assertIsNone(phone.dash.goal)
+
+    def run_main(self, ok, goal):
+        """main() with a live battery, a fake saved config and a server that returns at once; the Phone it built and stderr."""
+        self.ok = ok
+        built = []
+        server = mock.Mock()
+        server.serve_forever.side_effect = lambda: None
+        def make(port, phone, **kw):
+            built.append(phone)
+            return server
+        err = io.StringIO()
+        live = battery(50)  # built before LiveBattery is replaced below
+        with mock.patch.dict(os.environ, {"OPOS_BATTERY": "live", "OPOS_GLIMMER_ROUTING": "0"}), \
+                mock.patch.object(lb, "LiveBattery", return_value=live), \
+                mock.patch.object(web.setup_config, "load", return_value={"goal": goal}), \
+                mock.patch.object(web, "_install_helper_visible", return_value=False), \
+                mock.patch.object(web, "make_server", side_effect=make), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            web.main(["--port", "0"])
+        self.assertEqual(len(built), 1)
+        return built[0], err.getvalue()
 
     def test_the_clock_is_read_at_each_state(self):
         phone = self.phone(True)

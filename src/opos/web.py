@@ -999,6 +999,10 @@ def _install_helper_visible(flag):
     except Exception:
         return False
 DEMO_GOAL = "16:00"  # the plain quickstart demo's goal, so the 60% / 60% health / noon demo starts in Saver with email still allowed
+def _arm_configured_goal(phone, cfg):
+    """Set the saved goal, read against the clock goals may use (none while a live clock is a guess)."""
+    goal = cfg["goal"]
+    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone._goal_clock())
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
@@ -1033,8 +1037,7 @@ def main(argv=None):
             cfg["goal"] = {"enabled": True, "time": DEMO_GOAL}
     except Exception:
         cfg = setup_config.default_config()
-    goal = cfg["goal"]
-    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone._goal_clock())
+    _arm_configured_goal(phone, cfg)
     _route_with_glimmer(phone, os.environ)
     server = make_server(args.port, phone, token=token)
     if live is not None:
