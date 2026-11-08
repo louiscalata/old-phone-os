@@ -33,6 +33,46 @@ fi
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"
+# ---- BEGIN OPOS OTA checks (self-contained; needs $r $w and check(); docs/ota-update.md) -------------------------
+ota_link_ok() {
+    t=$(readlink "$r/opt/opos") || return 1
+    n=${t#opos-releases/}
+    case $t in opos-releases/[0-9]*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;; *) return 1 ;; esac
+    [ -d "$r/opt/opos-releases/$n" ] && [ -s "$r/opt/opos-releases/$n/REVISION" ] \
+        && [ "$(cut -c 1-12 "$r/opt/opos-releases/$n/REVISION")" = "${n#*-}" ]
+}
+ota_unit_enabled() { [ "$(readlink "$w/multi-user.target.wants/$1")" = "/etc/systemd/system/$1" ] && [ -f "$w/$1" ]; }
+ota_updater_ok() {
+    u=$r/usr/libexec/opos-updater/opos-updater
+    [ -f "$u" ] && [ ! -L "$u" ] && [ -x "$u" ] && [ "$(stat -c %a "$u")" = 755 ] \
+        && [ "$(head -n 1 "$u")" = '#!/usr/bin/python3 -IB' ] \
+        && python3 -I -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$u"
+}
+ota_signers_ok() {
+    s=$r/etc/opos/update/allowed_signers
+    [ -f "$s" ] && [ ! -L "$s" ] && [ "$(stat -c %a "$s")" = 644 ] || return 1
+    ! grep -vE '^opos-release ssh-ed25519 [A-Za-z0-9+/=]+$' "$s" | grep -q .
+}
+ota_units_ok() {
+    grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater apply-inbox$' "$w/opos-update.service" \
+        && grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater apply-pending-boot$' "$w/opos-update-boot.service" \
+        && grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater confirm-boot$' "$w/opos-update-confirm.service" \
+        && grep -q '^PathExistsGlob=/var/lib/opos-update/inbox/\*.opos-update$' "$w/opos-update.path" \
+        && grep -q '^Before=opos-server.service opos.service$' "$w/opos-update-boot.service" \
+        && [ ! -L "$w/multi-user.target.wants/opos-update.service" ]
+}
+ota_gid=$(awk -F: '$1=="droidian"{print $4}' "$r/etc/passwd")
+check "OTA: /opt/opos is a symlink to <serial>-<rev12> under /opt/opos-releases and REVISION matches" "ota_link_ok"
+check "OTA: opos-update.path, opos-update-boot.service and opos-update-confirm.service are enabled" "ota_unit_enabled opos-update.path && ota_unit_enabled opos-update-boot.service && ota_unit_enabled opos-update-confirm.service"
+check "OTA: the unit files call the updater, watch the inbox and run before the session" "ota_units_ok"
+check "OTA: the root updater is present, executable (0755) and parses" "ota_updater_ok"
+check "OTA: the updater and its trust files are owned by root" "[ \"\$(stat -c %u:%g $r/usr/libexec/opos-updater/opos-updater)\" = 0:0 ] && [ \"\$(stat -c %u:%g $r/etc/opos/update/allowed_signers)\" = 0:0 ] && [ \"\$(stat -c %u $r/etc/opos/update)\" = 0 ]"
+check "OTA: allowed_signers holds only 'opos-release ssh-ed25519 <public key>' lines (or nothing)" "ota_signers_ok"
+check "OTA: base-version is 1" "[ \"\$(cat $r/etc/opos/base-version)\" = 1 ]"
+check "OTA: the inbox is 2770 root:droidian, staging 0700 and the state directory 0755 root-owned" "[ \"\$(stat -c %a:%u:%g $r/var/lib/opos-update/inbox)\" = 2770:0:$ota_gid ] && [ \"\$(stat -c %a:%u:%g $r/var/lib/opos-update/staging)\" = 700:0:0 ] && [ \"\$(stat -c %a:%u:%g $r/var/lib/opos-update)\" = 755:0:0 ]"
+ota_keys=$(grep -c . "$r/etc/opos/update/allowed_signers" 2>/dev/null || true)
+if [ "${ota_keys:-0}" -gt 0 ]; then echo "NOTE: update signers: $ota_keys public key(s)"; else echo "NOTE: update signers: NONE (this image accepts no updates)"; fi
+# ---- END OPOS OTA checks ---------------------------------------------------------------------------------------
 umount "$mnt"
 
 # Server smoke test: qemu-user with the read-only image as its sysroot (-L), so the image's own
