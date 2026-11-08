@@ -57,6 +57,9 @@ ssh -L 9222:127.0.0.1:9222 droidian@<phone>
 curl -s http://127.0.0.1:9222/json        # lists the OPOS page and its webSocketDebuggerUrl
 ```
 
+Clients that open the DevTools websocket without an `Origin` header (puppeteer, chrome-remote-interface, a plain
+websocket library) should connect as they are; a browser-based client sends one, and Chromium 111 and later refuse it
+unless `--remote-allow-origins` names it. That is expected behaviour, not tried on the phone.
 The port gives full control of the browser to whoever can reach it; that is the same trust as the dev ssh key. Delete
 the file on the phone (`sudo rm /etc/default/opos-kiosk`, then restart `opos.service`) to close it. Screen blanking and
 the power key are not handled by OPOS yet: see [POWER.md](POWER.md).
