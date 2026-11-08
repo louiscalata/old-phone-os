@@ -57,6 +57,18 @@ returns to the bootloader and RAM-boots the port's kernel once. A RAM-boot does 
 [docs/duo-usb-install.md](../../docs/duo-usb-install.md) for restarting safely. Making it permanent means flashing
 the port's `boot.img` and `vbmeta.img` to the active slot, which is the owner's separate decision.
 
+## On-screen keyboard
+
+The Duo has no physical keyboard and OPOS's kiosk is the only client of phoc, so nothing raised a keyboard for the helper's
+Ask field, the Messages composer or the goal time in the shade. The image carries an **in-page keyboard**:
+`opos-server.service` sets `OPOS_OSK=1`, and the server then adds `/osk.js` and `/osk.css` (`src/opos/osk.py`,
+`src/opos/osk_static/`) to the page it serves; unset, the page and every route are exactly as before. It appears when a text
+field is touched, with letters, numbers, symbols, a phone pad and a 24-hour time pad, and sends the field the key and input events
+its handlers expect. On the spanned 1392 x 900 window the letters are **split, one half on each panel**, so no key sits on the
+hinge; a Join key puts them on one panel. `/etc/default/opos-osk` overrides the setting (`OPOS_OSK=off`, or `stevia` for the
+port's own `phosh-osk-stevia`, started by `opos-osk.service`: opt-in, written from sources, never started). Built and exercised in a desktop
+browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the choice, the behaviour in full and the live checks.
+
 ## Restore to Android
 
 - Full stock 2022.902.48 (all 25 partitions, `surface/duo/duo:12/2022.902.48`, AT&T product config included) was
