@@ -113,11 +113,11 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 | 14:32                 (masthead) |     | 14:32                 | About 30 min left   |
 | ================================ |     | Sunday, 1 November    | Saving power for    |
 | Sunday, 1 November  (dateline)   |     | ===================== | calls, messages     |
-|                                  |     | 23%  LOW              | New notice          |
+|                                  |     | 23%  LOW              | In call             |
 | 23%  LOW            (dbl border) |     |                       |                     |
 | About 30 min left · Saving power |     |                       | [ Unlock          ] |
 | for calls, messages (#lock-power)|     |                       | [ Phone ] [ Helper] |
-| New notice            (#lock-notice)   +---------------------------------------------+
+| In call               (#lock-notice)   +---------------------------------------------+
 |                                  |     Foldable: left pane = masthead/dateline/power,
 | [ Unlock                       ] |     right pane = buttons (phone-b.css:58 already
 | [ Phone ]  [ Helper ]            |     puts #lock>button in column 2).
@@ -125,6 +125,7 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 ```
 
 - Masthead = time (`#lock-time`, serif 2.25rem on phones, 40px rule at landscape ≤520 px stays), dateline `#lock-date` in condensed uppercase.
+- The notice line `#lock-notice` is the text of the newest notice in the Shade's Recent notices (`phone-a.js`), for example "In call", "Call ended", "Message sent", "New message". Those are the server's own fixed phrases (`notice_for` in `web.py`), never a message body or a number, so the line stays public state; it replaced the words "New notice" (interface plan W1-06).
 - Public power line `#lock-power` = `s.battery.time_left` + `s.battery.headline` joined by ` · ` (already redacted when the helper is hidden: dashboard.py:235). Never shows `why`, paused names or model names.
 - Buttons: `#unlock` primary (3px border). `#lock-call` MUST be relabelled "Phone" (it unlocks and opens the Phone app, phone-a.js:178). `#lock-ask` ("Helper") stays `hidden` by default; privacy rationale: the lock screen shows only redacted public state, and the helper's answers are private detail, so Helper from lock = Unlock then the Helper tile. Showing `#lock-ask` is a Settings › Device choice (`localStorage['jaryo_lock_helper']='1'`), off by default.
 - Swipe-up unlock stays as a shortcut; the button is the contract.
