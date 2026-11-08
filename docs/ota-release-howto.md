@@ -20,7 +20,9 @@ One key signs every release. The phone trusts the public half only.
 ssh-keygen -t ed25519 -C opos-release -f <a folder outside the repository>/opos-release-key
 ```
 
-Use a passphrase. This makes `opos-release-key` (private) and `opos-release-key.pub` (public).
+Use a passphrase. This makes `opos-release-key` (private) and `opos-release-key.pub` (public). `build` runs
+`ssh-keygen -Y sign`, which asks for the passphrase on your terminal, or you can pass the `.pub` file as `--key` and sign through
+ssh-agent.
 
 - The private key stays off the repository, off the phone and out of every image, chat and backup that is not yours.
   `tools/opos-release.py build` refuses a key that sits inside the repository it is building. Keep two offline copies:
