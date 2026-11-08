@@ -121,6 +121,22 @@ else
     echo "update signers: NONE installed; this image accepts no updates (set OPOS_UPDATE_SIGNERS=<public keys file> to allow them)"
 fi
 
+# Optional update source for the phone's OPOS client (OPOS_UPDATE_URL=https://host/folder/latest.json). Without it the
+# phone fetches nothing; the USB push (deploy/duo-push-update.ps1) needs no source. The client allows plain http only
+# for this phone or a private network and tells the owner when an address cannot be used.
+rm -f "$r/etc/opos/update.json"
+if [ -n "${OPOS_UPDATE_URL:-}" ]; then
+    case $OPOS_UPDATE_URL in https://* | http://*) ;; *) echo "OPOS_UPDATE_URL must start with https:// (or http:// for a private network)" >&2; exit 1 ;; esac
+    case $OPOS_UPDATE_URL in *[!A-Za-z0-9._~:/?\&=%+@,-]*) echo "OPOS_UPDATE_URL has characters a web address does not need" >&2; exit 1 ;; esac
+    ota_lan=false
+    case $OPOS_UPDATE_URL in http://*) ota_lan=true ;; esac
+    printf '{"url": "%s", "auto_check": false, "allow_lan_http": %s}\n' "$OPOS_UPDATE_URL" "$ota_lan" > "$r/etc/opos/update.json"
+    chmod 0644 "$r/etc/opos/update.json"
+    echo "update source: $OPOS_UPDATE_URL (checks only when asked)"
+else
+    echo "update source: none (the phone fetches nothing; push bundles over USB, or set OPOS_UPDATE_URL)"
+fi
+
 install -d -m 0755 "$r/usr/libexec/opos-updater"
 install -m 0755 "$here/updater/opos-updater" "$r/usr/libexec/opos-updater/opos-updater"
 install -d -m 0755 "$r/etc/systemd/system/multi-user.target.wants"
