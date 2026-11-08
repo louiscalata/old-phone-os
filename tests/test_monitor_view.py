@@ -636,6 +636,34 @@ class PublicationTests(unittest.TestCase):
         gate.set()
         worker.join(5)
 
+    def test_a_second_viewer_ages_the_remote_from_when_its_answer_landed_not_from_the_phones_newer_probe(self):
+        """The cache entry the phone's new probe publishes keeps the remote's own landing time; a mutant that measures
+        the allowance from the entry's `at` instead reads LIVE here."""
+        clock = Clock()
+        gate, started = threading.Event(), threading.Event()
+        count = [0]
+
+        def fetch(_remote):
+            count[0] += 1
+            if count[0] == 2:
+                started.set()
+                gate.wait(5)
+            return snapshot(dict(AGIW_ROW, ageSeconds=1.0, freshForSeconds=3))
+        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch,
+                               probe=lambda _e: ("none", []), clock=clock)
+        self.assertEqual(section(view.snapshot(), "remote")["status"], "LIVE")
+        clock.now += 8
+        worker = threading.Thread(target=view.snapshot, daemon=True)
+        worker.start()
+        self.assertTrue(started.wait(5))
+        second = view.snapshot()
+        # 1.0 s old when it landed, 8 s ago, 2 s of cache allowed: 1 + 6 > 3. The gate that is not the one under test (STALE_AFTER) is not hit.
+        self.assertEqual(section(second, "remote")["status"], "STALE")
+        self.assertIn("fetched 8 s ago", section(second, "remote")["lines"][0])
+        gate.set()
+        worker.join(5)
+
+
 class FreshnessIncludesFetchAgeTests(unittest.TestCase):
     """R3-13, corrected in r5: a row's own age plus the time since the fetch must fit its freshFor, allowing for the monitor's own cache."""
 
@@ -676,9 +704,10 @@ class FreshnessIncludesFetchAgeTests(unittest.TestCase):
 
     def test_a_slow_remote_does_not_make_the_word_alternate(self):
         """r5 low: the fetch time is in the age. It may keep a slow remote STALE; it must never flip LIVE and STALE."""
+        # 0.5 + 2.4 = 2.9 < 3: clear of the tie at exactly 3.0, which float rounding of the clock start would decide.
         quick = dict(AGIW_ROW, ageSeconds=0.5, freshForSeconds=3)
         for step in (2.0, 1.99):
-            words, _ = self.poll_words(quick, step=step, fetch_takes=2.5)
+            words, _ = self.poll_words(quick, step=step, fetch_takes=2.4)
             self.assertEqual(set(words), {"LIVE"}, (step, words))
         slow = dict(AGIW_ROW, ageSeconds=1.2, freshForSeconds=3)
         for step in (2.0, 1.99):

@@ -757,31 +757,34 @@ class AbortWiringTests(unittest.TestCase):
         return seen, Spy
 
     @needs_loopback
-    def test_probe_local_passes_its_event(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            closed = probe.getsockname()[1]
+    def test_probe_local_passes_the_event_its_watchdog_sets(self):
+        hold = Hold()
+        self.addCleanup(hold.close)
         seen, spy = self.spy()
-        with mock.patch.object(monitor, "_Pinned", spy), \
-                mock.patch.object(monitor, "_loopback_addresses", lambda host, port: [(socket.AF_INET, ("127.0.0.1", closed))]):
-            monitor.probe_local({"OPOS_LOCAL_URL": f"http://localhost:{closed}/v1"})
+        with mock.patch.object(monitor, "_Pinned", spy), mock.patch.object(monitor, "LOCAL_TOTAL", 0.3), \
+                mock.patch.object(monitor, "LOCAL_TIMEOUT", 3.0), \
+                mock.patch.object(monitor, "_loopback_addresses", lambda host, port: [(socket.AF_INET, ("127.0.0.1", hold.port))]):
+            self.assertEqual(monitor.probe_local({"OPOS_LOCAL_URL": f"http://localhost:{hold.port}/v1"}), ("unknown", []))
         self.assertEqual(len(seen), 1)
         self.assertIsInstance(seen[0], threading.Event)
+        self.assertTrue(seen[0].is_set(), "the event handed to the connection must be the one the watchdog sets")
 
     @needs_loopback
-    def test_fetch_snapshot_passes_its_event(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            closed = probe.getsockname()[1]
+    def test_fetch_snapshot_passes_the_event_its_watchdog_sets(self):
+        hold = Hold()
+        self.addCleanup(hold.close)
         seen, spy = self.spy()
 
         def resolver(host, port, type=0):
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", closed))]
-        with mock.patch.object(monitor, "_Pinned", spy):
-            with self.assertRaises(monitor.FetchError):
-                monitor.fetch_snapshot(monitor.parse_remote(f"http://h.invalid:{closed}"), resolver=resolver)
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", hold.port))]
+        with mock.patch.object(monitor, "_Pinned", spy), mock.patch.object(monitor, "TOTAL_DEADLINE", 0.4), \
+                mock.patch.object(monitor, "READ_TIMEOUT", 3.0):
+            with self.assertRaises(monitor.FetchError) as raised:
+                monitor.fetch_snapshot(monitor.parse_remote(f"http://h.invalid:{hold.port}"), resolver=resolver)
+        self.assertEqual(raised.exception.code, "timeout")
         self.assertEqual(len(seen), 1)
         self.assertIsInstance(seen[0], threading.Event)
+        self.assertTrue(seen[0].is_set(), "the event handed to the connection must be the one the watchdog sets")
 
 
 class LookupCapTests(unittest.TestCase):
