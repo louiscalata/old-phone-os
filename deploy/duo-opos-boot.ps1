@@ -124,10 +124,12 @@ function Find-Phone {
     if ($script:probed -ne $own) { $script:probed = $own; Log "USB network adapter address ${own}: probing TCP 22 across its /24, host $PreferHost first" }
     @(Find-PhoneSsh $own $PreferHost 22 2500)
 }
+# stderr is merged into the text, and with no known_hosts entry ssh would start it with "Warning: Permanently
+# added ... to the list of known hosts." LogLevel=ERROR keeps that out, so boot-diag.txt starts with state=...
 function Invoke-Ssh([string]$ip, [string]$remote) {
     $ErrorActionPreference = 'Continue'
     $kh = (Join-Path $LogDir 'known_hosts') -replace '\\', '/'
-    $o = (& ssh.exe -i $Key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=$kh" -o ConnectTimeout=8 "$SshUser@$ip" $remote 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    $o = (& ssh.exe -i $Key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=$kh" -o LogLevel=ERROR -o ConnectTimeout=8 "$SshUser@$ip" $remote 2>&1 | ForEach-Object { "$_" }) -join "`n"
     [pscustomobject]@{ Code = $LASTEXITCODE; Text = $o }
 }
 # A dotted-quad IPv4 literal (four decimal fields 0-255, no leading zeros), not a host name or a short form.

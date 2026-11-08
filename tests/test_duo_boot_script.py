@@ -27,6 +27,13 @@ def code():
     return "\n".join(line for line in text().splitlines() if not line.lstrip().startswith("#"))
 
 
+def function_text(name):
+    """The source of one function of the script (it ends at the first closing brace in column 0)."""
+    found = re.search(r"^function %s\b.*?^\}$" % re.escape(name), code(), re.S | re.M)
+    assert found, name
+    return found.group(0)
+
+
 def as_list(value):
     """ConvertTo-Json turns a one-element PowerShell array into a bare value."""
     return [] if value is None else [value] if isinstance(value, (str, dict)) else list(value)
@@ -175,6 +182,15 @@ class DuoBootScriptText(unittest.TestCase):
                     self.assertLess(at, body.index(later), later)
         self.assertIn("if ($PhoneIp -and -not (Test-Ipv4 $PhoneIp))", body)
 
+    def test_ssh_keeps_the_known_hosts_warning_out_of_the_saved_text(self):
+        ssh = function_text("Invoke-Ssh")
+        self.assertIn("2>&1", ssh)
+        self.assertIn("-o LogLevel=ERROR", ssh)
+        for option in ("BatchMode=yes", "IdentitiesOnly=yes", "-i $Key", "StrictHostKeyChecking=no"):
+            self.assertIn(option, ssh)
+        # Only the PATH check and this one call mention ssh.exe.
+        self.assertEqual(len([line for line in code().splitlines() if "ssh.exe" in line]), 2)
+
 
 @functools.lru_cache(maxsize=None)
 def powershell():
@@ -252,6 +268,25 @@ def ipv4_program(cases):
             "$cases = '" + json.dumps(cases) + "' | ConvertFrom-Json\n"
             "[pscustomobject]@{ results = @($cases | ForEach-Object { [bool](Test-Ipv4 $_) }) } | ConvertTo-Json -Compress\n")
 
+
+# ssh.exe is replaced by a function that behaves like OpenSSH with StrictHostKeyChecking=no and no known_hosts
+# entry: its first line, on stderr, is the "Permanently added" warning, unless LogLevel=ERROR was passed.
+SSH = AST + r"""
+$LogDir = Join-Path ([IO.Path]::GetTempPath()) 'opos-duo-ssh-test'
+$Key = 'dev.key'
+$SshUser = 'droidian'
+. ([scriptblock]::Create((FunctionText 'Invoke-Ssh')))
+$global:SshArgs = @()
+function global:ssh.exe {
+    $global:SshArgs = @($args | ForEach-Object { "$_" })
+    $global:LASTEXITCODE = 0
+    if ($args -notcontains 'LogLevel=ERROR') { Write-Error "Warning: Permanently added '203.0.113.7' (ED25519) to the list of known hosts." }
+    'state=running'
+    '2026-11-07T10:00:00+00:00'
+}
+$r = Invoke-Ssh '203.0.113.7' 'echo hi'
+[pscustomobject]@{ code = $r.Code; text = $r.Text; args = @($global:SshArgs) } | ConvertTo-Json -Compress
+"""
 
 # The whole script, run in this PowerShell session with fastboot.exe, adb.exe, Get-PnpDevice and Start-Sleep
 # replaced by functions: every call is appended to a log, and the fake phone answers a healthy preflight. PATH is emptied
@@ -400,6 +435,15 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 self.assertTrue(run["logs_dir"])
                 self.assertIn("hash ok boot.img", run["log"])
                 self.assertIn("dry run (no -Yes)", run["log"])
+
+    def test_ssh_output_does_not_start_with_the_known_hosts_warning(self):
+        got = run_powershell(SSH)
+        self.assertEqual(got["code"], 0)
+        self.assertTrue(got["text"].startswith("state=running"), got["text"])
+        self.assertNotIn("Warning", got["text"])
+        args = as_list(got["args"])
+        for option in ("LogLevel=ERROR", "BatchMode=yes", "IdentitiesOnly=yes", "StrictHostKeyChecking=no"):
+            self.assertIn(option, args)
 
 
 if __name__ == "__main__":
