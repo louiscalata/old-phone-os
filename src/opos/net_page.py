@@ -163,6 +163,8 @@ ul{list-style:none;margin:0;padding:0}
 input[type=password],input[type=text]{width:100%;min-height:48px;margin:8px 0;padding:8px 12px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
 label{display:block;margin:8px 0}
 #srow{display:flex;align-items:center;gap:12px;min-height:48px}
+input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:24px;height:24px;margin:0;border:2px solid var(--fg);border-radius:0;background:var(--bg);color:var(--fg);accent-color:var(--fg)}
+input[type=checkbox]:checked{background:var(--fg)}
 #sel{border:1px solid var(--fg);padding:12px;margin-top:12px}
 #msg{min-height:1.4em;font-weight:700}#msg[data-bad]{border:3px double var(--fg);padding:8px 12px}
 button:disabled::after{content:" unavailable"}

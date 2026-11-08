@@ -2,7 +2,7 @@
 // The browser half of tests/test_panes_browser.py: headless Chromium over the DevTools port (node 22+ for the global WebSocket) at
 // 1392x900 CSS px, against a real server started with OPOS_PANES=1 and a 675,42 span. It measures; the test file asserts.
 // usage: node panes_browser_driver.mjs CHROME BASE_URL DEBUG_PORT PROFILE_DIR OUT_JSON [SECTIONS]
-// SECTIONS is a comma list of the parts to run (states, hand, off, os, osk, motion, ready); without it every part but `ready` runs.
+// SECTIONS is a comma list of the parts to run (states, hand, off, os, checkbox, osk, motion, ready); without it every part but `ready` runs.
 // After a load it waits for the page (tests/panes_wait.mjs), never for a fixed time.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -281,6 +281,23 @@ const FIRST_READY = DOC_READY + "&&!!document.getElementById('next')&&!document.
 const ZONE_READY = DOC_READY + "&&!!document.querySelector('#tzbox .list button')";
 const setStore = (hand, scheme) => `(function(){try{localStorage.setItem('jaryo_theme','${scheme}');${hand ? `localStorage.setItem('jaryo_hand','${hand}')` : "localStorage.removeItem('jaryo_hand')"}}catch(e){}})()`;
 
+// The Network page's "Show the password" checkbox, as the page draws it: what the style says, and the pixels of the box itself.
+const SHOW_PASSWORD = `(function(){['sel','prow','srow'].forEach(function(i){document.getElementById(i).hidden=false})})()`;
+async function checkboxProbe(p, name) {
+  const g = await p.ev(`(function(){var e=document.getElementById('show');e.scrollIntoView({block:'center'});var r=e.getBoundingClientRect(),cs=getComputedStyle(e),row=e.closest('label').getBoundingClientRect();
+    return {x:r.left+scrollX,y:r.top+scrollY,w:r.width,h:r.height,rowH:Math.round(row.height),checked:e.checked,appearance:cs.appearance,width:cs.width,height:cs.height,
+     border:cs.borderTopWidth+' '+cs.borderTopStyle+' '+cs.borderTopColor,radius:cs.borderTopLeftRadius,accent:cs.accentColor,color:cs.color,fill:cs.backgroundColor}})()`);
+  const png = Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip: { x: Math.floor(g.x), y: Math.floor(g.y), width: Math.ceil(g.w), height: Math.ceil(g.h), scale: 1 } })).data, 'base64');
+  const img = decode(png), colours = {};
+  for (let y = 0; y < img.h; y++) for (let x = 0; x < img.w; x++) { const k = hex(img.px(x, y)); colours[k] = (colours[k] || 0) + 1; }
+  g.colours = colours; g.centre = hex(img.px(img.w >> 1, img.h >> 1)); g.size = [img.w, img.h];
+  if (SHOTS) {
+    save(`checkbox-${name}.png`, await p.png());
+    save(`checkbox-${name}-zoom.png`, Buffer.from((await p.s('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, g.x - 24), y: Math.max(0, g.y - 20), width: 360, height: g.h + 40, scale: 3 } })).data, 'base64'));
+  }
+  return g;
+}
+
 try {
   await launch();
   if (want('states')) for (const scheme of ['light', 'dark']) for (const hand of ['right', 'left']) {
@@ -352,6 +369,22 @@ try {
     out.logs[`os/${scheme}/${hand}`] = p.logs;
     await p.close();
   }
+
+  // The password checkbox, unchecked and checked, where the panes do not paint (a phone, a window below the two-panel gate: the page's own
+  // rules draw it) and where they do (1392 x 900, both hands).
+  if (want('checkbox')) { out.checkbox = {}; for (const [key, w, h, scheme, hand] of [['phone-light', 390, 844, 'light'], ['phone-dark', 390, 844, 'dark'], ['below-light', 1000, 700, 'light'],
+      ['below-dark', 1000, 700, 'dark'], ['span-right', 1392, 900, 'dark', 'right'], ['span-left', 1392, 900, 'dark', 'left']]) {
+    const p = await open({ url: BASE + '/network', w, h, scheme, ready: NET_READY });
+    await p.ev(setStore(hand, scheme)); await p.nav(BASE + '/network');
+    await p.ev(SHOW_PASSWORD);
+    out.checkbox[key] = {};
+    for (const checked of [false, true]) {
+      await p.ev(`document.getElementById('show').checked=${checked}`); await frame(p);
+      out.checkbox[key][checked ? 'checked' : 'unchecked'] = await checkboxProbe(p, `${key}-${checked ? 'checked' : 'unchecked'}`);
+    }
+    out.logs['checkbox/' + key] = p.logs;
+    await p.close();
+  } }
 
   // The keyboard's halves take the surface they sit on.
   if (want('osk')) for (const hand of ['right', 'left']) {

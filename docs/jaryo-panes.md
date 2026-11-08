@@ -254,7 +254,7 @@ Accepted deviation: DOM order is unchanged, so in Left the visual order (thumb p
 
 `panes.css` supplies: pane ink for every control (section 3.3), custom checkbox, radio and range paint (3.5), italic full-ink placeholders (3.5), the Hand button (4.1), and the thumb-side Shade and Lock row. Anything in the table above that was already true on the main page (square corners, 1 px borders, dashed disabled, 3 px focus ring, 48 px targets) is unchanged and was re-measured: 0 targets under 48 px in all 36 combinations (the 4 px `#meter` gauge is exempt; it has a 48 px strip).
 
-The placeholder, checkbox and radio rules are Jaryo fixes that belong in `jaryo.css`, and are in `panes.css` only because the page is within 64 bytes of its budget. If `ui/wave0` frees bytes, move them (open question 5).
+The placeholder, checkbox and radio rules are Jaryo fixes that belong in `jaryo.css`, and are in `panes.css` only because the page is within 64 bytes of its budget (the Network page, which has no such budget, draws its own checkbox: section 5.3, N17). If `ui/wave0` frees bytes, move them (open question 5).
 
 ### 5.3 `/network` (`net_page.py`): every violation, measured at 1392 x 900 in dark theme
 
@@ -278,6 +278,7 @@ The page has its own dark palette and ignores the light theme and `jaryo_theme`.
 | N14 | two-column breakpoint 1200 px, `--hinge:42px` | align with the first-run page | `@media (min-width: 1000px)` (as `firstrun_page`) |
 | N15 | `#nets button` margin 4 px | 8 px between targets | `margin: 8px 0` |
 | N16 | `net_page.LINK` (the Network link in Settings, `OPOS_NETWORK=1` only) has inline `color:#9ecbff` | two colours | `style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline"` (+26 B, only where `OPOS_NETWORK=1`; `len(LINK)` goes 203 to 229, under the test's 300; `web.page()` default is unchanged) |
+| N17 | the "Show the password" checkbox is the engine's: blue (`#0075ff`, `#99c8ff`) when checked and white in the dark scheme, on a phone, below the two-panel gate and on the Duo image as it ships (`OPOS_SPAN` is still commented out); only the spanned window repaired it, through `panes.css` | two colours, a box, a word | `input[type=checkbox]` in `_NET_CSS` (below): `appearance: none`, a 24 px square, 2 px solid ink border, square corners, checked = background ink, `accent-color` and `color` ink. In the page's own style, so it holds with the panes off; `panes.css` rule 11 paints the same box on the spanned window |
 
 #### 5.3.1 The net-only rules (verified)
 
@@ -295,6 +296,8 @@ ul{list-style:none;margin:0;padding:0}
 input[type=password],input[type=text]{width:100%;min-height:48px;margin:8px 0;padding:8px 12px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
 label{display:block;margin:8px 0}
 #srow{display:flex;align-items:center;gap:12px;min-height:48px}
+input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:24px;height:24px;margin:0;border:2px solid var(--fg);border-radius:0;background:var(--bg);color:var(--fg);accent-color:var(--fg)}
+input[type=checkbox]:checked{background:var(--fg)}
 #sel{border:1px solid var(--fg);padding:12px;margin-top:12px}
 #msg{min-height:1.4em;font-weight:700}#msg[data-bad]{border:3px double var(--fg);padding:8px 12px}
 button:disabled::after{content:" unavailable"}

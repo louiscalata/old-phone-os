@@ -174,6 +174,25 @@ class PanesBrowser(unittest.TestCase):
                 twin = self.r["states"]["dark/%s/%s" % (hand, name)]
                 self.assertEqual((m["surface"], m["pixels"]), (twin["surface"], twin["pixels"]), k)
 
+    def test_the_password_checkbox_is_two_colours_with_the_panes_on_and_off(self):
+        # docs/jaryo-panes.md section 5.3 (N17): the Network page's own rules draw the box on a phone and below the two-panel gate, where
+        # the panes do not paint; spanned, the pane does. Never the engine's blue (#0075ff) or white.
+        def rgb(h):
+            return "rgb(%d, %d, %d)" % tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+        inks = {"light": ("#1a1a1a", "#f3f0e8"), "dark": ("#e6e2d9", "#000000")}
+        self.assertEqual(set(self.r["checkbox"]), {"phone-light", "phone-dark", "below-light", "below-dark", "span-right", "span-left"})
+        for key, boxes in self.r["checkbox"].items():
+            ink, bg = inks[key.rsplit("-", 1)[1] if key.startswith(("phone", "below")) else "dark"]  # spanned: the black pane, either hand
+            for state, box in boxes.items():
+                where = (key, state)
+                self.assertEqual((box["appearance"], box["width"], box["height"], box["radius"]), ("none", "24px", "24px", "0px"), where)
+                self.assertEqual((box["border"], box["accent"], box["color"]), ("2px solid " + rgb(ink), rgb(ink), rgb(ink)), where)
+                self.assertEqual(box["fill"], rgb(ink if state == "checked" else bg), where)
+                self.assertLessEqual(set(box["colours"]), {ink, bg}, where)  # the pixels of the box: only the page's two colours
+                self.assertGreater(box["colours"][ink], 0, where)  # its border
+                self.assertEqual(box["centre"], ink if state == "checked" else bg, where)
+                self.assertGreaterEqual(box["rowH"], 48, where)  # the whole row is the target
+
     # -- where things sit -------------------------------------------------------------------------------------------------
     def test_the_thumb_items_are_in_the_thumb_pane_and_the_list_items_in_the_list_pane(self):
         for k, scheme, hand, name, m in self.states():

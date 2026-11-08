@@ -52,6 +52,15 @@ class NetPage(unittest.TestCase):
     def test_the_password_checkbox_row_is_a_big_target(self):
         self.assertIn("#srow{display:flex;align-items:center;gap:12px;min-height:48px}", self.css)
 
+    def test_the_password_checkbox_is_drawn_by_the_page_not_by_the_engine(self):
+        # The engine's own checkbox is blue when checked and white in the dark scheme: not two colours. The page draws its own, with the
+        # panes on or off (these rules are in the page's own style, not in panes.css).
+        box = re.search(r"input\[type=checkbox\]\{([^}]*)\}", self.css).group(1).split(";")
+        for decl in ("-webkit-appearance:none", "appearance:none", "width:24px", "height:24px", "border:2px solid var(--fg)", "border-radius:0",
+                     "background:var(--bg)", "color:var(--fg)", "accent-color:var(--fg)"):
+            self.assertIn(decl, box)
+        self.assertIn("input[type=checkbox]:checked{background:var(--fg)}", self.css)
+
     def test_the_settings_link_states_no_colour(self):
         self.assertNotIn("#9ecbff", net_page.LINK)
         self.assertNotRegex(net_page.LINK, r"#[0-9a-fA-F]{3,6}\b")
