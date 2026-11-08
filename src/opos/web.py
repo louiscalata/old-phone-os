@@ -50,7 +50,7 @@ from opos.sim import DrainSim
 from opos.ui import ScreenModem
 from opos.dashboard import Dashboard, _format_goal_12h
 from opos.router import HOT_C
-from opos import notices, secure
+from opos import notices, secure, update_client, update_page
 from opos.span import apply as apply_span, parse as parse_span
 try:  # track osk: the on-screen keyboard is optional; a runtime shipped without src/opos/osk.py serves what it always served
     from opos import osk
@@ -593,6 +593,7 @@ def page(token="", nonce="", *, demo=False, span=None):
 @@OPOS:css-4.css@@
 .box{border-radius:8px;padding:8px;margin:6px 12px;white-space:pre-wrap}
 #answer a{color:#9ecbff;display:inline-block;min-height:44px;line-height:44px}
+#upd{display:block;line-height:48px;color:inherit}
 label,input,button{font-size:1rem;margin:4px 0}
 input[type=text],input[type=range]{width:100%}
 input[type=range]{min-height:44px}input[type=checkbox]{width:24px;height:24px}
@@ -662,8 +663,10 @@ const renderBase=render;render=async function(s){const r=await renderBase(s);if(
     html = html.replace("<title>Old Phone OS Interface</title>", '<meta name="opos-token" content="' + html_escape(token, quote=True) + '"><title>Old Phone OS Interface</title>', 1)
     html = net_page.add_settings_link(html, os.environ)  # track: network (OPOS_NETWORK=1 only)
     return secure.add_nonce(html, nonce) if nonce else html
-_RATE_ACTIONS = {"call": "call", "send": "send", "receive": "receive", "explain": "explain", "ask": "ask", "plan": "plan", "restart_helper": "restart_helper"}
+_RATE_ACTIONS = {"call": "call", "send": "send", "receive": "receive", "explain": "explain", "ask": "ask", "plan": "plan", "restart_helper": "restart_helper",
+                 "update_check": "update_check", "update_download": "update_download", "update_rollback": "update_rollback"}
 _INJECT_ACTIONS = ("receive",)
+_UPDATE_ACTIONS = {"update_check": "check", "update_download": "start_download", "update_rollback": "request_rollback"}  # opos.update_client
 # --- track: network (Wi-Fi and radio status): GET /network and the net_* actions; logic in opos.net, page in opos.net_page ---
 def _net_serve(h):
     nonce = secrets.token_urlsafe(16)
@@ -805,9 +808,14 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/monitor", "/api/monitor") and monitor_web is not None and monitor_web.enabled():  # track: monitor (OPOS_MONITOR=1 only)
             _monitor_serve(self, path)
             return
-        if path in ("/", "/favicon.ico"):
+        if path in ("/", "/favicon.ico") or (path == "/update" and self.updater is not None):  # track ota: /update only where an updater exists
             nonce = secrets.token_urlsafe(16)
-            body = FAVICON if path == "/favicon.ico" else page(self.token, nonce, span=self.span).encode()
+            if path == "/favicon.ico":
+                body = FAVICON
+            elif path == "/update":  # its own document: no text field (no keyboard) and no Settings (no links to add); the decorations below are for "/" only
+                body = update_page.page(self.token, nonce, self.updater.snapshot()).encode()
+            else:
+                body = page(self.token, nonce, span=self.span).encode()
             self.send_response(200)
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)
@@ -827,6 +835,11 @@ class Handler(BaseHTTPRequestHandler):
             with self.lock:
                 snap = self.phone.state()
             self._json(snap)
+        elif path == "/api/update" and self.updater is not None:
+            if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
+                self._deny(403, "forbidden", "token")
+                return
+            self._json(self.updater.snapshot())
         else:
             self._json({"error": "not found"}, 404)
     def do_GET(self):
@@ -846,6 +859,7 @@ class Handler(BaseHTTPRequestHandler):
     port = 0
     limiter = None
     allow_inject = False
+    updater = None
     timeout = 10
     def _deny(self, code, message, reason):
         """Reject with JSON error."""
@@ -939,6 +953,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if a in _RATE_ACTIONS and not self.limiter.allow(a):
             self._deny(429, "too many requests", "rate")
+            return
+        if a in _UPDATE_ACTIONS:
+            if self.updater is None or len(data) != 1:
+                self._deny(400, "bad request", "shape")
+                return
+            try:
+                getattr(self.updater, _UPDATE_ACTIONS[a])()
+            except update_client.UpdateError as e:
+                self._json({"error": e.message, "code": e.code}, e.status)
+                return
+            self._json(dict(self.updater.snapshot(), ok=True))
             return
         for k, m in (("number", 64), ("name", 64), ("time", 64), ("text", 1000)):
             v = data.get(k)
@@ -1068,7 +1093,8 @@ def apply_phone_action(phone, data):
 class _Limits:
     """Per-action rate limits."""
     def __init__(self):
-        self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3)}
+        self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3),
+                         "update_check": secure.RateLimiter(0.2, 3), "update_download": secure.RateLimiter(0.1, 2), "update_rollback": secure.RateLimiter(0.1, 2)}
         self._buckets.update(net_page.buckets())  # track: network
         if monitor_web is not None:
             self._buckets.update(monitor_web.buckets())  # track: monitor
@@ -1076,8 +1102,8 @@ class _Limits:
         """Delegate key to its bucket."""
         b = self._buckets.get(key)
         return b.allow("all") if b is not None else False
-def make_server(port, phone, host="127.0.0.1", token=None, span=None):
-    """Bind loopback server."""
+def make_server(port, phone, host="127.0.0.1", token=None, span=None, updater=None):
+    """Bind loopback server. updater: an opos.update_client.UpdateClient (default: this install's)."""
     secure.check_bind(host)
     class Bound(Handler):
         pass
@@ -1088,6 +1114,7 @@ def make_server(port, phone, host="127.0.0.1", token=None, span=None):
     Bound.token = token if token else secure.new_token()
     Bound.limiter = _Limits()
     Bound.allow_inject = type(phone) is Phone
+    Bound.updater = updater if updater is not None else update_client.UpdateClient()
     server = _Server((host, port), Bound)
     Bound.port = server.server_address[1]
     return server
@@ -1160,10 +1187,17 @@ def main(argv=None):
     server = make_server(args.port, phone, token=token, **({} if span is None else {"span": span}))
     if span is not None:
         print(f"OPOS two-screen span: {span.pane:g} + {span.hinge:g} + {span.pane:g} CSS px", flush=True)
+    server.RequestHandlerClass.updater.start_auto_check()  # only when /etc/opos/update.json opts in with auto_check; it checks, never downloads
+    try:
+        port = server.server_address[1]  # not args.port: --port 0 lets the kernel pick, and the update smoke test reads the real one from this line
+    except (AttributeError, IndexError, TypeError):
+        port = args.port
+    if type(port) is not int:  # a test double
+        port = args.port
     if live is not None:
-        print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{args.port}/ (Ctrl-C to stop)", flush=True)
+        print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{port}/ (Ctrl-C to stop)", flush=True)
     else:
-        print(f"OPOS desktop demo: http://127.0.0.1:{args.port}/?demo=1 (Ctrl-C to stop)", flush=True)
+        print(f"OPOS desktop demo: http://127.0.0.1:{port}/?demo=1 (Ctrl-C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

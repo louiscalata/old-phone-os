@@ -23,15 +23,20 @@ dir=$HOME/.cache/opos-kiosk
 quick=20 gpu='' fails=0 delay=2
 log() { logger -t opos-kiosk "$*" 2>/dev/null || echo "opos-kiosk: $*" >&2; }
 now() { date +%s 2>/dev/null || echo 0; }
-n=0
-until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
-    n=$((n + 1))
-    if [ "$n" -ge 120 ]; then
-        log "the OPOS server does not answer after ${n} tries; starting chromium anyway"
-        break
-    fi
-    sleep 1
-done
+# >>> track ota: wait for the server before EVERY start of the browser, not only the first. An update restarts the
+# server and stops the browser together (docs/ota-update.md); a browser that came back first would load an error page.
+wait_for_server() {
+    n=0
+    until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
+        n=$((n + 1))
+        if [ "$n" -ge 120 ]; then
+            log "the OPOS server does not answer after ${n} tries; starting chromium anyway"
+            break
+        fi
+        sleep 1
+    done
+}
+# <<< track ota
 set -- --kiosk --ozone-platform=wayland --no-first-run --noerrdialogs --disable-translate \
     --disable-features=Translate,MediaRouter --password-store=basic --user-data-dir="$dir"
 case ${OPOS_KIOSK_DEBUG_PORT:-} in
@@ -40,6 +45,7 @@ case ${OPOS_KIOSK_DEBUG_PORT:-} in
 *) set -- "$@" --remote-debugging-port="$OPOS_KIOSK_DEBUG_PORT" --remote-debugging-address=127.0.0.1 ;;
 esac
 while :; do
+    wait_for_server # track ota: before every start, and before t0 below so the wait is not counted as a quick exit
     # >>> track firstboot: the owner's time zone, saved by src/opos/timezone.py. Chromium reads TZ when it starts, so every start re-reads it.
     z=; f=${OPOS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opos}/timezone
     [ -f "$f" ] && IFS= read -r z < "$f"

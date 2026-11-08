@@ -15,3 +15,6 @@ build/
 dist/
 *.egg-info/
 duo-acceptance/
+*.opos-update
+*_ed25519
+*.pem

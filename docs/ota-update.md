@@ -1,8 +1,13 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# OPOS over-the-air updates (design)
+# OPOS over-the-air updates
 
-Status, November 8, 2026: **design only; nothing here is implemented yet.** This document is the contract that the
-updater, the client and the release tools are built against. It describes the OPOS OS image for the Surface Duo
+Status, November 8, 2026: **implemented (root updater, client, release tools) and tested on Linux with stand-ins for systemd, runuser and the browser; not tested on the phone.**
+`tests/test_ota_roundtrip.py` builds real signed bundles with `tools/opos-release.py`, fetches them with the client from a
+loopback server, and has the updater apply, health-check, refuse and roll them back; the unit tests of each part sit
+beside it. What no test reaches: the systemd path unit and the unit hardening on systemd 257, the real `runuser`/PAM,
+the kiosk browser coming back after its restart, and the phone's kernel, flash and clock. Expect to find problems at the first
+real run. This document is the contract that the updater, the client and the release tools were built against; "As built"
+below lists where the code is stricter or more specific than the text. It describes the OPOS OS image for the Surface Duo
 (see [packaging/duo-os/README.md](../packaging/duo-os/README.md)); the Android/Termux deploy is not covered.
 
 ## What can and cannot be updated
@@ -33,8 +38,20 @@ from its own baked-in revision again.
   `OPOS_UPDATE_SIGNERS=<file>` (public keys). The repository carries public keys only. The owner generates and keeps the
   release key (`ssh-keygen -t ed25519`); a development key may sign development images.
 - Replay and downgrade: every bundle has a strictly increasing integer `serial`; the updater refuses `serial` not greater
-  than the current one and any serial in its `failed` list. A downgrade is a local root action (`opos-updater rollback`),
-  never a bundle.
+  than the current one, any serial in its `failed` list and any serial at or below the `floor` (the highest serial that ever
+  failed on this phone; it only goes up, so a serial pushed out of the bounded list is still refused). A downgrade is a
+  local root action (`opos-updater rollback`), never a bundle.
+- **The one exception: the rollback request.** The Update page's "Request rollback" is an empty file, `inbox/rollback.request`,
+  and root honours it although it carries no signature, so any process that can write the inbox (anything running as
+  `droidian`, which is also what OPOS's own server is) can send the phone back to its previous release. That is a
+  downgrade to code the owner signed and the phone ran, never to anything else, and it is limited: root honours **one
+  requested step back per applied update** (`state.json` `stepped_back`; an applied update clears it), and a requested
+  rollback does **not** burn the serial it leaves, so installing the same signed release again undoes it. What the limit does not
+  stop: one step back per update, by anyone with that uid; and a process that keeps `opos-server` down through the
+  45-second health window of a real update gets that update rolled back and its serial burned (the owner then ships the
+  fix under a new serial). A process that can do that can already kill the UI at will, so it is accepted, not fixed. The
+  same file can also ask for a *staged* boot update to be dropped (the text `cancel-staged`, or the empty request): that
+  changes nothing that is installed, burns no serial, and is not limited, because it only undoes something that has not run yet.
 
 ## Bundle format (`opos-<serial>.opos-update`)
 
@@ -80,7 +97,7 @@ relative to the index's own URL.
 ```
 
 `state.json` (root-written): `{"base": 1, "current": {"serial", "version", "revision", "release"}, "previous": [...],
-"failed": [serials], "pending_boot": null}`. `status.json` (world-readable, for the UI): `{"phase": "idle|verifying|
+"failed": [serials], "pending_boot": null, "stepped_back": null}`. `status.json` (world-readable, for the UI): `{"phase": "idle|verifying|
 applying|checking|done|rolled-back|failed", "message", "serial", "time"}`. The image's initial release is serial 0 built
 from the revision in `/opt/opos/REVISION`; `build-image.sh` creates the release-directory layout.
 
@@ -88,22 +105,26 @@ from the revision in `/opt/opos/REVISION`; `build-image.sh` creates the release-
 
 1. Take the lock; move the newest `*.opos-update` from the inbox into staging (`O_NOFOLLOW`, regular file only, size cap).
 2. Verify: tar structure; signature; manifest schema; `payload` hash/size; `serial` > current and not in `failed`;
-   `requires_base`; free space at least twice the unpacked size.
+   `requires_base`; free space at least twice the unpacked size, and room for the whole change and its rollback (see "As
+   built").
 3. Unpack the payload into `releases/.staging-<serial>` with the checks above; verify every file hash and mode; add
    `REVISION`; rename to its final release directory.
-4. Smoke test: start the new tree's server as `droidian` on `127.0.0.1:18765` (not the live port); `GET /` must answer
-   200 within 20 s; stop it.
+4. Smoke test: start the new tree's server as `droidian` on a loopback port the kernel picks (`--port 0`, never the live
+   port and never a fixed one that another process could hold); the server prints the address it got and the updater
+   reads it from its own log; `GET /` must answer 200 within 20 s; stop it.
 5. Overlay files (scope `app`): write `<dest>.new`, fsync, rename; keep the originals in `overlay-backup/`;
    `systemctl daemon-reload` if units changed. Switch `/opt/opos` atomically. Restart `opos-server`; kill the kiosk's
    Chromium so its loop restarts it on the new server. Scope `boot`: record `pending_boot` and stop here.
 6. Health check for up to 45 s: `systemctl is-active opos-server`; `GET /` 200; `GET /api/state` (with the page's
    token) returns JSON with a `battery` key. On failure: restore overlay backups, switch the symlink back, restart,
-   add the serial to `failed`, set `status.phase` to `rolled-back`.
+   add the serial to `failed`, set `status.phase` to `rolled-back`. That last step happens only after the files and the
+   link are back, systemd has reloaded and restarted the server, and a bounded health check has run (see "As built").
 7. Keep the current and two previous releases; remove older ones. Write state and status (fsync, rename) at each phase.
 
 Boot-time: `opos-update-boot.service` applies `pending_boot` (steps 5-6 without restarts); `opos-update-confirm.service`
 checks health after boot and rolls back after two consecutive failed boots (counter in `state.json`). A rollback request
-is an empty file `inbox/rollback.request` or `opos-updater rollback`.
+is `inbox/rollback.request`, empty (limited, see the trust model) or holding the text `cancel-staged` (drops a staged boot
+update and nothing else), or `opos-updater rollback` (root, not limited).
 
 ## Client (unprivileged, in OPOS)
 
@@ -113,18 +134,154 @@ is an empty file `inbox/rollback.request` or `opos-updater rollback`.
   no background polling unless `auto_check` is true.
 - `check` fetches `latest.json` and compares serials; `download` fetches the bundle to `inbox/<name>.partial`, fsyncs,
   renames to `.opos-update`; progress and results come from `status.json`. It never verifies for trust: root does.
-- UI: a separate small page at `/update` (not the main page, which is at its size budget) showing the running
-  version/revision/serial, check, download/apply, the last status and a rollback request. Existing token, origin and
-  rate-limit rules for POSTs apply. Without `/var/lib/opos-update` (desktop demo, Android) the page says updates are not
+  Storage is protected while the bytes arrive, because nothing can be verified before they have: 32 MiB must stay free after
+  the bundle. A size the index (or the server's `Content-Length`) promises is reserved before the first byte and is a ceiling
+  for the stream (a longer body stops at the promised size); with no promise at all, which a chunked reply without an index
+  `size` is, the 256 MiB cap is the ceiling and the free space is looked at every MiB as the file grows, so the download stops
+  when less than 32 MiB would remain.
+- UI: a separate small page at `/update` (not the main page, which is at its size budget; the main page has one link to it,
+  "Updates" in Settings under About, and the page's "Back to the phone" returns) showing the running
+  version/revision/serial, check, download/apply, the last status and a rollback request. While a boot-scope update is
+  staged (`pending_boot` in `state.json`) the button becomes "Cancel staged update" and writes `rollback.request` holding the
+  text `cancel-staged` (as `rollback.request.partial`, then renamed), which the updater takes as dropping the staged update and
+  nothing else. It is offered with no earlier release and after the one requested step back was used, and it is the only request
+  the client makes while something is staged, so cancelling never also moves the installed release; to go back, cancel first.
+  The client is in the app and the updater is in the image, so it can be newer than the updater, which would read the cancel
+  text as a plain "go back": the button is offered only when `state.json` shows an updater that knows the form (one that keeps a
+  `floor`); on an older one the page behaves as before. Existing token, origin and rate-limit rules for POSTs apply. Without `/var/lib/opos-update` (desktop demo, Android) the page says updates are not
   available on this install.
+  **That gate is a proxy, not a handshake.** The client never talks to root, so it cannot ask what the updater understands;
+  all it has is the files it reads. It takes a `floor` that is an integer of 0 or more in `state.json` (the highest serial that
+  ever failed on the phone; the updater that reads `cancel-staged` keeps it) as the sign of an updater that has the form, and
+  nothing else in `state.json` stands for it. Why that is safe:
+  - *The unprivileged side cannot force the button.* Only root writes `state.json`; the client reads it and reduces it to this
+    one test. And what the button writes is checked again by root: an updater that knows the form takes an empty file or exactly
+    `cancel-staged` and removes anything else.
+  - *A wrong "no" costs a button.* Whatever the reason `state.json` has no usable `floor` (the file is missing or damaged, or the
+    updater is an old one), the page shows the plain rollback rules, as before, and sends nothing that an old updater would misread.
+  - *A wrong "yes" is bounded.* It means an updater that has a `floor` but reads any request file as "go back". The cancel then
+    does what a rollback request does: it needs an earlier release, is limited to one step back per applied update (`stepped_back`),
+    does not burn the serial it leaves, and drops the staged update too; installing the same signed release again undoes it. With
+    no earlier release the old updater refuses it and the staged update stays. Nothing is lost, and nothing the owner did not sign runs.
+    The only way to get there is a `state.json` written by a newer updater and kept by an older image (a downgrade of the image
+    that keeps `/var/lib/opos-update`; an older updater rewrites the file and leaves a key it does not know where it is), which is a local
+    root action.
+  - *What keeps the proxy true.* An updater that keeps `floor` also reads `cancel-staged`, and the other way round; a change to
+    either changes the client's gate in the same commit. `tests/test_update_client.py` (`CancelStagedWithTheRealUpdater`) runs the
+    client against the real updater and is the check that they agree; it skips itself, saying so, while the updater in the tree has
+    no `cancel-staged` request.
 
 ## Developer path (no Wi-Fi, no host)
 
 `tools/opos-release.py` builds and signs a bundle from a git revision (`build`, `verify`, `index`). `deploy/duo-push-update.ps1`
-copies a bundle into the phone's inbox over the USB network with the dev key and prints `status.json` until it settles. This is
+copies a bundle into the phone's inbox over the USB network with the dev key and prints `status.json` until the status that
+belongs to this bundle settles. It reads the serial from the bundle's manifest and takes a status for its own only if it
+carries that serial, so another update finishing while this one is handed over is shown but never taken for the result. Two
+statuses carry no serial: `verifying`, which the script recognises by the inbox file name in its message, and a refusal before
+the manifest was read (a bad signature). The script takes such a refusal as this bundle's when the updater was idle at the
+hand-over or has been seen verifying this file, and otherwise keeps waiting and reports what it saw at the timeout (exit 2).
+A request identifier in every status would make that case exact; it is not there yet. The release tool also stops a build
+that would ship private key material and `verify` refuses a bundle that carries it, by content and not by file name. This is
 also how app-level changes reach the running phone without a new rootfs image.
+
+## As built
+
+Where the code is stricter or more specific than the text above. Every item is a tightening; the text above is the minimum.
+
+- **Layout.** `/opt/opos` is a *relative* symlink (`opos-releases/<serial>-<rev12>`, so it also resolves inside a mounted
+  image); `<rev12>` is the first 12 hex digits of the revision; the image's own release is `0-<rev12>`. A release directory
+  holds the app tree, `REVISION`, `manifest.json`, `manifest.json.sig`, `overlay/` and `overlay-backup/`; those five names
+  are reserved and a bundle may not write them. The current release and two previous ones are kept.
+- **Bundle contents.** A bundle is a complete application tree (`opt/opos/src/opos/**`, `LICENSE`, `THIRD_PARTY.md`, as
+  `git archive` gives it), never a delta; a bundle with only overlay files is refused. Overlay paths are single-level and
+  exact, as in the table above. Refused although a glob would match them: `etc/opos/update.json`, `etc/opos/base-version`,
+  anything named `opos-update*` in `usr/sbin`, `etc/systemd/system` and `etc/default`, `usr/libexec/opos-updater/**`, and
+  names ending `.new`. A path component matches `[A-Za-z0-9_][A-Za-z0-9._+-]*` (no dotfiles, spaces, `@` or non-ASCII).
+- **Manifest.** `requires_base` is a minimum (accepted when not above `/etc/opos/base-version`); `notes` is optional (at most
+  1,000 characters); no other keys; duplicate JSON keys, `NaN` and a byte-order mark are refused; modes are the strings
+  `"0644"` and `"0755"`; payload member names equal the manifest paths exactly and the tar header mode equals the manifest
+  mode. The outer tar is plain, exactly the three members in order, and only zero padding follows. The updater reads its
+  three 512-byte headers itself and does not use `tarfile` for them: `tarfile` parses PAX and GNU extension headers (sparse
+  maps, long names) before it yields a member, which let an unsigned file make the phone allocate whatever it declared. Any
+  header that is not a plain regular file of the expected name (an extension, sparse, long-name, link or directory header, a
+  prefix, a size that is not octal) is refused before its contents are read. Limits: 20,000 files,
+  256 MiB unpacked; the client and the release tool stop a bundle at 256 MiB, the updater at 272 MiB.
+- **Inbox.** The client writes `opos-<serial>.opos-update.partial`, fsyncs, then renames it; `rollback.request` is a regular
+  file that is empty (roll back, and drop a staged boot update) or holds the text `cancel-staged` (drop the staged boot
+  update only; the client must write it as `rollback.request.partial` and rename it, so root never reads it half
+  written). Anything else in it is refused, and at most 64 bytes are read. A staged boot update is dropped on its own
+  account, so it can be cancelled when there is no previous release and when the one-step limit has been used; its serial
+  is not burned. Root deletes every `*.opos-update` and `rollback.request` it looks at, accepted or not, removes `.partial`
+  files older than a day, applies the newest bundle by modification time and discards the others; a symlink, FIFO or
+  directory in the inbox is removed and reported (also when an unexpected error stops the run). The path unit matches
+  only `*.opos-update` and `rollback.request`. `opos-update.service` has **no start limit**: every file dropped in the inbox
+  is one start, and a limit would let any process that can write the inbox switch the service and the path unit off until
+  root resets them. What bounds a flood instead: everything looked at is removed, and the updater lingers after each run
+  (2 s; 30 s after a run that could not work: exit 1 or 75), so the path unit starts at most one run per few seconds.
+- **Serials.** A serial must be above the running one and above a staged boot update, and not in `failed`. A rolled-back
+  serial (after a failed health or boot check, `opos-updater rollback`, or recovered after an interrupted apply) is added to
+  `failed` and never accepted again; a refused bundle, a failed smoke test and a rollback *requested through the inbox* are
+  not (see the trust model: that one is limited to one step back per applied update, and installing the same signed release
+  again undoes it). `failed` keeps the newest 64; `floor` (also in `state.json`) is the highest serial that ever failed, never
+  goes down, and refuses every serial at or below it, so the 65th failure does not make the first replayable. If
+  `state.json` is lost the floor is lost with it (it is rebuilt from the running release). A newer app update supersedes a
+  staged boot update, and a rollback cancels it.
+- **State.** `state.json` also holds `schema`, `trial` (boot scope: the failed-boot counter), `stepped_back` (the serial the
+  phone last went back from, until the next update is applied) and `txn` (a journal written
+  before the first live change; the next run undoes an interrupted apply or finishes an interrupted rollback). `status.json`
+  also holds `epoch`, and each bundle or request that is looked at rewrites it (the USB push script waits for it to change).
+  Its `message` can contain text that came from a bundle or the inbox, so the UI escapes it. A bundle refused before its
+  manifest is read (a bad signature, say) leaves `serial` empty.
+- **Health and smoke tests.** Health: `systemctl is-active opos-server.service` is `active`; `GET /` on port 8765 answers
+  200 and carries `<meta name="opos-token" content="...">`; `GET /api/state` with that token returns a JSON object with a
+  `battery` key. Boot confirmation uses the same check. Smoke test: the new release's server runs as `droidian` through
+  `runuser` with `--port 0`; `opos.web` prints `http://127.0.0.1:<port>/` once it listens (the port it really got, not the
+  one asked for), the updater reads that line from its own root-owned log, and `GET /` on that port must answer 200 within
+  20 seconds. There is no well-known port to hold or to answer on: a server that does not print its address fails the test.
+  A process running as `droidian` could still kill the smoke server and answer on its port in the instant between the line
+  and the request; the health check on the live port after the switch, and the rollback it triggers, are the net under that.
+  Each probe of the server (connect, headers and body, both requests of a health check together) has a hard deadline of 8 s,
+  kept by a timer that shuts the socket down, because a per-receive timeout is satisfied for ever by a server that sends one
+  byte a second; the health and smoke deadlines are therefore met to within one probe. The smoke server may not write a file
+  larger than 1 MiB (`RLIMIT_FSIZE`, its log included), so a release that loops on an error cannot fill the storage; the
+  failure message reads only the last bytes of the log.
+- **Space and rollback.** Besides twice the unpacked size, the updater checks, before anything live changes, that each file
+  system has room for the peak of the whole change, rollback included. Per file system that is the unpacked release and the
+  saved originals of the overlay files it replaces (both in the release directory) plus what `peak_space` finds for the
+  overlay files that live on it: it follows the replacement order, where each file's temporary copy sits beside the old file
+  on top of the growth of the files replaced before it, and a restore from a failure at any point, where the original being
+  copied back sits beside the replaced file while the files before it are already back; the answer is the highest point of
+  all of that, never less than the largest single temporary copy, plus 16 MiB of headroom. Sizes are byte counts: block
+  rounding, directory and journal use and space that a delete gives back only later are not modelled, and the headroom has to
+  cover them (rounding up to a 4 KiB block costs less than 4 KiB per file, so the headroom covers about four thousand
+  overlay files). This is a bound from a
+  model and a test on a real small tmpfs, not a measurement on the phone. A staged boot update that no longer fits at boot
+  waits for the next boot and is not burned. A restore leaves a file alone that already is its saved original. A copy that
+  fails (a full file system above all) removes its own temporary file at once, and a restore removes every `<path>.new` beside
+  an indexed path before it copies anything (a killed run leaves one): otherwise a half-written copy holds the room that the
+  restore of the files already replaced needs for their copies.
+  The rollback of a failed update, a requested rollback and recovery after a crash all end the same way: the saved overlay
+  files are put back (a missing, unreadable or malformed `overlay-backup/index.json`, limit 16 MiB for writer and reader alike,
+  stops the run with the journal and the backups kept), the link is switched, systemd is asked to reload and restart the
+  server, and the server gets a bounded health check. If systemd refuses (rate limit, bus error) or a file cannot be put
+  back, the journal stays in `state.json`, the status says `failed`, the run exits 1 and no new bundle is looked at until
+  the next run has finished the job; the serial is burned and `current` changes only when it has. If everything is back but
+  the server is still not healthy, the rollback is complete and the status message says so. The updater never edits its own
+  journal away: when it cannot finish (a lost or damaged backup), every run stops at the same place until the owner puts the
+  files back by hand and closes the journal; [the how-to](ota-release-howto.md#a-rollback-that-did-not-finish) has the steps,
+  and re-imaging is the other way out.
+- **What the updater touches.** It asks systemd for `daemon-reload`, `restart opos-server.service` and `is-active
+  opos-server.service` and nothing else, so never `opos.service`; it kills the kiosk's Chromium with `pkill`, and
+  `opos-kiosk` waits for the server before every start of the browser. Exit codes: 0 done or nothing to do, 3 a bundle or
+  request was refused or rolled back and 75 another run holds the lock (the unit accepts both: `SuccessExitStatus=3 75`),
+  1 fatal, 2 usage.
+- **Hosting.** The client follows a redirect only within one scheme, host and port, so a phone cannot fetch from GitHub
+  release assets (served from another host); use a static site on one host. The image build takes
+  `OPOS_UPDATE_SIGNERS=<public keys file>` (no key: nothing is accepted) and `OPOS_UPDATE_URL=<address of latest.json>` (no
+  address: nothing is fetched); [the owner's how-to](ota-release-howto.md) covers the rest.
 
 ## Limits
 
 No kernel, initramfs, vendor-layer or Debian updates; no update of the updater or its trust keys over the air; no
-Android/Termux support; not tested on the phone until the updater runs there; there is no hosted update server yet.
+Android/Termux support; no revocation of a release key; not tested on the phone (see the status line); there is no hosted
+update server yet. Any process running as `droidian` can still ask for one step back per update (trust model).

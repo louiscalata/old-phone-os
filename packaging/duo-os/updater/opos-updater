@@ -1,0 +1,1715 @@
+#!/usr/bin/python3 -IB
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""opos-updater: the root-side trust anchor of OPOS over-the-air updates (contract: docs/ota-update.md).
+
+Standard library only. Subcommands: apply-inbox, apply-pending-boot, confirm-boot, rollback, status.
+
+Every directory, command and limit comes from a Config. The CLI builds the production Config (fixed paths and
+absolute command paths; no environment variable, argument or file overrides it); tests build temporary ones with
+stubbed commands. Nothing here runs at import time.
+
+Crash safety: before the first live change (overlay files, the /opt/opos symlink) state.json gets a `txn` record
+and the old files are saved in the new release's overlay-backup/. Whatever stops the run after that (exception,
+kill, power loss), the next run finds the record and puts the old release back (an apply is undone; an
+interrupted rollback is finished). A release only becomes `current` after its health check passed. The updater
+never restarts opos.service (the compositor session); the only unit it restarts is opos-server.service.
+"""
+import argparse
+import collections
+import contextlib
+import dataclasses
+import errno
+import fcntl
+import hashlib
+import http.client
+import json
+import os
+import pwd
+import re
+import resource
+import shutil
+import signal
+import socket
+import stat
+import subprocess
+import sys
+import tarfile
+import threading
+import time
+import zlib
+
+NAMESPACE = 'opos-update'
+PRINCIPAL = 'opos-release'
+SERVER_UNIT = 'opos-server.service'
+SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'}
+RELEASE_RE = re.compile(r'^(\d{1,10})-([0-9a-f]{12})\Z')  # a serial is at most 2**31 - 1, ten digits
+HEX64 = re.compile(r'^[0-9a-f]{64}\Z')
+HEX40 = re.compile(r'^[0-9a-f]{40}\Z')
+COMP_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9._+-]{0,127}\Z')
+VERSION_RE = re.compile(r'^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}\Z')
+# Names in a release directory that belong to the updater; a bundle may not write them.
+RESERVED = frozenset({'REVISION', 'manifest.json', 'manifest.json.sig', 'overlay', 'overlay-backup'})
+MODES = {'0644': 0o644, '0755': 0o755}
+MAX_MANIFEST = 8 << 20
+MAX_SIG = 16 << 10
+MAX_STATE = 1 << 20
+MAX_FAILED = 64            # serials kept in state.json's `failed` list (the `floor` is what never forgets)
+# One limit for the writer and the reader of overlay-backup/index.json. 20,000 entries of at most about 650 bytes each is
+# about 13 MB; a reader with a smaller limit than the writer once threw a valid backup away (review finding 2).
+MAX_INDEX = 16 << 20
+BLOCK = 512                # the tar block size
+MAX_REQUEST = 64           # bytes of a request file that are read
+CHUNK = 1 << 20
+REQUEST_ROLLBACK, CANCEL_STAGED = 'rollback', 'cancel-staged'  # what inbox/rollback.request can ask for
+Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
+
+
+class Reject(Exception):
+    """The bundle or request is refused; nothing live was changed."""
+
+
+class Busy(Exception):
+    """Another updater run holds the lock."""
+
+
+class Fatal(Exception):
+    """The updater cannot continue (unreadable state, wrong layout)."""
+
+
+class Incomplete(Fatal):
+    """Putting the previous release back did not finish (systemd refused a reload or a restart, a file could not be copied).
+    The transaction stays open in state.json together with the saved originals it names, and the next run does the rest."""
+
+
+def _free_bytes(path):
+    s = os.statvfs(path)
+    return s.f_bavail * s.f_frsize
+
+
+def _boot_id():
+    with open('/proc/sys/kernel/random/boot_id', encoding='ascii') as f:
+        return f.read().strip()
+
+
+def _log(msg):
+    print('opos-updater: ' + msg, file=sys.stderr, flush=True)
+
+
+@dataclasses.dataclass
+class Config:
+    """Everything the updater touches. Defaults are the production values."""
+    root: str = '/'                                  # overlay files land in root + path
+    opt_link: str = '/opt/opos'
+    releases: str = '/opt/opos-releases'
+    var: str = '/var/lib/opos-update'
+    signers: str = '/etc/opos/update/allowed_signers'
+    base_version: str = '/etc/opos/base-version'
+    trusted_uid: int = 0                             # owner required for the trust files and directories
+    service_user: str = 'droidian'
+    ssh_keygen: tuple = ('/usr/bin/ssh-keygen',)
+    systemctl: tuple = ('/usr/bin/systemctl',)
+    runuser: tuple = ('/usr/sbin/runuser', '-u', 'droidian', '--')
+    pkill: tuple = ('/usr/bin/pkill',)
+    env_bin: str = '/usr/bin/env'
+    python: str = '/usr/bin/python3'
+    kiosk_pattern: str = r'chromium.* --kiosk .*--user-data-dir=[^ ]*/\.cache/opos-kiosk'
+    health_host: str = '127.0.0.1'
+    health_port: int = 8765
+    smoke_port: int = 0                              # 0: the smoke server binds a port the kernel picks and reports it
+    smoke_chown: bool = True                         # give the smoke server's throwaway HOME to service_user
+    smoke_timeout: float = 20.0
+    smoke_log_limit: int = 1 << 20                   # the smoke server may not write a file larger than this (RLIMIT_FSIZE), its log included
+    health_timeout: float = 45.0
+    health_interval: float = 1.0
+    probe_deadline: float = 8.0                      # hard limit for one probe of the server: connect, headers and body
+    confirm_timeout: float = 120.0
+    lock_timeout: float = 120.0
+    pace: float = 2.0                                # apply-inbox lingers this long after a run that did its job
+    fail_pause: float = 30.0                         # ... and this long after one that could not (exit 1 or 75)
+    cmd_timeout: float = 60.0
+    partial_ttl: float = 86400.0
+    max_files: int = 20000
+    max_unpacked: int = 256 << 20
+    max_bundle: int = 272 << 20
+    max_passes: int = 8
+    space_headroom: int = 16 << 20                   # free bytes left over after the whole live change, rollback included
+    keep_previous: int = 2
+    statvfs: object = None                           # callable(path) -> free bytes
+    health: object = None                            # callable(cfg) -> (ok, message)
+    smoke: object = None                             # callable(cfg, release_dir) -> (ok, message)
+    boot_id: object = None                           # callable() -> str
+    now: object = time.time
+    mono: object = time.monotonic
+    sleep: object = time.sleep
+    log: object = _log
+    sync: object = None                              # callable(); flush everything before a release is named
+    hook: object = None                              # callable(step_name); the crash-injection seam of the tests
+
+    def __post_init__(self):
+        self.statvfs = self.statvfs or _free_bytes
+        self.health = self.health or probe_health
+        self.smoke = self.smoke or run_smoke
+        self.boot_id = self.boot_id or _boot_id
+        self.sync = self.sync or os.sync
+
+    @property
+    def inbox(self):
+        return os.path.join(self.var, 'inbox')
+
+    @property
+    def staging(self):
+        return os.path.join(self.var, 'staging')
+
+    @property
+    def state_file(self):
+        return os.path.join(self.var, 'state.json')
+
+    @property
+    def status_file(self):
+        return os.path.join(self.var, 'status.json')
+
+    @property
+    def lock_file(self):
+        return os.path.join(self.var, 'lock')
+
+
+def run(cfg, argv, input=None, timeout=None):
+    """Run a command with a fixed environment; never raises for a missing binary or a timeout."""
+    try:
+        return subprocess.run(list(argv), input=input, capture_output=True, env=SAFE_ENV, check=False,
+                              stdin=None if input is not None else subprocess.DEVNULL, timeout=timeout or cfg.cmd_timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(list(argv), 124, b'', b'timed out')
+    except OSError as e:
+        return subprocess.CompletedProcess(list(argv), 127, b'', str(e).encode())
+
+
+# ---- files -------------------------------------------------------------------------------------------------
+
+def fsync_dir(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def write_all(fd, data):
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
+def atomic_write(path, data, mode=0o644):
+    tmp = '%s.%d.tmp' % (path, os.getpid())
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        write_all(fd, data)
+        os.fchmod(fd, mode)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.rename(tmp, path)
+    fsync_dir(os.path.dirname(path))
+
+
+def hash_file(path):
+    h, n = hashlib.sha256(), 0
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        while True:
+            b = os.read(fd, CHUNK)
+            if not b:
+                return n, h.hexdigest()
+            h.update(b)
+            n += len(b)
+    finally:
+        os.close(fd)
+
+
+def read_small(path, limit):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        data = b''
+        while len(data) <= limit:
+            b = os.read(fd, min(CHUNK, limit + 1 - len(data)))
+            if not b:
+                return data
+            data += b
+    finally:
+        os.close(fd)
+    raise Reject('%s is larger than %d bytes' % (os.path.basename(path), limit))
+
+
+def remove_tree(path):
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(st.st_mode):
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+
+
+def make_dirs(base, rel):
+    """Create the directories of rel under base (0755, regardless of umask); never follows a symlink."""
+    p = base
+    for part in rel.split('/'):
+        p = os.path.join(p, part)
+        try:
+            os.mkdir(p, 0o755)
+            os.chmod(p, 0o755)
+        except FileExistsError:
+            if not stat.S_ISDIR(os.lstat(p).st_mode):
+                raise Reject('%s: path conflict' % rel)
+
+
+# ---- manifest ----------------------------------------------------------------------------------------------
+
+def _no_dupes(pairs):
+    d = {}
+    for k, v in pairs:
+        if k in d:
+            raise ValueError('duplicate key')
+        d[k] = v
+    return d
+
+
+def _bad_const(name):
+    raise ValueError(name)
+
+
+def _int(v, lo, hi, what):
+    if type(v) is not int or not lo <= v <= hi:
+        raise Reject('manifest: %s must be an integer from %d to %d' % (what, lo, hi))
+    return v
+
+
+def _str(v, rx, what):
+    if type(v) is not str or not rx.match(v):
+        raise Reject('manifest: %s is malformed' % what)
+    return v
+
+
+def classify(path):
+    """Allowlist check for a manifest path. Returns ('app', path inside the release) or ('overlay', path)."""
+    if type(path) is not str or not path or len(path) > 512:
+        raise Reject('manifest: bad path')
+    if path.startswith('/'):
+        raise Reject('absolute path %r' % path)
+    parts = path.split('/')
+    if '..' in parts:
+        raise Reject('path traversal in %r' % path)
+    if any(p in ('', '.') or not COMP_RE.match(p) for p in parts) or len(parts) > 16:
+        raise Reject('malformed path %r' % path)
+    n = len(parts)
+    head2, head3 = parts[:2], parts[:3]
+    if head3 in (['etc', 'opos', 'update'], ['usr', 'libexec', 'opos-updater']):
+        raise Reject('%r belongs to the updater and is never updated over the air' % path)
+    if head2 == ['opt', 'opos']:
+        if n < 3 or parts[2] in RESERVED:
+            raise Reject('%r is not a usable application path' % path)
+        return 'app', '/'.join(parts[2:])
+    name = parts[-1]
+    ok = (
+        (n == 4 and head3 == ['usr', 'libexec', 'opos'])
+        or (n == 3 and head2 == ['usr', 'sbin'] and name.startswith('opos-') and not name.startswith('opos-update'))
+        or (n == 4 and head3 == ['etc', 'systemd', 'system'] and name.startswith('opos') and name.endswith('.service')
+            and not name.startswith('opos-update'))
+        or (n == 3 and head2 == ['etc', 'default'] and name.startswith('opos') and not name.startswith('opos-update'))
+        or (n == 3 and head2 == ['etc', 'opos'] and name not in ('update', 'update.json', 'base-version'))
+    )
+    if not ok or name.endswith('.new'):
+        raise Reject('path %r is outside the updatable set' % path)
+    return 'overlay', path
+
+
+def parse_manifest(raw, cfg):
+    """Strict schema check of the (already authenticated) manifest bytes. Returns (manifest, [Entry])."""
+    try:
+        m = json.loads(raw.decode('utf-8'), object_pairs_hook=_no_dupes, parse_constant=_bad_const)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        raise Reject('manifest is not valid UTF-8 JSON')
+    required = {'format', 'serial', 'version', 'revision', 'created', 'requires_base', 'scope', 'payload', 'files'}
+    if type(m) is not dict or not required <= set(m) or set(m) - required - {'notes'}:
+        raise Reject('manifest has missing or unknown keys')
+    if _int(m['format'], 1, 1, 'format') != 1:
+        raise Reject('unsupported format')
+    _int(m['serial'], 1, 2**31 - 1, 'serial')
+    _str(m['version'], VERSION_RE, 'version')
+    _str(m['revision'], HEX40, 'revision')
+    _int(m['requires_base'], 1, 10**6, 'requires_base')
+    try:
+        if type(m['created']) is not str:
+            raise ValueError
+        time.strptime(m['created'], '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        raise Reject('manifest: created is not a UTC timestamp')
+    if m['scope'] not in ('app', 'boot'):
+        raise Reject('manifest: scope must be app or boot')
+    if 'notes' in m and (type(m['notes']) is not str or len(m['notes']) > 1000):
+        raise Reject('manifest: notes is malformed')
+    p = m['payload']
+    if type(p) is not dict or set(p) != {'sha256', 'size'}:
+        raise Reject('manifest: payload is malformed')
+    _str(p['sha256'], HEX64, 'payload.sha256')
+    _int(p['size'], 1, cfg.max_bundle, 'payload.size')
+    files = m['files']
+    if type(files) is not list or not 1 <= len(files) <= cfg.max_files:
+        raise Reject('manifest: between 1 and %d files are allowed' % cfg.max_files)
+    entries, seen, total = [], set(), 0
+    for f in files:
+        if type(f) is not dict or set(f) != {'path', 'sha256', 'size', 'mode'}:
+            raise Reject('manifest: a file entry is malformed')
+        kind, rel = classify(f['path'])
+        _str(f['sha256'], HEX64, 'file sha256')
+        size = _int(f['size'], 0, cfg.max_unpacked, 'file size')
+        if f['mode'] not in MODES:
+            raise Reject('manifest: mode of %s must be 0644 or 0755' % f['path'])
+        if f['path'] in seen:
+            raise Reject('manifest lists %s twice' % f['path'])
+        seen.add(f['path'])
+        total += size
+        entries.append(Entry(kind, f['path'], rel if kind == 'app' else 'overlay/' + f['path'], f['sha256'], size, MODES[f['mode']]))
+    if total > cfg.max_unpacked:
+        raise Reject('unpacked size %d is over the %d byte limit' % (total, cfg.max_unpacked))
+    trees = {e.tree for e in entries}
+    for t in trees:
+        parts = t.split('/')
+        if any('/'.join(parts[:i]) in trees for i in range(1, len(parts))):
+            raise Reject('manifest: %s is both a file and a directory' % t)
+    if not any(e.kind == 'app' for e in entries):
+        raise Reject('bundle carries no application files (an update is a complete application tree)')
+    return m, entries
+
+
+# ---- probes ------------------------------------------------------------------------------------------------
+
+def http_get(host, port, path, headers=None, timeout=3.0, total=None):
+    """GET with a hard overall deadline. `timeout` bounds every single socket operation; `total` (default twice that) bounds
+    the whole exchange: connect, status line, headers and body. A per-operation timeout alone is satisfied for ever by a
+    server that sends one byte a second, so a timer shuts the socket down when the deadline passes and the body is read in
+    pieces with the remaining time checked between them (review finding 7)."""
+    total = 2 * timeout if total is None else total
+    end = time.monotonic() + total
+    c = http.client.HTTPConnection(host, port, timeout=max(0.05, min(timeout, total)))
+    timer, fired = None, threading.Event()
+    try:
+        c.connect()
+        sock = c.sock
+
+        def expire():
+            fired.set()
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+        timer = threading.Timer(max(0.0, end - time.monotonic()), expire)
+        timer.daemon = True
+        timer.start()
+        c.request('GET', path, headers=headers or {})
+        r = c.getresponse()
+        body, cap = bytearray(), 4 << 20
+        while len(body) < cap and not r.isclosed():
+            left = end - time.monotonic()
+            if left <= 0 or fired.is_set():
+                raise TimeoutError('no complete answer within %g s' % total)
+            sock.settimeout(max(0.05, min(timeout, left)))
+            chunk = r.read1(min(65536, cap - len(body)))
+            if not chunk:
+                if fired.is_set():
+                    raise TimeoutError('no complete answer within %g s' % total)
+                if r.length:  # closed before the announced length
+                    raise http.client.IncompleteRead(bytes(body), r.length)
+                break
+            body += chunk
+        return r.status, bytes(body)
+    finally:
+        if timer:
+            timer.cancel()
+            timer.join(1.0)  # no thread left over when the next child process is forked
+        c.close()
+
+
+def probe_http(host, port, deadline=8.0):
+    """The health contract: GET / is 200 and carries the page token; /api/state answers JSON with a battery key.
+    `deadline` is the hard limit for both requests together."""
+    end = time.monotonic() + deadline
+
+    def left():
+        return max(0.05, end - time.monotonic())
+    try:
+        status, body = http_get(host, port, '/', total=left())
+        if status != 200:
+            return False, 'GET / answered %d' % status
+        m = re.search(rb'name="opos-token" content="([^"]{1,200})"', body)
+        if not m:
+            return False, 'the page has no token'
+        status, body = http_get(host, port, '/api/state', {'X-OPOS-Token': m.group(1).decode('ascii', 'replace')}, total=left())
+        if status != 200:
+            return False, 'GET /api/state answered %d' % status
+        data = json.loads(body)
+        if type(data) is not dict or 'battery' not in data:
+            return False, '/api/state has no battery'
+        return True, 'healthy'
+    except (OSError, ValueError, http.client.HTTPException) as e:
+        return False, '%s: %s' % (type(e).__name__, e)
+
+
+def probe_health(cfg):
+    r = run(cfg, [*cfg.systemctl, 'is-active', SERVER_UNIT], timeout=cfg.probe_deadline)
+    if r.returncode != 0 or r.stdout.strip() != b'active':
+        return False, 'opos-server is not active'
+    return probe_http(cfg.health_host, cfg.health_port, cfg.probe_deadline)
+
+
+SMOKE_ADDR = re.compile(rb'http://127\.0\.0\.1:([0-9]{1,5})/')
+
+
+def smoke_port_of(log):
+    """The port the smoke server says it listens on: opos.web prints its address once the socket is bound."""
+    try:
+        with open(log, 'rb') as f:
+            m = SMOKE_ADDR.search(f.read(8192))
+    except OSError:
+        return None
+    port = int(m.group(1)) if m else 0
+    return port if 1 <= port <= 65535 else None
+
+
+def run_smoke(cfg, release_dir):
+    """Start the release's own server as the service user; GET / must answer 200 on the port it reports.
+
+    There is no well-known port to squat. The server binds a port the kernel picks (--port 0) and prints the address
+    it got; the updater reads that from its own log, which only root can write, so no other process of the service
+    user can hold the port beforehand or answer in the server's place. A server that exits, or does not report a
+    port, fails the test."""
+    host = cfg.health_host
+    run(cfg, [*cfg.pkill, '-u', cfg.service_user, '-f', r'opos\.web --port %d( |$)' % cfg.smoke_port])  # one a killed run left
+    home = os.path.join(cfg.staging, 'smoke-home')
+    remove_tree(home)
+    os.mkdir(home, 0o700)
+    log = os.path.join(cfg.staging, 'smoke.log')
+    if cfg.smoke_chown:
+        try:
+            pw = pwd.getpwnam(cfg.service_user)
+            os.chown(home, pw.pw_uid, pw.pw_gid)
+        except (KeyError, OSError) as e:
+            return False, 'cannot prepare the smoke test as %s: %s' % (cfg.service_user, e)
+    env = ['PATH=' + SAFE_ENV['PATH'], 'LANG=C.UTF-8', 'HOME=' + home, 'PYTHONPATH=' + os.path.join(release_dir, 'src'),
+           'PYTHONDONTWRITEBYTECODE=1', 'OPOS_BATTERY=live', 'OPOS_ON_PHONE=1']
+    argv = [*cfg.runuser, cfg.env_bin, '-i', *env, cfg.python, '-m', 'opos.web', '--port', str(cfg.smoke_port), '--live-battery']
+    out = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
+    limit = cfg.smoke_log_limit
+
+    def cap_file_size():  # the kernel stops a server that loops on an error from filling the storage (review finding 10)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd='/', env=SAFE_ENV, start_new_session=True,
+                                preexec_fn=cap_file_size)
+    except OSError as e:
+        return False, 'cannot start the server: %s' % e
+    finally:
+        os.close(out)
+    try:
+        deadline = cfg.mono() + cfg.smoke_timeout
+        port = None
+        while True:
+            if proc.poll() is not None:
+                return False, 'the server exited with %s: %s' % (proc.returncode, _tail(log))
+            port = port or smoke_port_of(log)
+            status = None
+            if port:
+                try:
+                    status, _ = http_get(host, port, '/', timeout=2.0, total=min(cfg.probe_deadline, max(0.2, deadline - cfg.mono())))
+                except (OSError, http.client.HTTPException):
+                    status = None
+            if status == 200:
+                if proc.poll() is not None:  # it died while answering: whatever answered is not the server
+                    return False, 'the server exited with %s: %s' % (proc.returncode, _tail(log))
+                return True, 'GET / answered 200'
+            if status is not None:
+                return False, 'GET / answered %d' % status
+            if cfg.mono() >= deadline:
+                return False, ('no answer within %g s: %s' if port else 'the server reported no port within %g s: %s') % (cfg.smoke_timeout, _tail(log))
+            cfg.sleep(min(0.2, cfg.health_interval))
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, sig)
+            try:
+                proc.wait(5)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+        with contextlib.suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        remove_tree(home)
+        remove_tree(log)
+
+
+def _tail(path, keep=300):
+    """The last bytes of a log, read from the end: the file may be as large as a looping server could make it."""
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 4 * keep))
+            return f.read(8 * keep)[-keep:].decode('utf-8', 'replace').strip().replace('\n', ' | ')
+    except OSError:
+        return ''
+
+
+def _octal(field, what):
+    digits = field.strip(b'\0 ')
+    if not 1 <= len(digits) <= 11 or digits.strip(b'01234567'):
+        raise Reject('not a bundle: %s is not an octal number' % what)
+    return int(digits, 8)
+
+
+def outer_header(block, index, name):
+    """Check one 512-byte header of the outer archive: a plain (USTAR or GNU-magic) header of a regular file with exactly the
+    expected name. Returns the member's size. Extension, sparse, long-name, link, directory and device headers are all refused
+    here, by their type flag, without reading anything they point at."""
+    bad = 'bundle member %d must be the regular file %s' % (index + 1, name)
+    if len(block) < BLOCK:
+        raise Reject('bundle is truncated')
+    if _octal(block[148:156], 'the checksum') != sum(block[:148]) + 8 * 32 + sum(block[156:BLOCK]):
+        raise Reject('not a bundle: bad header checksum')
+    if block[257:265] not in (b'ustar\x0000', b'ustar  \x00'):
+        raise Reject('not a bundle: not a tar archive')
+    if block[156:157] not in (b'0', b'\0') or block[:100].split(b'\0', 1)[0] != name.encode():
+        raise Reject(bad)
+    if any(block[157:257]) or any(block[345:BLOCK]):  # link name; prefix and the GNU atime, sparse and extension fields
+        raise Reject('bundle member %s has header fields that a plain archive does not use' % name)
+    return _octal(block[124:136], 'the size')
+
+
+# ---- the updater -------------------------------------------------------------------------------------------
+
+def _new_state(cur):
+    return {'schema': 1, 'base': 1, 'current': cur, 'previous': [], 'failed': [], 'floor': 0, 'pending_boot': None, 'trial': None, 'txn': None,
+            'stepped_back': None}
+
+
+def _iso(t):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
+
+
+def peak_space(changes):
+    """The most bytes, above what the file system holds now, that the overlay files in `changes` ((old size, new size) in
+    replacement order; old is 0 for a file that does not exist yet) need while they are replaced one by one and, if the update
+    fails at any point, put back one by one in the same order. A replacement holds a temporary copy beside the old file until
+    the rename, so its peak is the growth so far plus that copy. A restore from a failure after k files holds that growth
+    while the saved original of file j < k is copied beside the replaced file, and the files before j are already back
+    (which gives space back, or takes it when they had shrunk): the growth after k files, less the growth before j, plus the
+    size of the original of j. Over all k and j that is the growth after k plus the highest (old size - growth before j)
+    among the files before k, found in one pass. Never less than the largest single temporary copy (freed space is not
+    always reusable at once)."""
+    grown, peak, lead = 0, 0, None   # growth after the files done so far; the highest need; that highest (old - growth before it)
+    for old, new in changes:
+        peak = max(peak, old, new, grown + new)
+        if lead is not None:
+            peak = max(peak, grown + lead)   # a failure before this file
+        lead = old - grown if lead is None else max(lead, old - grown)
+        grown += new - old
+    if lead is not None:
+        peak = max(peak, grown + lead)   # a failure after the last file
+    return peak
+
+
+class Updater:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.st = None
+        self.serial = None
+        self.bad = 0
+
+    # -- plumbing
+    def step(self, name):
+        if self.cfg.hook:
+            self.cfg.hook(name)
+
+    def log(self, msg):
+        self.cfg.log(msg)
+
+    def systemctl(self, *args):
+        # The only things this program asks systemd for. Never opos.service, never the compositor session.
+        if args not in (('daemon-reload',), ('restart', SERVER_UNIT)):
+            raise Fatal('refusing systemctl %s' % ' '.join(args))
+        r = run(self.cfg, [*self.cfg.systemctl, *args])
+        if r.returncode != 0:
+            raise RuntimeError('systemctl %s failed (%d): %s' % (' '.join(args), r.returncode, r.stderr.decode('utf-8', 'replace').strip()[:200]))
+
+    @contextlib.contextmanager
+    def locked(self):
+        cfg = self.cfg
+        try:
+            fd = os.open(cfg.lock_file, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        except OSError as e:
+            raise Fatal('updates are not available here (%s)' % e.strerror)
+        deadline = cfg.mono() + cfg.lock_timeout
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as e:
+                if e.errno not in (errno.EAGAIN, errno.EACCES):
+                    os.close(fd)
+                    raise
+                if cfg.mono() >= deadline:
+                    os.close(fd)
+                    raise Busy('another update run is active')
+                cfg.sleep(0.05)
+        try:
+            yield
+        finally:
+            os.close(fd)
+
+    def status(self, phase, message, serial=None):
+        now = self.cfg.now()
+        doc = {'phase': phase, 'message': message[:300], 'serial': serial if serial is not None else self.serial,
+               'time': _iso(now), 'epoch': int(now)}
+        atomic_write(self.cfg.status_file, (json.dumps(doc, sort_keys=True) + '\n').encode())
+
+    def save(self):
+        atomic_write(self.cfg.state_file, (json.dumps(self.st, indent=1, sort_keys=True) + '\n').encode())
+
+    # -- layout and state
+    def check_layout(self):
+        cfg = self.cfg
+        for p, what, gw in ((cfg.var, 'state directory', False), (cfg.inbox, 'inbox', True), (cfg.staging, 'staging directory', False),
+                            (cfg.releases, 'releases directory', False), (os.path.dirname(cfg.opt_link), 'application directory', False)):
+            try:
+                st = os.lstat(p)
+            except OSError:
+                raise Fatal('updates are not available here: %s is missing' % p)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != cfg.trusted_uid or st.st_mode & (0o002 if gw else 0o022):
+                raise Fatal('%s is not a directory owned by root that only root may write' % p)
+        if not os.path.islink(cfg.opt_link):
+            raise Fatal('%s is not a symlink to a release directory (this image has no release layout)' % cfg.opt_link)
+        remove_tree(cfg.opt_link + '.new')
+        for n in os.listdir(cfg.var):
+            if n.endswith('.tmp'):
+                remove_tree(os.path.join(cfg.var, n))
+        for n in os.listdir(cfg.staging):  # whatever a killed run left; the lock is held
+            remove_tree(os.path.join(cfg.staging, n))
+
+    def release_of_link(self):
+        return os.path.basename(os.readlink(self.cfg.opt_link).rstrip('/'))
+
+    def bootstrap(self):
+        name = self.release_of_link()
+        m = RELEASE_RE.match(name)
+        rdir = os.path.join(self.cfg.releases, name)
+        if not m or os.path.realpath(self.cfg.opt_link) != os.path.realpath(rdir):
+            raise Fatal('%s does not point into %s' % (self.cfg.opt_link, self.cfg.releases))
+        try:
+            rev = read_small(os.path.join(rdir, 'REVISION'), 100).decode('ascii', 'replace').strip()
+        except (OSError, Reject):
+            rev = ''
+        return _new_state({'serial': int(m.group(1)), 'version': 'image', 'revision': rev, 'release': name})
+
+    def read_state(self):
+        try:
+            st = json.loads(read_small(self.cfg.state_file, MAX_STATE))
+        except FileNotFoundError:
+            return None
+        except (ValueError, OSError, Reject):
+            raise Fatal('state.json is unreadable; refusing to guess (reinstall the image or repair it by hand)')
+        cur = st.get('current') if type(st) is dict else None
+        if (type(cur) is not dict or type(cur.get('serial')) is not int or type(st.get('previous')) is not list
+                or type(st.get('failed')) is not list or not all(type(x) is int for x in st['failed'])):
+            raise Fatal('state.json has an unexpected shape; refusing to guess')
+        for k, v in _new_state(None).items():
+            st.setdefault(k, v)
+        if type(st['floor']) is not int or st['floor'] < 0:
+            raise Fatal('state.json has an unexpected shape; refusing to guess')
+        # A state file from before the floor existed gets the highest serial in its list, which the floor is at least.
+        st['floor'] = max(st['floor'], max(st['failed'], default=0))
+        return st
+
+    def burn(self, serial):
+        """A serial that failed here is never accepted again. The list keeps the newest MAX_FAILED for display; the floor
+        (the highest serial that ever failed) never goes down and refuses everything at or below it, so a serial that falls
+        out of the list is still refused (review finding 8). Rollback does not lower it."""
+        st = self.st
+        st['failed'] = sorted(set(st['failed']) | {serial})[-MAX_FAILED:]
+        st['floor'] = max(st['floor'], serial)
+
+    def base_level(self):
+        try:
+            st = os.lstat(self.cfg.base_version)
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != self.cfg.trusted_uid or st.st_mode & 0o022:
+                return None
+            v = int(read_small(self.cfg.base_version, 32).decode('ascii').strip())
+            return v if 1 <= v <= 10**6 else None
+        except (OSError, ValueError, Reject):
+            return None
+
+    def begin(self, restart):
+        """Common start of every mutating command (the lock is held): layout, state, interrupted-run recovery."""
+        self.check_layout()
+        self.st = self.read_state()
+        if self.st is None:
+            self.st = self.bootstrap()
+        base = self.base_level()
+        if base:
+            self.st['base'] = base
+        tr = self.st['trial']
+        if tr and tr.get('release') != self.st['current']['release']:
+            self.st['trial'] = None
+        self.save()
+        self.recover(restart)
+        self.tidy()
+
+    def referenced(self):
+        st = self.st
+        names = {st['current']['release']} | {p['release'] for p in st['previous'][:self.cfg.keep_previous]}
+        for k in ('pending_boot', 'trial'):
+            if st[k]:
+                names.add(st[k]['release'])
+        if st['txn']:
+            names |= {v for k, v in st['txn'].items() if k in ('release', 'from', 'to')}
+        with contextlib.suppress(OSError):
+            names.add(self.release_of_link())
+        return names
+
+    def gc(self):
+        keep = self.referenced()
+        for n in os.listdir(self.cfg.releases):
+            if n not in keep and (RELEASE_RE.match(n) or n.startswith('.staging-')):
+                remove_tree(os.path.join(self.cfg.releases, n))
+
+    # -- recovery
+    def recover(self, restart):
+        txn = self.st['txn']
+        if not txn:
+            self.settle_status()
+            return
+        self.log('recovering an interrupted %s of serial %s' % (txn['kind'], txn['serial']))
+        if txn['kind'] == 'rollback':
+            self.finish_rollback(restart, 'finished an interrupted rollback')
+        else:
+            self.undo_apply('interrupted; the previous release was restored', restart)
+
+    def settle_status(self):
+        """A status left in a working phase by a killed run is turned into the truth."""
+        try:
+            doc = json.loads(read_small(self.cfg.status_file, 1 << 16))
+        except FileNotFoundError:
+            self.status('idle', 'no update has been delivered yet', None)
+            return
+        except (OSError, ValueError, Reject):
+            return
+        if type(doc) is not dict or doc.get('phase') not in ('verifying', 'applying', 'checking'):
+            return
+        if doc.get('phase') == 'checking' and doc.get('serial') == self.st['current']['serial']:
+            self.status('done', 'update %s is installed' % doc.get('serial'), doc.get('serial'))
+        else:
+            self.status('failed', 'a previous run was interrupted; the running release is %s' % self.st['current']['release'], doc.get('serial'))
+
+    # -- inbox
+    def scan_inbox(self):
+        """Returns (rollback requested, bundle names newest first). Hostile entries are removed."""
+        cfg = self.cfg
+        dfd = os.open(cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            rollback, bundles = False, []
+            for name in sorted(os.listdir(dfd)):
+                kind = 'rollback' if name == 'rollback.request' else 'bundle' if name.endswith('.opos-update') else 'partial' if name.endswith('.partial') else None
+                if kind is None:
+                    continue
+                try:
+                    st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISREG(st.st_mode):
+                    self.hostile(dfd, name, 'not a regular file')
+                elif kind == 'partial':
+                    if cfg.now() - st.st_mtime > cfg.partial_ttl:
+                        self.drop(dfd, name)
+                elif kind == 'rollback':
+                    rollback = True
+                else:
+                    bundles.append((st.st_mtime_ns, name))
+            return rollback, [n for _, n in sorted(bundles, reverse=True)]
+        finally:
+            os.close(dfd)
+
+    def drop(self, dfd, name, ident=None):
+        """Remove an inbox entry; with ident only if it is still the file that was copied."""
+        try:
+            st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+            if ident and (st.st_dev, st.st_ino) != ident:
+                return
+            if stat.S_ISDIR(st.st_mode):
+                shutil.rmtree(os.path.join(self.cfg.inbox, name), ignore_errors=True)
+            else:
+                os.unlink(name, dir_fd=dfd)
+        except OSError:
+            pass
+
+    def hostile(self, dfd, name, why):
+        self.log('inbox entry %r refused and removed: %s' % (name, why))
+        self.drop(dfd, name)
+        self.bad += 1
+        self.status('failed', 'rejected: inbox entry %r is %s' % (name[:60], why))
+
+    def take_request(self, dfd):
+        """Read and remove inbox/rollback.request. An empty file asks for a rollback (which also cancels a staged boot update);
+        the text `cancel-staged` asks to cancel the staged boot update and nothing else. Anything else is refused: a request
+        file is written by the unprivileged side, so only these two things are understood and at most MAX_REQUEST bytes are
+        read. Returns REQUEST_ROLLBACK, CANCEL_STAGED, or None for a refused request (removed and reported)."""
+        name = 'rollback.request'
+        data, ident = None, None
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dfd)
+        except OSError:
+            fd = None
+        if fd is not None:
+            try:
+                st = os.fstat(fd)
+                ident = (st.st_dev, st.st_ino)
+                if stat.S_ISREG(st.st_mode):
+                    data = os.read(fd, MAX_REQUEST + 1)
+            finally:
+                os.close(fd)
+        self.drop(dfd, name, ident)
+        text = data.strip() if data is not None and len(data) <= MAX_REQUEST else None
+        if text == b'':
+            return REQUEST_ROLLBACK
+        if text == CANCEL_STAGED.encode():
+            return CANCEL_STAGED
+        self.log('rollback request refused and removed: it is not an empty file or %r' % CANCEL_STAGED)
+        self.status('failed', 'rejected: the rollback request is not understood')
+        return None
+
+    def copy_in(self, dfd, name, run_dir):
+        """Copy the inbox file into root-owned staging, with O_NOFOLLOW and a size cap, before anything reads it."""
+        cfg = self.cfg
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dfd)
+        except OSError as e:
+            self.drop(dfd, name)
+            raise Reject('%s cannot be opened safely (%s)' % (name, e.strerror))
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                self.drop(dfd, name)
+                raise Reject('%s is not a regular file' % name)
+            if st.st_size > cfg.max_bundle:
+                self.drop(dfd, name)
+                raise Reject('%s is larger than %d bytes' % (name, cfg.max_bundle))
+            if cfg.statvfs(run_dir) < st.st_size + (16 << 20):
+                self.drop(dfd, name)
+                raise Reject('not enough free space to stage %s; free some space and deliver it again' % name)
+            dest = os.path.join(run_dir, 'bundle')
+            out = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+            try:
+                total = 0
+                while True:
+                    b = os.read(fd, CHUNK)
+                    if not b:
+                        break
+                    total += len(b)
+                    if total > cfg.max_bundle:
+                        self.drop(dfd, name)
+                        raise Reject('%s is larger than %d bytes' % (name, cfg.max_bundle))
+                    write_all(out, b)
+                os.fsync(out)
+            finally:
+                os.close(out)
+        finally:
+            os.close(fd)
+        self.step('copy-read')
+        self.drop(dfd, name, (st.st_dev, st.st_ino))  # only if it is still the file that was copied
+        return dest
+
+    # -- verification
+    def split_outer(self, bundle, run_dir):
+        """Copy the three members of the outer archive into run_dir. The archive is read here, header by header, and not by
+        tarfile: before it hands over a member, tarfile reads and parses PAX and GNU extension headers (a sparse map, a long
+        name) of any size the unauthenticated file declares, so a few hundred megabytes of them could exhaust the phone's
+        memory before the signature is even looked at (review finding 3). Only plain regular members are understood; a header
+        of any other kind is refused before its contents are touched."""
+        cfg = self.cfg
+        want = [('manifest.json', MAX_MANIFEST), ('manifest.json.sig', MAX_SIG), ('payload.tar.gz', cfg.max_bundle)]
+        with open(bundle, 'rb') as f:
+            for i, (name, limit) in enumerate(want):
+                block = f.read(BLOCK)
+                if not block:
+                    raise Reject('not a bundle: empty file' if i == 0 else 'bundle is missing members')
+                if not any(block):  # the end-of-archive marker, too early
+                    raise Reject('bundle is missing members')
+                size = outer_header(block, i, name)
+                if size > limit:
+                    raise Reject('bundle member %s is too large' % name)
+                out = os.open(os.path.join(run_dir, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    left = size
+                    while left:
+                        b = f.read(min(CHUNK, left))
+                        if not b:
+                            raise Reject('bundle is truncated')
+                        write_all(out, b)
+                        left -= len(b)
+                finally:
+                    os.close(out)
+                if f.read(-size % BLOCK).strip(b'\0'):  # the padding up to the next block is zeros (a cut-short last one is harmless)
+                    raise Reject('bundle has data after its last member')
+            while True:  # nothing but zeros may follow: the end-of-archive blocks and the padding
+                b = f.read(CHUNK)
+                if not b:
+                    break
+                if b.strip(b'\0'):
+                    raise Reject('bundle has data after its last member')
+
+    def require_signers(self):
+        cfg = self.cfg
+        try:
+            st = os.lstat(cfg.signers)
+            pst = os.lstat(os.path.dirname(cfg.signers))
+        except OSError:
+            raise Reject('this image has no update signing keys; nothing is accepted')
+        if (not stat.S_ISREG(st.st_mode) or st.st_uid != cfg.trusted_uid or st.st_mode & 0o022
+                or not stat.S_ISDIR(pst.st_mode) or pst.st_uid != cfg.trusted_uid or pst.st_mode & 0o022):
+            raise Reject('allowed_signers is not a root-owned file that only root may write; nothing is accepted')
+        try:
+            text = read_small(cfg.signers, 1 << 20).decode('utf-8', 'replace')
+        except OSError:
+            raise Reject('allowed_signers cannot be read; nothing is accepted')
+        if not any(l.strip() and not l.lstrip().startswith('#') for l in text.splitlines()):
+            raise Reject('this image has no update signing keys; nothing is accepted')
+
+    def check_signature(self, manifest_path, sig_path):
+        self.require_signers()
+        data = read_small(manifest_path, MAX_MANIFEST)
+        r = run(self.cfg, [*self.cfg.ssh_keygen, '-Y', 'verify', '-f', self.cfg.signers, '-I', PRINCIPAL, '-n', NAMESPACE, '-s', sig_path], input=data)
+        if r.returncode != 0 or b'Good' not in r.stdout:
+            why = (r.stderr or r.stdout).decode('utf-8', 'replace').strip().splitlines()
+            raise Reject('signature check failed' + (': ' + why[0][:120] if why else ''))
+
+    def check_policy(self, mf):
+        st = self.st
+        serial = mf['serial']
+        if serial in st['failed']:
+            raise Reject('serial %d failed on this phone before; use a new serial' % serial)
+        if serial <= st['floor']:
+            raise Reject('serial %d is not above %d, the highest serial that failed on this phone; use a new serial' % (serial, st['floor']))
+        if serial <= st['current']['serial']:
+            raise Reject('serial %d is not newer than the running serial %d' % (serial, st['current']['serial']))
+        if st['pending_boot'] and serial <= st['pending_boot']['serial']:
+            raise Reject('serial %d is not newer than the staged serial %d' % (serial, st['pending_boot']['serial']))
+        base = self.base_level()
+        if base is None:
+            raise Reject('/etc/opos/base-version is missing or unsafe')
+        if mf['requires_base'] > base:
+            raise Reject('needs base level %d; this image is level %d (build a new image)' % (mf['requires_base'], base))
+
+    def verify(self, bundle, run_dir):
+        cfg = self.cfg
+        self.split_outer(bundle, run_dir)
+        mpath, spath, ppath = (os.path.join(run_dir, n) for n in ('manifest.json', 'manifest.json.sig', 'payload.tar.gz'))
+        self.check_signature(mpath, spath)
+        mf, entries = parse_manifest(read_small(mpath, MAX_MANIFEST), cfg)
+        self.serial = mf['serial']
+        size, digest = hash_file(ppath)
+        if size != mf['payload']['size'] or digest != mf['payload']['sha256']:
+            raise Reject('payload does not match the signed manifest')
+        self.check_policy(mf)
+        need = 2 * sum(e.size for e in entries)
+        if cfg.statvfs(cfg.releases) < need:
+            raise Reject('not enough free space: %d bytes needed' % need)
+        return mf, entries
+
+    def check_overlay_targets(self, entries):
+        root = os.path.realpath(self.cfg.root)
+        for e in entries:
+            if e.kind != 'overlay':
+                continue
+            dest = os.path.join(self.cfg.root, e.path)
+            parent = os.path.dirname(dest)
+            if not os.path.isdir(parent) or os.path.realpath(parent) != os.path.join(root, os.path.dirname(e.path)):
+                raise Reject('%s: its directory is missing or a symlink' % e.path)
+            try:
+                st = os.lstat(dest)
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                raise Reject('%s exists and is not a regular file' % e.path)
+
+    def check_space(self, entries, unpacked):
+        """Before anything live changes, check that the whole change fits, rollback included (review findings 5 and U2). What
+        it holds at its peak, per file system: the unpacked release (unless it is already unpacked), the saved originals of
+        the overlay files it replaces (in the release directory), and what peak_space finds for the overlay files on that
+        file system: the growth of the files replaced so far with the temporary copy beside the next one, and the same for
+        a restore after a failure at any point; plus some headroom (which also has to cover what the byte counts leave out:
+        block rounding, directory and journal use). The earlier check (twice the unpacked size) stays."""
+        cfg = self.cfg
+        spots = {}  # device -> [a path on it, bytes held before the first live change, (old size, new size) of its overlay files in order]
+
+        def spot(path):
+            dev = os.stat(path).st_dev
+            return spots.setdefault(dev, [path, 0, []])
+        if not unpacked:
+            spot(cfg.releases)[1] += sum(e.size for e in entries)
+        for e in entries:
+            if e.kind != 'overlay':
+                continue
+            dest = os.path.join(cfg.root, e.path)
+            try:
+                old = os.lstat(dest).st_size
+            except FileNotFoundError:
+                old = 0
+            else:
+                spot(cfg.releases)[1] += old  # the saved original lives in the release directory
+            spot(os.path.dirname(dest))[2].append((old, e.size))
+        for path, held, changes in spots.values():
+            need = held + peak_space(changes) + cfg.space_headroom
+            have = cfg.statvfs(path)
+            if have < need:
+                raise Reject('not enough free space to apply and, if need be, undo the update: %d bytes needed on %s, %d free' % (need, path, have))
+
+    def extract(self, payload, entries, dest):
+        """Unpack payload.tar.gz into the fresh directory dest: listed regular files only, hashes and modes checked."""
+        want = {e.path: e for e in entries}
+        seen, total = set(), 0
+        os.mkdir(dest, 0o755)
+        try:
+            with tarfile.open(payload, 'r:gz') as tf:
+                for m in tf:
+                    if m.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):
+                        raise Reject('payload member %r is not a regular file' % m.name)
+                    e = want.get(m.name)
+                    if e is None:
+                        raise Reject('payload member %r is not in the manifest' % m.name)
+                    if m.name in seen:
+                        raise Reject('payload has %r twice' % m.name)
+                    if m.size != e.size or (m.mode & 0o7777) != e.mode:
+                        raise Reject('payload member %r differs from the manifest (size or mode)' % m.name)
+                    total += m.size
+                    if total > self.cfg.max_unpacked:
+                        raise Reject('payload unpacks to more than %d bytes' % self.cfg.max_unpacked)
+                    seen.add(m.name)
+                    self.write_member(tf.extractfile(m), dest, e)
+        except (tarfile.TarError, EOFError, OSError, zlib.error) as ex:
+            raise Reject('payload cannot be unpacked: %s' % ex)
+        if len(seen) != len(want):
+            raise Reject('payload is missing %d listed file(s)' % (len(want) - len(seen)))
+
+    def write_member(self, src, dest, e):
+        if '/' in e.tree:
+            make_dirs(dest, e.tree.rsplit('/', 1)[0])
+        fd = os.open(os.path.join(dest, e.tree), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        h, n = hashlib.sha256(), 0
+        try:
+            while True:
+                b = src.read(CHUNK)
+                if not b:
+                    break
+                n += len(b)
+                if n > e.size:
+                    raise Reject('payload member %s is longer than declared' % e.path)
+                h.update(b)
+                write_all(fd, b)
+            os.fchmod(fd, e.mode)
+        finally:
+            os.close(fd)
+        if n != e.size or h.hexdigest() != e.sha256:
+            raise Reject('payload member %s does not match its signed hash' % e.path)
+
+    def verify_tree(self, rdir, name):
+        """Re-check a staged release before it goes live (boot scope): signature, hashes, modes, no extra files."""
+        self.check_signature(os.path.join(rdir, 'manifest.json'), os.path.join(rdir, 'manifest.json.sig'))
+        mf, entries = parse_manifest(read_small(os.path.join(rdir, 'manifest.json'), MAX_MANIFEST), self.cfg)
+        if name != '%d-%s' % (mf['serial'], mf['revision'][:12]):
+            raise Reject('staged release does not match its manifest')
+        for e in entries:
+            p = os.path.join(rdir, e.tree)
+            st = os.lstat(p)
+            if not stat.S_ISREG(st.st_mode) or stat.S_IMODE(st.st_mode) != e.mode or st.st_size != e.size or hash_file(p)[1] != e.sha256:
+                raise Reject('staged file %s changed since it was verified' % e.path)
+        have = set()
+        for d, dirs, files in os.walk(rdir):
+            rel = os.path.relpath(d, rdir)
+            if rel == '.':
+                dirs[:] = [x for x in dirs if x != 'overlay-backup']
+                files = [x for x in files if x not in ('REVISION', 'manifest.json', 'manifest.json.sig')]
+            for n in files + [x for x in dirs if os.path.islink(os.path.join(d, x))]:
+                have.add(os.path.normpath(os.path.join(rel, n)))
+        if have != {e.tree for e in entries}:
+            raise Reject('staged release has unexpected files')
+        return mf, entries
+
+    # -- install
+    def process_bundle(self, dfd, name):
+        cfg = self.cfg
+        run_dir = os.path.join(cfg.staging, 'run')
+        remove_tree(run_dir)
+        os.mkdir(run_dir, 0o700)
+        self.serial = None
+        try:
+            ident = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+            ident = (ident.st_dev, ident.st_ino)
+        except OSError:
+            ident = None
+        try:
+            self.status('verifying', 'checking %s' % name[:80])
+            bundle = self.copy_in(dfd, name, run_dir)
+            self.step('copied')
+            mf, entries = self.verify(bundle, run_dir)
+            self.step('verified')
+            return self.install(mf, entries, run_dir)
+        except Reject as e:
+            self.log('rejected %r: %s' % (name, e))
+            self.status('failed', 'rejected: %s' % e)
+            self.tidy()
+            return 'rejected'
+        except (Fatal, Busy):
+            raise
+        except Exception as e:
+            self.log('internal error: %r' % (e,))
+            self.drop(dfd, name, ident)  # looked at means removed, or the path unit starts this run again at once
+            if self.st.get('txn'):  # live files may be half changed: stop here, the next run restores them
+                self.status('failed', 'internal error (%s); the next run restores the previous release' % type(e).__name__)
+                raise
+            self.status('failed', 'internal error (%s); nothing was changed' % type(e).__name__)
+            self.tidy()
+            return 'rejected'
+        finally:
+            remove_tree(run_dir)
+
+    def tidy(self):
+        with contextlib.suppress(Exception):
+            self.gc()
+
+    def install(self, mf, entries, run_dir):
+        cfg, st = self.cfg, self.st
+        name = '%d-%s' % (mf['serial'], mf['revision'][:12])
+        work = os.path.join(cfg.releases, '.staging-%d' % mf['serial'])
+        final = os.path.join(cfg.releases, name)
+        if name in self.referenced():
+            raise Reject('release %s is already installed' % name)
+        self.check_overlay_targets(entries)
+        self.check_space(entries, unpacked=False)
+        remove_tree(work)
+        remove_tree(final)
+        try:
+            self.extract(os.path.join(run_dir, 'payload.tar.gz'), entries, work)
+            self.step('extracted')
+            for fname, data in (('REVISION', (mf['revision'] + '\n').encode()),
+                                ('manifest.json', read_small(os.path.join(run_dir, 'manifest.json'), MAX_MANIFEST)),
+                                ('manifest.json.sig', read_small(os.path.join(run_dir, 'manifest.json.sig'), MAX_SIG))):
+                atomic_write(os.path.join(work, fname), data)
+            cfg.sync()
+            os.rename(work, final)
+            fsync_dir(cfg.releases)
+            self.step('release-ready')
+            ok, msg = cfg.smoke(cfg, final)
+            self.step('smoked')
+            if not ok:
+                raise Reject('smoke test failed: %s' % msg)
+        except Exception:
+            remove_tree(work)
+            remove_tree(final)
+            raise
+        new = {'serial': mf['serial'], 'version': mf['version'], 'revision': mf['revision'], 'release': name}
+        if mf['scope'] == 'boot':
+            st['pending_boot'] = new
+            self.save()
+            self.step('pending')
+            self.status('done', 'update %d (%s) is staged and applies at the next boot' % (mf['serial'], mf['version']))
+            self.tidy()
+            return 'staged'
+        return self.go_live(new, [e for e in entries if e.kind == 'overlay'], restart=True, boot=False)
+
+    def go_live(self, new, overlays, restart, boot):
+        cfg, st = self.cfg, self.st
+        rdir = os.path.join(cfg.releases, new['release'])
+        self.serial = new['serial']
+        self.backup_overlays(rdir, overlays)
+        self.step('backup')
+        st['txn'] = {'kind': 'apply', 'serial': new['serial'], 'release': new['release'], 'from': st['current']['release'], 'boot': boot}
+        self.save()
+        ok, msg = True, ''
+        try:
+            self.step('txn')
+            self.status('applying', 'installing update %d' % new['serial'])
+            self.replace_overlays(rdir, overlays)
+            self.switch_link(new['release'])
+            self.step('switched')
+            if restart:
+                self.restart_services()
+                self.step('restarted')
+                self.status('checking', 'update %d is installed; checking that it works' % new['serial'])
+                ok, msg = self.wait_healthy(cfg.health_timeout)
+                self.step('health')
+        except Exception as e:
+            ok, msg = False, '%s: %s' % (type(e).__name__, e)
+        if not ok:
+            self.log('update %d failed: %s' % (new['serial'], msg))
+            self.undo_apply('update %d failed its health check and was rolled back (%s)' % (new['serial'], msg), restart)
+            return 'rolled-back'
+        st['previous'] = ([st['current']] + st['previous'])[:cfg.keep_previous]
+        st['current'] = new
+        st['pending_boot'] = None
+        st['stepped_back'] = None
+        st['trial'] = {'serial': new['serial'], 'release': new['release'], 'failed_boots': 0, 'last_boot': cfg.boot_id(), 'counted_boot': None} if boot else None
+        st['txn'] = None
+        self.save()
+        try:
+            self.step('committed')
+            self.status('done', ('update %d (%s) is installed; it is confirmed after a healthy boot' if boot else 'update %d (%s) is installed and healthy')
+                        % (new['serial'], new['version']))
+            self.step('status')
+            self.gc()
+            self.step('gc')
+        except Exception as e:
+            self.log('housekeeping after a committed update failed: %r' % (e,))
+        return 'applied'
+
+    def undo_apply(self, reason, restart):
+        st = self.st
+        txn = st['txn']
+        rdir = os.path.join(self.cfg.releases, txn['release'])
+        self.serial = txn['serial']
+        note = self.put_back(rdir, txn['from'], 'undo-switched', restart)
+        self.burn(txn['serial'])
+        if txn.get('boot'):
+            st['pending_boot'] = None
+        st['txn'] = None
+        self.save()
+        self.step('undo-saved')
+        self.status('rolled-back', reason + note)
+        self.gc()
+
+    def put_back(self, rdir, to, step, restart):
+        """The part of every undo that touches the live system: put the saved overlay files of the release in rdir back,
+        point /opt/opos at `to`, make systemd see the restored unit files and, with restart, restart the server and wait
+        (bounded) for it to answer. It never closes the transaction: whatever fails leaves it, and the saved originals it
+        names, in place for the next run, which does all of it again (every part is idempotent; review findings 2 and 6).
+        Returns a note for the status text when the server is not healthy afterwards."""
+        try:
+            units = self.restore_overlays(rdir)
+            self.switch_link(to)
+            self.step(step)
+            try:
+                if units:
+                    self.reload_units()
+                if restart:
+                    self.restart_services()
+            except RuntimeError as e:
+                raise Incomplete('systemd did not take the restored release (%s)' % e)
+        except Fatal as e:  # the status must not stay at "applying"
+            with contextlib.suppress(OSError):
+                self.status('failed', 'the previous release is not back yet: %s%s' % (e, '; the next run tries again' if isinstance(e, Incomplete) else ''))
+            raise
+        if not restart:
+            return ''
+        ok, msg = self.wait_healthy(min(self.cfg.health_timeout, 20.0))
+        self.log('after the rollback the server is %s' % ('healthy' if ok else 'NOT healthy: ' + msg))
+        return '' if ok else '; the previous release did not pass the health check afterwards (%s)' % msg
+
+    # -- overlays
+    def backup_overlays(self, rdir, overlays):
+        bdir = os.path.join(rdir, 'overlay-backup')
+        remove_tree(bdir)
+        os.mkdir(bdir, 0o700)
+        index = []
+        for e in overlays:
+            dest = os.path.join(self.cfg.root, e.path)
+            try:
+                st = os.lstat(dest)
+            except FileNotFoundError:
+                index.append({'path': e.path, 'existed': False})
+                continue
+            save = os.path.join(bdir, 'files', e.path)
+            make_dirs(bdir, 'files/' + os.path.dirname(e.path))
+            self.copy_file(dest, save, 0o600)
+            index.append({'path': e.path, 'existed': True, 'mode': stat.S_IMODE(st.st_mode), 'sha256': hash_file(save)[1]})
+        data = (json.dumps(index, separators=(',', ':')) + '\n').encode()
+        if len(data) > MAX_INDEX:  # the reader refuses more than this, so never write more
+            raise Reject('the list of saved overlay files would be larger than %d bytes' % MAX_INDEX)
+        atomic_write(os.path.join(bdir, 'index.json'), data, 0o600)
+        fsync_dir(bdir)
+
+    def copy_file(self, src, dest, mode):
+        """Copy src to dest atomically (dest + '.new', fsync, rename). Whatever stops it before the rename (a full file system
+        above all), it removes its own temporary file at once: the half-written copy holds the free space that the restore
+        of the files already replaced needs for theirs (review finding U1)."""
+        tmp = dest + '.new'
+        remove_tree(tmp)
+        try:
+            sfd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                dfd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    while True:
+                        b = os.read(sfd, CHUNK)
+                        if not b:
+                            break
+                        write_all(dfd, b)
+                    os.fchmod(dfd, mode)
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
+            finally:
+                os.close(sfd)
+            os.rename(tmp, dest)
+        except BaseException:
+            remove_tree(tmp)
+            raise
+        fsync_dir(os.path.dirname(dest))
+
+    def replace_overlays(self, rdir, overlays):
+        for i, e in enumerate(overlays):
+            self.copy_file(os.path.join(rdir, e.tree), os.path.join(self.cfg.root, e.path), e.mode)
+            self.step('overlay-%d' % i)
+        if any(e.path.startswith('etc/systemd/system/') for e in overlays):
+            self.reload_units()
+            self.step('units')
+
+    def load_backup(self, bdir):
+        """The index of the saved originals of a release, checked. Every release that can be undone has one (it is written
+        before the transaction starts), so one that is missing, unreadable or malformed means the originals cannot be put
+        back: stop and keep the transaction, instead of carrying on without them and then discarding the backups."""
+        path = os.path.join(bdir, 'index.json')
+        try:
+            index = json.loads(read_small(path, MAX_INDEX))
+        except (OSError, ValueError, Reject, RecursionError) as e:
+            raise Fatal('the overlay backup %s is missing or unreadable (%s); refusing to guess, the transaction stays open' % (path, e))
+        good = type(index) is list
+        for it in index if good else ():
+            try:
+                good = good and type(it) is dict and classify(it.get('path'))[0] == 'overlay' and type(it.get('existed')) is bool and (
+                    not it['existed'] or (type(it.get('mode')) is int and 0 <= it['mode'] <= 0o7777 and type(it.get('sha256')) is str
+                                          and bool(HEX64.match(it['sha256']))))
+            except Reject:
+                good = False
+        if not good:
+            raise Fatal('the overlay backup %s is malformed; refusing to guess, the transaction stays open' % path)
+        return index
+
+    @staticmethod
+    def same_file(path, mode, sha256):
+        try:
+            st = os.lstat(path)
+            return stat.S_ISREG(st.st_mode) and stat.S_IMODE(st.st_mode) == mode and hash_file(path)[1] == sha256
+        except OSError:
+            return False
+
+    def restore_overlays(self, rdir):
+        """Put the saved originals back (idempotent). Returns True if a unit file was involved. A file that already is its
+        original is left alone: when the replacement itself failed for lack of space the destination is still intact, and
+        copying the original over it would need the very room that is missing (review finding 5). Before any copy, every
+        `<path>.new` beside an indexed path is removed: a run that was killed halfway through a replacement leaves one, and
+        it would hold the room that the files before it need for their temporary copies (review finding U1)."""
+        bdir = os.path.join(rdir, 'overlay-backup')
+        index = self.load_backup(bdir)
+        units = False
+        for it in index:
+            try:
+                remove_tree(os.path.join(self.cfg.root, it['path']) + '.new')
+            except OSError as e:
+                raise Incomplete('cannot clear %s.new: %s' % (it['path'], e))
+        for i, it in enumerate(index):
+            dest = os.path.join(self.cfg.root, it['path'])
+            units = units or it['path'].startswith('etc/systemd/system/')
+            try:
+                if it['existed']:
+                    save = os.path.join(bdir, 'files', it['path'])
+                    if hash_file(save)[1] != it['sha256']:
+                        raise Fatal('the backup of %s is damaged; not restoring it' % it['path'])
+                    if not self.same_file(dest, it['mode'], it['sha256']):
+                        self.copy_file(save, dest, it['mode'])
+                else:
+                    remove_tree(dest)
+            except OSError as e:
+                raise Incomplete('cannot put %s back: %s' % (it['path'], e))
+            self.step('restore-%d' % i)
+        return units
+
+    def reload_units(self):
+        self.systemctl('daemon-reload')
+
+    def switch_link(self, name):
+        cfg = self.cfg
+        tmp = cfg.opt_link + '.new'
+        remove_tree(tmp)
+        os.symlink(os.path.relpath(os.path.join(cfg.releases, name), os.path.dirname(cfg.opt_link)), tmp)
+        os.rename(tmp, cfg.opt_link)
+        fsync_dir(os.path.dirname(cfg.opt_link))
+
+    def restart_services(self):
+        self.systemctl('restart', SERVER_UNIT)
+        # The kiosk's loop starts a new Chromium on the restarted server. The session (opos.service) stays up.
+        run(self.cfg, [*self.cfg.pkill, '-u', self.cfg.service_user, '-f', self.cfg.kiosk_pattern])
+
+    def wait_healthy(self, timeout):
+        cfg = self.cfg
+        deadline = cfg.mono() + timeout
+        while True:
+            ok, msg = cfg.health(cfg)
+            if ok or cfg.mono() >= deadline:
+                return ok, msg
+            cfg.sleep(cfg.health_interval)
+
+    # -- rollback
+    def cancel_staged(self, why):
+        """Drop the staged boot-scope update. Nothing live was touched by staging, so this is bookkeeping only; the serial is
+        not burned (the owner can deliver the same signed release again)."""
+        st = self.st
+        pb = st['pending_boot']
+        st['pending_boot'] = None
+        self.serial = pb['serial']
+        self.save()
+        self.step('staged-cancelled')
+        self.status('rolled-back', 'staged update %d (%s) cancelled (%s); the phone keeps running release %s'
+                    % (pb['serial'], pb.get('version', '?'), why, st['current']['release']))
+        self.gc()
+
+    def rollback(self, reason, restart, requested=False, cancel_only=False):
+        """Go back to the previous release, and drop a staged boot update. requested: asked for through the inbox, so by a
+        process that is not root. That is honoured once per applied update (stepped_back) and does not burn the serial, so the
+        same signed release can be installed again; every other rollback (failed health or boot check, `opos-updater
+        rollback`) burns it. A staged boot update is cancelled on its own account, before and without regard to the installed
+        releases: it needs no previous release to exist and the one-step limit does not apply to it (review finding 11).
+        cancel_only: do nothing but that."""
+        st = self.st
+        staged = bool(st['pending_boot'])
+        if staged:
+            self.cancel_staged(reason)
+            if cancel_only:
+                return True
+        elif cancel_only:
+            self.status('failed', 'nothing is staged, so there is nothing to cancel')
+            return False
+        if not st['previous']:
+            if not staged:
+                self.status('failed', 'nothing to roll back to')
+            return staged
+        if requested and st['stepped_back'] is not None:
+            if not staged:
+                self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
+            return staged
+        target = st['previous'][0]
+        if not os.path.isdir(os.path.join(self.cfg.releases, target['release'])):
+            if not staged:
+                self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
+            return staged
+        st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': st['current']['release'], 'to': target['release'],
+                     'requested': bool(requested)}
+        self.save()
+        self.step('rollback-txn')
+        self.finish_rollback(restart, reason)
+        return True
+
+    def finish_rollback(self, restart, reason):
+        st = self.st
+        txn = st['txn']
+        self.serial = txn['serial']
+        self.status('applying', 'rolling back release %s' % txn['release'])
+        note = self.put_back(os.path.join(self.cfg.releases, txn['release']), txn['to'], 'rollback-switched', restart)
+        if st['previous'] and st['previous'][0]['release'] == txn['to']:
+            st['current'] = st['previous'][0]
+            st['previous'] = st['previous'][1:]
+        if not txn.get('requested'):
+            self.burn(txn['serial'])
+        st['stepped_back'] = txn['serial']
+        st['trial'] = None
+        st['pending_boot'] = None
+        st['txn'] = None
+        self.save()
+        self.step('rollback-saved')
+        self.status('rolled-back', '%s: now running release %s%s' % (reason, st['current']['release'], note))
+        self.gc()
+
+    # -- commands
+    def apply_inbox(self):
+        with self.locked():
+            self.begin(restart=True)
+            for _ in range(self.cfg.max_passes):
+                rollback, bundles = self.scan_inbox()
+                if not rollback and not bundles:
+                    break
+                if rollback:
+                    dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                    try:
+                        kind = self.take_request(dfd)
+                    finally:
+                        os.close(dfd)
+                    if kind is None:
+                        self.bad += 1
+                    else:
+                        self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True, cancel_only=kind == CANCEL_STAGED) else 1
+                done = False
+                for name in bundles:
+                    dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                    try:
+                        if done:
+                            self.log('discarded %r: a newer bundle was applied' % name)
+                            self.drop(dfd, name)
+                            continue
+                        res = self.process_bundle(dfd, name)
+                    finally:
+                        os.close(dfd)
+                    done = res in ('applied', 'staged')
+                    self.bad += res in ('rejected', 'rolled-back')
+        return 3 if self.bad else 0
+
+    def apply_pending_boot(self):
+        """Early boot, before opos-server and opos.service: finish or undo what a killed run left, count unconfirmed
+        boots (two in a row roll the update back), then apply a staged boot-scope update. No service is restarted."""
+        with self.locked():
+            self.begin(restart=False)
+            st, cfg = self.st, self.cfg
+            tr = st['trial']
+            if tr:
+                boot = cfg.boot_id()
+                if tr['last_boot'] != boot:
+                    if tr['counted_boot'] != tr['last_boot']:
+                        tr['failed_boots'] += 1
+                        tr['counted_boot'] = tr['last_boot']
+                    tr['last_boot'] = boot
+                    self.save()
+                if tr['failed_boots'] >= 2:
+                    self.log('update %d did not come up in two boots; rolling back' % tr['serial'])
+                    self.rollback('update %d did not survive two boots' % tr['serial'], False)
+                    return 3
+                return 0
+            pb = st['pending_boot']
+            if not pb:
+                return 0
+            rdir = os.path.join(cfg.releases, pb['release'])
+            try:
+                if pb['serial'] <= st['current']['serial'] or pb['serial'] in st['failed']:
+                    raise Reject('staged update %d is no longer newer than the running release' % pb['serial'])
+                mf, entries = self.verify_tree(rdir, pb['release'])
+                if mf['requires_base'] > (self.base_level() or 0):
+                    raise Reject('staged update %d needs a newer base' % pb['serial'])
+                self.check_overlay_targets(entries)
+            except (Reject, OSError) as e:
+                self.log('staged update %d dropped: %s' % (pb['serial'], e))
+                st['pending_boot'] = None
+                self.burn(pb['serial'])
+                self.save()
+                self.serial = pb['serial']
+                self.status('failed', 'staged update dropped: %s' % e)
+                self.gc()
+                return 3
+            try:
+                self.check_space(entries, unpacked=True)
+            except Reject as e:  # no room for the change and its rollback: do not start; it stays staged and is tried again at the next boot
+                self.log('staged update %d waits: %s' % (pb['serial'], e))
+                self.serial = pb['serial']
+                self.status('failed', 'staged update %d is kept for the next boot: %s' % (pb['serial'], e))
+                return 3
+            res = self.go_live(pb, [e for e in entries if e.kind == 'overlay'], restart=False, boot=True)
+            return 0 if res == 'applied' else 3
+
+    def confirm_boot(self):
+        """After multi-user.target: the booted release must be healthy, or the boot counts as failed."""
+        with self.locked():
+            self.begin(restart=True)
+            st, cfg = self.st, self.cfg
+            tr = st['trial']
+            if not tr:
+                return 0
+            ok, msg = self.wait_healthy(cfg.confirm_timeout)
+            self.serial = tr['serial']
+            if ok:
+                st['trial'] = None
+                self.save()
+                self.status('done', 'update %d is confirmed after a healthy boot' % tr['serial'])
+                self.gc()
+                return 0
+            boot = cfg.boot_id()
+            if tr['counted_boot'] != boot:
+                tr['failed_boots'] += 1
+                tr['counted_boot'] = boot
+            tr['last_boot'] = boot
+            self.save()
+            self.log('boot health check failed (%d of 2): %s' % (tr['failed_boots'], msg))
+            if tr['failed_boots'] >= 2:
+                self.rollback('update %d failed two boots (%s)' % (tr['serial'], msg), True)
+            else:
+                self.status('failed', 'update %d: the boot health check failed (1 of 2): %s' % (tr['serial'], msg))
+            return 3
+
+    def rollback_command(self):
+        with self.locked():
+            self.begin(restart=True)
+            return 0 if self.rollback('rolled back on request', True) else 1
+
+    def show_status(self, as_json):
+        st = self.read_state()
+        if st is None:
+            with contextlib.suppress(Fatal, OSError):
+                st = self.bootstrap()
+        try:
+            doc = json.loads(read_small(self.cfg.status_file, 1 << 16))
+        except (OSError, ValueError, Reject):
+            doc = None
+        if as_json:
+            print(json.dumps({'state': st, 'status': doc}, indent=1, sort_keys=True))
+            return 0
+        if st is None:
+            print('no release layout here; updates are not available')
+            return 1
+        c = st['current']
+        print('running   serial %s  version %s  revision %s  release %s' % (c['serial'], c.get('version'), c.get('revision', '')[:12], c['release']))
+        print('previous  %s' % (', '.join(p['release'] for p in st['previous']) or 'none'))
+        print('failed    %s' % (', '.join(map(str, st['failed'])) or 'none'))
+        print('staged    %s' % (st['pending_boot']['release'] if st['pending_boot'] else 'none'))
+        if st['stepped_back'] is not None:
+            print('went back from serial %s; a rollback request through the inbox is refused until an update is applied' % st['stepped_back'])
+        if st['trial']:
+            print('on trial  serial %s, %d failed boot(s) of 2' % (st['trial']['serial'], st['trial']['failed_boots']))
+        if st['txn']:
+            print('INTERRUPTED %s of serial %s; the next run recovers it' % (st['txn']['kind'], st['txn']['serial']))
+        if doc:
+            print('last      %s: %s (%s)' % (doc.get('phase'), doc.get('message'), doc.get('time')))
+        return 0
+
+
+def main(argv=None, cfg=None):
+    ap = argparse.ArgumentParser(prog='opos-updater', description='Root-side OPOS update trust anchor.')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    for n, h in (('apply-inbox', 'verify and apply bundles delivered to the inbox'), ('apply-pending-boot', 'boot: apply a staged update, count failed boots'),
+                 ('confirm-boot', 'after boot: confirm a new release or count a failed boot'), ('rollback', 'go back to the previous release')):
+        sub.add_parser(n, help=h)
+    sub.add_parser('status', help='show state (no lock, no changes)').add_argument('--json', action='store_true')
+    args = ap.parse_args(argv)
+    cfg = cfg or Config()
+    u = Updater(cfg)
+    code, paced = 1, False  # code is what a bug that escapes below counts as
+    try:
+        if args.cmd == 'status':
+            return u.show_status(args.json)
+        if os.geteuid() != cfg.trusted_uid:
+            print('opos-updater: must run as root', file=sys.stderr)
+            return 1
+        os.umask(0o022)
+        paced = args.cmd == 'apply-inbox'
+        code = {'apply-inbox': u.apply_inbox, 'apply-pending-boot': u.apply_pending_boot, 'confirm-boot': u.confirm_boot,
+                'rollback': u.rollback_command}[args.cmd]()
+        return code
+    except Busy as e:
+        print('opos-updater: %s' % e, file=sys.stderr)
+        code = 75
+        return code
+    except Fatal as e:
+        print('opos-updater: %s' % e, file=sys.stderr)
+        code = 1
+        return code
+    finally:
+        # opos-update.service has no start limit (one would let any writer of the inbox switch the update path off for good).
+        # This is the brake instead: the path unit cannot start the next run before this one has lingered.
+        if paced:
+            cfg.sleep(cfg.pace if code in (0, 3) else cfg.fail_pause)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
