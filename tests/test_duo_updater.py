@@ -1445,6 +1445,22 @@ class TestLayout(EnvCase):
         self.assertEqual(st['current'], {'serial': 0, 'version': 'image', 'revision': 'a' * 12 + '0' * 28, 'release': '0-aaaaaaaaaaaa'})
         self.assertEqual((st['previous'], st['failed'], st['pending_boot'], st['base']), ([], [], None, 1))
 
+    def test_the_largest_serials_name_releases_that_are_kept_and_collected_like_any_other(self):
+        """Review finding: a serial may be up to 2**31 - 1 (ten digits) but release names matched nine, so such releases were
+        never garbage-collected (and a lost state.json could not be rebuilt from them)."""
+        e = self.env
+        top = 2**31 - 1
+        self.assertTrue(U.RELEASE_RE.match(release_name(top)))
+        self.assertIsNone(U.RELEASE_RE.match('1' + release_name(top)))
+        for s in (10**9, 10**9 + 1, 10**9 + 2, top):
+            self.assertEqual(e.apply(make_bundle(s), 'opos-%d.opos-update' % s), 0, (s, e.logs[-3:]))
+        names = sorted(os.listdir(e.releases))
+        self.assertEqual(names, sorted([release_name(top), release_name(10**9 + 2), release_name(10**9 + 1)]))
+        self.assertEqual(e.consistent(), top)
+        os.unlink(os.path.join(e.var, 'state.json'))      # the state is rebuilt from the release /opt/opos points at
+        self.assertEqual(e.updater().apply_pending_boot(), 0)
+        self.assertEqual(e.state()['current']['serial'], top)
+
     def test_opt_opos_as_a_real_directory_is_refused(self):
         e = self.env
         os.unlink(e.opt_link)
