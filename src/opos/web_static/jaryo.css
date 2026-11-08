@@ -55,7 +55,7 @@ button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-d
 .feature-bar{background:var(--jaryo-bg);border:1px solid var(--jaryo-fg);border-radius:0}
 .paused-row{border-color:var(--jaryo-fg)}.paused-row button{min-height:48px}
 #history polyline{stroke:var(--jaryo-fg)}
-#sb-engine,#time-left,#history-label,#why,#events{opacity:1}
+#history-label{opacity:1}
 #charge::before{background:var(--jaryo-bg);border-color:var(--jaryo-fg)}
 #charge:checked::before{background:var(--jaryo-fg);color:var(--jaryo-bg);border-color:var(--jaryo-fg)}
 :focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible,#textsize:focus-visible,#meter:focus-visible,#sheet-title:focus-visible{outline:3px solid var(--jaryo-fg);outline-offset:3px}

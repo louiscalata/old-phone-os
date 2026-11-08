@@ -42,7 +42,7 @@ class PolishStatic(unittest.TestCase):
         self.assertIn('<details id="shade-technical"><summary>Technical details</summary>', out)
         self.assertIn('#features:empty', out)
         self.assertIn('scrollbar-width:none', out)
-        self.assertIn('percent<=15', out)
+        self.assertIn('low=p<=15', out)  # the Shade title's LOW threshold (the bar's chip is pinned by test_uxp01_statusbar)
         self.assertIn('#sb-batt[data-low="true"]{color:#ff7075;font-weight:700}', out)
 
 

@@ -1,6 +1,7 @@
 // phone-a.js: phone-shell hook point (UXP00)
 var G=i=>document.getElementById(i),E=t=>document.createElement(t);
 var demoTime=G('demo')&&!G('demo').hidden?'Demo time —':'';
+function pct(s,u){var p=s.battery&&s.battery.percent;return Number.isFinite(p)?Math.round(p)+'%':u}
 try{(function(){
 var sheet=G('sheet'),timer;
 if(!sheet||!window.opos)return;
@@ -91,7 +92,7 @@ renderNotices();
 }
 available('qs-close','Close',typeof closeSheet==='function');
 var details=G('time-left');
-available('qs-batt','Battery: '+(s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'unknown'),
+available('qs-batt','Battery: '+pct(s,'unknown'),
 !!details&&typeof details.scrollIntoView==='function');
 available('qs-helper',s.helper_visible?'Helper: On':'Helper: Off',typeof toggleVis==='function');
 G('qs-helper').setAttribute('aria-pressed',s.helper_visible?'true':'false');
@@ -109,11 +110,7 @@ qs.hidden=false;
 }catch(e){}
 try{
 (function(){
-var time=G('sb-time');
-var net=G('sb-net');
-var engine=G('sb-engine');
-var batt=G('sb-batt');
-var ui=window.oposUI=window.oposUI||{};
+var time=G('sb-time'),net=G('sb-net'),engine=G('sb-engine'),batt=G('sb-batt'),ui=window.oposUI=window.oposUI||{};
 ui.clockOk=function(){return ui.known!==false&&new Date().getFullYear()>=2026};
 ui.hhmm=function(d){return ui.clockOk()?('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2):'--:--'};
 ui.date=function(d){return ui.clockOk()?d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}):'Time not set'};
@@ -126,10 +123,10 @@ window.oposHooks.push(function(s){try{
 var {clock}=s;if(demoTime&&clock)demoTime='Demo time '+clock;
 ui.known=clock!=='--:--';
 tick();
-var p=s.battery&&s.battery.percent,n=typeof p==='number'&&isFinite(p);
+var p=s.battery&&s.battery.percent,low=Number.isFinite(p)&&p<=15;
 net.textContent=s.in_call?'In call':s.status_note||(navigator.onLine===false?'Offline':'');
-batt.textContent=n?(p<=15?'LOW ':'')+Math.round(p)+'%':'—';
-batt.setAttribute('data-low',n&&p<=15?'true':'false');
+batt.textContent=(low?'LOW ':'')+pct(s,'—');
+batt.setAttribute('data-low',String(low));
 engine.textContent=s.helper?'Helper on':'';
 }catch(e){}});
 tick();
@@ -194,7 +191,7 @@ if(typeof go==='function')go('hang_up');
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(s){try{
       lockTick();
-document.getElementById('lock-batt').textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
+document.getElementById('lock-batt').textContent=pct(s,'—');
 var story=G('lock-story'),text=s.lock_story||'';if(story&&story.textContent!==text)story.textContent=text;
 document.getElementById('lock-hangup').hidden=!s.in_call;
 if(first){

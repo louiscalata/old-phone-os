@@ -47,8 +47,6 @@ class TestStatusBar(unittest.TestCase):
         self.assertIn('var {clock}=s;if(demoTime&&clock)demoTime=\'Demo time \'+clock;', hook)
         self.assertIn('tick();', hook)
         self.assertNotIn('time.textContent=s.clock', hook)
-        self.assertIn("isFinite(s.battery.percent)", js)
-        self.assertIn("Math.round(s.battery.percent)+'%'", js)
         self.assertIn("engine.textContent=s.helper?'Helper on':'';", js)
         self.assertNotIn('Helper set to', js)  # the bar says the helper is on, not which model (it is configured, not verified)
 
@@ -185,6 +183,18 @@ out.unknown=bar({battery:{}});out.missing=bar({});""")
             self.assertEqual((out[str(pct)]['batt'], out[str(pct)]['low']), (f'LOW {pct}%', 'true'))
         self.assertEqual((out['unknown']['batt'], out['unknown']['low']), ('—', 'false'))
         self.assertEqual((out['missing']['batt'], out['missing']['low']), ('—', 'false'))
+
+    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    def test_only_a_finite_number_is_drawn_and_it_is_rounded(self):
+        """The percentage is rounded, and anything that is not a finite number is "—" and never LOW (the one helper, pct())."""
+        out = self.run_bar("""
+out.r1=bar({battery:{percent:41.6}});out.r2=bar({battery:{percent:14.6}});out.r3=bar({battery:{percent:15.4}});
+for(const [k,v] of Object.entries({nan:NaN,inf:Infinity,ninf:-Infinity,text:'12',nul:null,flag:true,undef:undefined}))out[k]=bar({battery:{percent:v}});""")
+        self.assertEqual((out['r1']['batt'], out['r1']['low']), ('42%', 'false'))
+        self.assertEqual((out['r2']['batt'], out['r2']['low']), ('LOW 15%', 'true'))   # LOW is the raw level, as in the Shade title
+        self.assertEqual((out['r3']['batt'], out['r3']['low']), ('15%', 'false'))
+        for key in ('nan', 'inf', 'ninf', 'text', 'nul', 'flag', 'undef'):
+            self.assertEqual((out[key]['batt'], out[key]['low']), ('—', 'false'), key)
 
     def test_simulated_telephony_is_disclosed_where_controls_appear(self):
         self.assertIn('<div id="controls"><p id="demo-phone-note">Calls and texts may use your configured phone connection.</p>', page())

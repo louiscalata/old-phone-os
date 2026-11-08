@@ -36,27 +36,17 @@ try{
 var phone=G('phone');
 if(!phone)return;
 if(!G('jaryo-masthead')){
-var div=E('div');
-div.id='jaryo-masthead';
-var s1=E('span');
-s1.textContent='Old Phone OS Interface';
-var br=E('br');
-var s2=E('span'),u=window.oposUI=window.oposUI||{};
+var div=E('div'),s1=E('span'),br=E('br'),s2=E('span'),u=window.oposUI=window.oposUI||{};
+div.id='jaryo-masthead';s1.textContent='Old Phone OS Interface';
 (u.dateline=function(){var t=u.date?u.date(new Date()):'';if(s2.textContent!==t)s2.textContent=t})();
-div.appendChild(s1);
-div.appendChild(br);
-div.appendChild(s2);
+div.appendChild(s1);div.appendChild(br);div.appendChild(s2);
 phone.insertBefore(div,phone.firstChild);
 }
-var heads=phone.querySelectorAll('h1,h2');
-for(var i=0;i<heads.length;i++)heads[i].classList.add('jaryo-head');
+phone.querySelectorAll('h1,h2').forEach(function(h){h.classList.add('jaryo-head')});
 }catch(e){}
 };
-if(document.readyState==='loading'){
-document.addEventListener('DOMContentLoaded',initType);
-}else{
-initType();
-}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initType);
+else initType();
 }catch(e){}
 })()}catch(e){}
 try{(function(){

@@ -151,6 +151,26 @@ class TestPrivateLockShade(unittest.TestCase):
             stamps[year] = json.loads(result.stdout)['item'][1][1]
         self.assertEqual(stamps, {2026: '16:00', 1970: '--:--'})
 
+    def test_the_battery_reads_the_same_on_the_lock_and_in_the_shade(self):
+        """Both draw pct(): the rounded level, or "—" / "unknown" for anything that is not a finite number."""
+        if not NODE:
+            self.skipTest('node not installed')
+        tail = r"""
+const out={},render=s=>c.oposHooks.forEach(f=>f(s));
+for(const [k,v] of Object.entries({r:41.6,nan:NaN,inf:Infinity,text:'12',nul:null}))
+  {render({battery:{percent:v}});out[k]=[get('lock-batt').textContent,get('qs-batt').textContent]}
+render({});out.none=[get('lock-batt').textContent,get('qs-batt').textContent];
+console.log(JSON.stringify(out));
+"""
+        harness = HARNESS.split("const out={},render=", 1)[0] + tail
+        result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', harness, str(JS)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out['r'], ['42%', 'Battery: 42%'])
+        for key in ('nan', 'inf', 'text', 'nul', 'none'):
+            self.assertEqual(out[key], ['—', 'Battery: unknown'], key)
+
     def test_helper_state_and_unavailable(self):
         out = self.run_js()
         self.assertEqual(out['off'], ['Helper: Off', 'false'])
