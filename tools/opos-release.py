@@ -49,8 +49,8 @@ OVERLAY_DEST = {
     "opos-diag.service": "etc/systemd/system/opos-diag.service",
 }
 SCOPES = ("app", "boot")
-PART = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._+@-]{0,99}")
-UNIT = re.compile(r"opos[A-Za-z0-9._+@-]*\.service")
+PART = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._+-]{0,99}")  # the updater's component rule (it allows 128 characters, the tool stops at 100)
+UNIT = re.compile(r"opos[A-Za-z0-9._+-]*\.service")
 HEX40, HEX64 = re.compile(r"[0-9a-f]{40}"), re.compile(r"[0-9a-f]{64}")
 STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z._+-]{0,63}")
@@ -73,7 +73,7 @@ def classify(path):
     parts = path.split("/")
     for p in parts:
         if not PART.fullmatch(p) or p.endswith(".new") or p == "__pycache__" or p.endswith((".pyc", ".pyo")):
-            raise Refused("%s: component %r is not allowed (relative names only: letters, digits and . _ + @ -, no leading dot)" % (path, p))
+            raise Refused("%s: component %r is not allowed (relative names only: letters, digits and . _ + -, no leading dot)" % (path, p))
     if path.startswith(APP):
         rest = parts[2:]
         if rest[:2] == ["src", "opos"] and len(rest) >= 3 or rest in (["LICENSE"], ["THIRD_PARTY.md"]):
