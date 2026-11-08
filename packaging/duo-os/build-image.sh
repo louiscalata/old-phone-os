@@ -135,6 +135,26 @@ fi
 ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/20-opos-network.conf $(ls etc/polkit-1/rules.d/50-opos-network.rules 2>/dev/null) )
 # --- end track: network ---
 
+# --- track: monitor (the Inference page; packaging/duo-os/README.md, "Inference page") ---
+# opos-server.service sets OPOS_MONITOR=1 and reads /etc/opos/monitor.env when it exists. The image installs no such file and
+# nothing secret: only the directory and a commented example, so the page fetches nothing but the phone's own 127.0.0.1 model-port
+# check until the owner adds a file.
+install -d -m 0755 "$r/etc/opos"
+cat > "$r/etc/opos/monitor.env.example" <<'EOF'
+# Optional settings for the Inference page (Settings > Inference). None is needed: without /etc/opos/monitor.env the page checks
+# this phone's own 127.0.0.1 model port and fetches nothing else.
+#
+# To show a computer's AGIW monitor as well, copy this file to /etc/opos/monitor.env, remove the # from the lines you want, then run
+#   sudo systemctl restart opos-server
+# The monitor is read over a reverse tunnel from that computer, so the Duo's own loopback reaches it: the Duo's 127.0.0.1:18767 is
+# the computer's 127.0.0.1:8767 (packaging/duo-os/README.md, "Inference page").
+#OPOS_AGIW_URL=http://127.0.0.1:18767
+#OPOS_AGIW_HOST=127.0.0.1:8767
+EOF
+chmod 0644 "$r/etc/opos/monitor.env.example"
+( cd "$r" && sha256sum etc/opos/monitor.env.example )
+# --- end track: monitor ---
+
 # DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
 # droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
 # for an image that is meant to be carried: without it nothing new can log in.

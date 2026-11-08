@@ -41,6 +41,9 @@ evidence about the current source.
 <!-- track: network -->
 - [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.
 <!-- end track: network -->
+<!-- track: monitor -->
+- [Inference page on the Duo OS](../packaging/duo-os/README.md#inference-page): Settings > Inference (`/monitor`): whether a model server on the phone answers, the battery numbers it was given, and an optional AGIW monitor on a computer you own; the three variables, why only loopback egress works on the hardened units, and a reverse-tunnel recipe; tested against fakes and loopback servers, not on the phone.
+<!-- end track: monitor -->
 <!-- >>> track firstboot -->
 - [First run and time zone on the Duo OS](duo-firstrun.md): the setup shown on the first start, the owner's time zone applied without root, the clock sentence and the switch that turns it on; tested off the phone.
 <!-- <<< track firstboot -->

@@ -24,6 +24,12 @@ Environment=OPOS_ON_PHONE=1
 # >>> track firstboot: first-run setup, time zone page and the saved time zone (src/opos/firstrun.py); unset = none of it
 Environment=OPOS_FIRSTRUN=1
 # <<< track firstboot
+# >>> track monitor: the Inference page (src/opos/monitor.py, monitor_web.py): GET /monitor and /api/monitor; unset = neither answers
+# The optional file sets OPOS_AGIW_URL and OPOS_AGIW_HOST (see /etc/opos/monitor.env.example). Without OPOS_AGIW_URL
+# nothing is fetched except the phone's own 127.0.0.1 model-port check.
+Environment=OPOS_MONITOR=1
+EnvironmentFile=-/etc/opos/monitor.env
+# <<< track monitor
 ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery
 Restart=always
 RestartSec=3s
