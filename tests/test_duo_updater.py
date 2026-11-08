@@ -303,6 +303,7 @@ class Env:
 case "$1" in
  is-active) if [ -e "%(run)s/inactive" ]; then echo inactive; exit 3; fi; echo active; exit 0;;
  restart) [ -e "%(run)s/restart-fails" ] && exit 1; readlink -f "%(opt)s" > "%(run)s/running"; exit 0;;
+ daemon-reload) [ -e "%(run)s/reload-fails" ] && exit 1; exit 0;;
 esac
 exit 0''')
         self.stub('pkill', 'echo "pkill $*" >> "%(log)s"\nexit 1')
@@ -1354,15 +1355,76 @@ class TestApply(EnvCase):
         self.assertEqual(e.status()['phase'], 'rolled-back')
         self.assertEqual(e.consistent(), 0)
 
-    def test_health_failure_when_the_restart_fails(self):
+    def test_a_restart_that_fails_is_not_a_finished_rollback(self):
+        """Review finding 6: the restart after the rollback failed too (systemd rate-limited, say), and the updater cleared the
+        journal, wrote rolled-back and collected the release that holds the saved files, without a working server. Now the
+        journal stays, the next run does the rest, and only a restart that worked closes it."""
         e = self.env
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
         wr(os.path.join(e.run, 'restart-fails'), '')
-        self.assertEqual(e.apply(make_bundle(7)), 3)
-        self.assertEqual(e.status()['phase'], 'rolled-back')
-        self.assertIn('restart', e.status()['message'])
+        e.deliver(make_bundle(7))
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        st = e.state()
+        self.assertEqual(st['txn']['kind'], 'apply')                        # the journal is still there
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('not back yet', e.status()['message'])
+        self.assertEqual(st['failed'], [])                                  # the serial is burned when the undo is finished, not before
+        self.assertTrue(os.path.isdir(os.path.join(e.releases, release_name(7), 'overlay-backup')))   # and so are the saved files
+        self.assertEqual(os.path.basename(os.readlink(e.opt_link)), '0-aaaaaaaaaaaa')   # what could be put back already is
+        self.assertEqual(e.overlay_state(), e.expect_overlay(0))
+        with self.assertRaises(U.Incomplete):                               # and it goes on being retried, not forgotten
+            e.updater().apply_inbox()
+        self.assertIsNotNone(e.state()['txn'])
+        os.unlink(os.path.join(e.run, 'restart-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)
         self.assertEqual(e.consistent(), 0)
         self.assertEqual(e.state()['failed'], [7])
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+        self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))   # the server really runs the old release
+
+    def test_a_daemon_reload_that_fails_is_not_a_finished_rollback(self):
+        e = self.env
+        e.cfg.smoke = lambda cfg, d: (True, 'stub')
+        wr(os.path.join(e.run, 'reload-fails'), '')   # the update ships a unit file, so it reloads systemd; that fails, then so does the undo
+        e.deliver(make_bundle(7))
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        self.assertIsNotNone(e.state()['txn'])
+        self.assertEqual(e.state()['failed'], [])
+        self.assertEqual(e.overlay_state(), e.expect_overlay(0))
+        os.unlink(os.path.join(e.run, 'reload-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.state()['failed'], [7])
+        self.assertIn('systemctl daemon-reload', e.calls())
+
+    def test_a_pending_incomplete_undo_is_finished_before_a_new_bundle_is_looked_at(self):
+        e = self.env
+        e.cfg.smoke = lambda cfg, d: (True, 'stub')
+        wr(os.path.join(e.run, 'restart-fails'), '')
+        e.deliver(make_bundle(7))
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        e.deliver(make_bundle(8), 'opos-8.opos-update')
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        self.assertTrue(os.path.exists(os.path.join(e.inbox, 'opos-8.opos-update')))   # not touched while the undo is open
+        self.assertEqual(e.state()['txn']['serial'], 7)
+        os.unlink(os.path.join(e.run, 'restart-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)                                  # the undo is finished, then 8 is applied
+        self.assertEqual(e.consistent(), 8)
+        self.assertEqual(e.state()['failed'], [7])
+
+    def test_a_server_that_is_not_healthy_after_the_rollback_is_said_so_in_the_status(self):
+        e = self.env
+        e.cfg.smoke = lambda cfg, d: (True, 'stub')
+        e.cfg.health = lambda cfg: (False, 'still down')
+        self.assertEqual(e.apply(make_bundle(7)), 3)
+        s = e.status()
+        self.assertEqual(s['phase'], 'rolled-back')
+        self.assertIn('did not pass the health check afterwards (still down)', s['message'])
+        self.assertEqual(e.consistent(), 0)
 
     def test_health_failure_when_api_state_has_no_battery(self):
         e = self.env
@@ -1649,8 +1711,29 @@ class TestRollback(EnvCase):
         e.request_rollback()
         e.updater().apply_inbox()
         sc = [c for c in e.calls() if c.startswith('systemctl')]
-        self.assertEqual(sc, ['systemctl daemon-reload', 'systemctl restart opos-server.service'])
+        # reload (the update shipped a unit file), restart, and the bounded health check that now closes every rollback
+        self.assertEqual(sc, ['systemctl daemon-reload', 'systemctl restart opos-server.service', 'systemctl is-active opos-server.service'])
         self.assertEqual(len([c for c in e.calls() if c.startswith('pkill') and '--kiosk' in c]), 1)
+
+    def test_a_requested_rollback_whose_restart_fails_is_finished_by_the_next_run(self):
+        """Review finding 6, the requested form: the restart was rejected, the journal was cleared and rolled-back reported."""
+        e = self.env
+        wr(os.path.join(e.run, 'restart-fails'), '')
+        e.request_rollback()
+        with self.assertRaises(U.Incomplete):
+            e.updater().apply_inbox()
+        st = e.state()
+        self.assertEqual((st['txn']['kind'], st['current']['serial']), ('rollback', 2))
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertEqual(os.path.basename(os.readlink(e.opt_link)), release_name(1))     # files and link are back already
+        self.assertTrue(os.path.isdir(os.path.join(e.releases, release_name(2), 'overlay-backup')))
+        os.unlink(os.path.join(e.run, 'restart-fails'))
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 1)
+        st = e.state()
+        self.assertEqual((st['failed'], st['stepped_back']), ([], 2))
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+        self.assertEqual(rd(e.running).strip(), os.path.realpath(e.opt_link))
 
     def test_rollback_restores_files_created_by_the_update(self):
         e = self.env
@@ -2156,6 +2239,97 @@ class TestCrashSafety(unittest.TestCase):
 # Findings 2, 3, 5, 6, 7, 8, 10 and 11 of the independent review of snapshot 366ac0d (finding 4 is under "units" below).
 # Each test names what went wrong; every one fails on the code before its fix.
 
+def fresh_env(case, **kw):
+    e = Env(**kw)
+    case.addCleanup(e.close)
+    return e
+
+
+@needs_keygen
+class TestBackupIndex(EnvCase):
+    """Finding 2: rollback discarded its backup index when it was larger than the reader's limit, then freed the backups."""
+    fast = True
+
+    def test_a_backup_index_of_many_files_is_read_and_restored(self):
+        e = self.env
+        n = 10000                                    # fits the 20,000-file limit; its index is bigger than the old 1 MiB reader limit
+        paths = ['etc/opos/f%05d' % i for i in range(n)]
+        for i, p in enumerate(paths):
+            e.put(os.path.join(e.root, p), ('old %d\n' % i).encode())
+        new = {p: (('new %d\n' % i).encode(), 0o644) for i, p in enumerate(paths)}
+        sizes, real = [], U.read_small
+
+        def spy(path, limit):
+            if path.endswith('index.json'):
+                sizes.append(os.path.getsize(path))
+            return real(path, limit)
+        app = {**default_app(7), 'src/opos/BROKEN': (b'', 0o644)}   # healthy for the smoke test, broken once live: it is rolled back
+        with mock.patch('os.fsync'), mock.patch.object(U, 'read_small', spy):   # 30,000 fsyncs would time the disk, not the updater
+            self.assertEqual(e.apply(make_bundle(7, app=app, overlay=new)), 3)
+        self.assertTrue(sizes and max(sizes) > 1 << 20, sizes)
+        self.assertEqual(e.status()['phase'], 'rolled-back', e.status())
+        self.assertIsNone(e.state()['txn'])
+        bad = [p for i, p in enumerate(paths) if rd(os.path.join(e.root, p)) != 'old %d\n' % i]
+        self.assertEqual(bad, [])
+        self.assertEqual(e.consistent(), 0)
+
+    def crashed_apply(self, env):
+        def hook(name):
+            if name == 'switched':
+                raise Crash(name)
+        env.cfg.hook = hook
+        env.deliver(make_bundle(7))
+        with self.assertRaises(Crash):
+            env.updater().apply_inbox()
+        env.cfg.hook = None
+        return os.path.join(env.releases, release_name(7), 'overlay-backup')
+
+    def test_an_unreadable_backup_keeps_the_transaction_and_the_backups(self):
+        damage = {
+            'missing': None,
+            'not json': b'{not json',
+            'not a list': b'{}',
+            'larger than any index can be': b' ' * ((16 << 20) + 1),
+            'path outside the updatable set': b'[{"path": "etc/passwd", "existed": false}]',
+            'path traversal': b'[{"path": "../../x", "existed": false}]',
+            'no hash for a file that existed': b'[{"path": "etc/opos/x", "existed": true, "mode": 420}]',
+            'mode out of range': ('[{"path": "etc/opos/x", "existed": true, "mode": 99999, "sha256": "%s"}]' % ('a' * 64)).encode(),
+        }
+        for label, content in damage.items():
+            with self.subTest(label):
+                e = fresh_env(self, fast=True)
+                bdir = self.crashed_apply(e)
+                index = os.path.join(bdir, 'index.json')
+                good = rd(index, 'rb')
+                if content is None:
+                    os.unlink(index)
+                else:
+                    wr(index, content, 'wb')
+                live = e.live()
+                for _ in range(2):                        # and it stays that way: every run refuses to guess
+                    with self.assertRaises(U.Fatal):
+                        e.updater().apply_inbox()
+                    self.assertIsNotNone(e.state()['txn'])
+                    self.assertTrue(os.path.isdir(bdir))
+                    self.assertTrue(os.path.isdir(os.path.join(bdir, 'files')))
+                self.assertEqual(e.live()['link'], live['link'])
+                self.assertEqual(e.live()['files'], live['files'])      # nothing was put back from a list nobody can vouch for
+                wr(index, good, 'wb')                    # repaired by hand: the very next run restores everything
+                self.assertEqual(e.updater().apply_inbox(), 0)
+                self.assertEqual(e.consistent(), 0)
+                self.assertEqual(e.state()['failed'], [7])
+
+    def test_the_writer_stops_at_the_limit_the_reader_enforces(self):
+        e = self.env
+        before = e.live()
+        with mock.patch.object(U, 'MAX_INDEX', 100):
+            self.assertEqual(e.apply(make_bundle(7)), 3)
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertIn('saved overlay files', e.status()['message'])
+        self.assertEqual(e.live(), before)               # refused before anything live was touched
+        self.assertEqual(e.apply(make_bundle(8), 'opos-8.opos-update'), 0)
+
+
 def retype(data, flag):
     """The first header of a tar with another type flag and a matching checksum."""
     b = bytearray(data[:512])
@@ -2341,6 +2515,35 @@ class TestSpace(EnvCase):
         e.cfg.statvfs = lambda p: 10**12
         self.assertEqual(e.updater().apply_pending_boot(), 0)
         self.assertEqual(e.state()['current']['serial'], 7)
+
+
+@needs_keygen
+class TestRestoreNeedsNoRoom(EnvCase):
+    """Finding 5, the rollback half: a restore copied every saved original over its destination, also when the replacement had
+    failed for lack of space and the destination was still intact, which needs the very room that is missing."""
+    fast = True
+
+    def test_restore_does_not_copy_a_file_that_is_already_its_original(self):
+        e = self.env
+        copies, real = [], U.Updater.copy_file
+
+        def spy(self_, src, dest, mode):
+            copies.append((src, dest))
+            if dest.startswith(os.path.join(e.root, 'etc')) or dest.startswith(os.path.join(e.root, 'usr')):
+                raise OSError(errno.ENOSPC, 'No space left on device')   # no room for a temporary copy of anything live, forward or back
+            return real(self_, src, dest, mode)
+        with mock.patch.object(U.Updater, 'copy_file', spy):
+            self.assertEqual(e.apply(make_bundle(7)), 3)
+        self.assertEqual(e.status()['phase'], 'rolled-back', e.status())
+        self.assertEqual([c for c in copies if 'overlay-backup' in c[0]], [])    # nothing was copied back over an intact file
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.state()['failed'], [7])
+
+    def test_a_restore_still_copies_a_file_that_was_changed(self):
+        e = self.env
+        self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/BROKEN': (b'', 0o644)})), 3)
+        self.assertEqual(e.consistent(), 0)                         # the replaced files did come back
+        self.assertEqual(e.file_info('usr/libexec/opos/opos-kiosk'), (sha(OLD_OVERLAY['usr/libexec/opos/opos-kiosk'][0]), 0o755))
 
 
 FLOOD_PY = b'''import sys, time

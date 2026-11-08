@@ -52,6 +52,9 @@ RESERVED = frozenset({'REVISION', 'manifest.json', 'manifest.json.sig', 'overlay
 MODES = {'0644': 0o644, '0755': 0o755}
 MAX_MANIFEST = 8 << 20
 MAX_SIG = 16 << 10
+# One limit for the writer and the reader of overlay-backup/index.json. 20,000 entries of at most about 650 bytes each is
+# about 13 MB; a reader with a smaller limit than the writer once threw a valid backup away (review finding 2).
+MAX_INDEX = 16 << 20
 BLOCK = 512                # the tar block size
 CHUNK = 1 << 20
 Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
@@ -67,6 +70,11 @@ class Busy(Exception):
 
 class Fatal(Exception):
     """The updater cannot continue (unreadable state, wrong layout)."""
+
+
+class Incomplete(Fatal):
+    """Putting the previous release back did not finish (systemd refused a reload or a restart, a file could not be copied).
+    The transaction stays open in state.json together with the saved originals it names, and the next run does the rest."""
 
 
 def _free_bytes(path):
@@ -1198,23 +1206,42 @@ class Updater:
         txn = st['txn']
         rdir = os.path.join(self.cfg.releases, txn['release'])
         self.serial = txn['serial']
-        units = self.restore_overlays(rdir)
-        if units:
-            self.reload_units(strict=False)
-        self.switch_link(txn['from'])
-        self.step('undo-switched')
-        if restart:
-            self.restart_services(strict=False)
+        note = self.put_back(rdir, txn['from'], 'undo-switched', restart)
         st['failed'] = sorted(set(st['failed']) | {txn['serial']})[-64:]
         if txn.get('boot'):
             st['pending_boot'] = None
         st['txn'] = None
         self.save()
         self.step('undo-saved')
-        self.status('rolled-back', reason)
+        self.status('rolled-back', reason + note)
         self.gc()
-        if restart:
-            self.log('after the rollback the server is %s' % ('healthy' if self.wait_healthy(min(self.cfg.health_timeout, 20.0))[0] else 'NOT healthy'))
+
+    def put_back(self, rdir, to, step, restart):
+        """The part of every undo that touches the live system: put the saved overlay files of the release in rdir back,
+        point /opt/opos at `to`, make systemd see the restored unit files and, with restart, restart the server and wait
+        (bounded) for it to answer. It never closes the transaction: whatever fails leaves it, and the saved originals it
+        names, in place for the next run, which does all of it again (every part is idempotent; review findings 2 and 6).
+        Returns a note for the status text when the server is not healthy afterwards."""
+        try:
+            units = self.restore_overlays(rdir)
+            self.switch_link(to)
+            self.step(step)
+            try:
+                if units:
+                    self.reload_units()
+                if restart:
+                    self.restart_services()
+            except RuntimeError as e:
+                raise Incomplete('systemd did not take the restored release (%s)' % e)
+        except Fatal as e:  # the status must not stay at "applying"
+            with contextlib.suppress(OSError):
+                self.status('failed', 'the previous release is not back yet: %s%s' % (e, '; the next run tries again' if isinstance(e, Incomplete) else ''))
+            raise
+        if not restart:
+            return ''
+        ok, msg = self.wait_healthy(min(self.cfg.health_timeout, 20.0))
+        self.log('after the rollback the server is %s' % ('healthy' if ok else 'NOT healthy: ' + msg))
+        return '' if ok else '; the previous release did not pass the health check afterwards (%s)' % msg
 
     # -- overlays
     def backup_overlays(self, rdir, overlays):
@@ -1233,7 +1260,10 @@ class Updater:
             make_dirs(bdir, 'files/' + os.path.dirname(e.path))
             self.copy_file(dest, save, 0o600)
             index.append({'path': e.path, 'existed': True, 'mode': stat.S_IMODE(st.st_mode), 'sha256': hash_file(save)[1]})
-        atomic_write(os.path.join(bdir, 'index.json'), (json.dumps(index, indent=1) + '\n').encode(), 0o600)
+        data = (json.dumps(index, separators=(',', ':')) + '\n').encode()
+        if len(data) > MAX_INDEX:  # the reader refuses more than this, so never write more
+            raise Reject('the list of saved overlay files would be larger than %d bytes' % MAX_INDEX)
+        atomic_write(os.path.join(bdir, 'index.json'), data, 0o600)
         fsync_dir(bdir)
 
     def copy_file(self, src, dest, mode):
@@ -1266,36 +1296,62 @@ class Updater:
             self.reload_units()
             self.step('units')
 
-    def restore_overlays(self, rdir):
-        """Put the saved originals back (idempotent). Returns True if a unit file was involved."""
-        bdir = os.path.join(rdir, 'overlay-backup')
+    def load_backup(self, bdir):
+        """The index of the saved originals of a release, checked. Every release that can be undone has one (it is written
+        before the transaction starts), so one that is missing, unreadable or malformed means the originals cannot be put
+        back: stop and keep the transaction, instead of carrying on without them and then discarding the backups."""
+        path = os.path.join(bdir, 'index.json')
         try:
-            index = json.loads(read_small(os.path.join(bdir, 'index.json'), 1 << 20))
-        except (OSError, ValueError, Reject):
-            self.log('no overlay backup in %s; only the symlink is restored' % rdir)
+            index = json.loads(read_small(path, MAX_INDEX))
+        except (OSError, ValueError, Reject, RecursionError) as e:
+            raise Fatal('the overlay backup %s is missing or unreadable (%s); refusing to guess, the transaction stays open' % (path, e))
+        good = type(index) is list
+        for it in index if good else ():
+            try:
+                good = good and type(it) is dict and classify(it.get('path'))[0] == 'overlay' and type(it.get('existed')) is bool and (
+                    not it['existed'] or (type(it.get('mode')) is int and 0 <= it['mode'] <= 0o7777 and type(it.get('sha256')) is str
+                                          and bool(HEX64.match(it['sha256']))))
+            except Reject:
+                good = False
+        if not good:
+            raise Fatal('the overlay backup %s is malformed; refusing to guess, the transaction stays open' % path)
+        return index
+
+    @staticmethod
+    def same_file(path, mode, sha256):
+        try:
+            st = os.lstat(path)
+            return stat.S_ISREG(st.st_mode) and stat.S_IMODE(st.st_mode) == mode and hash_file(path)[1] == sha256
+        except OSError:
             return False
+
+    def restore_overlays(self, rdir):
+        """Put the saved originals back (idempotent). Returns True if a unit file was involved. A file that already is its
+        original is left alone: when the replacement itself failed for lack of space the destination is still intact, and
+        copying the original over it would need the very room that is missing (review finding 5)."""
+        bdir = os.path.join(rdir, 'overlay-backup')
+        index = self.load_backup(bdir)
         units = False
         for i, it in enumerate(index):
             dest = os.path.join(self.cfg.root, it['path'])
             units = units or it['path'].startswith('etc/systemd/system/')
-            if it['existed']:
-                save = os.path.join(bdir, 'files', it['path'])
-                if hash_file(save)[1] != it['sha256']:
-                    raise Fatal('the backup of %s is damaged; not restoring it' % it['path'])
-                self.copy_file(save, dest, it['mode'])
-            else:
-                remove_tree(dest)
-            remove_tree(dest + '.new')
+            try:
+                if it['existed']:
+                    save = os.path.join(bdir, 'files', it['path'])
+                    if hash_file(save)[1] != it['sha256']:
+                        raise Fatal('the backup of %s is damaged; not restoring it' % it['path'])
+                    if not self.same_file(dest, it['mode'], it['sha256']):
+                        self.copy_file(save, dest, it['mode'])
+                else:
+                    remove_tree(dest)
+                remove_tree(dest + '.new')
+            except OSError as e:
+                raise Incomplete('cannot put %s back: %s' % (it['path'], e))
             self.step('restore-%d' % i)
         return units
 
-    def reload_units(self, strict=True):
-        try:
-            self.systemctl('daemon-reload')
-        except RuntimeError:
-            if strict:
-                raise
-            self.log('daemon-reload failed while restoring')
+    def reload_units(self):
+        self.systemctl('daemon-reload')
 
     def switch_link(self, name):
         cfg = self.cfg
@@ -1305,13 +1361,8 @@ class Updater:
         os.rename(tmp, cfg.opt_link)
         fsync_dir(os.path.dirname(cfg.opt_link))
 
-    def restart_services(self, strict=True):
-        try:
-            self.systemctl('restart', SERVER_UNIT)
-        except RuntimeError:
-            if strict:
-                raise
-            self.log('restarting opos-server failed')
+    def restart_services(self):
+        self.systemctl('restart', SERVER_UNIT)
         # The kiosk's loop starts a new Chromium on the restarted server. The session (opos.service) stays up.
         run(self.cfg, [*self.cfg.pkill, '-u', self.cfg.service_user, '-f', self.cfg.kiosk_pattern])
 
@@ -1352,13 +1403,7 @@ class Updater:
         txn = st['txn']
         self.serial = txn['serial']
         self.status('applying', 'rolling back release %s' % txn['release'])
-        units = self.restore_overlays(os.path.join(self.cfg.releases, txn['release']))
-        if units:
-            self.reload_units(strict=False)
-        self.switch_link(txn['to'])
-        self.step('rollback-switched')
-        if restart:
-            self.restart_services(strict=False)
+        note = self.put_back(os.path.join(self.cfg.releases, txn['release']), txn['to'], 'rollback-switched', restart)
         if st['previous'] and st['previous'][0]['release'] == txn['to']:
             st['current'] = st['previous'][0]
             st['previous'] = st['previous'][1:]
@@ -1370,7 +1415,7 @@ class Updater:
         st['txn'] = None
         self.save()
         self.step('rollback-saved')
-        self.status('rolled-back', '%s: now running release %s' % (reason, st['current']['release']))
+        self.status('rolled-back', '%s: now running release %s%s' % (reason, st['current']['release'], note))
         self.gc()
 
     # -- commands
