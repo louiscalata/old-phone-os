@@ -5,13 +5,18 @@
 # server, then keeps Chromium on the OPOS page full-screen; if Chromium exits it starts again.
 . /etc/profile.d/zz-droidian.sh 2>/dev/null || true
 url=http://127.0.0.1:8765/
-n=0
-until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
-    n=$((n + 1))
-    [ "$n" -lt 120 ] || break
-    sleep 1
-done
+# Waits for the server before every start of the browser, not only the first: an update restarts the server and
+# stops the browser together (docs/ota-update.md), and the browser would otherwise come back before the server does.
+wait_for_server() {
+    n=0
+    until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
+        n=$((n + 1))
+        [ "$n" -lt 120 ] || break
+        sleep 1
+    done
+}
 while :; do
+    wait_for_server
     chromium --kiosk --ozone-platform=wayland --no-first-run --noerrdialogs --disable-translate \
         --disable-features=Translate,MediaRouter --password-store=basic --user-data-dir="$HOME/.cache/opos-kiosk" "$url"
     sleep 2
