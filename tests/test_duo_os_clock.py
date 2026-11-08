@@ -256,6 +256,22 @@ class OposClockTests(unittest.TestCase):
             self.assertNotIn("date -s", out)
         self.assertEqual(self.sets(), [])
 
+    def test_more_than_twelve_digits_are_not_a_number_at_all(self):
+        # Not a refusal by range: the shell's integer tests would overflow (dash: "Illegal number") or wrap, and a
+        # run of leading zeros would pass for an in-range time.
+        self.now(FLOOR)
+        for content in ("1794093790123", "99999999999999999999", "0001794093790"):
+            rc, out = self.run_clock("set", str(self.drop(content)))
+            self.assertEqual(rc, 1, (content, out))
+            self.assertIn("does not hold Unix seconds", out, content)
+            self.assertNotIn("outside", out, content)
+            self.assertNotIn(content, out)
+        self.assertEqual(self.sets(), [])
+        self.assertEqual(self.clock(), FLOOR)
+        rc, out = self.run_clock("set", str(self.drop("999999999999")))  # twelve digits are a number, refused by range
+        self.assertEqual(rc, 1, out)
+        self.assertIn("999999999999 is outside", out)
+
     def test_an_empty_file_is_refused_after_the_wait(self):
         f = self.drop("")
         rc, out = self.run_clock("set", str(f), wait="0")
@@ -515,6 +531,18 @@ class ImageBlocksTests(unittest.TestCase):
         out = self.build(r, self.repo(max(MIN, self.now_minus(60))), dev_key="/dev/null")
         self.assertEqual(os.readlink(r / link), "/etc/systemd/system/opos-clock-set.path")
         self.assertIn("DEV IMAGE", out)
+
+    def test_the_manifest_lists_the_clock_files_including_the_path_unit(self):
+        r = self.rootfs()
+        self.build(r, self.repo(max(MIN, self.now_minus(60))))
+        m = re.search(r'^\( cd "\$r" && find .*\)$', (PKG / "build-image.sh").read_text(encoding="utf-8"), re.M)
+        self.assertTrue(m, "the manifest line of build-image.sh")
+        # Not the whole image: find says so for the files this scratch tree lacks, and lists the rest.
+        p = subprocess.run([SH, "-c", 'r=%s; %s' % (r, m.group(0))], capture_output=True, text=True, timeout=60)
+        listed = [line.split()[-1] for line in p.stdout.splitlines()]
+        for want in ("usr/libexec/opos/opos-clock", "etc/systemd/system/opos-clock.service", "etc/systemd/system/opos-clock-set.service",
+                     "etc/systemd/system/opos-clock-set.path"):
+            self.assertIn(want, listed, p.stdout + p.stderr)
 
     def test_the_verify_block_passes_what_the_build_block_makes(self):
         for dev in (False, True):

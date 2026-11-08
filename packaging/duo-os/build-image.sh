@@ -98,7 +98,7 @@ fi
 
 sync
 echo "manifest:"
-( cd "$r" && find opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch etc/systemd/system/opos*.service -type f -exec sha256sum {} + )
+( cd "$r" && find opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch etc/systemd/system/opos*.service etc/systemd/system/opos*.path -type f -exec sha256sum {} + )
 umount "$mnt"
 trap - EXIT
 rmdir "$mnt"
