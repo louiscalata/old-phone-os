@@ -597,6 +597,28 @@ def _iso(t):
     return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
 
 
+def peak_space(changes):
+    """The most bytes, above what the file system holds now, that the overlay files in `changes` ((old size, new size) in
+    replacement order; old is 0 for a file that does not exist yet) need while they are replaced one by one and, if the update
+    fails at any point, put back one by one in the same order. A replacement holds a temporary copy beside the old file until
+    the rename, so its peak is the growth so far plus that copy. A restore from a failure after k files holds that growth
+    while the saved original of file j < k is copied beside the replaced file, and the files before j are already back
+    (which gives space back, or takes it when they had shrunk): the growth after k files, less the growth before j, plus the
+    size of the original of j. Over all k and j that is the growth after k plus the highest (old size - growth before j)
+    among the files before k, found in one pass. Never less than the largest single temporary copy (freed space is not
+    always reusable at once)."""
+    grown, peak, lead = 0, 0, None   # growth after the files done so far; the highest need; that highest (old - growth before it)
+    for old, new in changes:
+        peak = max(peak, old, new, grown + new)
+        if lead is not None:
+            peak = max(peak, grown + lead)   # a failure before this file
+        lead = old - grown if lead is None else max(lead, old - grown)
+        grown += new - old
+    if lead is not None:
+        peak = max(peak, grown + lead)   # a failure after the last file
+    return peak
+
+
 class Updater:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -1019,17 +1041,18 @@ class Updater:
                 raise Reject('%s exists and is not a regular file' % e.path)
 
     def check_space(self, entries, unpacked):
-        """Before anything live changes, check that the whole change fits, rollback included (review finding 5). What it
-        holds at its peak, per file system: the unpacked release (unless it is already unpacked), the saved originals of the
-        overlay files it replaces (in the release directory), and, one at a time, the temporary copy beside a file being
-        replaced, which a restore needs just as much (its size is the larger of the new file and the saved original); plus
-        some headroom. The earlier check (twice the unpacked size) stays; this one adds what it did not count."""
+        """Before anything live changes, check that the whole change fits, rollback included (review findings 5 and U2). What
+        it holds at its peak, per file system: the unpacked release (unless it is already unpacked), the saved originals of
+        the overlay files it replaces (in the release directory), and what peak_space finds for the overlay files on that
+        file system: the growth of the files replaced so far with the temporary copy beside the next one, and the same for
+        a restore after a failure at any point; plus some headroom (which also has to cover what the byte counts leave out:
+        block rounding, directory and journal use). The earlier check (twice the unpacked size) stays."""
         cfg = self.cfg
-        spots = {}  # device -> [a path on it, bytes held at the peak, largest temporary copy]
+        spots = {}  # device -> [a path on it, bytes held before the first live change, (old size, new size) of its overlay files in order]
 
         def spot(path):
             dev = os.stat(path).st_dev
-            return spots.setdefault(dev, [path, 0, 0])
+            return spots.setdefault(dev, [path, 0, []])
         if not unpacked:
             spot(cfg.releases)[1] += sum(e.size for e in entries)
         for e in entries:
@@ -1042,10 +1065,9 @@ class Updater:
                 old = 0
             else:
                 spot(cfg.releases)[1] += old  # the saved original lives in the release directory
-            s = spot(os.path.dirname(dest))
-            s[2] = max(s[2], e.size, old)
-        for path, held, temp in spots.values():
-            need = held + temp + cfg.space_headroom
+            spot(os.path.dirname(dest))[2].append((old, e.size))
+        for path, held, changes in spots.values():
+            need = held + peak_space(changes) + cfg.space_headroom
             have = cfg.statvfs(path)
             if have < need:
                 raise Reject('not enough free space to apply and, if need be, undo the update: %d bytes needed on %s, %d free' % (need, path, have))

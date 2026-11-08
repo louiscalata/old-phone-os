@@ -17,6 +17,7 @@ import io
 import json
 import os
 import pathlib
+import random
 import re
 import shutil
 import signal
@@ -2521,6 +2522,93 @@ class TestSpace(EnvCase):
         e.cfg.statvfs = lambda p: 10**12
         self.assertEqual(e.updater().apply_pending_boot(), 0)
         self.assertEqual(e.state()['current']['serial'], 7)
+
+
+def peak_by_walking(changes):
+    """The reference for U2: the peak found by following every byte count (the files replaced one by one, then a failure at
+    every point and a restore from it), not by the closed form the updater uses. changes: (old size, new size) in order."""
+    base = sum(o for o, n in changes)
+    peak = max([max(o, n) for o, n in changes], default=0)       # a temporary copy is never smaller than its file
+
+    def note(cur, temp):
+        nonlocal peak
+        peak = max(peak, sum(cur) - base + temp)
+    cur = [o for o, n in changes]
+    for i, (o, n) in enumerate(changes):
+        note(cur, n)                     # the new file's temporary copy sits beside the old one
+        cur[i] = n                       # renamed over it
+        note(cur, 0)
+    for k in range(len(changes) + 1):    # failed after k files were replaced
+        cur = [n if i < k else o for i, (o, n) in enumerate(changes)]
+        for j in range(k):
+            note(cur, changes[j][0])     # the saved original's temporary copy, beside the replaced file
+            cur[j] = changes[j][0]
+            note(cur, 0)
+    return peak
+
+
+class TestPeakSpace(unittest.TestCase):
+    """U2: check_space took the largest single temporary copy, not the growth summed across files (about 60% of random cases
+    in a model needed more than it accepted). peak_space follows the replacement order and the restore from every failure."""
+
+    def test_cases_worked_by_hand(self):
+        for changes, want in (
+                ([], 0),
+                ([(0, 5)], 5),                                      # a new file: its temporary copy; the restore only deletes it
+                ([(5, 0)], 5),                                      # shrinking: never less than the file's own copy
+                ([(1000, 100000)], 100000),
+                ([(1000, 100000), (50000, 100000)], 199000),        # the second copy sits on top of the first file's growth
+                ([(100000, 0), (0, 100000)], 100000),               # the first file gives its space back before the second needs it
+                ([(100, 200)] * 3, 400),                            # +100 each: the third copy on top of +200
+        ):
+            with self.subTest(changes=changes):
+                self.assertEqual(U.peak_space(changes), want)
+
+    def test_agrees_with_walking_every_byte_count(self):
+        rnd = random.Random(20261108)
+        for _ in range(500):
+            changes = [(rnd.choice((0, rnd.randrange(1, 300))), rnd.choice((0, rnd.randrange(1, 300)))) for _ in range(rnd.randrange(0, 8))]
+            self.assertEqual(U.peak_space(changes), peak_by_walking(changes), changes)
+
+    def test_a_great_many_files_take_no_time(self):
+        changes = [(1, 2)] * 200000
+        self.assertEqual(U.peak_space(changes), 200001)
+
+
+@needs_keygen
+class TestSpaceGrowthAcrossFiles(EnvCase):
+    """U2 through an update: two files that both grow need the growth of the first in room when the second is copied."""
+    fast = True
+    OLD = {'etc/opos/a.conf': 1000, 'etc/opos/b.conf': 50000}
+    NEW = 100000
+
+    def setUp(self):
+        super().setUp()
+        e = self.env
+        for p, n in self.OLD.items():
+            e.put(os.path.join(e.root, p), b'o' * n)
+        app = {'src/opos/__init__.py': (b'', 0o644), 'src/opos/web.py': (WEB_PY, 0o644)}
+        self.bundle = make_bundle(7, app=app, overlay={p: (b'n' * self.NEW, 0o644) for p in self.OLD})
+        unpacked = 2 * self.NEW + len(WEB_PY)
+        # unpacked release + the two saved originals + the peak: a's growth (99000) with b's temporary copy (100000) on top.
+        self.need = unpacked + sum(self.OLD.values()) + 99000 + self.NEW
+        # the earlier rule (one largest temporary copy, 100000) and the twice-the-unpacked-size rule both admit one byte less
+        self.assertGreater(self.need - 1, 2 * unpacked)
+        self.assertGreater(self.need - 1, unpacked + sum(self.OLD.values()) + self.NEW)
+        e.cfg.space_headroom = 0
+
+    def free(self, n):
+        e = self.env
+        e.cfg.statvfs = lambda p: 10**12 if p.startswith(e.staging) else n
+
+    def test_the_summed_growth_must_fit(self):
+        e = self.env
+        self.free(self.need - 1)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        self.free(self.need)
+        self.assertEqual(e.apply(self.bundle), 0)
+        for p in self.OLD:
+            self.assertEqual(rd(os.path.join(e.root, p), 'rb'), b'n' * self.NEW)
 
 
 @needs_keygen
