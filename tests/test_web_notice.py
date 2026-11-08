@@ -149,6 +149,67 @@ class TestPhoneNotice(unittest.TestCase):
         self.assertEqual(p.state()["notice"], "")
 
 
+class _OtherModem:
+    """Stands for a modem that is not the screen's simulation."""
+    def dial(self, number):
+        pass
+
+    def hang_up(self):
+        pass
+
+    def send_sms(self, number, text):
+        pass
+
+
+class TestCallLine(unittest.TestCase):
+    """Home's card during a call says who is on the line (interface plan W1-06), not what the phone can do."""
+
+    def test_the_card_names_a_contact_and_says_practice_while_the_modem_is_simulated(self):
+        p = Phone()
+        before = p.state()["screen"]
+        self.assertIn("Calls", before)
+        p.call("+15550100")
+        s = p.state()
+        self.assertEqual(s["screen"], ["In a practice call with Mom"])
+        self.assertTrue(s["in_call"])
+
+    def test_an_unknown_number_is_named_by_the_number_as_the_phone_normalised_it(self):
+        p = Phone()
+        p.call("+1 (555) 010-1234")
+        self.assertEqual(p.state()["screen"], ["In a practice call with +15550101234"])
+
+    def test_after_hang_up_the_card_lists_what_is_on_again(self):
+        p = Phone()
+        p.call("+15550100")
+        p.hang_up()
+        self.assertEqual(p.state()["screen"][:2], ["Calls", "Messages"])
+
+    def test_a_refused_call_changes_nothing(self):
+        p = Phone()
+        p.call("abc")
+        self.assertEqual(p.state()["screen"][:2], ["Calls", "Messages"])
+        self.assertFalse(p.state()["in_call"])
+
+    def test_a_modem_that_is_not_simulated_is_not_called_practice(self):
+        p = Phone()
+        p.essentials.modem = _OtherModem()
+        p.call("+15550142")
+        self.assertEqual(p.state()["screen"], ["In a call with Clinic"])
+
+    def test_the_line_is_escaped_like_the_rest_of_the_card(self):
+        p = Phone()
+        p.book.add("A<b>&", "+15550177")
+        p.call("+15550177")
+        self.assertEqual(p.state()["screen"], ["In a practice call with A&lt;b&gt;&amp;"])
+
+    def test_the_card_text_has_no_word_the_quiet_mode_forbids(self):
+        p = Phone()
+        p.call("+15550100")
+        for line in p.state()["screen"]:
+            for w in ("AI", "model", "Governor", "assistant"):
+                self.assertNotIn(w.lower(), line.lower())
+
+
 class TestPageNotice(unittest.TestCase):
     def test_notice_div_present(self):
         h = page()
@@ -162,6 +223,26 @@ class TestPageNotice(unittest.TestCase):
         self.assertNotIn("font-size:13px", h)
         self.assertIn("text-align: center", h.replace("text-align:center", "text-align: center"))
         self.assertIn("padding: 4px 8px", h.replace("padding:4px 8px", "padding: 4px 8px"))
+
+    def test_a_call_is_a_boxed_bold_notice_and_hang_up_is_the_inverted_fill(self):
+        h = page()
+        box = re.search(r'#notice\[data-tone=call\]:not\(\[hidden\]\)\{([^}]+)\}', h).group(1)
+        for declaration in ("font-size:1.25rem", "font-weight:700", "border:3px double var(--jaryo-fg)", "text-align:left"):
+            self.assertIn(declaration, box)
+        hang = "#notice[data-tone=call]~#controls [data-go=hang_up]"
+        self.assertIn(hang + "{background:var(--jaryo-fg);color:var(--jaryo-bg)}", h)
+        # Pressed it goes back to the plain look, so a press is a visible change and never ink on ink.
+        self.assertIn(hang + ":active{background:var(--jaryo-bg);color:var(--jaryo-fg)}", h)
+        for rule in (box, h.split(hang, 1)[1].split("}", 1)[0], h.split(hang + ":active", 1)[1].split("}", 1)[0]):
+            self.assertNotRegex(rule, r"#[0-9a-fA-F]{3,8}|rgb|hsl")  # Jaryo tokens only, never a literal colour
+
+    def test_a_call_notice_that_is_hidden_keeps_the_ordinary_hidden_slot(self):
+        # In Messages the notice is hidden (visibility) but keeps its slot; the call box must not grow that slot.
+        self.assertIn("#notice[data-tone=call]:not([hidden])", page())
+        self.assertIn("#notice[hidden]{display:block;visibility:hidden}", page())
+
+    def test_the_lock_line_is_the_newest_notice(self):
+        self.assertIn("text=notices.length?notices[0].text:''", page())
 
     def test_notice_before_demo_and_outside(self):
         h = page()

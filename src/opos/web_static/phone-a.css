@@ -5,7 +5,8 @@
 #qs-notices li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
 #qs-notices{flex-basis:100%;margin:0;padding-left:20px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
 #sb{position:fixed;top:0;left:0;right:0;height:28px;z-index:40;display:flex;gap:10px;align-items:center;padding:0 12px;line-height:28px;white-space:nowrap;overflow:hidden}
-#sb-engine{flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis}
+#sb-net,#sb-engine{overflow:hidden;text-overflow:ellipsis}
+#sb-engine{flex:1 0 auto;text-align:center}
 #sb-batt{margin-left:auto}
 body{padding-top:48px}
 #lock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:100;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;overflow:auto;touch-action:none}

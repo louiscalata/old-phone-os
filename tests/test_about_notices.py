@@ -77,6 +77,8 @@ class TestAboutNotices(unittest.TestCase):
         self.assertEqual(page.count(html.escape(attack)), 2)
 
     def test_helper_status_and_static_asset_stay_independent(self):
+        # The About line has no script of its own any more (the status bar says "Helper on" and the About line no longer copies it,
+        # interface plan W1-05); the notices block is still moved beside it by one line, and is static markup first.
         page = web.page()
         self.assertIn(web._asset("phone-b.html"), page)
         parsed = _Elements(page)
@@ -87,6 +89,7 @@ class TestAboutNotices(unittest.TestCase):
         # W1-08: the helper-status hook that rewrote About ("Helper set to ...") is gone; the line stays static.
         self.assertNotIn("a.textContent=e?", page)
         self.assertEqual("".join(parsed.ids["about"]["text"]), "Old Phone OS Interface")
+        self.assertNotIn("'Old Phone OS Interface. '", page)
 
     def test_native_readability_and_nonce_contract(self):
         page = web.page(nonce="test-about-nonce")

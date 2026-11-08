@@ -70,6 +70,7 @@ html[data-theme="dark"]{--jaryo-fg:#fff;--jaryo-bg:#000}
 | `.box{background:#222}`, `#demo`, `.paused-row{border-bottom:#333}`, `.feature-bar/.feature-fill`, `#textsize{background:#111;border:#444}`, `#askbtn{background:#fff;color:#111}`, `#history polyline{stroke:#fff}` | bg/fg variables; `.feature-fill` becomes fg; the SVG polyline gets `stroke:currentColor` via CSS |
 | `#sb{background:#000}`, `#sb-engine{opacity:.8}`, `#time-left{opacity:.85}`, `#history-label{opacity:.6}`, `#why{opacity:.9}`, `#events{opacity:.8}` | `background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)`; all opacities `1` |
 | `:focus-visible{outline:2px solid #fff}` (web.py:399, phone-b.css:42,53) | `outline:3px solid var(--jaryo-fg);outline-offset:3px` |
+| A call in progress (was a 14 px centred grey line) | `#notice[data-tone=call]`: 1.25 rem bold, `padding:12px`, `3px double` box in the pane's ink (the "Error / notice" row above), left aligned. `Hang up` beside it is the inverted fill (`#notice[data-tone=call]~#controls [data-go=hang_up]`) and goes back to the plain look while pressed, so a press is always a visible change. The status bar says "In call"; Home's card says "In a practice call with <name or number>" ("practice" while the modem is the simulated one); the lock line shows the notice text |
 | Wizard: `#meter-fill{background:#30a46c}`, `.dot.*`, `#error{color:#e5484d}`, `a{color:#30a46c}` | wizard gets the same tokens; progress dots become text `pending/running/ok/failed/skipped` in a condensed face |
 
 The `palette` CDP test (section 8) MUST verify that no visible element computes to anything but `rgb(0,0,0)`/`rgb(255,255,255)` after the overrides.
@@ -112,11 +113,11 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 | 14:32                 (masthead) |     | 14:32                 | About 30 min left   |
 | ================================ |     | Sunday, 1 November    | Saving power for    |
 | Sunday, 1 November  (dateline)   |     | ===================== | calls, messages     |
-|                                  |     | 23%  LOW              | New notice          |
+|                                  |     | 23%  LOW              | In call             |
 | 23%  LOW            (dbl border) |     |                       |                     |
 | About 30 min left · Saving power |     |                       | [ Unlock          ] |
 | for calls, messages (#lock-power)|     |                       | [ Phone ] [ Helper] |
-| New notice            (#lock-notice)   +---------------------------------------------+
+| In call               (#lock-notice)   +---------------------------------------------+
 |                                  |     Foldable: left pane = masthead/dateline/power,
 | [ Unlock                       ] |     right pane = buttons (phone-b.css:58 already
 | [ Phone ]  [ Helper ]            |     puts #lock>button in column 2).
@@ -124,6 +125,7 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 ```
 
 - Masthead = time (`#lock-time`, serif 2.25rem on phones, 40px rule at landscape ≤520 px stays), dateline `#lock-date` in condensed uppercase.
+- The notice line `#lock-notice` is the text of the newest notice in the Shade's Recent notices (`phone-a.js`), for example "In call", "Call ended", "Message sent", "New message". Those are the server's own fixed phrases (`notice_for` in `web.py`), never a message body or a number, so the line stays public state; it replaced the words "New notice" (interface plan W1-06).
 - Public power line `#lock-power` = `s.battery.time_left` + `s.battery.headline` joined by ` · ` (already redacted when the helper is hidden: dashboard.py:235). Never shows `why`, paused names or model names.
 - Buttons: `#unlock` primary (3px border). `#lock-call` MUST be relabelled "Phone" (it unlocks and opens the Phone app, phone-a.js:178). `#lock-ask` ("Helper") stays `hidden` by default; privacy rationale: the lock screen shows only redacted public state, and the helper's answers are private detail, so Helper from lock = Unlock then the Helper tile. Showing `#lock-ask` is a Settings › Device choice (`localStorage['jaryo_lock_helper']='1'`), off by default.
 - Swipe-up unlock stays as a shortcut; the button is the contract.
@@ -306,8 +308,8 @@ All reads come from `GET /api/state` = `Phone.state()` (web.py:174) unless noted
 
 | Screen | Reads today | Writes today | Pending / not wired |
 |---|---|---|---|
-| Status bar `#sb` | `battery.percent`, `helper.engine` (visible only), `navigator.onLine` | — | real radio state; `in_call` tone shown as text "In call" from `notice` |
-| Lock | `battery.percent`, `battery.time_left`, `battery.headline`, `in_call`, `notice` | `hang_up` | — |
+| Status bar `#sb` | `clock` (`--:--` = not set), `in_call`, `status_note` ("Simulated battery", "Battery not readable", "Clock not set"; `statusbar.py`), `navigator.onLine`, `battery.percent` (`LOW 12%` at 15 or less, with the double border), `helper` (present: "Helper on", never a model name) | — | real radio state. The network slot says "In call", else the note, else "Offline" |
+| Lock | `battery.percent`, `battery.time_left`, `battery.headline`, `in_call`, `notice` (the newest notice is the lock line), `clock` (unset: `--:--` and "Time not set") | `hang_up` | — |
 | Home tiles | `in_call`, `threads.length`, `mode` (NEW additive field, `d.mode.name`, always present), `battery.paused` for the brief | — | app badges beyond messages |
 | Shade | `battery.{percent,time_left,headline,steps,paused,events,history,goal,goal_note,worn_note}`, `brightness`, `helper_visible`, `notice` | `visible`, `goal`, `undo`, `in_use` (not exposed) | real screen brightness (value is the budget's wish, budget.py; no sysfs writer) |
 | Settings › Display | localStorage `jaryo_theme`, `opos_text`, `jaryo_tiles` | localStorage | server-side persistence after install (config `jaryo`) |

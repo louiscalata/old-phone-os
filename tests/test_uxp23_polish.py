@@ -47,7 +47,7 @@ class PolishStatic(unittest.TestCase):
         self.assertIn('<details id="shade-technical"><summary>Technical details</summary>', out)
         self.assertIn('#features:empty', out)
         self.assertIn('scrollbar-width:none', out)
-        self.assertIn('percent<=15', out)
+        self.assertIn('low=p<=15', out)  # the Shade title's LOW threshold (the bar's chip is pinned by test_uxp01_statusbar)
         # The low-battery chip is bold with a double border; its colour is the Jaryo ink (jaryo.css), not #ff7075.
         self.assertIn('#sb-batt[data-low="true"]{font-weight:700}', out)
         self.assertRegex(out, r'#sb-batt\[data-low="true"\][^{}]*\{[^}]*color:var\(--jaryo-fg\)')
