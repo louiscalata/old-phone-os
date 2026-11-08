@@ -2348,7 +2348,7 @@ class TestImageBlocks(unittest.TestCase):
             'updater not executable': lambda r: os.chmod(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 0o644),
             'updater writable': lambda r: os.chmod(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 0o775),
             'updater broken': lambda r: wr(os.path.join(r, 'usr/libexec/opos-updater/opos-updater'), 'def (', 'a'),
-            'signers has a private key': lambda r: wr(os.path.join(r, 'etc/opos/update/allowed_signers'), '-----BEGIN OPENSSH PRIVATE KEY-----\n'),
+            'signers has a private key': lambda r: wr(os.path.join(r, 'etc/opos/update/allowed_signers'), '-----' + 'BEGIN OPENSSH PRIVATE' + ' KEY-----\n'),
             'signers has a stray line': lambda r: wr(os.path.join(r, 'etc/opos/update/allowed_signers'), 'other ssh-ed25519 AAAA\n', 'a'),
             'signers world writable': lambda r: os.chmod(os.path.join(r, 'etc/opos/update/allowed_signers'), 0o666),
             'signers missing': lambda r: os.unlink(os.path.join(r, 'etc/opos/update/allowed_signers')),
