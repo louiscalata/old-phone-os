@@ -1626,9 +1626,10 @@ class MainPageIsUntouched(Env):
     # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
     # Every change to page() re-records these two, in the same commit (they were re-recorded for the interface plan's dead-rule
     # removal, B-03, its sources-as-text change, W2-16, and the practice wording and battery claims, W1-01 and W1-07, and the helper's text, W1-08).
-    # docs/ui-byte-ledger.md says how to measure the page. The integrator re-records them once on the merged tree.
-    MAIN_SHA256 = "TBD"
-    DEMO_SHA256 = "TBD"
+    # docs/ui-byte-ledger.md says how to measure the page. Re-recorded once on the merged tree integrate/w1 (the six ui/w1-* tracks:
+    # room, practice, helper, resilience, status, layout); each track had recorded its own digests, which cannot all hold at once.
+    MAIN_SHA256 = "433ef87d6228c32fbecdbfb4e7acabca4cce8077740977db5f2845f1731b4538"
+    DEMO_SHA256 = "a521a68640af3ab671b5d2d1ddb072eb722a8ec6652d0792ea22c4913bc2ed94"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
