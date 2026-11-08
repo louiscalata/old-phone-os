@@ -102,7 +102,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_OSK_HINGE` | not set (42) | CSS px between the keyboard's halves when the page does not say |
 | `OPOS_NETWORK` | drop-in `opos-server.service.d/20-opos-network.conf` | the Settings link to `/network` and the actions that change Wi-Fi |
 | `OPOS_NET_TTY` | not set | `1`: hand the Wi-Fi password to `nmcli` through a pseudo-terminal |
-| `OPOS_NET_POLKIT` | build input | `1`: install `50-opos-network.rules` |
+| `OPOS_NET_POLKIT` | build input | `1`: install `50-opos-network.rules`; unset, empty or `0`: not installed; anything else stops the build |
 | `OPOS_FIRSTRUN` | `opos-server.service` (`1`) | first-run setup, `/timezone`, the saved zone |
 | `OPOS_KIOSK_RESTART` | not set | `0`: do not restart Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
@@ -207,7 +207,9 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
 
 - **Network.** Settings > Network opens `/network`: radio status, and scan, join, forget, disconnect and Wi-Fi on or off through
   NetworkManager as `droidian`. The `opos-network.conf` drop-in sets `OPOS_NETWORK=1`; the polkit rule is installed only when
-  building with `OPOS_NET_POLKIT=1`. See [docs/network.md](../../docs/network.md).
+  building with `OPOS_NET_POLKIT=1` (any other value but `0`, empty or unset stops the build, so a typo cannot build an image without it; `verify-image.sh`
+  checks the rule). Without it the phone cannot join Wi-Fi: NetworkManager asks polkit for `wifi.scan`, `network-control` and `settings.modify.system`, and
+  `droidian` has no session to answer an administrator prompt. See [docs/network.md](../../docs/network.md).
 - **First run and time zone.** A fresh phone opens a skippable setup; Settings > Date and time changes the zone later. The
   server applies the zone; the kiosk exports it to Chromium on every start. See [docs/duo-firstrun.md](../../docs/duo-firstrun.md).
 - **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key>` from
@@ -398,7 +400,8 @@ unprivileged `droidian`, protects nothing there. The acceptance suite warns (`de
 `verify-image.sh` checks the file when it is there (a plain 0440 root:root file with exactly that line, in an image that has the dev ssh key, `visudo -cf` accepts
 it, and no other sudoers line grants `NOPASSWD`) and that no sudoers line grants `NOPASSWD` when it is not. The image cannot say whether the build meant to
 write the file, so give the verifier the variable the build had to hold the image to it both ways: `OPOS_DEV_SUDO=1` requires the file and `OPOS_DEV_SUDO=0`
-requires its absence (unset requires nothing; under `sudo`, `sudo env OPOS_DEV_SUDO=1 sh packaging/duo-os/verify-image.sh …`).
+requires its absence (unset requires nothing; under `sudo`, `sudo env OPOS_DEV_SUDO=1 OPOS_NET_POLKIT=1 sh packaging/duo-os/verify-image.sh …`; `OPOS_NET_POLKIT`
+is held the same way: `1` requires the polkit rule, `0` requires its absence, and a rule that is there must be the very bytes of `50-opos-network.rules`).
 
 Remove it from a running phone with `sudo rm /etc/sudoers.d/90-opos-dev`; the next sudo asks for a password again. Check it from the PC with
 `ssh droidian@<phone> sudo -n true`.

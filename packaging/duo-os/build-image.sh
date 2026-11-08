@@ -33,6 +33,11 @@ if [ "${OPOS_DEV_SUDO:-}" = 1 ] && [ -z "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
     exit 2
 fi
 # --- dev sudo: CHECK END
+# --- polkit: CHECK BEGIN (OPOS_NET_POLKIT; the block that acts on it is in "track: network" below)
+# The rule is installed only for a 1, so a typo (yes, true, 2) used to build an image WITHOUT it and say nothing, and without the rule the phone cannot join
+# Wi-Fi. Refused before OUT is touched: unset, empty, 0 or 1.
+case ${OPOS_NET_POLKIT:-} in '' | 0 | 1) ;; *) echo "build-image.sh: OPOS_NET_POLKIT must be 1 (or unset)" >&2; exit 2 ;; esac
+# --- polkit: CHECK END
 mnt=$(mktemp -d)
 cleanup() { umount "$mnt" 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -146,9 +151,12 @@ chmod 0644 "$r/etc/default/opos-osk"
 install -d "$r/etc/systemd/system/opos-server.service.d"
 install -m 0644 "$here/opos-network.conf" "$r/etc/systemd/system/opos-server.service.d/20-opos-network.conf"
 if [ "${OPOS_NET_POLKIT:-0}" = 1 ]; then
-    install -d "$r/etc/polkit-1/rules.d"
+    # not `install -d` on a directory that is there: it would set the mode to 0755, and the base's rules.d is 0750 root:polkitd on purpose
+    [ -d "$r/etc/polkit-1/rules.d" ] || install -d -m 0755 "$r/etc/polkit-1/rules.d"
     install -m 0644 "$here/50-opos-network.rules" "$r/etc/polkit-1/rules.d/50-opos-network.rules"
     echo "NETWORK: polkit rule installed: droidian may change Wi-Fi in NetworkManager without being asked"
+else
+    rm -f "$r/etc/polkit-1/rules.d/50-opos-network.rules"  # one left by an earlier OPOS image used as the BASE goes too
 fi
 ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/20-opos-network.conf $(ls etc/polkit-1/rules.d/50-opos-network.rules 2>/dev/null) )
 # --- end track: network ---

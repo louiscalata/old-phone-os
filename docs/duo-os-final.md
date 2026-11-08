@@ -44,7 +44,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_OSK_HINGE` | unset (42) | CSS pixels between the two halves of a split keyboard when the page does not say; `0` never splits |
 | `OPOS_NETWORK` | `1` (drop-in `opos-network.conf`) | the Settings link to `/network` and the actions that change things; without it the page only reads |
 | `OPOS_NET_TTY` | unset | `1` hands the Wi-Fi password to `nmcli` through a pseudo-terminal, if a pipe is not accepted on the phone |
-| `OPOS_NET_POLKIT` | unset (a build input) | `1` at build time installs the polkit rule that lets `droidian` change Wi-Fi without being asked |
+| `OPOS_NET_POLKIT` | unset (a build input) | `1` at build time installs the polkit rule that lets `droidian` change Wi-Fi without being asked (any value but `1`, `0`, empty or unset stops the build; `verify-image.sh` checks the rule, and with `OPOS_NET_POLKIT` in its environment requires or forbids it). Without it joining Wi-Fi is refused on this image |
 | `OPOS_FIRSTRUN` | `1` (`opos-server.service`) | the first-run setup, `/timezone`, and applying the saved zone at start |
 | `OPOS_MONITOR` | `1` (`opos-server.service`) | the Inference page: the Settings link to `/monitor`, and the routes `/monitor` and `/api/monitor`; `/monitor` and `/api/monitor` answer 404 without it |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | unset (optional `/etc/opos/monitor.env`; the image ships only `monitor.env.example`) | where the Inference page looks for an AGIW monitor on a computer you own (loopback or private network; unset: no monitor is fetched), and the `Host` header to send it; see the Inference page section of the image README |

@@ -8,11 +8,13 @@ set -u
 [ $# -ge 1 ] || { echo "usage: sudo sh verify-image.sh OUT.img" >&2; exit 2; }
 img=$1
 case $img in /*) ;; *) img=$PWD/$img ;; esac
-# --- expect: CHECK BEGIN (OPOS_DEV_SUDO, as build-image.sh took it)
-# Optional. A file in the image cannot say whether the build meant to put it there, so a build knob that adds a file may be given here too, with the
+here=$(cd "$(dirname "$0")" && pwd)
+# --- expect: CHECK BEGIN (OPOS_DEV_SUDO and OPOS_NET_POLKIT, as build-image.sh took them)
+# Optional. A file in the image cannot say whether the build meant to put it there, so the build knobs that add a file may be given here too, with the
 # value the build had: 1 then requires the file and 0 requires its absence. Unset (the default) reads the image as it is: a file that is there must be
 # exactly what the build would have written, and nothing is required. Anything else is refused before the image is touched.
 case ${OPOS_DEV_SUDO:-} in '' | 0 | 1) ;; *) echo "verify-image.sh: OPOS_DEV_SUDO must be 1, 0 or unset" >&2; exit 2 ;; esac
+case ${OPOS_NET_POLKIT:-} in '' | 0 | 1) ;; *) echo "verify-image.sh: OPOS_NET_POLKIT must be 1, 0 or unset" >&2; exit 2 ;; esac
 # --- expect: CHECK END
 q=$(command -v qemu-aarch64-static) || { echo "needs qemu-aarch64-static" >&2; exit 2; }
 # This script is root. Everything it runs (the image's python3 under qemu-user, this builder's python3) starts in, and
@@ -99,7 +101,35 @@ check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -
 # --- track: network (Wi-Fi and radio status) ---
 check "the server may manage the phone's network (OPOS_NETWORK=1 drop-in)" "grep -q '^Environment=OPOS_NETWORK=1' $w/opos-server.service.d/20-opos-network.conf"
 check "the Network page and its logic are in the image" "[ -f $r/opt/opos/src/opos/net.py ] && [ -f $r/opt/opos/src/opos/net_page.py ]"
-if [ -f "$r/etc/polkit-1/rules.d/50-opos-network.rules" ]; then echo "NOTE: polkit rule installed: droidian may change Wi-Fi in NetworkManager without being asked"; else echo "NOTE: no polkit rule from OPOS (the base's own rules decide whether the Network page may join Wi-Fi)"; fi
+# --- polkit: BEGIN (OPOS_NET_POLKIT in build-image.sh; docs/network.md)
+# The opt-in rule that lets droidian do the four NetworkManager actions the Network page needs. Present: the very bytes of packaging/duo-os/50-opos-network.rules
+# (the file the build copies), a plain root-owned 0644 file, in a rules.d that polkitd (which reads rules as its own user) can enter. With OPOS_NET_POLKIT=1 in
+# this script's environment the rule is required, with 0 it must be absent; unset, only what is there is checked.
+pkd=$r/etc/polkit-1/rules.d
+pkf=$pkd/50-opos-network.rules
+polkit_rule_ok() {
+    [ -f "$pkf" ] && [ ! -L "$pkf" ] && [ "$(stat -c %a "$pkf")" = 644 ] && [ "$(stat -c %u:%g "$pkf")" = 0:0 ] && cmp -s "$pkf" "$here/50-opos-network.rules"
+}
+polkit_dir_ok() {
+    [ -d "$pkd" ] && [ ! -L "$pkd" ] || return 1
+    pk_m=$(stat -c %a "$pkd") pk_g=$(stat -c %g "$pkd") pk_id=$(awk -F: '$1=="polkitd"{print $3}' "$r/etc/group")
+    pk_t=${pk_m%?}
+    case ${pk_m#"$pk_t"} in 5 | 7) return 0 ;; esac  # everyone may enter
+    case ${pk_t#"${pk_t%?}"} in 5 | 7) [ -n "$pk_id" ] && [ "$pk_g" = "$pk_id" ] && return 0 ;; esac  # polkitd's group may
+    return 1
+}
+if [ -e "$pkf" ] || [ -L "$pkf" ]; then
+    check "polkit: 50-opos-network.rules is a plain root-owned 0644 file with the very bytes of packaging/duo-os/50-opos-network.rules" "polkit_rule_ok"
+    check "polkit: /etc/polkit-1/rules.d can be entered by polkitd (its group or everyone), so the rule is read" "polkit_dir_ok"
+    echo "NOTE: polkit rule installed: droidian may change Wi-Fi in NetworkManager without being asked"
+else
+    echo "NOTE: no polkit rule from OPOS (the base's own rules decide whether the Network page may join Wi-Fi)"
+fi
+case ${OPOS_NET_POLKIT:-} in
+    1) check "OPOS_NET_POLKIT=1: the polkit rule is in the image" "[ -e $pkf ] || [ -L $pkf ]" ;;
+    0) check "OPOS_NET_POLKIT=0: no polkit rule from OPOS is in the image" "[ ! -e $pkf ] && [ ! -L $pkf ]" ;;
+esac
+# --- polkit: END
 # --- end track: network ---
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"
