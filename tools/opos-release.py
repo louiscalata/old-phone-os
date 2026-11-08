@@ -91,19 +91,23 @@ def public_key_fields(data, name):
 
     Every line must be a public key (a type, a base64 blob that starts with that same type, an optional comment); a private
     key, an empty file or anything else is refused. A file that is exempt from a private-key rule because it is called
-    .pub must pass this first."""
+    .pub must pass this first. Only the comment may be more than ASCII (it is UTF-8 text: ssh-keygen -C with an accented name, or the
+    default user@host of a person whose user or host name has one); the type and the blob are ASCII and the fields are split
+    at ASCII white space only."""
     bad = Refused("%s is not an OpenSSH public key file (never give this tool a private key)" % name)
-    if len(data) > 16384 or private_key_marker(data):
+    if len(data) > 16384 or private_key_marker(data):  # the marker scan is on the raw bytes, whatever the text encoding
         raise bad
     try:
-        lines = [l for l in data.decode("ascii").splitlines() if l.strip() and not l.lstrip().startswith("#")]
+        data.decode("utf-8")
     except UnicodeDecodeError:
         raise bad
+    lines = [l for l in data.splitlines() if l.strip() and not l.lstrip().startswith(b"#")]  # bytes: ASCII line ends and blanks only
     first = None
     for line in lines:
-        fields = line.split()
+        fields = line.split(None, 2)  # type, blob, and the comment as one piece
         try:
-            blob = base64.b64decode(fields[1], validate=True)
+            kind, b64 = fields[0].decode("ascii"), fields[1].decode("ascii")  # a UnicodeDecodeError is a ValueError
+            blob = base64.b64decode(b64, validate=True)
         except (IndexError, ValueError):
             raise bad
         parts, i = [], 0  # the blob is a run of length-prefixed strings: the type name, then the key's numbers
@@ -111,9 +115,9 @@ def public_key_fields(data, name):
             n = int.from_bytes(blob[i:i + 4], "big")
             parts.append(blob[i + 4:i + 4 + n])
             i += 4 + n
-        if not PUBKEY_TYPE.fullmatch(fields[0]) or i != len(blob) or len(parts) < 2 or parts[0] != fields[0].encode():
+        if not PUBKEY_TYPE.fullmatch(kind) or i != len(blob) or len(parts) < 2 or parts[0] != kind.encode():
             raise bad
-        first = first or (fields[0], fields[1])
+        first = first or (kind, b64)
     if first is None:
         raise bad
     return first

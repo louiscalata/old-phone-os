@@ -53,9 +53,9 @@ def tool(*args):
     return code, out.getvalue(), err.getvalue()
 
 
-def keygen(path):
+def keygen(path, comment="opos-test"):
     path.parent.mkdir(parents=True, exist_ok=True)
-    proc = run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "opos-test", "-f", path)
+    proc = run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", comment, "-f", path)
     assert proc.returncode == 0, proc.stderr
     return path
 
@@ -954,6 +954,73 @@ class KeygenHelpTest(ReleaseCase):
                 self.assertEqual(code, 1, so)
                 self.assertIn("not an OpenSSH public key", se)
                 self.assertNotIn("allowed_signers line for", so)
+
+
+class AccentedCommentTest(ReleaseCase):
+    """A public key whose comment is not ASCII is a public key: ssh-keygen -C with an accented name makes one, and so does the
+    default comment (user@host) of a person whose user or host name has an accent. The type and the base64 blob stay strict."""
+    COMMENT = "jos\u00e9@laptop \u00dcber-host"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.accent = keygen(cls.top / "keys" / "accent", cls.COMMENT)
+        cls.accent_pub = cls.accent.with_name("accent.pub")
+        assert cls.COMMENT.encode("utf-8") in cls.accent_pub.read_bytes(), "ssh-keygen kept the comment as UTF-8"
+        cls.accent_signers = cls.top / "accent_signers"
+        cls.accent_signers.write_text(cls.line(cls.accent_pub))
+
+    @staticmethod
+    def line(pub):
+        kind, blob = pub.read_bytes().decode("utf-8").split()[:2]
+        return "opos-release %s %s\n" % (kind, blob)
+
+    def test_keygen_help_prints_the_line_for_it(self):
+        code, so, se = tool("keygen-help", "--pub", self.accent_pub)
+        self.assertEqual(code, 0, se)
+        self.assertEqual(so.rstrip().splitlines()[-1], self.line(self.accent_pub).strip(), "the line carries the type and the blob, not the comment")
+
+    def test_a_build_checks_itself_against_an_allowed_signers_file_made_from_it(self):
+        code, so, se = tool("keygen-help", "--pub", self.accent_pub)
+        self.assertEqual(code, 0, se)
+        signers = self.top / "accent_made_signers"
+        signers.write_text(so.rstrip().splitlines()[-1] + "\n")
+        code, so, se, bundle = self.build(key=self.accent, extra=["--allowed-signers", signers])
+        self.assertEqual(code, 0, se)
+        self.assertEqual(self.verify_cmd(bundle, signers=signers)[0], 0)
+        self.assertNotEqual(self.verify_cmd(bundle)[0], 0, "the release key's file does not take a bundle signed by this one")
+        # the whole .pub line as `cat release.pub >> allowed_signers` leaves it, comment and all
+        full = self.top / "accent_full_signers"
+        full.write_bytes(b"opos-release " + self.accent_pub.read_bytes())
+        code, so, se, bundle = self.build(key=self.accent, extra=["--allowed-signers", full])
+        self.assertEqual(code, 0, se)
+
+    def test_the_default_check_after_signing_finds_the_public_key_beside_the_key(self):
+        code, so, se, bundle = self.build(key=self.accent)
+        self.assertEqual(code, 0, se)
+        self.assertNotIn("not checked after signing", se, "the .pub beside the key was read, not skipped")
+        self.assertEqual(self.verify_cmd(bundle, signers=self.accent_signers)[0], 0)
+
+    def test_only_the_comment_may_be_more_than_ascii(self):
+        kind, b64 = self.accent_pub.read_bytes().decode("utf-8").split()[:2]
+        refused = {"a comment that is not UTF-8": ("%s %s jos" % (kind, b64)).encode() + b"\xe9@laptop\n",
+                   "a type with an accent": ("%s\u00e9 %s\n" % (kind, b64)).encode(),
+                   "a blob with an accent": ("%s %s\u00e9 comment\n" % (kind, b64)).encode(),
+                   "a no-break space between the fields": ("%s\u00a0%s comment\n" % (kind, b64)).encode(),
+                   "a good line then an accented junk line": ("%s %s\n\u00e9crou\n" % (kind, b64)).encode()}
+        for label, data in refused.items():
+            with self.subTest(label):
+                f = self.top / "keys" / "odd.pub"
+                f.write_bytes(data)
+                code, so, se = tool("keygen-help", "--pub", f)
+                self.assertEqual(code, 1, so)
+                self.assertIn("not an OpenSSH public key", se)
+                self.assertNotIn("allowed_signers line for", so)
+        f = self.top / "keys" / "two.pub"
+        f.write_bytes(self.accent_pub.read_bytes() + self.key.with_name("release.pub").read_bytes())
+        code, so, se = tool("keygen-help", "--pub", f)
+        self.assertEqual(code, 0, se)
+        self.assertEqual(so.rstrip().splitlines()[-1], self.line(self.accent_pub).strip(), "the first key is the one that is printed")
 
 
 class ToolHygieneTest(unittest.TestCase):
