@@ -3,6 +3,7 @@
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -15,6 +16,16 @@ MIN = 1767225600  # 2026-01-01T00:00:00Z
 SPAN = 631152000
 FLOOR = 1794093790  # 2026-11-07T23:23:10Z, a commit time
 GIT = shutil.which("git")
+
+# Stands in for whatever reads the time file (dd, head): the droidian user owns the path and wins the race between the
+# script's checks and its read, swapping the plain file for a link to FAKE_TARGET (or, with FAKE_FIFO, for a FIFO).
+SWAP_READER = """#!/bin/sh
+if [ -n "${FAKE_SWAP:-}" ] && [ -f "$FAKE_SWAP" ] && [ ! -L "$FAKE_SWAP" ]; then
+  rm -f "$FAKE_SWAP"
+  if [ -n "${FAKE_FIFO:-}" ]; then mkfifo "$FAKE_SWAP"; else ln -s "$FAKE_TARGET" "$FAKE_SWAP"; fi
+fi
+exec "%s" "$@"
+"""
 
 FAKE_DATE = """#!/bin/sh
 case "$*" in
@@ -60,10 +71,12 @@ class OposClockTests(unittest.TestCase):
     def sets(self):
         return [int(x) for x in (self.tmp / "sets").read_text().split()]
 
+    def clock_env(self, wait="0", **extra_env):
+        return dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT=wait,
+                    PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"], **extra_env)
+
     def run_clock(self, *args, wait="0", **extra_env):
-        env = dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT=wait,
-                   PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"], **extra_env)
-        p = subprocess.run([SH, str(PKG / "opos-clock"), *args], env=env, capture_output=True, text=True, timeout=30)
+        p = subprocess.run([SH, str(PKG / "opos-clock"), *args], env=self.clock_env(wait, **extra_env), capture_output=True, text=True, timeout=30)
         return p.returncode, p.stdout + p.stderr
 
     def path(self, rel):
@@ -269,6 +282,41 @@ class OposClockTests(unittest.TestCase):
         self.assertFalse(link.is_symlink())
         self.assertTrue(target.exists())
         self.assertEqual(self.sets(), [])
+
+    def swap_readers(self):
+        for name in ("dd", "head"):
+            wrapper = self.tmp / "bin" / name
+            wrapper.write_text(SWAP_READER % shutil.which(name))
+            wrapper.chmod(0o755)
+
+    def test_a_link_swapped_in_after_the_checks_is_not_read(self):
+        self.swap_readers()
+        for content, what in (("424242", "a number echoed in the refusal"), ("%d" % (FLOOR + 9), "a time that sets the clock")):
+            self.now(FLOOR)
+            target = self.drop(content, name="target")
+            f = self.drop("%d\n" % (FLOOR + 1))
+            rc, out = self.run_clock("set", str(f), FAKE_SWAP=str(f), FAKE_TARGET=str(target))
+            self.assertEqual(rc, 1, (what, out))
+            self.assertNotIn(content, out, what)
+            self.assertEqual(self.sets(), [], what)
+            self.assertEqual(self.clock(), FLOOR, what)
+            self.assertFalse(os.path.lexists(f), "a refused file is not left to be retried")
+            self.assertEqual(target.read_text(), content, "only the link is removed")
+
+    def test_a_fifo_swapped_in_after_the_checks_does_not_hold_the_script(self):
+        self.swap_readers()
+        f = self.drop("%d\n" % (FLOOR + 1))
+        p = subprocess.Popen([SH, str(PKG / "opos-clock"), "set", str(f)], env=self.clock_env(FAKE_SWAP=str(f), FAKE_FIFO="1"),
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        try:
+            out, _ = p.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.communicate()
+            self.fail("the script waited for a writer on a FIFO")
+        self.assertEqual(p.returncode, 1, out)
+        self.assertEqual(self.sets(), [])
+        self.assertFalse(os.path.lexists(f))
 
     def test_a_directory_is_refused(self):
         d = self.tmp / "opos-set-time"

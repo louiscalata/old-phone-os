@@ -79,7 +79,10 @@ do_set() {
     while [ -f "$f" ] && [ ! -L "$f" ] && [ ! -s "$f" ] && [ "$n" -lt "${OPOS_CLOCK_WAIT:-3}" ]; do sleep 1; n=$((n + 1)); done
     if [ -L "$f" ]; then rm -f "$f"; say "set: the time file is a symlink: refused"; return 1; fi
     [ -f "$f" ] || { say "set: the time file is not a plain file: refused"; return 1; }
-    v=$(head -c 32 "$f" 2> /dev/null | tr -d '\r' | sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}')
+    # The checks above are advice: the droidian user owns the path and can swap it for a link between a check and the read.
+    # dd opens it with O_NOFOLLOW, so a link there reads nothing (head cannot), and nonblock keeps a swapped-in FIFO from
+    # holding root. A dd that lacks these flags reads nothing and the file is refused. 32 bytes at most, as before.
+    v=$(dd if="$f" iflag=nofollow,nonblock bs=32 count=1 2> /dev/null | tr -d '\r' | sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}')
     rm -f "$f"
     num "$v" || { say "set: the time file does not hold Unix seconds: refused"; return 1; }
     floor=$(floor_value)
