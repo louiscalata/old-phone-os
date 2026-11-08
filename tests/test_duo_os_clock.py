@@ -19,7 +19,7 @@ GIT = shutil.which("git")
 FAKE_DATE = """#!/bin/sh
 case "$*" in
   "-u +%s") cat "$FAKE/now" ;;
-  "-u -s @"*) echo "${3#@}" > "$FAKE/now"; echo "${3#@}" >> "$FAKE/sets" ;;
+  "-u -s @"*) [ -z "${FAKE_FAIL_SET:-}" ] || exit 1; echo "${3#@}" > "$FAKE/now"; echo "${3#@}" >> "$FAKE/sets" ;;
   *) echo "fake date: $*" >&2; exit 9 ;;
 esac
 """
@@ -60,9 +60,9 @@ class OposClockTests(unittest.TestCase):
     def sets(self):
         return [int(x) for x in (self.tmp / "sets").read_text().split()]
 
-    def run_clock(self, *args, wait="0"):
+    def run_clock(self, *args, wait="0", **extra_env):
         env = dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT=wait,
-                   PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"])
+                   PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"], **extra_env)
         p = subprocess.run([SH, str(PKG / "opos-clock"), *args], env=env, capture_output=True, text=True, timeout=30)
         return p.returncode, p.stdout + p.stderr
 
@@ -91,6 +91,19 @@ class OposClockTests(unittest.TestCase):
         self.assertEqual(self.sets(), [FLOOR])
         self.assertTrue(self.guess())
         self.assertIn("raised to it", out)
+
+    def test_a_clock_that_cannot_be_set_leaves_no_guess_marker_and_fails(self):
+        rc, out = self.run_clock("floor", FAKE_FAIL_SET="1")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("cannot set the clock", out)
+        self.assertFalse(self.guess())
+        self.assertEqual(self.clock(), 0)
+
+    def test_a_set_that_fails_says_so_and_changes_nothing(self):
+        f = self.drop("%d" % (FLOOR + 1))
+        rc, out = self.run_clock("set", str(f), FAKE_FAIL_SET="1")
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(self.clock(), 0)
 
     def test_a_clock_past_the_floor_is_left_alone(self):
         for value in (FLOOR, FLOOR + 1, FLOOR + 10 ** 6):

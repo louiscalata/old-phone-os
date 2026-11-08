@@ -17,7 +17,7 @@ GUESS=$R/run/opos/clock-floor
 KEEP=$R/var/lib/opos/clock-guess
 SYNCED=$R/run/systemd/timesync/synchronized
 
-say() { echo "opos-clock: $*"; }
+say() { printf 'opos-clock: %s\n' "$*"; }
 num() { case ${1:-} in '' | *[!0-9]*) return 1 ;; esac; [ "${#1}" -le 12 ]; }
 setclock() { date -u -s "@$1" > /dev/null; }
 
@@ -50,8 +50,8 @@ do_floor() {
     mkdir -p "$R/run/opos" || return 1
     evidence
     if [ "$cur" -lt "$floor" ]; then
-        setclock "$floor" || { say "cannot set the clock to $floor"; return 1; }
-        : > "$GUESS"
+        : > "$GUESS"   # first, so OPOS never sees a 2026 clock that is not yet marked a guess
+        setclock "$floor" || { rm -f "$GUESS"; say "cannot set the clock to $floor"; return 1; }
         say "the clock read $cur, before the floor $floor: raised to it; it stays a guess until network time or 'set'"
     elif [ -e "$KEEP" ] && [ ! -e "$SYNCED" ]; then
         : > "$GUESS"
