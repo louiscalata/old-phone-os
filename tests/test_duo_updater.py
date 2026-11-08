@@ -544,9 +544,18 @@ class TestPaths(unittest.TestCase):
                   '/etc/passwd', '/opt/opos/src/x', '../x', 'opt/opos/../../etc/passwd', 'opt/opos/./x', 'opt/opos//x', 'opt/opos/x/', '', 'opt/opos/a b',
                   'opt/opos/é', 'opt/opos/a\\b', 'usr/libexec/opos/x.new', 'etc/opos/x.new', 'bin/sh', 'usr/bin/python3',
                   'root/.ssh/authorized_keys', 'home/droidian/.ssh/authorized_keys', 'usr/lib/systemd/system/opos.service', 'var/lib/opos-update/state.json',
-                  'opt/opos/.hidden', 'a' * 600, 'opt/opos/' + '/'.join(['d'] * 20), None, 7, ['x']):
+                  'opt/opos/.hidden', 'a' * 600, 'opt/opos/' + '/'.join(['d'] * 20), None, 7, ['x'],
+                  # documented as refused ("As built"), found accepted by the reviewers' differential fuzz
+                  'etc/default/opos-update', 'etc/default/opos-update-x', 'etc/default/opos-updater', 'etc/default/opos-update.d',
+                  # `$` matches before a final newline; a name must end where the text ends
+                  'usr/libexec/opos/evil.new\n', 'usr/libexec/opos/a\n', 'etc/opos/x\n', 'etc/opos/update\n', 'opt/opos/src/opos/x.py\n'):
             with self.assertRaises(U.Reject, msg=repr(p)):
                 U.classify(p)
+
+    def test_text_that_ends_in_a_newline_is_not_a_hash_a_version_or_a_name(self):
+        for rx, ok in ((U.HEX64, 'a' * 64), (U.HEX40, 'b' * 40), (U.VERSION_RE, '1.2.3'), (U.COMP_RE, 'web.py'), (U.RELEASE_RE, '7-' + 'c' * 12)):
+            self.assertTrue(rx.match(ok), ok)
+            self.assertIsNone(rx.match(ok + '\n'), rx.pattern)
 
 
 def good_manifest(**over):

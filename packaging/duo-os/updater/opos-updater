@@ -39,11 +39,11 @@ NAMESPACE = 'opos-update'
 PRINCIPAL = 'opos-release'
 SERVER_UNIT = 'opos-server.service'
 SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'}
-RELEASE_RE = re.compile(r'^(\d{1,9})-([0-9a-f]{12})$')
-HEX64 = re.compile(r'^[0-9a-f]{64}$')
-HEX40 = re.compile(r'^[0-9a-f]{40}$')
-COMP_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9._+-]{0,127}$')
-VERSION_RE = re.compile(r'^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$')
+RELEASE_RE = re.compile(r'^(\d{1,9})-([0-9a-f]{12})\Z')
+HEX64 = re.compile(r'^[0-9a-f]{64}\Z')
+HEX40 = re.compile(r'^[0-9a-f]{40}\Z')
+COMP_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9._+-]{0,127}\Z')
+VERSION_RE = re.compile(r'^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}\Z')
 # Names in a release directory that belong to the updater; a bundle may not write them.
 RESERVED = frozenset({'REVISION', 'manifest.json', 'manifest.json.sig', 'overlay', 'overlay-backup'})
 MODES = {'0644': 0o644, '0755': 0o755}
@@ -301,7 +301,7 @@ def classify(path):
         or (n == 3 and head2 == ['usr', 'sbin'] and name.startswith('opos-') and not name.startswith('opos-update'))
         or (n == 4 and head3 == ['etc', 'systemd', 'system'] and name.startswith('opos') and name.endswith('.service')
             and not name.startswith('opos-update'))
-        or (n == 3 and head2 == ['etc', 'default'] and name.startswith('opos'))
+        or (n == 3 and head2 == ['etc', 'default'] and name.startswith('opos') and not name.startswith('opos-update'))
         or (n == 3 and head2 == ['etc', 'opos'] and name not in ('update', 'update.json', 'base-version'))
     )
     if not ok or name.endswith('.new'):
