@@ -7,9 +7,8 @@
 # - PathChanged forgets events that happen while the service runs. PathExistsGlob is checked again when the
 #   service ends, so a bundle that arrives during a run starts the next one (and the updater also rescans
 #   the inbox before it exits). The updater removes every bundle it looked at, accepted or not, which is
-#   what ends the loop; opos-update.service's start limit stops anything that still respins.
-# After the limit trips this unit fails: "systemctl reset-failed opos-update.service opos-update.path &&
-# systemctl restart opos-update.path" re-arms it.
+#   what ends the loop. The service has no start limit (the inbox's writer is not root, so a limit would be a switch
+#   for it), and the updater lingers a moment after each run, which is what paces a flood of files.
 [Unit]
 Description=OPOS update inbox
 

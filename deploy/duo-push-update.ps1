@@ -81,7 +81,17 @@ try {
         # A settled status that is byte-for-byte the one from before the push belongs to an earlier update.
         if ($raw -ne $beforeRaw -and $settled -contains $st.phase) { $final = $st; break }
     }
-    if ($null -eq $final) { Fail "no settled status within $TimeoutS s (last: $last); the updater may still be working, read status.json again" 2 }
+    if ($null -eq $final) {
+        # Read-only question, asked only now: is the updater's trigger running? ("failed" is what a tripped start limit used to leave.)
+        $units = Invoke-Phone "systemctl is-active opos-update.path opos-update.service"
+        $word = @($units.Out -split "\s+" | Where-Object { $_ })
+        $pathState = if ($word.Count -ge 1) { $word[0] } else { "unknown" }
+        $hint = "the updater may still be working, read status.json again"
+        if ($pathState -ne "active" -and $pathState -ne "unknown") {
+            $hint = "the update path unit is $pathState, so nothing started the updater and the bundle waits in the inbox; restart the phone, or as root: systemctl reset-failed opos-update.path opos-update.service; systemctl restart opos-update.path"
+        }
+        Fail "no settled status within $TimeoutS s (last: $last); update units (path, service): $($word -join ', '); $hint" 2
+    }
     "result: phase=$($final.phase) serial=$($final.serial) message=$($final.message)"
     if ($final.phase -eq "done") { exit 0 }
     exit 1

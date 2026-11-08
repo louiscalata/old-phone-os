@@ -295,7 +295,7 @@ class World:
             systemctl=(os.path.join(self.bin, "systemctl"),), runuser=(os.path.join(self.bin, "runuser"), "-u", "droidian", "--"),
             pkill=(os.path.join(self.bin, "pkill"),), env_bin="/usr/bin/env", python=sys.executable, health_port=self.health_port,
             smoke_port=self.smoke_port, smoke_chown=False, smoke_timeout=60.0 if self.real else 15.0,
-            health_timeout=60.0 if self.real else health_timeout, health_interval=0.1, confirm_timeout=3.0, lock_timeout=5.0, cmd_timeout=60.0)
+            health_timeout=60.0 if self.real else health_timeout, health_interval=0.1, confirm_timeout=3.0, lock_timeout=5.0, cmd_timeout=60.0, pace=0.0, fail_pause=0.0)
         self.cfg.log = self.logs.append
         self.cfg.sync = lambda: None
         self.cfg.boot_id = lambda: self.boot

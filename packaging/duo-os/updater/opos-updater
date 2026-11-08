@@ -107,6 +107,8 @@ class Config:
     health_interval: float = 1.0
     confirm_timeout: float = 120.0
     lock_timeout: float = 120.0
+    pace: float = 2.0                                # apply-inbox lingers this long after a run that did its job
+    fail_pause: float = 30.0                         # ... and this long after one that could not (exit 1 or 75)
     cmd_timeout: float = 60.0
     partial_ttl: float = 86400.0
     max_files: int = 20000
@@ -949,6 +951,11 @@ class Updater:
         os.mkdir(run_dir, 0o700)
         self.serial = None
         try:
+            ident = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+            ident = (ident.st_dev, ident.st_ino)
+        except OSError:
+            ident = None
+        try:
             self.status('verifying', 'checking %s' % name[:80])
             bundle = self.copy_in(dfd, name, run_dir)
             self.step('copied')
@@ -964,6 +971,7 @@ class Updater:
             raise
         except Exception as e:
             self.log('internal error: %r' % (e,))
+            self.drop(dfd, name, ident)  # looked at means removed, or the path unit starts this run again at once
             if self.st.get('txn'):  # live files may be half changed: stop here, the next run restores them
                 self.status('failed', 'internal error (%s); the next run restores the previous release' % type(e).__name__)
                 raise
@@ -1377,6 +1385,7 @@ def main(argv=None, cfg=None):
     args = ap.parse_args(argv)
     cfg = cfg or Config()
     u = Updater(cfg)
+    code, paced = 1, False  # code is what a bug that escapes below counts as
     try:
         if args.cmd == 'status':
             return u.show_status(args.json)
@@ -1384,14 +1393,23 @@ def main(argv=None, cfg=None):
             print('opos-updater: must run as root', file=sys.stderr)
             return 1
         os.umask(0o022)
-        return {'apply-inbox': u.apply_inbox, 'apply-pending-boot': u.apply_pending_boot, 'confirm-boot': u.confirm_boot,
+        paced = args.cmd == 'apply-inbox'
+        code = {'apply-inbox': u.apply_inbox, 'apply-pending-boot': u.apply_pending_boot, 'confirm-boot': u.confirm_boot,
                 'rollback': u.rollback_command}[args.cmd]()
+        return code
     except Busy as e:
         print('opos-updater: %s' % e, file=sys.stderr)
-        return 75
+        code = 75
+        return code
     except Fatal as e:
         print('opos-updater: %s' % e, file=sys.stderr)
-        return 1
+        code = 1
+        return code
+    finally:
+        # opos-update.service has no start limit (one would let any writer of the inbox switch the update path off for good).
+        # This is the brake instead: the path unit cannot start the next run before this one has lingered.
+        if paced:
+            cfg.sleep(cfg.pace if code in (0, 3) else cfg.fail_pause)
 
 
 if __name__ == '__main__':

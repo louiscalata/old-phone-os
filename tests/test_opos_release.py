@@ -933,14 +933,20 @@ class PushScriptTextTest(unittest.TestCase):
         self.assertNotIn("PhoneHost =", param, "the host has no default")
         self.assertNotIn("Key =", param.replace("Mandatory = $true", ""), "the key has no default")
 
-    def test_only_cat_and_mv_run_on_the_phone(self):
+    def test_only_cat_and_mv_and_one_read_only_question_run_on_the_phone(self):
         calls = re.findall(r'Invoke-Phone\s+"([^"]*)"', self.text)
-        self.assertEqual(sorted(c.split()[0] for c in calls), ["cat", "cat", "mv"], calls)
+        self.assertEqual(sorted(c.split()[0] for c in calls), ["cat", "cat", "mv", "systemctl"], calls)
         for call in calls:
-            self.assertRegex(call, r"^(cat \$statusFile|mv \$partial \$ready)$")
+            self.assertRegex(call, r"^(cat \$statusFile|mv \$partial \$ready|systemctl is-active opos-update\.path opos-update\.service)$")
         self.assertEqual(len(re.findall(r"& ssh\b", self.text)), 1, "ssh is invoked in one place, through Invoke-Phone")
         self.assertEqual(len(re.findall(r"& scp\b", self.text)), 1)
-        for word in ("sudo", "su", "systemctl", "rm", "chmod", "chown", "bash", "eval", "exec", "tee", "dd", "Invoke-Expression", "iex"):
+        # systemctl is asked one read-only question, only once the wait has timed out; the script never tells it to do anything
+        # (the advice printed for the owner, after "$hint = ", is text, not a command that runs).
+        code = self.text.split("$hint = ", 1)[0]
+        self.assertEqual(len(re.findall(r"(?<![\w-])systemctl(?![\w-])", code)), 1)
+        self.assertGreater(self.text.index('Invoke-Phone "systemctl is-active'), self.text.index("Start-Sleep"))
+        self.assertGreater(self.text.index('Invoke-Phone "systemctl is-active'), self.text.index("if ($null -eq $final)"))
+        for word in ("sudo", "su", "rm", "chmod", "chown", "bash", "eval", "exec", "tee", "dd", "Invoke-Expression", "iex"):
             self.assertNotRegex(self.text, r"(?<![\w-])%s(?![\w-])" % re.escape(word), word)
 
     def test_partial_then_rename(self):
@@ -1030,11 +1036,17 @@ if remote.startswith("cat "):
     sys.exit(0)
 if remote.startswith("mv "):
     sys.exit(0)
+if remote.startswith("systemctl is-active "):
+    units = os.environ.get("STUB_UNITS", "active active")
+    if units == "NOANSWER":
+        sys.exit(255)
+    sys.stdout.write("\\n".join(units.split()) + "\\n")
+    sys.exit(0 if units.split()[0] == "active" else 3)
 sys.stderr.write("unexpected remote command: " + remote + "\\n")
 sys.exit(99)
 '''
 
-    def stubbed(self, exe, cat, args=(), name="opos-8.opos-update", scp_rc=0, timeout="30"):
+    def stubbed(self, exe, cat, args=(), name="opos-8.opos-update", scp_rc=0, timeout="30", units="active active"):
         with tempfile.TemporaryDirectory() as td:
             top = Path(td)
             (top / "bin").mkdir()
@@ -1050,7 +1062,7 @@ sys.exit(99)
             bundle, key = top / name, top / "login-key"
             bundle.write_bytes(b"not a real bundle\n")
             key.write_text("not a key\n")
-            env = dict(os.environ, STUB_DIR=str(top), STUB_SCP_RC=str(scp_rc), PATH=str(top / "bin") + os.pathsep + os.environ["PATH"])
+            env = dict(os.environ, STUB_DIR=str(top), STUB_SCP_RC=str(scp_rc), STUB_UNITS=units, PATH=str(top / "bin") + os.pathsep + os.environ["PATH"])
             cmd = [exe, "-NoProfile", "-NonInteractive", "-File", str(PUSH), "-Bundle", str(bundle), "-Host", "fe80::1%8", "-Key", str(key),
                    "-TimeoutS", timeout, "-PollS", "1"] + list(args)
             proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=240)
@@ -1097,6 +1109,25 @@ sys.exit(99)
         proc, calls = self.stubbed(exe, [old], timeout="3")
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("no settled status within 3 s", proc.stderr)
+
+    def test_a_timeout_says_whether_the_update_path_unit_is_running(self):
+        """Review finding: a path unit that the start limit had failed left the push waiting 300 s for nothing, with no reason."""
+        exe, old = self.native()[0], self.status("done", "old", 7)
+        for units, want in (("failed failed", "the update path unit is failed"), ("inactive inactive", "the update path unit is inactive"),
+                            ("active inactive", "may still be working"), ("NOANSWER", "may still be working")):
+            with self.subTest(units):
+                proc, calls = self.stubbed(exe, [old], timeout="3", units=units)
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn("no settled status within 3 s", proc.stderr)
+                self.assertIn(want, proc.stderr)
+                if units != "NOANSWER":
+                    self.assertIn("update units (path, service): " + ", ".join(units.split()), proc.stderr)
+                asked = [c[-1] for c in calls if c[-1].startswith("systemctl")]
+                self.assertEqual(asked, ["systemctl is-active opos-update.path opos-update.service"])
+                self.assertEqual(calls[-1][-1], asked[0], "asked once, after the last status read")
+        proc, calls = self.stubbed(exe, [old, self.status("applying", "n1"), self.status("done", "n2")])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual([c for c in calls if c[-1].startswith("systemctl")], [], "a push that settles never asks")
 
     def test_failed_and_rolled_back_exit_non_zero(self):
         exe = self.native()[0]

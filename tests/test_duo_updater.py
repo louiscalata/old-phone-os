@@ -7,6 +7,7 @@ smoke test running a tiny fake `opos.web`. Nothing touches the real system: ever
 """
 import ast
 import contextlib
+import errno
 import gzip
 import hashlib
 import importlib.machinery
@@ -28,6 +29,7 @@ import threading
 import time
 import unittest
 import http.server
+from unittest import mock
 
 if not sys.platform.startswith('linux'):
     raise unittest.SkipTest('the updater is Linux-only (flock, O_NOFOLLOW, systemd)')
@@ -323,7 +325,7 @@ exit 0''')
                     runuser=(os.path.join(b, 'runuser'), '-u', 'droidian', '--'), pkill=(os.path.join(b, 'pkill'),),
                     env_bin='/usr/bin/env', python=sys.executable, health_port=self.server.server_address[1],
                     smoke_port=self.smoke_port, smoke_chown=False, smoke_timeout=15.0, health_timeout=1.5, health_interval=0.05,
-                    confirm_timeout=0.5, lock_timeout=0.3, cmd_timeout=20.0)
+                    confirm_timeout=0.5, lock_timeout=0.3, cmd_timeout=20.0, pace=0.0, fail_pause=0.0)
 
     def stub(self, name, body):
         path = os.path.join(self.bin, name)
@@ -2038,6 +2040,167 @@ class TestLock(EnvCase):
         self.assertEqual(U.main(['apply-inbox'], e.cfg), 0)
 
 
+# ============================================================================== no start limit, so no switch for the inbox's writer
+
+@needs_keygen
+class TestRunsWithoutAStartLimit(EnvCase):
+    """opos-update.service has no start limit (a limit was a switch: see TestUnits). What replaces it is tested here."""
+    fast = True
+
+    def sleeps(self):
+        rec = []
+        self.env.cfg.sleep = rec.append
+        return rec
+
+    def test_a_run_that_did_its_job_lingers_pace_seconds(self):
+        e = self.env
+        e.cfg.pace, e.cfg.fail_pause = 2.0, 30.0
+        rec = self.sleeps()
+        e.deliver(make_bundle(7))
+        self.assertEqual(U.main(['apply-inbox'], e.cfg), 0)
+        self.assertEqual(rec[-1], 2.0)
+        e.deliver(b'junk')
+        self.assertEqual(U.main(['apply-inbox'], e.cfg), 3)
+        self.assertEqual(rec[-1], 2.0)
+
+    def test_a_run_that_could_not_work_lingers_longer(self):
+        import fcntl
+        e = self.env
+        e.cfg.pace, e.cfg.fail_pause = 2.0, 30.0
+        rec = self.sleeps()
+        e.deliver(make_bundle(7))
+        fd = os.open(os.path.join(e.var, 'lock'), os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(U.main(['apply-inbox'], e.cfg), 75)
+        finally:
+            os.close(fd)
+        self.assertEqual(rec[-1], 30.0)
+        os.rmdir(e.staging)                                   # a broken layout is fatal, and stays so until a person looks
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(U.main(['apply-inbox'], e.cfg), 1)
+        self.assertEqual(rec[-1], 30.0)
+        self.assertTrue(os.path.exists(os.path.join(e.inbox, 'opos-7.opos-update')))
+
+    def test_a_bug_that_escapes_still_lingers(self):
+        e = self.env
+        e.cfg.pace, e.cfg.fail_pause = 2.0, 30.0
+        rec = self.sleeps()
+        with mock.patch.object(U.Updater, 'apply_inbox', side_effect=ZeroDivisionError):
+            with self.assertRaises(ZeroDivisionError):
+                U.main(['apply-inbox'], e.cfg)
+        self.assertEqual(rec[-1], 30.0)
+
+    def test_only_apply_inbox_lingers(self):
+        e = self.env
+        e.cfg.pace, e.cfg.fail_pause = 2.0, 30.0
+        rec = self.sleeps()
+        with contextlib.redirect_stdout(io.StringIO()):
+            U.main(['status'], e.cfg)
+        U.main(['rollback'], e.cfg)
+        U.main(['apply-pending-boot'], e.cfg)
+        U.main(['confirm-boot'], e.cfg)
+        self.assertNotIn(2.0, rec)
+        self.assertNotIn(30.0, rec)
+
+    def test_production_pace_is_short_and_the_pause_after_a_failure_is_longer(self):
+        c = U.Config()
+        self.assertTrue(1.0 <= c.pace <= 5.0, c.pace)
+        self.assertGreater(c.fail_pause, c.pace)
+
+    def test_an_unexpected_error_still_removes_the_inbox_file_it_looked_at(self):
+        """Without a start limit a file that stays is read again at once: the generic error branch must remove it too."""
+        e = self.env
+        e.deliver(make_bundle(7))
+        with mock.patch.object(U.Updater, 'copy_in', side_effect=OSError(errno.ENOSPC, 'No space left on device')):
+            self.assertEqual(e.updater().apply_inbox(), 3)
+        self.assertEqual(os.listdir(e.inbox), [])
+        self.assertIn('internal error', e.status()['message'])
+        self.assertEqual(e.state()['current']['serial'], 0)
+        self.assertEqual(e.updater().apply_inbox(), 0)        # nothing is left to start another run
+        self.assertEqual(e.apply(make_bundle(7)), 0)          # and the same bundle delivered again installs
+
+    def test_an_unexpected_error_does_not_remove_a_newer_file_of_the_same_name(self):
+        e = self.env
+        e.deliver(make_bundle(7))
+
+        def swap(self_, dfd, name, run_dir):
+            os.unlink(os.path.join(e.inbox, name))             # the file that was looked at is replaced by a new delivery
+            e.deliver(make_bundle(8), name)
+            raise OSError(errno.EIO, 'Input/output error')
+        with mock.patch.object(U.Updater, 'copy_in', swap):
+            e.cfg.max_passes = 1
+            e.updater().apply_inbox()
+        self.assertEqual(os.listdir(e.inbox), ['opos-7.opos-update'])
+
+    def test_every_kind_of_inbox_entry_is_gone_after_a_run(self):
+        e = self.env
+        victim = os.path.join(e.tmp, 'victim')
+        wr(victim, 'keep')
+        os.symlink(victim, os.path.join(e.inbox, 'a.opos-update'))
+        os.mkdir(os.path.join(e.inbox, 'b.opos-update'))
+        wr(os.path.join(e.inbox, 'b.opos-update', 'f'), 'x')
+        os.mkfifo(os.path.join(e.inbox, 'c.opos-update'))
+        os.mkdir(os.path.join(e.inbox, 'rollback.request'))
+        wr(os.path.join(e.inbox, 'd.opos-update'), 'not a tar')
+        wr(os.path.join(e.inbox, 'e.opos-update'), '')
+        wr(os.path.join(e.inbox, 'f.opos-update'), 'x' * (2 << 20))
+        self.assertEqual(e.updater().apply_inbox(), 3)
+        left = [n for n in os.listdir(e.inbox) if n.endswith('.opos-update') or n == 'rollback.request']
+        self.assertEqual(left, [])
+        self.assertEqual(rd(victim), 'keep')
+
+
+@unittest.skipUnless(sys.platform.startswith('linux') and os.geteuid() == 0 and shutil.which('systemd-run') and os.path.isdir('/run/systemd/system'),
+                     'needs root on a machine running systemd')
+class TestRealSystemdStartLimit(unittest.TestCase):
+    """The unit files' own directives on a real systemd: any number of files dropped in the inbox, one after the other,
+    leave the service and the path unit healthy. (A transient pair stands in for the real ExecStart, which needs the image.)"""
+
+    def run_pair(self, files):
+        u = read_unit('opos-update.service')
+        props = ['--property=Type=oneshot']
+        for section in ('Unit', 'Service'):
+            for key in ('StartLimitIntervalSec', 'StartLimitBurst', 'SuccessExitStatus'):
+                for v in values(u, section, key):
+                    props.append('--property=%s=%s' % (key, v))
+        inbox = tempfile.mkdtemp(prefix='opos-sl-')
+        self.addCleanup(shutil.rmtree, inbox, True)
+        unit = 'opos-test-startlimit-%d' % os.getpid()
+
+        def stop():
+            subprocess.run(['systemctl', 'stop', unit + '.path', unit + '.service'], capture_output=True)
+            subprocess.run(['systemctl', 'reset-failed', unit + '.path', unit + '.service'], capture_output=True)
+        self.addCleanup(stop)
+        # what the real updater does to the inbox: removes what it looked at, then exits 0, 3 or 75
+        script = ('n=$(ls "%(d)s" | wc -l); rm -f "%(d)s"/*.opos-update "%(d)s"/rollback.request; '
+                  'case $((n %% 3)) in 0) exit 0;; 1) exit 3;; *) exit 75;; esac') % {'d': inbox}
+        r = subprocess.run(['systemd-run', '--quiet', '--unit=' + unit, '--path-property=PathExistsGlob=%s/*.opos-update' % inbox,
+                            '--path-property=PathExists=%s/rollback.request' % inbox, *props, '/bin/sh', '-c', script], capture_output=True, text=True)
+        if r.returncode != 0:
+            self.skipTest('systemd-run is not usable here: %s' % r.stderr.strip()[:100])
+
+        def state(what):
+            return subprocess.run(['systemctl', *what], capture_output=True, text=True).stdout.strip()
+        for i in range(files):
+            name = 'rollback.request' if i % 5 == 4 else 'x%d.opos-update' % i
+            with open(os.path.join(inbox, name), 'w') as f:
+                f.write('junk\n')
+            end = time.time() + 10
+            while time.time() < end and [n for n in os.listdir(inbox) if n.endswith('.opos-update') or n == 'rollback.request']:
+                time.sleep(0.05)
+            self.assertEqual(os.listdir(inbox), [], 'file %d was not taken' % (i + 1))
+            time.sleep(0.15)
+            self.assertEqual(state(['is-active', unit + '.path']), 'active', 'path unit after file %d' % (i + 1))
+            self.assertNotEqual(state(['is-active', unit + '.service']), 'failed', 'service after file %d' % (i + 1))
+        self.assertEqual(state(['show', '-p', 'Result', '--value', unit + '.service']), 'success')
+        self.assertEqual(state(['show', '-p', 'Result', '--value', unit + '.path']), 'success')
+
+    def test_a_dozen_files_in_a_row_do_not_switch_the_update_path_off(self):
+        self.run_pair(12)
+
+
 # =========================================================================================== production probes
 
 class TestProbes(unittest.TestCase):
@@ -2113,15 +2276,19 @@ class TestUnits(unittest.TestCase):
         self.assertEqual(values(u, 'Install', 'WantedBy'), ['multi-user.target'])
         self.assertNotIn('.partial', ''.join(v for _, v in u['Path']))
 
-    def test_service_is_a_rate_limited_root_oneshot(self):
+    def test_service_is_a_root_oneshot_that_nobody_can_start_limit_out_of_action(self):
         u = read_unit('opos-update.service')
         self.assertEqual(values(u, 'Service', 'Type'), ['oneshot'])
         self.assertEqual(values(u, 'Service', 'User'), [])
         self.assertEqual(values(u, 'Service', 'ExecStart'), ['/usr/libexec/opos-updater/opos-updater apply-inbox'])
         self.assertTrue(int(values(u, 'Service', 'TimeoutStartSec')[0]) >= 300)
-        self.assertEqual(values(u, 'Unit', 'StartLimitBurst'), ['6'])
-        self.assertEqual(values(u, 'Unit', 'StartLimitIntervalSec'), ['600'])
-        self.assertEqual(values(u, 'Service', 'SuccessExitStatus'), ['3'])
+        # Review finding: every file dropped in the inbox is one start, the inbox is writable by the unprivileged server, and
+        # the seventh start in ten minutes left the service and the path unit failed until root reset them.
+        self.assertEqual(values(u, 'Unit', 'StartLimitIntervalSec'), ['0'])
+        self.assertEqual(values(u, 'Unit', 'StartLimitBurst'), [])
+        # 3: a bundle or request was refused or rolled back; 75: another run held the lock (a run that fails is a failed start)
+        self.assertEqual(values(u, 'Service', 'SuccessExitStatus'), ['3 75'])
+        self.assertEqual(values(read_unit('opos-update.path'), 'Unit', 'StartLimitIntervalSec'), [])
         self.assertIn('opos-update-boot.service', values(u, 'Unit', 'After')[0])
         self.assertEqual(values(u, 'Install', 'WantedBy') if 'Install' in u else [], [])  # started by the path unit only
 

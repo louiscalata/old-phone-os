@@ -5,16 +5,18 @@
 Description=OPOS: verify and apply a delivered update
 After=local-fs.target opos-update-boot.service
 ConditionPathIsDirectory=/var/lib/opos-update/inbox
-# A bad bundle is consumed on its first look, so a run per bundle is normal. More than six runs in ten minutes
-# is a loop: systemd stops starting the service until "systemctl reset-failed opos-update.service".
-StartLimitIntervalSec=600
-StartLimitBurst=6
+# No start limit, on purpose. The inbox is writable by the unprivileged OPOS server, and every file dropped there is one
+# start of this service, so a limit would let any process of that user trip it: systemd then leaves this service and
+# opos-update.path failed and no later update is applied until root resets them (found by review, reproduced on systemd).
+# What stops a loop instead: the updater removes every inbox entry it looks at, and lingers after each run (Config.pace).
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/opos-updater/opos-updater apply-inbox
 # Exit 3 = a bundle was refused or rolled back; the reason is in /var/lib/opos-update/status.json.
-SuccessExitStatus=3
+# Exit 75 = another run held the lock (the boot units or "opos-updater rollback"); the inbox is looked at again after it.
+SuccessExitStatus=3 75
 TimeoutStartSec=900
 Nice=10
 IOSchedulingClass=idle

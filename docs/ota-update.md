@@ -150,7 +150,11 @@ Where the code is stricter or more specific than the text above. Every item is a
 - **Inbox.** The client writes `opos-<serial>.opos-update.partial`, fsyncs, then renames it; `rollback.request` is an empty
   regular file. Root deletes every `*.opos-update` and `rollback.request` it looks at, accepted or not, removes `.partial`
   files older than a day, applies the newest bundle by modification time and discards the others; a symlink, FIFO or
-  directory in the inbox is removed and reported. The path unit matches only `*.opos-update` and `rollback.request`.
+  directory in the inbox is removed and reported (also when an unexpected error stops the run). The path unit matches
+  only `*.opos-update` and `rollback.request`. `opos-update.service` has **no start limit**: every file dropped in the inbox
+  is one start, and a limit would let any process that can write the inbox switch the service and the path unit off until
+  root resets them. What bounds a flood instead: everything looked at is removed, and the updater lingers after each run
+  (2 s; 30 s after a run that could not work: exit 1 or 75), so the path unit starts at most one run per few seconds.
 - **Serials.** A serial must be above the running one and above a staged boot update, and not in `failed`. A rolled-back
   serial (automatic, requested, or recovered after an interrupted run) is added to `failed` and never accepted again; a
   refused bundle and a failed smoke test are not. A newer app update supersedes a staged boot update, and a rollback cancels it.
