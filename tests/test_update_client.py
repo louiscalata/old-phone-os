@@ -1626,8 +1626,8 @@ class MainPageIsUntouched(Env):
     # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
     # Re-recorded for each of the interface plan's W1-04 to W1-06 commits (clock, status bar, call), and for each fix the status track's
     # review asked for: the page changes by design there.
-    MAIN_SHA256 = "374fdc0483450c731bed2cafb335efb5b985f60ccde8f6dafb91ab0080089e7a"
-    DEMO_SHA256 = "4f030b8e64d7dad4696a56b208cb41941054b9a567eaaa5e911f21a84f39f575"
+    MAIN_SHA256 = "60e2bf8763e2fddb330304f45f607de2e4c279b76bcb0bc8fdab0b91cd393034"
+    DEMO_SHA256 = "30371a1d1d755c4947a5fb76cfd0ceb904a5c37044798ef3e9473f90f7733fb7"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
