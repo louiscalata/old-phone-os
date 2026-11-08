@@ -41,6 +41,22 @@ mount -o ro,loop,noload "$img" "$mnt" || exit 1
 port=18999
 py() { PYTHONPATH="$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 HOME=/tmp "$q" -L "$mnt" "$mnt/usr/bin/python3" "$@"; }
 py -c "import sys; print(sys.version.split()[0], sys.platform)" | sed 's/^/image python3 /'
+# >>> track firstboot: first run and time zone (src/opos/firstrun.py, timezone.py). Static wiring, then the image's own python3 and zone files under qemu-user.
+zi=$r/usr/share/zoneinfo
+fb_list() { py -c 'import sys; from opos import timezone as t; z, s = t.zones(sys.argv[1]); sys.exit(0 if s == "system" and "Europe/Berlin" in z and len(z) > 300 else 1)' "$zi"; }
+fb_tz() { [ "$( export TZ=Asia/Kolkata; py -c 'import time; print(time.strftime("%z", time.localtime(0)))' )" = +0530 ]; }
+fb_saved() { d=$(mktemp -d); ( export OPOS_CONFIG_DIR=$d; py -m opos.timezone --set Asia/Kolkata >/dev/null &&
+    [ "$(py -c 'import time; from opos import timezone as t; t.apply_saved(); print(time.strftime("%z", time.localtime(0)))')" = +0530 ] ); rc=$?; rm -rf "$d"; return $rc; }
+check "first run is on: opos-server.service sets OPOS_FIRSTRUN=1" "grep -q '^Environment=OPOS_FIRSTRUN=1' $w/opos-server.service"
+check "the kiosk exports the saved time zone to Chromium" "grep -q 'track firstboot' $r/usr/libexec/opos/opos-kiosk && sh -n $r/usr/libexec/opos/opos-kiosk"
+if [ -f "$zi/UTC" ] && [ -f "$zi/Europe/Berlin" ]; then
+    check "zone database present: OPOS lists the system zones (more than 300)" "fb_list"
+    check "TZ=Asia/Kolkata reads +0530 with the image's python3 and zone files" "fb_tz"
+    check "a saved zone is applied by the image's python3 (opos.timezone, TZ + tzset)" "fb_saved"
+else
+    echo "NOTE: no /usr/share/zoneinfo in this image: OPOS offers only its short built-in zone list"
+fi
+# <<< track firstboot
 ( cd /tmp && py -m opos.web --port $port >/tmp/opos-verify.log 2>&1 & echo $! > /tmp/opos-verify.pid )
 ok=1
 for i in $(seq 1 60); do

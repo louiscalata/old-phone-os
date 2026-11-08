@@ -29,6 +29,9 @@ earlier work and are not current instructions or evidence about the current sour
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
 - [Over-the-air updates](ota-update.md): design for signed, rollback-safe updates of the OPOS app and its own files on the Duo OS image; design only, not yet implemented.
+<!-- >>> track firstboot -->
+- [First run and time zone on the Duo OS](duo-firstrun.md): the setup shown on the first start, the owner's time zone applied without root, the clock sentence and the switch that turns it on; tested off the phone.
+<!-- <<< track firstboot -->
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; prepared, not yet run on the phone.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
 
