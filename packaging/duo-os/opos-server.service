@@ -10,6 +10,13 @@ Environment=PYTHONPATH=/opt/opos/src
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=OPOS_BATTERY=live
 Environment=OPOS_ON_PHONE=1
+# Two-screen span, off until the layout is checked on the phone. The kiosk window covers both panels and the
+# hinge, and Chromium on Linux cannot report where the hinge is, so the server has to say. The value is
+# PANE,HINGE in CSS px. The Duo's 2784x1800 output is two 1350 px panels and an 84 px hinge (the port's
+# display-panel file) and phoc.ini sets output scale 2, so 675,42, for a window 1392 px wide (not yet
+# measured on the phone). To try it: remove the leading # below, run sudo systemctl daemon-reload and
+# sudo systemctl restart opos-server, then pkill chromium as the droidian user (opos-kiosk starts it again).
+#Environment=OPOS_SPAN=675,42
 ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery
 Restart=always
 RestartSec=3s
