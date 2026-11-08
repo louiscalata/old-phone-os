@@ -25,13 +25,15 @@
 #   - SHA-256 of every file is checked before the first write; the rootfs is checked again on the phone.
 #   - The rootfs must be a RAW ext4 image: zstd, gzip, xz and Android sparse files are refused by their magic
 #     bytes, the ext4 superblock must be there and the file at least as long as it says. Checked first, in the
-#     dry run too, from the first 1.2 KB and the length (the image is not loaded).
+#     dry run too, from the first 1.4 KB and the length (the image is not loaded). Blocks larger than 4096
+#     bytes are refused: the Duo's kernel has 4 KiB pages. The staged copy is checked again.
 #   - Preflight on the phone: product surfaceduo, current-slot a, unlocked yes, battery 20 percent or more.
 #   - The misc brake (a one-shot bootonce-bootloader flag in misc) is armed before TWRP and again before the
 #     kernel, so a crash or a reboot should land in Boot Select, not in stock Android (which would wipe
 #     userdata). A precaution, not a guarantee. If writing the brake fails, the script says in capitals that
 #     the brake may be ABSENT, tries the brake image once more (no second erase) and stops; the phone must
-#     then stay in Boot Select: do not power-cycle it or let it restart.
+#     then stay in Boot Select: do not power-cycle it or let it restart. The by-hand command it prints names the
+#     verified staged brake image, which is kept for that case only.
 #   - The kernel is RAM-booted exactly ONCE and never retried, even if something after it fails. A kernel that
 #     crashed may leave the slot rejecting RAM-boots with Device Error; stop and ask, do not try again.
 #   - Only misc (erase, flash) and userdata (format) are written. Nothing is written to boot, vbmeta, dtbo or
@@ -127,12 +129,12 @@ function Set-MiscBrake([string]$image) {
 }
 
 # The rootfs goes to /data/rootfs.img and Halium loop-mounts it as it is, so it must be a RAW ext4 image. Reads only
-# the first 1200 bytes and the length. Returns '' when it looks right, otherwise what is wrong with it.
+# the first 1400 bytes and the length. Returns '' when it looks right, otherwise what is wrong with it.
 function Get-Ext4Problem([string]$path) {
     $fs = New-Object System.IO.FileStream($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
     try {
         $len = $fs.Length
-        $b = New-Object byte[] 1200
+        $b = New-Object byte[] 1400
         $n = 0
         while ($n -lt $b.Length) {
             $got = $fs.Read($b, $n, $b.Length - $n)
@@ -154,10 +156,15 @@ function Get-Ext4Problem([string]$path) {
     }
     if ($n -lt 1082) { return "it is only $len bytes, too short to hold an ext4 superblock" }
     if ($b[1080] -ne 0x53 -or $b[1081] -ne 0xEF) { return 'there is no ext4 superblock magic (0xEF53) at byte 1080' }
-    # Superblock at byte 1024: blocks_count_lo at +4, log_block_size at +24 (block size = 1024 << that), both little endian.
+    # Superblock at byte 1024, all little endian: blocks_count_lo at +4, log_block_size at +24 (block size = 1024 << that),
+    # feature_incompat at +96 (0x80 = 64-bit block count), blocks_count_hi at +336.
     $blocks = [uint64]$b[1028] + [uint64]$b[1029] * 256 + [uint64]$b[1030] * 65536 + [uint64]$b[1031] * 16777216
     $logbs = [uint64]$b[1048] + [uint64]$b[1049] * 256 + [uint64]$b[1050] * 65536 + [uint64]$b[1051] * 16777216
     if ($logbs -gt 6) { return "the ext4 superblock has an impossible block size (log_block_size $logbs)" }
+    # The Duo's kernel has 4 KiB pages and cannot mount an ext4 whose blocks are larger than a page.
+    if ($logbs -gt 2) { return "the ext4 block size is larger than 4096 bytes (log_block_size $logbs), which the Duo's kernel cannot mount" }
+    $hi = [uint64]$b[1360] + [uint64]$b[1361] * 256 + [uint64]$b[1362] * 65536 + [uint64]$b[1363] * 16777216
+    if (($b[1120] -band 0x80) -and $hi -ne 0) { return 'the ext4 superblock describes a filesystem of 16 TiB or more (64-bit block count), far beyond this phone' }
     if ($blocks -eq 0) { return 'the ext4 superblock says the filesystem has no blocks' }
     $size = [uint64]1024
     for ($i = 0; $i -lt $logbs; $i++) { $size = $size * 2 }
@@ -175,6 +182,7 @@ function Get-Ext4Problem([string]$path) {
 # the read, closed only for the rootfs (by the sha256sum on the phone), so it is not done unless it has to be.
 function Stage-Image([string]$src, [string]$dst, [string]$sha) {
     [System.IO.File]::Copy($src, $dst)
+    [System.IO.File]::SetAttributes($dst, [System.IO.FileAttributes]::Normal)   # Copy keeps a read-only flag, which would block the delete
     $fs = New-Object System.IO.FileStream($dst, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read, 1048576)
     try {
         $hasher = [System.Security.Cryptography.SHA256]::Create()
@@ -223,12 +231,14 @@ function Find-PhoneSsh([string]$OwnIp, [int]$PreferHost, [int]$Port, [int]$Timeo
     $rest = @(1..254 | ForEach-Object { $net + $_ } | Where-Object { $_ -ne $OwnIp -and $_ -ne $Prefer })
     @(Test-Tcp $rest $Port $TimeoutMs)
 }
-# Every RNDIS-like adapter that is up and has an IPv4 address: its name, description and address.
-function RndisAdapters {
+# Every RNDIS-like adapter that is up and has an IPv4 address: its name, description and address. With -Any also
+# those that have none yet.
+function RndisAdapters([switch]$Any) {
     $ErrorActionPreference = 'Continue'
     @(foreach ($n in @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -match 'Remote NDIS|RNDIS' -and $_.Status -eq 'Up' })) {
         $a = Get-NetIPAddress -InterfaceIndex $n.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($a -and $a.IPAddress) { [pscustomobject]@{ Name = "$($n.Name)"; Description = "$($n.InterfaceDescription)"; Address = "$($a.IPAddress)" } }
+        elseif ($Any) { [pscustomobject]@{ Name = "$($n.Name)"; Description = "$($n.InterfaceDescription)"; Address = 'no IPv4 address yet' } }
     })
 }
 # The address of THE RNDIS-like adapter, or nothing while there is none. With more than one it refuses: another
@@ -337,6 +347,11 @@ try {
         [void]$held.Add((Stage-Image $orig[$n] $dst $want[$n]))
         $p[$n] = $dst
         Log "staged $n and hashed the copy again: ok"
+        if ($n -eq $Rootfs) {
+            # The check above looked at the original; this one looks at the bytes that will be pushed.
+            $bad = Get-Ext4Problem $dst
+            if ($bad) { throw "the staged copy of -Rootfs $Rootfs is not a raw ext4 image: $bad" }
+        }
     }
     $phase = 'preflight (nothing was written to the phone)'
     Log "waiting up to $WaitMinutes min for the Duo in fastboot (Boot Select)"
@@ -356,7 +371,7 @@ try {
     # another device, and the search for the phone after the kernel boot could not tell them apart. Refuse now,
     # before anything is written and the one RAM-boot is spent. (-PhoneIp skips the search.)
     if (-not $PhoneIp) {
-        $other = @(RndisAdapters)
+        $other = @(RndisAdapters -Any)
         if ($other.Count) {
             $names = ($other | ForEach-Object { '{0} ({1}) {2}' -f $_.Name, $_.Description, $_.Address }) -join '; '
             throw "an RNDIS-like USB network adapter is already up although the Duo has not booted: $names. The phone could not be told from that device. Unplug it or pass -PhoneIp with the Duo's address."
@@ -423,10 +438,16 @@ try {
     Write-Host 'Stopped on the first failure; nothing was retried. See the log:' $log
     if ($script:brakeMayBeAbsent) {
         Show-BrakeWarning
-        Log "To put the brake back by hand, with the phone still in Boot Select: fastboot -s $Serial flash misc $($orig['misc-brake.img'])"
+        Log "To put the brake back by hand, with the phone still in Boot Select: fastboot -s $Serial flash misc $($p['misc-brake.img'])"
+        Log "That file is the verified copy (SHA-256 $($want['misc-brake.img'])); it is kept for this. Do not use the one in the image folder without checking it."
     }
     if ($kernelBoots -ge 1) { Write-Host 'The kernel was RAM-booted once. Do not run fastboot boot again for this attempt.' }
 } finally {
-    Release-Staged $held $staged $stage
+    if ($script:brakeMayBeAbsent) {
+        # Everything is closed and removed except the verified brake image (and so its folder), named in the by-hand command above.
+        Release-Staged $held @($staged | Where-Object { $_ -ne $p['misc-brake.img'] }) $null
+    } else {
+        Release-Staged $held $staged $stage
+    }
 }
 if ($failed) { exit 1 }

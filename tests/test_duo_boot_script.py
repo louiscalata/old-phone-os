@@ -290,10 +290,10 @@ class DuoBootScriptText(unittest.TestCase):
             with self.subTest(magic=magic):
                 self.assertIn(magic, check)
         # Only the first 1200 bytes and the length are read: the image is never loaded.
-        self.assertIn("New-Object byte[] 1200", check)
+        self.assertIn("New-Object byte[] 1400", check)
         self.assertIn("$fs.Length", check)
         self.assertNotRegex(check, r"ReadAllBytes|Get-Content|ReadToEnd|ComputeHash")
-        for field in ("$b[1080]", "$b[1028]", "$b[1048]"):
+        for field in ("$b[1080]", "$b[1028]", "$b[1048]", "$b[1120]", "$b[1360]"):
             self.assertIn(field, check)
 
     def test_every_command_gets_a_staged_copy_and_the_handles_are_held_until_the_end(self):
@@ -303,11 +303,18 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertLess(body.index("Stage-Image $orig[$n]"), body.index("Fb getvar"))
         stage = function_text("Stage-Image")
         self.assertIn("[System.IO.File]::Copy($src, $dst)", stage)
+        self.assertIn("SetAttributes($dst, [System.IO.FileAttributes]::Normal)", stage)
         self.assertIn("[System.IO.FileAccess]::Read, [System.IO.FileShare]::Read", stage)
         # Hashed through the handle that is kept, after opening it: the bytes hashed are the bytes later read.
         self.assertLess(stage.index("New-Object System.IO.FileStream"), stage.index("ComputeHash($fs)"))
         self.assertNotIn("Get-FileHash", stage)
-        self.assertRegex(body, r"\} finally \{\n    Release-Staged \$held \$staged \$stage\n\}\nif \(\$failed\) \{ exit 1 \}")
+        self.assertIn("    } else {\n        Release-Staged $held $staged $stage\n    }\n}\nif ($failed) { exit 1 }", body)
+        # ... except the verified brake image, kept for the by-hand command after a failed brake write.
+        self.assertIn("if ($script:brakeMayBeAbsent) {\n        Release-Staged $held @($staged | Where-Object", body)
+        self.assertIn("Where-Object { $_ -ne $p['misc-brake.img'] }", body)
+        # The staged rootfs is checked again, with its copy open.
+        self.assertIn("$bad = Get-Ext4Problem $dst", body)
+        self.assertLess(body.index("$bad = Get-Ext4Problem $dst"), body.index("@(FastbootSerials)"))
         # The originals are named in messages only; no tool is ever handed one.
         for line in body.splitlines():
             if "$orig" in line:
@@ -326,7 +333,7 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertIn("-PhoneIp", find)
         self.assertNotIn("return $a.IPAddress", body)
         # Adapters already up while the phone is still in Boot Select are refused in the preflight, before any write.
-        early = body.index("$other = @(RndisAdapters)")
+        early = body.index("$other = @(RndisAdapters -Any)")
         self.assertLess(body.index("preflight ok"), early)
         self.assertLess(early, body.index("Set-MiscBrake $p["))
         self.assertIn("if (-not $PhoneIp) {", body[early - 40:early])
@@ -457,7 +464,7 @@ $r = Invoke-Ssh '203.0.113.7' 'echo hi'
 # fastboot or adb could be found. The three pinned hashes in the script's copy are swapped for those of small
 # stand-in files (data only; the pinning itself is tested as text above), the rootfs is a small raw ext4 stand-in,
 # and the script's TCP probe is replaced by one that answers with its first host. $runs is a JSON list of
-#   {label, args, rootfs (base64), key, fail, others, late_others, tamper, no_keygen}
+#   {label, args, rootfs (base64), key, fail, others, late_others, tamper, no_keygen, no_early_ext4}
 # and each run starts from freshly written image files. fail is a list of {tool, match, mode, skip, times, text}:
 # the (skip+1)th call of that tool whose arguments match the regex fails `times` times, as a nonzero exit
 # ('exit'), a nonzero exit with FAILED in the answer ('failed'), FAILED with exit 0 ('failed0') or a replaced
@@ -582,6 +589,12 @@ try {
     function global:Start-Sleep { throw 'harness: the script waits for something the fake phone never gives' }
     $tmp = Join-Path $work 'duo-opos-boot.ps1'
     Set-Content -LiteralPath $tmp -Value $text -Encoding UTF8
+    # A copy whose first look at the rootfs (the one on the original) always passes: the second look, at the staged
+    # copy, is then the only one left.
+    $early = '$bad = Get-Ext4Problem $p[$Rootfs]'
+    if (-not $text.Contains($early)) { throw 'harness: the early rootfs check was not found' }
+    $tmpNoEarly = Join-Path $work 'duo-opos-boot-no-early-check.ps1'
+    Set-Content -LiteralPath $tmpNoEarly -Value $text.Replace($early, '$bad = ""') -Encoding UTF8
     $results = @()
     foreach ($run in ($runs | ConvertFrom-Json)) {
         Reset-Images $run.rootfs
@@ -615,7 +628,9 @@ try {
         Remove-Item -LiteralPath (Join-Path $img 'logs') -Recurse -Force -ErrorAction SilentlyContinue
         $global:LASTEXITCODE = $null
         $threw = $null
-        try { & $tmp @p *> $null } catch { $threw = $_.Exception.Message }
+        $target = $tmp
+        if ($run.no_early_ext4) { $target = $tmpNoEarly }
+        try { & $target @p *> $null } catch { $threw = $_.Exception.Message }
         $logs = Join-Path $img 'logs'
         $logfile = Join-Path $logs 'boot-chain.log'
         $results += [pscustomobject]@{
@@ -625,7 +640,8 @@ try {
             calls = @(if (Test-Path -LiteralPath $global:CallLog) { Get-Content -LiteralPath $global:CallLog | ForEach-Object { [string]$_ } })
             probes = @(if (Test-Path -LiteralPath $global:ProbeLog) { Get-Content -LiteralPath $global:ProbeLog | ForEach-Object { [string]$_ } })
             expected = $global:Expected
-            stage_left = @(Get-ChildItem -LiteralPath $logs -Filter 'stage-*' -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+            stage_left = @(Get-ChildItem -LiteralPath $logs -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'stage-\d' } | ForEach-Object { $_.FullName })
+            stage_hashes = @(Get-ChildItem -LiteralPath $logs -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'stage-\d' } | ForEach-Object { $_.Name + '|' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower() })
             logs_dir = [bool](Test-Path -LiteralPath $logs)
             log = $(if (Test-Path -LiteralPath $logfile) { (Get-Content -LiteralPath $logfile) -join "`n" } else { '' })
         }
@@ -641,14 +657,17 @@ def fake_phone_program(runs):
     return "$runs = '" + json.dumps(runs).replace("'", "''") + "'\n" + FAKE_PHONE
 
 
-def ext4_image(blocks=4, log_bs=0, length=4096, magic=0xEF53, head=b""):
+def ext4_image(blocks=4, log_bs=0, length=4096, magic=0xEF53, head=b"", incompat=0, blocks_hi=0):
     """A stand-in raw ext4 image: only the superblock fields the installer reads are real (blocks_count_lo at byte
-    1028, log_block_size at 1048, the 0xEF53 magic at 1080). `length` is the size of the file, whatever the
-    superblock says, and `head` overwrites the first bytes (a compression magic, say)."""
+    1028, log_block_size at 1048, the 0xEF53 magic at 1080, feature_incompat at 1120, blocks_count_hi at 1360).
+    `length` is the size of the file, whatever the superblock says, and `head` overwrites the first bytes (a
+    compression magic, say)."""
     data = bytearray(max(length, 4096))
     struct.pack_into("<I", data, 1028, blocks)
     struct.pack_into("<I", data, 1048, log_bs)
     struct.pack_into("<H", data, 1080, magic)
+    struct.pack_into("<I", data, 1120, incompat)
+    struct.pack_into("<I", data, 1360, blocks_hi)
     data[:len(head)] = head
     return bytes(data[:length])
 
@@ -661,12 +680,17 @@ def b64(data):
 EXT4_CASES = [
     ("valid, 1 KiB blocks", ext4_image(), ""),
     ("valid, 4 KiB blocks and exactly as long", ext4_image(blocks=3, log_bs=2, length=12288), ""),
-    ("valid, 64 KiB blocks", ext4_image(blocks=1, log_bs=6, length=65536), ""),
+    ("valid, 2 KiB blocks", ext4_image(blocks=3, log_bs=1, length=6144), ""),
+    ("valid, 64-bit feature with a zero high word", ext4_image(incompat=0x80), ""),
+    ("high word set but the 64-bit feature is not", ext4_image(blocks_hi=1), ""),
     ("longer than the filesystem says", ext4_image(blocks=2, length=8192), ""),
     ("compression magic one byte off", ext4_image(head=bytes.fromhex("28b52ffe")), ""),
     ("one byte short", ext4_image(blocks=5, length=5119), "describes 5120 bytes"),
-    ("short by whole blocks", ext4_image(blocks=2, log_bs=6, length=65536), "describes 131072 bytes"),
-    ("block count that needs 64-bit arithmetic", ext4_image(blocks=0xFFFFFFFF, log_bs=6), "describes 281474976645120 bytes"),
+    ("short by whole blocks", ext4_image(blocks=2, log_bs=2, length=4096), "describes 8192 bytes"),
+    ("block count that needs 64-bit arithmetic", ext4_image(blocks=0xFFFFFFFF, log_bs=2), "describes 17592186040320 bytes"),
+    ("64-bit block count of 16 TiB and more", ext4_image(blocks=16384, log_bs=2, length=1 << 26, incompat=0x80, blocks_hi=1), "16 TiB or more"),
+    ("8 KiB blocks (larger than a page of the Duo's kernel)", ext4_image(blocks=1, log_bs=3, length=8192), "larger than 4096 bytes"),
+    ("64 KiB blocks", ext4_image(blocks=1, log_bs=6, length=65536), "larger than 4096 bytes"),
     ("zstd", ext4_image(head=bytes.fromhex("28b52ffd")), "zstd"),
     ("gzip", ext4_image(head=bytes.fromhex("1f8b")), "gzip"),
     ("xz", ext4_image(head=bytes.fromhex("fd377a585a00")), "xz"),
@@ -725,6 +749,13 @@ try {
         $r.write_blocked = try { [IO.File]::Open($a, 'Open', 'Write', 'ReadWrite').Dispose(); $false } catch { $true }
         $r.delete_blocked = try { [IO.File]::Delete($a); $false } catch { $true }
     }
+    $ro = Join-Path $work 'ro.img'
+    [IO.File]::Copy($src, $ro)
+    [IO.File]::SetAttributes($ro, [IO.FileAttributes]::ReadOnly)
+    $c = Join-Path $work 'c.img'
+    $fs2 = Stage-Image $ro $c $good
+    Release-Staged @($fs2) @($c) $null
+    $r.readonly_source_copy_removed = -not (Test-Path -LiteralPath $c)
     $r.same_name_again = try { Stage-Image $src $a $good | Out-Null; 'accepted' } catch { 'refused' }
     $b = Join-Path $work 'b.img'
     $r.bad_hash_message = try { Stage-Image $src $b ('0' * 64) | Out-Null; '' } catch { $_.Exception.Message }
@@ -968,6 +999,18 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 self.assertEqual(as_list(run["stage_left"]), [], "images were staged for a rootfs that cannot work")
                 self.assertNotIn("hash ok", run["log"])
 
+    def test_the_staged_rootfs_is_checked_again_in_case_the_original_changed(self):
+        """The first look at the rootfs is at the original, which a download or a sync could replace before it is
+        staged. This run skips that first look, so only the look at the staged copy is left."""
+        zst = ext4_image(head=bytes.fromhex("28b52ffd"))
+        got = run_yes([{"label": "replaced after the first look", "rootfs": b64(zst), "no_early_ext4": True}])[0]
+        self.assertIsNone(got["threw"])
+        self.assertEqual(got["exit"], 1)
+        self.assertEqual(got["calls"], [], "a fastboot or adb command ran")
+        self.assertIn("the staged copy of -Rootfs", got["log"])
+        self.assertIn("zstd", got["log"])
+        self.assertEqual(as_list(got["stage_left"]), [], "the staged copies were not removed")
+
     def test_a_good_run_hands_fastboot_and_adb_only_held_staged_copies(self):
         """Every path given to fastboot or adb is a copy in a new folder under the log folder, hashed through a
         handle that is still held when the tool is called (another opener asking for exclusive access is refused)
@@ -1013,6 +1056,7 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         self.assertTrue(got["bad_hash_copy_exists"])
         self.assertTrue(got["bad_hash_handle_released"], "a copy that failed its hash kept its handle open")
         self.assertTrue(got["released_file_gone"])
+        self.assertTrue(got["readonly_source_copy_removed"], "a staged copy of a read-only file could not be deleted")
 
     def test_every_write_phase_failure_stops_at_the_failing_command(self):
         """Each row injects one failure (a nonzero exit, FAILED in the answer, a wrong answer) and compares the
@@ -1028,7 +1072,12 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 self.assertNotIn("DONE:", run["log"])
                 for text_ in says:
                     self.assertIn(text_, run["log"])
-                self.assertEqual(as_list(run["stage_left"]), [], "the staged copies were not released and removed")
+                if "To put the brake back by hand" in says:
+                    # Only the verified brake image is kept, with its folder, for the by-hand command.
+                    self.assertEqual(len(as_list(run["stage_left"])), 2)
+                    self.assertEqual(as_list(run["stage_hashes"]), ["misc-brake.img|" + run["expected"]["misc-brake.img"]])
+                else:
+                    self.assertEqual(as_list(run["stage_left"]), [], "the staged copies were not released and removed")
                 # The kernel is only ever booted by the very last command of a full run.
                 self.assertLessEqual(sum(1 for c in run["calls"] if re.search(r" boot <S>/boot\.img$", c)), 1)
 
@@ -1048,8 +1097,8 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         self.assertEqual(fails["log"].count(BRAKE_MAY_BE_ABSENT), 2)
         hand = [line for line in fails["log"].splitlines() if "To put the brake back by hand" in line]
         self.assertEqual(len(hand), 1)
-        self.assertRegex(hand[0], r"fastboot -s SER1 flash misc \S+[\\/]img[\\/]misc-brake\.img$")
-        self.assertNotIn("stage-", hand[0])
+        self.assertRegex(hand[0], r"fastboot -s SER1 flash misc \S+[\\/]img[\\/]logs[\\/]stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img$")
+        self.assertIn("(SHA-256 " + fails["expected"]["misc-brake.img"] + ")", fails["log"])
         self.assertEqual(second["log"].count(BRAKE_MAY_BE_ABSENT), 2)
         self.assertNotIn(" boot <S>/boot.img", " ".join(second["calls"]))
         self.assertNotIn("format:ext4", " ".join(fails["calls"]))
@@ -1069,6 +1118,7 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         got = {r["label"]: r for r in run_yes([
             {"label": "one adapter, the phone's"},
             {"label": "another adapter already up", "others": [tether, other]},
+            {"label": "an adapter up that has no address yet", "others": [{"name": "Ethernet 6", "desc": "Remote NDIS Compatible Device", "ip": None, "index": 6}]},
             {"label": "two adapters after the boot", "late_others": [tether]},
             {"label": "-PhoneIp skips the search", "args": {"PhoneIp": "203.0.113.82"}, "others": [tether]},
         ])}
@@ -1081,6 +1131,10 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         for words in ("Ethernet 7", "198.51.100.129", "Ethernet 8", "198.51.100.2", "Remote NDIS", "-PhoneIp"):
             with self.subTest(words=words):
                 self.assertIn(words, early["log"])
+        noaddr = got["an adapter up that has no address yet"]
+        self.assertEqual(noaddr["calls"], upto(GETVAR_BATTERY))
+        self.assertIn("Ethernet 6", noaddr["log"])
+        self.assertIn("no IPv4 address yet", noaddr["log"])
         late = got["two adapters after the boot"]
         self.assertEqual(late["exit"], 1)
         self.assertEqual(late["calls"], GOLDEN)
