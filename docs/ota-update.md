@@ -96,8 +96,9 @@ from the revision in `/opt/opos/REVISION`; `build-image.sh` creates the release-
    `requires_base`; free space at least twice the unpacked size.
 3. Unpack the payload into `releases/.staging-<serial>` with the checks above; verify every file hash and mode; add
    `REVISION`; rename to its final release directory.
-4. Smoke test: start the new tree's server as `droidian` on `127.0.0.1:18765` (not the live port); `GET /` must answer
-   200 within 20 s; stop it.
+4. Smoke test: start the new tree's server as `droidian` on a loopback port the kernel picks (`--port 0`, never the live
+   port and never a fixed one that another process could hold); the server prints the address it got and the updater
+   reads it from its own log; `GET /` must answer 200 within 20 s; stop it.
 5. Overlay files (scope `app`): write `<dest>.new`, fsync, rename; keep the originals in `overlay-backup/`;
    `systemctl daemon-reload` if units changed. Switch `/opt/opos` atomically. Restart `opos-server`; kill the kiosk's
    Chromium so its loop restarts it on the new server. Scope `boot`: record `pending_boot` and stop here.
@@ -166,7 +167,11 @@ Where the code is stricter or more specific than the text above. Every item is a
 - **Health and smoke tests.** Health: `systemctl is-active opos-server.service` is `active`; `GET /` on port 8765 answers
   200 and carries `<meta name="opos-token" content="...">`; `GET /api/state` with that token returns a JSON object with a
   `battery` key. Boot confirmation uses the same check. Smoke test: the new release's server runs as `droidian` through
-  `runuser` on 127.0.0.1:18765 and `GET /` must answer 200 within 20 seconds.
+  `runuser` with `--port 0`; `opos.web` prints `http://127.0.0.1:<port>/` once it listens (the port it really got, not the
+  one asked for), the updater reads that line from its own root-owned log, and `GET /` on that port must answer 200 within
+  20 seconds. There is no well-known port to hold or to answer on: a server that does not print its address fails the test.
+  A process running as `droidian` could still kill the smoke server and answer on its port in the instant between the line
+  and the request; the health check on the live port after the switch, and the rollback it triggers, are the net under that.
 - **What the updater touches.** It asks systemd for `daemon-reload`, `restart opos-server.service` and `is-active
   opos-server.service` and nothing else, so never `opos.service`; it kills the kiosk's Chromium with `pkill`, and
   `opos-kiosk` waits for the server before every start of the browser. Exit codes: 0 done or nothing to do, 3 a bundle or

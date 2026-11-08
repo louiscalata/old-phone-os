@@ -28,7 +28,6 @@ import pwd
 import re
 import shutil
 import signal
-import socket
 import stat
 import subprocess
 import sys
@@ -100,7 +99,7 @@ class Config:
     kiosk_pattern: str = r'chromium.* --kiosk .*--user-data-dir=[^ ]*/\.cache/opos-kiosk'
     health_host: str = '127.0.0.1'
     health_port: int = 8765
-    smoke_port: int = 18765
+    smoke_port: int = 0                              # 0: the smoke server binds a port the kernel picks and reports it
     smoke_chown: bool = True                         # give the smoke server's throwaway HOME to service_user
     smoke_timeout: float = 20.0
     health_timeout: float = 45.0
@@ -408,20 +407,29 @@ def probe_health(cfg):
     return probe_http(cfg.health_host, cfg.health_port)
 
 
-def port_open(host, port):
+SMOKE_ADDR = re.compile(rb'http://127\.0\.0\.1:([0-9]{1,5})/')
+
+
+def smoke_port_of(log):
+    """The port the smoke server says it listens on: opos.web prints its address once the socket is bound."""
     try:
-        socket.create_connection((host, port), timeout=0.5).close()
-        return True
+        with open(log, 'rb') as f:
+            m = SMOKE_ADDR.search(f.read(8192))
     except OSError:
-        return False
+        return None
+    port = int(m.group(1)) if m else 0
+    return port if 1 <= port <= 65535 else None
 
 
 def run_smoke(cfg, release_dir):
-    """Start the release's own server as the service user on the smoke port; GET / must answer 200."""
-    host, port = cfg.health_host, cfg.smoke_port
-    run(cfg, [*cfg.pkill, '-u', cfg.service_user, '-f', r'opos\.web --port %d( |$)' % port])
-    if port_open(host, port):
-        return False, 'smoke port %d is busy' % port
+    """Start the release's own server as the service user; GET / must answer 200 on the port it reports.
+
+    There is no well-known port to squat. The server binds a port the kernel picks (--port 0) and prints the address
+    it got; the updater reads that from its own log, which only root can write, so no other process of the service
+    user can hold the port beforehand or answer in the server's place. A server that exits, or does not report a
+    port, fails the test."""
+    host = cfg.health_host
+    run(cfg, [*cfg.pkill, '-u', cfg.service_user, '-f', r'opos\.web --port %d( |$)' % cfg.smoke_port])  # one a killed run left
     home = os.path.join(cfg.staging, 'smoke-home')
     remove_tree(home)
     os.mkdir(home, 0o700)
@@ -434,7 +442,7 @@ def run_smoke(cfg, release_dir):
             return False, 'cannot prepare the smoke test as %s: %s' % (cfg.service_user, e)
     env = ['PATH=' + SAFE_ENV['PATH'], 'LANG=C.UTF-8', 'HOME=' + home, 'PYTHONPATH=' + os.path.join(release_dir, 'src'),
            'PYTHONDONTWRITEBYTECODE=1', 'OPOS_BATTERY=live', 'OPOS_ON_PHONE=1']
-    argv = [*cfg.runuser, cfg.env_bin, '-i', *env, cfg.python, '-m', 'opos.web', '--port', str(port), '--live-battery']
+    argv = [*cfg.runuser, cfg.env_bin, '-i', *env, cfg.python, '-m', 'opos.web', '--port', str(cfg.smoke_port), '--live-battery']
     out = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
     try:
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd='/', env=SAFE_ENV, start_new_session=True)
@@ -444,19 +452,25 @@ def run_smoke(cfg, release_dir):
         os.close(out)
     try:
         deadline = cfg.mono() + cfg.smoke_timeout
+        port = None
         while True:
             if proc.poll() is not None:
                 return False, 'the server exited with %s: %s' % (proc.returncode, _tail(log))
-            try:
-                status, _ = http_get(host, port, '/', timeout=2.0)
-            except (OSError, http.client.HTTPException):
-                status = None
+            port = port or smoke_port_of(log)
+            status = None
+            if port:
+                try:
+                    status, _ = http_get(host, port, '/', timeout=2.0)
+                except (OSError, http.client.HTTPException):
+                    status = None
             if status == 200:
+                if proc.poll() is not None:  # it died while answering: whatever answered is not the server
+                    return False, 'the server exited with %s: %s' % (proc.returncode, _tail(log))
                 return True, 'GET / answered 200'
             if status is not None:
                 return False, 'GET / answered %d' % status
             if cfg.mono() >= deadline:
-                return False, 'no answer within %g s: %s' % (cfg.smoke_timeout, _tail(log))
+                return False, ('no answer within %g s: %s' if port else 'the server reported no port within %g s: %s') % (cfg.smoke_timeout, _tail(log))
             cfg.sleep(min(0.2, cfg.health_interval))
     finally:
         for sig in (signal.SIGTERM, signal.SIGKILL):

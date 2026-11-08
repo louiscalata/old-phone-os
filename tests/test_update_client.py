@@ -1389,6 +1389,24 @@ class MainStartsAutoCheck(unittest.TestCase):
         srv.RequestHandlerClass.updater.start_auto_check.assert_called_once_with()
         srv.serve_forever.assert_called_once_with()
 
+    def test_main_prints_the_port_the_kernel_chose(self):
+        """The update smoke test starts the new release's server with --port 0 and reads its port from this line."""
+        made, out = [], io.StringIO()
+        real = webclient.web.make_server
+
+        def spy(*a, **k):
+            srv = real(*a, **k)
+            srv.serve_forever = lambda: None
+            made.append(srv)
+            return srv
+        with mock.patch.object(webclient.web, "make_server", spy), mock.patch("sys.stdout", out):
+            webclient.web.main(["--port", "0"])
+        self.addCleanup(made[0].server_close)
+        port = made[0].server_address[1]
+        self.assertGreater(port, 0)
+        self.assertIn("http://127.0.0.1:%d/" % port, out.getvalue())
+        self.assertNotIn("127.0.0.1:0/", out.getvalue())
+
     def test_make_server_attaches_the_given_updater(self):
         mine = uc.UpdateClient(uc.Paths(root="/nonexistent/opos-update"))
         server = webclient.web.make_server(0, webclient.web.Phone(), updater=mine)

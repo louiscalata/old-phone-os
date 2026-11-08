@@ -1041,10 +1041,16 @@ def main(argv=None):
     _route_with_glimmer(phone, os.environ)
     server = make_server(args.port, phone, token=token)
     server.RequestHandlerClass.updater.start_auto_check()  # only when /etc/opos/update.json opts in with auto_check; it checks, never downloads
+    try:
+        port = server.server_address[1]  # not args.port: --port 0 lets the kernel pick, and the update smoke test reads the real one from this line
+    except (AttributeError, IndexError, TypeError):
+        port = args.port
+    if type(port) is not int:  # a test double
+        port = args.port
     if live is not None:
-        print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{args.port}/ (Ctrl-C to stop)", flush=True)
+        print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{port}/ (Ctrl-C to stop)", flush=True)
     else:
-        print(f"OPOS desktop demo: http://127.0.0.1:{args.port}/?demo=1 (Ctrl-C to stop)", flush=True)
+        print(f"OPOS desktop demo: http://127.0.0.1:{port}/?demo=1 (Ctrl-C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

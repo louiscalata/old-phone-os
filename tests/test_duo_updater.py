@@ -117,7 +117,9 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Length", "2"); self.end_headers(); self.wfile.write(b"ok")
     def log_message(self, *a):
         pass
-http.server.HTTPServer(("127.0.0.1", a.port), H).serve_forever()
+srv = http.server.HTTPServer(("127.0.0.1", a.port), H)
+print("stand-in server: http://127.0.0.1:%d/" % srv.server_address[1], flush=True)
+srv.serve_forever()
 '''
 OLD_OVERLAY = {
     'usr/libexec/opos/opos-kiosk': (b'#!/bin/sh\necho old kiosk\n', 0o755),
@@ -306,7 +308,6 @@ exit 0''')
         self.server = HealthServer(self)
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.02}, daemon=True)
         self.thread.start()
-        self.smoke_port = free_port()
         self.cfg = U.Config(**self.cfg_kwargs())
         if fast:
             self.cfg.smoke = lambda cfg, d: (True, 'stub')
@@ -324,7 +325,7 @@ exit 0''')
                     ssh_keygen=(KEYGEN,), systemctl=(os.path.join(b, 'systemctl'),),
                     runuser=(os.path.join(b, 'runuser'), '-u', 'droidian', '--'), pkill=(os.path.join(b, 'pkill'),),
                     env_bin='/usr/bin/env', python=sys.executable, health_port=self.server.server_address[1],
-                    smoke_port=self.smoke_port, smoke_chown=False, smoke_timeout=15.0, health_timeout=1.5, health_interval=0.05,
+                    smoke_chown=False, smoke_timeout=15.0, health_timeout=1.5, health_interval=0.05,
                     confirm_timeout=0.5, lock_timeout=0.3, cmd_timeout=20.0, pace=0.0, fail_pause=0.0)
 
     def stub(self, name, body):
@@ -497,7 +498,7 @@ class TestModule(unittest.TestCase):
         for cmd in (c.ssh_keygen, c.systemctl, c.runuser, c.pkill, (c.env_bin,), (c.python,)):
             self.assertTrue(cmd[0].startswith('/'), cmd)
         self.assertEqual(c.runuser, ('/usr/sbin/runuser', '-u', 'droidian', '--'))
-        self.assertEqual((c.health_port, c.smoke_port), (8765, 18765))
+        self.assertEqual((c.health_port, c.smoke_port), (8765, 0))
         self.assertEqual((c.max_files, c.max_unpacked), (20000, 256 << 20))
         self.assertEqual(c.keep_previous, 2)
         self.assertIsNone(c.hook)
@@ -1198,22 +1199,108 @@ class TestApply(EnvCase):
         self.assertEqual(e.live()['restarts'], [])
         e.consistent()
 
-    def test_smoke_port_busy(self):
-        e = self.env
-        s = socket.socket()
-        s.bind(('127.0.0.1', e.smoke_port))
-        s.listen(1)
-        self.addCleanup(s.close)
-        before = e.live()
-        self.assertEqual(e.apply(make_bundle(7)), 3)
-        self.assertIn('busy', e.status()['message'])
-        self.assertEqual(e.live(), before)
+    @contextlib.contextmanager
+    def smoke_ports(self):
+        """Record the ports the smoke test talked to (the ones the server reported)."""
+        seen = []
+        real = U.smoke_port_of
+
+        def spy(log):
+            port = real(log)
+            if port and port not in seen:
+                seen.append(port)
+            return port
+        with mock.patch.object(U, 'smoke_port_of', spy):
+            yield seen
 
     def test_smoke_server_is_stopped_afterwards(self):
         e = self.env
-        e.apply(make_bundle(7))
+        with self.smoke_ports() as seen:
+            self.assertEqual(e.apply(make_bundle(7)), 0)
+        self.assertEqual(len(seen), 1)
         with self.assertRaises(OSError):
-            socket.create_connection(('127.0.0.1', e.smoke_port), timeout=1).close()
+            socket.create_connection(('127.0.0.1', seen[0]), timeout=1).close()
+
+    def test_smoke_server_gets_a_port_from_the_kernel_not_a_well_known_one(self):
+        e = self.env
+        self.assertEqual(e.cfg.smoke_port, 0)
+        with self.smoke_ports() as seen:
+            self.assertEqual(e.apply(make_bundle(7)), 0)
+            self.assertEqual(e.apply(make_bundle(8), 'opos-8.opos-update'), 0)
+        self.assertEqual(len(seen), 2)
+        runs = [c for c in e.calls() if c.startswith('runuser') and 'opos.web' in c]
+        self.assertEqual(len(runs), 2)
+        for c in runs:
+            self.assertIn('opos.web --port 0 --live-battery', c)
+            self.assertNotIn('18765', c)
+
+    def test_a_listener_on_the_old_fixed_smoke_port_cannot_block_or_fake_an_update(self):
+        """Review finding: a process of the service user that holds the fixed smoke port refused every update (or could
+        answer 200 in the server's place). The port is now the kernel's choice, reported by the server itself."""
+        e = self.env
+        squat = []
+        for _ in range(3):
+            s = socket.socket()
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(('127.0.0.1', 18765 if not squat else 0))
+            except OSError:
+                s.close()
+                continue
+            s.listen(5)
+            self.addCleanup(s.close)
+            squat.append(s)
+        self.assertTrue(squat)
+        e.cfg.smoke_port = U.Config(root='/').smoke_port   # the production default, whatever it is
+        self.assertEqual(e.apply(make_bundle(7)), 0, e.status())
+        self.assertEqual(e.consistent(), 7)
+        for s in squat:                                # nobody connected to the squatters
+            s.setblocking(False)
+            with self.assertRaises(BlockingIOError):
+                s.accept()
+
+    def test_an_answering_squatter_does_not_turn_a_broken_server_into_a_pass(self):
+        e = self.env
+        class Ok(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'ok')
+
+            def log_message(self, *a):
+                pass
+        answer = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Ok)
+        threading.Thread(target=answer.serve_forever, kwargs={'poll_interval': 0.02}, daemon=True).start()
+        self.addCleanup(answer.server_close)
+        self.addCleanup(answer.shutdown)
+        e.cfg.smoke_port = answer.server_address[1]    # worst case: the squatter sits exactly where the updater is told to look
+        app = {**default_app(7), 'src/opos/BROKEN_SMOKE': (b'', 0o644)}
+        before = e.live()
+        self.assertEqual(e.apply(make_bundle(7, app=app)), 3)
+        self.assertIn('smoke test failed', e.status()['message'])
+        self.assertEqual(e.live(), before)
+
+    def test_server_that_never_reports_a_port_fails_the_smoke_test(self):
+        e = self.env
+        e.cfg.smoke_timeout = 1.0
+        silent = WEB_PY.replace(b'print("stand-in server: http://127.0.0.1:%d/" % srv.server_address[1], flush=True)', b'pass')
+        self.assertNotEqual(silent, WEB_PY)
+        before = e.live()
+        self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/web.py': (silent, 0o644)})), 3)
+        self.assertIn('reported no port', e.status()['message'])
+        self.assertEqual(e.live(), before)
+
+    def test_smoke_port_report_is_read_from_the_log_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, 'smoke.log')
+            self.assertIsNone(U.smoke_port_of(log))
+            for text, want in ((b'', None), (b'starting\n', None), (b'OPOS desktop demo: http://127.0.0.1:0/?demo=1\n', None),
+                               (b'OPOS live battery (sysfs, health x): http://127.0.0.1:41234/ (Ctrl-C to stop)\n', 41234),
+                               (b'stand-in: http://127.0.0.1:70000/\n', None), (b'http://127.0.0.2:5000/\n', None)):
+                with open(log, 'wb') as f:
+                    f.write(text)
+                self.assertEqual(U.smoke_port_of(log), want, text)
 
     def test_smoke_test_that_answers_500_fails(self):
         e = self.env

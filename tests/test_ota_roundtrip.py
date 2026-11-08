@@ -144,7 +144,9 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send(404, b"")
     def log_message(self, *args):
         pass
-http.server.ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), H)
+print("stand-in server: http://127.0.0.1:%d/" % srv.server_address[1], flush=True)
+srv.serve_forever()
 '''
 
 # systemctl as the updater calls it. restart really restarts the application server from the release /opt/opos points
@@ -270,7 +272,7 @@ class World:
             os.makedirs(os.path.join(r, d), mode=0o755, exist_ok=True)
             os.chmod(os.path.join(r, d), 0o755)
         os.makedirs(self.staging, mode=0o700)
-        self.health_port, self.smoke_port = free_port(), free_port()
+        self.health_port = free_port()
         # The image: release 0 built from a tree like the later ones, the old overlay files, the owner's public key.
         base = os.path.join(self.releases, rel_name(0))
         self.write_app(base, 0, "ok")
@@ -294,8 +296,9 @@ class World:
             base_version=os.path.join(r, "etc/opos/base-version"), trusted_uid=os.geteuid(), ssh_keygen=(KEYGEN,),
             systemctl=(os.path.join(self.bin, "systemctl"),), runuser=(os.path.join(self.bin, "runuser"), "-u", "droidian", "--"),
             pkill=(os.path.join(self.bin, "pkill"),), env_bin="/usr/bin/env", python=sys.executable, health_port=self.health_port,
-            smoke_port=self.smoke_port, smoke_chown=False, smoke_timeout=60.0 if self.real else 15.0,
-            health_timeout=60.0 if self.real else health_timeout, health_interval=0.1, confirm_timeout=3.0, lock_timeout=5.0, cmd_timeout=60.0, pace=0.0, fail_pause=0.0)
+            smoke_chown=False, smoke_timeout=60.0 if self.real else 15.0,
+            health_timeout=60.0 if self.real else health_timeout, health_interval=0.1, confirm_timeout=3.0, lock_timeout=5.0, cmd_timeout=60.0,
+            pace=0.0, fail_pause=0.0)
         self.cfg.log = self.logs.append
         self.cfg.sync = lambda: None
         self.cfg.boot_id = lambda: self.boot
