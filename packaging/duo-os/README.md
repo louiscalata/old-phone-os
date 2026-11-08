@@ -103,7 +103,8 @@ With `-Yes` it checks product, slot a, unlocked and battery; arms the brake; for
 pushes the rootfs and compares its hash on the phone; returns to the bootloader; re-arms the brake; RAM-boots
 the port's kernel once; then finds the phone on the USB network and, only if `-Key` is given, reads its state
 and logs over ssh. The first failure stops it and nothing is retried. The safety rules are written at the top
-of the script.
+of the script. If Windows refuses to run the script under its default execution policy, put
+`-ExecutionPolicy Bypass` before `-File` (the repository's `install.cmd` does the same).
 
 The phone sets no default gateway and is not in the PC's neighbour table until something contacts it, so the
 script derives the /24 from the address of the PC's RNDIS adapter and probes TCP port 22 across it, trying host
@@ -154,19 +155,28 @@ mounting userdata and loop-mounting `/data/rootfs.img`; that has not been rehear
 - Calls and texts are simulated (see above); the real modem is not used.
 - `opos-fallback` and `opos-switch` have not been exercised on the phone.
 - One address, one run: host 82 of a 10.15.19.x network is where the phone answered once, not a documented constant.
+- **The search finds the phone only if the PC's USB adapter holds an address in the phone's /24.** The script
+  takes the /24 from the RNDIS adapter's IPv4 address. If the adapter shows only a 169.254.x.x address, the PC
+  has no lease from the phone (seen on October 31, 2026): the sweep covers the wrong network and the script
+  times out after the kernel boot. Do not run the script again to retry: that repeats the whole chain, including
+  the userdata format and a second kernel boot, and it has no attach-only mode. Find the phone and ssh to it by
+  hand.
 
 ## Restore to Android
 
 Nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed, so the stock Android
 (2022.902.48) is still installed and is what the phone starts when the OS image is not RAM-booted.
 
-1. Power cycle the phone (Power held about 20 seconds). Android starts from the untouched boot partition,
-   does not accept the OS image's userdata and sets itself up from scratch; the OS image and everything on
-   userdata are gone. (If a failed install left the brake armed, the first start goes to Boot Select once;
-   power cycle again.)
+1. Power cycle the phone (Power held about 20 seconds). Android starts from the untouched boot partition. The
+   port's notes expect it not to accept the OS image's userdata and to set itself up from scratch, which leaves
+   the OS image and everything on userdata gone; that sequence was not re-measured here. (If a failed install
+   left the brake armed, the first start goes to Boot Select once; power cycle again.)
 2. If Android does not come up (a boot loop, or a recovery that offers to wipe), use the stock recovery's factory
-   reset; that cured an earlier boot loop on this phone on November 7. If `misc` holds a wipe request that the
-   bootloader keeps rejecting boots against, zero the first 2 KB of `misc` from a RAM-booted TWRP.
+   reset; that cured an earlier boot loop on this phone on November 7. The "never pick Factory data reset" rule
+   in the Button steps of [docs/duo-usb-install.md](../../docs/duo-usb-install.md) applies while the OS image is
+   being installed; when you are restoring Android, the reset is the intended step. If `misc` holds a wipe
+   request that the bootloader keeps rejecting boots against, zero the first 2 KB of `misc` from a RAM-booted
+   TWRP.
 3. For a full stock reflash there is the extracted set for 2022.902.48 (all 25 partitions,
    `surface/duo/duo:12/2022.902.48`, AT&T product config included), checked against the OTA payload's own
    hashes: flash it from fastboot, logical partitions through fastbootd, then wipe. No restore from it is

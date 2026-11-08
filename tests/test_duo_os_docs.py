@@ -104,7 +104,7 @@ class TestDuoOsReadme(unittest.TestCase):
         self.assertTrue(script.is_file())
         self.assertIn("deploy\\duo-opos-boot.ps1", self.text)
         params = script_params()
-        for option in ("ImageDir", "RootfsSha256", "Key", "Yes", "PhoneIp"):
+        for option in ("ImageDir", "RootfsSha256", "Key", "Yes", "PhoneIp", "PreferHost"):
             with self.subTest(option=option):
                 self.assertIn("-" + option, install)
                 self.assertIn(option, params)
@@ -115,6 +115,10 @@ class TestDuoOsReadme(unittest.TestCase):
                        "the less guarded route"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, install)
+        # A default Windows execution policy can refuse an unsigned script; the repository's own launcher shows the fix.
+        self.assertIn("default execution policy", install)
+        self.assertIn("`-ExecutionPolicy Bypass` before `-File`", install)
+        self.assertIn("-ExecutionPolicy Bypass", read("install.cmd"))
 
     def test_dev_key_section_matches_the_build_script(self):
         dev = flat(section(self.text, "## Dev options: an ssh key"))
@@ -165,6 +169,39 @@ class TestDuoOsReadme(unittest.TestCase):
                        "No restore from it is recorded in this repository", "October 31, 2026"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, restore)
+
+    def test_discovery_needs_the_adapter_to_hold_the_phones_network(self):
+        issues = flat(section(self.text, "## Known issues"))
+        for phrase in ("only if the PC's USB adapter holds an address in the phone's /24", "169.254.x.x",
+                       "no lease", "the sweep covers the wrong network", "times out after the kernel boot",
+                       "Do not run the script again to retry", "a second kernel boot", "no attach-only mode",
+                       "ssh to it by hand"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, issues)
+        # What the bullet says about the script is true of the script.
+        script = read("deploy/duo-opos-boot.ps1")
+        self.assertIn("LastIndexOf('.')", script)
+        self.assertEqual(script.count("Fb boot"), 2)
+        self.assertNotRegex(script, r"(?i)attach|-Resume|-SkipChain")
+
+    def test_restore_step_one_is_hedged_and_step_two_reconciles_the_reset_with_the_button_steps(self):
+        restore = section(self.text, "## Restore to Android")
+        step1 = flat(restore[restore.index("1. Power cycle"):restore.index("2. If Android")])
+        step2 = flat(restore[restore.index("2. If Android"):restore.index("3. For a full stock reflash")])
+        # Step 1 is no more certain than the Known-issues bullet it repeats.
+        self.assertIn("not re-measured here", flat(section(self.text, "## Known issues")))
+        for phrase in ("expect it not to accept the OS image's userdata", "that sequence was not re-measured here"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, step1)
+        self.assertNotRegex(step1, r"(?i)\bdoes not accept\b")
+        # The install guide forbids Factory data reset; the restore says when that rule does not apply.
+        usb = flat(read("docs/duo-usb-install.md"))
+        self.assertIn("Never pick Start, Recovery Mode or Factory data reset", usb)
+        for phrase in ("Button steps", "(../../docs/duo-usb-install.md)", "never pick Factory data reset",
+                       "applies while the OS image is being installed",
+                       "when you are restoring Android, the reset is the intended step"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, step2)
 
 
 class TestDuoStatusDocs(unittest.TestCase):
