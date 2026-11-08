@@ -45,8 +45,9 @@ applies only while the window is at least 1055 px wide (the first pane, the hing
 on one panel (675 px) keeps the phone layout. A Device type chosen in Settings is still honoured, and Settings reads
 "Auto looks like: two screens" and then the window's size while the window spans both panels. Unset, the served page is
 byte-for-byte what it was. The service file carries the setting commented out, to be enabled once the layout has been
-checked on the phone. Not handled: a rotated window (the hinge would run across it) and a phone folded with one panel
-dark.
+checked on the phone. Not handled: a rotated window (the hinge would run across it), a phone folded with one panel
+dark, and two things that still cross the hinge: the thin battery bar along the top edge and, while it plays, the
+240 ms zoom from a tile to its app.
 
 ## Build and check
 
