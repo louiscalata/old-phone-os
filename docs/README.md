@@ -29,9 +29,21 @@ evidence about the current source.
 
 - [OPOS on postmarketOS](pmos.md): package inputs, local-source staging, QEMU development and validation limits.
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
+<!-- track: integrate -->
+- [The Duo OS as it stands](duo-os-final.md): what the Surface Duo OS does now, the switches, what is still simulated or not known (calls and texts, battery life, stability, RAM-boot only), and the live checks in order; none of it measured on a phone yet.
+<!-- end track: integrate -->
+<!-- track: qa -->
+- [Duo OS acceptance](duo-acceptance.md): the automated suite (`opos-selftest` on the phone, `deploy/duo-acceptance.ps1` from the PC) and the owner's eyes-on-the-glass checklist; written and tested against fakes, not yet run on a phone.
+<!-- end track: qa -->
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
 - [Over-the-air updates](ota-update.md): design for signed, rollback-safe updates of the OPOS app and its own files on the Duo OS image; design only, not yet implemented.
 - [OPOS OS for the Surface Duo](../packaging/duo-os/README.md): OPOS as the only interface of a Linux image, RAM-booted on the owner's Duo on November 7, 2026 (it worked, per the owner); what was and was not observed, the RAM-boot-only rule and the misc brake, the dev ssh key, boot logs, known issues and restoring Android. Installed by `deploy/duo-opos-boot.ps1`.
+<!-- track: network -->
+- [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.
+<!-- end track: network -->
+<!-- >>> track firstboot -->
+- [First run and time zone on the Duo OS](duo-firstrun.md): the setup shown on the first start, the owner's time zone applied without root, the clock sentence and the switch that turns it on; tested off the phone.
+<!-- <<< track firstboot -->
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; ran on the owner's Duo on November 7, 2026, one session.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; the current Duo routes are the two above.
 

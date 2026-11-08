@@ -40,6 +40,11 @@ case ${OPOS_KIOSK_DEBUG_PORT:-} in
 *) set -- "$@" --remote-debugging-port="$OPOS_KIOSK_DEBUG_PORT" --remote-debugging-address=127.0.0.1 ;;
 esac
 while :; do
+    # >>> track firstboot: the owner's time zone, saved by src/opos/timezone.py. Chromium reads TZ when it starts, so every start re-reads it.
+    z=; f=${OPOS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opos}/timezone
+    [ -f "$f" ] && IFS= read -r z < "$f"
+    case "$z" in ''|*[!A-Za-z0-9_+/-]*|[+-]*|/*|*//*|*..*) ;; *) [ "${#z}" -le 64 ] && export TZ="$z" ;; esac
+    # <<< track firstboot
     # A lock left by a Chromium that died with the phone (hard reset, RAM-boot) can name a host or pid that
     # Chromium then takes for a live owner. Never while a Chromium is still running on this profile.
     if pgrep -f -- "--user-data-dir=$dir" >/dev/null 2>&1; then

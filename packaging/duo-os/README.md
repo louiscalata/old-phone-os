@@ -6,6 +6,10 @@ An OPOS phone with no Android system: the Surface Duo boots a Linux rootfs whose
 Status, November 7, 2026: **ran on the owner's Surface Duo 1, RAM-booted from a PC; the owner looked at the
 screens and said "it's working".** One phone, one day, one person watching. It is not an installed system: it
 lives on userdata and starts only from a RAM-boot (see below), and a power cycle returns the phone to Android.
+The pieces added since (keyboard, Network page, first run and time zone, acceptance suite) are built and tested off the phone only.
+[docs/duo-os-final.md](../../docs/duo-os-final.md) says what the OS does now, what is still simulated, what is not known, and
+lists the live checks in order. The owner's Duo cannot take a fresh install yet: its USB-C port charges but carries no data, and
+every install route below needs fastboot over USB. Android's wireless debugging cannot write partitions.
 
 ## What was seen, and what was not
 
@@ -36,21 +40,47 @@ On top of the base, `build-image.sh` adds:
 | Piece | Role |
 |---|---|
 | `/opt/opos` | OPOS runtime at an exact revision (`/opt/opos/REVISION`); stdlib Python on the image's python3 |
-| `opos-server.service` | `python3 -m opos.web --live-battery` as user `droidian`, on `127.0.0.1:8765`: the rules on the phone's sysfs battery |
+| `opos-server.service` | `python3 -m opos.web --live-battery` as user `droidian`, on `127.0.0.1:8765`: the rules on the phone's sysfs battery; sets the switches below |
 | `opos.service` | the shell, with the hardware setup the port gives phosh and item (hwcomposer backend, vendor composer, VT 7); it runs `opos-session` |
 | `opos-session` | starts `phoc` as phosh-session does (the port's `phoc.ini`, hwcomposer output, hinge seam, scale) but **without `-S`**, with `opos-kiosk` as phoc's only client |
-| `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU. Every exit is logged: `journalctl -t opos-kiosk` |
+| `opos-kiosk` | waits for the server, then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU. Every exit is logged: `journalctl -t opos-kiosk`; the owner's time zone is put in Chromium's environment at every start |
 | `sfduo-composer-watchdog` | the port's script, edited at build time so that its bounce of a composer that is not DRM master restarts OPOS as well as phosh (`verify-image.sh` checks the edit; an upgrade of the port's package reverts it) |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
 | `opos-diag`, journald drop-in | boot evidence that survives a failed boot (below) |
 | `opos-clock.service` | raises a clock that reads before the image's floor (the OPOS commit's time, never before 2026) to it at boot, never lowers one; see [The clock](#the-clock) |
 | `opos-clock-set.path` | dev images: sets the clock from Unix seconds that the developer's PC drops into `~/opos-set-time` over ssh, with no password |
+| on-screen keyboard | in-page web keyboard served by `opos-server` (`src/opos/osk.py`); `opos-osk` and `opos-osk.service` are the opt-in Wayland one, enabled but idle |
+| Network page | `/network` (`src/opos/net.py`, `net_page.py`); drop-in `opos-network.conf`; optional polkit rule `50-opos-network.rules` |
+| first run, time zone | `/firstrun` and `/timezone` (`src/opos/firstrun.py`, `timezone.py`), the saved zone, the clock sentence |
+| `opos-selftest` | read-only acceptance checks on the phone, `/usr/sbin/opos-selftest`; the PC side is `deploy/duo-acceptance.ps1` |
 
 **Why no phoc shell mode.** `phosh-session` starts phoc with `-S`. In that shell mode phoc keeps an opaque black
 shield over every output until a phosh client reports that the shell is up. OPOS's kiosk is not one, so on
 November 7 both panels stayed black while every process ran. `opos-session` leaves `-S` out, and
 `verify-image.sh` fails an image whose session script passes it. phosh and item stay installed but are not
 started at boot.
+
+Over-the-air updates are a design ([docs/ota-update.md](../../docs/ota-update.md)), not part of this tree.
+
+## Switches
+
+Every piece is off unless its switch is set, and then the page and every route are exactly what they were. The image sets them in
+its units; a missing one is a FAIL in `opos-selftest` when the image carries the piece.
+
+| Variable | Set by | Meaning |
+|---|---|---|
+| `OPOS_OSK` | `opos-server.service` (`1`), overridden by `/etc/default/opos-osk` | `1`/`web` in-page keyboard, `stevia` the port's keyboard, `off` none |
+| `OPOS_OSK_HINGE` | not set (42) | CSS px between the keyboard's halves when the page does not say |
+| `OPOS_NETWORK` | drop-in `opos-server.service.d/20-opos-network.conf` | the Settings link to `/network` and the actions that change Wi-Fi |
+| `OPOS_NET_TTY` | not set | `1`: hand the Wi-Fi password to `nmcli` through a pseudo-terminal |
+| `OPOS_NET_POLKIT` | build input | `1`: install `50-opos-network.rules` |
+| `OPOS_FIRSTRUN` | `opos-server.service` (`1`) | first-run setup, `/timezone`, the saved zone |
+| `OPOS_KIOSK_RESTART` | not set | `0`: do not restart Chromium after a zone change |
+| `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
+| `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
+| `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
+| `OPOS_KIOSK_DEBUG_PORT` | `/etc/default/opos-kiosk`, written only by a dev image | the Chromium DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
+| `OPOS_DEV_SSH_PUBKEY` | build input | a public key file; the image then lets that key log in as `droidian` (a dev image) |
 
 ## RAM-boot only, and the misc brake
 
@@ -109,9 +139,32 @@ sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 ```
 
 `verify-image.sh` checks the unit wiring, that phoc is not started in shell mode, phoc's `-E` startup command and
-the journal settings, and runs the OPOS server from the image with the image's own aarch64 python3 under
-qemu-user. It is not a boot, display or battery test.
+the journal settings, runs the OPOS server from the image with the image's own aarch64 python3 under
+qemu-user, and starts a second one with the keyboard, the Network page and the first run all on to ask it for each page.
+It is not a boot, display or battery test.
 `tests/test_duo_kiosk.py` runs the kiosk script under `sh` with a fake `chromium` (locks, back-off, the no-GPU retry).
+
+## On-screen keyboard
+
+The Duo has no physical keyboard and OPOS's kiosk is the only client of phoc, so nothing raised a keyboard for the helper's
+Ask field, the Messages composer, the goal time in the shade or the Wi-Fi password. The image carries an **in-page keyboard**:
+`opos-server.service` sets `OPOS_OSK=1`, and the server then adds `/osk.js` and `/osk.css` (`src/opos/osk.py`,
+`src/opos/osk_static/`) to the pages it serves; unset, the page and every route are exactly as before. It appears when a text
+field is touched, with letters, numbers, symbols, a phone pad and a 24-hour time pad, and sends the field the key and input events
+its handlers expect. On the spanned 1392 x 900 window the letters are **split, one half on each panel**, so no key sits on the
+hinge; a Join key puts them on one panel. `/etc/default/opos-osk` overrides the setting (`OPOS_OSK=off`, or `stevia` for the
+port's own `phosh-osk-stevia`, started by `opos-osk.service`: opt-in, written from sources, never started). Built and exercised in a desktop
+browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the choice, the behaviour in full and the live checks.
+
+## Network, first run and acceptance
+
+- **Network.** Settings > Network opens `/network`: radio status, and scan, join, forget, disconnect and Wi-Fi on or off through
+  NetworkManager as `droidian`. The `opos-network.conf` drop-in sets `OPOS_NETWORK=1`; the polkit rule is installed only when
+  building with `OPOS_NET_POLKIT=1`. See [docs/network.md](../../docs/network.md).
+- **First run and time zone.** A fresh phone opens a skippable setup; Settings > Date and time changes the zone later. The
+  server applies the zone; the kiosk exports it to Chromium on every start. See [docs/duo-firstrun.md](../../docs/duo-firstrun.md).
+- **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key>` from
+  the PC, then the owner's checklist. See [docs/duo-acceptance.md](../../docs/duo-acceptance.md).
 
 ## Looking at the page on a dev image
 

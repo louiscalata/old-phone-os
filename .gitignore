@@ -14,3 +14,4 @@ src/opos/_build_info.py
 build/
 dist/
 *.egg-info/
+duo-acceptance/

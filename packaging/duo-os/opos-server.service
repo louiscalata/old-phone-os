@@ -7,6 +7,10 @@ Wants=lxc@android.service
 [Service]
 User=droidian
 Environment=PYTHONPATH=/opt/opos/src
+# On-screen keyboard (src/opos/osk.py): 1 serves the in-page keyboard to the kiosk page. /etc/default/opos-osk overrides it:
+# OPOS_OSK=off for none, OPOS_OSK=stevia for the port's Wayland keyboard instead (opos-osk.service), see packaging/duo-os/OSK.md.
+Environment=OPOS_OSK=1
+EnvironmentFile=-/etc/default/opos-osk
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=OPOS_BATTERY=live
 Environment=OPOS_ON_PHONE=1
@@ -17,6 +21,9 @@ Environment=OPOS_ON_PHONE=1
 # measured on the phone). To try it: remove the leading # below, run sudo systemctl daemon-reload and
 # sudo systemctl restart opos-server, then pkill chromium as the droidian user (opos-kiosk starts it again).
 #Environment=OPOS_SPAN=675,42
+# >>> track firstboot: first-run setup, time zone page and the saved time zone (src/opos/firstrun.py); unset = none of it
+Environment=OPOS_FIRSTRUN=1
+# <<< track firstboot
 ExecStart=/usr/bin/python3 -m opos.web --port 8765 --live-battery
 Restart=always
 RestartSec=3s
