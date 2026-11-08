@@ -29,7 +29,7 @@ function world(opt){opt=opt||{};
   addEventListener(t,f){(L[t]=L[t]||[]).push(f)},
   fire(t,ev){ev=ev||{};ev.target=ev.target||this;ev.preventDefault=ev.preventDefault||function(){};(L[t]||[]).forEach(f=>f(ev))}};
   all.push(e);return e}
- const doc={documentElement:el('html'),createElement(t){return el('',t)},querySelector(s){return /opos-token/.test(s)?{content:'tok'}:null},
+ const doc={documentElement:el('html'),createElement(t){return el('',t)},createTextNode(t){const n=el('','#text');n._t=String(t);return n},querySelector(s){return /opos-token/.test(s)?{content:'tok'}:null},
   getElementById(i){return ids[i]||all.find(e=>e.id===i&&e.parentNode)||null}};
  ['phone','home','back','settings','ask','q','askbtn','answer','webq','why','demo-phone-note'].forEach(i=>ids[i]=el(i));
  ids.ask.hidden=true;ids.ask.appendChild(ids.q);ids.ask.appendChild(ids.answer);ids.phone.appendChild(ids.ask);ids.why.textContent=WHY;
@@ -112,13 +112,12 @@ const S={
   await w.ask('two');return{st:w.ui.state(),sameRow:w.$('hs-log').children[0]===li}},
  async sources(){const w=world();w.hooks();await w.open('helper');w.queue.push('src');await w.ask('wiki');
   const ap=w.$('hs-log').children[0].children[1];
-  return{log:w.ui.state().log,links:ap.children.filter(c=>c.tagName==='A').map(a=>({t:a.textContent,href:a.href||'',rel:a.rel}))}},
+  return{log:w.ui.state().log,parts:ap.children.map(c=>({tag:c.tagName,t:c.textContent,href:c.href||'',target:c.target||'',rel:c.rel||''}))}},
  async noabort(){const w=world({noAbort:true});w.hooks();await w.open('helper');return{st:w.ui.state(),hs:!!w.$('hs-send')}},
  async throwfetch(){const w=world({throwFetch:true});w.hooks();await w.open('helper');await w.ask('x');const st=w.ui.state();
   w.ids.q.value='y';w.ids.q.fire('keydown',{key:'Enter'});await w.flush();const again=w.ui.state();
   w.$('back').fire('click');await w.flush();return{st,again,app:w.ui.state().app}},
- async renderfail(){const w=world();w.hooks();await w.open('helper');const create=w.ctx.document.createElement;
-  w.ctx.document.createElement=function(t){if(t==='a')throw new Error('render fails');return create(t)};
+ async renderfail(){const w=world();w.hooks();await w.open('helper');w.ctx.document.createTextNode=function(t){throw new Error('render fails')};  // a source line is a text node since W2-16
   w.queue.push('src');await w.ask('wiki');const st=w.ui.state();
   let prevented=false;w.ids.q.fire('keydown',{key:'Enter',preventDefault(){prevented=true}});await w.flush();
   w.$('back').fire('click');await w.flush();const home=w.ui.state().app;await w.open('helper');
@@ -365,13 +364,14 @@ class UXP31HelperScreenJS(unittest.TestCase):
         self.assertIn("A:two", st["log"][-1])
         self.assertTrue(r["sameRow"])  # old rows are kept, so only the new turn is announced
 
-    def test_wikipedia_sources_kept_and_checked(self):
+    def test_wikipedia_sources_are_plain_text(self):
+        # W2-16 / D11: a source is a line of text, never a link (a kiosk window opened by a link has no way back).
         r = self.r["sources"]
         self.assertIn("Wiki says hi", r["log"][-1])
-        self.assertEqual([l["t"] for l in r["links"]], ["Battery", "Bad"])
-        self.assertEqual(r["links"][0]["href"], "https://en.wikipedia.org/wiki/Battery")
-        self.assertEqual(r["links"][1]["href"], "")  # only Wikipedia URLs become links
-        self.assertEqual(r["links"][0]["rel"], "noopener noreferrer")
+        self.assertEqual([p["t"] for p in r["parts"] if p["tag"] == "#TEXT"],
+                         ["Source: Battery, Wikipedia", "Source: Bad, Wikipedia"])
+        self.assertNotIn("A", [p["tag"] for p in r["parts"]])
+        self.assertEqual([(p["href"], p["target"], p["rel"]) for p in r["parts"]], [("", "", "")] * len(r["parts"]))
 
     def test_no_abortcontroller_keeps_ask(self):
         r = self.r["noabort"]

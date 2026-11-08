@@ -41,7 +41,7 @@ function world(opt={}){
    click(){if(!this.disabled){this.clicks++;return this.fire('click')}}};
   all.push(e);return e;
  }
- const doc={documentElement:el('html'),createElement(tag){if(opt.failLinks&&tag==='a')throw new Error('render failed');return el('',tag)},
+ const doc={documentElement:el('html'),createElement(tag){return el('',tag)},createTextNode(t){if(opt.failSources)throw new Error('render failed');const n=el('','#text');n._text=String(t);return n},
   getElementById(id){return ids[id]||all.find(e=>e.id===id&&e.parentNode)||null},
   querySelector(s){return s==='meta[name=opos-token]'||s==='[name=opos-token]'?{content:'synthetic-test-token'}:null},querySelectorAll(){return []}};
  for(const id of ['phone','home','back','settings','ask','q','askbtn','planbtn','answer','webq','why','demo-phone-note',
@@ -77,7 +77,7 @@ function world(opt={}){
 (async()=>{
  const out={};
  for(const kind of ['normal','visibleSend','composing','repeat','prevented','inFlight','fallback','failedEnhancement','settledRepeat','empty','otherKey']){
-  const w=world({unavailable:kind==='fallback',failLinks:kind==='failedEnhancement'});await w.open();w.ids.q.value='Synthetic question';
+  const w=world({unavailable:kind==='fallback',failSources:kind==='failedEnhancement'});await w.open();w.ids.q.value='Synthetic question';
   if(kind==='visibleSend')await w.send();
   else if(kind==='inFlight'){await w.send();out.inFlightBefore=w.state();await w.key()}
   else if(kind==='settledRepeat'){

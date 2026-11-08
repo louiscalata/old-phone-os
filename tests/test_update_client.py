@@ -1626,8 +1626,8 @@ class MainPageIsUntouched(Env):
     # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
     # Every change to page() re-records these two, in the same commit (they were re-recorded for the interface plan's dead-rule
     # removal, B-03, and its sources-as-text change, W2-16). docs/ui-byte-ledger.md says how to measure the page.
-    MAIN_SHA256 = "1e59ad73442937c7b8a4e07aa9d1df86543a92c4b9eb7315270f3b3f30f56a64"
-    DEMO_SHA256 = "cd34e135f9692e3ab7d6f3734c7129b9b05e2f0b986da64072f10287bb9b8e0b"
+    MAIN_SHA256 = "edde4b43243eba6e8d8aa895cac1a4912fff2799b844141d695a41490efa393e"
+    DEMO_SHA256 = "0f2d94aff5ec5ffa787e5cefd78951bc8e47c5214e4e6948d330ebfc5b7aed83"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
