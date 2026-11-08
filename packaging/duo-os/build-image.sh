@@ -150,8 +150,6 @@ cat > "$r/etc/opos/monitor.env.example" <<'EOF'
 # the computer's 127.0.0.1:8767 (packaging/duo-os/README.md, "Inference page").
 #OPOS_AGIW_URL=http://127.0.0.1:18767
 #OPOS_AGIW_HOST=127.0.0.1:8767
-# Where this phone's own model server listens (http on 127.0.0.1 or localhost only; the default is shown):
-#OPOS_LOCAL_URL=http://127.0.0.1:8080/v1
 EOF
 chmod 0644 "$r/etc/opos/monitor.env.example"
 ( cd "$r" && sha256sum etc/opos/monitor.env.example )

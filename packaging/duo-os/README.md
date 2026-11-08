@@ -79,7 +79,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
 | `OPOS_MONITOR` | `opos-server.service` (`1`) | the Settings link to `/monitor` and the routes `/monitor` and `/api/monitor` (see Inference page) |
-| `OPOS_AGIW_URL`, `OPOS_AGIW_HOST`, `OPOS_LOCAL_URL` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor and for the phone's own model server |
+| `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor, and the `Host` header to send it (`OPOS_LOCAL_URL` is the Helper's, see Inference page) |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
 | `OPOS_KIOSK_DEBUG_PORT` | `/etc/default/opos-kiosk`, written only by a dev image | the Chromium DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
 | `OPOS_DEV_SSH_PUBKEY` | build input | a public key file; the image then lets that key log in as `droidian` (a dev image) |
@@ -183,7 +183,7 @@ with no file nothing is fetched:
 |---|---|
 | `OPOS_AGIW_URL` | `http(s)://host[:port]` of the monitor; every address it resolves to must be loopback or on a private network; unset: NOT CONFIGURED |
 | `OPOS_AGIW_HOST` | the `Host` header to send (a monitor behind a tunnel answers only for its own address) |
-| `OPOS_LOCAL_URL` | where the phone's own model server listens (http on `127.0.0.1` or `localhost`); default `http://127.0.0.1:8080/v1` |
+| `OPOS_LOCAL_URL` | NOT an Inference page setting, and not in the example file: it is the Helper's (`src/opos/assist.py`). The page's check of the phone's own model server follows it ONLY if you already set it for the Helper (http on `127.0.0.1` or `localhost`); otherwise it asks `http://127.0.0.1:8080/v1`. Setting it changes the Helper too, even to that default: the Helper then uses the address as set, stops checking `/models` for a known model first, and drops its alternate model ids |
 
 Only loopback egress works on the hardened server units (`deploy/opos-server.service` and the postmarketOS unit set
 `IPAddressDeny=any` and `IPAddressAllow=localhost`): there a LAN address reads TIMED OUT or UNREACHABLE, and a reverse tunnel to the

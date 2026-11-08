@@ -538,5 +538,72 @@ class Shipping(unittest.TestCase):
         self.assertIn("src/opos/monitor.py", doc)
 
 
+def build_example():
+    """The text build-image.sh writes to /etc/opos/monitor.env.example."""
+    script = (ROOT / "packaging/duo-os/build-image.sh").read_text(encoding="utf-8")
+    m = re.search(r"cat > \"\$r/etc/opos/monitor\.env\.example\" <<'EOF'\n(.*?)\nEOF\n", script, re.S)
+    assert m, "build-image.sh no longer writes monitor.env.example from a quoted here-document"
+    return m.group(1)
+
+
+def table_rows(path):
+    """(first cell, whole row) for each row of each markdown table in the file; backticks and surrounding space removed from the cell."""
+    rows = []
+    for line in (ROOT / path).read_text(encoding="utf-8").splitlines():
+        if line.startswith("|") and not line.startswith("|--") and not line.startswith("|---"):
+            rows.append((line.strip().strip("|").split("|")[0].strip().replace("`", ""), line))
+    return rows
+
+
+class LocalUrlBelongsToTheHelper(unittest.TestCase):
+    """OPOS_LOCAL_URL is the Helper's variable (assist.local_route). The Inference page's probe reads it as well, but setting it,
+    even to the default, turns off the Helper's /models check and drops its alternates, so nothing may offer it as a page setting."""
+    DOCS = ("packaging/duo-os/README.md", "docs/duo-os-final.md")
+
+    def test_the_helper_changes_when_it_is_set_even_to_the_default(self):
+        from opos import assist
+        plain = assist.local_route({}, 8192)
+        same = assist.local_route({"OPOS_LOCAL_URL": monitor.LOCAL_DEFAULT_URL}, 8192)
+        self.assertEqual(plain.base_url, same.base_url)
+        self.assertTrue(plain.verify_model)
+        self.assertTrue(plain.alternates)
+        self.assertFalse(same.verify_model, "the /models check is off")
+        self.assertEqual(same.alternates, (), "and the alternates are gone")
+
+    def test_the_page_probe_follows_it_when_it_is_set_and_is_8080_when_not(self):
+        self.assertEqual(monitor.local_models_url({}), ("127.0.0.1", 8080, "/v1/models"))
+        self.assertEqual(monitor.local_models_url({"OPOS_LOCAL_URL": "http://127.0.0.1:9000/v1"}), ("127.0.0.1", 9000, "/v1/models"))
+
+    def test_the_example_does_not_offer_it(self):
+        example = build_example()
+        self.assertNotIn("OPOS_LOCAL_URL", example)
+        self.assertEqual(re.findall(r"(?m)^#(OPOS_[A-Z_]+)=", example), ["OPOS_AGIW_URL", "OPOS_AGIW_HOST"], "the only settings it lists")
+        self.assertEqual([x for x in example.splitlines() if x.strip() and not x.lstrip().startswith("#")], [], "and every line is a comment")
+
+    def test_the_server_unit_does_not_name_it(self):
+        unit = (ROOT / "packaging/duo-os/opos-server.service").read_text(encoding="utf-8")
+        self.assertNotIn("OPOS_LOCAL_URL", unit)
+        self.assertIn("OPOS_AGIW_URL and OPOS_AGIW_HOST", unit, "the comment names what the optional file sets")
+
+    def test_the_docs_say_it_is_the_helpers_and_that_setting_it_changes_the_helper(self):
+        for path in self.DOCS:
+            rows = table_rows(path)
+            for first, row in rows:
+                if "OPOS_AGIW_URL" in first:
+                    self.assertNotIn("OPOS_LOCAL_URL", first, path + ": listed with the Inference page's settings")
+            own = [row for first, row in rows if first == "OPOS_LOCAL_URL"]
+            self.assertEqual(len(own), 1, path)
+            flat = " ".join(own[0].lower().replace("`", "").split())
+            self.assertIn("only if you already set it for the helper", flat, path)
+            self.assertIn("changes the helper too", flat, path)
+            self.assertIn("not an inference page setting", flat, path)
+
+    def test_the_changelog_does_not_list_it_as_an_inference_setting(self):
+        entry = next(x for x in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines() if x.startswith("- Inference page ("))
+        self.assertIn("(`OPOS_AGIW_URL`, `OPOS_AGIW_HOST`;", entry)
+        self.assertNotIn("`OPOS_AGIW_HOST`, `OPOS_LOCAL_URL`", entry)
+        self.assertIn("only if you already set it for the Helper, and setting it changes the Helper too", entry)
+
+
 if __name__ == "__main__":
     unittest.main()
