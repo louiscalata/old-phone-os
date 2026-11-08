@@ -86,7 +86,6 @@ var n=G('demo-phone-note');if(!n)return;
 function set(s){n.textContent=s&&s.simulation&&s.simulation.modem===true?'Demo: calls and texts are simulated.':'Calls and texts may use your configured phone connection.'}
 set();(window.oposHooks=window.oposHooks||[]).push(set);
 })()}catch(e){}
-// UXP31: one Ask request and error mapping shared by the conversation and fallback button.
 function helperAsk(text,web,request){return request({action:'ask',text:text,web:web}).then(function(r){if(r&&r.error)r.error=r.error==='helper hidden'?'Tap Show helper first':r.error;return r})}
 try{(function(){
 var ui=window.oposUI;if(!ui||!ui.openApp)return;

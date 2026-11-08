@@ -1,4 +1,3 @@
-// G: dynamic get-by-ID; E: element factory.
 var G=i=>document.getElementById(i),E=t=>document.createElement(t);
 let running=false,vis=false,sheetOpen=false,dragging=false,startY=0;
 const meterEl=G('meter');

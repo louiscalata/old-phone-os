@@ -89,3 +89,43 @@ These explanatory comments were moved out of the stylesheets to keep the served 
 ## Spanned page (opos.span)
 
 With `OPOS_SPAN` or `--span` set, the server rewrites the page it serves; the files in `web_static` are unchanged and an unset span serves them as before. The segment query `(horizontal-viewport-segments:2)` (in `phone-b.css`, `jaryo-layout.css` and the `TWO` constant of `phone-b.js`) becomes a width test, the two segment `env()` values become `--pane` and `--hinge`, and the first-state Auto seed in `jaryo.js` stops deleting the Foldable choice that `phone-b.js` just made. Each of those strings is pinned by `tests/test_span.py`, so rewording one of them fails a test instead of silently leaving the rewrite out. A few rules the segment rules do not cover (status line, shade handle, lock screen alignment) and a readout in Settings are added, and the style sheet's comments and the line breaks between its rules are dropped, which keeps the spanned page under `PAGE_BUDGET`.
+
+## Script comments
+
+Six full-line `//` comments were moved out of the page scripts for the same reason (about 384 bytes). The code around them is unchanged. As above, the internal change labels (UXP20, UXP23, UXP31) are dropped from the text.
+
+## js-1.js header
+
+```js
+// G: dynamic get-by-ID; E: element factory.
+```
+
+## phone-a.js, before the viewport-change block
+
+```js
+// Layout stays in CSS; preserve the live controls across viewport changes.
+```
+
+## phone-a.js, before the state-render enhancement block
+
+```js
+// Enhance only after a successful state render; the base controls stay intact.
+```
+
+## phone-b.js, before helperAsk
+
+```js
+// One Ask request and error mapping shared by the conversation and fallback button.
+```
+
+## jaryo.js header
+
+```js
+// jaryo.js: Jaryo theme and motion
+```
+
+## jaryo-layout.js header
+
+```js
+// jaryo-layout.js: Jaryo layout screens
+```

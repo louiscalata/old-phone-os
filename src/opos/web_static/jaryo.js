@@ -1,4 +1,3 @@
-// jaryo.js: Jaryo theme and motion
 var G=i=>document.getElementById(i),E=t=>document.createElement(t);
 try{(function(){
 var jaryo=window.jaryo||{};window.jaryo=jaryo;
