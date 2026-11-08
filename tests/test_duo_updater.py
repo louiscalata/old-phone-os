@@ -2731,6 +2731,71 @@ class TestNoJunkHoldsTheRoom(EnvCase):
 
 
 @needs_keygen
+class TestStuckTransactionByHand(EnvCase):
+    """U3: the operator note in docs/ota-release-howto.md ("A rollback that did not finish"), followed step by step."""
+    fast = True
+
+    def stick(self, lose_index):
+        e = self.env
+        real = U.Updater.copy_file
+
+        def no_room_for_a_restore(self_, src, dest, mode):
+            if 'overlay-backup' in src:
+                raise OSError(errno.ENOSPC, 'No space left on device')
+            return real(self_, src, dest, mode)
+        broken = make_bundle(7, app={**default_app(7), 'src/opos/BROKEN': (b'', 0o644)})   # fails its health check, so it is undone
+        with mock.patch.object(U.Updater, 'copy_file', no_room_for_a_restore), self.assertRaises(U.Incomplete):
+            e.apply(broken)
+        txn = e.state()['txn']
+        self.assertEqual((txn['kind'], txn['serial'], txn['from']), ('apply', 7, '0-aaaaaaaaaaaa'))
+        self.assertEqual(e.status()['phase'], 'failed')
+        self.assertTrue(e.status()['message'].startswith('the previous release is not back yet: cannot put '), e.status())
+        if lose_index:
+            os.unlink(os.path.join(e.releases, txn['release'], 'overlay-backup', 'index.json'))
+        return txn
+
+    def test_the_next_run_finishes_it_once_the_cause_is_gone(self):
+        e = self.env
+        self.stick(lose_index=False)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            e.updater().show_status(False)
+        self.assertIn('INTERRUPTED apply of serial 7; the next run recovers it', out.getvalue())
+        self.assertEqual(e.updater().apply_inbox(), 0)           # an empty inbox: the run only recovers
+        self.assertEqual((e.consistent(), e.state()['failed']), (0, [7]))
+        self.assertEqual(e.status()['phase'], 'rolled-back')
+
+    def test_a_lost_index_stays_open_until_the_files_the_link_and_the_state_are_put_right_by_hand(self):
+        e = self.env
+        txn = self.stick(lose_index=True)
+        with self.assertRaises(U.Fatal) as cm:
+            e.updater().apply_inbox()
+        self.assertIn('the transaction stays open', str(cm.exception))
+        self.assertEqual(e.state()['txn'], txn)
+        # by hand, as the note says: the saved originals back (the modes are the image's), the files that did not exist deleted,
+        # the link back to txn.from, then the transaction closed the way the updater would have closed it
+        saved = os.path.join(e.releases, txn['release'], 'overlay-backup', 'files')
+        for d, _, names in os.walk(saved):
+            for n in names:
+                rel = os.path.relpath(os.path.join(d, n), saved)
+                shutil.copyfile(os.path.join(d, n), os.path.join(e.root, rel))
+                os.chmod(os.path.join(e.root, rel), OLD_OVERLAY[rel][1])
+        os.unlink(os.path.join(e.root, NEWFILE))
+        os.symlink(os.path.join('opos-releases', txn['from']), e.opt_link + '.new')
+        os.rename(e.opt_link + '.new', e.opt_link)
+        e.updater().reload_units()
+        e.updater().restart_services()
+        st = e.state()
+        st['txn'] = None
+        st['failed'] = sorted(set(st['failed']) | {txn['serial']})
+        st['floor'] = max(st['floor'], txn['serial'])
+        wr(os.path.join(e.var, 'state.json'), json.dumps(st, indent=1, sort_keys=True) + '\n')
+        self.assertEqual(e.updater().apply_inbox(), 0)
+        self.assertEqual(e.consistent(), 0)
+        self.assertEqual(e.apply(make_bundle(8), 'opos-8.opos-update'), 0)     # and updates go on
+        self.assertEqual(e.consistent(), 8)
+
+
+@needs_keygen
 class TestSerialFloor(EnvCase):
     """Finding 8: only the highest 64 failed serials were kept, so an authentic old bundle could be replayed once its serial
     fell out of the list. The floor is the highest serial that ever failed and never goes down."""

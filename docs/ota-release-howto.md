@@ -167,6 +167,65 @@ that same bundle again undoes it; the root command goes back as often as you ask
 fails two boots in a row rolls itself back. If the phone is unusable, re-image it from the PC with `build-image.sh`; the
 image starts again from its own baked-in release.
 
+### A rollback that did not finish
+
+A failed update, a requested rollback and recovery after a crash all end the same way: the saved files go back, `/opt/opos`
+is switched and the server restarts. When that cannot finish (no room, systemd refuses, a saved file is damaged) the updater
+does not guess. It keeps the journal (`txn` in `state.json`) and the saved originals, exits 1, and looks at no bundle or
+request until a run has finished the job. Meanwhile the server runs whatever is live, which may be a mix of old and new
+files, so repair it rather than leave it. Do it as root over ssh, and do not delete anything in `/opt/opos-releases`.
+
+What the phone says:
+
+- `status.json` has `"phase": "failed"` and a message that starts `the previous release is not back yet:` and then the cause:
+  `cannot put usr/libexec/opos/opos-kiosk back: [Errno 28] No space left on device; the next run tries again`, or
+  `systemd did not take the restored release (...)`, or `the overlay backup <path>/index.json is missing or unreadable (...);
+  refusing to guess, the transaction stays open` (also `is malformed`, and `the backup of <path> is damaged; not restoring
+  it`). The message is cut at 300 characters; `journalctl -u opos-update.service -u opos-update-boot.service` has the whole line.
+- `/usr/libexec/opos-updater/opos-updater status` (changes nothing) prints `INTERRUPTED apply of serial N; the next run
+  recovers it` (or `rollback of serial N`). With `--json` it shows the `txn` record: `kind`, `serial`, `release` (the release
+  being left; its directory holds the backups) and `from` (an apply) or `to` (a rollback): the release to go back to.
+
+What to check, with `R=/opt/opos-releases/<txn.release>`:
+
+- `python3 -m json.tool $R/overlay-backup/index.json`: one entry for each file the update touches. `path` (from `/`),
+  `existed`, and when it did exist `mode` (decimal: 493 is 0755; `printf '%o\n' 493`) and the `sha256` of the original, which is
+  saved in `$R/overlay-backup/files/<path>`. `sha256sum` that copy and compare it with the entry. `existed: false` means the
+  update created the file and a restore deletes it.
+- `sha256sum /<path>` and `stat -c %a /<path>` for each entry. A live file that already has the entry's hash and mode is left
+  alone by the restore; a different one is replaced by the saved copy.
+- `readlink /opt/opos`. After an update that failed it still names `txn.release` until the restore has switched it back.
+
+What to do:
+
+1. If the cause is room, make room on the file system of the file named: `df /usr/libexec/opos /etc/opos /opt`, then delete
+   what is yours to delete (logs, downloads). Delete any `*.new` beside the overlay files (`/usr/libexec/opos`, `/usr/sbin`,
+   `/etc/systemd/system`, `/etc/default`, `/etc/opos`) too: the updater now removes them itself before a restore, but an image
+   built before that change can have a half-written one holding the very room the restore needs. If the cause is systemd (a
+   rate limit, a bus error), wait a minute.
+2. Let the updater do the job: `systemctl start opos-update.service` (with an empty inbox it only recovers) or reboot
+   (`opos-update-boot.service` recovers before the server and the session start). It is done when `status` has no
+   `INTERRUPTED` line and `status.json` says `rolled-back` (an apply: `interrupted; the previous release was restored`; its
+   serial is now in `failed`). Do not use `opos-updater rollback` for this: it recovers first and, if that works, then goes back
+   one release more.
+3. If it stops at the same place again because the backup itself is unusable (a lost or malformed `index.json`, a saved copy
+   that does not match its hash), the updater cannot finish and will not guess. Either re-image the phone, or repair it by hand
+   and close the journal yourself, as a last resort:
+   - `systemctl stop opos-update.path`, and check that `opos-update.service` is not running.
+   - Put each overlay file back: `install -o root -g root -m <octal mode> $R/overlay-backup/files/<path> /<path>`, using only
+     a saved copy you can vouch for (its hash matches, or you know it is the image's file); delete each file that did not
+     exist. Without `index.json`, the files under `$R/overlay-backup/files/` are the ones that existed, and every other path
+     in `$R/manifest.json` that does not start with `opt/opos/` is one that did not; the mode is the image's, since the saved
+     copies are `0600`. With no copy you can vouch for, re-image.
+   - Point `/opt/opos` back at `txn.from`: `ln -s opos-releases/<txn.from> /opt/opos.new && mv -T /opt/opos.new /opt/opos`.
+     Then `systemctl daemon-reload` and `systemctl restart opos-server.service`, and check that the Update page opens.
+   - Close the journal the way the updater would have for an `apply`: copy `/var/lib/opos-update/state.json` aside, then set
+     `"txn": null`, add the serial to `"failed"` and raise `"floor"` to at least that serial (it is burned: the fix goes out
+     under a new number), and set `"pending_boot": null` if `txn.boot` is true. Keep it valid JSON: the updater refuses a
+     `state.json` it cannot read. Closing a `rollback` journal also moves `current` and `previous`, so re-image instead.
+   - `systemctl start opos-update.path`, then `systemctl start opos-update.service` once. `status` should show the running
+     release you expect and no `INTERRUPTED` line.
+
 ## Limits
 
 - Written against the [design](ota-update.md). The tools are tested with throw-away keys on a PC (Linux and Windows). Neither

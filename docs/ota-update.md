@@ -207,17 +207,31 @@ Where the code is stricter or more specific than the text above. Every item is a
   byte a second; the health and smoke deadlines are therefore met to within one probe. The smoke server may not write a file
   larger than 1 MiB (`RLIMIT_FSIZE`, its log included), so a release that loops on an error cannot fill the storage; the
   failure message reads only the last bytes of the log.
-- **Space and rollback.** Besides twice the unpacked size, the updater checks, before anything live changes, that the file
-  system has room for the unpacked release, the saved originals of the overlay files it replaces and the largest temporary
-  copy beside a file being replaced (a restore needs as much), plus 16 MiB of headroom. A staged boot update that no longer
-  fits at boot waits for the next boot and is not burned. A restore leaves a file alone that already is its saved original.
+- **Space and rollback.** Besides twice the unpacked size, the updater checks, before anything live changes, that each file
+  system has room for the peak of the whole change, rollback included. Per file system that is the unpacked release and the
+  saved originals of the overlay files it replaces (both in the release directory) plus what `peak_space` finds for the
+  overlay files that live on it: it follows the replacement order, where each file's temporary copy sits beside the old file
+  on top of the growth of the files replaced before it, and a restore from a failure at any point, where the original being
+  copied back sits beside the replaced file while the files before it are already back; the answer is the highest point of
+  all of that, never less than the largest single temporary copy, plus 16 MiB of headroom. Sizes are byte counts: block
+  rounding, directory and journal use and space that a delete gives back only later are not modelled, and the headroom has to
+  cover them (rounding up to a 4 KiB block costs less than 4 KiB per file, so the headroom covers about four thousand
+  overlay files). This is a bound from a
+  model and a test on a real small tmpfs, not a measurement on the phone. A staged boot update that no longer fits at boot
+  waits for the next boot and is not burned. A restore leaves a file alone that already is its saved original. A copy that
+  fails (a full file system above all) removes its own temporary file at once, and a restore removes every `<path>.new` beside
+  an indexed path before it copies anything (a killed run leaves one): otherwise a half-written copy holds the room that the
+  restore of the files already replaced needs for their copies.
   The rollback of a failed update, a requested rollback and recovery after a crash all end the same way: the saved overlay
   files are put back (a missing, unreadable or malformed `overlay-backup/index.json`, limit 16 MiB for writer and reader alike,
   stops the run with the journal and the backups kept), the link is switched, systemd is asked to reload and restart the
   server, and the server gets a bounded health check. If systemd refuses (rate limit, bus error) or a file cannot be put
   back, the journal stays in `state.json`, the status says `failed`, the run exits 1 and no new bundle is looked at until
   the next run has finished the job; the serial is burned and `current` changes only when it has. If everything is back but
-  the server is still not healthy, the rollback is complete and the status message says so.
+  the server is still not healthy, the rollback is complete and the status message says so. The updater never edits its own
+  journal away: when it cannot finish (a lost or damaged backup), every run stops at the same place until the owner puts the
+  files back by hand and closes the journal; [the how-to](ota-release-howto.md#a-rollback-that-did-not-finish) has the steps,
+  and re-imaging is the other way out.
 - **What the updater touches.** It asks systemd for `daemon-reload`, `restart opos-server.service` and `is-active
   opos-server.service` and nothing else, so never `opos.service`; it kills the kiosk's Chromium with `pkill`, and
   `opos-kiosk` waits for the server before every start of the browser. Exit codes: 0 done or nothing to do, 3 a bundle or
