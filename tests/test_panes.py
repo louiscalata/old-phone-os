@@ -189,6 +189,18 @@ class Routes(unittest.TestCase):
             s, h, b = self.get(run)
             self.assertNotIn(b"panes", b)
 
+    def test_off_serves_every_full_page_exactly_as_the_pages_are_built(self):
+        # Flag unset: the bytes on the wire are what web.page() and net_page.render() return, nothing added before or after.
+        from opos import net_page
+        with env_without(), webclient.Running(token=TOKEN, span=DUO) as run:
+            for path, build in (("/", lambda t, n: page(t, n, span=DUO)), ("/network", net_page.render)):
+                for method in ("GET", "HEAD"):
+                    s, h, body = self.get(run, path, method)
+                    nonce = re.search(r"script-src 'nonce-([A-Za-z0-9_-]+)'", h["content-security-policy"]).group(1)
+                    self.assertEqual(s, 200, path)
+                    self.assertEqual(body, build(TOKEN, nonce).encode("utf-8") if method == "GET" else b"", (path, method))
+                    self.assertEqual(h["content-length"], str(len(build(TOKEN, nonce).encode("utf-8"))), (path, method))
+
     def test_on_serves_both_with_the_page_hardening_and_the_span(self):
         with env_without(**ON), webclient.Running(token=TOKEN, span=DUO) as run:
             s, h, b = self.get(run, "/panes.css")
