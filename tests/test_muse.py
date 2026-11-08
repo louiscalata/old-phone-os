@@ -165,7 +165,7 @@ class TestMuse(unittest.TestCase):
         route = glimmer_route({})
         opener = FakeOpener(exc=OSError("down"))
         out = explain({"mode": "a"}, route, env={}, opener=opener)
-        self.assertEqual(out["text"], "Calls, messages and alarms stay on; other tasks are paused to save battery.")
+        self.assertEqual(out["text"], "Calls and messages are never paused. Other tasks are paused to save battery.")
         self.assertEqual(out["engine"], "rules")
         self.assertEqual(out["where"], "on this device")
         self.assertFalse(out["ok"])

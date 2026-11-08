@@ -84,7 +84,9 @@ class TestAboutNotices(unittest.TestCase):
         self.assertIsNot(parsed.ids["about"]["parent"], parsed.ids["about-notices"])
         self.assertNotIn("Licence", "".join(parsed.ids["about"]["text"]))
         self.assertIn("a.insertAdjacentElement('afterend',n)", page)
-        self.assertIn("a.textContent=e?", page)
+        # W1-08: the helper-status hook that rewrote About ("Helper set to ...") is gone; the line stays static.
+        self.assertNotIn("a.textContent=e?", page)
+        self.assertEqual("".join(parsed.ids["about"]["text"]), "Old Phone OS Interface")
 
     def test_native_readability_and_nonce_contract(self):
         page = web.page(nonce="test-about-nonce")
@@ -110,9 +112,10 @@ CHECKS.about_notices = async function() {
     if(!a||!w||!d||!p||!details||!summary)return ['missing About notices'];
     if(!document.getElementById('settings').contains(w)||w.previousElementSibling!==a)out.push('not beside helper status in Settings');
     if(!__u.vis(d)||details.open)out.push('disclaimer hidden or details initially open');
-    var original=w.textContent;
+    var original=w.textContent,line=a.textContent;
     (window.oposHooks||[]).forEach(function(f){f({helper:{engine:'review route'}})});
-    if(!a.textContent.includes('review route'))out.push('helper-status hook no longer updates');
+    // W1-08 retired the hook that rewrote About with the helper route: the line stays as it is, and so do the notices.
+    if(a.textContent!==line||a.textContent.includes('review route'))out.push('a helper-status hook rewrote About');
     if(w.textContent!==original)out.push('helper-status hook overwrote notices');
     summary.click();
     if(!details.open||!__u.vis(p))out.push('native details did not open');

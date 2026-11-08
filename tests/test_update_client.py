@@ -1625,7 +1625,7 @@ class MainPageIsUntouched(Env):
     # duo-acceptance (which had removed dead CSS and shortened the same phone-b.js comment): against duo-acceptance 702c4d3 the
     # page differs by exactly two things, the one CSS rule of the link and the Settings link to /update (checked by diffing the two).
     # Every change to page() re-records these two, in the same commit (they were re-recorded for the interface plan's dead-rule
-    # removal, B-03, its sources-as-text change, W2-16, and the practice wording and battery claims, W1-01 and W1-07).
+    # removal, B-03, its sources-as-text change, W2-16, and the practice wording and battery claims, W1-01 and W1-07, and the helper's text, W1-08).
     # docs/ui-byte-ledger.md says how to measure the page. The integrator re-records them once on the merged tree.
     MAIN_SHA256 = "TBD"
     DEMO_SHA256 = "TBD"

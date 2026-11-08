@@ -191,12 +191,12 @@ class GlimmerAttributionTest(unittest.TestCase):
     def test_names_only_tasks_the_facts_list_as_paused(self):
         why = "The phone is charging, so nothing is paused, so everything is on."
         text = self.explain_offline({"why_paused": why, "paused": [], "paused_by_glimmer": ["maps"]})
-        self.assertEqual(text, why + " Calls, messages and alarms always stay on.")
+        self.assertEqual(text, why + " Calls and messages are never paused.")
 
     def test_never_names_calls_messages_alarms_or_blank_names(self):
         text = self.explain_offline({"why_paused": "Reason.", "paused": ["calls", "email", "Alarms", " "],
                                      "paused_by_glimmer": ["calls", "email", "Alarms", " ", "maps"]})
-        self.assertEqual(text, "Reason. Muse Glimmer chose to pause email. Calls, messages and alarms always stay on.")
+        self.assertEqual(text, "Reason. Muse Glimmer chose to pause email. Calls and messages are never paused.")
 
     def test_joined_names_are_capped(self):
         names = ["task %03d %s" % (i, "x" * 30) for i in range(40)]

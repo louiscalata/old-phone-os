@@ -78,8 +78,6 @@ function set(x){if(T.indexOf(x)<0)x='n';d.dataset.text=x;if(s)s.value=x;return x
 try{v=localStorage.getItem('opos_text')}catch(e){}
 set(v);
 if(s)s.addEventListener('change',function(){var x=set(s.value);try{localStorage.setItem('opos_text',x)}catch(e){}});
-var a=G('about'),g=G('sb-engine');
-if(a&&g)(window.oposHooks=window.oposHooks||[]).push(function(){var e=(g.textContent||'').trim();a.textContent=e?'Old Phone OS Interface. '+(/^Helper set to /.test(e)?e:'Helper set to '+e):'Old Phone OS Interface'});
 })()}catch(e){}
 try{(function(){
 var n=G('demo-phone-note');if(!n)return;
@@ -90,7 +88,7 @@ set();(window.oposHooks=window.oposHooks||[]).push(set);
 function helperAsk(text,web,request){return request({action:'ask',text:text,web:web}).then(function(r){if(r&&r.error)r.error=r.error==='helper hidden'?'Tap Show helper first':r.error;return r})}
 try{(function(){
 var ui=window.oposUI;if(!ui||!ui.openApp)return;
-var o=ui.openApp,built=false,dead=false,T=[],MAX=6,ASK_WAIT_MS=125000,ctl=null,timer=null,pulse=null,lastQ='',ask,log,st,bar,bs,bc,br,resting=false,modeVersion=0,REST='Resting to save power. Calls and messages still work.',STD='Standard answer: the helper did not reply.';
+var o=ui.openApp,built=false,dead=false,T=[],MAX=6,ASK_WAIT_MS=125000,ctl=null,timer=null,pulse=null,lastQ='',ask,log,st,bar,bs,bc,br,resting=false,modeVersion=0,REST='The helper is resting to save power. Plug the phone in, then ask again.',STD='The helper did not reply.';
 var $=G;
 function mk(t){return document.createElement(t)}
 function btn(id,t){var b=mk('button');b.type='button';b.id=id;b.textContent=t;return b}
@@ -100,7 +98,7 @@ function g(f){return function(){if(dead)return;try{return f.apply(this,arguments
 function row(t){if(!t.li){t.li=mk('li');var q=mk('p');t.ap=mk('p');q.textContent='You: '+t.q;t.li.appendChild(q);t.li.appendChild(t.ap)}
 if(t.shown===t.a)return t.li;t.shown=t.a;t.ap.textContent='Helper: '+(t.a||'...');(t.src||[]).forEach(function(s){if(!s||typeof s.title!=='string')return;t.ap.appendChild(mk('br'));t.ap.appendChild(document.createTextNode('Source: '+s.title+', Wikipedia'))});return t.li}
 function draw(){var k=T.map(row);while(log.firstChild&&k.indexOf(log.firstChild)<0)log.removeChild(log.firstChild);k.forEach(function(li){if(li.parentNode!==log)log.appendChild(li)});log.hidden=!T.length}
-function std(j){var w=$('why'),x=j&&typeof j.text==='string'&&j.text.trim()||w&&(w.textContent||'').trim()||'You can try again.';return STD+' '+x}
+function std(j){return j&&typeof j.text==='string'&&j.text.trim()||STD+' You can try again.'}
 function setRest(v){resting=v;if(!bs)return;bs.disabled=resting||!!ctl;if(!ctl){if(resting){st.textContent=REST;br.hidden=true}else if(st.textContent===REST)st.textContent=''}}
 (window.oposHooks=window.oposHooks||[]).push(function(s){var m=s&&s.helper&&s.helper.mode;if(m==='CRITICAL'||m==='NORMAL'||m==='SAVER'){modeVersion++;setRest(m==='CRITICAL'&&!(s.helper.usable_percent>=15))}});
 function end(t,a,s,retry,src){try{clearWait();ctl=null;t.a=a||'(no answer)';t.src=src;draw();bs.disabled=resting;bc.disabled=true;st.textContent=resting?REST:s;br.hidden=resting||!retry}catch(e){off()}}
@@ -109,14 +107,14 @@ var t={q:q,a:''},c=new AbortController(),started=Date.now(),askedModeVersion=mod
 T.push(t);while(T.length>MAX)T.shift();ctl=c;draw();bs.disabled=true;bc.disabled=false;
 function waiting(){if(ctl===c)st.textContent='Waiting... '+Math.max(0,Math.floor((Date.now()-started)/1000))+' s elapsed. Cancel to stop waiting.'}
 waiting();pulse=setInterval(waiting,5000);
-timer=setTimeout(function(){if(ctl!==c||dead)return;c.abort();end(t,std(null),'No reply after '+(ASK_WAIT_MS/1000)+' s. Showing the standard answer.',true)},ASK_WAIT_MS);
+timer=setTimeout(function(){if(ctl!==c||dead)return;c.abort();end(t,std(null),'No reply after '+(ASK_WAIT_MS/1000)+' s. Tap Retry.',true)},ASK_WAIT_MS);
 helperAsk(q,!!(w&&w.checked),function(payload){return fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':m?m.content:''},body:JSON.stringify(payload),signal:c.signal})
-.then(function(r){return r.json().then(function(j){if(r.ok)return j;return{error:r.status===429?'Too many questions in a row. Wait a few seconds, then try again.':r.status===403?'This page is out of date. Reload it, then try again.':r.status>=500?'Something went wrong in OPOS. Try again in a minute.':j&&j.error||'The request failed. Try again.'}},function(){return{ok:false}})})})
-.then(function(j){if(ctl!==c||dead)return;if(j&&j.error)return end(t,j.error,j.error,true);if(j&&j.ok===false&&j.engine==='rules'&&typeof j.text==='string'&&j.text.trim()){if(modeVersion===askedModeVersion)setRest(true);return end(t,j.text.trim(),resting?REST:'This request rested to save power. You can ask again.',false)}if(!j||j.ok===false)return end(t,std(j),'No reply. Showing the standard answer.',true);
-var text=typeof j.text==='string'?j.text.trim():'';if(!text)return end(t,std(j),'No reply. Showing the standard answer.',true);
+.then(function(r){return r.json().then(function(j){if(r.ok)return j;return{error:r.status===429?'Too many questions in a row. Wait a few seconds, then try again.':r.status===403?'This page is out of date. Reload it, then try again.':r.status>=500?'Something went wrong. Try again in a minute.':j&&j.error||'The request failed. Try again.'}},function(){return{ok:false}})})})
+.then(function(j){if(ctl!==c||dead)return;if(j&&j.error)return end(t,j.error,j.error,true);if(j&&j.ok===false&&j.engine==='rules'&&typeof j.text==='string'&&j.text.trim()){if(modeVersion===askedModeVersion)setRest(true);return end(t,j.text.trim(),resting?REST:'This request rested to save power. You can ask again.',false)}if(!j||j.ok===false)return end(t,std(j),'No reply. Tap Retry.',true);
+var text=typeof j.text==='string'?j.text.trim():'';if(!text)return end(t,std(j),'No reply. Tap Retry.',true);
 var input=$('q');if(input&&input.value.trim()===q)input.value='';
 end(t,text+(j.engine&&j.engine!=='none'&&j.where?' (reply: '+j.engine+', '+j.where+')':''),'Answered.',false,Array.isArray(j.sources)?j.sources:null)})
-.catch(function(){if(ctl!==c||dead)return;end(t,std(null),'No reply. Showing the standard answer.',true)})
+.catch(function(){if(ctl!==c||dead)return;end(t,std(null),'No reply. Tap Retry.',true)})
 .catch(off)}
 function build(){var a=$('ask'),q=$('q');if(!a||!q||q.parentNode!==a||typeof AbortController!=='function'||typeof fetch!=='function')return;
 var l=mk('ol'),s=mk('p'),b=mk('div');ask=a;bar=b;

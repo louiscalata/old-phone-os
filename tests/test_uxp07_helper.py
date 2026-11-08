@@ -78,8 +78,8 @@ class UXP07Helper(unittest.TestCase):
         self.assertIsInstance(r, dict)
         self.assertIs(r["ok"], False)
         self.assertEqual((r["engine"], r["where"]), ("none", ""))
-        self.assertIn("No model answered.", r["text"])
-        self.assertIn("Calls, messages", r["text"])
+        self.assertEqual(r["text"], "The helper did not answer. The battery rules still work.")
+        self.assertNotRegex(r["text"], r"(?i)alarm|model")
         self.assertEqual(r["sources"], [])
         # Battery critical answers from rules without even invoking the offline transport.
         attempts.clear()

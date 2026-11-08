@@ -227,7 +227,7 @@ Pivots in order: **Display** (theme, text size, tile sizes), **Battery** (`#head
 ```
 
 - Ask = `#hs-bar` Send/Cancel/Retry/Clear (the chat-style helper screen). Plan = `#planbtn` (POST `plan`). Why = the existing "Why?" button (POST `explain`) relabelled "Why is power being saved?" with `s.battery.headline` as its headline. `#helper` technical lines live under a `<details>` in Why.
-- Rest state: when `s.mode === 'CRITICAL'` the server refuses (assist.py:106); the UI MUST show "Resting to save power. Calls and messages still work." in `#hs-status`, set `#hs-send[disabled]` (dashed border) and keep Plan/Why usable (they are rule-based). The Helper tile standfirst says the same.
+- Rest state: when `s.mode === 'CRITICAL'` the server refuses (assist.py:106); the UI MUST show "The helper is resting to save power. Plug the phone in, then ask again." in `#hs-status` (`REST` in `phone-b.js`, worded by W1-08; the server's rest reply still says calls and messages are never paused), set `#hs-send[disabled]` (dashed border) and keep Plan/Why usable (they are rule-based). The Helper tile standfirst is the shorter "Resting to save power".
 - Wide screens keep the existing two-column helper grid (phone-b.css:70–75).
 
 ### 4.6 Phone and Messages (`#screen #contacts #threads #thread #number #msg #controls`)

@@ -212,9 +212,13 @@ class UXP13SettingsRuntime(unittest.TestCase):
         self.assertFalse(r["settingsAfterBack"])
         self.assertTrue(r["homeAfterBack"])
 
-    def test_about_uses_helper_label_or_name(self):
+    def test_about_names_no_configured_engine(self):
+        # W1-08: the configured route is not a verified one, so About no longer prints "Helper set to ...".
         self.assertEqual(self.r["empty"]["about"], "Old Phone OS Interface")
-        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface. Helper set to on this phone")
+        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface")
+        js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
+        self.assertNotIn("sb-engine", js)
+        self.assertNotIn("Helper set to", js)
 
 
 class UXP13Wizard(unittest.TestCase):

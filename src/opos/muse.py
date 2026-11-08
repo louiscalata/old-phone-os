@@ -93,8 +93,8 @@ def glimmer_route(env=None):
         with contextlib.suppress(Exception):
             p = urllib.parse.urlparse(url)
             if p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost"):
-                return Route("glimmer", "Muse Glimmer", "on this device", url, "muse-glimmer-30b")
-    return Route("glimmer", "Muse Glimmer", "on this device", default, "muse-glimmer-30b")
+                return Route("glimmer", "Muse Glimmer", "on a local server", url, "muse-glimmer-30b")
+    return Route("glimmer", "Muse Glimmer", "on a local server", default, "muse-glimmer-30b")
 SPARK_OPEN = Route("spark-open", "Muse Spark Open", "Baseten partner inference", "https://inference.baseten.co/v1", "meta-models/muse-spark-open-1026")
 def choose(hard, env=None):
     """Choose Spark Open when hard and env allows."""
@@ -265,7 +265,7 @@ def explain(fact_dict, route, env=None, opener=None):
     context.pop("paused_by_glimmer", None)
     if paused_by_glimmer:
         context["paused_by_glimmer"] = paused_by_glimmer
-    prompt = "Explain why tasks are paused in at most four short sentences. Restate the supplied reason in plain words; do not recalculate or propose a new plan. Say calls, messages and alarms stay on. Facts: " + json.dumps(context)
+    prompt = "Explain why tasks are paused in at most four short sentences. Restate the supplied reason in plain words; do not recalculate or propose a new plan. Say calls and messages are never paused. Facts: " + json.dumps(context)
     if paused_by_glimmer:
         prompt += " If a paused_by_glimmer fact is present, also say that Muse Glimmer chose to pause those tasks."
     deadline = time.monotonic() + HELPER_DEADLINE_S
@@ -286,11 +286,11 @@ def explain(fact_dict, route, env=None, opener=None):
         text = why_paused.strip()[:500]
         if paused_by_glimmer:
             text += " Muse Glimmer chose to pause " + _join_names(paused_by_glimmer) + "."
-        text += " Calls, messages and alarms always stay on."
+        text += " Calls and messages are never paused."
     elif isinstance(paused, list) and not paused:
-        text = "Calls, messages and alarms stay on; nothing is paused right now."
+        text = "Calls and messages are never paused. Nothing is paused right now."
     else:
-        text = "Calls, messages and alarms stay on; other tasks are paused to save battery."
+        text = "Calls and messages are never paused. Other tasks are paused to save battery."
     return {"text": text, "engine": "rules", "where": "on this device", "ok": False}
 class Order(list):
     """Step order plus the answering route (None when no usable answer arrived)."""

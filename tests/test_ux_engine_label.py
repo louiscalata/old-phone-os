@@ -30,7 +30,7 @@ class TestEngineLabel(unittest.TestCase):
             os.environ.pop("OPOS_LAN_URL", None)
             self.assertEqual(
                 Phone(visible=True).state()["helper"]["engine"],
-                "Muse Glimmer, on this device",
+                "Muse Glimmer, on a local server",
             )
             free_mb.assert_called_once_with()
 
@@ -69,7 +69,7 @@ class TestEngineLabel(unittest.TestCase):
         self._check_label_matches_ask({}, 5000, "Meta Llama 3.2 3B, on this phone")
 
     def test_neither_uses_glimmer(self):
-        self._check_label_matches_ask({}, 1000, "Muse Glimmer, on this device")
+        self._check_label_matches_ask({}, 1000, "Muse Glimmer, on a local server")
 
     def test_hard_ask_prefers_lan(self):
         host = ".".join(str(octet) for octet in (192, 168, 0, 10))

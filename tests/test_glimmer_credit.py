@@ -55,7 +55,7 @@ class TestPlanCredit(unittest.TestCase):
     def test_same_order_credits_the_glimmer_reply(self):
         result, opener = plan_reply([json.dumps(STEPS)])
         self.assertEqual(result, {"order": STEPS, "engine": "Muse Glimmer",
-                                 "where": "on this device", "credit": "Muse Glimmer kept this order"})
+                                 "where": "on a local server", "credit": "Muse Glimmer kept this order"})
         self.assertEqual(opener.call_count, 1)
 
     def test_changed_order_says_changed(self):
@@ -162,23 +162,23 @@ class TestContributionLine(unittest.TestCase):
             phone.set_visible(False)
             hidden = phone.state()
         self.assertEqual(self.render([before, extra, undone, rules, hidden])["lines"], [
-            "Glimmer: no extra pauses", "Glimmer: also paused email",
-            "Glimmer: no extra pauses", "Glimmer: off", "Glimmer: off"])
+            "Helper: no extra pauses", "Helper: also paused email",
+            "Helper: no extra pauses", "Helper: off", "Helper: off"])
 
     def test_configuration_and_unrelated_reason_do_not_claim_a_contribution(self):
         helper = {"engine": "Muse Glimmer, on this device", "source": "router"}
         states = [{"helper": helper}, {"helper": helper, "battery": {}},
                   {"helper": helper, "battery": {"why": "router+glimmerish"}}, {}]
         self.assertEqual(self.render(states)["lines"],
-                         ["Glimmer: no extra pauses"] * 3 + ["Glimmer: off"])
+                         ["Helper: no extra pauses"] * 3 + ["Helper: off"])
 
     def test_plan_ui_uses_server_credit_for_kept_changed_and_rules(self):
         kept, _ = plan_reply([json.dumps(STEPS)])
         changed, _ = plan_reply([json.dumps(STEPS[::-1])])
         fallback, _ = plan_reply([TimeoutError("timed out")])
         self.assertEqual(self.render(plans=[kept, changed, fallback, {"error": "helper hidden"}])["plans"], [
-            "Plan: dim screen > pause email. Muse Glimmer kept this order (on this device)",
-            "Plan: pause email > dim screen. Muse Glimmer changed this order (on this device)",
+            "Plan: dim screen > pause email. Muse Glimmer kept this order (on a local server)",
+            "Plan: pause email > dim screen. Muse Glimmer changed this order (on a local server)",
             "Plan: dim screen > pause email. Battery rules kept this order (battery rules)",
             "Tap Show helper first"])
 
@@ -196,8 +196,8 @@ class TestContributionLine(unittest.TestCase):
         events = [{"state": before}, {"plan": kept}, {"state": before},
                   {"plan": changed}, {"state": before}, {"state": after}]
         self.assertEqual(self.render(events=events)["eventLines"], [
-            "Glimmer: off", "Glimmer: off; kept the plan order", "Glimmer: off; kept the plan order",
-            "Glimmer: off; changed the plan order", "Glimmer: off; changed the plan order", "Glimmer: also paused email"])
+            "Helper: off", "Helper: off; kept the plan order", "Helper: off; kept the plan order",
+            "Helper: off; changed the plan order", "Helper: off; changed the plan order", "Helper: also paused email"])
 
     def test_hiding_clears_the_previous_plan_line(self):
         kept, _ = plan_reply([json.dumps(STEPS)])
@@ -207,8 +207,8 @@ class TestContributionLine(unittest.TestCase):
         hidden = phone.state()
         events = [{"state": visible}, {"plan": kept}, {"state": hidden}, {"state": visible}]
         self.assertEqual(self.render(events=events)["eventLines"], [
-            "Glimmer: off", "Glimmer: off; kept the plan order",
-            "Glimmer: off", "Glimmer: off"])
+            "Helper: off", "Helper: off; kept the plan order",
+            "Helper: off", "Helper: off"])
 
     def test_a_plan_finishing_after_hiding_does_not_replace_the_hidden_line(self):
         kept, _ = plan_reply([json.dumps(STEPS)])
@@ -219,22 +219,22 @@ class TestContributionLine(unittest.TestCase):
         events = [{"state": visible}, {"start": True}, {"state": hidden},
                   {"finish": kept}, {"state": visible}]
         self.assertEqual(self.render(events=events)["eventLines"], [
-            "Glimmer: off", "Glimmer: off", "Glimmer: off",
-            "Glimmer: off", "Glimmer: off"])
+            "Helper: off", "Helper: off", "Helper: off",
+            "Helper: off", "Helper: off"])
 
     def test_rules_and_other_routes_do_not_claim_a_glimmer_plan_reply(self):
         kept, _ = plan_reply([json.dumps(STEPS)])
         fallback, _ = plan_reply([TimeoutError("timed out")])
         local, _ = plan_reply([json.dumps(STEPS)], routes=[LOCAL])
         self.assertEqual(self.render(plans=[kept, fallback, kept, local])["planLines"], [
-            "Glimmer: kept the plan order", "Glimmer: no plan reply",
-            "Glimmer: kept the plan order", "Glimmer: no plan reply"])
+            "Helper: kept the plan order", "Helper: no plan reply",
+            "Helper: kept the plan order", "Helper: no plan reply"])
 
     def test_contribution_line_is_present_before_first_state(self):
         with mock.patch("opos.notices.BUILD", "f" * 12):
             markup = page("t" * 43, "n" * 22, demo=True)
         self.assertIn('id="glimmer-credit"', markup)
-        self.assertIn("Glimmer: waiting for phone</p>", markup)
+        self.assertIn("Helper: waiting for phone</p>", markup)
 
 
 if __name__ == "__main__":

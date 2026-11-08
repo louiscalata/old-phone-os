@@ -23,7 +23,7 @@ class TestWebMuse(unittest.TestCase):
         s = p.state()
         self.assertIn("helper", s)
         self.assertIn("engine", s["helper"])
-        self.assertEqual(s["helper"]["engine"], "Muse Glimmer, on this device")
+        self.assertEqual(s["helper"]["engine"], "Muse Glimmer, on a local server")
 
     def test_quiet_no_muse_or_engine(self):
         p = Phone(visible=False)
@@ -38,7 +38,7 @@ class TestWebMuse(unittest.TestCase):
         req = p.explain_request()
         self.assertIsInstance(req, tuple)
         self.assertEqual(len(req), 2)
-        self.assertEqual(muse.label(req[1]), "Muse Glimmer, on this device")
+        self.assertEqual(muse.label(req[1]), "Muse Glimmer, on a local server")
 
     def test_explain_hidden(self):
         p = Phone(visible=False)
