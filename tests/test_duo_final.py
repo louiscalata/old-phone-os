@@ -296,7 +296,8 @@ class ImageWiring(unittest.TestCase):
 
     def test_the_kiosk_keeps_what_the_restart_and_the_time_zone_need(self):
         k = self.read("opos-kiosk")
-        self.assertIn('--user-data-dir="$HOME/.cache/opos-kiosk"', k)
+        self.assertIn("dir=$HOME/.cache/opos-kiosk", k)  # the profile directory firstrun.restart_kiosk finds Chromium by ...
+        self.assertIn('--user-data-dir="$dir"', k)  # ... passed as Chromium's profile
         self.assertIn("track firstboot", k)
         self.assertLess(k.index("while :; do"), k.index("track firstboot"), "the zone is read before every Chromium start")
 

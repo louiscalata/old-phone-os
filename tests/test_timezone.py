@@ -345,7 +345,7 @@ class KioskExport(unittest.TestCase):
         r = subprocess.run(["sh", "-n", str(KIOSK)], capture_output=True, text=True)
         self.assertEqual(0, r.returncode, r.stderr)
         text = KIOSK.read_text(encoding="utf-8")
-        self.assertLess(text.index("# >>> track firstboot"), text.index("chromium --kiosk"))
+        self.assertLess(text.index("# >>> track firstboot"), text.index('chromium "$@"'))  # the launch line (its arguments are built above the loop)
         self.assertLess(text.index("while :; do"), text.index("# >>> track firstboot"))  # inside the restart loop
 
 
