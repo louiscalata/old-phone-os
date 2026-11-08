@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from opos import timezone as tzmod
 
@@ -60,6 +61,23 @@ class ZoneList(unittest.TestCase):
         except (OSError, NotImplementedError):
             self.skipTest("cannot create symlinks here")
         self.assertEqual((["Europe/Berlin"], "system"), tzmod.zones(self.d))
+
+    def test_the_scan_is_remembered_until_the_database_changes(self):
+        make_tree(self.d, ["Europe/Berlin", "Asia/Kolkata"])
+        with mock.patch.object(tzmod, "_scan", wraps=tzmod._scan) as scan:
+            first = tzmod.zones(self.d)
+            self.assertEqual((["Asia/Kolkata", "Europe/Berlin"], "system"), first)
+            for _ in range(5):
+                self.assertEqual(first, tzmod.zones(self.d))
+                self.assertTrue(tzmod.valid_zone("Europe/Berlin", self.d))
+            self.assertEqual(1, scan.call_count, "six asks, one scan")
+            first[0].append("Mars/Olympus")  # a caller's changes to its copy are not remembered
+            self.assertEqual((["Asia/Kolkata", "Europe/Berlin"], "system"), tzmod.zones(self.d))
+            make_tree(self.d, ["Europe/Paris"])  # a new file in a region directory changes that directory's time
+            os.utime(os.path.join(self.d, "Europe"), ns=(1, 2 * 10**18))
+            self.assertEqual((["Asia/Kolkata", "Europe/Berlin", "Europe/Paris"], "system"), tzmod.zones(self.d))
+            self.assertEqual(2, scan.call_count)
+        self.assertEqual("builtin", tzmod.zones(os.path.join(self.d, "nope"))[1], "another root is its own entry")
 
     def test_a_missing_or_empty_database_falls_back_to_the_built_in_list(self):
         for root in (os.path.join(self.d, "nope"), self.d):

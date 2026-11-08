@@ -93,9 +93,29 @@ def _scan(root):
     return sorted(out)
 
 
+_SEEN = {}  # root -> (signature, names): the scan opens ~450 files, and every page load and every validation asks for it
+
+
+def _signature(root):
+    """Changes when the database does: the modification times of the root and of its region directories (None if unreadable)."""
+    try:
+        with os.scandir(root) as it:
+            subdirs = sorted((e.name, e.stat(follow_symlinks=False).st_mtime_ns) for e in it if e.is_dir(follow_symlinks=False))
+        return (os.stat(root).st_mtime_ns, tuple(subdirs))
+    except OSError:
+        return None
+
+
 def zones(root=ZONEINFO):
     """(names, source): the zones found under root with source "system", else the built-in ones with source "builtin"."""
-    found = _scan(root)
+    key, sig = str(root), _signature(root)
+    hit = _SEEN.get(key)
+    if sig is not None and hit is not None and hit[0] == sig:
+        found = list(hit[1])
+    else:
+        found = _scan(root)
+        if sig is not None:
+            _SEEN[key] = (sig, tuple(found))
     return (found, "system") if found else (sorted(BUILTIN), "builtin")
 
 
