@@ -28,10 +28,12 @@ import pwd
 import re
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import zlib
 
@@ -104,6 +106,7 @@ class Config:
     smoke_timeout: float = 20.0
     health_timeout: float = 45.0
     health_interval: float = 1.0
+    probe_deadline: float = 8.0                      # hard limit for one probe of the server: connect, headers and body
     confirm_timeout: float = 120.0
     lock_timeout: float = 120.0
     pace: float = 2.0                                # apply-inbox lingers this long after a run that did its job
@@ -370,26 +373,65 @@ def parse_manifest(raw, cfg):
 
 # ---- probes ------------------------------------------------------------------------------------------------
 
-def http_get(host, port, path, headers=None, timeout=3.0):
-    c = http.client.HTTPConnection(host, port, timeout=timeout)
+def http_get(host, port, path, headers=None, timeout=3.0, total=None):
+    """GET with a hard overall deadline. `timeout` bounds every single socket operation; `total` (default twice that) bounds
+    the whole exchange: connect, status line, headers and body. A per-operation timeout alone is satisfied for ever by a
+    server that sends one byte a second, so a timer shuts the socket down when the deadline passes and the body is read in
+    pieces with the remaining time checked between them (review finding 7)."""
+    total = 2 * timeout if total is None else total
+    end = time.monotonic() + total
+    c = http.client.HTTPConnection(host, port, timeout=max(0.05, min(timeout, total)))
+    timer, fired = None, threading.Event()
     try:
+        c.connect()
+        sock = c.sock
+
+        def expire():
+            fired.set()
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+        timer = threading.Timer(max(0.0, end - time.monotonic()), expire)
+        timer.daemon = True
+        timer.start()
         c.request('GET', path, headers=headers or {})
         r = c.getresponse()
-        return r.status, r.read(4 << 20)
+        body, cap = bytearray(), 4 << 20
+        while len(body) < cap and not r.isclosed():
+            left = end - time.monotonic()
+            if left <= 0 or fired.is_set():
+                raise TimeoutError('no complete answer within %g s' % total)
+            sock.settimeout(max(0.05, min(timeout, left)))
+            chunk = r.read1(min(65536, cap - len(body)))
+            if not chunk:
+                if fired.is_set():
+                    raise TimeoutError('no complete answer within %g s' % total)
+                if r.length:  # closed before the announced length
+                    raise http.client.IncompleteRead(bytes(body), r.length)
+                break
+            body += chunk
+        return r.status, bytes(body)
     finally:
+        if timer:
+            timer.cancel()
+            timer.join(1.0)  # no thread left over when the next child process is forked
         c.close()
 
 
-def probe_http(host, port):
-    """The health contract: GET / is 200 and carries the page token; /api/state answers JSON with a battery key."""
+def probe_http(host, port, deadline=8.0):
+    """The health contract: GET / is 200 and carries the page token; /api/state answers JSON with a battery key.
+    `deadline` is the hard limit for both requests together."""
+    end = time.monotonic() + deadline
+
+    def left():
+        return max(0.05, end - time.monotonic())
     try:
-        status, body = http_get(host, port, '/')
+        status, body = http_get(host, port, '/', total=left())
         if status != 200:
             return False, 'GET / answered %d' % status
         m = re.search(rb'name="opos-token" content="([^"]{1,200})"', body)
         if not m:
             return False, 'the page has no token'
-        status, body = http_get(host, port, '/api/state', {'X-OPOS-Token': m.group(1).decode('ascii', 'replace')})
+        status, body = http_get(host, port, '/api/state', {'X-OPOS-Token': m.group(1).decode('ascii', 'replace')}, total=left())
         if status != 200:
             return False, 'GET /api/state answered %d' % status
         data = json.loads(body)
@@ -401,10 +443,10 @@ def probe_http(host, port):
 
 
 def probe_health(cfg):
-    r = run(cfg, [*cfg.systemctl, 'is-active', SERVER_UNIT])
+    r = run(cfg, [*cfg.systemctl, 'is-active', SERVER_UNIT], timeout=cfg.probe_deadline)
     if r.returncode != 0 or r.stdout.strip() != b'active':
         return False, 'opos-server is not active'
-    return probe_http(cfg.health_host, cfg.health_port)
+    return probe_http(cfg.health_host, cfg.health_port, cfg.probe_deadline)
 
 
 SMOKE_ADDR = re.compile(rb'http://127\.0\.0\.1:([0-9]{1,5})/')
@@ -460,7 +502,7 @@ def run_smoke(cfg, release_dir):
             status = None
             if port:
                 try:
-                    status, _ = http_get(host, port, '/', timeout=2.0)
+                    status, _ = http_get(host, port, '/', timeout=2.0, total=min(cfg.probe_deadline, max(0.2, deadline - cfg.mono())))
                 except (OSError, http.client.HTTPException):
                     status = None
             if status == 200:

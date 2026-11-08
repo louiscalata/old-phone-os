@@ -10,6 +10,7 @@ import contextlib
 import errno
 import gzip
 import hashlib
+import http.client
 import importlib.machinery
 import importlib.util
 import io
@@ -1374,9 +1375,9 @@ class TestApply(EnvCase):
         e = self.env
         e.cfg.smoke = lambda cfg, d: (True, 'stub')
         e.cfg.health_timeout = 5
-        t0 = time.time()
+        calls = [0]
 
-        def slow(cfg, calls=[0]):
+        def slow(cfg):
             calls[0] += 1
             return (calls[0] > 5, 'warming up')
         e.cfg.health = slow
@@ -2148,6 +2149,146 @@ class TestCrashSafety(unittest.TestCase):
                 e.updater().apply_pending_boot()
                 self.assertIn(e.consistent(), (0, 7), steps[i])
                 self.follow_up(e, 'hard kill at %s' % steps[i])
+
+
+# ============================================================================================ Astra review: updater findings
+# Findings 2, 3, 5, 6, 7, 8, 10 and 11 of the independent review of snapshot 366ac0d (finding 4 is under "units" below).
+# Each test names what went wrong; every one fails on the code before its fix.
+
+SLOW_PY = b'''import argparse, http.server, sys, time
+p = argparse.ArgumentParser()
+p.add_argument("--port", type=int, default=8765)
+p.add_argument("--live-battery", action="store_true")
+a = p.parse_args()
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Length", "4194304"); self.end_headers()
+        for _ in range(100):
+            self.wfile.write(b"x"); self.wfile.flush(); time.sleep(0.1)
+    def log_message(self, *a):
+        pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), H)
+print("stand-in server: http://127.0.0.1:%d/" % srv.server_address[1], flush=True)
+srv.serve_forever()
+'''
+
+
+class Trickle:
+    """A server that answers like a broken one: one byte at a time, so that no single receive ever times out."""
+
+    def __init__(self, where, gap=0.1, count=60):
+        self.where, self.gap, self.count = where, gap, count
+        self.sock = socket.socket()
+        self.sock.bind(('127.0.0.1', 0))
+        self.sock.listen(8)
+        self.sock.settimeout(0.1)
+        self.port = self.sock.getsockname()[1]
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.loop, daemon=True)
+        self.thread.start()
+
+    def loop(self):
+        while not self.stop.is_set():
+            try:
+                c, _ = self.sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            threading.Thread(target=self.talk, args=(c,), daemon=True).start()
+
+    def talk(self, c):
+        try:
+            c.settimeout(2)
+            buf = b''
+            while b'\r\n\r\n' not in buf:
+                d = c.recv(4096)
+                if not d:
+                    return
+                buf += d
+            if self.where == 'body':
+                c.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 4194304\r\n\r\n')
+                pieces = [b'x'] * self.count
+            else:                                   # the status line, then a header that never ends
+                c.sendall(b'HTTP/1.1 200 OK\r\n')
+                pieces = [b'X'] * self.count
+            for piece in pieces:
+                if self.stop.is_set():
+                    break
+                c.sendall(piece)
+                time.sleep(self.gap)
+        except OSError as e:   # the client gave up and hung up: that is what the tests want
+            self.hung_up = e
+        finally:
+            c.close()
+
+    def close(self):
+        self.stop.set()
+        self.thread.join(2)
+        self.sock.close()
+
+
+@needs_keygen
+class TestProbeDeadline(EnvCase):
+    """Finding 7: a per-receive timeout is satisfied for ever by a server that sends a byte a second, and the health and
+    smoke deadlines were only looked at between probes."""
+    fast = True
+
+    def trickle(self, where, count=60):
+        t = Trickle(where, count=count)
+        self.addCleanup(t.close)
+        return t
+
+    def test_http_get_stops_at_its_total_deadline(self):
+        for where in ('body', 'headers'):
+            with self.subTest(where):
+                t = self.trickle(where)
+                t0 = time.monotonic()
+                with self.assertRaises(OSError):
+                    U.http_get('127.0.0.1', t.port, '/', timeout=3.0, total=1.0)
+                self.assertLess(time.monotonic() - t0, 2.5)
+
+    def test_the_health_probe_gives_up_at_the_probe_deadline_and_calls_it_unhealthy(self):
+        e = self.env
+        e.cfg.probe_deadline = 1.0
+        for where in ('body', 'headers'):
+            with self.subTest(where):
+                t = self.trickle(where)
+                e.cfg.health_port = t.port
+                t0 = time.monotonic()
+                ok, msg = U.probe_health(e.cfg)
+                self.assertFalse(ok)
+                self.assertLess(time.monotonic() - t0, 3.0, msg)
+
+    def test_the_probe_deadline_covers_both_requests_together(self):
+        e = self.env
+        t = self.trickle('body')
+        t0 = time.monotonic()
+        ok, msg = U.probe_http('127.0.0.1', t.port, 1.0)
+        self.assertFalse(ok)
+        self.assertLess(time.monotonic() - t0, 2.5)
+
+    def test_a_complete_answer_is_still_read_in_full_and_a_cut_short_one_is_an_error(self):
+        e = self.env
+        port = e.server.server_address[1]
+        status, body = U.http_get('127.0.0.1', port, '/')
+        self.assertEqual(status, 200)
+        self.assertIn(b'opos-token', body)
+        t = self.trickle('body', count=3)             # promises 4 MiB, sends 3 bytes, hangs up
+        with self.assertRaises(http.client.IncompleteRead):
+            U.http_get('127.0.0.1', t.port, '/', timeout=3.0, total=5.0)
+
+    def test_a_server_that_answers_the_smoke_test_one_byte_at_a_time_fails_it_in_time(self):
+        e = self.env
+        e.cfg.smoke = U.run_smoke                        # the real smoke test, against a real (stand-in) server process
+        e.cfg.smoke_timeout, e.cfg.probe_deadline = 2.0, 1.0
+        t0 = time.monotonic()
+        self.assertEqual(e.apply(make_bundle(7, app={**default_app(7), 'src/opos/web.py': (SLOW_PY, 0o644)})), 3)
+        self.assertLess(time.monotonic() - t0, 7.0)      # not the ten seconds the server takes to finish its answer
+        self.assertIn('smoke test failed', e.status()['message'])
+        self.assertEqual(e.consistent(), 0)
+
+
 
 
 # =============================================================================================================== lock
