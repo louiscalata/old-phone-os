@@ -32,8 +32,11 @@ src/opos/home.py
 src/opos/hw/__init__.py
 src/opos/hw/battery.py
 src/opos/hw/detect.py
+src/opos/hw/live_battery.py
 src/opos/hw/store.py
 src/opos/mm_modem.py
+src/opos/monitor.py
+src/opos/monitor_web.py
 src/opos/muse.py
 src/opos/net.py
 src/opos/net_page.py
@@ -92,6 +95,10 @@ src/opos/web_static/js-5.js
 src/opos/web_static/js-6.js
 src/opos/web_static/js-7.js
 src/opos/web_static/js-8.js
+src/opos/web_static/monitor-theme.js
+src/opos/web_static/monitor.css
+src/opos/web_static/monitor.html
+src/opos/web_static/monitor.js
 src/opos/web_static/phone-a.css
 src/opos/web_static/phone-a.html
 src/opos/web_static/phone-a.js

@@ -57,6 +57,10 @@ try:  # track osk: the on-screen keyboard is optional; a runtime shipped without
 except ImportError:
     osk = None
 from opos import net_page  # track: network
+try:  # track monitor: the Inference page is optional; a runtime shipped without src/opos/monitor.py serves what it always served
+    from opos import monitor, monitor_web
+except ImportError:
+    monitor = monitor_web = None
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -682,6 +686,48 @@ def _net_act(h, a, data):
     code, obj = net_page.handle(a, data)
     h._json(obj, code)
 # --- end track: network ---
+# --- track: monitor (the Inference page): GET /monitor and GET /api/monitor, only while OPOS_MONITOR=1; data in opos.monitor, glue in opos.monitor_web ---
+def _monitor_serve(h, path):
+    """Answer /monitor (the document) or /api/monitor (its data). The Host check has been made by _get."""
+    if path == "/monitor":
+        nonce = secrets.token_urlsafe(16)
+        try:
+            # The same inliner page() uses, then the two-panel rewrite, the token meta and the nonce (monitor_web.document).
+            body = monitor_web.document(_inline_assets(_asset("monitor.html")), h.token, nonce, h.span).encode()
+        except (OSError, ValueError) as e:  # a missing part, or a drop-in whose title is not the one expected: send nothing half-built
+            logging.getLogger("opos.security").warning("monitor page not built: %s", type(e).__name__)
+            h._json({"error": "internal error"}, 500)
+            return
+        h.send_response(200)
+        for k, v in secure.security_headers(nonce).items():
+            h.send_header(k, v)
+        h.send_header("Content-Type", "text/html; charset=utf-8")
+        h.send_header("Content-Length", str(len(body)))
+        h.end_headers()
+        if h.command != "HEAD":
+            h.wfile.write(body)
+        return
+    if not secure.token_ok(h.headers.get("X-OPOS-Token"), h.token):
+        h._deny(403, "forbidden", "token")
+        return
+    if h.command == "HEAD":  # a HEAD would start the monitor's collection and return nothing
+        logging.getLogger("opos.security").warning("rejected: %s", "method")
+        h.send_response(405)
+        h.send_header("Allow", "GET")
+        h.send_header("Content-Length", "0")
+        for k, v in secure.security_headers().items():
+            h.send_header(k, v)
+        h.end_headers()
+        return
+    if not h.limiter.allow(monitor_web.LIMIT_KEY):  # an unknown key is refused, so a server built without the bucket answers 429
+        h._deny(429, "too many requests", "rate")
+        return
+    with h.lock:
+        snap = h.phone.state()
+        health = getattr(getattr(h.phone, "sim", None), "health", None)
+    # Outside the lock: a slow LAN host can use the monitor's whole 6 s budget, and the phone must go on answering meanwhile.
+    h._json(monitor.get().snapshot(monitor_web.local_state(snap, health)))
+# --- end track: monitor ---
 class Handler(BaseHTTPRequestHandler):
     """Loopback web handler."""
     phone = None
@@ -757,6 +803,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/network":  # track: network
             _net_serve(self)
             return
+        if path in ("/monitor", "/api/monitor") and monitor_web is not None and monitor_web.enabled():  # track: monitor (OPOS_MONITOR=1 only)
+            _monitor_serve(self, path)
+            return
         if path in ("/", "/favicon.ico"):
             nonce = secrets.token_urlsafe(16)
             body = FAVICON if path == "/favicon.ico" else page(self.token, nonce, span=self.span).encode()
@@ -766,6 +815,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "image/png" if path == "/favicon.ico" else "text/html; charset=utf-8")
             if path == "/" and osk is not None:
                 body = osk.inject_bytes(body, nonce)  # track osk: adds the keyboard's two tags while OPOS_OSK=1, else the same bytes
+            if path == "/" and monitor_web is not None:
+                body = monitor_web.link_bytes(body)  # track monitor: the Settings link to /monitor while OPOS_MONITOR=1, else the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
@@ -1020,6 +1071,8 @@ class _Limits:
     def __init__(self):
         self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3)}
         self._buckets.update(net_page.buckets())  # track: network
+        if monitor_web is not None:
+            self._buckets.update(monitor_web.buckets())  # track: monitor
     def allow(self, key):
         """Delegate key to its bucket."""
         b = self._buckets.get(key)
