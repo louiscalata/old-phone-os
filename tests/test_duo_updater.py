@@ -2276,6 +2276,73 @@ class TestOuterArchive(EnvCase):
                 self.assertEqual([rd(os.path.join(run_dir, n), 'rb') for n in ('manifest.json', 'manifest.json.sig', 'payload.tar.gz')], [m, s, p])
 
 
+@needs_keygen
+class TestSpace(EnvCase):
+    """Finding 5: the space check admitted an update whose rollback could not fit."""
+    fast = True
+    BIG = 100000
+
+    def setUp(self):
+        super().setUp()
+        e = self.env
+        e.put(os.path.join(e.root, 'etc/opos/big.conf'), b'o' * self.BIG)
+        app = {'src/opos/__init__.py': (b'', 0o644), 'src/opos/web.py': (WEB_PY, 0o644)}
+        self.bundle = make_bundle(7, app=app, overlay={'etc/opos/big.conf': (b'n' * self.BIG, 0o644)})
+        self.unpacked = self.BIG + len(WEB_PY)
+        e.cfg.space_headroom = 0
+
+    def free(self, n):
+        """Free space is n everywhere but in staging (which has its own, earlier check that is not what is tested here)."""
+        e = self.env
+        e.cfg.statvfs = lambda p: 10**12 if p.startswith(e.staging) else n
+
+    def test_extraction_the_saved_original_and_the_largest_temporary_copy_must_all_fit(self):
+        e = self.env
+        # old rule: twice the unpacked size. Unpacked release + saved original + one temporary copy needs more than that.
+        self.free(2 * self.unpacked + 10)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        need = self.unpacked + self.BIG + self.BIG
+        self.free(need - 1)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        self.free(need)
+        self.assertEqual(e.apply(self.bundle), 0)
+        self.assertEqual(rd(os.path.join(e.root, 'etc/opos/big.conf'), 'rb'), b'n' * self.BIG)
+
+    def test_headroom_is_part_of_the_budget(self):
+        e = self.env
+        self.assertEqual(U.Config(root='/').space_headroom, 16 << 20)
+        e.cfg.space_headroom = 5000
+        need = self.unpacked + 2 * self.BIG
+        self.free(need + 4999)
+        self.reject(self.bundle, 'not enough free space to apply and, if need be, undo')
+        self.free(need + 5000)
+        self.assertEqual(e.apply(self.bundle), 0)
+
+    def test_a_file_that_does_not_exist_yet_needs_no_saved_original(self):
+        e = self.env
+        os.unlink(os.path.join(e.root, 'etc/opos/big.conf'))
+        self.free(2 * self.unpacked)       # no original to save: the unpacked release and one temporary copy fit; with the original they would not
+        self.assertEqual(e.apply(self.bundle), 0)
+
+    def test_a_staged_update_waits_at_boot_when_its_rollback_would_not_fit(self):
+        e = self.env
+        staged = make_bundle(7, scope='boot', app={'src/opos/__init__.py': (b'', 0o644), 'src/opos/web.py': (WEB_PY, 0o644)},
+                             overlay={'etc/opos/big.conf': (b'n' * self.BIG, 0o644)})
+        self.assertEqual(e.apply(staged), 0)
+        self.assertEqual(e.state()['pending_boot']['serial'], 7)
+        e.boot = 'boot-2'
+        self.free(2 * self.BIG - 1)
+        self.assertEqual(e.updater().apply_pending_boot(), 3)
+        self.assertIn('kept for the next boot', e.status()['message'])
+        st = e.state()
+        self.assertEqual((st['pending_boot']['serial'], st['failed'], st['current']['serial']), (7, [], 0))   # waits; is not burned
+        self.assertEqual(rd(os.path.join(e.root, 'etc/opos/big.conf'), 'rb'), b'o' * self.BIG)
+        e.boot = 'boot-3'
+        e.cfg.statvfs = lambda p: 10**12
+        self.assertEqual(e.updater().apply_pending_boot(), 0)
+        self.assertEqual(e.state()['current']['serial'], 7)
+
+
 FLOOD_PY = b'''import sys, time
 while True:
     try:
