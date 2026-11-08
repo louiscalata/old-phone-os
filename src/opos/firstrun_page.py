@@ -125,6 +125,17 @@ _FIRSTRUN_BODY = """<main class="cols">
 _FIRSTRUN_JS = """
 var steps=['welcome','tz','goal','helper','wifi','done'],cur=0,last=steps.length-1,S=null,Z=null,pk=null;
 var A={zone:null,goal:null,helper:null},g={on:true,min:1380},help='on',busy=false;
+var KEEP='opos_firstrun';
+function keep(){try{sessionStorage.setItem(KEEP,JSON.stringify({t:Date.now(),cur:cur,A:A,g:g,help:help}))}catch(e){}}
+function forget(){try{sessionStorage.removeItem(KEEP)}catch(e){}}
+function recall(){try{var v=JSON.parse(sessionStorage.getItem(KEEP)||'null'),a,b;
+if(!v||typeof v!=='object'||!(Date.now()-v.t<1800000)||!(v.cur>=1&&v.cur<=last))return 0;
+a=v.A||{};if(typeof a.zone==='string'&&/^[A-Za-z0-9_+/-]{1,64}$/.test(a.zone))A.zone=a.zone;
+b=a.goal;if(b&&typeof b.enabled==='boolean'&&/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(b.time))A.goal={enabled:b.enabled,time:b.time};
+if(a.helper==='on'||a.helper==='off')A.helper=a.helper;
+b=v.g;if(b&&typeof b.on==='boolean'&&b.min>=0&&b.min<1440)g={on:b.on,min:Math.floor(b.min)};
+if(v.help==='on'||v.help==='off')help=v.help;
+return Math.floor(v.cur)}catch(e){return 0}}
 function pad(n){return(n<10?'0':'')+n}
 function hhmm(m){return pad(Math.floor(m/60))+':'+pad(m%60)}
 function say(m){var e=$('err');e.hidden=!m;e.textContent=m||''}
@@ -140,9 +151,10 @@ li('Helper',A.helper?(A.helper==='on'?'shown':'hidden'):'unchanged')}
 function show(i){cur=i;steps.forEach(function(s,k){$('s-'+s).hidden=k!==i});
 $('prog').textContent=i<last?'Step '+(i+1)+' of '+last:'Review';
 $('back').hidden=i===0;$('skip').hidden=i===0||i===last;$('next').textContent=i===0?'Start':i===last?'Finish':'Next';
-var h=$('s-'+steps[i]).querySelector('h2');if(h){h.tabIndex=-1;h.focus()}if(i===last)summary();say('')}
+var h=$('s-'+steps[i]).querySelector('h2');if(h){h.tabIndex=-1;h.focus()}if(i===last)summary();say('');if(i>0)keep()}
 function done(r){var e=r&&r.errors&&r.errors.length;
 if(e){say('Some choices could not be saved ('+r.errors.join(', ')+'). You can change them later.');$('home').hidden=false;$('next').hidden=true;return}
+forget();
 if(r&&r.restart){$('saving').textContent='Saved. The screen restarts in a few seconds to use the new time zone.';$('next').hidden=true;$('back').hidden=true;
 setTimeout(function(){location.href='/'},15000);return}
 location.href='/'}
@@ -156,7 +168,7 @@ if(cur===3&&d>0)A.helper=help;
 if(d>0&&cur===last)return finish();show(Math.max(0,Math.min(last,cur+d)))}
 $('next').onclick=function(){go(1)};$('back').onclick=function(){go(-1)};
 $('skip').onclick=function(){if(cur===1)A.zone=null;if(cur===2)A.goal=null;if(cur===3)A.helper=null;show(cur+1)};
-$('skipall').onclick=function(){api('/api/firstrun',{action:'skip'}).then(function(){location.href='/'},function(){location.href='/?firstrun=later'})};
+$('skipall').onclick=function(){api('/api/firstrun',{action:'skip'}).then(function(){forget();location.href='/'},function(){location.href='/?firstrun=later'})};
 $('goal-on').onclick=function(){g.on=!g.on;goalPaint()};
 $('hm').onclick=function(){g.min=(g.min+1440-60)%1440;goalPaint()};$('hp').onclick=function(){g.min=(g.min+60)%1440;goalPaint()};
 $('mm').onclick=function(){g.min=(g.min+1440-15)%1440;goalPaint()};$('mp').onclick=function(){g.min=(g.min+15)%1440;goalPaint()};
@@ -166,8 +178,8 @@ Promise.all([api('/api/firstrun'),api('/api/timezone')]).then(function(v){S=v[0]
 $('clock').textContent=S.clock.text?'Phone clock: '+S.clock.text:'';
 if(S.clock.note){$('clock-note').textContent=S.clock.note;$('clock-note').hidden=false}
 if(S.goal){g.on=!!S.goal.enabled;var p=(S.goal.time||'23:00').split(':');g.min=(+p[0])*60+(+p[1])}
-help=S.helper==='off'?'off':'on';goalPaint();helpPaint();
-pk=tzPicker($('tzbox'),Z.zones,Z.source,Z.saved,function(){});show(0);$('next').disabled=false},
+help=S.helper==='off'?'off':'on';var back=recall();goalPaint();helpPaint();
+pk=tzPicker($('tzbox'),Z.zones,Z.source,A.zone||Z.saved,function(){});show(back);$('next').disabled=false},
 function(x){$('prog').textContent='';say('Setup could not load ('+x.message+'). Open Home and set things up later in Settings.');$('home').hidden=false;$('next').hidden=true;$('back').hidden=true;$('skip').hidden=true;$('s-welcome').hidden=false});
 """
 
