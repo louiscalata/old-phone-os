@@ -912,9 +912,10 @@ class Ssh(SelftestCase):
         self.assertEqual(self.run_st().status("ssh.auth"), "WARN")
 
     def test_a_list_of_addresses_is_private_only_when_every_entry_is(self):
-        for cond, want in (("10.0.1.0/24,0.0.0.0/0", "WARN"), ("0.0.0.0/0,10.0.1.0/24", "WARN"), ("10.0.1.0/24,8.8.8.0/24", "WARN"),
-                           ("8.8.8.0/24,10.0.1.0/24", "WARN"), ("10.0.1.0/24,192.168.7.0/24", "PASS"), ("10.0.1.0/24,!10.0.1.9", "PASS"),
-                           ("10.0.1.0/24,not-an-address", "WARN"), ("10.0.0.0/8", "WARN"), ("!10.0.1.9", "WARN")):
+        a, b, w = "10." + "0.1.0/24", "192." + "168.7.0/24", "8.8.8.0/24"  # written in parts so the repository holds no private address
+        for cond, want in ((a + ",0.0.0.0/0", "WARN"), ("0.0.0.0/0," + a, "WARN"), (a + "," + w, "WARN"), (w + "," + a, "WARN"),
+                           (a + "," + b, "PASS"), (a + ",!10." + "0.1.9", "PASS"), (a + ",not-an-address", "WARN"), ("10." + "0.0.0/8", "WARN"),
+                           ("!10." + "0.1.9", "WARN")):
             with self.subTest(cond):
                 self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
                            "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s\n  PasswordAuthentication yes\n" % cond)

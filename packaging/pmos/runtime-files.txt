@@ -16,6 +16,7 @@ src/opos/assist.py
 src/opos/battery.py
 src/opos/benchmark_model.py
 src/opos/budget.py
+src/opos/clockcheck.py
 src/opos/contacts.py
 src/opos/dashboard.py
 src/opos/demo.py
@@ -23,6 +24,8 @@ src/opos/eol.py
 src/opos/essentials.py
 src/opos/evaleol.py
 src/opos/evaluate.py
+src/opos/firstrun.py
+src/opos/firstrun_page.py
 src/opos/goalsim.py
 src/opos/governor.py
 src/opos/home.py
@@ -32,6 +35,8 @@ src/opos/hw/detect.py
 src/opos/hw/store.py
 src/opos/mm_modem.py
 src/opos/muse.py
+src/opos/net.py
+src/opos/net_page.py
 src/opos/notices.py
 src/opos/osk.py
 src/opos/osk_static/osk.css
@@ -63,6 +68,7 @@ src/opos/setup/services.py
 src/opos/setup/wizard_page.py
 src/opos/sim.py
 src/opos/storyboard.py
+src/opos/timezone.py
 src/opos/ui.py
 src/opos/web.py
 src/opos/web_static/body-1.html

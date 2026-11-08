@@ -102,6 +102,43 @@ tail -n 1 /tmp/opos-verify-osk.txt
 kill "$(cat /tmp/opos-verify.pid)" 2>/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port" 2>/dev/null || break; sleep 1; done
 head -5 /tmp/opos-verify.log
+# --- track integrate: BEGIN (the keyboard, the Network page and the first run in one server; docs/duo-os-final.md)
+# A second server from the image, started with the three switches opos-server.service and its drop-in set, asked for every page
+# the pieces add: they must be wired into the same server, not merely present on disk. Offline, like the smoke test above.
+cfgd=$(mktemp -d); port2=18998
+( export OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 OPOS_CONFIG_DIR=$cfgd; cd /tmp && py -m opos.web --port $port2 >/tmp/opos-verify-duo.log 2>&1 & echo $! > /tmp/opos-verify-duo.pid )
+python3 - "$port2" > /tmp/opos-verify-duo.txt 2>&1 <<'EOF'
+import sys, time, urllib.request
+base = "http://127.0.0.1:%s" % sys.argv[1]
+def get(path, accept=None):
+    req = urllib.request.Request(base + path, headers={"Accept": accept} if accept else {})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return r.status, r.geturl(), r.read().decode("utf-8", "replace")
+for _ in range(60):
+    try:
+        get("/")
+        break
+    except OSError:
+        time.sleep(1)
+home = get("/")[2]
+need = [("the home page loads the keyboard", 'src="/osk.js"' in home), ("Settings links to /network", 'href="/network"' in home),
+        ("Settings links to /timezone", 'href="/timezone"' in home)]
+for path in ("/network", "/firstrun", "/timezone"):
+    st, _, body = get(path)
+    need.append((path + " loads the keyboard", st == 200 and 'src="/osk.js"' in body))
+for path in ("/osk.js", "/osk.css"):
+    need.append((path + " is served", get(path)[0] == 200))
+need.append(("a browser is sent to the first run", get("/", "text/html,application/xhtml+xml")[1].endswith("/firstrun")))
+need.append(("a script asking for / is not", get("/")[1] == base + "/"))
+bad = [n for n, ok in need if not ok]
+print("duo pieces ok" if not bad else "duo pieces FAILED: " + "; ".join(bad))
+EOF
+kill "$(cat /tmp/opos-verify-duo.pid)" 2>/dev/null
+for i in 1 2 3 4 5 6 7 8 9 10; do pkill -f "opos.web --port $port2" 2>/dev/null || break; sleep 1; done
+rm -rf "$cfgd"
+check "the keyboard, the Network page and the first run answer together in one server from the image" "grep -q '^duo pieces ok' /tmp/opos-verify-duo.txt"
+tail -n 2 /tmp/opos-verify-duo.txt
+# --- track integrate: END
 # --- qa: BEGIN (opos-selftest; docs/duo-acceptance.md)
 check "opos-selftest is installed with its /usr/sbin wrapper, and the image's own python3 can start it" "[ -x $mnt/usr/libexec/opos/opos-selftest ] && [ -x $mnt/usr/sbin/opos-selftest ] && sh -n $mnt/usr/sbin/opos-selftest && grep -q '^exec /usr/libexec/opos/opos-selftest' $mnt/usr/sbin/opos-selftest && py $mnt/usr/libexec/opos/opos-selftest --help | grep -q 'Changes nothing'"
 # --- qa: END
