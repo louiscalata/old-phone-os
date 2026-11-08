@@ -4,8 +4,9 @@
 # of G1, and the probes of G2 in docs/duo-persistent-install.md. NOTHING IS WRITTEN TO THE PHONE: this script has no
 # command that writes to it. It looks, and it copies partitions off the phone to a folder on this PC.
 #
-#   powershell -File deploy\duo-persist-probe.ps1 -Phase bootloader [-Serial <serial>] [-OutDir <folder>] [-DryRun]
-#   powershell -File deploy\duo-persist-probe.ps1 -Phase twrp [-Serial <serial>] [-OutDir <folder>] [-BootImage <file>] [-DryRun]
+#   powershell -File deploy\duo-persist-probe.ps1 -Phase bootloader [-Serial <serial>] [-OutDir <folder>] [-TimeoutSec <n>] [-DryRun]
+#   powershell -File deploy\duo-persist-probe.ps1 -Phase twrp [-Serial <serial>] [-OutDir <folder>] [-BootImage <file>]
+#                                                  [-PullWith dd|head] [-TimeoutSec <n>] [-DryRun]
 #
 # Run it twice, in this order. It never changes the phone's mode: you put the phone in the right place first.
 #   -Phase bootloader  the phone is in the bootloader menu (fastboot). G0 preflight as the install chain does it
@@ -23,10 +24,11 @@
 #
 # Safety rules. They are the point of this script; change none without the owner's say-so.
 #   - Every command goes through Invoke-Allowed, which starts the one process and first refuses any line that is not
-#     matched, whole and case-sensitively, by the allow-list below. The list holds reads only: getprop, cat of a few
-#     proc and sys files, ls, readlink, blockdev getsize64 and getro, sha256sum of one of the listed partitions,
-#     sgdisk print and info, bootctl queries, and dd that reads (it names no output file, so it writes to stdout) piped
-#     to this PC with adb exec-out; on the fastboot side only devices and getvar.
+#     matched, whole and case-sensitively, by the allow-list below. The list holds reads only: cat of a few proc and sys
+#     files, ls, df of /tmp, readlink, blockdev getsize64 and getro, sha256sum of one of the listed partitions, sgdisk
+#     print and info, and dd or head that reads (it names no output file, so it writes to stdout) piped to this PC with
+#     adb exec-out; on the fastboot side only devices and getvar. The pinned TWRP has no bootctl, so none is allowed.
+#   - A command that does not finish within -TimeoutSec seconds is killed and the run stops with that reason.
 #   - The phone must already be in the mode the phase names. A wrong mode is refused, not corrected.
 #   - It stops at the first failure and says plainly that nothing was written. A hash that differs between the phone,
 #     the PC file and the second read is a failure.
@@ -37,6 +39,8 @@ param(
     [string]$Serial = '',
     [string]$OutDir = '',
     [string]$BootImage = '',
+    [ValidateSet('dd', 'head')][string]$PullWith = 'dd',
+    [ValidateRange(2, 3600)][int]$TimeoutSec = 180,
     [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -77,21 +81,24 @@ $PhoneRules = @(
     '^id\z',
     '^getenforce\z',
     '^dmesg\z',
-    '^getprop [a-z][a-z0-9_.]*\z',
     '^cat /proc/(?:cmdline|version|partitions|mounts)\z',
     ('^cat /sys/class/block/(?:' + $NodeRx + '|sde)/(?:ro|size)\z'),
     '^ls /sys/class/power_supply\z',
     '^cat /sys/class/power_supply/battery/capacity\z',
     '^ls -l /dev/block/platform/soc/1d84000\.ufshc/by-name\z',
+    '^df /tmp\z',
     ('^readlink -f /dev/block/' + $ByNameRx + '\z'),
     ('^blockdev --(?:getsize64|getro) ' + $AnyDev + '\z'),
     ('^sha256sum ' + $PartDev + '\z'),
     '^sgdisk -p /dev/block/sde\z',
-    '^sgdisk -i [0-9]{1,3} /dev/block/sde\z',
-    '^bootctl (?:hal-info|get-number-slots|get-current-slot)\z',
-    '^bootctl (?:is-slot-bootable|is-slot-marked-successful|get-suffix) [01]\z'
+    '^sgdisk -i [0-9]{1,3} /dev/block/sde\z'
 )
-$PullRule = '^dd if=' + $AnyDev + ' bs=[0-9]{1,8}(?: skip=[0-9]{1,8})?(?: count=[0-9]{1,8})? 2>/dev/null\z'
+# The two ways to copy a block device to this PC through adb exec-out, both reads. The pinned TWRP's dd is a BSD-style
+# binary: it takes if=, bs= and count= (and skip=) as plain decimal numbers and has no status= and no conv=. The head
+# form is the one the October 9 backup tool used; -PullWith head selects it if the dd form returns the wrong size.
+$DdPullRule = '^dd if=' + $AnyDev + ' bs=[0-9]{1,8}(?: skip=[0-9]{1,8})?(?: count=[0-9]{1,8})? 2>/dev/null\z'
+$HeadPullRule = '^head -c [0-9]{1,9} ' + $AnyDev + '\z'
+$PullRules = @($DdPullRule, $HeadPullRule)
 $AdbHostRules = @('^devices\z', '^get-state\z')
 $FastbootRules = @('^devices\z', '^getvar all\z', '^getvar [a-z][a-z0-9-]*(?::[a-z0-9_]+)?\z')
 
@@ -103,13 +110,20 @@ function Test-Allowed([string]$Tool, [string]$Line) {
         $rules = $FastbootRules
     } elseif ($Tool -ceq 'adb') {
         if ($Line.StartsWith('shell ')) { $rules = $PhoneRules; $rest = $Line.Substring(6) }
-        elseif ($Line.StartsWith('exec-out ')) { $rules = @($PullRule); $rest = $Line.Substring(9) }
+        elseif ($Line.StartsWith('exec-out ')) { $rules = $PullRules; $rest = $Line.Substring(9) }
         else { $rules = $AdbHostRules }
     } else {
         return $false
     }
     foreach ($r in $rules) { if ($rest -cmatch $r) { return $true } }
     return $false
+}
+
+# Kills a command that did not finish in time and stops the run with the reason (the main section records it).
+function Stop-Hung($Process, [string]$Tool, [string]$Line, [int]$Seconds) {
+    if (-not $Process.HasExited) { $Process.Kill() }
+    [void]$Process.WaitForExit(5000)
+    throw ('timed out: ' + (Get-Shown $Tool $Line) + " did not finish within $Seconds seconds and was killed. Nothing was written to the phone. A hung fastboot is a known trap after a multi-chunk sparse transfer: hold Power until the screen is dark (twenty to thirty seconds), enter the bootloader menu again and run the phase again into a new folder. Raise -TimeoutSec only for a slow cable.")
 }
 
 # The one place a process is started. $Line has passed the allow-list, so it holds no quote, no space inside a word and
@@ -120,7 +134,7 @@ function Invoke-Allowed([string]$Tool, [string]$Line, [string]$ToFile = '', [swi
     if (-not $script:Exe.ContainsKey($Tool)) { throw "refused: $Tool was not looked up for this phase" }
     $argLine = $Line
     if ($Line -ne 'devices') {
-        if ($script:Serial -notmatch '^[A-Za-z0-9._:-]+$') { throw 'refused: no valid device serial yet' }
+        if ($script:Serial -notmatch '^[A-Za-z0-9._:-]+\z') { throw 'refused: no valid device serial yet' }
         $argLine = '-s ' + $script:Serial + ' ' + $Line
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -143,9 +157,15 @@ function Invoke-Allowed([string]$Tool, [string]$Line, [string]$ToFile = '', [swi
     } elseif (-not $HashOnly) {
         $ms = New-Object System.IO.MemoryStream
     }
+    # The whole command, reads and exit, must finish within -TimeoutSec seconds; if not, it is killed and the run stops.
+    $limit = [int]$script:TimeoutSec
+    $deadline = [DateTime]::UtcNow.AddSeconds($limit)
     try {
         while ($true) {
-            $n = $src.Read($buf, 0, $buf.Length)
+            $pending = $src.ReadAsync($buf, 0, $buf.Length)
+            $left = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+            if (-not $pending.Wait([Math]::Max($left, 0))) { Stop-Hung $p $Tool $Line $limit }
+            $n = $pending.Result
             if ($n -le 0) { break }
             [void]$sha.TransformBlock($buf, 0, $n, $null, 0)
             $total += $n
@@ -155,7 +175,8 @@ function Invoke-Allowed([string]$Tool, [string]$Line, [string]$ToFile = '', [swi
     } finally {
         if ($null -ne $fs) { $fs.Dispose() }
     }
-    $p.WaitForExit()
+    $left = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+    if (-not $p.WaitForExit([Math]::Max($left, 1))) { Stop-Hung $p $Tool $Line $limit }
     $err = $errTask.Result
     $text = ''
     if ($null -ne $ms) { $text = [System.Text.Encoding]::UTF8.GetString($ms.ToArray()) }
@@ -178,7 +199,13 @@ function New-Step([string]$Id, [string]$Gate, [string]$Tool, [string]$Line, [str
     [pscustomobject]$s
 }
 
-function Build-Plan([string]$Phase, [bool]$WithCandidate) {
+# The adb exec-out line that copies a block device to stdout: dd (the default) or head (the form of the October 9 backup tool).
+function Get-PullLine([string]$Way, [string]$Dev, [long]$Bytes) {
+    if ($Way -ceq 'head') { return 'exec-out head -c ' + $Bytes + ' ' + $Dev }
+    return 'exec-out dd if=' + $Dev + ' bs=4096 count=' + [long]($Bytes / 4096) + ' 2>/dev/null'
+}
+
+function Build-Plan([string]$Phase, [bool]$WithCandidate, [string]$PullWith = 'dd') {
     $plan = New-Object System.Collections.ArrayList
     if ($Phase -eq 'bootloader') {
         [void]$plan.Add((New-Step 'b00' 'G0' 'fastboot' 'devices' 'serial' $true @{ Value = 'fastboot' }))
@@ -213,13 +240,12 @@ function Build-Plan([string]$Phase, [bool]$WithCandidate) {
     }
     foreach ($p in $Parts) {
         $dev = '/dev/block/' + $p.Node
-        $count = [long]($p.Size / 4096)
-        $pull = 'exec-out dd if=' + $dev + ' bs=4096 count=' + $count + ' 2>/dev/null'
+        $pull = Get-PullLine $PullWith $dev $p.Size
         [void]$plan.Add((New-Step ('k-' + $p.Name + '-sha') 'G1' 'adb' ('shell sha256sum ' + $dev) 'sha' $true @{ Part = $p.Name }))
         [void]$plan.Add((New-Step ('k-' + $p.Name + '-pull') 'G1' 'adb' $pull 'pull' $true @{ Part = $p.Name; Mode = 'file'; Out = ($p.Name + '.img'); Value = $p.Size; Ref = ('k-' + $p.Name + '-sha') }))
         [void]$plan.Add((New-Step ('k-' + $p.Name + '-again') 'G1' 'adb' $pull 'again' $true @{ Part = $p.Name; Mode = 'hash'; Ref = ('k-' + $p.Name + '-pull') }))
     }
-    $gpt = 'exec-out dd if=/dev/block/sde bs=4096 count=256 2>/dev/null'
+    $gpt = Get-PullLine $PullWith '/dev/block/sde' 1048576
     [void]$plan.Add((New-Step 'k-gpt-pull' 'G1' 'adb' $gpt 'pull' $true @{ Mode = 'file'; Out = 'sde-table-head.bin'; Value = [long]1048576 }))
     [void]$plan.Add((New-Step 'k-gpt-again' 'G1' 'adb' $gpt 'again' $true @{ Mode = 'hash'; Ref = 'k-gpt-pull' }))
     foreach ($p in $Parts) {
@@ -232,10 +258,7 @@ function Build-Plan([string]$Phase, [bool]$WithCandidate) {
     [void]$plan.Add((New-Step 'p-sgdisk' 'G2' 'adb' 'shell sgdisk -p /dev/block/sde' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-sgdisk-boot-a' 'G2' 'adb' 'shell sgdisk -i 9 /dev/block/sde' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-sgdisk-boot-b' 'G2' 'adb' 'shell sgdisk -i 26 /dev/block/sde' 'info' $false $null))
-    foreach ($q in @('hal-info', 'get-number-slots', 'get-current-slot', 'is-slot-bootable 0', 'is-slot-bootable 1',
-                     'is-slot-marked-successful 0', 'is-slot-marked-successful 1')) {
-        [void]$plan.Add((New-Step ('p-bootctl-' + ($q -replace ' ', '-')) 'G2' 'adb' ('shell bootctl ' + $q) 'info' $false $null))
-    }
+    [void]$plan.Add((New-Step 'p-df-tmp' 'G2' 'adb' 'shell df /tmp' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-partitions' 'G2' 'adb' 'shell cat /proc/partitions' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-version' 'G2' 'adb' 'shell cat /proc/version' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-dmesg' 'G2' 'adb' 'shell dmesg' 'info' $false $null))
@@ -542,14 +565,14 @@ function Build-Report([string]$Status, [string]$StopId, [string]$Reason) {
         [void]$L.Add('| Read | Answer |')
         [void]$L.Add('|---|---|')
         foreach ($x in $script:Records) {
-            if ($x.id -match '^p-(ro|sysro|enforce|bootctl)') {
+            if ($x.id -match '^p-(ro|sysro|enforce|df)') {
                 $ans = ((Get-Answer $x.id) -replace '\s+', ' ')
                 if ($x.status -eq 'unavailable') { $ans = 'unavailable: ' + [string]$x.note }
                 [void]$L.Add("| ``$($x.command -replace '^adb -s <serial> shell ', '')`` | $ans |")
             }
         }
         [void]$L.Add('')
-        [void]$L.Add('The partition table dump (`sgdisk -p`, and `-i 9`, `-i 26` for the slot attribute bits of boot_a and boot_b), the dmesg and the bootctl answers are in raw/. A probe marked unavailable is not a failure: the tool may simply not be in this TWRP.')
+        [void]$L.Add('The partition table dump (`sgdisk -p`, and `-i 9`, `-i 26` for the slot attribute bits of boot_a and boot_b) and the dmesg are in raw/. The df line shows the room in the phone''s /tmp for the 96 MiB image that G3 pushes. A probe marked unavailable is not a failure: the tool may simply not be in this TWRP.')
         [void]$L.Add('')
         if ($script:Results.ContainsKey('t08')) {
             $c = $script:Results['t08'].Candidate
@@ -589,8 +612,9 @@ function Build-Report([string]$Status, [string]$StopId, [string]$Reason) {
 }
 
 # ---- main ----
-if ($Serial -and $Serial -notmatch '^[A-Za-z0-9._:-]+$') { throw '-Serial may hold letters, digits and . _ : - only' }
+if ($Serial -and $Serial -notmatch '^[A-Za-z0-9._:-]+\z') { throw '-Serial may hold letters, digits and . _ : - only' }
 if ($BootImage -and $Phase -ne 'twrp') { throw '-BootImage belongs to -Phase twrp' }
+if ($PSBoundParameters.ContainsKey('PullWith') -and $Phase -ne 'twrp') { throw '-PullWith belongs to -Phase twrp' }
 if (-not $OutDir) { $OutDir = Join-Path (Get-Location).Path 'duo-persist-probe' }
 $OutDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutDir)
 $inside = Find-GitRoot $OutDir
@@ -599,7 +623,7 @@ if ($BootImage) {
     $BootImage = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BootImage)
     if (-not (Test-Path -LiteralPath $BootImage -PathType Leaf)) { throw "-BootImage $BootImage is not a file" }
 }
-$plan = Build-Plan $Phase ([bool]$BootImage)
+$plan = Build-Plan $Phase ([bool]$BootImage) $PullWith
 $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 $RunDir = Join-Path $OutDir ($stamp + '-' + $Phase)
 
@@ -623,6 +647,7 @@ if (Test-Path -LiteralPath $RunDir) { throw "refused: $RunDir already exists" }
 New-Item -ItemType Directory -Path (Join-Path $RunDir 'raw') -Force | Out-Null
 $script:RunDir = $RunDir
 $script:Serial = $Serial
+$script:TimeoutSec = $TimeoutSec
 $script:BootImage = $BootImage
 $script:Results = @{}
 $script:Present = @{}

@@ -148,22 +148,25 @@ class PersistProbeScriptText(unittest.TestCase):
 
     def test_allow_list_holds_reads_only(self):
         body = code()
-        phone = body[body.index("$PhoneRules = @("):body.index("$PullRule")]
+        phone = body[body.index("$PhoneRules = @("):body.index("$DdPullRule")]
         verbs = re.findall(r"'\^([a-z0-9]+)|\('\^([a-z0-9]+)", phone)
+        # The pinned TWRP has no bootctl (row 20 of the runbook) and the plan never asks for getprop: neither is allowed.
         self.assertEqual({a or b for a, b in verbs},
-                         {"id", "getenforce", "dmesg", "getprop", "cat", "ls", "readlink", "blockdev", "sha256sum",
-                          "sgdisk", "bootctl"})
+                         {"id", "getenforce", "dmesg", "cat", "ls", "df", "readlink", "blockdev", "sha256sum", "sgdisk"})
+        self.assertNotIn("bootctl", body.lower())
+        self.assertNotIn("getprop", body.lower())
         self.assertEqual(len(re.findall(r"\\z'", phone)), len(re.findall(r"^\s+\(?'\^", phone, re.M)))
         for read in ("cat /proc/(?:cmdline|version|partitions|mounts)", "--(?:getsize64|getro)", "sgdisk -p /dev/block/sde",
-                     "sgdisk -i [0-9]{1,3} /dev/block/sde",
-                     "bootctl (?:hal-info|get-number-slots|get-current-slot)",
-                     "bootctl (?:is-slot-bootable|is-slot-marked-successful|get-suffix) [01]"):
+                     "sgdisk -i [0-9]{1,3} /dev/block/sde", "'^df /tmp\\z'"):
             with self.subTest(read=read):
                 self.assertIn(read, phone)
-        pull = re.search(r"\$PullRule = (.*)", body).group(1)
+        pull = re.search(r"\$DdPullRule = (.*)", body).group(1)
         self.assertTrue(pull.startswith("'^dd if=' + $AnyDev + ' bs="))
         self.assertTrue(pull.endswith(" 2>/dev/null\\z'"))
         self.assertNotIn("of=", pull)
+        head = re.search(r"\$HeadPullRule = (.*)", body).group(1)
+        self.assertEqual(head, "'^head -c [0-9]{1,9} ' + $AnyDev + '\\z'")
+        self.assertIn("$PullRules = @($DdPullRule, $HeadPullRule)", body)
         self.assertIn("$AdbHostRules = @('^devices\\z', '^get-state\\z')", body)
         self.assertIn("$FastbootRules = @('^devices\\z', '^getvar all\\z', '^getvar [a-z][a-z0-9-]*(?::[a-z0-9_]+)?\\z')", body)
         # Only the listed partitions can be named, by exact node or by name.
@@ -176,7 +179,10 @@ class PersistProbeScriptText(unittest.TestCase):
         order = [plan.index(token) for token in ("'-sha'", "'-pull'", "'-again'")]
         self.assertEqual(order, sorted(order))
         self.assertIn("shell sha256sum", plan)
-        self.assertEqual(plan.count("bs=4096 count="), 2)
+        self.assertEqual(plan.count("Get-PullLine"), 2)
+        pull_line = function_text("Get-PullLine")
+        self.assertEqual(pull_line.count("bs=4096 count="), 1)
+        self.assertIn("'exec-out head -c '", pull_line)
         check = function_text("Confirm-Step")
         for needle in ('if ($r.Bytes -ne [long]$s.Value) { return "short or long read',
                        "if ($disk -cne $r.Sha256) { return 'the file on disk does not hash like the stream that wrote it'",
@@ -191,6 +197,36 @@ class PersistProbeScriptText(unittest.TestCase):
         self.assertIn("CreateNew", function_text("Invoke-Allowed"))
         self.assertEqual(len(re.findall(r"\bcatch\b", body)), 1)
         self.assertIn("foreach ($s in $plan) { Invoke-Step $s }", body)
+
+    def test_a_hung_command_is_killed_after_the_time_limit_and_the_run_stops(self):
+        body = code()
+        wrapper = function_text("Invoke-Allowed")
+        # Reads are asynchronous and bounded by one deadline for the whole command; the exit is waited for with a limit.
+        self.assertIn("$deadline = [DateTime]::UtcNow.AddSeconds($limit)", wrapper)
+        self.assertIn("$limit = [int]$script:TimeoutSec", wrapper)
+        self.assertIn("$src.ReadAsync($buf, 0, $buf.Length)", wrapper)
+        self.assertIn("-not $pending.Wait([Math]::Max($left, 0))", wrapper)
+        self.assertIn("-not $p.WaitForExit([Math]::Max($left, 1))", wrapper)
+        self.assertEqual(wrapper.count("Stop-Hung $p $Tool $Line $limit"), 2)
+        self.assertNotIn("$src.Read(", wrapper)
+        self.assertIsNone(re.search(r"WaitForExit\(\s*\)", body), "a wait without a limit")
+        hung = function_text("Stop-Hung")
+        self.assertIn("if (-not $Process.HasExited) { $Process.Kill() }", hung)
+        self.assertIn("[void]$Process.WaitForExit(5000)", hung)     # Kill() returns before the process is gone
+        self.assertLess(hung.index("$Process.Kill()"), hung.index("WaitForExit(5000)"))
+        self.assertLess(hung.index("WaitForExit(5000)"), hung.index("throw"))
+        for needle in ("timed out: ", "did not finish within $Seconds seconds and was killed", "Nothing was written to the phone",
+                       "hold Power until the screen is dark", "-TimeoutSec"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, hung)
+        self.assertIn("[ValidateRange(2, 3600)][int]$TimeoutSec = 180", body)
+        self.assertIn("$script:TimeoutSec = $TimeoutSec", body)
+
+    def test_the_serial_is_checked_with_an_end_of_string_anchor_in_both_places(self):
+        # "$" also matches before a final line feed, so a serial with a trailing newline would pass it.
+        body = code()
+        self.assertEqual(body.count("'^[A-Za-z0-9._:-]+\\z'"), 2)
+        self.assertNotIn("[A-Za-z0-9._:-]+$'", body)
 
     def test_inventory_stops_on_a_layout_that_is_not_the_recorded_one(self):
         plan = function_text("Build-Plan")
@@ -357,6 +393,29 @@ BAD = [
         "exec-out dd if=/dev/block/sda6 bs=4096 count=1 2>/dev/null", "exec-out dd if=/dev/block/sdb1 bs=4096 count=1 2>/dev/null",
         "exec-out dd if=/dev/block/by-name/userdata bs=4096 count=1 2>/dev/null",
         "exec-out dd if=/dev/zero bs=4096 count=1 2>/dev/null", "exec-out dd if=/dev/block/sde9 bs=4096 count=1 2>/dev/null\n",
+        # dd options a pull must not carry: a write position, a conversion, a flag, a status (BSD dd has none of the last two).
+        "exec-out dd if=/dev/block/sde9 bs=4096 seek=1 count=1 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 count=1 seek=1 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 skip=1 seek=1 count=1 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 count=1 conv=notrunc 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 count=1 conv=sync 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 count=1 oflag=direct 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 count=1 iflag=direct 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4096 count=1 status=progress 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 ibs=4096 obs=4096 count=1 2>/dev/null",
+        "exec-out dd if=/dev/block/sde9 bs=4k count=1 2>/dev/null",
+        "shell dd if=/dev/block/sde9 bs=4096 seek=1 count=1", "shell dd if=/dev/block/sde9 bs=4096 count=1 conv=notrunc",
+        # head is allowed only as a pull through exec-out, with a decimal byte count and a listed device.
+        "exec-out head -c 99999999999 /dev/block/sde9", "exec-out head -c 4096 /dev/block/sde8",
+        "exec-out head -c 4096 /dev/block/by-name/userdata", "exec-out head -c 4096 /dev/zero", "exec-out head -c 4096",
+        "exec-out head -n 1 /dev/block/sde9", "exec-out head -c 4096 /dev/block/sde9 /dev/block/sde26",
+        "exec-out head -c 4096 /dev/block/sde9 > /dev/block/sde26", "exec-out head -c 4096 /dev/block/sde9 2>/dev/null",
+        "exec-out head -c 4096 /dev/block/sde9\n", "exec-out head -c 0x10 /dev/block/sde9", "exec-out head -c -1 /dev/block/sde9",
+        "shell head -c 4096 /dev/block/sde9", "exec-out tail -c 4096 /dev/block/sde9",
+        # The pinned TWRP has no bootctl and the plan never asks for getprop: neither is on the list any more.
+        "shell bootctl hal-info", "shell bootctl get-number-slots", "shell bootctl get-current-slot",
+        "shell bootctl is-slot-bootable 1", "shell bootctl get-suffix 0", "shell getprop ro.boot.slot_suffix",
+        "shell df", "shell df /data", "shell df -h /tmp", "shell df /tmp /data", "shell df /tmp\n", "exec-out df /tmp",
         "exec-out cat /dev/block/sde9", "exec-out", "exec-out dd", "exec-in dd of=/dev/block/sde26",
         "shell setenforce 0", "shell reboot", "shell reboot bootloader", "shell rm -rf /data", "shell mount -o rw /dev/block/sde26 /mnt",
         "shell umount /data", "shell sgdisk -o /dev/block/sde", "shell sgdisk -d 26 /dev/block/sde", "shell sgdisk -p /dev/block/sdb",
@@ -384,14 +443,16 @@ BAD = [
 ] + [("cmd", "id"), ("powershell", "id"), ("", "devices"), ("pc", "devices"), ("ADB", "devices")]
 
 GOOD = [("adb", l) for l in (
-    "devices", "get-state", "shell id", "shell getprop ro.boot.slot_suffix", "shell cat /proc/cmdline", "shell cat /proc/mounts",
+    "devices", "get-state", "shell id", "shell cat /proc/cmdline", "shell cat /proc/mounts", "shell df /tmp",
     "shell ls -l /dev/block/platform/soc/1d84000.ufshc/by-name", "shell readlink -f /dev/block/platform/soc/1d84000.ufshc/by-name/boot_b",
     "shell readlink -f /dev/block/by-name/misc", "shell blockdev --getsize64 /dev/block/sde26", "shell blockdev --getro /dev/block/sde",
     "shell sha256sum /dev/block/sde9", "shell sha256sum /dev/block/by-name/vbmeta_a", "shell sgdisk -p /dev/block/sde",
-    "shell sgdisk -i 26 /dev/block/sde", "shell bootctl hal-info", "shell bootctl is-slot-bootable 1",
+    "shell sgdisk -i 26 /dev/block/sde",
     "shell cat /sys/class/block/sde26/ro", "shell cat /sys/class/block/sde/size", "shell dmesg", "shell getenforce",
     "exec-out dd if=/dev/block/sde26 bs=4096 count=24576 2>/dev/null", "exec-out dd if=/dev/block/sde bs=4096 count=256 2>/dev/null",
     "exec-out dd if=/dev/block/sda5 bs=4096 skip=0 count=256 2>/dev/null",
+    "exec-out head -c 100663296 /dev/block/sde26", "exec-out head -c 1048576 /dev/block/sde",
+    "exec-out head -c 1048576 /dev/block/sda5", "exec-out head -c 65536 /dev/block/by-name/vbmeta_a",
 )] + [("fastboot", l) for l in ("devices", "getvar all", "getvar product", "getvar partition-size:boot_a", "getvar slot-retry-count:b",
                                 "getvar has-slot:boot", "getvar battery-level")]
 
@@ -399,14 +460,14 @@ ALLOW = HEAD + r"""
 $corpus = $extra | ConvertFrom-Json
 $verdicts = @($corpus | ForEach-Object { [pscustomobject]@{ tool = [string]$_.tool; line = [string]$_.line; allowed = [bool](Test-Allowed ([string]$_.tool) ([string]$_.line)) } })
 $plans = [ordered]@{}
-foreach ($ph in 'twrp', 'bootloader') {
-    $plan = @(Build-Plan $ph ($ph -eq 'twrp'))
+foreach ($ph in 'twrp', 'bootloader', 'twrp-head') {
+    $plan = @($(if ($ph -eq 'twrp-head') { Build-Plan 'twrp' $true 'head' } else { Build-Plan $ph ($ph -eq 'twrp') }))
     $plans[$ph] = @($plan | ForEach-Object {
         [pscustomobject]@{ id = [string]$_.Id; gate = [string]$_.Gate; tool = [string]$_.Tool; line = [string]$_.Line; mode = [string]$_.Mode
                            out = [string]$_.Out; required = [bool]$_.Required; allowed = $(if ($_.Tool -eq 'pc') { $true } else { [bool](Test-Allowed $_.Tool $_.Line) }) }
     })
 }
-[pscustomobject]@{ verdicts = $verdicts; twrp = $plans['twrp']; bootloader = $plans['bootloader'] } | ConvertTo-Json -Compress -Depth 5
+[pscustomobject]@{ verdicts = $verdicts; twrp = $plans['twrp']; bootloader = $plans['bootloader']; twrp_head = $plans['twrp-head'] } | ConvertTo-Json -Compress -Depth 5
 """
 
 # Confirm-Step on made-up answers: each case is {kind, text, ...step fields}; the result is the message or null.
@@ -488,13 +549,18 @@ try {
         if ($run.dry) { $p.DryRun = $true }
         if ($run.serial) { $p.Serial = [string]$run.serial }
         if ($run.image) { $p.BootImage = $img }
+        if ($run.pullwith) { $p.PullWith = [string]$run.pullwith }
+        if ($run.timeout) { $p.TimeoutSec = [int]$run.timeout }
         $env:PATH = $(if ($run.nopath) { $empty } else { $bin })
         Set-Location $(if ($run.cwd -eq 'repo') { $repo } else { $plain })
         $global:LASTEXITCODE = $null
         $threw = $null; $said = ''
+        $clock = [Diagnostics.Stopwatch]::StartNew()
         try { $said = (& $script @p *>&1 | Out-String -Width 4000) } catch { $threw = $_.Exception.Message }
+        $seconds = $clock.Elapsed.TotalSeconds
         $code = $global:LASTEXITCODE
         Set-Location $work; $env:PATH = $origPath
+        $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -in 'adb', 'fastboot' -and $_.Path -and $_.Path.StartsWith($bin) }).Count
         $folders = @()
         if (Test-Path -LiteralPath $out) {
             foreach ($d in (Get-ChildItem -LiteralPath $out -Directory)) {
@@ -508,7 +574,7 @@ try {
                     disk = @($files | Where-Object { $_.name -match '\.(img|bin)$' } | ForEach-Object { [pscustomobject]@{ name = $_.name; sha = (Get-FileHash -LiteralPath (Join-Path $rd $_.name) -Algorithm SHA256).Hash.ToLower() } }) }
             }
         }
-        $results += [pscustomobject]@{ label = [string]$run.label; threw = $threw; exit = $code; said = $said
+        $results += [pscustomobject]@{ label = [string]$run.label; threw = $threw; exit = $code; said = $said; seconds = $seconds; left_running = $left
             calls = @(if (Test-Path -LiteralPath $log) { [IO.File]::ReadAllLines($log) })
             folders = @($folders); out_exists = [bool](Test-Path -LiteralPath $out)
             default_dir = [bool](Test-Path -LiteralPath (Join-Path $plain 'duo-persist-probe')) }
@@ -563,7 +629,7 @@ class PersistProbePowerShell(unittest.TestCase):
     def test_parses_without_errors_and_has_the_documented_parameters(self):
         got = run_powershell(PARSE)
         self.assertEqual(got["errors"], [], got["version"])
-        self.assertEqual(sorted(got["names"]), ["BootImage", "DryRun", "OutDir", "Phase", "Serial"])
+        self.assertEqual(sorted(got["names"]), ["BootImage", "DryRun", "OutDir", "Phase", "PullWith", "Serial", "TimeoutSec"])
         self.assertEqual(as_list(got["switches"]), ["DryRun"])
         self.assertEqual(as_list(got["mandatory"]), [])
         self.assertEqual(got["direct_tool_calls"], 0, "adb or fastboot is run by name somewhere")
@@ -604,9 +670,31 @@ foreach ($c in $corpus) {
                 self.assertFalse(item["message"].startswith("refused: not on the allow-list"), item["message"])
                 self.assertNotEqual(item["message"], "ran")
 
+    def test_a_serial_with_a_trailing_newline_or_other_odd_characters_is_refused_by_the_wrapper(self):
+        program = HEAD + r"""
+$script:Exe = @{ adb = (Join-Path ([IO.Path]::GetTempPath()) 'no-such-dir\adb.exe') }
+$script:TimeoutSec = 5
+$out = @()
+foreach ($serial in ($extra | ConvertFrom-Json)) {
+    $script:Serial = [string]$serial
+    $msg = 'ran'
+    try { [void](Invoke-Allowed 'adb' 'shell id') } catch { $msg = $_.Exception.Message }
+    $out += [pscustomobject]@{ serial = [string]$serial; message = $msg }
+}
+[pscustomobject]@{ results = @($out) } | ConvertTo-Json -Compress -Depth 4
+"""
+        serials = ["SER1", "ab.c_d:1-2", "SER1\n", "SER1\r\n", "\nSER1", "SER 1", "SER1;id", "", "SER1\t", "é"]
+        got = as_list(run_powershell(program, stdin=stdin_with(json.dumps(serials).encode("ascii")))["results"])
+        self.assertEqual(len(got), len(serials))
+        for item in got:
+            refused = item["message"].startswith("refused: no valid device serial yet")
+            with self.subTest(serial=item["serial"]):
+                # A valid serial gets as far as starting the (missing) process; every other one is refused before that.
+                self.assertEqual(refused, item["serial"] not in ("SER1", "ab.c_d:1-2"), item["message"])
+
     def test_every_planned_command_is_allowed_and_names_only_the_listed_partitions(self):
         got = run_powershell(ALLOW, stdin=stdin_with(b"[]"))
-        for phase in ("twrp", "bootloader"):
+        for phase in ("twrp", "bootloader", "twrp_head"):
             plan = as_list(got[phase])
             with self.subTest(phase=phase):
                 self.assertGreater(len(plan), 10)
@@ -630,11 +718,24 @@ foreach ($c in $corpus) {
                 self.assertEqual(next(s for s in twrp if s["id"] == "i-%s-size" % name)["line"], "shell blockdev --getsize64 /dev/block/" + node)
                 self.assertEqual(next(s for s in twrp if s["id"] == "k-%s-sha" % name)["line"], "shell sha256sum /dev/block/" + node)
         self.assertEqual(pulls["k-gpt-pull"]["line"], "exec-out dd if=/dev/block/sde bs=4096 count=256 2>/dev/null")
+        # -PullWith head: the same plan with the form the October 9 backup tool used, and no dd left in it.
+        twrp_head = as_list(got["twrp_head"])
+        self.assertEqual([s["id"] for s in twrp_head], [s["id"] for s in twrp])
+        head_pulls = {s["id"]: s for s in twrp_head if s["mode"] == "file"}
+        for name, node, size in PARTS:
+            with self.subTest(head_part=name):
+                self.assertEqual(head_pulls["k-%s-pull" % name]["line"], "exec-out head -c %d /dev/block/%s" % (size, node))
+                self.assertEqual(next(s for s in twrp_head if s["id"] == "k-%s-again" % name)["line"], head_pulls["k-%s-pull" % name]["line"])
+        self.assertEqual(head_pulls["k-gpt-pull"]["line"], "exec-out head -c 1048576 /dev/block/sde")
+        self.assertFalse([s for s in twrp_head if "dd if=" in s["line"]])
+        # The df probe is there (the room for the 96 MiB push in G3); bootctl and getprop are not probed at all.
+        self.assertEqual(next(s for s in twrp if s["id"] == "p-df-tmp")["line"], "shell df /tmp")
+        self.assertFalse([s for s in twrp + twrp_head if "bootctl" in s["line"] or "getprop" in s["line"]])
         # Nothing in the plan names a partition outside the list.
         for s in twrp:
             for node in re.findall(r"/dev/block/(sd[a-z]\d*)", s["line"]):
                 self.assertIn(node, {n for _, n, _ in PARTS} | {"sde"}, s["line"])
-        for s in twrp + as_list(got["bootloader"]):
+        for s in twrp + twrp_head + as_list(got["bootloader"]):
             self.assertIsNone(re.search(FORBIDDEN_IN_A_COMMAND, s["line"]), s["line"])
         self.assertEqual([s["line"] for s in as_list(got["bootloader"])][:5],
                          ["devices", "getvar product", "getvar current-slot", "getvar unlocked", "getvar battery-level"])
@@ -716,7 +817,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         only = [x for x in os.environ.get("OPOS_PERSIST_SCENARIOS", "").split("|") if x]   # a subset, for a quick local run
-        env = {"FAKE_NO_BOOTCTL": "1", "FAKE_NO_SGDISK": "1", "FAKE_NO_DTBO": "1", "FAKE_RO": "sde26"}
+        env = {"FAKE_NO_SGDISK": "1", "FAKE_NO_DTBO": "1", "FAKE_RO": "sde26"}
         runs = [
             {"label": "dry twrp", "phase": "twrp", "dry": True, "nopath": True, "out": "dir", "image": True},
             {"label": "dry bootloader", "phase": "bootloader", "dry": True, "nopath": True, "out": "dir"},
@@ -743,6 +844,16 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             {"label": "locked", "phase": "bootloader", "out": "dir", "env": {"FAKE_UNLOCKED": "no"}},
             {"label": "battery 19", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "19"}},
             {"label": "battery 20", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "20"}},
+            {"label": "dry twrp head", "phase": "twrp", "dry": True, "nopath": True, "out": "dir", "image": True, "pullwith": "head"},
+            {"label": "twrp ok with head pulls", "phase": "twrp", "out": "dir", "image": True, "pullwith": "head"},
+            {"label": "head short read", "phase": "twrp", "out": "dir", "pullwith": "head", "env": {"FAKE_SHORT": "sde9"}},
+            {"label": "head pull on the wrong phase", "phase": "bootloader", "pullwith": "head", "out": "dir"},
+            {"label": "serial with a trailing newline", "phase": "twrp", "serial": "SER1\n", "out": "dir"},
+            {"label": "hang in the bootloader", "phase": "bootloader", "out": "dir", "timeout": 3,
+             "env": {"FAKE_HANG": "getvar battery-level"}},
+            {"label": "hang on the first command", "phase": "twrp", "out": "dir", "timeout": 3, "env": {"FAKE_HANG": "devices"}},
+            {"label": "hang during a pull", "phase": "twrp", "out": "dir", "timeout": 3,
+             "env": {"FAKE_HANG": "exec-out dd if=/dev/block/sde9 bs=4096 count=24576 2>/dev/null"}},
         ]
         runs = [r for r in runs if not only or r["label"] in only]
         cls.labels = [r["label"] for r in runs]
@@ -797,7 +908,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
                 self.assertTrue(all(c.startswith(tool) for c in ran))
 
     def test_no_run_issues_a_command_outside_the_allow_list(self):
-        allowed = re.compile(r"^(adb|fastboot) (-s <serial> )?(devices|get-state|getvar [a-z][a-z0-9:_-]*|shell (id|getenforce|dmesg|getprop [a-z][a-z0-9_.]*|cat /(proc|sys)/[a-z0-9_/.]+|ls /sys/class/power_supply|ls -l /dev/block/platform/soc/1d84000\.ufshc/by-name|readlink -f /dev/block/[a-z0-9_/.-]+|blockdev --get(size64|ro) /dev/block/[a-z0-9_]+|sha256sum /dev/block/[a-z0-9_]+|sgdisk -(p|i [0-9]+) /dev/block/sde|bootctl [a-z-]+( [01])?)|exec-out dd if=/dev/block/[a-z0-9_]+ bs=4096 count=[0-9]+ 2>/dev/null)$")
+        allowed = re.compile(r"^(adb|fastboot) (-s <serial> )?(devices|get-state|getvar [a-z][a-z0-9:_-]*|shell (id|getenforce|dmesg|cat /(proc|sys)/[a-z0-9_/.]+|ls /sys/class/power_supply|ls -l /dev/block/platform/soc/1d84000\.ufshc/by-name|df /tmp|readlink -f /dev/block/[a-z0-9_/.-]+|blockdev --get(size64|ro) /dev/block/[a-z0-9_]+|sha256sum /dev/block/[a-z0-9_]+|sgdisk -(p|i [0-9]+) /dev/block/sde)|exec-out (dd if=/dev/block/[a-z0-9_]+ bs=4096 count=[0-9]+ 2>/dev/null|head -c [0-9]+ /dev/block/[a-z0-9_]+))$")
         for label in self.labels:
             for call in as_list(self.run_of(label)["calls"]):
                 with self.subTest(label=label, call=call):
@@ -851,7 +962,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
         for needle in ("## Summary for the owner", "Nothing was written to the phone", "## Backups (G1)", "## Writability probes (G2)",
                        "## The first 2048 bytes of misc", "all zero (no brake, no pending request)", "## Candidate kernel image",
                        "## What this run does not settle", "No read-only flag was reported for boot_b",
-                       "It does NOT show that a write will be accepted", "private data"):
+                       "It does NOT show that a write will be accepted", "private data", "| `df /tmp` | Filesystem"):
             with self.subTest(report=needle):
                 self.assertIn(needle, report)
         self.assertIn("Fits boot_b: True", report)
@@ -863,8 +974,11 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
         probe = self.probe(label)
         self.assertEqual(probe["status"], "complete")
         steps = self.steps(label)
-        for sid in ("p-sgdisk", "p-sgdisk-boot-a", "p-bootctl-hal-info", "p-bootctl-get-current-slot"):
+        for sid in ("p-sgdisk", "p-sgdisk-boot-a"):
             self.assertEqual(steps[sid]["status"], "unavailable", sid)
+        # bootctl is not in the pinned TWRP: it is not asked for at all, so it cannot show up as "unavailable" either.
+        self.assertFalse([sid for sid in steps if "bootctl" in sid or "getprop" in sid])
+        self.assertEqual(steps["p-df-tmp"]["status"], "ok")
         for sid in ("i-dtbo_a-link", "k-dtbo_a-pull", "k-dtbo_b-again"):
             self.assertEqual(steps[sid]["status"], "skipped", sid)
         self.assertEqual(len(as_list(probe["backups"])), len(PARTS) - 2 + 1)
@@ -875,6 +989,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
         self.assertIn("not present on this phone", report)
         calls = as_list(run["calls"])
         self.assertFalse([c for c in calls if "sde15" in c or "sde32" in c or "dtbo" in c])
+        self.assertFalse([c for c in calls if "bootctl" in c or "getprop" in c])
 
     def test_the_bootloader_run_does_the_install_chains_preflight_and_saves_the_answers(self):
         run = self.run_of("bootloader ok")
@@ -909,6 +1024,10 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             "slot b in the bootloader": ("b02", "the current slot is not a"),
             "locked": ("b03", "the bootloader is not unlocked"),
             "battery 19": ("b04", "battery is below 20 percent"),
+            "head short read": ("k-boot_a-pull", "short or long read"),
+            "hang in the bootloader": ("b04", "timed out: fastboot -s <serial> getvar battery-level did not finish within 3 seconds"),
+            "hang on the first command": ("t00", "timed out: adb devices did not finish within 3 seconds"),
+            "hang during a pull": ("k-boot_a-pull", "timed out: adb -s <serial> exec-out dd if=/dev/block/sde9"),
         }
         for label, (step, why) in expect.items():
             if label not in self.runs:
@@ -930,6 +1049,59 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
                 self.assertNotIn("## Summary for the owner", report)
                 # Nothing is asked of the phone after the failing step: one call per recorded step.
                 self.assertEqual(len(as_list(run["calls"])), len(steps))
+
+    def test_a_hung_tool_is_killed_at_the_limit_and_the_run_stops_with_the_reason(self):
+        for label in self.present(("hang in the bootloader", "hang on the first command", "hang during a pull")):
+            run = self.run_of(label)
+            with self.subTest(label=label):
+                # The stand-in sleeps for 90 seconds; the limit was 3. Anything near 90 means nobody killed it.
+                self.assertLess(run["seconds"], 45, "the run waited for the hung command")
+                self.assertEqual(run["left_running"], 0, "the hung process was left running")
+                self.assertEqual(run["exit"], 1)
+                probe = self.probe(label)
+                self.assertEqual(probe["status"], "stopped")
+                self.assertIn("was killed. Nothing was written to the phone.", probe["reason"])
+                self.assertIn("hold Power until the screen is dark", probe["reason"])
+                self.assertIn("-TimeoutSec", probe["reason"])
+                self.assertIs(probe["nothing_written_to_phone"], True)
+        if "hang during a pull" in self.runs:
+            # The partial file is not listed as a backup: it never reached the hash comparison.
+            folder = self.folder("hang during a pull")
+            self.assertNotIn("boot_a.img", folder["sums"] or "")
+
+    def test_pull_with_head_backs_up_the_same_bytes_as_the_dd_pull(self):
+        if "twrp ok with head pulls" not in self.runs:
+            self.skipTest("scenario was not run")
+        run = self.run_of("twrp ok with head pulls")
+        self.assertIsNone(run["threw"])
+        self.assertIn("Done. Nothing was written to the phone.", run["said"])
+        calls = as_list(run["calls"])
+        self.assertFalse([c for c in calls if "exec-out dd" in c])
+        for name, node, size in PARTS:
+            self.assertEqual(calls.count("adb -s <serial> exec-out head -c %d /dev/block/%s" % (size, node)), 2, name)
+        self.assertEqual(calls.count("adb -s <serial> exec-out head -c 1048576 /dev/block/sde"), 2)
+        folder = self.folder("twrp ok with head pulls")
+        sums = dict(line.split("  ", 1)[::-1] for line in folder["sums"].strip().splitlines())
+        for idx, (name, node, size) in enumerate(PARTS):
+            self.assertEqual(sums[name + ".img"], content_sha(idx, size // 4096), name)
+        self.assertEqual(sums["sde-table-head.bin"], content_sha(100, 256))
+        if "twrp ok" in self.runs:
+            self.assertEqual(sums, dict(line.split("  ", 1)[::-1] for line in self.folder("twrp ok")["sums"].strip().splitlines()))
+        if "dry twrp head" in self.runs:
+            planned = [c for _, _, c in dry_lines(self.run_of("dry twrp head")["said"]) if not c.startswith("(PC only)")]
+            self.assertEqual(calls, planned)
+            self.assertFalse([c for c in planned if "exec-out dd" in c])
+
+    def test_pull_with_belongs_to_the_twrp_phase_and_a_serial_with_a_newline_is_refused_up_front(self):
+        for label, message in (("head pull on the wrong phase", "-PullWith belongs to -Phase twrp"),
+                               ("serial with a trailing newline", "-Serial may hold letters, digits and . _ : - only")):
+            if label not in self.runs:
+                continue
+            run = self.run_of(label)
+            with self.subTest(label=label):
+                self.assertEqual(run["threw"], message)
+                self.assertEqual(as_list(run["calls"]), [])
+                self.assertFalse(run["out_exists"])
 
     def test_a_wrong_mode_is_refused_with_one_call_and_a_battery_of_exactly_twenty_passes(self):
         for label in self.present(("not in recovery", "two devices")):
