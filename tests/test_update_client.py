@@ -137,9 +137,13 @@ class Env(unittest.TestCase):
     def conf(self, **kw):
         self.put(self.paths.config, {"url": self.src.url(), "allow_lan_http": True, **kw})
 
-    def state(self, serial=0, previous=(), failed=(), stepped_back=None, **cur):
-        self.put(self.paths.state, {"base": 1, "current": {"serial": serial, "version": "0.1.0", "revision": "a" * 40, "release": f"{serial}-aaaaaaaaaaaa", **cur},
-                                    "previous": list(previous), "failed": list(failed), "pending_boot": None, "stepped_back": stepped_back})
+    def state(self, serial=0, previous=(), failed=(), stepped_back=None, pending_boot=None, floor=0, **cur):
+        """floor=None: the state file of an updater from before the floor existed (it does not know the cancel-staged request)."""
+        doc = {"base": 1, "current": {"serial": serial, "version": "0.1.0", "revision": "a" * 40, "release": f"{serial}-aaaaaaaaaaaa", **cur},
+               "previous": list(previous), "failed": list(failed), "pending_boot": pending_boot, "stepped_back": stepped_back}
+        if floor is not None:
+            doc["floor"] = floor
+        self.put(self.paths.state, doc)
 
     def status(self, **kw):
         self.put(self.paths.status, {"phase": "idle", "message": "", "serial": None, "time": "2026-11-08T12:00:00Z", **kw})
@@ -972,6 +976,113 @@ class RollbackRequest(Env):
             self.client().request_rollback()
         self.assertEqual((cm.exception.code, cm.exception.status), ("not_available", 404))
 
+    # Review finding 11: the first staged boot update could not be cancelled, because the client wanted an earlier release first.
+    # The updater (docs/ota-update.md, "Inbox") reads rollback.request as empty = go back, or `cancel-staged` = drop the staged update
+    # and nothing else; the cancel form must be written as rollback.request.partial and renamed.
+    STAGED = {"serial": 3, "version": "0.3.0", "revision": "b" * 40, "release": "3-bbbbbbbbbbbb"}
+
+    def request_text(self):
+        with open(os.path.join(self.paths.inbox, "rollback.request"), "rb") as f:
+            return f.read()
+
+    def test_a_staged_update_is_cancelled_with_the_cancel_text_even_without_an_earlier_release(self):
+        self.state(0, previous=[], pending_boot=self.STAGED)
+        c = self.client()
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 3})
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": False, "cancel": True})
+        self.assertEqual((self.request_text(), self.inbox()), (b"cancel-staged", ["rollback.request"]), "no .partial is left behind")
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": True, "staged": 3})
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": True, "cancel": True})
+        self.assertEqual(self.request_text(), b"cancel-staged")
+
+    def test_the_cancel_text_is_whole_before_root_can_see_a_file_with_the_request_name(self):
+        self.state(0, previous=[], pending_boot=self.STAGED)
+        path = os.path.join(self.paths.inbox, "rollback.request")
+        seen = []
+        real = os.replace
+
+        def replace(a, b):
+            with open(a, "rb") as f:
+                seen.append((os.path.basename(a), f.read(), os.path.lexists(b)))
+            return real(a, b)
+        with mock.patch("os.replace", replace):
+            self.client().request_rollback()
+        self.assertEqual(seen, [("rollback.request.partial", b"cancel-staged", False)])
+        self.assertTrue(os.path.exists(path))
+
+    def test_a_staged_update_can_be_cancelled_after_the_one_step_back_was_used(self):
+        self.state(1, previous=["0-aaaaaaaaaaaa"], stepped_back=2, pending_boot=self.STAGED)
+        c = self.client()
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "once": True, "staged": 3})
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": False, "cancel": True})
+        self.assertEqual(self.request_text(), b"cancel-staged")
+
+    def test_a_cancel_never_asks_for_the_installed_release_to_go_back_too(self):
+        """With an earlier release and an update staged, the empty request would roll the installed release back as well."""
+        self.state(2, previous=["1-aaaaaaaaaaaa"], pending_boot=self.STAGED)
+        self.client().request_rollback()
+        self.assertEqual(self.request_text(), b"cancel-staged")
+
+    def test_a_request_that_is_already_there_is_left_alone(self):
+        self.state(2, previous=["1-aaaaaaaaaaaa"])
+        c = self.client()
+        c.request_rollback()  # an empty one: go back
+        self.state(2, previous=["1-aaaaaaaaaaaa"], pending_boot=self.STAGED)
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": True, "cancel": True})
+        self.assertEqual(self.request_text(), b"", "it was not replaced")
+
+    def test_a_leftover_or_planted_partial_is_not_written_through(self):
+        self.state(0, previous=[], pending_boot=self.STAGED)
+        victim = os.path.join(self.tmp.name, "victim")
+        with open(victim, "w") as f:
+            f.write("keep")
+        part = os.path.join(self.paths.inbox, "rollback.request.partial")
+        os.symlink(victim, part)
+        self.client().request_rollback()
+        with open(victim) as f:
+            self.assertEqual(f.read(), "keep")
+        self.assertEqual((self.request_text(), self.inbox()), (b"cancel-staged", ["rollback.request"]))
+        os.unlink(os.path.join(self.paths.inbox, "rollback.request"))
+        with open(part, "wb") as f:
+            f.write(b"junk from a crash")
+        self.client().request_rollback()
+        self.assertEqual((self.request_text(), self.inbox()), (b"cancel-staged", ["rollback.request"]))
+
+    def test_an_updater_from_before_the_cancel_form_is_never_sent_it(self):
+        """The updater is in the image and this client in the app, so the client can be newer. The old updater reads any request file as
+        'go back', so the cancel text would roll the installed release back, or do nothing: such a phone keeps the old behaviour."""
+        self.state(0, previous=[], pending_boot=self.STAGED, floor=None)
+        c = self.client()
+        self.assertEqual(c.snapshot()["rollback"], {"possible": False, "requested": False})
+        with self.assertRaises(uc.UpdateError) as cm:
+            c.request_rollback()
+        self.assertEqual(cm.exception.code, "no_rollback")
+        self.state(2, previous=["1-aaaaaaaaaaaa"], pending_boot=self.STAGED, floor=None)
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False})
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": False})
+        self.assertEqual(self.request_text(), b"", "the plain request, as before")
+        for odd in ("0", -1, True, [0]):
+            with self.subTest(floor=odd):
+                self.state(0, previous=[], pending_boot=self.STAGED, floor=odd)
+                self.assertNotIn("staged", c.snapshot()["rollback"])
+
+    def test_with_nothing_staged_the_old_rules_stand(self):
+        for kw, code in (({"previous": []}, "no_rollback"), ({"previous": ["0-aaaaaaaaaaaa"], "stepped_back": 2}, "no_rollback")):
+            with self.subTest(kw):
+                self.state(1, **kw)
+                with self.assertRaises(uc.UpdateError) as cm:
+                    self.client().request_rollback()
+                self.assertEqual(cm.exception.code, code)
+        self.assertEqual(self.inbox(), [])
+
+    def test_an_odd_pending_boot_entry_counts_as_nothing_staged(self):
+        for odd in ({"serial": "3"}, {"serial": -1}, {"serial": True}, {"version": "0.3.0"}, [3], "3", 3, {}):
+            with self.subTest(odd):
+                self.state(0, previous=[], pending_boot=odd)
+                self.assertEqual(self.client().snapshot()["rollback"], {"possible": False, "requested": False})
+                with self.assertRaises(uc.UpdateError):
+                    self.client().request_rollback()
+
     def test_planted_symlink_is_not_followed(self):
         self.state(2, previous=["1-bbbbbbbbbbbb"])
         victim = os.path.join(self.tmp.name, "victim")
@@ -1164,6 +1275,26 @@ class Page(unittest.TestCase):
         self.assertIn("rb.once?ONCE:", script)
         self.assertIn("var ONCE=" + json.dumps(uc.ONCE_ONLY) + ",", script)
         self.assertNotIn("@@ONCE@@", h)
+
+    def test_a_staged_update_is_explained_and_can_be_cancelled_from_the_page(self):
+        plain = update_page.page("t" * 43, "n" * 22, self.snap())
+        self.assertIn("Asks the updater to return to the earlier version.", plain.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0])
+        self.assertIn(">Request rollback</button>", plain)
+        staged = {"possible": True, "requested": False, "staged": 3}
+        h = update_page.page("t" * 43, "n" * 22, self.snap(rollback=staged))
+        self.assertEqual(h.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0],
+                         "Update 3 is staged and installs at the next restart. The button cancels it; what is installed stays as it is.")
+        self.assertIn(">Cancel staged update</button>", h)
+        self.assertNotIn('id="u-rb" disabled', h)
+        self.assertIn(">Cancel requested</button>", update_page.page("t", "n", self.snap(rollback=dict(staged, requested=True))))
+        script = h.split("</main>", 1)[1]
+        self.assertNotIn("@@", script)
+        for needle in ("STAGED=" + json.dumps(update_page._STAGED), "CANCEL=" + json.dumps(update_page._CANCEL), "BACK=" + json.dumps(update_page._BACK),
+                       "LAB=" + json.dumps(update_page._LABELS), "rb.staged==null?BACK:STAGED.replace('{}',String(rb.staged))",
+                       "last.rollback.staged!=null?CANCEL:", "LAB[rb.staged==null?'back':'cancel'][rb.requested?1:0]"):
+            self.assertIn(needle, script)
+        evil = update_page.page("t", "n", self.snap(rollback={"possible": True, "requested": False, "staged": "<img src=x>"}))
+        self.assertNotIn("<img", evil)
 
     def test_a_stalled_updater_is_said_out_loud(self):
         quiet = update_page.page("t" * 43, "n" * 22, self.snap(stalled=False))
@@ -1605,6 +1736,52 @@ class MainStartsAutoCheck(unittest.TestCase):
         server = webclient.web.make_server(0, webclient.web.Phone(), updater=mine)
         self.addCleanup(server.server_close)
         self.assertIs(server.RequestHandlerClass.updater, mine)
+
+
+class CancelStagedWithTheRealUpdater(unittest.TestCase):
+    """The client's cancel request, read by the real updater (tests/test_ota_roundtrip.py's fake phone). The two halves agree on a
+    format that lives in docs/ota-update.md, so this is the check that they do. It needs an updater that knows the `cancel-staged`
+    form (the updater review fixes, finding 11) and is skipped, saying so, while the updater in this tree does not."""
+
+    def test_a_staged_boot_update_is_cancelled_with_no_earlier_release(self):
+        updater = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packaging", "duo-os", "updater", "opos-updater")
+        with open(updater, encoding="utf-8") as f:
+            if "cancel-staged" not in f.read():
+                self.skipTest("the updater in this tree has no cancel-staged request yet")
+        import importlib
+        rt = importlib.import_module("tests.test_ota_roundtrip")  # skips itself away from Linux
+        if not rt.KEYGEN:
+            self.skipTest("ssh-keygen is not installed")
+        rt.setUpModule()
+        self.addCleanup(rt.tearDownModule)
+        w = rt.World()
+        self.addCleanup(w.close)
+        w.release(1, scope="boot")
+        self.assertEqual(w.fetch_and_apply(1), 0, w.logs)
+        self.assertEqual(w.state()["pending_boot"]["serial"], 1)
+        self.assertEqual(w.state()["previous"], [], "the first update: there is nothing to go back to")
+        c = w.client
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 1})
+        self.assertEqual(c.request_rollback(), {"requested": True, "already": False, "cancel": True})
+        self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
+        self.assertEqual((w.status()["phase"], w.state()["pending_boot"]), ("rolled-back", None))
+        self.assertIn("cancelled", w.status()["message"])
+        self.assertEqual(os.listdir(w.inbox), [], "the request was taken and nothing was left behind")
+        w.boot = "boot-2"
+        self.assertEqual(w.run_updater("apply-pending-boot"), 0, w.logs)
+        w.assert_on(self, 0)  # the cancelled update did not apply at the next boot
+        self.assertEqual(c.snapshot()["rollback"], {"possible": False, "requested": False})
+        # With an earlier release too, a cancel leaves what is installed alone (the empty request would go back as well).
+        w.release(2)
+        self.assertEqual(w.fetch_and_apply(2), 0, w.logs)
+        w.release(3, scope="boot")
+        self.assertEqual(w.fetch_and_apply(3), 0, w.logs)
+        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 3})
+        self.assertEqual(c.request_rollback()["cancel"], True)
+        self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
+        self.assertIn("cancelled", w.status()["message"])
+        w.assert_on(self, 2, previous=[0], failed=[])
+        self.assertEqual(w.client.snapshot()["rollback"], {"possible": True, "requested": False})
 
 
 class Defaults(unittest.TestCase):

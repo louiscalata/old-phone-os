@@ -21,11 +21,19 @@ snapshot() keys: available, message, running {version, revision, serial, release
 allow_lan_http, error}, check (the last check: time, ok, newer, serial, version, size, message; or null), job {kind,
 phase, bytes, total, serial, message}, pending (bundles waiting in the inbox), stalled (a bundle or rollback request has
 waited so long that the updater is probably not running), rollback {possible, requested, and once: true when the only
-thing against it is that the phone already went back once since the last update; see below}, status (status.json:
-phase, message, serial, time; or null).
+thing against it is that the phone already went back once since the last update; and, only while a boot-scope update is
+staged, staged: its serial, and possible is then true whatever the earlier releases; see below}, status
+(status.json: phase, message, serial, time; or null).
 
 A rollback request is the one thing this unprivileged side can ask of root that moves the phone to older code, so it
 is limited: root honours one per applied update and does not burn the serial it leaves (docs/ota-update.md, trust model).
+While a boot-scope update is staged, the page offers to cancel it instead: the request file then holds the text
+`cancel-staged` (written as rollback.request.partial and renamed, so root never reads it half written), which the updater
+takes as "drop the staged update and touch nothing that is installed". That needs no earlier release, is not subject to the
+one-step limit and burns no serial (docs/ota-update.md). With an update staged the empty request is not written: cancel
+first, then go back if that is wanted. The root updater is part of the image and this client is part of the app, so a new
+client can run on an old updater, which reads any request file as "go back" whatever it holds; the cancel form is therefore
+offered only when state.json shows the updater that wrote it knows the form (it keeps a `floor`, which the older one does not).
 """
 from __future__ import annotations
 
@@ -58,6 +66,7 @@ MAX_SERIAL = 2 ** 31 - 1
 CHUNK = 64 * 1024
 BUNDLE_EXT = ".opos-update"
 ROLLBACK_REQUEST = "rollback.request"
+CANCEL_STAGED = b"cancel-staged"  # what rollback.request holds to cancel a staged update and nothing else (empty: go back)
 STALL_S = 300.0  # a delivered bundle or request that root has not taken in this long: the updater is not running
 AUTO_FIRST_S = 120.0
 AUTO_EVERY_S = 6 * 3600.0
@@ -347,6 +356,7 @@ class UpdateClient:
         version, revision, release = cur.get("version"), cur.get("revision"), cur.get("release")
         failed = d.get("failed")
         previous = d.get("previous")
+        staged = d.get("pending_boot")
         return {
             "serial": _int(cur.get("serial")),
             "version": version if isinstance(version, str) and _VERSION.fullmatch(version) else None,
@@ -354,6 +364,8 @@ class UpdateClient:
             "release": release if isinstance(release, str) and _RELEASE.fullmatch(release) else None,
             "previous": len(previous) if isinstance(previous, list) else 0,
             "stepped_back": _int(d.get("stepped_back")),
+            "staged": _int(staged.get("serial")) if isinstance(staged, dict) else None,
+            "cancels_staged": type(d.get("floor")) is int and d["floor"] >= 0,  # an updater that keeps a floor is one that reads `cancel-staged`
             "failed": sorted({n for n in (_int(x) for x in failed) if n is not None}) if isinstance(failed, list) else [],
         }
 
@@ -433,6 +445,10 @@ class UpdateClient:
         requested = avail and os.path.lexists(os.path.join(self.paths.inbox, ROLLBACK_REQUEST))
         earlier = bool(st and st["previous"] > 0)
         once = earlier and st["stepped_back"] is not None
+        staged = st["staged"] if st and st["cancels_staged"] else None  # an old updater would turn the cancel into a rollback
+        rollback = dict({"possible": (earlier and not once) or staged is not None, "requested": bool(requested)}, **({"once": True} if once else {}))
+        if staged is not None:
+            rollback["staged"] = staged
         return {
             "available": avail,
             "message": None if avail else NOT_AVAILABLE,
@@ -442,7 +458,7 @@ class UpdateClient:
             "job": job,
             "pending": self.pending() if avail else [],
             "stalled": bool(avail and self.stalled()),
-            "rollback": dict({"possible": earlier and not once, "requested": bool(requested)}, **({"once": True} if once else {})),
+            "rollback": rollback,
             "status": self.read_status() if avail else None,
         }
 
@@ -704,19 +720,32 @@ class UpdateClient:
     # ---- rollback ----
 
     def request_rollback(self) -> dict:
-        """Create inbox/rollback.request (empty). Root does the rollback; this only asks."""
+        """Ask root to go back: create inbox/rollback.request (empty). Root does the rollback; this only asks.
+
+        With a boot-scope update staged this cancels it instead (the file holds `cancel-staged`): that needs no earlier
+        release and is not limited, and it is the only request made while something is staged, so a cancel never also
+        moves the installed release."""
         if not self.available():
             raise UpdateError("not_available", NOT_AVAILABLE, 404)
         st = self.read_state()
         if st is None:
             raise UpdateError("no_rollback", "OPOS cannot read which versions are installed, so it will not ask for a rollback.", 409)
-        if st["previous"] < 1:
-            raise UpdateError("no_rollback", "There is no earlier version to go back to.", 409)
-        if st["stepped_back"] is not None:
-            raise UpdateError("no_rollback", ONCE_ONLY, 409)
+        cancel = st["staged"] is not None and st["cancels_staged"]
+        if not cancel:
+            if st["previous"] < 1:
+                raise UpdateError("no_rollback", "There is no earlier version to go back to.", 409)
+            if st["stepped_back"] is not None:
+                raise UpdateError("no_rollback", ONCE_ONLY, 409)
         path = os.path.join(self.paths.inbox, ROLLBACK_REQUEST)
+        if cancel and os.path.lexists(path):
+            return {"requested": True, "already": True, "cancel": True}
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        part = path + ".partial"
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o660)
+            if cancel:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(part)  # a leftover is not written through
+            fd = os.open(part if cancel else path, flags, 0o660)
         except FileExistsError:
             return {"requested": True, "already": True}
         except FileNotFoundError:
@@ -724,11 +753,24 @@ class UpdateClient:
         except OSError:
             raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
         try:
+            if cancel:
+                os.write(fd, CANCEL_STAGED)
             os.fsync(fd)
-        finally:
+        except OSError:
             os.close(fd)
+            with contextlib.suppress(OSError):
+                os.unlink(part if cancel else path)
+            raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
+        os.close(fd)
+        if cancel:
+            try:
+                os.replace(part, path)  # the whole text is there before root can see a file of this name
+            except OSError:
+                with contextlib.suppress(OSError):
+                    os.unlink(part)
+                raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
         self._sync_dir(self.paths.inbox)
-        return {"requested": True, "already": False}
+        return {"requested": True, "already": False, **({"cancel": True} if cancel else {})}
 
     # ---- optional background check ----
 

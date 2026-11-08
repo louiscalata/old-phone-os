@@ -177,7 +177,11 @@ reuse) and a new bundle. To go back to the previous release on purpose, create a
 the inbox (over ssh as the login user; this is also what the Update page's button does), or run `opos-updater rollback` as
 root on the phone. The inbox request is honoured once per applied update and does not burn the serial it leaves, so pushing
 that same bundle again undoes it; the root command goes back as often as you ask and does burn the serial. A `boot`-scope update that
-fails two boots in a row rolls itself back. If the phone is unusable, re-image it from the PC with `build-image.sh`; the
+fails two boots in a row rolls itself back. A `boot`-scope update that is staged and has not run yet can be cancelled from the
+Update page ("Cancel staged update", offered even on the first update, when there is nothing to go back to, on an image whose
+updater knows the form; an older image keeps the old rules), or by hand on such an image: write the
+text `cancel-staged` into `rollback.request.partial` in the inbox and rename it to `rollback.request`. That drops the staged update
+and leaves what is installed alone; its serial is not burned, so the same bundle can be delivered again. If the phone is unusable, re-image it from the PC with `build-image.sh`; the
 image starts again from its own baked-in release.
 
 ## Limits
