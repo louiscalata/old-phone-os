@@ -47,6 +47,7 @@ SCAN_WAIT_S = 3.0
 USB_IFACES = ("usb", "rndis", "ncm", "enx")
 PROFILE_MAX = 20
 SCAN_MAX = 30
+MODEM_ON = ("registered", "connected", "searching", "enabled")  # ModemManager states in which the radio is on
 
 
 class Run(NamedTuple):
@@ -371,17 +372,27 @@ class Net:
             return None
         return [{"name": f[0], "uuid": f[1], "type": f[2], "active": f[3] not in ("", "--")} for f in _rows(r.out, 4)]  # nmcli may print -- for no device
 
-    def _saved_wifi(self, q):
-        """Saved Wi-Fi profiles with their SSIDs (the profile name is only a fallback), or None."""
+    def _wifi_profiles(self, q, limit=None):
+        """(profiles, complete): the saved Wi-Fi profiles with their SSIDs, or (None, False) if NetworkManager does not list them.
+        `read` says whether the SSID was really read from the profile; otherwise "ssid" is the profile's name, a guess. `complete`
+        means every profile was listed and every SSID read, so nothing saved for a network can be hiding. `limit` cuts the list and
+        is for display only: a cut list is never complete."""
         ps = self._profiles(q)
         if ps is None:
-            return None
+            return None, False
+        wifi = [p for p in ps if p["type"] in ("wifi", "802-11-wireless")]
         out = []
-        for p in [p for p in ps if p["type"] in ("wifi", "802-11-wireless")][:PROFILE_MAX]:
+        for p in wifi if limit is None else wifi[:limit]:
             r = q.call(["nmcli", "-t", "-f", "802-11-wireless.ssid", "connection", "show", "uuid", p["uuid"]])
             f = split_terse(r.out.splitlines()[0]) if r.ok and r.out.strip() else []
-            out.append({**p, "ssid": clean(":".join(f[1:])) if len(f) >= 2 and f[1] else p["name"]})
-        return out
+            read = len(f) >= 2 and bool(f[1])
+            out.append({**p, "ssid": clean(":".join(f[1:])) if read else p["name"], "read": read})
+        return out, len(out) == len(wifi) and all(p["read"] for p in out)
+
+    def _saved_wifi(self, q):
+        """Saved Wi-Fi profiles for showing (at most PROFILE_MAX; a profile's name stands in for an SSID that was not read), or None.
+        Nothing that deletes or decides what is saved may use this: it is cut. Use _wifi_profiles for that."""
+        return self._wifi_profiles(q, PROFILE_MAX)[0]
 
     def _nm_why(self, q):
         return q.why("nmcli", "NetworkManager") if (q.missing or q.slow) else "NetworkManager is not running or did not answer"
@@ -411,8 +422,9 @@ class Net:
         perms = self._permissions(q) if gs else None
         wifi = self._wifi(q, gs, devs, ips, radios)
         modem, sim = self._modem(q)
-        s = {"ok": True, "wifi": wifi, "bluetooth": self._bluetooth(q, rf, radios), "modem": modem, "sim": sim,
-             "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf), "usb": self._usb(ips, radios),
+        bt = self._bluetooth(q, rf, radios)
+        s = {"ok": True, "wifi": wifi, "bluetooth": bt, "modem": modem, "sim": sim,
+             "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf, bt, radios, modem), "usb": self._usb(ips, radios),
              "control": self._control(q, gs, perms), "simulated": SIMULATED, "notes": []}
         if self._wall() < 1.6e9:
             s["notes"].append("The phone's clock is not set yet, so secure websites and updates may fail until it is.")
@@ -564,18 +576,42 @@ class Net:
             d["state"], d["summary"] = "off", "Mobile data: off"
         return d
 
-    def _airplane(self, gs, rf):
+    def _airplane(self, gs, rf, bt=None, radios=None, modem=None):
+        """Airplane mode is "every radio is blocked", so it needs every radio's state. Wi-Fi and mobile data come from rfkill or
+        NetworkManager's switches, Bluetooth from rfkill or else from what BlueZ said (bt, the Bluetooth status), and the modem,
+        when neither of those says anything about it, from ModemManager (modem, the modem status). A radio that exists but whose
+        state was not established keeps the answer at unknown: it is never counted as blocked."""
         kinds = [x for x in rf or [] if x["type"] in ("wlan", "bluetooth", "wwan")]
         flags = [x["soft"] or x["hard"] for x in kinds]
+        unknown = []
+        present = (radios or {}).get("radios_present", ())
         if gs is not None:  # NetworkManager's own switches stand in for radios rfkill does not list
             if not any(x["type"] == "wlan" for x in kinds):
                 flags.append(not gs["wifi"] or not gs["wifi_hw"])
             if not any(x["type"] == "wwan" for x in kinds):
                 flags.append(not gs["wwan"] or not gs["wwan_hw"])
-        if not flags:
+        if gs is None and "wifi" in present and not any(x["type"] == "wlan" for x in kinds):
+            unknown.append("Wi-Fi")  # the system shows an adapter, but neither rfkill nor NetworkManager said whether it is blocked
+        if gs is None and not any(x["type"] == "wwan" for x in kinds) and ("wwan" in present or (modem or {}).get("present") is True):
+            # a modem the system or ModemManager shows, and nobody else says whether it is blocked: only a modem that is on says so
+            if (modem or {}).get("state") in MODEM_ON:
+                flags.append(False)
+            else:
+                unknown.append("mobile data")
+        if bt is not None and not any(x["type"] == "bluetooth" for x in kinds):
+            if bt.get("enabled") is not None:
+                flags.append(not bt["enabled"])
+            elif bt.get("present"):
+                unknown.append("Bluetooth")
+        if not flags and not unknown:
             return {"on": None, "state": "unknown", "summary": "Airplane mode: unknown"}
-        on = True if all(flags) else False if not any(flags) else None
-        state = "on" if on else "off" if on is False else "partly"
+        if any(not f for f in flags):  # some radio is known to be working, so not every radio is blocked
+            state, on = ("partly", None) if any(flags) else ("off", False)
+        elif unknown:
+            return {"on": None, "state": "unknown", "summary": "Airplane mode: unknown (the state of " + ", ".join(unknown[:-1]) + (" and " if len(unknown) > 1 else "") + unknown[-1] + " could not be read, "
+                                                                "so it cannot be said that every radio is blocked)"}
+        else:
+            state, on = "on", True
         return {"on": on, "state": state, "summary": {"on": "Airplane mode: on (all radios are blocked)", "off": "Airplane mode: off",
                                                        "partly": "Airplane mode: off, but some radios are blocked or switched off"}[state]}
 
@@ -723,7 +759,8 @@ class Net:
 
     def _join(self, ssid, password, hidden):
         q = _Q(self, JOIN_WAIT_S + 60)
-        saved = [p for p in self._saved_wifi(q) or [] if p["ssid"] == ssid]
+        listed, complete = self._wifi_profiles(q)  # all of them: a saved network must not be missed because it is the 21st
+        saved = [p for p in listed or [] if p["ssid"] == ssid]
         op = "connect" if saved and not password else "join"
         gs, err = self._ready(q, op)
         if err:
@@ -732,8 +769,8 @@ class Net:
         ifn = ["ifname", dev] if dev else []
         wait = ["--colors", "no", "--wait", str(JOIN_WAIT_S)]
         if password:
-            for p in saved:
-                q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]])
+            # nmcli always makes a NEW profile for this. The old entries stay until the new one is up: a failed join (the network
+            # went away, no address, a timeout) must not cost the owner a password that was right.
             r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
         elif saved:
             r = q.call(["nmcli"] + wait + ["connection", "up", "uuid", saved[0]["uuid"]] + ifn, JOIN_WAIT_S + JOIN_EXTRA_S)
@@ -743,14 +780,49 @@ class Net:
                 return _bad("This network needs a password.")
             r = q.call(["nmcli"] + wait + ["device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S)
         if r.ok:
-            return _ok(f"Connected to {ssid}." + (" The password is kept by the phone's network service, not by OPOS." if password else ""))
+            msg = f"Connected to {ssid}." + (" The password is kept by the phone's network service, not by OPOS." if password else "")
+            if password and saved:
+                msg += self._drop_replaced(q, [p for p in saved if p["read"]], r)  # an entry matched only by its name may be another network
+            return _ok(msg)
         msg = explain(r, password)
         if password:
-            kept = {p["uuid"] for p in saved}
-            for p in [p for p in self._saved_wifi(q) or [] if p["ssid"] == ssid and p["uuid"] not in kept]:
-                q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]])
-            msg += " The old saved entry for this network was removed; join again with the right password." if saved else " Nothing was saved."
+            msg += self._after_failed_join(q, ssid, listed, saved, complete)
         return _bad(msg)
+
+    def _drop_replaced(self, q, saved, r):
+        """After a join with a new password worked: delete the entries it replaced, never the one now in use. Returns a sentence only
+        if something was left."""
+        m = re.search(r"activated with '([0-9a-fA-F-]{36})'", r.out)
+        if m is None:
+            return " The older saved entry for this network was kept, because OPOS could not tell which entry is the new one."
+        stuck = 0
+        for p in saved:
+            if p["uuid"].lower() != m.group(1).lower() and not q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]]).ok:
+                stuck += 1
+        return " The older saved entry for this network could not be removed." if stuck else ""
+
+    def _after_failed_join(self, q, ssid, listed, saved, complete=True):
+        """After a failed join with a password: delete what this attempt left behind (profiles that did not exist before), never what
+        was saved. Says only what was checked: `complete` is the first listing's, and a profile whose SSID could not be read may be
+        a saved entry for this very network that `saved` cannot see, so "Nothing was saved" needs a listing without such a gap."""
+        keep = " Your saved entry for this network was kept." if saved else ""
+        if listed is None:
+            return keep + " OPOS could not check whether the attempt left an entry behind."
+        before = {p["uuid"] for p in listed}
+        after, _ = self._wifi_profiles(q)
+        if after is None:
+            return keep + " OPOS could not check whether the attempt left an entry behind."
+        unresolved = 0
+        for p in [p for p in after if p["uuid"] not in before]:
+            if not (p["read"] and p["ssid"] == ssid and q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]]).ok):
+                unresolved += 1
+        if unresolved:
+            return keep + " OPOS could not remove everything the attempt left behind."
+        if keep:
+            return keep
+        if not complete:
+            return " OPOS could not read every saved network, so it cannot tell whether " + ssid + " is saved."
+        return " Nothing was saved."
 
     def forget(self, ssid):
         """Delete every saved Wi-Fi entry for `ssid` (this also disconnects it)."""
@@ -762,16 +834,23 @@ class Net:
         gs, err = self._ready(q, "forget")
         if err:
             return err
-        saved = self._saved_wifi(q)
+        saved, complete = self._wifi_profiles(q)  # every profile, never the cut list used for showing
         if saved is None:
             return _bad("NetworkManager did not list the saved networks.")
-        mine = [p for p in saved if p["ssid"] == ssid]
+        mine = [p for p in saved if p["read"] and p["ssid"] == ssid]
         if not mine:
+            if not complete:
+                return _bad("OPOS could not read every saved network, so it cannot tell whether " + ssid + " is saved.")
             return _bad("That network is not saved on this phone.")
         for p in mine:
             r = q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]])
             if not r.ok:
                 return _bad(explain(r))
+        # Say "gone" only after looking again at every profile.
+        again, complete_again = self._wifi_profiles(q)
+        if again is None or not complete_again or any(p["read"] and p["ssid"] == ssid for p in again):
+            return _bad(f"Removed {len(mine)} saved {'entry' if len(mine) == 1 else 'entries'} for {ssid}, but OPOS could not check every saved network "
+                        "afterwards, so a saved password for it may remain. Try again.")
         return _ok(f"Forgot {ssid}. Its password is gone from this phone.")
 
     def wifi(self, mode):

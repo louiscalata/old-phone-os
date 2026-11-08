@@ -242,11 +242,129 @@ console.log(JSON.stringify(out));
         self.assertEqual((h["g"], h["help"]), ({"on": True, "min": 1380}, "on"))
         self.assertEqual((out["floor"]["r"], out["floor"]["g"]), (4, {"on": False, "min": 100}))
 
+    # The whole page script, as shipped, on a small stand-in for the DOM and fetch: the walk the owner does.
+    WALK = r"""
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+class El {
+  constructor(tag, id) { this.tag = tag; this.id = id || ''; this.children = []; this.attrs = {}; this.dataset = {}; this._t = '';
+    this.hidden = false; this.disabled = false; this.className = ''; this.tabIndex = 0; this.onclick = null; this.oninput = null; this.value = ''; }
+  get textContent() { return this._t + this.children.map(c => c.textContent).join(''); }
+  set textContent(v) { this._t = String(v); this.children = []; }
+  appendChild(c) { this.children.push(c); return c; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  focus() {}
+  scrollIntoView() {}
+  all(pred, out = []) { for (const c of this.children) { if (pred(c)) out.push(c); c.all(pred, out); } return out; }
+  querySelectorAll(sel) {
+    return this.all(sel === '[aria-pressed=true]' ? e => e.attrs['aria-pressed'] === 'true' : e => e.tag === sel);
+  }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || (sel === 'h2' ? new El('h2') : null); }
+}
+const settle = async () => { for (let i = 0; i < 30; i++) await new Promise(r => setImmediate(r)); };
+async function load(store) {
+  const ids = {};
+  for (const m of input.body.matchAll(/<(\w+)([^>]*)>/g)) {
+    const idm = /\bid="([^"]+)"/.exec(m[2]);
+    if (!idm) continue;
+    const e = new El(m[1], idm[1]);
+    const rest = m[2].replace(/"[^"]*"/g, '');
+    e.hidden = /\bhidden\b/.test(rest);
+    e.disabled = /\bdisabled\b/.test(rest);
+    ids[idm[1]] = e;
+  }
+  const posts = [], nav = [];
+  const sessionStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
+  const reply = o => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(o) });
+  const fetchStub = (url, o) => {
+    o = o || {};
+    if (url === '/network') return reply({});
+    if (url === '/api/firstrun' && o.method === 'POST') { posts.push(JSON.parse(o.body)); return reply({ ok: true, done: true, saved: {}, errors: [], restart: false }); }
+    if (url === '/api/firstrun') return reply({ pending: true, clock: { plausible: true, text: 'Fri 06 Nov 2026, 10:00', note: '' }, goal: { enabled: true, time: '23:00' }, helper: 'on', timezone: { saved: null } });
+    if (url === '/api/timezone') return reply({ zones: input.zones, source: 'system', saved: null, active: '', clock: { plausible: true, text: '', note: '' } });
+    return Promise.reject(new Error('unexpected fetch ' + url));
+  };
+  const doc = { getElementById: id => ids[id] || null, createElement: t => new El(t), querySelector: s => (s === 'meta[name=opos-token]' ? { content: 'tok' } : null) };
+  const loc = { set href(v) { nav.push(v); } };
+  new Function('document', 'window', 'sessionStorage', 'fetch', 'location', 'setInterval', 'setTimeout', input.js)(doc, {}, sessionStorage, fetchStub, loc, () => 0, () => 0);
+  await settle();
+  return { ids, posts, nav };
+}
+const text = (p, id) => p.ids[id].textContent;
+const shown = (p, id) => !p.ids[id].hidden;
+async function press(p, id) { if (p.ids[id].disabled) throw new Error(id + ' is disabled'); p.ids[id].onclick({ preventDefault() {} }); await settle(); }
+function pickZone(p, region, city) {
+  const box = p.ids.tzbox;
+  box.all(e => e.tag === 'button' && e.dataset.r === region)[0].onclick();
+  box.all(e => e.tag === 'button' && e.dataset.z === region + '/' + city)[0].onclick();
+}
+(async () => {
+  const out = {}, store = {};
+  let p = await load(store);
+  out.first = { prog: text(p, 'prog'), welcome: shown(p, 's-welcome') };
+  await press(p, 'next');                                   // Welcome -> Time zone
+  pickZone(p, 'Europe', 'Berlin');
+  await press(p, 'next');                                   // -> Daily goal
+  await press(p, 'hm');                                     // 23:00 -> 22:00
+  await press(p, 'next');                                   // -> Helper
+  await press(p, 'help-off');
+  await press(p, 'next');                                   // -> Wi-Fi
+  out.atWifi = { prog: text(p, 'prog'), link: shown(p, 'wifi-link'), step: shown(p, 's-wifi') };
+  // "Open Wi-Fi setup" leaves the page; Home in /network comes back through "/" to a NEW /firstrun in the same tab
+  p = await load(store);
+  out.back = { prog: text(p, 'prog'), wifi: shown(p, 's-wifi'), welcome: shown(p, 's-welcome'), backButton: shown(p, 'back') };
+  await press(p, 'next');                                   // -> Review
+  out.review = p.ids.sum.children.map(c => c.textContent);
+  await press(p, 'next');                                   // Finish
+  out.posts = p.posts;
+  out.nav = p.nav;
+  out.cleared = !('opos_firstrun' in store);
+  // Skip setup forgets too
+  const store2 = {};
+  let q = await load(store2);
+  await press(q, 'next'); await press(q, 'next');
+  out.keptOnTz = 'opos_firstrun' in store2;
+  q = await load(store2);
+  await press(q, 'skipall');
+  out.skipPosts = q.posts; out.skipNav = q.nav; out.skipCleared = !('opos_firstrun' in store2);
+  // A tab that was left for more than 30 minutes starts again at Welcome
+  const store3 = { opos_firstrun: JSON.stringify({ t: Date.now() - 31 * 60 * 1000, cur: 4, A: { zone: 'Europe/Berlin', goal: null, helper: null }, g: { on: true, min: 1320 }, help: 'off' }) };
+  const r = await load(store3);
+  out.stale = { prog: text(r, 'prog'), welcome: shown(r, 's-welcome') };
+  console.log(JSON.stringify(out));
+})().catch(e => { console.error(e.stack || e); process.exit(1); });
+"""
+
+    @unittest.skipUnless(NODE, "needs node (OPOS_TEST_NODE or PATH)")
+    def test_answers_survive_the_wifi_handoff_in_the_real_page_script(self):
+        """Choose a time zone, a goal and the Helper, take the Wi-Fi link, come back: the page is on the Wi-Fi step with every
+        answer, and Finish sends them all."""
+        import json
+        from opos import firstrun_page
+        payload = json.dumps({"js": firstrun_page._COMMON_JS + firstrun_page._FIRSTRUN_JS, "body": firstrun_page._FIRSTRUN_BODY,
+                              "zones": ["Africa/Cairo", "Asia/Kolkata", "Europe/Berlin", "Europe/London", "UTC"]})
+        r = subprocess.run([NODE, "-e", self.WALK], input=payload, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        out = json.loads(r.stdout)
+        self.assertEqual(out["first"], {"prog": "Step 1 of 5", "welcome": True})
+        self.assertEqual(out["atWifi"], {"prog": "Step 5 of 5", "link": True, "step": True})
+        # the new page, in the same tab: not Welcome
+        self.assertEqual(out["back"], {"prog": "Step 5 of 5", "wifi": True, "welcome": False, "backButton": True})
+        self.assertEqual(out["review"], ["Time zone: Europe/Berlin", "Daily goal: 10:00 PM", "Helper: hidden"])
+        self.assertEqual(len(out["posts"]), 1)
+        sent = out["posts"][0]
+        sent.pop("client_tz")
+        self.assertEqual(sent, {"action": "finish", "zone": "Europe/Berlin", "goal": {"enabled": True, "time": "22:00"}, "helper": "off"})
+        self.assertEqual(out["nav"], ["/"])
+        self.assertTrue(out["cleared"], "finishing forgets the kept answers")
+        self.assertTrue(out["keptOnTz"])
+        self.assertEqual((out["skipPosts"], out["skipNav"], out["skipCleared"]), ([{"action": "skip"}], ["/"], True))
+        self.assertEqual(out["stale"], {"prog": "Step 1 of 5", "welcome": True}, "a tab left for half an hour starts over")
+
 
 class VerifyBlock(unittest.TestCase):
     def test_the_integrate_block_passes_against_a_real_server_started_the_way_the_image_starts_it(self):
         text = (DUO / "verify-image.sh").read_text(encoding="utf-8")
-        m = re.search(r"^python3 - \"\$port2\" > /tmp/opos-verify-duo\.txt 2>&1 <<'EOF'\n(.*?)^EOF\n", text, re.S | re.M)
+        m = re.search(r"^[ \t]*python3 -I - \"\$port2\" > \"\$work/opos-verify-duo\.txt\" 2>&1 <<'EOF'\n(.*?)^EOF\n", text, re.S | re.M)
         self.assertIsNotNone(m, "verify-image.sh has the track integrate probe")
         cfg = tempfile.mkdtemp(prefix="opos-final-")
         self.addCleanup(shutil.rmtree, cfg, True)
@@ -263,8 +381,10 @@ class VerifyBlock(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^# --- track integrate: BEGIN", text, re.M)), 1)
         self.assertEqual(len(re.findall(r"^# --- track integrate: END", text, re.M)), 1)
         self.assertLess(text.index("# --- track integrate: BEGIN"), text.index("# --- qa: BEGIN"))
-        self.assertGreater(text.index("# --- track integrate: BEGIN"), text.index("head -5 /tmp/opos-verify.log"))
-        self.assertIn("pkill -f \"opos.web --port $port2\"", text)
+        self.assertGreater(text.index("# --- track integrate: BEGIN"), text.index('head -5 "$work/opos-verify.log"'))
+        self.assertEqual([ln for ln in text.splitlines() if "pkill" in ln and not ln.startswith("check ") and not ln.lstrip().startswith("#")], [],
+                         "the second server is stopped by the pid serve() recorded (see test_duo_verify_image.py), not by its command line")
+        self.assertIn('stop_server "$duo_pid"', text)
 
 
 class ImageWiring(unittest.TestCase):

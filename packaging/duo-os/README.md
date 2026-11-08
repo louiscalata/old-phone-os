@@ -42,8 +42,8 @@ On top of the base, `build-image.sh` adds:
 | `/opt/opos` | OPOS runtime at an exact revision (`/opt/opos/REVISION`); stdlib Python on the image's python3. A symlink to `/opt/opos-releases/0-<rev12>`, so an update can switch releases atomically |
 | `opos-server.service` | `python3 -m opos.web --live-battery` as user `droidian`, on `127.0.0.1:8765`: the rules on the phone's sysfs battery; sets the switches below |
 | `opos.service` | the shell, with the hardware setup the port gives phosh and item (hwcomposer backend, vendor composer, VT 7); it runs `opos-session` |
-| `opos-session` | starts `phoc` as phosh-session does (the port's `phoc.ini`, hwcomposer output, hinge seam, scale) but **without `-S`**, with `opos-kiosk` as phoc's only client |
-| `opos-kiosk` | waits for the server before every start of the browser (so a kiosk relaunched after an update waits for the restarted server), then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU. Every exit is logged: `journalctl -t opos-kiosk`; the owner's time zone is put in Chromium's environment at every start |
+| `opos-session` | starts `phoc` as phosh-session does (the port's `phoc.ini`, hwcomposer output, hinge seam, scale) but **without `-S`**, with `opos-kiosk` as phoc's only client. phoc runs as its child, so that when the kiosk gives up the script ends phoc and exits 75 (below) |
+| `opos-kiosk` | waits for the server before every start of the browser (so a kiosk relaunched after an update waits for the restarted server), then keeps Chromium in kiosk mode on the OPOS page. It clears a stale profile lock before each start; a Chromium that keeps dying within 20 s is restarted after 2, 2, 4, 8 ... 60 s and, from the third quick exit, without the GPU, and after the sixth in a row, or the tenth of any length within 10 minutes, the kiosk gives up (below). Every exit is logged: `journalctl -t opos-kiosk`; the owner's time zone is put in Chromium's environment at every start |
 | `sfduo-composer-watchdog` | the port's script, edited at build time so that its bounce of a composer that is not DRM master restarts OPOS as well as phosh (`verify-image.sh` checks the edit; an upgrade of the port's package reverts it) |
 | `opos-fallback.service`, `opos-switch` | as the port's item: a failed OPOS shell starts phosh; `sudo opos-switch opos\|phosh\|status` changes shells |
 | `opos-updater`, `opos-update*.path/.service` | the root side of over-the-air updates (below): checks and applies signed bundles, rolls back a bad one |
@@ -60,6 +60,34 @@ shield over every output until a phosh client reports that the shell is up. OPOS
 November 7 both panels stayed black while every process ran. `opos-session` leaves `-S` out, and
 `verify-image.sh` fails an image whose session script passes it. phosh and item stay installed but are not
 started at boot.
+
+**When Chromium never starts.** After 6 quick exits in a row (each under 20 s, about half a minute of back-off), or 10 exits
+of any length within 10 minutes (a Chromium that crashes every 20 to 60 s), `opos-kiosk` leaves a marker file
+(`opos-gave-up` in the runtime directory) and exits 1. `opos-session`, which runs phoc as its child, sees it, ends phoc
+(TERM, five seconds, KILL) and exits 75. `opos.service` has `RestartPreventExitStatus=75`, so it fails at once instead of
+restarting, and `OnFailure=` runs `opos-fallback.service`, which starts phosh. No start-limit arithmetic is involved; the
+unit keeps its original `StartLimitIntervalSec=60`, so a manual restart or the composer watchdog's try-restart does not
+count against a long window. The unit fails about a minute after it started when Chromium dies at once, and about three
+minutes at the very worst (phosh needs the fallback's composer reset and its own start after that); a wait for an OPOS
+server that does not answer comes first, before every start of Chromium and not only the first: up to 120 one-second
+tries, so about two minutes when nothing listens on the port and up to six when something accepts and never answers (it
+runs before the start time is taken, so it never counts as a quick exit, and not at all once the marker is written). A
+phoc that itself keeps dying is not a give-up: it still depends on the start limit, 4 starts in 60 s, which the 20 to 40 s
+of `item-composer-fresh` per start may keep from being reached (not measured). Four starts of `opos.service` within 60 s,
+the first one and manual restarts included, fail the unit and start phosh unless `item-composer-fresh` makes each start
+take 20 s or more, and `sudo opos-switch opos` brings OPOS back.
+
+**Phosh after a failed OPOS** is the stock Droidian shell, started for this boot only: nothing is switched off, OPOS is not
+running, and the next boot tries OPOS again. To get OPOS back without rebooting, run `sudo opos-switch opos` (over ssh or
+from phosh's terminal); `sudo opos-switch phosh` makes phosh the default instead. The reason is in
+`journalctl -t opos-kiosk` and `journalctl -u opos.service`.
+
+Shown: the whole chain on real systemd 259 in a model (`OPOS_TEST_SYSTEMD=1`, root, `tests/test_duo_kiosk.py`) with the
+shipped `opos-session`, `opos-kiosk` and fallback command, a stub phoc that ignores TERM, one that obeys it and one that
+ends with its client, and a stub Chromium that dies at once: the unit fails with status 75, is not restarted, and the
+stand-in phosh starts within seconds. Only on paper: how the real phoc reacts to TERM and KILL and shuts the hwcomposer
+down, the real timings on the phone, and that phosh comes up afterwards. So the fallback is reachable end to end in the
+model, not yet on the phone.
 
 Over-the-air updates are described [below](#over-the-air-updates); the contract is [docs/ota-update.md](../../docs/ota-update.md).
 
@@ -147,8 +175,12 @@ sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 the journal settings, runs the OPOS server from the image with the image's own aarch64 python3 under
 qemu-user, starts a second one with the keyboard, the Network page and the first run all on to ask it for each page, and two
 more, with the Inference page off (its two routes answer 404) and on (they answer 200).
+All four servers listen on loopback ports it picks, and a port that already answers is a FAIL, so a stale or hostile listener
+cannot stand in for the image's server; they get none of the caller's `OPOS_` variables, and are stopped by their own pid,
+at the end or on INT, TERM or HUP.
 It is not a boot, display or battery test.
-`tests/test_duo_kiosk.py` runs the kiosk script under `sh` with a fake `chromium` (locks, back-off, the no-GPU retry).
+`tests/test_duo_kiosk.py` runs the kiosk script under `sh` with a fake `chromium` (locks, back-off, the no-GPU retry, the
+give-up), `opos-session` with a stub phoc, and with `OPOS_TEST_SYSTEMD=1` as root the whole give-up chain on real systemd.
 
 ## On-screen keyboard
 

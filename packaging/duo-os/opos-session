@@ -4,6 +4,14 @@
 # passes -S, and in shell mode phoc keeps an opaque black shield over every output until a phosh
 # client reports that the shell is up. OPOS's kiosk is not one, so both panels stayed black on the
 # Duo (2026-11-07) with every process running; phoc without -S lit them.
+#
+# phoc runs as this script's child (not exec'd away), so that the script can end it and say why. opos-kiosk, phoc's
+# -E client, leaves a marker file in the runtime directory when it gives up on Chromium (the rules are in opos-kiosk).
+# Then phoc is ended here: TERM, a few seconds, KILL (phoc may not end with its client, or may ignore TERM), and the
+# script exits 75. opos.service has RestartPreventExitStatus=75, so the unit fails at once instead of restarting, and its
+# OnFailure= starts phosh. Any other end of phoc is this script's exit status, as when it exec'd phoc (a phoc killed by a
+# signal shows as 128 plus the signal), and opos.service restarts the session. 75 is for the give-up alone. (A shell's
+# background job ignores SIGINT and SIGQUIT, and phoc inherits that; nothing in the unit sends either.)
 PHOC_INI=/usr/share/phosh/phoc.ini
 [ -f /etc/phosh/phoc.ini ] && PHOC_INI=/etc/phosh/phoc.ini
 [ -n "$WLR_BACKENDS" ] || WLR_BACKENDS=hwcomposer,libinput
@@ -11,4 +19,46 @@ export WLR_BACKENDS
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
     DBUS_RUN_SESSION="dbus-run-session --"
 fi
-exec systemd-cat -t phoc $DBUS_RUN_SESSION /usr/bin/phoc -v -C "$PHOC_INI" -E /usr/libexec/opos/opos-kiosk
+uid=$(id -u)
+gave_up=${XDG_RUNTIME_DIR:-/run/user/$uid}/opos-gave-up
+grace=5
+rm -f "$gave_up"
+
+# pgrep says 1 for "no such process"; anything else (no pgrep, an error) means it cannot be told, so phoc counts as alive.
+phoc_alive() { pgrep -u "$uid" -x phoc >/dev/null 2>&1; [ $? -ne 1 ]; }
+# Ends phoc and the wrapper above it (systemd-cat, dbus-run-session): TERM, up to $grace seconds for phoc to go, then KILL.
+end_phoc() {
+    kill -TERM "$child" 2>/dev/null
+    pkill -TERM -u "$uid" -x phoc 2>/dev/null
+    i=0
+    while [ "$i" -lt "$grace" ] && phoc_alive; do
+        sleep 1
+        i=$((i + 1))
+    done
+    kill -KILL "$child" 2>/dev/null
+    pkill -KILL -u "$uid" -x phoc 2>/dev/null
+}
+
+# An asynchronous command would get /dev/null for stdin; phoc keeps the unit's, as when it was exec'd.
+exec 3<&0
+systemd-cat -t phoc $DBUS_RUN_SESSION /usr/bin/phoc -v -C "$PHOC_INI" -E /usr/libexec/opos/opos-kiosk <&3 3<&- &
+child=$!
+# While phoc runs the script waits for it, so a phoc that ignores TERM is ended from here.
+(
+    until [ -e "$gave_up" ]; do sleep 1; done
+    echo "opos-session: opos-kiosk gave up ($(cat "$gave_up" 2>/dev/null)); ending phoc"
+    end_phoc
+) 3<&- &
+watcher=$!
+wait "$child"
+rc=$?
+if [ -e "$gave_up" ]; then
+    # phoc went with its client (or the watcher has just ended it): the watcher is the one that sees the marker through, and
+    # it is bounded (one poll, then TERM, the grace, KILL), so wait for it rather than end phoc a second time here.
+    wait "$watcher"
+    echo "opos-session: phoc ended after opos-kiosk gave up; exiting 75, so that opos.service fails and starts phosh instead of restarting"
+    exit 75
+fi
+kill "$watcher" 2>/dev/null
+[ "$rc" -ne 75 ] || rc=1
+exit "$rc"

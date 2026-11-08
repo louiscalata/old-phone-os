@@ -97,7 +97,13 @@ case "$1 $2" in
   "general permissions") cat "$D/permissions";;
   "device status") cat "$D/device_status";;
   "device show") cat "$D/show_$3";;
-  "connection show") if [ "$3" = uuid ]; then cat "$D/ssid_$4"; else cat "$D/connections"; fi;;
+  "connection show") if [ "$3" = uuid ]; then cat "$D/ssid_$4"; else
+      if [ -f "$D/list_fails_after" ]; then
+        n=$(cat "$D/list_count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$D/list_count"
+        if [ "$n" -gt "$(cat "$D/list_fails_after")" ]; then echo "Error: NetworkManager went away." >&2; exit 1; fi
+      fi
+      cat "$D/connections"
+    fi;;
   "connection delete") echo "$4" >> "$D/deleted"; grep -v ":$4:" "$D/connections" > "$D/c.new"; mv "$D/c.new" "$D/connections"; echo "Connection successfully deleted.";;
   "connection up") echo "$4" >> "$D/up"; echo "Connection successfully activated.";;
   "radio wifi") echo "$3" > "$D/radio";;
@@ -122,7 +128,12 @@ case "$1 $2" in
             echo "Error: Connection activation failed: (7) Secrets were required, but not provided. [$pw]" >&2; exit 4
           fi
         fi
-        echo "Device 'wlan0' successfully activated with '@UNEW@'."
+        if [ -f "$D/activation_fails" ]; then  # the right password, then no address / the network went away
+          if [ -f "$D/leave_profile" ]; then echo "$4:@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$4" > "$D/ssid_@UNEW@"; fi
+          cat "$D/activation_fails" >&2; exit 4
+        fi
+        if [ -f "$D/quiet_ok" ]; then echo "Connection activated"; exit 0; fi
+        echo "Device 'wlan0' successfully activated with '$(cat "$D/activated_uuid" 2>/dev/null || echo @UNEW@)'."
         ;;
     esac;;
   *) echo "Error: unexpected: $*" >&2; exit 2;;
@@ -367,6 +378,125 @@ class Status(unittest.TestCase):
         self.assertEqual(f.net().status(True)["airplane"]["state"], "partly")
         f.put("rfkill_out", RFKILL.replace("Hard blocked: no", "Hard blocked: yes"))
         self.assertEqual(f.net().status(True)["bluetooth"]["state"], "blocked")
+
+    def test_rfkill_missing_and_bluetooth_on_is_not_all_radios_blocked(self):
+        f = Fake(self)
+        f.put("rfkill_rc", "1")  # rfkill fails: nothing tells whether Bluetooth is blocked, except BlueZ itself
+        f.put("general_status", "running:connected:none:enabled:disabled:enabled:disabled\n")  # NetworkManager: Wi-Fi and mobile data off
+        s = f.net().status(True)
+        self.assertEqual((s["bluetooth"]["state"], s["bluetooth"]["enabled"]), ("on", True))
+        self.assertNotEqual(s["airplane"]["state"], "on")
+        self.assertIsNot(s["airplane"]["on"], True)
+        self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+        self.assertEqual(s["airplane"]["state"], "partly")
+
+    def test_rfkill_missing_and_bluetooth_off_is_all_radios_blocked(self):
+        f = Fake(self)
+        f.put("rfkill_rc", "1")
+        f.put("bluetoothctl_out", BTCTL.replace("Powered: yes", "Powered: no"))
+        f.put("general_status", "running:connected:none:enabled:disabled:enabled:disabled\n")
+        s = f.net().status(True)
+        self.assertEqual(s["bluetooth"]["state"], "off")
+        self.assertIs(s["airplane"]["on"], True)
+        self.assertIn("all radios are blocked", s["airplane"]["summary"])
+
+    def test_rfkill_missing_and_bluetooth_not_known_keeps_the_answer_unknown(self):
+        f = Fake(self)
+        f.put("rfkill_rc", "1")
+        f.put("bluetoothctl_out", "")  # BlueZ answers but names no controller: the radio is there, its state is not established
+        f.put("general_status", "running:connected:none:enabled:disabled:enabled:disabled\n")
+        s = f.net().status(True)
+        self.assertEqual(s["bluetooth"]["enabled"], None)
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"))
+        self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+        self.assertIn("Bluetooth", s["airplane"]["summary"])
+
+    def test_an_unknown_radio_does_not_hide_a_radio_that_is_known_to_work(self):
+        f = Fake(self)
+        f.put("rfkill_rc", "1")
+        f.put("bluetoothctl_out", "")
+        f.put("general_status", "running:connected:none:enabled:enabled:enabled:disabled\n")  # Wi-Fi is on
+        s = f.net().status(True)
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "partly"))
+
+    def test_a_wifi_radio_nobody_reported_on_keeps_airplane_unknown(self):
+        f = Fake(self)
+        f.put("nm_down")  # NetworkManager says nothing about Wi-Fi or mobile data
+        f.put("rfkill_out", "1: hci0: Bluetooth\n\tSoft blocked: yes\n\tHard blocked: no\n")  # rfkill lists only Bluetooth, and it is blocked
+        (f.bin / "mmcli").unlink()  # and this phone has no modem to be read: only the Wi-Fi radio is in doubt
+        s = f.net().status(True)
+        self.assertEqual(s["bluetooth"]["state"], "off")
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"))
+        self.assertIn("Wi-Fi", s["airplane"]["summary"])
+        self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+
+    def modem_case(self, mmcli_state=None, mmcli_rc=None, mmcli_out=None, wwan_iface=True, rfkill=None):
+        """NetworkManager down, Wi-Fi and Bluetooth blocked in rfkill, which lists no Wireless WAN row (the normal Droidian
+        case); the phone has a modem (an rmnet interface and/or ModemManager's answer), but nothing has said whether it is blocked."""
+        f = Fake(self)
+        f.put("nm_down")
+        f.put("rfkill_out", rfkill if rfkill is not None else RFKILL.replace("Soft blocked: no", "Soft blocked: yes"))
+        if wwan_iface:
+            (f.root / "sys/class/net/rmnet_data0").mkdir()
+        if mmcli_state:
+            f.put("mmcli_out", MMCLI.replace("registered", mmcli_state, 1))
+        if mmcli_rc is not None:
+            f.put("mmcli_rc", str(mmcli_rc))
+            f.put("mmcli_out", mmcli_out or "")
+        return f.net().status(True)
+
+    def test_a_modem_nobody_reported_on_keeps_airplane_unknown(self):
+        for how, kw in {"mmcli fails": dict(mmcli_rc=1), "ModemManager sees no modem": dict(mmcli_rc=1, mmcli_out="error: couldn't find modem")}.items():
+            with self.subTest(how):
+                s = self.modem_case(**kw)
+                self.assertEqual(s["bluetooth"]["state"], "off")
+                self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"), s["airplane"])
+                self.assertIn("mobile data", s["airplane"]["summary"])
+                self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+
+    def test_a_modem_that_is_on_means_airplane_mode_is_not_all_radios_blocked(self):
+        for state in ("registered", "connected", "searching", "enabled"):
+            with self.subTest(state):
+                s = self.modem_case(mmcli_state=state, wwan_iface=False)  # ModemManager alone shows the modem
+                self.assertEqual(s["modem"]["state"], state)
+                self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "partly"), s["airplane"])
+                self.assertNotIn("all radios are blocked", s["airplane"]["summary"])
+
+    def test_a_modem_whose_state_says_nothing_about_the_radio_keeps_airplane_unknown(self):
+        for state in ("disabled", "locked", "failed", "initializing", "unknown"):
+            with self.subTest(state):
+                s = self.modem_case(mmcli_state=state)
+                self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (None, "unknown"), s["airplane"])
+                self.assertIn("mobile data", s["airplane"]["summary"])
+
+    def test_the_same_case_with_the_modem_read_as_on_is_the_status_the_page_shows_for_the_modem(self):
+        s = self.modem_case()  # the default ModemManager answer: registered on Example Mobile
+        self.assertIn("registered", s["modem"]["summary"])
+        self.assertNotIn("all radios are blocked", s["airplane"]["summary"], "the page must not say both")
+
+    def test_rfkill_listing_the_modem_decides_whatever_modemmanager_says(self):
+        both = RFKILL.replace("Soft blocked: no", "Soft blocked: yes") + "2: wwan0: Wireless WAN\n\tSoft blocked: yes\n\tHard blocked: no\n"
+        s = self.modem_case(rfkill=both)  # registered per mmcli, blocked per rfkill: rfkill is the switch
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (True, "on"))
+
+    def test_a_phone_without_a_modem_has_nothing_unknown_about_one(self):
+        f = Fake(self)
+        f.put("nm_down")
+        f.put("rfkill_out", RFKILL.replace("Soft blocked: no", "Soft blocked: yes"))
+        (f.bin / "mmcli").unlink()  # no ModemManager tool, and no wwan interface in the fixture: there is no modem to be unsure about
+        s = f.net().status(True)
+        self.assertIn("mmcli", s["tools_missing"])
+        self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (True, "on"))
+
+    def test_unknown_radios_are_listed_in_plain_words(self):
+        f = Fake(self)
+        f.put("nm_down")
+        f.put("rfkill_rc", "1")
+        f.put("bluetoothctl_out", "")
+        f.put("mmcli_rc", "1")
+        (f.root / "sys/class/net/rmnet_data0").mkdir()
+        s = f.net().status(True)["airplane"]
+        self.assertIn("the state of Wi-Fi, mobile data and Bluetooth could not be read", s["summary"])
 
     def test_bluetooth_cases(self):
         f = Fake(self)
@@ -669,13 +799,108 @@ class Join(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.f.read("deleted").split(), [UUID_HOME])
 
-    def test_a_wrong_new_password_for_a_saved_network_says_the_old_entry_is_gone(self):
+    def test_a_wrong_new_password_for_a_saved_network_keeps_the_old_entry(self):
         self.f.put("leave_profile")
         r = self.f.net().join("HomeNet", "not the password")
         self.assertFalse(r["ok"])
-        self.assertIn(UUID_HOME, self.f.read("deleted"))
-        self.assertIn("old saved entry for this network was removed", r["error"])
-        self.assertNotIn("Nothing was saved", r["error"], "the working profile was deleted, so that would be false")
+        self.assertEqual(self.f.read("deleted").split(), [UUID_NEW], "only what the failed attempt itself left behind is deleted")
+        self.assertIn(UUID_HOME, self.f.read("connections"))
+        self.assertNotIn(UUID_NEW, self.f.read("connections"))
+        self.assertTrue(r["error"].endswith("Your saved entry for this network was kept."), r["error"])
+        self.assertNotIn("was removed", r["error"])
+        self.assertNotIn("Nothing was saved", r["error"], "the old entry is still saved, so that would be false")
+
+    def test_no_failed_join_costs_the_saved_entry(self):
+        """The password was right and the join still failed (no address, the network went away, a timeout), or it was wrong."""
+        causes = {
+            "no address": "Error: Connection activation failed: IP configuration could not be reserved (no available address, timeout, etc.).",
+            "network gone": "Error: No network with SSID 'HomeNet' found.",
+            "not in range": "Error: Connection activation failed: The Wi-Fi network could not be found",
+        }
+        for name, text in causes.items():
+            with self.subTest(name):
+                f = Fake(self)
+                f.put("psk", "the right one")
+                f.put("activation_fails", text + "\n")
+                f.put("leave_profile")
+                r = f.net().join("HomeNet", "the right one")
+                self.assertFalse(r["ok"])
+                self.assertEqual(f.read("deleted").split(), [UUID_NEW], name)
+                self.assertIn(UUID_HOME, f.read("connections"), name)
+                self.assertIn("Your saved entry for this network was kept.", r["error"])
+        f = Fake(self)
+        f.put("psk", "the right one")
+        f.put("join_hang")
+        with mock.patch.object(net, "JOIN_WAIT_S", 0), mock.patch.object(net, "JOIN_EXTRA_S", 1):
+            r = f.net().join("HomeNet", "the right one")
+        self.assertIn("did not answer in time", r["error"])
+        self.assertEqual(f.read("deleted"), "")
+        self.assertIn(UUID_HOME, f.read("connections"))
+        self.assertIn("Your saved entry for this network was kept.", r["error"])
+
+    def test_a_new_password_that_works_replaces_the_old_entry_only_after_the_join(self):
+        self.f.put("psk", "brand new pass")
+        r = self.f.net().join("HomeNet", "brand new pass")
+        self.assertTrue(r["ok"], r)
+        calls = self.f.calls().splitlines()
+        join_at = next(i for i, c in enumerate(calls) if "device wifi connect" in c)
+        delete_at = next(i for i, c in enumerate(calls) if "connection delete" in c)
+        self.assertLess(join_at, delete_at, "the old entry is deleted after the new one is up, not before")
+        self.assertEqual(self.f.read("deleted").split(), [UUID_HOME])
+        self.assertNotIn("older saved entry", r["message"], "nothing is left over to report")
+
+    def test_the_entry_nmcli_reports_as_activated_is_never_deleted(self):
+        # an nmcli that reused the old profile instead of making a new one
+        self.f.put("psk", "brand new pass")
+        self.f.put("activated_uuid", UUID_HOME)
+        r = self.f.net().join("HomeNet", "brand new pass")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.f.read("deleted"), "")
+
+    def test_when_the_new_entry_cannot_be_told_the_old_one_is_kept(self):
+        self.f.put("psk", "brand new pass")
+        self.f.put("quiet_ok")
+        r = self.f.net().join("HomeNet", "brand new pass")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.f.read("deleted"), "")
+        self.assertIn("older saved entry for this network was kept", r["message"])
+
+    def test_nothing_was_saved_is_not_claimed_when_the_leftovers_cannot_be_checked(self):
+        self.f.put("leave_profile")
+        self.f.put("list_fails_after", "1")  # the list before the attempt works, the one after does not
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertNotIn("Nothing was saved", r["error"])
+        self.assertIn("could not check whether the attempt left an entry behind", r["error"])
+
+    def test_nothing_was_saved_is_not_claimed_while_a_saved_profile_cannot_be_read(self):
+        # "Old hotspot" may well be a saved entry for Neighbor 5G (its SSID cannot be read), and its name is not the SSID, so it is
+        # invisible to the match: the attempt's own leftover is removed, and the text must not say nothing is saved
+        uid = "55555555-5555-4555-8555-555555555555"
+        self.f.put("connections", self.f.read("connections") + f"Old hotspot:{uid}:wifi:\n")  # no ssid_<uuid> file: nmcli fails for it
+        self.f.put("leave_profile")
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertNotIn("Nothing was saved", r["error"])
+        self.assertNotIn("kept", r["error"], "no entry was matched, so none can be said to be kept either")
+        self.assertTrue(r["error"].endswith("OPOS could not read every saved network, so it cannot tell whether Neighbor 5G is saved."), r["error"])
+        self.assertEqual(self.f.read("deleted").split(), [UUID_NEW], "the attempt's own leftover is still removed, and only that")
+        self.assertIn(uid, self.f.read("connections"))
+
+    def test_nothing_was_saved_is_still_said_when_every_profile_could_be_read(self):
+        self.f.put("leave_profile")
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertTrue(r["error"].endswith("Nothing was saved."), r["error"])
+
+    def test_a_listing_that_fails_before_the_join_claims_nothing_and_deletes_nothing(self):
+        self.f.put("leave_profile")
+        self.f.put("list_fails_after", "0")  # NetworkManager lists nothing at all, before or after
+        r = self.f.net().join("Neighbor 5G", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["error"].endswith("OPOS could not check whether the attempt left an entry behind."), r["error"])
+        self.assertNotIn("Nothing was saved", r["error"])
+        self.assertEqual(self.f.read("deleted"), "", "without the list from before the attempt, nothing can be told apart from what was there")
+        self.assertIn(UUID_NEW, self.f.read("connections"))
 
     def test_hidden_network(self):
         r = self.f.net().join("Secret Net", PW, hidden=True)
@@ -728,6 +953,110 @@ class Join(unittest.TestCase):
         self.assertTrue(r.timed_out)
         r = net.run(["nope-not-here"], 0.5, "pw\n", path=str(self.f.tools), tty=True)
         self.assertTrue(r.missing)
+
+
+UUID_DUP = "77777777-7777-4777-8777-777777777777"
+
+
+def crowded(f, extra=22, unreadable=()):
+    """25 saved Wi-Fi profiles in all: HomeNet and Cafe, `extra` fillers, and a second HomeNet entry that is the 25th, past the
+    twentieth that a list cut for showing keeps. `unreadable` names fillers whose SSID nmcli will not give."""
+    lines = [CONNS.rstrip("\n")]
+    for i in range(1, extra + 1):
+        u = "aaaaaaaa-0000-4000-8000-%012d" % i
+        lines.append(f"Filler {i:02d}:{u}:wifi:")
+        if f"Filler {i:02d}" not in unreadable:
+            f.put(f"ssid_{u}", f"802-11-wireless.ssid:Filler {i:02d}\n")
+    lines.append(f"HomeNet backup:{UUID_DUP}:wifi:")
+    f.put(f"ssid_{UUID_DUP}", "802-11-wireless.ssid:HomeNet\n")
+    f.put("connections", "\n".join(lines) + "\n")
+    return f
+
+
+class LargeInventory(unittest.TestCase):
+    """More saved networks than a list cut for showing keeps: what is saved is decided from all of them."""
+
+    def test_the_fixture_has_25_wifi_profiles_and_the_second_homenet_is_the_25th(self):
+        f = crowded(Fake(self))
+        wifi = [ln for ln in f.read("connections").splitlines() if ":wifi:" in ln]
+        self.assertEqual(len(wifi), 25)
+        self.assertTrue(wifi[24].endswith(f"{UUID_DUP}:wifi:"))
+        self.assertEqual(sum(ln.startswith("HomeNet") for ln in wifi), 2)
+
+    def test_forget_removes_both_entries_for_the_ssid_and_says_so_only_then(self):
+        f = crowded(Fake(self))
+        r = f.net().forget("HomeNet")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(sorted(f.read("deleted").split()), sorted([UUID_HOME, UUID_DUP]))
+        self.assertIn("Its password is gone", r["message"])
+        left = f.read("connections")
+        self.assertNotIn(UUID_HOME, left)
+        self.assertNotIn(UUID_DUP, left)
+        self.assertIn(UUID_CAFE, left)
+
+    def test_forget_looks_again_and_does_not_claim_what_it_cannot_check(self):
+        f = crowded(Fake(self))
+        f.put("list_fails_after", "1")  # the first list works; the one after the deletions does not
+        r = f.net().forget("HomeNet")
+        self.assertFalse(r["ok"])
+        self.assertNotIn("password is gone", json.dumps(r))
+        self.assertIn("may remain", r["error"])
+        self.assertEqual(sorted(f.read("deleted").split()), sorted([UUID_HOME, UUID_DUP]))
+
+    def test_an_unreadable_profile_means_forget_cannot_claim_completion(self):
+        f = crowded(Fake(self), unreadable=("Filler 05",))
+        r = f.net().forget("HomeNet")
+        self.assertFalse(r["ok"], r)
+        self.assertNotIn("password is gone", json.dumps(r))
+        self.assertIn("may remain", r["error"])
+        self.assertEqual(sorted(f.read("deleted").split()), sorted([UUID_HOME, UUID_DUP]), "what was readable is still deleted")
+
+    def test_an_unreadable_profile_does_not_turn_not_found_into_not_saved(self):
+        f = crowded(Fake(self), unreadable=("Filler 05",))
+        r = f.net().forget("Nowhere")
+        self.assertFalse(r["ok"])
+        self.assertNotEqual(r["error"], "That network is not saved on this phone.")
+        self.assertIn("could not read every saved network", r["error"])
+        self.assertEqual(f.read("deleted"), "")
+
+    def test_forget_never_deletes_a_profile_it_only_guessed_by_name(self):
+        # a profile named like the network whose SSID could not be read may be a different network
+        f = crowded(Fake(self), unreadable=("Filler 05",))
+        r = f.net().forget("Filler 05")
+        self.assertFalse(r["ok"])
+        self.assertEqual(f.read("deleted"), "")
+
+    def test_a_stray_profile_past_the_twentieth_is_cleaned_after_a_failed_join(self):
+        f = crowded(Fake(self))
+        f.put("psk", PW)
+        f.put("leave_profile")  # the failed attempt adds its profile at the END of the list
+        r = f.net().join("Neighbor 5G", "not the password")
+        self.assertFalse(r["ok"])
+        self.assertEqual(f.read("deleted").split(), [UUID_NEW])
+        self.assertNotIn(UUID_NEW, f.read("connections"))
+        self.assertTrue(r["error"].endswith("Nothing was saved."), r["error"])
+
+    def test_a_saved_network_past_the_twentieth_is_still_a_saved_network(self):
+        f = crowded(Fake(self))
+        f.put("connections", f.read("connections").replace("HomeNet backup", "Backup Net"))
+        f.put(f"ssid_{UUID_DUP}", "802-11-wireless.ssid:Backup Net\n")
+        r = f.net().join("Backup Net")  # no password: it is saved, so it is brought up
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(f.read("up").split(), [UUID_DUP])
+        f.put("psk", "brand new pass")
+        r = f.net().join("Backup Net", "brand new pass")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(f.read("deleted").split(), [UUID_DUP], "the old entry is replaced, not left beside the new one")
+
+    def test_the_list_cut_for_showing_is_still_cut(self):
+        f = crowded(Fake(self))
+        n = f.net()
+        q = net._Q(n, 60)
+        self.assertEqual(len(n._saved_wifi(q)), net.PROFILE_MAX)
+        profiles, complete = n._wifi_profiles(q)
+        self.assertEqual(len(profiles), 25)
+        self.assertTrue(complete)
+        self.assertFalse(n._wifi_profiles(q, net.PROFILE_MAX)[1], "a cut list is never complete")
 
 
 class ForgetAndWifi(unittest.TestCase):
@@ -1009,6 +1338,13 @@ class Packaging(unittest.TestCase):
         d = self.read("docs/network.md")
         for phrase in ("still simulated", "OPOS_NETWORK", "OPOS_NET_POLKIT", "nmcli --ask", "not tested on the phone", "802.1X"):
             self.assertIn(phrase, d)
+        flat = " ".join(d.split())
+        # the accepted posture: one owner, a token any local process can read; and how far the optional rule reaches
+        for phrase in ("any local user or process on the phone can read it and change Wi-Fi", "single-user phone",
+                       "activate, modify and delete every NetworkManager connection, mobile data and VPN profiles included",
+                       "The page token is served on `GET /network`",
+                       "keeps the old entry", "A radio whose state was not read keeps the answer at \"unknown\""):
+            self.assertIn(phrase, flat)
         self.assertIn("network.md", self.read("docs/README.md"))
 
 

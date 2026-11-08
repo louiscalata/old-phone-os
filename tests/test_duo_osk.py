@@ -181,7 +181,7 @@ class ImageScriptsTest(unittest.TestCase):
                   "phosh-osk-stevia"):
             self.assertIn(s, b, s)
         t = (DUO / "verify-image.sh").read_text(encoding="utf-8")
-        c = self.block("verify-image.sh", "# --- track osk: the image's own python3", 'kill "$(cat /tmp/opos-verify.pid)"')
+        c = self.block("verify-image.sh", "# --- track osk: the image's own python3", 'stop_server "$smoke_pid"')
         self.assertIn("osk.asset('/osk.js')", c)
         self.assertIn("os.environ['OPOS_OSK'] = '1'", c)
         self.assertLess(t.index("# --- track osk: the image's own python3"), t.index("VERIFY: PASS"))

@@ -73,7 +73,10 @@ online; whether it does on the phone is not checked here.
 
 - A request that does not ask for `text/html` (the kiosk's wait loop, health checks) always gets the home
   page with status 200. Only a browser opening `/` is sent to `/firstrun`, and only until the flag exists.
-- Skip setup, "Open Home" and `/?firstrun=later` all reach the home screen. If the flag cannot be written, the server stops
+- Skip setup, "Open Home" and `/?firstrun=later` all reach the home screen. The query changes nothing on the server: it only makes that
+  one response the home page, so a request from anyone cannot switch the setup off for everyone. "Open Home" first sends an
+  authenticated `POST /api/firstrun {"action": "later"}`, which stops the redirect until the server restarts, and goes home
+  whether or not that worked. If the flag cannot be written, the server stops
   offering setup for that run instead of looping.
 - If the config directory cannot be written there is no first run at all; if deciding fails for any reason the home page is
   shown; if `opos.web` cannot load the track at all, it logs one line and starts normally.
@@ -92,7 +95,7 @@ from a shell with NetworkManager's `nmcli`.
 | | |
 |---|---|
 | pages | `GET /firstrun`, `GET /timezone` (host check, nonce CSP, same token as `/`) |
-| JSON | `GET /api/firstrun`, `GET /api/timezone` (token); `POST /api/firstrun` `{"action": "skip"}` or `{"action": "finish", "zone", "goal": {"enabled", "time"}, "helper", "client_tz"}`; `POST /api/timezone` `{"zone", "client_tz"}` (the same origin, type, token and rate checks as `/api`) |
+| JSON | `GET /api/firstrun`, `GET /api/timezone` (token); `POST /api/firstrun` `{"action": "skip"}`, `{"action": "later"}` or `{"action": "finish", "zone", "goal": {"enabled", "time"}, "helper", "client_tz"}`; `POST /api/timezone` `{"zone", "client_tz"}` (the same origin, type, token and rate checks as `/api`, in that order: a rejected request is not charged to the rate limit) |
 | files | `<config>/timezone`, `<config>/firstrun.json`; `config.json`, `prefs.json` as written by the setup |
 | environment | `OPOS_FIRSTRUN=1` (on), `OPOS_KIOSK_RESTART=0` (no Chromium restart) |
 | kiosk | `opos-kiosk` must keep starting Chromium with `--user-data-dir=$HOME/.cache/opos-kiosk` (the restart finds it by that) and must keep re-reading `<config>/timezone` before each start |

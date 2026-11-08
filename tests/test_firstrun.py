@@ -461,12 +461,66 @@ class On(Http):
         self.assertEqual(200, s)
         self.assertIn(b"Old Phone OS Interface", b)
 
-    def test_not_now_reaches_home_and_stays_there(self):
+    def test_the_later_query_serves_home_for_that_response_only(self):
         s, h, b = self.req("GET", "/?firstrun=later", headers=BROWSER)
         self.assertEqual(200, s)
         self.assertIn(b'name="opos-token"', b)
-        self.assertEqual(200, self.req("GET", "/", headers=BROWSER)[0])
+        self.assertFalse(firstrun._later, "a GET does not change what the server offers to everyone")
+        s, h, b = self.req("GET", "/", headers=BROWSER)
+        self.assertEqual((302, "/firstrun"), (s, h.get("location")), "the next visit to / still gets the setup")
         self.assertFalse(firstrun.done())
+
+    def test_not_now_for_the_whole_run_is_an_authenticated_post_and_then_stays_home(self):
+        s, j = self.jpost("/api/firstrun", {"action": "later"})
+        self.assertEqual((200, True, False), (s, j["ok"], j["done"]))
+        self.assertTrue(firstrun._later)
+        self.assertFalse(firstrun.done(), "deferred, not finished or skipped")
+        self.assertEqual(200, self.req("GET", "/", headers=BROWSER)[0])
+        self.assertEqual(200, self.req("GET", "/?firstrun=later", headers=BROWSER)[0])
+        firstrun.reset()
+        self.assertEqual(302, self.req("GET", "/", headers=BROWSER)[0])
+
+    def test_nothing_unauthenticated_can_defer_the_setup(self):
+        origin = {"Origin": "http://evil.example"}
+        for name, extra, want in (("no token", {"X-OPOS-Token": None}, 403), ("wrong token", {"X-OPOS-Token": "nope"}, 403),
+                                  ("foreign origin", origin, 403), ("wrong type", {"Content-Type": "text/plain"}, 415),
+                                  ("foreign host", {"Host": "evil.example"}, 403)):
+            with self.subTest(name):
+                self.assertEqual(want, self.post("/api/firstrun", {"action": "later"}, **extra)[0])
+                self.assertFalse(firstrun._later)
+        self.assertEqual(302, self.req("GET", "/", headers=BROWSER)[0])
+
+    def test_a_tokenless_get_with_a_foreign_host_defers_nothing(self):
+        for path in ("/?firstrun=later", "/?x=1&firstrun=later"):
+            s, h, b = self.req("GET", path, headers=dict(BROWSER, Host="evil.example:80"))
+            self.assertEqual(403, s, path)
+            self.assertFalse(firstrun._later, path)
+        s, h, b = self.req("GET", "/", headers=BROWSER)
+        self.assertEqual((302, "/firstrun"), (s, h.get("location")), "setup is still offered to the owner")
+
+    def test_rejected_posts_do_not_spend_the_budget_of_an_authentic_one(self):
+        from opos import secure
+        self.server.RequestHandlerClass.limiter._buckets["post"] = secure.RateLimiter(0.0, 5)  # no refill: every charge counts
+        body = json.dumps({"zone": "UTC"}).encode()
+        base = {"Content-Type": "application/json", "X-OPOS-Token": self.token}
+        rejected = ({"Origin": "http://evil.example"}, {"Content-Type": "text/plain"}, {"X-OPOS-Token": "wrong"}, {"X-OPOS-Token": None})
+        for i in range(40):
+            extra = rejected[i % len(rejected)]
+            h = {k: v for k, v in {**base, **extra}.items() if v is not None}
+            self.assertIn(self.req("POST", "/api/timezone", body=body, headers=h)[0], (403, 415))
+        for i in range(5):
+            self.assertEqual(200, self.post("/api/timezone", {"zone": "UTC"}, Origin=f"http://127.0.0.1:{self.port}")[0], "authentic request %d" % i)
+        self.assertEqual(429, self.post("/api/timezone", {"zone": "UTC"})[0], "the limit still applies to authentic requests")
+
+    def test_an_authentic_api_request_after_a_flood_of_rejected_ones_is_not_429(self):
+        # the shape of the report: rejected POSTs to /api/timezone, then the owner's own /api request
+        from opos import secure
+        self.server.RequestHandlerClass.limiter._buckets["post"] = secure.RateLimiter(0.0, 3)
+        for _ in range(30):
+            self.assertEqual(403, self.post("/api/timezone", {"zone": "UTC"}, Origin="http://evil.example")[0])
+        s, h, b = self.req("POST", "/api", body=json.dumps({"action": "battery", "level": 55}).encode(),
+                           headers={"Content-Type": "application/json", "X-OPOS-Token": self.token})
+        self.assertNotEqual(429, s)
 
     def test_a_wrong_host_is_not_redirected(self):
         s, h, b = self.req("GET", "/", headers=dict(BROWSER, Host="evil.example:80"))
@@ -702,6 +756,10 @@ class Pages(unittest.TestCase):
         self.assertIn('href="/?firstrun=later"', page)
         self.assertIn("location.href='/?firstrun=later'", page)  # a failed skip still gets out
         self.assertIn("api('/api/firstrun',{action:'skip'})", page)
+        # "Open Home" asks for the run-wide "not now" with the token, and goes home whether or not that worked
+        self.assertIn("$('home').onclick=function(e){e.preventDefault();", page)
+        self.assertIn("api('/api/firstrun',{action:'later'}).then(out,out)", page)
+        self.assertIn("var out=function(){location.href='/?firstrun=later'}", page)
         self.assertIn('<a class="btn" href="/">Back to Home</a>', firstrun_page.timezone_page("t", "n"))
 
     def test_the_steps_are_the_ones_the_os_needs(self):
