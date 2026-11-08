@@ -224,7 +224,11 @@ class Phone:
             self.sim.refresh()
             self.charging = bool(self.sim.charging)
             self.clock_s = _local_clock_s()
-            self.clock_ok = clock_ok()
+            was_ok, self.clock_ok = self.clock_ok, clock_ok()
+            if self.clock_ok and not was_ok and self.dash.goal:
+                # A goal set against a guessed clock counts as set before its time. The clock is real now, so
+                # judge the goal again as if it were set just now: inside its grace window it means the next one.
+                self.dash.set_goal(self.dash.goal, self.clock_s)
         hours = self.dash.hours_to_goal(self._goal_clock())
         def step(undone):
             return self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c,

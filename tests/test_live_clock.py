@@ -60,7 +60,8 @@ class ClockOkTests(unittest.TestCase):
 class LivePhoneClockTests(unittest.TestCase):
     def setUp(self):
         self.ok = True
-        for p in (mock.patch.object(web, "_local_clock_s", return_value=NOON),
+        self.now = NOON
+        for p in (mock.patch.object(web, "_local_clock_s", side_effect=lambda: self.now),
                   mock.patch.object(web, "clock_ok", side_effect=lambda *a, **k: self.ok)):
             p.start()
             self.addCleanup(p.stop)
@@ -130,6 +131,51 @@ class LivePhoneClockTests(unittest.TestCase):
         phone = self.phone(False, goal="")
         phone.dash.set_goal("23:00", phone._goal_clock())
         self.assertTrue(phone.dash._goal_armed)
+
+    def test_the_goal_is_judged_again_when_the_clock_goes_from_a_guess_to_trusted(self):
+        # The goal was set under a guess (as main() and the API do), and the clock is then set to 23:30, an hour and a
+        # half after the goal time: the goal must mean the next 22:00, not "Made it".
+        phone = self.phone(False, goal="")
+        self.assertTrue(web.apply_phone_action(phone, {"action": "goal", "time": "22:00"}))
+        self.assertTrue(phone.dash._goal_armed)
+        self.assertEqual(phone.state()["battery"]["calls_until"], "")
+        self.ok, self.now = True, 23 * 3600 + 30 * 60
+        seen = []
+        step = phone.runtime.step
+        phone.runtime.step = lambda *a, **k: (seen.append(k.get("goal_hours")), step(*a, **k))[1]
+        b = phone.state()["battery"]
+        self.assertNotIn("Made it", b["goal_note"])
+        self.assertRegex(b["goal_note"], r"^Won't last until 10 PM, calls and messages until ~\d{1,2}:\d{2} (AM|PM)$")
+        self.assertFalse(b["goal_met"])
+        self.assertRegex(b["calls_until"], r"^\d{1,2}:\d{2} (AM|PM)$")
+        self.assertTrue(seen)
+        self.assertTrue(all(h is not None and abs(h - 22.5) < 1e-6 for h in seen), seen)  # 23:30 to the next 22:00
+
+    def test_a_goal_set_under_a_guess_is_reached_when_the_clock_turns_out_to_be_before_it(self):
+        phone = self.phone(False, goal="")
+        self.assertTrue(web.apply_phone_action(phone, {"action": "goal", "time": "22:00"}))
+        phone.state()
+        self.ok, self.now = True, NOON
+        self.assertNotIn("Made it", phone.state()["battery"]["goal_note"])
+        self.now = 22 * 3600 + 30 * 60  # judged again once, not on every tick: the goal can still be reached
+        b = phone.state()["battery"]
+        self.assertTrue(b["goal_note"].startswith("Made it to 10 PM"), b["goal_note"])
+        self.assertTrue(b["goal_met"])
+
+    def test_a_clock_that_was_trusted_all_along_is_not_judged_again(self):
+        phone = self.phone(True, goal="22:00")  # noon, ten hours before the goal: armed
+        self.assertTrue(phone.dash._goal_armed)
+        self.now = 22 * 3600 + 30 * 60
+        self.assertTrue(phone.state()["battery"]["goal_note"].startswith("Made it to 10 PM"))
+
+    def test_the_clock_turning_trusted_with_no_goal_sets_none(self):
+        phone = self.phone(False, goal="")
+        phone.state()
+        self.ok = True
+        b = phone.state()["battery"]
+        self.assertIs(phone.dash.goal, None)
+        self.assertEqual(b["goal_note"], "")
+        self.assertEqual(b["goal"], "")
 
     def test_the_clock_is_read_at_each_state(self):
         phone = self.phone(True)
