@@ -227,7 +227,7 @@ class Fake:
         self.put("etc/ssh/sshd_config", SSHD)
         self.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", SSHD_DROPIN)
         self.put("etc/ssh/sshd_config.d/10-sfduo.conf", "PermitRootLogin prohibit-password\n")
-        self.put("usr/libexec/opos/opos-kiosk", "#!/bin/sh\nchromium --kiosk\n")
+        self.put("usr/libexec/opos/opos-kiosk", KIOSK)
 
     # --- running
     def run(self, *args, now=NOW, url=None, bins=True):
@@ -255,6 +255,14 @@ class Fake:
         return f.read_text().splitlines() if f.exists() else []
 
 
+KIOSK = """#!/bin/sh
+while :; do
+    z=; f=${XDG_CONFIG_HOME:-$HOME/.config}/opos/timezone
+    [ -f "$f" ] && IFS= read -r z < "$f"
+    case "$z" in '') ;; *) export TZ="$z" ;; esac
+    chromium --kiosk
+done
+"""
 SERVER_ARGV = ["/usr/bin/python3", "-m", "opos.web", "--port", "8765", "--live-battery"]
 SERVER_ENV = {"OPOS_ON_PHONE": "1", "OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"}  # what the image's units give the server
 LINE = re.compile(r"^(PASS|FAIL|WARN|SKIP)\s{2}(\S+)\s+(.*)$")
@@ -610,7 +618,7 @@ class Kiosk(SelftestCase):
         self.assertEqual(self.run_st().status("kiosk.gpu"), "WARN")
 
     def test_kiosk_restarts_are_counted_when_the_script_logs_them(self):
-        self.f.put("usr/libexec/opos/opos-kiosk", "#!/bin/sh\nlog() { logger -t opos-kiosk \"$*\"; }\n")
+        self.f.put("usr/libexec/opos/opos-kiosk", KIOSK + "log() { logger -t opos-kiosk \"$*\"; }\n")
         self.assertEqual(self.run_st().status("kiosk.restarts"), "PASS")
         self.f.journal("opos-kiosk", "chromium exited with status 0 after 3s (quick exits in a row: 1); starting it again in 2s\n")
         r = self.run_st()
@@ -1167,6 +1175,13 @@ class FirstRun(PieceCase):
         self.assertEqual(r.status("clock.kiosk-tz"), "PASS")
         self.assertEqual(r.status("clock.timezone"), "PASS")
         self.assertIn("Asia/Tokyo", r.ev("clock.timezone"))
+
+    def test_a_kiosk_script_that_does_not_export_the_zone_fails(self):
+        self.f.put("usr/libexec/opos/opos-kiosk", "#!/bin/sh\nchromium --kiosk\n")
+        r = self.run_st()
+        self.assertEqual(r.status("clock.kiosk-tz"), "FAIL")
+        self.assertIn("export TZ", r.ev("clock.kiosk-tz"))
+        self.assertEqual(r.rc, 1)
 
     def test_only_firstrun_prefix(self):
         r = self.run_st("--only", "firstrun")

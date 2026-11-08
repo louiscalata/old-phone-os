@@ -158,9 +158,11 @@ class TogetherInOneServer(unittest.TestCase):
         with duo_server(**ALL_ON) as (port, cfg):
             f = Fake("http://127.0.0.1:%d/" % port)
             self.addCleanup(f.cleanup)
-            r = f.run("--only", "osk", "--only", "net.page", "--only", "net.permissions", "--only", "firstrun")
+            f.put("usr/libexec/opos/opos-kiosk", (DUO / "opos-kiosk").read_text(encoding="utf-8"))  # the image's own script
+            r = f.run("--only", "osk", "--only", "net.page", "--only", "net.permissions", "--only", "firstrun", "--only", "clock.kiosk-tz")
             for cid in ("osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes"):
                 self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
+            self.assertEqual(r.status("clock.kiosk-tz"), "SKIP", "the real kiosk script exports the zone; none is chosen yet: " + str(r.rows.get("clock.kiosk-tz")))
             self.assertIn("PENDING", r.ev("firstrun.routes"))
             self.assertIn("keyboard loaded on it: yes", r.ev("net.page"))
             self.assertEqual(r.rc, 0, r.text)

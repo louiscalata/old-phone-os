@@ -1019,7 +1019,10 @@ def check_firstrun(c):
         else:
             c.emit("FAIL", "firstrun.routes", ev)
     own, br = saved_zone(c), kiosk_browser(c)
-    if not own:
+    script = c.rd("/usr/libexec/opos/opos-kiosk") or ""
+    if "/timezone" not in script or "export TZ" not in script:  # the kiosk is what puts the saved zone into Chromium's environment
+        c.emit("FAIL", "clock.kiosk-tz", "the kiosk script /usr/libexec/opos/opos-kiosk does not read the saved zone and export TZ: Chromium would show UTC whatever is chosen")
+    elif not own:
         c.emit("SKIP", "clock.kiosk-tz", "no time zone has been chosen yet")
     elif br is None:
         c.emit("SKIP", "clock.kiosk-tz", "no kiosk Chromium")
