@@ -148,6 +148,34 @@ class KioskScriptTest(unittest.TestCase):
         self.assertIn("--remote-debugging-address=127.0.0.1", args)
         self.assertEqual(args[-1], "http://127.0.0.1:8765/")
 
+    def test_debug_port_in_the_environment_does_not_open_it(self):
+        # e.g. an Environment= line in a unit: only /etc/default/opos-kiosk may enable the port
+        for defaults in (None, "no-port-in-it"):
+            with self.subTest(defaults=defaults):
+                d = None
+                if defaults:
+                    d = self.t / "opos-kiosk-defaults"
+                    d.write_text("# nothing about the port here\n")
+                (self.t / "chromium.log").unlink(missing_ok=True)
+                (self.t / "count").unlink(missing_ok=True)
+                self.run_kiosk([(0, 100)], env={"OPOS_KIOSK_DEBUG_PORT": "9333"}, defaults=d)
+                self.assertFalse([a for a in self.runs()[0]["args"] if "remote-debugging" in a])
+                self.assertFalse(any("not a port number" in m for m in self.logged()))
+
+    def test_debug_port_in_the_environment_is_not_used_when_the_defaults_file_is_broken(self):
+        d = self.t / "opos-kiosk-defaults"
+        d.write_text("OPOS_KIOSK_DEBUG_PORT=9222\nif then fi (\n")
+        self.run_kiosk([(0, 100)], env={"OPOS_KIOSK_DEBUG_PORT": "9333"}, defaults=d)
+        self.assertFalse([a for a in self.runs()[0]["args"] if "remote-debugging" in a])
+
+    def test_the_defaults_file_decides_the_port_whatever_the_environment_says(self):
+        d = self.t / "opos-kiosk-defaults"
+        d.write_text("OPOS_KIOSK_DEBUG_PORT=9222\n")
+        self.run_kiosk([(0, 100)], env={"OPOS_KIOSK_DEBUG_PORT": "9333"}, defaults=d)
+        args = self.runs()[0]["args"]
+        self.assertIn("--remote-debugging-port=9222", args)
+        self.assertNotIn("--remote-debugging-port=9333", args)
+
     def test_bad_debug_port_is_logged_and_ignored(self):
         d = self.t / "opos-kiosk-defaults"
         d.write_text("OPOS_KIOSK_DEBUG_PORT='9222; reboot'\n")

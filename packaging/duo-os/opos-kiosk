@@ -9,8 +9,10 @@
 # dash ends the script when `.` cannot open its file, whatever follows it, so the file is tested first.
 if [ -r /etc/profile.d/zz-droidian.sh ]; then . /etc/profile.d/zz-droidian.sh; fi
 # Dev images only: build-image.sh writes this file when OPOS_DEV_SSH_PUBKEY is set (OPOS_KIOSK_DEBUG_PORT=9222).
-# Tried in a subshell first, so a typo in it cannot end the phone's only interface.
+# Tried in a subshell first, so a typo in it cannot end the phone's only interface. The port is unset before
+# the file is read: only the file can open it, never an Environment= line in a unit or the caller's environment.
 defaults=${OPOS_KIOSK_DEFAULTS:-/etc/default/opos-kiosk}
+unset OPOS_KIOSK_DEBUG_PORT
 if [ -r "$defaults" ] && (. "$defaults") >/dev/null 2>&1; then . "$defaults"; fi
 # Chromium connects by WAYLAND_DISPLAY. phoc 0.47.0 as the port builds it hands its -E command that and no
 # WAYLAND_SOCKET (checked in the source); a research fork that adds one does so in shell mode only, and
