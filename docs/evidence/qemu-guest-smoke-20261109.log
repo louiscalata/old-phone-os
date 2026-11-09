@@ -1,0 +1,14 @@
+# OPOS QEMU guest smoke
+# date: 2026-11-09T18:57:02Z
+# uname: Linux 6.12.113+ x86_64
+# qemu: QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)
+# kernel: /tmp/vmlinuz-guest (copy of /boot/vmlinuz-6.8.0-149-generic; /boot was not readable)
+# busybox: /usr/bin/busybox
+# note: This is not a postmarketOS or OPOS UI boot. Physical-device flashing was not performed.
+# note: Excerpt of the serial log. Ubuntu kernel X.509 certificate lines were left out; a secret scanner flags those public build fingerprints, and they are not project secrets.
+[    0.000000] Linux version 6.8.0-149-generic (buildd@lcy02-amd64-099) (x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #149-Ubuntu SMP PREEMPT_DYNAMIC Fri Oct 23 13:21:10 UTC 2026 (Ubuntu 6.8.0-149.149-generic 6.8.12)
+[    0.000000] Command line: console=ttyS0 rdinit=/init panic=-1
+[    1.922479] Run /init as init process
+OPOS_QEMU_GUEST_SMOKE_OK
+[    2.017324] ACPI: PM: Preparing to enter system sleep state S5
+[    2.018148] reboot: Power down

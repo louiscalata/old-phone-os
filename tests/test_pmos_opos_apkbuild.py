@@ -6,11 +6,11 @@ from tests.pmos_lint import apkbuild_vars, function_body
 
 ROOT = Path(__file__).resolve().parent.parent
 APKBUILD = ROOT / "packaging/pmos/opos/APKBUILD"
-ARCHIVE = "opos-runtime-source-20261102.tar.gz"
+ARCHIVE = "opos-runtime-source-20261109.tar.gz"
 SOURCE_ROOT = "old-phone-os-source"
 RELEASE_URL = (
     "https://github.com/louiscalata/old-phone-os/releases/download/"
-    "v0.1.0-source-20261102/$_source_archive"
+    "v0.2.0/$_source_archive"
 )
 
 
@@ -23,8 +23,8 @@ class TestOposApkbuild(unittest.TestCase):
     def test_metadata_contract(self):
         expected = {
             "pkgname": "opos",
-            "pkgver": "0.1.0",
-            "pkgrel": "3",
+            "pkgver": "0.2.0",
+            "pkgrel": "0",
             "pkgdesc": "Old Phone OS Interface policy and optional helper",
             "url": "https://github.com/louiscalata/old-phone-os",
             "arch": "noarch",

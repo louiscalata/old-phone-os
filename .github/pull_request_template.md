@@ -1,24 +1,18 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 ## What?
 
-<!-- Describe the change. -->
+<!-- Which interface does this change? The hackathon reference in this repository, or a claim about the Surface Duo OS (that OS is not in this tree). -->
 
 ## Why?
 
-<!-- Explain the problem it addresses. -->
-
 ## How?
-
-<!-- Describe the approach and scope. -->
 
 ## Testing
 
-<!-- List commands and actual results, including skips or blockers. -->
+<!-- Commands and actual results. Say what was not run. -->
 
-## Screenshots
+## Hardware
 
-<!-- Add relevant captures, or say why none are needed. -->
+<!-- Physical-device flashing is untested unless this pull request includes evidence. Do not attach a hardware dossier. -->
 
 ## Anything else?
-
-<!-- Note remaining work, limits or provenance. -->

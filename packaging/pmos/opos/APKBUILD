@@ -2,8 +2,8 @@
 # TODO(publish): publish the measured release-tarball and verify sha512 retrieval before remote builds.
 maintainer="Old Phone OS <173626247+louiscalata@users.noreply.github.com>"
 pkgname=opos
-pkgver=0.1.0
-pkgrel=3
+pkgver=0.2.0
+pkgrel=0
 pkgdesc="Old Phone OS Interface policy and optional helper"
 url="https://github.com/louiscalata/old-phone-os"
 arch="noarch"
@@ -13,9 +13,9 @@ makedepends="python3"
 options="!check"
 install="$pkgname.pre-install"
 subpackages="$pkgname-systemd:_systemd $pkgname-openrc:_openrc"
-_source_archive="opos-runtime-source-20261102.tar.gz"
+_source_archive="opos-runtime-source-20261109.tar.gz"
 _source_root="old-phone-os-source"
-source="$_source_archive::https://github.com/louiscalata/old-phone-os/releases/download/v0.1.0-source-20261102/$_source_archive opos-sysusers.conf opos-kiosk opos-server.initd opos-firstboot.sh opos-kiosk-off.sh opos-firstboot.initd opos-server.service opos-firstboot.service opos-systemd-state.py"
+source="$_source_archive::https://github.com/louiscalata/old-phone-os/releases/download/v0.2.0/$_source_archive opos-sysusers.conf opos-kiosk opos-server.initd opos-firstboot.sh opos-kiosk-off.sh opos-firstboot.initd opos-server.service opos-firstboot.service opos-systemd-state.py"
 builddir="$srcdir/$_source_root"
 package() {
 	install -Dm644 "$builddir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
@@ -51,7 +51,7 @@ _openrc() {
 	mkdir -p "$subpkgdir"
 }
 sha512sums="
-ad367d0988e17c961247472fc2c62ed50b6457ec4ec628ba613905fd2bc01fde9f0249fc1c4b74d76ab43310cfbe2a44f3de7cf7ad238c038277500be58acbaa  $_source_archive
+4d29d714e2768f9940dbab1b0869f0d510fc6b8bdb7267602bae17f423fdcee515d810b51851c8b6baf9cd182312a72abfaa6d104070658d2f7966ff39b2e21c  $_source_archive
 69a42652bc69cb979a14df47613d1600f0c52d0755a0f3f7510b01b977dd05b2dfcaa16eeccd761d4008cee04408672c83d47de3a5079a0f5c297c1aefa0b12a  opos-sysusers.conf
 3ce642ae3b6528dbf274778d99af88a9cc9016fb4253a6e8e435629c5a3ff9df177084a15c4efe2d96b66832b6443f6299a08e3b7d41cddb3524f92a61b2f6b5  opos-kiosk
 a3cf480a69358326f075f8a5ce594069e2b5b6e2a1f914e92af82ac2c2a39dbf68d4d3b4332b9194e04a1a14069b4f7c0e6798ea9227d5e76c45483698cc4f93  opos-server.initd

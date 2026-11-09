@@ -26,7 +26,7 @@ INSTALL_SCOPE = (
 )
 
 # Same value as pkgver in packaging/pmos/opos/APKBUILD (a test keeps them equal).
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 UNPUBLISHED_BUILD = "unpublished"
 _BUILD_RE = re.compile(r"[0-9a-f]{7,40}")

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Duo USB install
 
-This is a historical Droidian development guide, not an installation or stock-restore procedure for the current source. Duo device work remains paused. The formatting, flashing and boot sections below are incomplete historical records and must not be executed without a separately verified device-specific plan. For the current desktop and QEMU scope, see [README.md](../README.md).
+This is a historical Droidian development guide, not an installation or stock-restore procedure for the current source. It is not the Surface Duo OS interface, which is not in this repository. Duo device work remains paused. The formatting, flashing and boot sections below are incomplete historical records and must not be executed without a separately verified device-specific plan. For the current desktop and QEMU scope, see [README.md](../README.md).
 
 ## Model access through a reverse tunnel
 

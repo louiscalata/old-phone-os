@@ -7,7 +7,7 @@ Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental soft
 The replacement warning is for OS flashing; per-user install.sh installs OPOS within the existing OS.
 
 Version
-0.1.0
+0.2.0
 
 Build
 unpublished

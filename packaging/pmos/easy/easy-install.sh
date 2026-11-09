@@ -11,5 +11,5 @@ IMAGE="$1"
 if [ "$FLASH" -eq 0 ]; then echo "step 1: sh $HERE/image-prep.sh --check $IMAGE"; echo "step 2: sh $HERE/confirm-reboot.sh"; echo "step 3: skipped (no --flash)"; exit 0; fi
 sh "$HERE/image-prep.sh" "--check" "$IMAGE"
 if [ -n "$YES" ]; then sh "$HERE/confirm-reboot.sh" "$YES"; else sh "$HERE/confirm-reboot.sh"; fi
-echo "step 3: flashing"
+echo "step 3: flashing (physical-device flashing is untested; pmbootstrap uses its installed rootfs, not the checked image path)"
 pmbootstrap flasher flash_rootfs

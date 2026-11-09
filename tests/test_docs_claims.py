@@ -169,7 +169,7 @@ class TestReleaseDocs(unittest.TestCase):
         project = data["project"]
         self.assertEqual(data["build-system"]["build-backend"], "setuptools.build_meta")
         self.assertEqual((project["name"], project["version"], project["requires-python"], project["license"]),
-                         ("opos", "0.1.0", ">=3.11", "GPL-3.0-or-later"))
+                         ("opos", "0.2.0", ">=3.11", "GPL-3.0-or-later"))
         self.assertEqual(project["dependencies"], [])
         # The package says what the README says, no more.
         self.assertEqual(project["description"], DESCRIPTION)

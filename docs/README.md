@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Documentation
 
-Old Phone OS Interface is a prototype. The desktop demo simulates the battery, calls and texts; recorded QEMU
+The Surface Duo OS interface is not in this repository. These documents describe the Meta hackathon reference interface kept in place under [reference/meta-hackathon/README.md](../reference/meta-hackathon/README.md). The desktop demo simulates the battery, calls and texts; recorded QEMU
 results and model experiments have their own limits. The postmarketOS kiosk uses the same simulated battery
 and modem as the desktop demo. Documents marked **historical** preserve
 earlier work and are not current instructions or evidence about the current source.
@@ -26,7 +26,7 @@ earlier work and are not current instructions or evidence about the current sour
 ## Install and packaging
 
 - [OPOS on postmarketOS](pmos.md): package inputs, local-source staging, QEMU development and validation limits.
-- [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
+- [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts actually do, the plan-only default, and the untested flash path.
 - [Lean by design](lean.md): direct package and service inputs, and the measurements still needed.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; Duo work is paused.
 
@@ -45,7 +45,9 @@ earlier work and are not current instructions or evidence about the current sour
 
 ## Project records
 
-- [Changelog](../CHANGELOG.md): public snapshot, follow-up fixes and unreleased work.
+- [Changelog](../CHANGELOG.md): public snapshot, follow-up fixes and the 0.2.0 release candidate.
+- [v0.2.0 release notes](release-notes/v0.2.0.md): draft for the GitHub Release and the website. Tagging and publishing stay with the release owner.
+- [Hackathon reference](../reference/meta-hackathon/README.md): what in this tree is the October 2026 hackathon interface, and what is not the Surface Duo OS.
 - [Roadmap](../ROADMAP.md): what works today and what comes next.
 - [New work and source scope](../NEW-WORK.md): hackathon source scope and contributions.
 - [Development contributions](../WORK-BY-MODEL.md): who and which models contributed what.

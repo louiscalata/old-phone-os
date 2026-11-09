@@ -56,9 +56,11 @@ checks and deployment observations remain separate evidence.
 
 ## Next
 
-Linux CI portability fixes were verified on a Debian VM. Hosted CI results for
-the Python 3.11/3.13 matrix in `.github/workflows/tests.yml` are still pending;
-the Debian verification does not establish a hosted CI pass.
+Linux CI portability fixes were verified on a Debian VM. Hosted GitHub Actions
+for `.github/workflows/tests.yml` was green on main `846383ba` (Python 3.11 and
+3.13). The v0.2.0 release candidate adds easy-setup and QEMU guest-smoke jobs;
+those results belong to that pull request. The Debian verification and the
+hosted unit-test pass do not establish a physical-phone or postmarketOS image boot.
 
 1. **A real phone.** Boot the postmarketOS image on a supported device, run setup, and record
    battery life against the stock system with the same daily routine.

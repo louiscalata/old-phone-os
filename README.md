@@ -1,11 +1,55 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Old Phone OS Interface (OPOS)
 
-OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
+The current OPOS interface is the Surface Duo operating system: dual-screen, foldable, and the phone's own OS. That interface is not in this repository. There is no source tree, quickstart, or hardware dossier for it here.
 
-OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
+This repository keeps the earlier interface as a reference. It pauses less essential work toward a time the owner chooses, so calls and messages can stay available on a simulated older phone. See [reference/meta-hackathon/README.md](reference/meta-hackathon/README.md).
+
+[![tests](https://github.com/louiscalata/old-phone-os/actions/workflows/tests.yml/badge.svg)](https://github.com/louiscalata/old-phone-os/actions/workflows/tests.yml)
+[![version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
+[![python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![license](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![QEMU](https://img.shields.io/badge/QEMU-recorded%20boot-green)](docs/pmos.md)
+[![devices](https://img.shields.io/badge/physical%20devices-not%20verified-yellow)](docs/pmos-easy-setup.md)
+
+OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). The project story is on [fortheloveof.studio](https://fortheloveof.studio/code/old-phone-os/). Source: [github.com/louiscalata/old-phone-os](https://github.com/louiscalata/old-phone-os). Meta model developers: see the [field report](docs/meta-model-field-report.md).
+
+The reference interface is Louis Calata's solo entry in the Meta hackathon with Cerebral Valley (October 2026, Indie developer track). Version 0.2.0 labels that work as a reference and records what this tree has checked. [Release notes](docs/release-notes/v0.2.0.md).
+
+## Current interface
+
+The Surface Duo OS interface is not in this repository. Do not use the commands below to flash a Duo or to replace a phone's operating system. The foldable and dual-screen choices in the hackathon page are layout options, not that OS.
+
+## Support
+
+This table is the hackathon reference only.
+
+| Surface | Status |
+|---|---|
+| Desktop demo (`python3 -m opos.web`) | Runs from this tree. Battery, calls and messages are simulated. |
+| Public browser demo | Live, rules only, no Muse Glimmer. |
+| postmarketOS in QEMU | Proven on November 3, 2026: an aarch64 image reached the lock screen, and Unlock reached Home. This 0.2.0 tree has not repeated that image boot. |
+| QEMU guest smoke | CI boots a tiny initramfs and checks for `OPOS_QEMU_GUEST_SMOKE_OK`. That guest is not postmarketOS and does not show OPOS. |
+| `easy-install.sh` without `--flash` | Prints a plan and changes nothing. |
+| `easy-install.sh --flash` | Calls `pmbootstrap flasher flash_rootfs` after a check and a confirmation. Physical-device flashing is untested. |
+| Physical phones, including Surface Duo | Not verified. |
+| Windows installer | Script is in the tree. Runtime is untested. |
+
+## Proof
+
+<p>
+  <img src="docs/assets/screen-lock.png" width="240" alt="Desktop simulation lock screen at 12:00 with 60% battery, a worn-battery notice saying 2 tasks paused for 4 PM, and Unlock and Call buttons.">
+  <img src="docs/assets/screen-home.png" width="240" alt="Desktop simulation Home with Phone, Messages, Helper, Settings and All apps; maps and photos backup are paused to save power.">
+  <img src="docs/assets/screen-shade.png" width="240" alt="Desktop simulation battery panel at 60% with maps and photos backup paused; both expanded reasons say battery rules paused them to help the battery last until 4 PM.">
+</p>
+
+Screenshots of the desktop simulation (battery, calls and messages are simulated).
+
+The postmarketOS QEMU UI boot is the November 3 record in [docs/pmos.md](docs/pmos.md): QEMU 9.1.2, TCG, OpenRC, aarch64, packaged Pixman renderer, lock screen then Home. The serial log from the separate v0.2.0 guest smoke on this development VM is [docs/evidence/qemu-guest-smoke-20261109.log](docs/evidence/qemu-guest-smoke-20261109.log). It prints `OPOS_QEMU_GUEST_SMOKE_OK` and is not that UI boot.
 
 ## Quickstart — under five minutes
+
+This quickstart starts the hackathon reference interface. It does not start the Surface Duo OS.
 
 Requires **Python 3.11+ and a web browser**. No package installation, account or model download is needed. Open a terminal in the extracted folder containing this README, then run:
 
@@ -16,6 +60,8 @@ PYTHONPATH=src python3 -m opos.web --port 8765
 Open **http://127.0.0.1:8765/?demo=1** for the unlocked simulator controls. **Leave this terminal running; Ctrl-C to stop.** Or [open the public demo](https://opos-demo-production.up.railway.app), which answers from battery rules with Glimmer off.
 
 Battery, calls and messages are simulated. This source has not run on a physical phone; on-phone inference is untested. The noon panel's estimate is a snapshot: a separate recorded rules-only noon-to-16:00 run, with no model or owner overrides, displayed **0% at 16:00; goal not met (`goal_met=false`)**.
+
+Phone setup is a different command. From this checkout, `sh packaging/pmos/easy/easy-install.sh IMAGE` prints a three-step plan and does not read the image, run the other scripts, or call `pmbootstrap`. Add `--flash` only if you intend to run `pmbootstrap flasher flash_rootfs`. That path is untested on hardware. See [docs/pmos-easy-setup.md](docs/pmos-easy-setup.md).
 
 ## Try the battery features
 
@@ -50,15 +96,7 @@ You keep an older phone whose worn battery usually dies by mid-afternoon. With O
 
 Scenario written by Meta Muse Spark 1.3 via Gumloop, reproduced verbatim; it is not a measured phone result.
 
-OPOS is a prototype phone interface for people who keep an older phone as its battery wears out. It pauses less essential work such as email, maps and photos backup **toward a time the owner chooses**, while calls and messages stay allowed. Optional open-weight Meta Muse Glimmer 30B runs on the owner's computer, explains decisions when asked, and may pause extra tasks. It never re-enables anything the rules paused or touches calls, messages or alarms; the rules work without it. The postmarketOS kiosk runs the same simulation: it does not yet read the phone's real battery or use its modem.
-
-<p>
-  <img src="docs/assets/screen-lock.png" width="240" alt="Desktop simulation lock screen at 12:00 with 60% battery, a worn-battery notice saying 2 tasks paused for 4 PM, and Unlock and Call buttons.">
-  <img src="docs/assets/screen-home.png" width="240" alt="Desktop simulation Home with Phone, Messages, Helper, Settings and All apps; maps and photos backup are paused to save power.">
-  <img src="docs/assets/screen-shade.png" width="240" alt="Desktop simulation battery panel at 60% with maps and photos backup paused; both expanded reasons say battery rules paused them to help the battery last until 4 PM.">
-</p>
-
-Screenshots of the desktop simulation (battery, calls and messages are simulated).
+OPOS is a prototype phone interface for people who keep an older phone as its battery wears out. It pauses less essential work such as email, maps and photos backup **toward a time the owner chooses**, while calls and messages stay allowed. Optional open-weight Meta Muse Glimmer 30B runs on the owner's computer, explains decisions when asked, and may pause extra tasks. It never re-enables anything the rules paused or touches calls, messages or alarms; the rules work without it. The postmarketOS kiosk runs the same simulation: it does not yet read the phone's real battery or use its modem. The desktop screenshots are in [Proof](#proof).
 
 ## Muse Glimmer answering
 
@@ -176,7 +214,7 @@ opos run --defaults
 opos status
 ```
 
-The installer keeps using that source checkout and creates a per-user launcher and virtual environment. Keep the checkout. `--no-launch` leaves setup for the later `opos run` step.
+The installer keeps using that source checkout and creates a per-user launcher and virtual environment. Keep the checkout. `--no-launch` leaves setup for the later `opos run` step. `opos run --defaults` installs a background service and needs a user service bus; without one, that step fails and the quickstart command above is how to run the reference.
 
 Optional bootstrap: `bootstrap.sh` clones the repository into `$HOME/opos-src` (or `OPOS_SRC_DIR`) and runs `install.sh --yes --no-launch` from that new checkout. The script itself is a file in this repository, so you need a copy of it first, from a checkout or downloaded on its own. If you already have a checkout, run `install.sh` from it as shown above instead.
 ```sh
@@ -191,6 +229,8 @@ This later virtual-machine boot does not finish integration acceptance. The earl
 
 The kiosk starts the same `opos.web` server as the desktop demo, so it uses the same simulated battery (`DrainSim`) and simulated modem (`ScreenModem`): it does not read the phone's battery, place real calls or send real texts. A ModemManager adapter (`src/opos/mm_modem.py`) exists but is not connected yet, and the sysfs battery reader (`src/opos/hw/battery.py`) is used only by setup to describe the device, not by the phone screen.
 
+`sh packaging/pmos/qemu-smoke.sh` prints the QEMU plan and does not boot. `sh packaging/pmos/qemu-smoke.sh --guest` is the tiny-guest smoke in the support table. `sh packaging/pmos/easy/easy-install.sh IMAGE` is plan-only unless you pass `--flash`. Physical-device flashing is untested. Surface Duo notes are historical: [docs/duo-usb-install.md](docs/duo-usb-install.md).
+
 ## Tests
 
 Optional, slow developer verification: you can finish the demo without running tests. The full suite can take **30+ minutes** and creates disposable Git commits in a temporary directory. For a focused web check, use the six-module command in [public-demo verification](docs/public-demo.md#verification).
@@ -202,7 +242,7 @@ Run discovery canonically from the checkout root:
 PYTHONPATH=src python3 -m unittest discover -s tests -t .
 ```
 
-`.github/workflows/tests.yml` runs the same command on Python 3.11 and 3.13 for pushes and pull requests.
+`.github/workflows/tests.yml` runs the same command on Python 3.11 and 3.13 for pushes and pull requests. The same workflow runs ShellCheck and the easy-install dry run (`easy-setup`) and the tiny QEMU guest smoke (`qemu-guest-smoke`).
 
 Optional maintainer check, from the root of an OPOS Git checkout: `python3 -B guard/check.py`. It requires the checkout's Git metadata and is not supported for a downloaded source archive. It is not needed for the demo. See [guard/RULES.md](guard/RULES.md).
 
@@ -216,7 +256,10 @@ The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-
 
 ## Documentation
 
+- [docs/release-notes/v0.2.0.md](docs/release-notes/v0.2.0.md): v0.2.0 release-candidate notes for GitHub and the website.
 - [docs/README.md](docs/README.md): every document, grouped by what you want to do.
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to test a change, and what not to claim.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability.
 - [docs/architecture.md](docs/architecture.md): module map and how a request flows from the page to the governor and to Muse Glimmer.
 - [ROADMAP.md](ROADMAP.md): what works today and what comes next.
 
@@ -224,4 +267,6 @@ The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-
 
 Development used Meta models Muse Glimmer, Muse Spark, Muse Spark Open, Muse Wonder together with Codex, Claude and Grok Bot. The submitter is responsible for the submission. See [NEW-WORK.md](NEW-WORK.md), [WORK-BY-MODEL.md](WORK-BY-MODEL.md), [docs/provenance.md](docs/provenance.md) and [docs/META.md](docs/META.md).
 
-GPL-3.0-or-later; [LICENSE](LICENSE) is retained verbatim. Model materials have separate licenses and are not bundled. [THIRD_PARTY.md](THIRD_PARTY.md) links upstream terms.
+License: GPL-3.0-or-later. [LICENSE](LICENSE) is retained verbatim. Model materials have separate licenses and are not bundled. [THIRD_PARTY.md](THIRD_PARTY.md) links upstream terms.
+
+Project page: [fortheloveof.studio/code/old-phone-os](https://fortheloveof.studio/code/old-phone-os/). Issues and pull requests: [github.com/louiscalata/old-phone-os](https://github.com/louiscalata/old-phone-os).

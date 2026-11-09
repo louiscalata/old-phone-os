@@ -5,6 +5,7 @@ import contextlib
 import io
 import unittest
 import unittest.mock
+from opos.notices import VERSION
 from opos.setup import cli
 
 
@@ -21,7 +22,7 @@ class DuoCliVersionTest(unittest.TestCase):
                                 with contextlib.redirect_stderr(err):
                                     cli._build_parser().parse_args(["--version"])
                         self.assertEqual(ctx.exception.code, 0)
-                        self.assertEqual(out.getvalue(), "opos 0.1.0\n")
+                        self.assertEqual(out.getvalue(), "opos " + VERSION + "\n")
                         self.assertEqual(err.getvalue(), "")
                         self.assertFalse(run_mock.called)
                         self.assertFalse(status_mock.called)
@@ -34,7 +35,7 @@ class DuoCliVersionTest(unittest.TestCase):
                                 with contextlib.redirect_stderr(err):
                                     cli.main(["--version"], env={})
                         self.assertEqual(ctx.exception.code, 0)
-                        self.assertEqual(out.getvalue(), "opos 0.1.0\n")
+                        self.assertEqual(out.getvalue(), "opos " + VERSION + "\n")
                         self.assertEqual(err.getvalue(), "")
                         self.assertFalse(run_mock.called)
                         self.assertFalse(status_mock.called)

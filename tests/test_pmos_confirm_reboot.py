@@ -6,7 +6,7 @@ class TestConfirmReboot(unittest.TestCase):
     def setUp(self):
         self.script = str(Path(__file__).resolve().parent.parent / "packaging" / "pmos" / "easy" / "confirm-reboot.sh")
         Path(self.script).read_text()
-        self.warn = "WARNING: the phone will reboot several times during setup. Do not unplug it or press buttons until it says Done.\n"
+        self.warn = "WARNING: this script does not reboot the phone or verify a multi-reboot setup. Physical-device flashing is untested. Do not unplug a device you choose to flash.\n"
         self.prompt = "Type reboot and press Enter to continue:\n"
     def test_yes(self):
         p = subprocess.run(["/bin/sh", self.script, "--yes"], input="", capture_output=True, text=True)

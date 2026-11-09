@@ -20,7 +20,7 @@ class TestEasyInstall(unittest.TestCase):
         self.assertEqual((code, log), (1, ["prep:2:--check:image file.img", "confirm:"]))
     def test_yes_forwarding(self):
         code, out, log, here = self.run_case(["--flash", "--yes", "image file.img"], 0)
-        self.assertEqual((code, out, log), (0, "step 3: flashing\n", ["prep:2:--check:image file.img", "confirm:--yes", "pmbootstrap:flasher flash_rootfs"]))
+        self.assertEqual((code, out, log), (0, "step 3: flashing (physical-device flashing is untested; pmbootstrap uses its installed rootfs, not the checked image path)\n", ["prep:2:--check:image file.img", "confirm:--yes", "pmbootstrap:flasher flash_rootfs"]))
     def test_check_mode(self):
         code, out, log, here = self.run_case(["--flash", "image file.img"], 0)
-        self.assertEqual((code, out, log), (0, "step 3: flashing\n", ["prep:2:--check:image file.img", "confirm:", "pmbootstrap:flasher flash_rootfs"]))
+        self.assertEqual((code, out, log), (0, "step 3: flashing (physical-device flashing is untested; pmbootstrap uses its installed rootfs, not the checked image path)\n", ["prep:2:--check:image file.img", "confirm:", "pmbootstrap:flasher flash_rootfs"]))
