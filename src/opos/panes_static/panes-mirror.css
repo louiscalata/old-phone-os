@@ -7,6 +7,7 @@ html[data-panes=two][data-hand=left][data-ff] #lock>*{grid-column:2}
 html[data-panes=two][data-hand=left][data-ff] #lock>button{grid-column:1}
 html[data-panes=two][data-hand=left][data-ff] #jaryo-status-row{justify-content:flex-start}
 html[data-panes=two][data-hand=left][data-ff] #reload-shell{left:12px;right:auto}
+html[data-panes=two][data-hand=left] [data-stale] #phone>#notice{left:var(--jp-x2)}
 html[data-panes=two][data-hand=left] #meter{left:auto;right:0}
 html[data-panes=two][data-hand=left] #meter-hit::after{left:calc(var(--jp-x2) + var(--jp-x1)/2)}
 html[data-panes=two][data-hand=left] #sheet{left:auto;right:0;transform:translateX(100%)}

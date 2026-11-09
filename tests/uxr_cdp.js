@@ -125,10 +125,15 @@ async function eachView(views, sizes, fn) {
 
 const CHECKS = {
   async touch_targets() {
-    return eachView(['full', 'home'], VIEWPORTS, () => ev(`(function(){var U=__u,A=(window.__uxrAllow||{}).size||{},O=(window.__uxrAllow||{}).overlap||[],out=[],els=U.inter(),R=els.map(function(e){return e.getBoundingClientRect()});
+    return eachView(['full', 'home'], VIEWPORTS, view => ev(`(function(){var U=__u,VIEW=${JSON.stringify(view)},A=(window.__uxrAllow||{}).size||{},O=(window.__uxrAllow||{}).overlap||{},out=[],els=U.inter(),R=els.map(function(e){return e.getBoundingClientRect()});
+     function floats(e){var v=O[U.sel(e)];return !!v&&v.indexOf(VIEW)>=0}
      els.forEach(function(e,i){var s=U.sel(e),min=s in A?A[s]:48,r=R[i];if(r.width<min||r.height<min)out.push(s+' size '+Math.round(r.width)+'x'+Math.round(r.height)+' < '+min+' "'+U.txt(e)+'"')});
-     for(var i=0;i<els.length;i++)for(var j=i+1;j<els.length;j++){if(els[i].contains(els[j])||els[j].contains(els[i]))continue;if(O.indexOf(U.sel(els[i]))>=0||O.indexOf(U.sel(els[j]))>=0)continue;var a=R[i],b=R[j];
-      var g=Math.max(b.left-a.right,a.left-b.right,b.top-a.bottom,a.top-b.bottom);if(g<8)out.push(U.sel(els[i])+' <-> '+U.sel(els[j])+' gap '+Math.round(g)+'px < 8')}
+     for(var i=0;i<els.length;i++)for(var j=i+1;j<els.length;j++){if(els[i].contains(els[j])||els[j].contains(els[i]))continue;var a=R[i],b=R[j];
+      var g=Math.max(b.left-a.right,a.left-b.right,b.top-a.bottom,a.top-b.bottom);
+      if(floats(els[i])||floats(els[j])){if(g>=0)continue;var f=floats(els[i])?a:b,t=f===a?b:a;
+       var free=[[t.left,Math.min(t.right,f.left),t.top,t.bottom],[Math.max(t.left,f.right),t.right,t.top,t.bottom],[t.left,t.right,t.top,Math.min(t.bottom,f.top)],[t.left,t.right,Math.max(t.top,f.bottom),t.bottom]];
+       if(!free.some(function(q){return q[1]-q[0]>=48&&q[3]-q[2]>=48}))out.push(U.sel(els[i])+' <-> '+U.sel(els[j])+' a floating control leaves no free 48x48 part of the one under it');continue}
+      if(g<8)out.push(U.sel(els[i])+' <-> '+U.sel(els[j])+' gap '+Math.round(g)+'px < 8')}
      return out})()`));
   },
   async contrast() {

@@ -215,6 +215,32 @@ class PanesBrowser(unittest.TestCase):
             if name in ("lock", "lock-start"):
                 self.assertTrue(self.thumb(hand, at["unlock"]) and self.listing(hand, at["lockTime"]), k)
 
+    def test_a_stale_page_shows_its_banner_in_the_list_pane_and_reload_in_the_thumb_pane(self):
+        """W1-02: the banner is something to read (list pane, the list pane's own colours, inside it and clear of the hinge) and Reload,
+        which it points at, is a thumb control; the thumb pane's Shade and Lock buttons are not under it."""
+        seen = 0
+        for k, scheme, hand, name, m in self.states():
+            if name != "stale":
+                continue
+            seen += 1
+            at = m["at"]
+            banner, reload_ = at["notice"], at["reload"]
+            self.assertIsNotNone(banner, k)
+            self.assertIsNotNone(reload_, k)
+            self.assertTrue(self.listing(hand, banner), (k, banner))
+            self.assertEqual((banner["l"], banner["w"]), (0, 675) if hand == "right" else (717, 675), k)
+            self.assertTrue(self.thumb(hand, reload_), (k, reload_))
+            self.assertTrue(at["status"] and all(self.thumb(hand, {"l": a, "r": b}) for a, b in at["status"]), (k, at["status"]))
+            # the list pane's own colours: dark ink on the white pane (Right), light ink on the black pane (Left); a 3 px double box; no taps
+            bg, ink = (WHITE, "rgb(26, 26, 26)") if hand == "right" else (BLACK, "rgb(230, 226, 217)")
+            css = m["noticeCss"]
+            self.assertEqual((css["bg"], css["fg"], css["position"], css["events"]), (bg, ink, "fixed", "none"), k)
+            self.assertEqual(css["border"], "double 3px " + ink, k)
+            self.assertEqual(m["hinge"], [], k)
+            self.assertEqual(m["small"], [], k)
+            self.assertGreaterEqual(m["minCr"], 15, k)
+        self.assertEqual(seen, 4, "light and dark, both hands")
+
     def test_the_shade_is_the_list_pane_from_its_own_edge(self):
         for k, scheme, hand, name, m in self.states():
             if name == "shade":

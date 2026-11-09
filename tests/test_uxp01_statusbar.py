@@ -41,7 +41,7 @@ class TestStatusBar(unittest.TestCase):
         self.assertIn('setInterval(tick,15000)', js)
         # Normal status bar time follows the visitor's local clock. The demo
         # notice clock is intentionally sourced from simulated state.
-        self.assertIn("time.textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);", js)
+        self.assertIn("t=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);\nif(time.textContent!==t)time.textContent=t;", js)
         hook = js[js.index('window.oposHooks.push(function(s){try{', js.index('var time=G(\'sb-time\')')):]
         self.assertIn('var {clock}=s;if(demoTime&&clock)demoTime=\'Demo time \'+clock;', hook)
         self.assertIn('tick();', hook)
@@ -52,11 +52,13 @@ class TestStatusBar(unittest.TestCase):
 
     def test_lock_clock_updates_without_state_render(self):
         html = page()
-        lock = html.split("var cover=document.getElementById('lock')", 1)[1].split('</script>', 1)[0]
+        lock = html.split("var cover=G('lock')", 1)[1].split('</script>', 1)[0]
         clock = lock.split('function lockTick(){try{', 1)[1].split('}catch(e)', 1)[0]
         self.assertIn('new Date()', clock)
         for element in ('lock-time', 'lock-date'):
-            self.assertIn("document.getElementById('%s').textContent=" % element, clock)
+            self.assertIn("G('%s')" % element, clock)
+        # W1-09: the 15 s timer writes a text only when it differs (a write replaces the text node and dirties the layout)
+        self.assertIn('if(a.textContent!==t)a.textContent=t;\nif(b.textContent!==n)b.textContent=n;', clock)
         self.assertIn('setInterval(lockTick,15000)', lock)
         self.assertIn('window.oposHooks.push(function(s){try{\n      lockTick();', lock)
         self.assertIn('}catch(e){window.oposUI.unlock();}', lock)
@@ -64,9 +66,9 @@ class TestStatusBar(unittest.TestCase):
     def test_lock_accessibility_and_independent_exit(self):
         html = page()
         self.assertRegex(html, r'<div id="lock"[^>]*aria-modal="true"')
-        lock = html.split("var cover=document.getElementById('lock')", 1)[1].split('</script>', 1)[0]
+        lock = html.split("var cover=G('lock')", 1)[1].split('</script>', 1)[0]
         locking = lock.split('window.oposUI.lock=function(){try{', 1)[1].split('}catch(e)', 1)[0]
-        self.assertIn("document.getElementById('unlock').focus()", locking)
+        self.assertIn("G('unlock').focus()", locking)
         self.assertIn("if(e.key==='Escape')window.oposUI.unlock()", lock)
         self.assertIn("if(!/(^|[?&])(lock=0|demo=1|app=full)(&|$)/.test(location.search))window.oposUI.lock();", lock)
         unlock = lock.split('// unlock definition start', 1)[1].split('// unlock definition end', 1)[0]

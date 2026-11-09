@@ -114,8 +114,8 @@ var net=G('sb-net');
 var engine=G('sb-engine');
 var batt=G('sb-batt');
 function tick(){try{
-var d=new Date();
-time.textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+var d=new Date(),t=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+if(time.textContent!==t)time.textContent=t;
 }catch(e){}}
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(s){try{
@@ -131,13 +131,13 @@ setInterval(tick,15000);
 }catch(e){}
 try{
 (function(){
-var cover=document.getElementById('lock'),phone=document.getElementById('phone');
+var cover=G('lock'),phone=G('phone');
 if(!cover||!phone)return;
 var first=true,startY=null;
 function lockTick(){try{
-var d=new Date();
-document.getElementById('lock-time').textContent=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-document.getElementById('lock-date').textContent=d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+var d=new Date(),t=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),n=d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}),a=G('lock-time'),b=G('lock-date');
+if(a.textContent!==t)a.textContent=t;
+if(b.textContent!==n)b.textContent=n;
 }catch(e){window.oposUI.unlock();}}
 window.oposUI=window.oposUI||{};
 function ownerOpen(name){
@@ -161,10 +161,10 @@ window.oposUI.lock=function(){try{
 ownerOpen('lock');
 cover.hidden=false;
 phone.inert=true;
-document.getElementById('unlock').focus();
+G('unlock').focus();
 }catch(e){window.oposUI.unlock();}};
 function safe(fn){return function(e){try{fn(e);}catch(err){window.oposUI.unlock();}};}
-document.getElementById('unlock').onclick=safe(function(){window.oposUI.unlock();});
+G('unlock').onclick=safe(function(){window.oposUI.unlock();});
 cover.addEventListener('pointerdown',safe(function(e){startY=e.clientY;}));
 cover.addEventListener('pointerup',safe(function(e){
 var up=startY!==null&&startY-e.clientY>40;
@@ -173,41 +173,41 @@ if(up)window.oposUI.unlock();
 }));
 cover.addEventListener('pointercancel',safe(function(){startY=null;}));
 document.addEventListener('keydown',safe(function(e){if(e.key==='Escape')window.oposUI.unlock();}));
-document.getElementById('lock-ask').onclick=safe(function(){
+G('lock-ask').onclick=safe(function(){
 window.oposUI.unlock();
 window.oposUI.openApp&&window.oposUI.openApp('helper');
 });
-document.getElementById('lock-call').onclick=safe(function(){
+G('lock-call').onclick=safe(function(){
 window.oposUI.unlock();
 window.oposUI.openApp&&window.oposUI.openApp('phone');
 });
-document.getElementById('lock-hangup').onclick=safe(function(){
+G('lock-hangup').onclick=safe(function(){
 if(typeof go==='function')go('hang_up');
 });
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(s){try{
       lockTick();
-document.getElementById('lock-batt').textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
+G('lock-batt').textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
 var story=G('lock-story'),text=s.lock_story||'';if(story&&story.textContent!==text)story.textContent=text;
-document.getElementById('lock-hangup').hidden=!s.in_call;
+G('lock-hangup').hidden=!s.in_call;
 if(first){
         first=false;
 if(!/(^|[?&])(lock=0|demo=1|app=full)(&|$)/.test(location.search))window.oposUI.lock();
 }
 }catch(e){window.oposUI.unlock();}finally{
-phone.inert=!document.getElementById('lock').hidden;
+phone.inert=!G('lock').hidden;
 }});
 if(demoTime)lockTick();
 setInterval(lockTick,15000);
 })();
 }catch(e){
-var lockFallback=document.getElementById('lock'),phoneFallback=document.getElementById('phone');
+var lockFallback=G('lock'),phoneFallback=G('phone');
 if(lockFallback)lockFallback.hidden=true;
 if(phoneFallback)phoneFallback.inert=false;
 }
 try{
 (function(){
-var reload=document.getElementById('reload-shell'),failures=0;
+var reload=G('reload-shell'),failures=0;
 if(!reload)return;
 function stateResult(failed){try{
 failures=failed?failures+1:0;
@@ -230,7 +230,7 @@ stateResult(r.status>=500||r.status===403);
 return s;
 };
 }
-var screen=document.getElementById('screen');
+var screen=G('screen');
 if(screen&&typeof MutationObserver==='function'){
 function bootFailed(){try{
 if(screen.textContent==='Could not reach Old Phone OS Interface. Reload the page in a few seconds.'){
@@ -329,7 +329,7 @@ var early=null;
 window.oposHooks.push(function(s){early=s});
 document.addEventListener('DOMContentLoaded',function(){try{
 if(early)render(early);
-else if(document.getElementById('screen').textContent)
+else if(G('screen').textContent)
 fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content}}).then(function(r){return r.json()}).then(function(s){if(s&&!s.error)return render(s)}).catch(function(){});
 }catch(e){}},{once:true});
 })()}catch(e){}

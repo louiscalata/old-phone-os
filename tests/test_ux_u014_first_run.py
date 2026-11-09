@@ -25,6 +25,6 @@ class TestInitialLoad(unittest.TestCase):
         self.assertLess(nline.find(norm("s.error")), nline.find(norm("throw new Error")))
         self.assertLess(nline.find(norm("throw new Error")), nline.find(norm("render(s)")))
         self.assertLess(nline.find(norm("render(s)")), nline.find(norm(".catch")))
-        self.assertIn(norm("document.getElementById('screen').textContent"), nline)
+        self.assertIn(norm("G('screen').textContent"), nline)
         self.assertLess(nline.find(norm(".catch")), nline.find(norm("Could not reach Old Phone OS Interface. Reload the page in a few seconds.")))
         self.assertIn(norm("Could not reach Old Phone OS Interface. Reload the page in a few seconds."), nline)

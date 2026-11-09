@@ -15,8 +15,8 @@ class TestDemoPanel(unittest.TestCase):
         pos = h.index(group)
         self.assertLess(demo, pos)
         self.assertLess(pos, temp)
-        self.assertIn("document.getElementById('battery').oninput=e=>document.getElementById('battery-val').textContent=Math.round(parseFloat(e.target.value))+'%';", h)
-        self.assertIn("document.getElementById('battery').onchange=e=>api({action:'battery',level:parseFloat(e.target.value)}).then(render);", h)
+        self.assertIn("G('battery').oninput=e=>G('battery-val').textContent=Math.round(parseFloat(e.target.value))+'%';", h)
+        self.assertIn("G('battery').onchange=e=>api({action:'battery',level:parseFloat(e.target.value)}).then(render);", h)
 
     def test_demo_slider_starts_at_the_phone_level(self):
         # Regression (lane A): the slider said 5% while the phone starts at 60% (Saver, helper answering).
@@ -30,8 +30,8 @@ class TestDemoPanel(unittest.TestCase):
     def test_battery_value_live(self):
         h = page()
         self.assertEqual(h.count('id="battery-val"'), 1)
-        self.assertIn("document.getElementById('battery').oninput=e=>document.getElementById('battery-val').textContent=Math.round(parseFloat(e.target.value))+'%';", h)
-        self.assertIn("document.getElementById('battery').onchange=e=>api({action:'battery',level:parseFloat(e.target.value)}).then(render);", h)
+        self.assertIn("G('battery').oninput=e=>G('battery-val').textContent=Math.round(parseFloat(e.target.value))+'%';", h)
+        self.assertIn("G('battery').onchange=e=>api({action:'battery',level:parseFloat(e.target.value)}).then(render);", h)
 
 
 if __name__ == "__main__":

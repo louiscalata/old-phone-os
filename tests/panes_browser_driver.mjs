@@ -128,8 +128,9 @@ const MEASURE = `(function(){
  res.cols=(function(){var m=document.querySelector('main,.cols');return m?getComputedStyle(m).gridTemplateColumns:null})();
  function B(id){var e=document.getElementById(id);if(!e)return null;var r=e.getBoundingClientRect();return r.width>0?{l:Math.round(r.left),r:Math.round(r.right),w:Math.round(r.width)}:null}
  res.at={masthead:B('jaryo-masthead'),home:B('home'),back:B('back'),settings:B('settings'),threads:B('threads'),thread:B('thread'),number:B('number'),msg:B('msg'),helper:B('helper'),ask:B('ask'),
-  sheet:B('sheet'),contacts:B('contacts'),appsList:B('apps-list'),appsClose:B('apps-close'),unlock:B('unlock'),lockTime:B('lock-time'),notice:B('notice'),
+  sheet:B('sheet'),contacts:B('contacts'),appsList:B('apps-list'),appsClose:B('apps-close'),unlock:B('unlock'),lockTime:B('lock-time'),notice:B('notice'),reload:B('reload-shell'),
   status:[].map.call(document.querySelectorAll('#jaryo-status-row button'),function(b){var r=b.getBoundingClientRect();return [Math.round(r.left),Math.round(r.right)]})};
+ res.noticeCss=(function(){var e=document.getElementById('notice');if(!e)return null;var cs=getComputedStyle(e);return {bg:cs.backgroundColor,fg:cs.color,border:cs.borderTopStyle+' '+cs.borderTopWidth+' '+cs.borderTopColor,events:cs.pointerEvents,position:cs.position}})();
  return res})()`;
 
 async function measure(p, extra) {
@@ -315,6 +316,9 @@ try {
     await st('messages', `oposUI.openApp('messages')`);
     await st('helper', `oposUI.openApp('helper')`);
     await st('settings', `oposUI.openApp('settings')`);
+    // A page whose server went away: two lost polls (and every request lost from here on), the banner and the Reload button.
+    await st('stale', `oposUI.openApp('home');window.__fetch=window.fetch;window.fetch=function(){return Promise.reject(new TypeError('down'))};oposPoll(0);oposPoll(0)`);
+    await p.ev(`window.fetch=window.__fetch;oposPoll(1);fetchState().then(render)`); await sleep(800);
     await st('shade', `oposUI.openApp('home');window.opos.open()`);
     await p.ev(`window.opos.close()`); await sleep(400);
     await st('lock', `oposUI.lock()`);

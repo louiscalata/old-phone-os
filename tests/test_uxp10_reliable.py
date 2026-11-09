@@ -211,7 +211,7 @@ class TestReliable(unittest.TestCase):
 class TestStaleBannerCss(unittest.TestCase):
     """W1-02: what a stale page looks like. Tokens only, fixed (nothing moves), one pane wide when the window spans two."""
     BANNER = ('[data-stale] #notice:not([hidden]){position:fixed;top:28px;left:0;right:0;z-index:120;background:var(--jaryo-bg);'
-              'border:3px double var(--jaryo-fg);padding:8px 16px;font-size:1rem;text-align:left}')
+              'border:3px double var(--jaryo-fg);padding:8px 16px;font-size:1rem;text-align:left;pointer-events:none}')
 
     def test_the_banner_is_a_fixed_boxed_notice_in_the_jaryo_tokens(self):
         out = page()
@@ -219,6 +219,11 @@ class TestStaleBannerCss(unittest.TestCase):
         self.assertIn('[data-stale] #sb-batt::before{content:"? "}', out)
         self.assertNotRegex(self.BANNER, r'#[0-9a-fA-F]{3,8}\b|rgb|hsl')
         self.assertLess(out.index('#notice{font-size'), out.index(self.BANNER), 'it wins by source order and by specificity')
+
+    def test_the_banner_takes_no_taps_so_the_buttons_under_it_stay_reachable(self):
+        # At Largest text it wraps to two lines and covers the Shade and Lock buttons of the status row; it is not a control.
+        self.assertIn(';pointer-events:none}', self.BANNER)
+        self.assertIn(self.BANNER, page())
 
     def test_reload_sits_at_the_bottom_right_and_nothing_is_pushed_for_it(self):
         out = page()
@@ -230,7 +235,7 @@ class TestStaleBannerCss(unittest.TestCase):
         from opos.span import parse
         out = page(span=parse('675,42'))
         tail = out[out.rindex('@media (min-width:1055px){'):]
-        self.assertIn('[data-stale] #notice:not([hidden]){box-sizing:border-box;max-width:var(--pane)}', tail)
+        self.assertIn('[data-stale] #notice{max-width:var(--pane)}', tail)
         self.assertNotIn('--pane', page(), 'one pane: no new rules, no span variables (tests/test_span.py)')
 
 
