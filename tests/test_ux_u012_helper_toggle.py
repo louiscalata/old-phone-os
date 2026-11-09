@@ -10,8 +10,8 @@ class HelperToggleTest(unittest.TestCase):
         start = rendered.index("async function render(s){")
         end = rendered.index("async function go", start)
         section = rendered[start:end]
-        self.assertIn("document.getElementById('visbtn').textContent=vis?'Hide helper':'Show helper';", section)
-        self.assertIn("const helperToggle=document.getElementById('helpertoggle');", section)
+        self.assertIn("G('visbtn').textContent=vis?'Hide helper':'Show helper';", section)
+        self.assertIn("const helperToggle=G('helpertoggle');", section)
         self.assertIn("if(helperToggle){helperToggle.textContent=vis?'Hide helper':'Show helper';}", section)
 
 

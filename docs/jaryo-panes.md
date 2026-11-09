@@ -164,6 +164,7 @@ html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,
 | `#sheet` (Shade) | `left:0; width:--jp-x1; border:0; transform:translateX(-100%)`, open state `body.sheet-open #sheet { transform: translateX(0) }` (Left: from the right edge, `translateX(100%)`) | the Shade becomes the white pane's content; a 384 px strip over a masthead (today's look, "ace" clipped at x 384) goes away. The existing transition and `visibility` delay are untouched |
 | `#lock` | background = right surface; `#lock::before` = left surface; text in column 1 (list), buttons in column 2 (thumb) | the lock's two columns are already pane-aligned |
 | `#reload-shell` | right-aligned at 12 px (Left: left at 12 px); thumb tokens | it is a thumb control |
+| stale-page banner (`body[data-stale] #notice`, a fixed box under the status bar from `jaryo.css`) | list tokens (`--jp-lst`, `--jp-lst-ink`) and the list pane: `left:0` (Left: `left:--jp-x2`), one pane wide (`opos.span`) | an alert is something to read, so it is the white pane's own 3 px double box and the white pane stays white; it never covers the Shade and Lock buttons or Reload, which are thumb controls in the other pane. It takes no taps (`pointer-events:none`) |
 | keyboard (`#opos-osk`) | `.osk-split>.osk-panel:first-child` takes the left surface, `:last-child` the right surface | the two halves already hug the outer edges; verified in both hands with `OPOS_OSK=1` |
 
 ### 3.5 Native controls and placeholders
@@ -222,6 +223,7 @@ Checked is the inverted fill, not a tick glyph. Placeholders are full ink and it
 | Battery gauge `#meter` and pull handle | left pane | right pane |
 | Keyboard halves | left half on white, right half on black | left half on black, right half on white |
 | `#reload-shell` | right, 12 px | left, 12 px |
+| Stale-page banner | list pane (left), list tokens | list pane (right), list tokens |
 | `/network`, `/firstrun`, `/timezone` columns | list column left, thumb column right | swapped |
 | Status bar text (time, network, engine left; battery right) | unchanged | unchanged; the two halves take their pane's colours |
 | Grid template, hinge, widths | `675px 42px 1fr` | the same (equal panes) |

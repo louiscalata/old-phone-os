@@ -15,7 +15,7 @@ class TestHelperScroll(unittest.TestCase):
             line_end = len(html)
         src = html[begin:line_end]
         self.assertEqual(src.count("scrollIntoView"), 1)
-        self.assertIn("getElementById('ask')", src)
+        self.assertIn("G('ask')", src)
         self.assertIn("block:'nearest'", src)
         render_mark = "render(await api({action:'visible'"
         render_pos = src.find(render_mark)
@@ -25,4 +25,4 @@ class TestHelperScroll(unittest.TestCase):
         self.assertLess(render_pos, scroll_pos)
         render_end = src.find("))", render_pos) + 2
         self.assertIn("vis", src[render_end:scroll_pos])
-        self.assertIn("document.getElementById('helpertoggle').onclick=toggleVis;", html)
+        self.assertIn("G('helpertoggle').onclick=toggleVis;", html)

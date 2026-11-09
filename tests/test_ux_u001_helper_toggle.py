@@ -9,7 +9,7 @@ class HelperToggleTest(unittest.TestCase):
         h = page()
         self.assertIn('<button data-go="receive">Simulate incoming text</button><button id="helpertoggle">Show helper</button></div>', h)
         self.assertLess(h.index('<button id="helpertoggle">Show helper</button>'), h.index('<div id="demo"'))
-        self.assertIn("document.getElementById('helpertoggle').onclick=toggleVis;", h)
+        self.assertIn("G('helpertoggle').onclick=toggleVis;", h)
         self.assertTrue(is_quiet(['Show helper']))
 
     def test_receive_labelled_as_simulation(self):

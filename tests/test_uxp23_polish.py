@@ -156,6 +156,16 @@ CHECKS.polish = async function() {
     if(document.querySelectorAll('.helper-actions button').length!==3)out.push('changed helper: actions '+document.querySelectorAll('.helper-actions button').length);
     return out;
   })()`));
+  out.push(...await ev(`(async function(){
+    // a11y-cost-05 (a): a poll whose state is what was last drawn writes nothing (about 60 DOM records per poll before)
+    var out=[],rec=0,mo=new MutationObserver(function(l){rec+=l.length});
+    mo.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+    await pollTick();mo.takeRecords();rec=0;
+    await pollTick();await pollTick();await pollTick();
+    rec+=mo.takeRecords().length;mo.disconnect();
+    if(rec)out.push('three polls of an unchanged state wrote '+rec+' DOM records');
+    return out;
+  })()`));
   await sleep(350);
   if(!await ev(`(function(){var r=document.getElementById('sheet').getBoundingClientRect();return r.top===0&&r.left===0&&r.right>=innerWidth&&r.bottom>=innerHeight})()`))out.push('shade does not cover viewport');
   await ev('oposUI.lock()');

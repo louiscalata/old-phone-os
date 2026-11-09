@@ -33,7 +33,7 @@ NODE = shutil.which("node")
 DUO = Span(675, 42)
 WHITE, BLACK = "rgb(243, 240, 232)", "rgb(0, 0, 0)"
 WHITE_HEX, BLACK_HEX = "#f3f0e8", "#000000"
-APPS = ("home", "home-low", "allapps", "phone", "phone-call", "messages", "helper", "settings", "shade", "lock-start", "lock")
+APPS = ("home", "allapps", "phone", "messages", "helper", "settings", "shade", "lock-start", "lock")
 WINDOWS_BROWSERS = (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
                     r"C:\Program Files\Google\Chrome\Application\chrome.exe", r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe")
 
@@ -215,43 +215,31 @@ class PanesBrowser(unittest.TestCase):
             if name in ("lock", "lock-start"):
                 self.assertTrue(self.thumb(hand, at["unlock"]) and self.listing(hand, at["lockTime"]), k)
 
-    def test_a_call_is_a_boxed_bold_notice_and_an_inverted_hang_up_in_the_thumb_pane_in_both_hands(self):
-        # interface plan W1-06: the pane's ink on the pane's surface for the box, the inverse for Hang up; pressed, Hang up goes back to
-        # the plain look, so a press is always a visible change and never ink on ink.
+    def test_a_stale_page_shows_its_banner_in_the_list_pane_and_reload_in_the_thumb_pane(self):
+        """W1-02: the banner is something to read (list pane, the list pane's own colours, inside it and clear of the hinge) and Reload,
+        which it points at, is a thumb control; the thumb pane's Shade and Lock buttons are not under it."""
         seen = 0
         for k, scheme, hand, name, m in self.states():
-            if name != "phone-call":
+            if name != "stale":
                 continue
             seen += 1
-            ink, surface = "rgb(230, 226, 217)", BLACK  # the thumb pane is the black one in both hands (Left mirrors the place, not the colour)
-            c = m["probe"]
-            self.assertEqual((c["tone"], c["hidden"], c["net"]), ("call", False, "In call"), k)
-            self.assertEqual((c["border"], c["borderColor"], c["color"], c["fontWeight"]), ("3px double", ink, ink, "700"), k)
-            self.assertGreaterEqual(float(c["fontSize"][:-2]), 20, k)
-            self.assertTrue(self.thumb(hand, c["box"]), (k, c["box"]))
-            self.assertEqual((c["hang"]["fg"], c["hang"]["bg"]), (surface, ink), (k, "Hang up is the inverted fill"))
-            self.assertTrue(self.thumb(hand, c["hang"]["box"]) and c["hang"]["box"]["h"] >= 48, k)
-            self.assertIn("call", c["screen"].lower(), k)
-            pressed = [it for it in m["press"]["forced"] if it["who"] == "go:hang_up"]
-            self.assertEqual(len(pressed), 1, k)
-            self.assertEqual((pressed[0]["fg"], pressed[0]["bg"], pressed[0]["inv"]), (ink.replace(" ", ""), surface.replace(" ", ""), True), (k, "pressed: the plain look"))
-            self.assertGreaterEqual(pressed[0]["cr"], 15, k)
-        self.assertEqual(seen, 4)  # two hands, two themes
-
-    def test_low_battery_is_a_word_in_a_double_box_in_the_right_panes_ink_in_both_hands(self):
-        # interface plan W1-05: "LOW 12%", the 3 px double border in the ink of the pane the battery sits in, the chip inside the bar.
-        seen = 0
-        for k, scheme, hand, name, m in self.states():
-            if name != "home-low":
-                continue
-            seen += 1
-            ink = "rgb(230, 226, 217)" if hand == "right" else "rgb(26, 26, 26)"  # the battery is at the right edge: the right pane
-            c = m["probe"]
-            self.assertEqual((c["text"], c["low"], c["title"]), ("LOW 12%", "true", "12% LOW"), k)
-            self.assertEqual((c["border"], c["borderColor"], c["color"]), ("3px double", ink, ink), k)
-            self.assertTrue(c["inBar"] and c["h"] <= 28, (k, c))
-            self.assertGreaterEqual(c["l"], 717, k)  # past the hinge
-        self.assertEqual(seen, 4)
+            at = m["at"]
+            banner, reload_ = at["notice"], at["reload"]
+            self.assertIsNotNone(banner, k)
+            self.assertIsNotNone(reload_, k)
+            self.assertTrue(self.listing(hand, banner), (k, banner))
+            self.assertEqual((banner["l"], banner["w"]), (0, 675) if hand == "right" else (717, 675), k)
+            self.assertTrue(self.thumb(hand, reload_), (k, reload_))
+            self.assertTrue(at["status"] and all(self.thumb(hand, {"l": a, "r": b}) for a, b in at["status"]), (k, at["status"]))
+            # the list pane's own colours: dark ink on the white pane (Right), light ink on the black pane (Left); a 3 px double box; no taps
+            bg, ink = (WHITE, "rgb(26, 26, 26)") if hand == "right" else (BLACK, "rgb(230, 226, 217)")
+            css = m["noticeCss"]
+            self.assertEqual((css["bg"], css["fg"], css["position"], css["events"]), (bg, ink, "fixed", "none"), k)
+            self.assertEqual(css["border"], "double 3px " + ink, k)
+            self.assertEqual(m["hinge"], [], k)
+            self.assertEqual(m["small"], [], k)
+            self.assertGreaterEqual(m["minCr"], 15, k)
+        self.assertEqual(seen, 4, "light and dark, both hands")
 
     def test_the_shade_is_the_list_pane_from_its_own_edge(self):
         for k, scheme, hand, name, m in self.states():
