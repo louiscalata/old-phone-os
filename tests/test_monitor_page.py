@@ -182,11 +182,16 @@ class SourceRuleTests(unittest.TestCase):
                         field = ast.get_source_segment(source, part.value) or ""
                         self.assertNotIn(quote[0], field, f"{path.name}:{node.lineno}: quote reused inside an f-string field")
                         self.assertNotIn("\\", field, f"{path.name}:{node.lineno}: backslash inside an f-string field")
-        # The detector sees what 3.11 would refuse.
+        # The detector sees what 3.11 would refuse. 3.11's parser rejects the sample outright;
+        # 3.12 parses it and the quote is inside the replacement field, which the scan above flags.
         bad = 'row = {"a": 1}\nx = f"{row["a"]}"\n'
-        node = next(n for n in ast.walk(ast.parse(bad)) if isinstance(n, ast.JoinedStr))
-        field = ast.get_source_segment(bad, node.values[0].value)
-        self.assertIn('"', field)
+        try:
+            node = next(n for n in ast.walk(ast.parse(bad)) if isinstance(n, ast.JoinedStr))
+        except SyntaxError:
+            self.assertLess(sys.version_info, (3, 12))
+        else:
+            field = ast.get_source_segment(bad, node.values[0].value)
+            self.assertIn('"', field)
 
     def test_no_python_3_12_only_syntax(self):
         # The phone runs 3.14 but CI may run 3.11: no PEP 695 generics, no f-string nesting tricks.

@@ -139,7 +139,8 @@ check "OTA: the root updater is present, executable (0755) and parses" "ota_upda
 check "OTA: the updater and its trust files are owned by root" "[ \"\$(stat -c %u:%g $r/usr/libexec/opos-updater/opos-updater)\" = 0:0 ] && [ \"\$(stat -c %u:%g $r/etc/opos/update/allowed_signers)\" = 0:0 ] && [ \"\$(stat -c %u $r/etc/opos/update)\" = 0 ]"
 check "OTA: allowed_signers holds only 'opos-release ssh-ed25519 <public key>' lines (or nothing)" "ota_signers_ok"
 check "OTA: base-version is 1" "[ \"\$(cat $r/etc/opos/base-version)\" = 1 ]"
-check "OTA: the inbox is 2770 root:droidian, staging 0700 and the state directory 0755 root-owned" "[ \"\$(stat -c %a:%u:%g $r/var/lib/opos-update/inbox)\" = 2770:0:$ota_gid ] && [ \"\$(stat -c %a:%u:%g $r/var/lib/opos-update/staging)\" = 700:0:0 ] && [ \"\$(stat -c %a:%u:%g $r/var/lib/opos-update)\" = 755:0:0 ]"
+check "OTA: the inbox is mode 2770, staging 0700 and the state directory 0755" "[ \"\$(stat -c %a $r/var/lib/opos-update/inbox)\" = 2770 ] && [ \"\$(stat -c %a $r/var/lib/opos-update/staging)\" = 700 ] && [ \"\$(stat -c %a $r/var/lib/opos-update)\" = 755 ]"
+check "OTA: the inbox is root:droidian and staging and the state directory are root-owned" "[ \"\$(stat -c %u:%g $r/var/lib/opos-update/inbox)\" = 0:$ota_gid ] && [ \"\$(stat -c %u:%g $r/var/lib/opos-update/staging)\" = 0:0 ] && [ \"\$(stat -c %u:%g $r/var/lib/opos-update)\" = 0:0 ]"
 check "OTA: etc/opos/update.json is absent (nothing is fetched) or names one address and leaves auto_check off" "ota_source_ok"
 ota_keys=$(grep -c . "$r/etc/opos/update/allowed_signers" 2>/dev/null || true)
 if [ "${ota_keys:-0}" -gt 0 ]; then echo "NOTE: update signers: $ota_keys public key(s)"; else echo "NOTE: update signers: NONE (this image accepts no updates)"; fi

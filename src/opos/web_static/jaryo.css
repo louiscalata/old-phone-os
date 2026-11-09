@@ -40,7 +40,7 @@ h3,#settings h3,summary,.jaryo-letter,.jaryo-letter-head,#lock-date{font-family:
 html,body,#phone,#lock,#sheet,#sheet-grip,#history,#sb,#demo,.box,#screen,#reload-shell{background:var(--jaryo-bg);color:var(--jaryo-fg)}
 button,input[type=text],input[type=time],select,#topbar,#textsize,#goal-clear,#goal-row button,#goal-row input[type=time],#askbtn{background:var(--jaryo-bg);color:var(--jaryo-fg);border-color:var(--jaryo-fg);color-scheme:inherit;border-radius:0;min-height:48px;min-width:48px}
 html[data-ff="slideout"] #controls{background:var(--jaryo-bg)}
-button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active{background:var(--jaryo-fg);color:var(--jaryo-bg)}
+button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active,#reload-shell:active{background:var(--jaryo-fg);color:var(--jaryo-bg)}
 button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-disabled="true"],#goal-clear:disabled{background:var(--jaryo-bg);color:var(--jaryo-fg);opacity:1;border-style:dashed}
 #screen{border:1px solid var(--jaryo-fg);border-radius:0;filter:none!important}
 #sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#demo label{color:var(--jaryo-fg)}

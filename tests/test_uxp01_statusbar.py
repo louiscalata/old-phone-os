@@ -97,7 +97,7 @@ console.log(JSON.stringify({configured,quiet:ids['sb-engine'].textContent}));
         proc = subprocess.run(['node', '-e', harness, str(source)], capture_output=True, text=True, timeout=15)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(json.loads(proc.stdout), {
-            'configured': 'Helper set to Muse Glimmer, on this device', 'quiet': ''})
+            'configured': 'Helper on', 'quiet': ''})
 
     def test_simulated_telephony_is_disclosed_where_controls_appear(self):
         self.assertIn('<div id="controls"><p id="demo-phone-note">Calls and texts may use your configured phone connection.</p>', page())

@@ -231,8 +231,8 @@ class PanesBrowser(unittest.TestCase):
             self.assertEqual((banner["l"], banner["w"]), (0, 675) if hand == "right" else (717, 675), k)
             self.assertTrue(self.thumb(hand, reload_), (k, reload_))
             self.assertTrue(at["status"] and all(self.thumb(hand, {"l": a, "r": b}) for a, b in at["status"]), (k, at["status"]))
-            # the list pane's own colours: dark ink on the white pane (Right), light ink on the black pane (Left); a 3 px double box; no taps
-            bg, ink = (WHITE, "rgb(26, 26, 26)") if hand == "right" else (BLACK, "rgb(230, 226, 217)")
+            # The list pane is the white pane in both hands. Left moves that pane to the right; it does not turn it black.
+            bg, ink = (WHITE, "rgb(26, 26, 26)")
             css = m["noticeCss"]
             self.assertEqual((css["bg"], css["fg"], css["position"], css["events"]), (bg, ink, "fixed", "none"), k)
             self.assertEqual(css["border"], "double 3px " + ink, k)

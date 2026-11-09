@@ -98,7 +98,7 @@ G('qs-helper').setAttribute('aria-pressed',s.helper_visible?'true':'false');
 G('qs-settings').hidden=!G('settings');
 var notice=typeof s.notice==='string'?s.notice.trim():'';
 if(notice&&notice!==lastNotice&&!String(s.status||'').startsWith('error:')){
-var at=new Date();notices.unshift({text:s.notice,at:at,clock:demoTime?s.clock:('0'+at.getHours()).slice(-2)+':'+('0'+at.getMinutes()).slice(-2)});
+var at=new Date();notices.unshift({text:s.notice,at:at,clock:demoTime?s.clock:(at.getFullYear()<2026?'--:--':('0'+at.getHours()).slice(-2)+':'+('0'+at.getMinutes()).slice(-2))});
 notices=notices.slice(0,5);
 renderNotices();
 }
@@ -116,13 +116,15 @@ var batt=G('sb-batt');
 function tick(){try{
 var d=new Date(),t=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
 if(time.textContent!==t)time.textContent=t;
+if(!demoTime&&(d.getFullYear()<2026||window.oposClockUnset)){t='--:--';if(time.textContent!==t)time.textContent=t;}
 }catch(e){}}
 window.oposHooks=window.oposHooks||[];
 window.oposHooks.push(function(s){try{
 var {clock}=s;if(demoTime&&clock)demoTime='Demo time '+clock;
+if(!demoTime&&clock==='--:--')window.oposClockUnset=true;else if(!demoTime&&clock)window.oposClockUnset=false;
 tick();
-net.textContent=navigator.onLine===false?'Offline':'';
-batt.textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
+net.textContent=s.status_note||(navigator.onLine===false?'Offline':'');
+batt.textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?(s.battery.percent<=15?'LOW ':'')+Math.round(s.battery.percent)+'%':'—';
 engine.textContent=s.helper&&typeof s.helper.engine==='string'&&s.helper.engine?'Helper on':'';
 }catch(e){}});
 tick();
@@ -136,6 +138,7 @@ if(!cover||!phone)return;
 var first=true,startY=null;
 function lockTick(){try{
 var d=new Date(),t=demoTime||('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),n=d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}),a=G('lock-time'),b=G('lock-date');
+if(!demoTime&&(d.getFullYear()<2026||window.oposClockUnset)){t='--:--';n='Time not set';}
 if(a.textContent!==t)a.textContent=t;
 if(b.textContent!==n)b.textContent=n;
 }catch(e){window.oposUI.unlock();}}
