@@ -61,6 +61,7 @@ def variables(span):
 # status bar that would run across the hinge, so it is one pane wide (the first; with OPOS_PANES the list pane: panes.css).
 EXTRA = ('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}'
          "#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}"
+         "#meter{right:auto;width:var(--pane)}"
          "#meter-hit::after{left:calc(var(--pane)/2)}"
          "[data-stale] #notice{max-width:var(--pane)}")
 

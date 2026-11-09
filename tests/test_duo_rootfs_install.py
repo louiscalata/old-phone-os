@@ -104,12 +104,13 @@ class TestDuoRootfsInstall(unittest.TestCase):
             with open(calls_log) as f:
                 lines = f.read().splitlines()
 
-            self.assertEqual(len(lines), 4)
+            self.assertEqual(len(lines), 5)
             self.assertEqual(lines[0], 'fastboot format:ext4 userdata')
             self.assertTrue(lines[1].startswith('fastboot boot ') and lines[1].endswith('twrp.img'))
             self.assertEqual(lines[2], 'adb wait-for-recovery')
-            self.assertTrue(lines[3].startswith('adb push '))
-            self.assertTrue(lines[3].endswith('/data/rootfs.img'))
+            self.assertEqual(lines[3], 'adb shell mountpoint -q /data || mount -t ext4 /dev/block/platform/soc/1d84000.ufshc/by-name/userdata /data')
+            self.assertTrue(lines[4].startswith('adb push '))
+            self.assertTrue(lines[4].endswith('/data/rootfs.img'))
 
             for l in lines:
                 if l.startswith('fastboot boot'):

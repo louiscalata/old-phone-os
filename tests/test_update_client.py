@@ -1628,8 +1628,8 @@ class MainPageIsUntouched(Env):
     # removal, B-03, its sources-as-text change, W2-16, and the practice wording and battery claims, W1-01 and W1-07, and the helper's text, W1-08).
     # docs/ui-byte-ledger.md says how to measure the page. Re-recorded once on the merged tree integrate/w1 (the six ui/w1-* tracks:
     # room, practice, helper, resilience, status, layout); each track had recorded its own digests, which cannot all hold at once.
-    MAIN_SHA256 = "433ef87d6228c32fbecdbfb4e7acabca4cce8077740977db5f2845f1731b4538"
-    DEMO_SHA256 = "a521a68640af3ab671b5d2d1ddb072eb722a8ec6652d0792ea22c4913bc2ed94"
+    MAIN_SHA256 = "8f3b417875a6066a50e74701011d22ceb3d07c8a2017d73580c02d4b92c2c65b"
+    DEMO_SHA256 = "8aaad19a4b64e5a8d5c3a4a375ba8adaab4722a09e829e87145e28ae1f397f5f"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):

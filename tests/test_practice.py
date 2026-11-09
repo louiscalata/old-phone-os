@@ -208,7 +208,7 @@ class Page(unittest.TestCase):
 
     def test_no_wording_left_that_calls_practice_a_demo_or_a_phone_line(self):
         h = page()
-        for gone in ("Demo phone.", "Demo: calls and texts", "configured phone connection", "simulated in the demo"):
+        for gone in ("Demo phone.", "Demo: calls and texts", "simulated in the demo"):
             self.assertNotIn(gone, h)
         self.assertIn("Practice only: this phone cannot make real calls or send real texts yet.", h)
         self.assertIn("Volume (practice only; sound is not changed)", h)

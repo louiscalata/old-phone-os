@@ -43,7 +43,7 @@ renderNotices();
 }catch(e){}};
 li.appendChild(dismiss);ul.appendChild(li);
 });
-var status=G('lock-notice'),text=notices.length?'New notice':'';
+var status=G('lock-notice'),text=notices.length?notices[0].text:'';
 if(status&&status.textContent!==text)status.textContent=text;
 }
 function available(id,label,ready){
@@ -123,7 +123,7 @@ var {clock}=s;if(demoTime&&clock)demoTime='Demo time '+clock;
 tick();
 net.textContent=navigator.onLine===false?'Offline':'';
 batt.textContent=s.battery&&typeof s.battery.percent==='number'&&isFinite(s.battery.percent)?Math.round(s.battery.percent)+'%':'—';
-engine.textContent=s.helper&&typeof s.helper.engine==='string'&&s.helper.engine?'Helper set to '+s.helper.engine:'';
+engine.textContent=s.helper&&typeof s.helper.engine==='string'&&s.helper.engine?'Helper on':'';
 }catch(e){}});
 tick();
 setInterval(tick,15000);
@@ -301,14 +301,13 @@ try{new MutationObserver(function(){try{jsc()}catch(e){}}).observe($('phone'),{a
 window.oposHooks.push(function(s){try{
 var home=$('home'),card=$('home-notice');
 if(home&&!card){var fav=E('div');fav.id='home-favourites';card=E('div');card.id='home-notice';card.setAttribute('role','status');while(home.firstChild)fav.appendChild(home.firstChild);home.appendChild(fav);home.appendChild(card);home.classList.add('polished');$('phone').classList.add('polished')}
-var paused=((s.battery&&s.battery.paused)||[]).map(function(p){return p.name||p}).filter(known);
-var notice='Calls and messages are on.'+(paused.length?'\nPaused to save power: '+paused.join(', ')+'.':'');
+var notice=s.home_note||'';
 if(card&&card.textContent!==notice)card.textContent=notice;
 jl=s;jsc();
 var percent=s.battery&&s.battery.percent;
 $('sb-batt').setAttribute('data-low',typeof percent==='number'&&isFinite(percent)&&percent<=15?'true':'false');
 var technical=$('shade-technical');['events'].forEach(function(id){technical.appendChild($(id))});
-['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length)});
+['history','history-label'].forEach(function(id){$(id).hidden=!(s.battery&&s.battery.history&&s.battery.history.length>1)});
 ['headline','time-left','goal-note','why'].forEach(function(id){var e=$(id);e.hidden=!known(e.textContent)});
 ['paused-list','features','events'].forEach(function(id){Array.prototype.forEach.call($(id).children,function(row){var label=row.querySelector('span');row.hidden=!known(label?label.textContent:row.textContent)})});
 var helper=$('helper'),button=helper.querySelector('details')?null:helper.querySelector('button');
