@@ -1313,21 +1313,25 @@ class PersistRunbook(unittest.TestCase):
                        "October 31 hash MEASURED", "the conclusion about a root-side write INFERRED"):
             with self.subTest(row5=phrase):
                 self.assertIn(phrase, five)
-        # Row 7 is dated: the counters and the critical flag are as of October 9.
+        # Row 7 does not keep a dated unlock or slot snapshot. G0 reads the phone on the day of the install.
         seven = flat(" ".join(rows["7"]))
-        self.assertIn("as of October 9, 2026, 17:07 UTC", seven)
-        self.assertIn("have not been read since", seven)
-        self.assertIn("MEASURED on October 9", rows["7"][2])
+        self.assertIn("G0 reads the current slot", seven)
+        self.assertNotIn("17:07 UTC", seven)
+        self.assertNotIn("retry count", seven)
+        self.assertEqual(rows["7"][2], "UNKNOWN")
         # Row 10 says what the WOA-Project page says: fastbootd via stock recovery, the plain name, no firmware, no carrier.
         ten = flat(" ".join(rows["10"]))
         for phrase in ("through stock recovery > \"Enter fastboot\"", "`fastboot flash boot <image>`", "It names no firmware version and no carrier",
                        "this runbook's reading of the page's steps, not a statement on the page",
-                       "own Android build is 2022.902.48", "bootloader reports 2022.815.527", "Troubleshooting advice is a G5 row",
+                       "Troubleshooting advice is a G5 row",
                        "cannot be relocked"):
             with self.subTest(row10=phrase):
                 self.assertIn(phrase, ten)
         self.assertNotIn("AT&T", ten)
         self.assertNotIn("names firmware", ten)
+        for banned in ("2022.902.48", "2022.815.527", "planning dossier"):
+            with self.subTest(banned=banned):
+                self.assertNotIn(banned, self.doc)
         self.assertEqual(rows["10"][2], "REPORTED")
         self.assertIn("undated page", ten)
         self.assertIn("Troubleshooting advice (REPORTED, undated)", flat(self.gates["G5"]))
