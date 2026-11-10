@@ -58,6 +58,7 @@ except ImportError:
     osk = None
 from opos import net_page  # track: network
 from opos import apps_page  # everyday apps: /apps and /api/<app>; the page is unchanged unless OPOS_APPS names one
+from opos import lockpin  # optional PIN. Off unless OPOS_LOCK=1, so the demo is unchanged.
 try:  # track monitor: the Inference page is optional; a runtime shipped without src/opos/monitor.py serves what it always served
     from opos import monitor, monitor_web
 except ImportError:
@@ -855,7 +856,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with self.lock:
                 snap = self.phone.state()
+            if lockpin.is_locked():
+                snap = lockpin.redact(snap)
             self._json(snap)
+        elif path == "/api/lock" and lockpin.active():
+            if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
+                self._deny(403, "forbidden", "token")
+                return
+            body = lockpin.status()
+            body["lock"] = lockpin.counts()
+            self._json(body)
         elif path == "/api/update" and self.updater is not None:
             if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
                 self._deny(403, "forbidden", "token")
@@ -942,7 +952,8 @@ class Handler(BaseHTTPRequestHandler):
         """Handle API POST."""
         path = urllib.parse.urlsplit(self.path).path
         app_post = apps_page.is_post(path)
-        if path != "/api" and not app_post:
+        lock_post = path == "/api/lock" and lockpin.active()
+        if path != "/api" and not app_post and not lock_post:
             self._deny(404, "not found", "path")
             return
         if not secure.host_ok(self.headers.get("Host"), self.port):
@@ -967,6 +978,12 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(e.status, e.message, "body")
             return
         self._disarm()
+        if lock_post:
+            self._lock_act(data)
+            return
+        if lockpin.blocks(data.get("action") if isinstance(data.get("action"), str) else "", path):
+            self._deny(403, "locked", "lock")
+            return
         if app_post:
             apps_page.post(self, path, data)
             return
@@ -1048,6 +1065,33 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "unknown action" if a not in {"battery","temp","call","hang_up","send","receive","open","visible","sim","tick","charge","goal","undo","in_use","explain","ask","plan","restart_helper"} else "bad request"}, 400)
             return
         self._json(snap)
+    def _lock_act(self, data):
+        """Set, skip, lock or unlock. Wrong-PIN waits are computed from data['now'] when a test sends it."""
+        action = data.get("action") if isinstance(data, dict) else None
+        try:
+            if action == "set":
+                lockpin.set_pin(data.get("pin"))
+                self._json(lockpin.status())
+                return
+            if action == "skip":
+                lockpin.skip()
+                self._json(lockpin.status())
+                return
+            if action == "lock":
+                lockpin.lock()
+                self._json(lockpin.status())
+                return
+            if action == "unlock":
+                now = data.get("now")
+                if isinstance(now, bool) or not isinstance(now, (int, float)):
+                    now = time.time()
+                ok, status = lockpin.unlock("" if data.get("pin") is None else str(data.get("pin")), now)
+                self._json(status, 200 if ok else 403)
+                return
+        except ValueError:
+            self._json({"error": "bad request"}, 400)
+            return
+        self._json({"error": "bad request"}, 400)
 def apply_phone_action(phone, data):
     """Apply only a validated in-memory phone action; return whether its shape was valid.
 
