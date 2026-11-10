@@ -1,9 +1,34 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Old Phone OS Interface (OPOS)
+# Old Phone OS (OPOS)
 
-OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
+OPOS is a phone operating system for the Microsoft Surface Duo 1. It runs a Linux image built on the community Droidian port for the Duo, with OPOS as the only interface across both screens. It keeps calls and messages on and pauses less essential work toward a time the owner chooses. It is for people who rely on an older phone, whatever their age or budget.
 
-OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
+OPOS is a work in progress.
+
+## Surface Duo status
+
+| Area | State |
+|---|---|
+| First run on the phone | November 7, 2026: the OPOS-only image ran on one Surface Duo 1, RAM-booted from a PC: the kernel is started from the PC each time and the phone's boot partition is not changed, so a power cycle returns it to Android. |
+| Duo OS image, checkpoint 1 | Pull request #10 says this image was accepted on the device on November 8, 2026 for touch, the Hand setting, the on-screen keyboard and Settings. The files in this repository record the November 7 RAM-boot. They do not record that November 8 session on their own, and they do not record a flashed boot partition. |
+| Duo OS image, checkpoint 2 | Pull request #10 says a later image was built and that its install and selftest were not checked independently. |
+| Calls and texts on the Duo | Still simulated. The ModemManager adapter is not wired in. |
+| Starting without a PC | Not yet. A persistent install is planned, not run. |
+| Speed, battery life, stability | Not measured. |
+| Over-the-air updates | Implemented and tested on Linux with stand-ins. Not tested on the phone. |
+| postmarketOS packaging | Booted to the lock screen in QEMU on November 3, 2026. Not booted on a phone. |
+| Windows installer | Untested at runtime. |
+
+Start with:
+
+- [The Duo OS as it stands](docs/duo-os-final.md): what the OS does, what is simulated, and what is not known.
+- [OPOS OS for the Surface Duo](packaging/duo-os/README.md): the image, how it is built and installed, and how to restore Android.
+- [Duo OS acceptance](docs/duo-acceptance.md): the on-phone selftest and the owner's checklist.
+- [OPOS on a stock-Android Surface Duo](docs/duo-android.md): running OPOS in Termux without flashing.
+
+## Hackathon reference
+
+This was a hackathon project. The desktop demo, the public demo and the rest of this README describe the earlier prototype, Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is kept as a reference. The battery rules and the helper it introduced are the base of the Duo OS. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
 
 ## Quickstart — under five minutes
 
@@ -214,7 +239,7 @@ The desktop demo is simulation only, and so is the postmarketOS kiosk: both use 
 
 The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-yet-verified); that path is documented separately.
 
-**Surface Duo: one phone, one day (November 7, 2026).** [OPOS as the whole OS](packaging/duo-os/README.md) ran on the owner's Duo, RAM-booted from a PC with no Android, and the owner confirmed on the screens that it was working; logs from the phone showed the real battery read from sysfs. [OPOS on stock Android](docs/duo-android.md) ran through Termux with the real battery, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens per second. Nothing here measures speed, battery life or stability over time. Calls and texts are still simulated on both routes. The OS image is RAM-boot only, so a power cycle returns the phone to Android and wipes it. The older [Droidian USB notes](docs/duo-usb-install.md) are historical.
+**Surface Duo: one phone, one day (November 7, 2026).** [OPOS as the whole OS](packaging/duo-os/README.md) ran on the owner's Duo, RAM-booted from a PC with no Android, and the owner confirmed on the screens that it was working; logs from the phone showed the real battery read from sysfs. [OPOS on stock Android](docs/duo-android.md) ran through Termux with the real battery, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens per second. Nothing here measures speed, battery life or stability over time. Calls and texts are still simulated on both routes. The OS image is RAM-boot only, so a power cycle returns the phone to Android and wipes it. Pull request #10 says checkpoint 1 was accepted on November 8, 2026 for touch, Hand, the on-screen keyboard and Settings. That sentence is not a second session written down in these files, and it is not a flashed boot. The older [Droidian USB notes](docs/duo-usb-install.md) are historical.
 
 ## Documentation
 
