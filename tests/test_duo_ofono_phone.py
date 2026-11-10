@@ -35,3 +35,17 @@ class Ofono(unittest.TestCase):
         self.assertEqual(bus.calls[0][3], "Dial")
         self.assertEqual(bus.calls[1][3], "SendMessage")
         self.assertEqual(bus.calls[2][3], "HangupAll")
+
+    def test_a_short_number_is_refused_when_calls_are_on(self):
+        bus = Bus()
+        phone = OfonoPhone(bus, {"OPOS_CALLS": "1"})
+        with self.assertRaises(ValueError):
+            phone.dial("911")
+        self.assertEqual(bus.calls, [])
+        self.assertEqual(phone.calls, [])
+
+    def test_the_phone_page_keeps_the_screen_modem(self):
+        from opos.ui import ScreenModem
+        from opos.web import Phone
+        phone = Phone()
+        self.assertIs(type(phone.modem), ScreenModem)

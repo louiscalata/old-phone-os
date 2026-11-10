@@ -2,9 +2,12 @@
 """oFono call and message calls, off unless OPOS_CALLS=1.
 
 Practice mode is the default. The phone page is not wired to this module.
+A short or emergency number is refused until a recorded emergency test exists.
 Not measured on a phone, and not used without a SIM.
 """
 from __future__ import annotations
+
+from opos.practice import refuses
 
 
 def calls_enabled(env) -> bool:
@@ -23,6 +26,8 @@ class OfonoPhone:
 
     def dial(self, number: str) -> None:
         self._require()
+        if refuses(number):
+            raise ValueError("refused")
         self.bus.call("org.ofono", self.path, "org.ofono.VoiceCallManager", "Dial", number, "default")
         self.calls.append(number)
 
