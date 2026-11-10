@@ -13,6 +13,7 @@ src/opos/aitools/place.py
 src/opos/aitools/power.py
 src/opos/aitools/sessions.py
 src/opos/aitools/wizard.py
+src/opos/alarm_sound.py
 src/opos/alarms.py
 src/opos/appdoc.py
 src/opos/apps.py
@@ -83,6 +84,7 @@ src/opos/setup/server.py
 src/opos/setup/services.py
 src/opos/setup/wizard_page.py
 src/opos/sim.py
+src/opos/sounds/alarm.wav
 src/opos/span.py
 src/opos/statusbar.py
 src/opos/store.py
