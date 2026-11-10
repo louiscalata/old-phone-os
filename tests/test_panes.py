@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import osk, panes, span as spanmod
+from opos import fonts, osk, panes, span as spanmod
 from opos.span import Span
 from opos.web import page
 from tests import webclient
@@ -260,8 +260,11 @@ class Routes(unittest.TestCase):
                     s, h, body = self.get(run, path, method)
                     nonce = re.search(r"script-src 'nonce-([A-Za-z0-9_-]+)'", h["content-security-policy"]).group(1)
                     self.assertEqual(s, 200, path)
-                    self.assertEqual(body, build(TOKEN, nonce).encode("utf-8") if method == "GET" else b"", (path, method))
-                    self.assertEqual(h["content-length"], str(len(build(TOKEN, nonce).encode("utf-8"))), (path, method))
+                    expect = build(TOKEN, nonce).encode("utf-8")
+                    if path == "/":
+                        expect = fonts.inject(expect, nonce)
+                    self.assertEqual(body, expect if method == "GET" else b"", (path, method))
+                    self.assertEqual(h["content-length"], str(len(expect)), (path, method))
 
     def test_on_serves_both_with_the_page_hardening_and_the_span(self):
         with env_without(**ON), webclient.Running(token=TOKEN, span=DUO) as run:
@@ -279,7 +282,7 @@ class Routes(unittest.TestCase):
             nonce = re.search(r"script-src 'nonce-([A-Za-z0-9_-]+)'", h["content-security-policy"]).group(1)
             self.assertEqual(body.decode().count("/panes."), 2)
             self.assertIn(f'<link rel="stylesheet" href="/panes.css" nonce="{nonce}">', body.decode())
-            self.assertEqual(body.decode().replace(panes.tags(nonce), ""), page(TOKEN, nonce, span=DUO))
+            self.assertEqual(body.decode().replace(panes.tags(nonce), "").replace(fonts.inject(b"</head>", nonce).decode().removesuffix("</head>"), ""), page(TOKEN, nonce, span=DUO))
 
     def test_every_full_page_gets_it(self):
         with env_without(**ON), webclient.Running(token=TOKEN) as run:

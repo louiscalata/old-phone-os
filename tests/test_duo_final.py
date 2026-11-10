@@ -25,7 +25,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from opos import firstrun, osk, web  # noqa: E402
+from opos import firstrun, fonts, osk, web  # noqa: E402
 from tests.test_selftest import Fake, SERVER_ENV  # noqa: E402
 
 ORIG_PAGE = web.page  # before any run of the first-run hook
@@ -124,7 +124,7 @@ class TogetherInOneServer(unittest.TestCase):
         with duo_server() as (port, cfg):
             st, h, home = get(port, "/")
             token = re.search(rb'name="opos-token" content="([^"]+)"', home).group(1).decode()
-            self.assertEqual(home, ORIG_PAGE(token, nonce_of(h)).encode(), "byte-identical home page with nothing set")
+            self.assertEqual(home, fonts.inject(ORIG_PAGE(token, nonce_of(h)).encode(), nonce_of(h)), "home page plus the font sheet")
             self.assertEqual(get(port, "/", {"Accept": "text/html"})[0], 200, "no first run")
             for path in ("/firstrun", "/timezone", "/osk.js", "/osk.css", "/api/firstrun"):
                 self.assertEqual(get(port, path)[0], 404, path)
