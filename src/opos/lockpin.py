@@ -156,11 +156,14 @@ def status(now=0):
 
 
 def blocks(action, path):
-    """True when a write must be refused. Alarm stop and snooze, hang up, and unlock stay allowed."""
+    """True when a write must be refused. Alarm stop and snooze, hang up, and unlock stay allowed.
+
+    set and skip change the PIN. They are refused while the phone is locked.
+    """
     if not is_locked():
         return False
     if path == "/api/lock":
-        return False
+        return action in {"set", "skip"}
     if path == "/api/clock" and action in {"stop", "snooze"}:
         return False
     if action in {"hang_up", "unlock"}:

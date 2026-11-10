@@ -71,6 +71,38 @@ class Server(unittest.TestCase):
             code, raw = post(server, "/api", {"action": "call", "number": "+15550100"}, token)
             self.assertNotEqual(code, 403, raw)
 
+    def test_set_and_skip_are_refused_while_locked(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            saved = lockpin._read()["record"]["hash"]
+            self.assertTrue(lockpin.blocks("set", "/api/lock"))
+            self.assertTrue(lockpin.blocks("skip", "/api/lock"))
+            self.assertFalse(lockpin.blocks("unlock", "/api/lock"))
+            self.assertFalse(lockpin.blocks("lock", "/api/lock"))
+            code, raw = post(server, "/api/lock", {"action": "skip"}, token)
+            self.assertEqual(code, 403, raw)
+            self.assertEqual(json.loads(raw)["error"], "locked")
+            self.assertEqual(lockpin._read()["record"]["hash"], saved)
+            self.assertTrue(lockpin.is_locked())
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "5678"}, token)
+            self.assertEqual(code, 403, raw)
+            self.assertTrue(lockpin.verify("1234", lockpin._read()["record"]))
+            self.assertFalse(lockpin.verify("5678", lockpin._read()["record"]))
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 50}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(json.loads(raw)["locked"])
+            code, raw = post(server, "/api/lock", {"action": "skip"}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(lockpin.has_pin())
+            self.assertFalse(lockpin.is_locked())
+
     def test_locked_state_has_no_names_and_writes_are_refused(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
