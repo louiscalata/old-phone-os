@@ -2,6 +2,9 @@
 """Clock page: save an alarm, ring from a test clock, snooze, stop, and refuse to ring when the clock is unknown."""
 import json
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -74,6 +77,50 @@ class ClockPage(unittest.TestCase):
             self.assertFalse(snap["clock_ok"])
             self.assertEqual(len(snap["alarms"]), 1)
             self.assertEqual(snap["notices"], [])
+
+
+    def test_typed_time_must_be_hh_mm(self):
+        html = clock_page.render("tok", "nonce")
+        self.assertIn(r"/^(?:[01]\d|2[0-3]):[0-5]\d$/", html)
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        match = re.search(r"G\('clock-time'\)\.onchange=function\(\)\{.*?\};", html)
+        self.assertIsNotNone(match)
+        script = r"""
+function pad(n){return (n<10?'0':'')+n}
+var hour=7,minute=0,shown=null;
+var input={value:'07:00'};
+function G(i){return i==='clock-time'?input:null}
+function show(){shown=pad(hour)+':'+pad(minute)}
+""" + match.group(0) + r"""
+function apply(v){
+  hour=7;minute=0;shown=null;input.value=v;
+  input.onchange();
+  return {hour:hour,minute:minute,shown:shown};
+}
+var rejects=[':', '1:2.5', '7:30', '24:00', '07:60', '', '07:0', '7:05', '25:00', '23:5'];
+var accepts=[['07:00',7,0],['00:00',0,0],['23:59',23,59],['09:05',9,5],['12:30',12,30]];
+for (var i=0;i<rejects.length;i++){
+  var r=apply(rejects[i]);
+  if(r.hour!==7||r.minute!==0||r.shown!=='07:00'){
+    console.error('accepted '+JSON.stringify(rejects[i])+' -> '+JSON.stringify(r));
+    process.exit(1);
+  }
+}
+for (var j=0;j<accepts.length;j++){
+  var a=accepts[j], r=apply(a[0]);
+  var want=pad(a[1])+':'+pad(a[2]);
+  if(r.hour!==a[1]||r.minute!==a[2]||r.shown!==want){
+    console.error('bad accept '+JSON.stringify(a[0])+' -> '+JSON.stringify(r));
+    process.exit(1);
+  }
+}
+console.log('ok');
+"""
+        proc = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("ok", proc.stdout)
 
     def test_tick_is_refused_without_the_test_hook_and_the_main_page_does_not_grow(self):
         before = page()

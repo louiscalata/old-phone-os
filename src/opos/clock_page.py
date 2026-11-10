@@ -98,7 +98,7 @@ G('h-minus').onclick=function(){hour=(hour+23)%24;show()};
 G('h-plus').onclick=function(){hour=(hour+1)%24;show()};
 G('m-minus').onclick=function(){minute=(minute+55)%60;show()};
 G('m-plus').onclick=function(){minute=(minute+5)%60;show()};
-G('clock-time').onchange=function(){var p=(G('clock-time').value||'').split(':');var h=+p[0],m=+p[1];if(p.length!==2||!(h>=0&&h<=23&&m>=0&&m<=59)){show();return}hour=h;minute=m;show()};
+G('clock-time').onchange=function(){var v=G('clock-time').value||'';if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v)){show();return}var p=v.split(':');hour=+p[0];minute=+p[1];show()};
 G('save').onclick=function(){var body={action:sel?'edit':'add',hour:hour,minute:minute,days:chosen(),label:G('clock-label').value};if(sel)body.id=sel;api(body).then(function(s){sel=null;G('del').hidden=true;paint(s)})};
 G('fresh').onclick=function(){sel=null;hour=7;minute=0;on={};G('clock-label').value='';G('del').hidden=true;show();dayButtons()};
 G('del').onclick=function(){if(!sel)return;if(G('del').dataset.sure!=='1'){G('del').dataset.sure='1';G('del').textContent='Delete this alarm?';return}api({action:'delete',id:sel}).then(function(s){sel=null;G('del').hidden=true;paint(s)})};
