@@ -19,6 +19,14 @@ The lock screen shows the next timed event as "Next: 15:00". The title stays off
 
 On-device checks for this page are NOT_RUN.
 
+## Music
+
+`music` plays files in the music folder (`OPOS_MUSIC_DIR`, or `OPOS/Music` under the home directory). It is off until `OPOS_APPS` names it. The formats are the ones the page can play: MP3, OGG, FLAC, and WAV. The list is albums and files. Play, Pause, Previous and Next are text buttons. The position is text, such as `0:00 / 0:01`.
+
+A hard battery floor pauses playback and says why. While the page is open, a softer pause does not. The sleep timer is the Clock timer. There is no account and no network.
+
+Speaker playback on a phone is NOT_RUN. Voice memos are a separate app and are not part of this one.
+
 ## Not run on a phone
 
 Clock is the first named app (`OPOS_APPS=clock` on the Duo image). It is its own page. The home page only gains the short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen.

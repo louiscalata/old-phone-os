@@ -52,6 +52,7 @@ src/opos/mm_modem.py
 src/opos/monitor.py
 src/opos/monitor_web.py
 src/opos/muse.py
+src/opos/music_page.py
 src/opos/net.py
 src/opos/net_page.py
 src/opos/notes_page.py

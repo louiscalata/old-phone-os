@@ -3,9 +3,13 @@
 
 A raised app handler becomes a short error page with Home. The front page and Phone are not part of that handler.
 """
+import hashlib
+import hmac
 import re
 import secrets
+import urllib.parse
 from html import escape
+from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
 
 from opos import appdoc, apps, secure
@@ -14,6 +18,64 @@ from opos import appdoc, apps, secure
 _INJECT = '<script nonce="{nonce}" src="/apps-home.js"></script>'
 _HOME_JS = Path(__file__).with_name("apps_static") / "home.js"
 _BODY_END = re.compile(r"</body\s*>", re.I)
+_MEDIA_COOKIE = "opos_media"
+
+
+def _media_grant(token):
+    """A media capability for this session. It is not the API token."""
+    if not isinstance(token, str) or not token:
+        return ""
+    try:
+        key = token.encode("utf-8")
+    except UnicodeError:
+        return ""
+    return hmac.new(key, b"opos-media", hashlib.sha256).hexdigest()
+
+
+def _media_cookie_header(token):
+    grant = _media_grant(token)
+    if not grant:
+        return ""
+    return "%s=%s; HttpOnly; SameSite=Strict; Path=/media/" % (_MEDIA_COOKIE, grant)
+
+
+def _cookie(handler, name):
+    raw = handler.headers.get("Cookie")
+    if not isinstance(raw, str) or not raw:
+        return ""
+    jar = SimpleCookie()
+    try:
+        jar.load(raw)
+    except CookieError:
+        return ""
+    found = jar.get(name)
+    return found.value if found is not None else ""
+
+
+def _query_has_api_token(handler):
+    """True when any query value is the long-lived API token."""
+    expected = getattr(handler, "token", "")
+    query = urllib.parse.urlsplit(handler.path).query
+    for values in urllib.parse.parse_qs(query, keep_blank_values=True).values():
+        for value in values:
+            if secure.token_ok(value, expected):
+                return True
+    return False
+
+
+def _media_authorized(handler):
+    """Header or same-origin media cookie. The API token in the query never counts."""
+    expected = getattr(handler, "token", "")
+    if secure.token_ok(handler.headers.get("X-OPOS-Token"), expected):
+        return True
+    grant = _media_grant(expected)
+    supplied = _cookie(handler, _MEDIA_COOKIE)
+    if not grant or not supplied:
+        return False
+    try:
+        return hmac.compare_digest(supplied.encode("utf-8"), grant.encode("utf-8"))
+    except (TypeError, ValueError):
+        return False
 
 
 def buckets():
@@ -102,7 +164,7 @@ def is_post(path):
     return apps.switched_on() and _api_app(path) is not None and getattr(_api_app(path), "post", None) is not None
 
 
-def _send_html(handler, html, status, nonce):
+def _send_html(handler, html, status, nonce, app=None):
     body = html.encode("utf-8")
     try:
         from opos import osk
@@ -114,8 +176,19 @@ def _send_html(handler, html, status, nonce):
             body = osk.inject_bytes(body, nonce)
         except Exception:
             pass
+    headers = secure.security_headers(nonce)
+    tweak = getattr(app, "headers", None)
+    if callable(tweak):
+        try:
+            headers = tweak(dict(headers)) or headers
+        except Exception:
+            pass
+    if app is not None and callable(getattr(app, "open_file", None)):
+        cookie = _media_cookie_header(getattr(handler, "token", ""))
+        if cookie:
+            headers["Set-Cookie"] = cookie
     handler.send_response(status)
-    for key, value in secure.security_headers(nonce).items():
+    for key, value in headers.items():
         handler.send_header(key, value)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
@@ -139,8 +212,49 @@ def _send_static(handler, body, content_type):
         handler.wfile.write(body)
 
 
+def _observe(handler, app):
+    fn = getattr(app, "observe", None)
+    if not callable(fn):
+        return
+    try:
+        fn(handler)
+    except Exception:
+        pass
+
+
+def _media(handler, path):
+    """GET /media/<app>/<id> for a file an app already listed. Anything else is not ours.
+
+    The long-lived API token is refused in the query string. Callers send X-OPOS-Token or the media cookie.
+    """
+    if not path.startswith("/media/"):
+        return False
+    if not apps.switched_on():
+        return False
+    parts = path.strip("/").split("/")
+    if len(parts) != 3 or parts[0] != "media":
+        return False
+    apps.load_enabled()
+    app = apps.by_id(parts[1])
+    opener = getattr(app, "open_file", None)
+    if app is None or not callable(opener):
+        return False
+    if _query_has_api_token(handler) or not _media_authorized(handler):
+        handler._deny(403, "forbidden", "token")
+        return True
+    opened = opener(parts[2])
+    if not opened:
+        handler._json({"error": "not found"}, 404)
+        return True
+    body, content_type = opened
+    _send_static(handler, body, content_type)
+    return True
+
+
 def serve_get(handler, path):
     """Answer an app GET. False means this path is not an app path."""
+    if _media(handler, path):
+        return True
     if path == "/apps-home.js":
         if not apps.switched_on():
             return False
@@ -159,13 +273,14 @@ def serve_get(handler, path):
             return True
         app = apps.by_path(path)
         if app is not None:
-            _send_html(handler, app.render(handler.token, nonce), 200, nonce)
+            _send_html(handler, app.render(handler.token, nonce), 200, nonce, app)
             return True
         api = _api_app(path)
         if api is not None and api.get_json is not None:
             if not secure.token_ok(handler.headers.get("X-OPOS-Token"), handler.token):
                 handler._deny(403, "forbidden", "token")
                 return True
+            _observe(handler, api)
             _send_json(handler, api.get_json())
             return True
     except Exception:
@@ -187,6 +302,7 @@ def post(handler, path, data):
     if not handler.limiter.allow("apps"):
         handler._deny(429, "too many requests", "rate")
         return
+    _observe(handler, app)
     try:
         status, obj = app.post(data)
     except Exception:
