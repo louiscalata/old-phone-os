@@ -16,6 +16,7 @@ Notable changes to Old Phone OS Interface (OPOS), in Keep a Changelog style.
 - Surface Duo on stock Android: `--live-battery` (`LiveBattery`), `deploy/duo-termux.ps1` and `deploy/termux-setup.sh`; one session on the owner's phone on November 7, 2026 (see `docs/duo-android.md`).
 - Over-the-air updates for the Surface Duo OS image ([design and as-built notes](docs/ota-update.md)): a root updater with its systemd units, installed by `packaging/duo-os/build-image.sh` (`OPOS_UPDATE_SIGNERS`, `OPOS_UPDATE_URL`); an opt-in update client and `/update` page in OPOS; `tools/opos-release.py` and `deploy/duo-push-update.ps1` to build, sign and push a release ([how-to](docs/ota-release-howto.md)). Settings, About has an Updates link to the page. Review fixes: the update service has no start limit that a writer of the inbox could trip; the smoke test uses a port the kernel picks; a rollback requested through the inbox is limited to one step back per applied update and does not burn the serial. Implemented and tested on Linux with stand-ins for systemd, runuser and the browser; not tested on the phone.
 - VoLTE (`docs/duo-volte.md`): whether `ofono-binder-plugin-ext-qti` can be installed, and whether IMS registers, are open checks. **NOT_RUN.**
+- oFono call plumbing (`src/opos/ofono_phone.py`): `dial`, `hang_up`, and `send_sms` talk to VoiceCallManager and MessageManager only when `OPOS_CALLS=1`. A short number is still refused. The phone page is not wired to it. Not used without a SIM.
 
 ### Changed
 
