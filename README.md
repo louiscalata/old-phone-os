@@ -9,7 +9,7 @@ OPOS is a work in progress.
 
 | Area | State |
 |---|---|
-| First run on the phone | November 7, 2026: the OPOS-only image ran on one Surface Duo 1, RAM-booted from a PC. Nothing was flashed to the phone's boot partition; a power cycle returns it to Android. |
+| First run on the phone | November 7, 2026: the OPOS-only image ran on one Surface Duo 1, RAM-booted from a PC: the kernel is started from the PC each time and the phone's boot partition is not changed, so a power cycle returns it to Android. |
 | Duo OS image, checkpoint 1 | Pull request #10 says this image was accepted on the device on November 8, 2026 for touch, the Hand setting, the on-screen keyboard and Settings. The files in this repository record the November 7 RAM-boot. They do not record that November 8 session on their own, and they do not record a flashed boot partition. |
 | Duo OS image, checkpoint 2 | Pull request #10 says a later image was built and that its install and selftest were not checked independently. |
 | Calls and texts on the Duo | Still simulated. The ModemManager adapter is not wired in. |
