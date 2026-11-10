@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Lock screen counts. Served only while OPOS_LOCK=1, so the main page stays the same size.
+window.oposLockCounts = true;
 try {
   var tokenEl = document.querySelector("meta[name=opos-token]");
   if (!tokenEl) throw new Error("token");

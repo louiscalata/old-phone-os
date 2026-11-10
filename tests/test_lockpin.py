@@ -259,9 +259,11 @@ class Server(unittest.TestCase):
     def test_lock_screen_script_shows_counts_and_page_stays_under_the_gate(self):
         page = web.page()
         self.assertIn("oposLockCounts", page)
-        self.assertNotIn('src="/lock.js"', page)
-        self.assertLessEqual(len(page.encode("utf-8")), 102000)
+        self.assertIn('script[src="/lock.js"]', page)
+        self.assertEqual(page.count('src="/lock.js"'), 1)
         script = lockpin._JS.read_text(encoding="utf-8")
+        self.assertLess(script.index("window.oposLockCounts = true"), script.index("fetch("))
+        self.assertLessEqual(len(page.encode("utf-8")), 102000)
         self.assertIn("new messages", script)
         self.assertNotIn("notices", script)
         same = b"<html><body></body></html>"
