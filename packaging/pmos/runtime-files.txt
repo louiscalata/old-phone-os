@@ -25,6 +25,7 @@ src/opos/budget.py
 src/opos/clock_page.py
 src/opos/clockcheck.py
 src/opos/contacts.py
+src/opos/contacts_page.py
 src/opos/dashboard.py
 src/opos/demo.py
 src/opos/eol.py
@@ -91,6 +92,7 @@ src/opos/tokenfile.py
 src/opos/ui.py
 src/opos/update_client.py
 src/opos/update_page.py
+src/opos/vcard.py
 src/opos/web.py
 src/opos/web_static/body-1.html
 src/opos/web_static/body-2.html
