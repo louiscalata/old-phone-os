@@ -144,7 +144,7 @@ def clock_known():
         from opos.web import clock_ok
         return bool(clock_ok())
     except Exception:
-        return True
+        return False
 
 
 def current_now():
