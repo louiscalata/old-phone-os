@@ -48,6 +48,7 @@ src/opos/hw/detect.py
 src/opos/hw/live_battery.py
 src/opos/hw/store.py
 src/opos/lockpin.py
+src/opos/memos_page.py
 src/opos/mm_modem.py
 src/opos/monitor.py
 src/opos/monitor_web.py

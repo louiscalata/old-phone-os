@@ -27,6 +27,14 @@ A hard battery floor pauses playback and says why. While the page is open, a sof
 
 Speaker playback on a phone is NOT_RUN. Voice memos are a separate app and are not part of this one.
 
+## Voice memos
+
+`memos` is on only when `OPOS_APPS` names it. Naming `music` does not turn it on. Record and Stop use the browser microphone. No extra package is installed for recording or playback. A memo is saved as a file on the phone, in small pieces so it fits the existing request limit. Play reads that file. Delete asks "Delete this memo?".
+
+A hard battery floor refuses a new recording and says why. The microphone permission is on this page only. The front page still leaves the microphone off.
+
+Capturing from the phone's microphone is NOT_RUN. No package approval is waiting: nothing new was added to the image.
+
 ## Not run on a phone
 
 Clock is the first named app (`OPOS_APPS=clock` on the Duo image). It is its own page. The home page only gains the short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen.

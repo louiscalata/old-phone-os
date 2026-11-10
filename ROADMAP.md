@@ -20,6 +20,7 @@ and what comes next. Plans are intentions, not promises.
 - Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes and Calculator. App data stays in local files. Alarms do not ring while the clock is unknown. Sound on a real phone is not verified.
 - Calendar is a local page when `OPOS_APPS` names `calendar`. The Duo image does not name it. Reminders follow the alarm rules and do not write alarms. The lock line is a time, with no title. Nothing here has been run on a phone.
 - Music is a local page when `OPOS_APPS` names `music`. It plays files on the phone and pauses on a hard battery floor. The sleep timer is the Clock timer. Speaker playback on a phone is not verified.
+- Voice memos are a separate page when `OPOS_APPS` names `memos`. Recording uses the browser microphone and no new package. Microphone capture on a phone is not verified.
 - Camera: research only ([docs/camera-spike.md](docs/camera-spike.md)). No still has been captured. No camera code.
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
   (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. The kiosk runs the
