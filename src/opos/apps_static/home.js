@@ -50,4 +50,22 @@ try {
   window.oposHooks.push(function () { if (window.__oposAlarm) paintAlarm({ clock_ok: true, now: new Date().toISOString(), next: { text: window.__oposAlarm, at: new Date(Date.now() + 60000).toISOString() } }); });
   pull();
   setInterval(pull, 30000);
+  function lockLine(data) {
+    if (!data || !data.enforced || !data.locked) return;
+    var note = document.getElementById("lock-notice");
+    if (!note) return;
+    var c = data.lock || {};
+    var missed = c.missed || 0;
+    var parts = [(c.messages || 0) + " new messages", missed === 1 ? "1 missed call" : missed + " missed calls"];
+    if (c.alarm) parts.push(c.alarm);
+    note.textContent = parts.join(". ");
+  }
+  function pullLock() {
+    fetch("/api/lock", { headers: { "X-OPOS-Token": tokenEl.content } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(lockLine)
+      .catch(function () {});
+  }
+  pullLock();
+  setInterval(pullLock, 2000);
 } catch (e) {}

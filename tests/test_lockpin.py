@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Lock PIN: the hash, the growing wait, and the server refusing writes while locked."""
+import json
+import tempfile
+import unittest
+
+from opos import lockpin, web
+from tests.test_apps_shell import get, post, running
+
+
+class Hash(unittest.TestCase):
+    def test_verify_and_the_iteration_count(self):
+        record = lockpin.hash_pin("1234")
+        self.assertGreaterEqual(record["iterations"], 200000)
+        self.assertTrue(lockpin.verify("1234", record))
+        self.assertFalse(lockpin.verify("9999", record))
+        with self.assertRaises(ValueError):
+            lockpin.hash_pin("12")
+
+    def test_five_wrong_tries_then_a_wait_that_grows(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        with unittest.mock.patch.dict(__import__("os").environ, {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}):
+            lockpin.set_pin("1234")
+            for n in range(4):
+                ok, status = lockpin.unlock("0000", 1000)
+                self.assertFalse(ok)
+                self.assertEqual(status["wait_s"], 0)
+            ok, status = lockpin.unlock("0000", 1000)
+            self.assertFalse(ok)
+            self.assertGreaterEqual(status["wait_s"], 30)
+            ok, early = lockpin.unlock("1234", 1000)
+            self.assertFalse(ok)
+            self.assertGreater(early["wait_s"], 0)
+            ok, later = lockpin.unlock("1234", 1031)
+            self.assertTrue(ok)
+            self.assertFalse(later["locked"])
+
+
+class Server(unittest.TestCase):
+    def test_locked_state_has_no_names_and_writes_are_refused(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        snap = {"notice": "Ana called", "contacts": [{"name": "Ana"}], "threads": [{"name": "Ana"}], "clock": "07:00", "battery": {"percent": 50}}
+        red = lockpin.redact(snap)
+        self.assertNotIn("Ana", json.dumps(red))
+        self.assertEqual(red["battery"]["percent"], 50)
+        self.assertNotIn("notice", red)
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertTrue(lockpin.blocks("call", "/api"))
+            self.assertFalse(lockpin.blocks("stop", "/api/clock"))
+            self.assertFalse(lockpin.blocks("hang_up", "/api"))
+            code, raw = post(server, "/api", {"action": "call", "number": "+15550100"}, token)
+            self.assertEqual(code, 403)
+            self.assertEqual(json.loads(raw)["error"], "locked")
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 50}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(json.loads(raw)["locked"])
+            status, body = get(server, "/api/state", token)
+            self.assertEqual(status, 200)
+            self.assertNotIn("locked", json.loads(body))
+        page = web.page()
+        self.assertNotIn(">Emergency<", page)
+
+
+if __name__ == "__main__":
+    unittest.main()
