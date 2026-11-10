@@ -87,8 +87,9 @@ class TestDuoOsReadme(unittest.TestCase):
 
     def test_ram_boot_rule_and_misc_brake_are_stated_and_kept_by_the_tools(self):
         rule = flat(section(self.text, "## RAM-boot only, and the misc brake"))
-        for phrase in ("`fastboot boot boot.img`", "refuses flashes of the boot partition with `Device Error`",
-                       "forbid flashing boot, vbmeta, dtbo or recovery", "`bootonce-bootloader`",
+        for phrase in ("`fastboot boot boot.img`",
+                       "The image is RAM-booted from a PC; the phone's installed system is left unchanged.",
+                       "No tool here writes the boot image", "`bootonce-bootloader`",
                        "One RAM-boot, never retried", "Never run `reboot` or `systemctl reboot`",
                        "`reboot bootloader`", "It is a precaution, not a guarantee"):
             with self.subTest(phrase=phrase):

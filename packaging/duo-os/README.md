@@ -121,11 +121,9 @@ boot partitions, on purpose.
 
 A gated, read-only-first experiment to find out whether the kernel can live in the phone's own storage is planned in [docs/duo-persistent-install.md](../../docs/duo-persistent-install.md); it has not been run.
 
-- This phone's bootloader refuses flashes of the boot partition with `Device Error` even when unlocked
-  (`boot_a`, recorded October 31, 2026; vbmeta is reported to be refused the same way), and the port's own
-  notes forbid flashing boot, vbmeta, dtbo or recovery in any case. `fastboot boot` works. No tool here writes
-  those partitions or changes the active slot; making the image permanent would need a different, separately
-  decided method.
+- The image is RAM-booted from a PC; the phone's installed system is left unchanged. No tool here writes
+  the boot image or changes the active slot. Making the image start without the PC would need a different,
+  separately decided method.
 - The **misc brake** is `misc-brake.img`, 2,048 bytes for the `misc` partition: a one-shot
   `bootonce-bootloader` flag, so the next boot lands in Boot Select instead of in stock Android. If stock
   Android boots while this rootfs sits on userdata, it can write a wipe request into `misc`, after which the
