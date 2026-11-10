@@ -107,7 +107,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_KIOSK_RESTART` | not set | `0`: do not restart Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_PANES` | `opos-server.service` (`1`) | the black thumb pane, the white list pane and the Hand setting on the spanned window (`src/opos/panes.py`, [docs/jaryo-panes.md](../../docs/jaryo-panes.md)); paints only while `OPOS_SPAN` is on; `1,pure` strict `#000`/`#fff`, `invert` color swap without the mirror, unset none |
-| `OPOS_SPAN` | not set; a commented line in `opos-server.service`, or `--span` | `675,42`: pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables |
+| `OPOS_SPAN` | `opos-server.service` (`675,42`), or `--span` | pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables. Not yet measured on the phone |
 | `OPOS_MONITOR` | `opos-server.service` (`1`) | the Settings link to `/monitor` and the routes `/monitor` and `/api/monitor` (see Inference page) |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor, and the `Host` header to send it (`OPOS_LOCAL_URL` is the Helper's, see Inference page) |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |

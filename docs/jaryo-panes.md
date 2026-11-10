@@ -280,7 +280,7 @@ The page has its own dark palette and ignores the light theme and `jaryo_theme`.
 | N14 | two-column breakpoint 1200 px, `--hinge:42px` | align with the first-run page | `@media (min-width: 1000px)` (as `firstrun_page`) |
 | N15 | `#nets button` margin 4 px | 8 px between targets | `margin: 8px 0` |
 | N16 | `net_page.LINK` (the Network link in Settings, `OPOS_NETWORK=1` only) has inline `color:#9ecbff` | two colors | `style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline"` (+26 B, only where `OPOS_NETWORK=1`; `len(LINK)` goes 203 to 229, under the test's 300; `web.page()` default is unchanged) |
-| N17 | the "Show the password" checkbox is the engine's: blue (`#0075ff`, `#99c8ff`) when checked and white in the dark scheme, on a phone, below the two-panel gate and on the Duo image as it ships (`OPOS_SPAN` is still commented out); only the spanned window repaired it, through `panes.css` | two colors, a box, a word | `input[type=checkbox]` in `_NET_CSS` (below): `appearance: none`, a 24 px square, 2 px solid ink border, square corners, checked = background ink, `accent-color` and `color` ink. In the page's own style, so it holds with the panes off; `panes.css` rule 11 paints the same box on the spanned window |
+| N17 | the "Show the password" checkbox is the engine's: blue (`#0075ff`, `#99c8ff`) when checked and white in the dark scheme, on a phone, below the two-panel gate and on the Duo image as it ships (`opos-server.service` sets `OPOS_SPAN=675,42`; not yet measured on the phone); only the spanned window repaired it, through `panes.css` | two colors, a box, a word | `input[type=checkbox]` in `_NET_CSS` (below): `appearance: none`, a 24 px square, 2 px solid ink border, square corners, checked = background ink, `accent-color` and `color` ink. In the page's own style, so it holds with the panes off; `panes.css` rule 11 paints the same box on the spanned window |
 
 #### 5.3.1 The net-only rules (verified)
 
@@ -395,7 +395,7 @@ The nonce check and tag shape, the "same bytes object while off" contract, the `
 
 ### 6.6 Deployment and docs
 
-- Unit: `packaging/duo-os/opos-server.service` sets `Environment=OPOS_PANES=1` in its own `# >>> track panes` block next to `OPOS_SPAN` (answering open question 2 with yes). Panes do nothing without the span, and the span is still a commented line until it is measured on the phone, so the image shows no change until `OPOS_SPAN=675,42` is turned on. `verify-image.sh` has a matching `track panes` block.
+- Unit: `packaging/duo-os/opos-server.service` sets `Environment=OPOS_PANES=1` in its own `# >>> track panes` block next to `OPOS_SPAN` (answering open question 2 with yes). Panes do nothing without the span. `opos-server.service` sets `OPOS_SPAN=675,42`. Not yet measured on the phone.  `verify-image.sh` has a matching `track panes` block.
 - Docs: this file as `docs/jaryo-panes.md`; one row `OPOS_PANES` in the `docs/duo-os-final.md` environment table; a note in `docs/jaryo.md` section 13 ("on a spanned window the two pane surfaces replace Light/Dark; see jaryo-panes.md"); one `CHANGELOG.md` line; one line in `packaging/duo-os/README.md` where `OPOS_OSK` is.
 - Shell: tests run on Linux in WSL with the script recipe (node shim, `TMPDIR` on `C:`, targeted modules only).
 
@@ -468,7 +468,7 @@ Limits and risks:
 Open questions for Louis:
 
 1. Soft or strict whites? Default is the Nov 3 soft pair; `pure` is one word. Which should the Duo image set?
-2. Default on? Should `opos-server.service` set `OPOS_PANES=1` once `OPOS_SPAN` is enabled, or stay a commented line until the phone has shown it?
+2. The service sets `OPOS_PANES=1` and `OPOS_SPAN=675,42`. Not yet measured on the phone.
 3. Hinge color: black (the physical hinge) or white?
 4. "Invert for the left": is it a mirror (built) or a color swap with no mirror (`invert`)?
 5. The placeholder, checkbox and radio fixes: leave in `panes.css`, or move into `jaryo.css` when the page budget allows?
@@ -504,8 +504,8 @@ The keyboard adds 154 B to each full page and serves `/osk.js` (30,642 B) and `/
 ## 11. Wave 1, layout track (`ui/w1-layout`, 2026-11-08): the hinge, the keyboard and long words
 
 Plan items W1-10, W1-11 and W1-12 of the interface finalization plan. Headless Edge 157 at 1392 x 900 CSS px against the real server
-(`python -m opos.web --span 675,42`), the same limits as section 10: nothing here was run on the Duo, and the span is still off in
-`opos-server.service`.
+(`python -m opos.web --span 675,42`), the same limits as section 10: nothing here was run on the Duo. The image now sets
+`OPOS_SPAN=675,42` in `opos-server.service`. Not yet measured on the phone.
 
 ### 11.1 W1-11: nothing on the hinge (x 675 to 717)
 
