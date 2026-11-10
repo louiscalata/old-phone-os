@@ -130,8 +130,7 @@ addresses and passwords appear in some of it.
    `systemctl show opos-server -p Environment` (shows `OPOS_NETWORK=1`, `OPOS_FIRSTRUN=1`, `OPOS_OSK=1`, `OPOS_MONITOR=1`);
    `python3 -m opos.net probe | tee /tmp/net-probe.txt` (every block `rc=0`; an `mmcli` "couldn't find modem" is a finding, not an error);
    `nmcli -t general permissions | grep -E 'enable-disable-wifi|network-control|settings.modify.system|wifi.scan'` (four lines ending `:yes`;
-   `:auth` or `:no` means rebuild with `OPOS_NET_POLKIT=1`, or as root install `packaging/duo-os/50-opos-network.rules` into
-   `/etc/polkit-1/rules.d/`); `python3 -m opos.net status | python3 -c 'import json,sys; s=json.load(sys.stdin); [print(s[k]["summary"]) for k in ("wifi","bluetooth","modem","sim","data","airplane","usb")]; print(s["control"]); print(s["notes"])'`
+   `:auth` or `:no` means the default rule is not in effect; `OPOS_NET_POLKIT=0` omits it); `python3 -m opos.net status | python3 -c 'import json,sys; s=json.load(sys.stdin); [print(s[k]["summary"]) for k in ("wifi","bluetooth","modem","sim","data","airplane","usb")]; print(s["control"]); print(s["notes"])'`
    (seven plain lines that agree with `nmcli`, `mmcli -m any`, `rfkill list`, `ip -br addr`).
 6. **First run, on the glass.** The kiosk opens "Set up this phone": text on the left panel, controls on the right, nothing in the
    42 px hinge strip, every control reachable by touch, the 1970 sentence on the left. Tap Start, Europe, Berlin, Next, adjust the

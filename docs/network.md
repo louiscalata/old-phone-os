@@ -49,14 +49,14 @@ NetworkManager as the unprivileged user the server runs as (`droidian`). Nothing
 - **Limits.** A Wi-Fi password is 8 to 63 characters (or 64 hex digits). Networks that need a user name (802.1X, "company or school")
   and WEP are listed but not joinable. Hidden networks can be joined by typing the name. Names starting with a dash are refused.
 
-If NetworkManager does not allow the user to change Wi-Fi, build the image with `OPOS_NET_POLKIT=1` to add
-`packaging/duo-os/50-opos-network.rules`, or install it by hand. It lets `droidian` do four NetworkManager actions without being
-asked. They also let that user connect or disconnect any connection and add, change or delete system connections (mobile data and
-VPNs included), so it is opt-in and off by default.
+The Duo image installs `packaging/duo-os/50-opos-network.rules` by default. `OPOS_NET_POLKIT=0` leaves it out.
+On polkitd that reports a system unit, only `opos-server.service` may use the four actions. Older polkitd falls back to user `droidian`.
+The actions also let that service connect or disconnect any connection and add, change or delete system connections (mobile data and
+VPNs included). Whether a running phone actually grants them is **NOT_RUN**.
 
 **Who can change Wi-Fi.** The page token is served on `GET /network` like the home page, so any local user or process on the phone
 can read it and change Wi-Fi as `droidian`: the accepted posture is a single-user phone, where every local process is the owner's.
-The optional polkit rule is wider than Wi-Fi: it also lets the server activate, modify and delete every NetworkManager connection,
+The polkit rule is wider than Wi-Fi: it also lets the server activate, modify and delete every NetworkManager connection,
 mobile data and VPN profiles included.
 
 ## Files and settings

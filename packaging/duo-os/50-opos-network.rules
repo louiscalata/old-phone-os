@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Duo OS image, opt-in (build-image.sh with OPOS_NET_POLKIT=1): lets the OPOS server's user, droidian, change Wi-Fi
-// through NetworkManager without an administrator prompt. The server runs as a system service with no login session, so
-// polkit's default for these actions is to ask an administrator, which nothing on the phone can answer.
-// Only the four actions the Network page needs, only for droidian. They also let that user connect or disconnect any
+// Duo OS image: lets the OPOS server change Wi-Fi through NetworkManager without an administrator prompt.
+// The server is a system unit with no login session, so polkit's default for these actions is to ask, and nothing on the phone can answer.
+// polkitd that sets subject.system_unit (128 and later) grants only opos-server.service. Older polkitd has no system_unit, so the rule falls back to user droidian.
+// Only the four actions the Network page needs. They also let that user connect or disconnect any
 // NetworkManager connection and add, change or delete system connections, including mobile data and VPNs.
-// Install only when `nmcli general permissions` run as droidian shows these as "auth" or "no" (docs/network.md).
 polkit.addRule(function(action, subject) {
     var ids = [
         "org.freedesktop.NetworkManager.enable-disable-wifi",
@@ -12,7 +11,16 @@ polkit.addRule(function(action, subject) {
         "org.freedesktop.NetworkManager.settings.modify.system",
         "org.freedesktop.NetworkManager.wifi.scan"
     ];
-    if (subject.user == "droidian" && ids.indexOf(action.id) >= 0) {
+    if (ids.indexOf(action.id) < 0) {
+        return;
+    }
+    if (typeof subject.system_unit == "string") {
+        if (subject.system_unit == "opos-server.service") {
+            return polkit.Result.YES;
+        }
+        return;
+    }
+    if (subject.user == "droidian") {
         return polkit.Result.YES;
     }
 });
