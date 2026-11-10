@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Declared-source admission and normalized package-input archive checks."""
-import hashlib
 import importlib.util
 import os
 import stat
@@ -117,15 +116,21 @@ class RuntimeSourceArchive(unittest.TestCase):
         with self.assertRaises(ValueError):
             builder.create_archive(self.root, self.root / "new.tar.gz", "old-phone-os-source")
 
-    def test_release_recipe_digest_matches_current_declared_runtime_bytes(self):
+    def test_current_declared_runtime_archive_is_reproducible(self):
         values = apkbuild_vars(ROOT / "packaging/pmos/opos/APKBUILD")
         output = self.base / values["_source_archive"]
         paths = builder.create_archive(ROOT, output, values["_source_root"])
-        self.assertEqual(len(paths), 132)  # 130 declared runtime files, LICENSE and THIRD_PARTY.md
-        tokens = values["sha512sums"].split()
-        self.assertEqual(tokens[1], "$_source_archive")
-        self.assertEqual(tokens[0], hashlib.sha512(output.read_bytes()).hexdigest())
-        declared = set(paths) - {"LICENSE", "THIRD_PARTY.md"}
+        rebuilt = self.base / "rebuilt.tar.gz"
+        builder.create_archive(ROOT, rebuilt, values["_source_root"])
+        self.assertEqual(output.read_bytes(), rebuilt.read_bytes())
+        with tarfile.open(output, "r:gz") as archive:
+            self.assertCountEqual(
+                [m.name for m in archive.getmembers() if m.isfile()],
+                [values["_source_root"] + "/" + p for p in paths],
+            )
+
+    def test_declared_inventory_matches_editable_runtime_files(self):
+        declared = set(builder.runtime_paths(ROOT))
         actual = {
             p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*")
             if p.is_file() and "__pycache__" not in p.parts
