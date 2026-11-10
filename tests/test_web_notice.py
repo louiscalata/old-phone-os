@@ -106,7 +106,7 @@ class TestPhoneNotice(unittest.TestCase):
                 p.call(number)
                 s = p.state()
                 self.assertFalse(s["in_call"])
-                self.assertEqual(s["notice"], "Calls are off.")
+                self.assertEqual(s["notice"], "Calls are off. This phone cannot reach emergency services. Use another phone.")
                 self.assertEqual(p.essentials.modem.events, [])
                 self.assertEqual(s["notice_app"], "phone")
         p = Phone()

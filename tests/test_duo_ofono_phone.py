@@ -90,7 +90,7 @@ class Ofono(unittest.TestCase):
                 phone = Phone()
                 phone.call(number)
                 state = phone.state()
-                self.assertEqual(state["notice"], "Calls are off.")
+                self.assertEqual(state["notice"], "Calls are off. This phone cannot reach emergency services. Use another phone.")
                 self.assertFalse(state["in_call"])
                 self.assertEqual(phone.essentials.modem.events, [])
 
