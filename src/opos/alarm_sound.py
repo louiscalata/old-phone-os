@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Play an alarm tone and, only after a self-test file says so, a haptic pulse.
 
-The tone is a short self-made beep. Volume steps from 20% to 70% on the paplay
-stream, not the sink, so a sink-wide duck does not scale it. The player we started is stopped
-by its process id. This never sets a media role of
-alarm: that role crashes PulseAudio on this phone. Vibration stays off until a
-self-test file exists.
+The tone file is about 0.4 seconds. A ring plays that file up to six times, each
+time louder, from 20 percent to 70 percent on the paplay stream. It is a series of
+beeps, not one sound that rises. The stream volume is not the sink volume, so a
+sink-wide duck does not scale it. The player we started is stopped by its process
+id. This never sets a media role of alarm: that role crashes PulseAudio on this
+phone. Vibration stays off until a self-test file exists.
 """
 from pathlib import Path
 
@@ -26,10 +27,22 @@ def levels(steps=6):
 
 
 def stop(proc, spawn):
-    """Stop the paplay process we started. kill(pid) is the real stop."""
+    """Stop the paplay process we started. terminate, then kill, then kill by pid."""
     if proc is None:
         return
-    pid = getattr(proc, "pid", None)
+    poll = getattr(proc, "poll", None)
+    if callable(poll):
+        try:
+            if poll() is not None:
+                return
+        except OSError:
+            pass
+    term = getattr(proc, "terminate", None)
+    if callable(term):
+        try:
+            term()
+        except OSError:
+            pass
     kill = getattr(proc, "kill", None)
     if callable(kill):
         try:
@@ -37,12 +50,24 @@ def stop(proc, spawn):
             return
         except OSError:
             pass
+    pid = getattr(proc, "pid", None)
     if isinstance(pid, int) and pid > 0:
         spawn(["kill", "-TERM", str(pid)])
 
 
+def _finish(proc):
+    """Wait for one beep to end. A stand-in with no wait returns at once."""
+    wait = getattr(proc, "wait", None)
+    if not callable(wait):
+        return
+    try:
+        wait(timeout=2)
+    except Exception:
+        pass
+
+
 def play(spawn, steps=6):
-    """Run the tone. spawn(command) may raise. The process we started is still killed."""
+    """Play the short file once per step, louder each time. The last process is stopped."""
     global _current
     try:
         for level in levels(steps):
@@ -50,6 +75,7 @@ def play(spawn, steps=6):
                 raise RuntimeError("volume")
             stop(_current, spawn)
             _current = spawn(["paplay", "--volume", str(level * 655), str(TONE)])
+            _finish(_current)
         return _current
     finally:
         stop(_current, spawn)

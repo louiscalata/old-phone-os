@@ -2,11 +2,16 @@
 """Clock page: save an alarm, ring from a test clock, snooze, stop, and refuse to ring when the clock is unknown."""
 import json
 import os
+import shutil
+import stat
 import tempfile
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
 from unittest import mock
 
 from opos import apps, apps_page, clock_page, web
+from opos.alarms import Event
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible
 from tests.test_panes_pages import TOKENS, css_hexes, style_of
@@ -86,6 +91,33 @@ class ClockPage(unittest.TestCase):
         self.assertLessEqual(len(served), WAVE_GATE)
         self.assertIn(b"/apps-home.js", served)
         self.assertNotIn(b"Snooze 10 min", served)
+
+    def test_the_clock_thread_path_starts_paplay_and_lets_each_beep_finish(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        log = Path(folder) / "log"
+        script = Path(folder) / "paplay"
+        script.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$OPOS_PAPLAY_LOG\"\nexit 0\n", encoding="utf-8")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        event = Event("ring", "alarm", "a", datetime(2026, 11, 16, 7, 0, tzinfo=timezone.utc), "Alarm 07:00")
+        old_path = os.environ.get("PATH", "")
+        old_log = os.environ.get("OPOS_PAPLAY_LOG")
+        os.environ["PATH"] = folder + os.pathsep + old_path
+        os.environ["OPOS_PAPLAY_LOG"] = str(log)
+        try:
+            clock_page._play([event])
+        finally:
+            os.environ["PATH"] = old_path
+            if old_log is None:
+                os.environ.pop("OPOS_PAPLAY_LOG", None)
+            else:
+                os.environ["OPOS_PAPLAY_LOG"] = old_log
+        lines = log.read_text(encoding="utf-8").splitlines()
+        self.assertGreaterEqual(len(lines), 2)
+        self.assertIn(str(20 * 655), lines[0])
+        self.assertIn(str(70 * 655), lines[-1])
+        self.assertIn("--volume", lines[0])
+        self.assertNotIn("paplay-stop", "\n".join(lines))
 
 
 if __name__ == "__main__":

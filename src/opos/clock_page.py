@@ -5,12 +5,13 @@ The schedule is opos.alarms. This module is the page and the /api/clock actions.
 A test may POST action "tick" only when OPOS_CLOCK_TEST=1.
 """
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from opos import alarms, appdoc, apps
+from opos import alarm_sound, alarms, appdoc, apps
 from opos.store import default_root
 
 _BOOK = None
@@ -259,12 +260,18 @@ def start_thread():
     _THREAD.start()
 
 
+def paplay(command):
+    """Start paplay and return the process. The clock thread uses this runner."""
+    return subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def _play(events):
-    try:
-        from opos import alarm_sound
-    except ImportError:
-        return
-    alarm_sound.handle(events)
+    alarm_sound.handle(events, spawn=paplay)
 
 
 apps.register(apps.App(
