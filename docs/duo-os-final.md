@@ -41,6 +41,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | Switch | Image default | Effect |
 |---|---|---|
 | `OPOS_OSK` | `1` (`opos-server.service`; `/etc/default/opos-osk` overrides) | `1` or `web`: the in-page keyboard on every full page; `stevia`: the port's keyboard instead; `off` or anything else: none |
+| `OPOS_APPS` | `clock,contacts,notes,calc` (drop-in `20-opos-apps.conf`) | which everyday apps are on; absent or empty leaves the main page unchanged and does not serve `/apps`. Each named app is its own page. Not checked on a phone |
 | `OPOS_OSK_HINGE` | unset (42) | CSS pixels between the two halves of a split keyboard when the page does not say; `0` never splits |
 | `OPOS_NETWORK` | `1` (drop-in `opos-network.conf`) | the Settings link to `/network` and the actions that change things; without it the page only reads |
 | `OPOS_NET_TTY` | unset | `1` hands the Wi-Fi password to `nmcli` through a pseudo-terminal, if a pipe is not accepted on the phone |
