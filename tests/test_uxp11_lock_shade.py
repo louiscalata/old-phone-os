@@ -100,7 +100,7 @@ class TestPrivateLockShade(unittest.TestCase):
         self.assertTrue(out['locked'])
         # The lock line is the newest notice itself (interface plan W1-06): the server's notices are fixed phrases ("In call",
         # "Call ended", "New message"), never a message body or a number, so "New notice" told the owner nothing for no gain.
-        self.assertEqual(out['lock'], 'secret demo text')
+        self.assertEqual(out['lock'], '1 new')
         self.assertIn('secret demo text', out['shade'])
         self.assertEqual(out['emptyLock'], '')
         self.assertEqual(out['unlocked'], [True, False])
@@ -114,11 +114,11 @@ class TestPrivateLockShade(unittest.TestCase):
         self.assertTrue(out['sameStatusWrites'])  # an unchanged poll does not touch the lock line
         # The lock line is the newest notice (W1-06), so a different notice is one more write, and only that.
         self.assertFalse(out['addStatusWrites'])
-        self.assertEqual(out['lockAfterSecond'], 'second')
+        self.assertEqual(out['lockAfterSecond'], '2 new')
 
     def test_lock_status_tracks_pending_notices(self):
         out = self.run_js()
-        self.assertEqual(out['pendingLock'], 'secret demo text')  # the newest notice still pending after 'second' was dismissed
+        self.assertEqual(out['pendingLock'], '1 new')  # one notice remains after the newest was dismissed
         self.assertEqual(out['dismissedLock'], '')
         self.assertEqual(out['emptyShade'], 'No recent notices')
         self.assertEqual(out['dismissedPollLock'], '')
