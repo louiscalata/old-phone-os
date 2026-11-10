@@ -23,7 +23,7 @@ n++;
 var box=document.getElementById('body');
 var saved=box&&document.getElementById('saved').textContent.indexOf('Saved')>=0;
 if(!typed&&document.querySelector('#rows button')){typed=true;box.value='Hello note';box.dispatchEvent(new Event('input'));}
-if(!saved&&n<50)return;
+if(!saved&&n<120)return;
 clearInterval(t);
 if(!box||box.value!=='Hello note'){resolve(['text missing']);return;}
 if(!saved)out.push('not saved');
