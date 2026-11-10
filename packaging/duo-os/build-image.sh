@@ -270,6 +270,11 @@ done
 sh "$here/close-exposure.sh" "$r"
 # --- end track: exposure ---
 
+# Both panels, one backlight value. Not a phone-page change.
+install -m 0644 "$here/opos-brightness.service" "$r/etc/systemd/system/opos-brightness.service"
+ln -sfn /etc/systemd/system/opos-brightness.service \
+    "$r/etc/systemd/system/multi-user.target.wants/opos-brightness.service"
+
 sync
 echo "manifest:"
 set -- opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch usr/local/sbin/sfduo-composer-watchdog

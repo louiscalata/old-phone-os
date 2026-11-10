@@ -31,6 +31,7 @@ src/opos/contacts.py
 src/opos/contacts_page.py
 src/opos/dashboard.py
 src/opos/demo.py
+src/opos/display.py
 src/opos/eol.py
 src/opos/essentials.py
 src/opos/evaleol.py

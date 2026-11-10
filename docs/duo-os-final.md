@@ -58,6 +58,8 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_KIOSK_DEFAULTS` | unset (`/etc/default/opos-kiosk`) | which file `opos-kiosk` reads the DevTools port from; a hook for tests |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | unset | only for `opos-osk` (the opt-in Wayland keyboard): the binary, seconds to wait for phoc's socket (120), and `0` to leave gsettings alone |
 | `OPOS_BATTERY`, `OPOS_ON_PHONE` | `live`, `1` | the sysfs battery source and the phone-only behaviour |
+| `OPOS_BRIGHTNESS` | `128` (`opos-brightness.service`) | one OS level, 1-255, mapped through the vendor curve and written to both panel backlights. Not measured on a phone |
+| `OPOS_BRIGHTNESS_DIR` | `/run/user/32011` | directory where the brightness unit writes `sfduo-brightness` for the lid helper |
 | `OPOS_UPDATE_SIGNERS` | unset (a build input) | a file of public keys (`ssh-ed25519 ...`) that `build-image.sh` installs as the image's only trust for over-the-air updates; without it the image accepts no update |
 | `OPOS_UPDATE_URL` | unset (a build input) | `https://host/folder/latest.json`, written to `/etc/opos/update.json` so the Updates page may look there, only when asked; without it the phone fetches nothing |
 

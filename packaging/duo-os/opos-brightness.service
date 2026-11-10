@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Set both Duo panels to the same backlight
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=droidian
+Environment=PYTHONPATH=/opt/opos/src
+Environment=OPOS_BRIGHTNESS=128
+Environment=OPOS_BRIGHTNESS_DIR=/run/user/32011
+ExecStart=/usr/bin/python3 -m opos.display
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
