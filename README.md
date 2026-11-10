@@ -1,9 +1,32 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Old Phone OS Interface (OPOS)
+# Old Phone OS (OPOS)
 
-OPOS is for people who rely on a hand-me-down phone, whatever their age or budget. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
+OPOS is a phone operating system for the Microsoft Surface Duo 1. It runs a Linux image built on the community Droidian port for the Duo, with OPOS as the only interface across both screens. It keeps calls and messages on and pauses less essential work toward a time the owner chooses. It is for people who rely on an older phone, whatever their age or budget.
 
-OPOS is Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is a hackathon prototype, not a finished product.
+OPOS is a work in progress.
+
+## Surface Duo status
+
+| Area | State |
+|---|---|
+| Duo OS image, checkpoint 1 | Installed on one Surface Duo 1 and accepted on the device on November 8, 2026 for touch, the Hand setting, the on-screen keyboard and Settings. |
+| Duo OS image, checkpoint 2 | Built. Its install and selftest result have not been checked independently. |
+| Calls and texts on the Duo | Still simulated. The ModemManager adapter is not wired in. |
+| Speed, battery life, stability | Not measured. |
+| Over-the-air updates | Implemented and tested on Linux with stand-ins. Not tested on the phone. |
+| postmarketOS packaging | Booted to the lock screen in QEMU on November 3, 2026. Not booted on a phone. |
+| Windows installer | Untested at runtime. |
+
+Start with:
+
+- [The Duo OS as it stands](docs/duo-os-final.md): what the OS does, what is simulated, and what is not known.
+- [OPOS OS for the Surface Duo](packaging/duo-os/README.md): the image, how it is built and installed, and how to restore Android.
+- [Duo OS acceptance](docs/duo-acceptance.md): the on-phone selftest and the owner's checklist.
+- [OPOS on a stock-Android Surface Duo](docs/duo-android.md): running OPOS in Termux without flashing.
+
+## Hackathon reference
+
+This was a hackathon project. The desktop demo, the public demo and the rest of this README describe the earlier prototype, Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is kept as a reference. The battery rules and the helper it introduced are the base of the Duo OS. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
 
 ## Quickstart — under five minutes
 
