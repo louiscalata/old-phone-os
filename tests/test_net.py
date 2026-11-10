@@ -81,6 +81,19 @@ UUID_NEW = "99999999-0000-4000-8000-000000000001"
 NMCLI = r"""#!/bin/sh
 D='@D@'
 echo "$@" >> "$D/calls.log"
+PWFILE=
+kept=
+: > "$D/argv.new"
+while [ $# -gt 0 ]; do
+  if [ "$1" = "passwd-file" ]; then PWFILE=$2; shift 2; continue; fi
+  printf '%s\n' "$1" >> "$D/argv.new"
+  shift
+done
+set --
+while IFS= read -r kept; do
+  set -- "$@" "$kept"
+done < "$D/argv.new"
+rm -f "$D/argv.new"
 ASK=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -105,7 +118,29 @@ case "$1 $2" in
       cat "$D/connections"
     fi;;
   "connection delete") echo "$4" >> "$D/deleted"; grep -v ":$4:" "$D/connections" > "$D/c.new"; mv "$D/c.new" "$D/connections"; echo "Connection successfully deleted.";;
-  "connection up") echo "$4" >> "$D/up"; echo "Connection successfully activated.";;
+  "connection add") printf '%s\n' "$*" > "$D/cmdline.log"; echo "Connection '$6' (@UNEW@) successfully added.";;
+  "connection up")
+    if [ -n "$PWFILE" ]; then
+      tr '\0' ' ' < /proc/$$/cmdline >> "$D/cmdline.log"
+      echo "$PWFILE" > "$D/pwfile"
+      stat -c %a "$PWFILE" > "$D/pwmode" 2>/dev/null || true
+      cp "$PWFILE" "$D/seen-key"
+      [ -f "$D/join_denied" ] && { echo "Error: Failed to add/activate new connection: Not authorized to control networking." >&2; exit 1; }
+      [ -f "$D/join_hang" ] && exec sleep 30
+      pw=$(sed -n 's/.*psk://p' "$PWFILE" | head -n 1)
+      if [ -f "$D/psk" ] && [ "$pw" != "$(cat "$D/psk")" ]; then
+        if [ -f "$D/leave_profile" ]; then echo "$4:@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$4" > "$D/ssid_@UNEW@"; fi
+        echo "Error: Connection activation failed: (7) Secrets were required, but not provided. [$pw]" >&2; exit 4
+      fi
+      if [ -f "$D/activation_fails" ]; then
+        if [ -f "$D/leave_profile" ]; then echo "$4:@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$4" > "$D/ssid_@UNEW@"; fi
+        cat "$D/activation_fails" >&2; exit 4
+      fi
+      if [ -f "$D/quiet_ok" ]; then echo "Connection activated"; exit 0; fi
+      echo "Device 'wlan0' successfully activated with '$(cat "$D/activated_uuid" 2>/dev/null || echo @UNEW@)'."
+    else
+      echo "$4" >> "$D/up"; echo "Connection successfully activated."
+    fi;;
   "radio wifi") echo "$3" > "$D/radio";;
   "device disconnect") echo "$3" > "$D/disc"; echo "Device successfully disconnected.";;
   "device wifi")
@@ -195,7 +230,7 @@ class Fake:
         self.bin.mkdir()
         self.tools = self.dir / "tools"  # only what the fake scripts call, so a real nmcli or ip can never be reached
         self.tools.mkdir()
-        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout"):
+        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout", "rm", "cp", "stat"):
             if shutil.which(tool):
                 (self.tools / tool).symlink_to(shutil.which(tool))
         self.root = self.dir / "root"
@@ -725,9 +760,13 @@ class Join(unittest.TestCase):
         self.assertNotIn(PW, self.f.calls())
         self.assertNotIn(PW, self.f.read("cmdline.log"))
         cmd = self.f.read("cmdline.log")
-        self.assertIn("--ask", cmd)
-        self.assertIn("device wifi connect Neighbor 5G ifname wlan0", cmd)
+        self.assertIn("passwd-file", cmd)
+        self.assertNotIn("--ask", cmd)
+        self.assertNotIn(PW, cmd)
         self.assertNotIn("password", cmd)
+        self.assertEqual(self.f.read("pwmode").strip(), "600")
+        self.assertFalse(os.path.exists(self.f.read("pwfile").strip()))
+        self.assertIn("802-11-wireless-security.psk:" + PW, self.f.read("seen-key"))
         self.assertEqual(self.f.read("deleted"), "")
 
     def test_wrong_password_says_why_and_leaves_nothing(self):
@@ -843,7 +882,7 @@ class Join(unittest.TestCase):
         r = self.f.net().join("HomeNet", "brand new pass")
         self.assertTrue(r["ok"], r)
         calls = self.f.calls().splitlines()
-        join_at = next(i for i, c in enumerate(calls) if "device wifi connect" in c)
+        join_at = next(i for i, c in enumerate(calls) if "passwd-file" in c)
         delete_at = next(i for i, c in enumerate(calls) if "connection delete" in c)
         self.assertLess(join_at, delete_at, "the old entry is deleted after the new one is up, not before")
         self.assertEqual(self.f.read("deleted").split(), [UUID_HOME])
@@ -905,7 +944,7 @@ class Join(unittest.TestCase):
     def test_hidden_network(self):
         r = self.f.net().join("Secret Net", PW, hidden=True)
         self.assertTrue(r["ok"], r)
-        self.assertIn("hidden yes", self.f.read("cmdline.log"))
+        self.assertIn("wifi.hidden yes", self.f.read("cmdline.log"))
         self.f.net().join("Secret Net", PW, hidden="yes")  # only a real True counts
         self.assertNotIn("hidden", self.f.read("cmdline.log"))
 
@@ -938,9 +977,9 @@ class Join(unittest.TestCase):
 
     def test_tty_mode_for_an_nmcli_that_insists_on_a_terminal(self):
         self.f.put("need_tty")
-        r = self.f.net().join("Neighbor 5G", PW)  # standard input is a pipe: this fake refuses
-        self.assertFalse(r["ok"])
-        self.assertIn("password was not accepted", r["error"])
+        r = self.f.net().join("Neighbor 5G", PW)  # passwd-file does not need a terminal
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(os.path.exists(self.f.read("pwfile").strip()))
         with mock.patch.dict(os.environ, {"PATH": f"{self.f.bin}:{self.f.tools}"}):
             r = net.Net(root=self.f.root, env={"OPOS_NETWORK": "1", "OPOS_NET_TTY": "1"}, sleep=lambda s: None).join("Neighbor 5G", PW)
         self.assertTrue(r["ok"], r)

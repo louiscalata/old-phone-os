@@ -34,7 +34,7 @@ NetworkManager as the unprivileged user the server runs as (`droidian`). Nothing
 - **Permission is checked first.** `nmcli general permissions` is read; if NetworkManager would refuse (`no`) or ask an administrator
   (`auth`), the page says so in plain words and does not try. Scanning, joining, forgetting and switching Wi-Fi each need their own
   permissions (`wifi.scan`; `network-control` and `settings.modify.system`; `settings.modify.system`; `enable-disable-wifi`).
-- **Passwords.** A password goes to `nmcli --ask device wifi connect` on standard input, one line, so it is never in the process list.
+- **Passwords.** A password is written to a mode 0600 file and passed as `nmcli connection up ... passwd-file`, then the file is deleted. It is never an argument. `nmcli --ask` is the fallback when `OPOS_NET_TTY=1`, which types the password on a terminal instead of a pipe.
   nmcli's documented behaviour is that `--ask` prompts for a password that was not given; that it reads the prompt from a pipe is
   from nmcli's documentation and common use, not from a run on the phone. If the live check shows it does not, `OPOS_NET_TTY=1` types
   the password into a pseudo terminal instead. The password is not kept, logged or returned by OPOS: NetworkManager stores the

@@ -19,6 +19,7 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 from typing import NamedTuple
@@ -213,6 +214,15 @@ def check_ssid(ssid):
     if ssid.startswith("-"):
         return "OPOS cannot join a network whose name starts with a dash yet."
     return None
+
+
+def _secret_file(password):
+    """A mode 0600 file nmcli can read as `passwd-file`. The caller deletes it."""
+    fd, path = tempfile.mkstemp(prefix="opos-wifi-")
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("802-11-wireless-security.psk:" + password + "\n")
+    return path
 
 
 def check_password(pw):
@@ -769,9 +779,23 @@ class Net:
         ifn = ["ifname", dev] if dev else []
         wait = ["--colors", "no", "--wait", str(JOIN_WAIT_S)]
         if password:
-            # nmcli always makes a NEW profile for this. The old entries stay until the new one is up: a failed join (the network
+            # nmcli makes a new profile for this. The old entries stay until the new one is up: a failed join (the network
             # went away, no address, a timeout) must not cost the owner a password that was right.
-            r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
+            # The password is not an argument. OPOS_NET_TTY=1 still types it on a terminal; otherwise it is a mode 0600 file
+            # passed to `connection up ... passwd-file`, and that file is removed before this returns.
+            if self.env.get("OPOS_NET_TTY") == "1":
+                r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
+            else:
+                secret = _secret_file(password)
+                try:
+                    added = q.call(["nmcli", "connection", "add", "type", "wifi", "con-name", ssid, "ssid", ssid,
+                                    "wifi-sec.key-mgmt", "wpa-psk"] + ifn + (["wifi.hidden", "yes"] if hidden else []))
+                    r = added if not added.ok else q.call(["nmcli"] + wait + ["connection", "up", "id", ssid, "passwd-file", secret], JOIN_WAIT_S + JOIN_EXTRA_S)
+                finally:
+                    try:
+                        os.remove(secret)
+                    except OSError:
+                        pass
         elif saved:
             r = q.call(["nmcli"] + wait + ["connection", "up", "uuid", saved[0]["uuid"]] + ifn, JOIN_WAIT_S + JOIN_EXTRA_S)
         else:
