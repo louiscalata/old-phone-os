@@ -296,7 +296,7 @@ class TestLCharging(unittest.TestCase):
 class TestMReserveAttribution(unittest.TestCase):
     def test_unchanged_worn_reserve_keeps_glimmer_credit(self):
         runtime = Runtime(visible=True)
-        runtime.governor.decide = lambda *a: Decision(
+        runtime.governor.decide = lambda state, tasks, *, pause_inference=False: Decision(
             Mode.CRITICAL, ("calls", "messages"), ("email", "maps", "photos backup"), "router+glimmer"
         )
         tick = runtime.step(0, reserve_level(30, 0.35) + 2, health=0.35, temp_c=30)
@@ -306,7 +306,7 @@ class TestMReserveAttribution(unittest.TestCase):
     def test_reserve_adding_pauses_keeps_reserve_reason(self):
         runtime = Runtime()
         decision = Decision(Mode.SAVER, ("calls", "messages", "email"), ("maps", "photos backup"), "router+glimmer")
-        runtime.governor.decide = lambda *a: decision
+        runtime.governor.decide = lambda state, tasks, *, pause_inference=False: decision
         with mock.patch("opos.runtime.rule_decide", return_value=decision):
             tick = runtime.step(0, reserve_level(30, 0.35) + 2, health=0.35, temp_c=30)
         self.assertEqual(tick.decision.reason, WORN_REASON)
