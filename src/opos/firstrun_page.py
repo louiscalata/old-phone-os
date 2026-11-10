@@ -3,7 +3,7 @@
 
 Separate pages, not part of the main page (which is at its size budget). Touch only: every choice is a button, nothing
 needs the keyboard. On the 1392 px wide two-panel screen the page keeps its text in the left panel and its controls in
-the right one, so nothing sits on the 42 px hinge. Styled with the main page's Jaryo colours and type.
+the right one, so nothing sits on the 42 px hinge. Styled with the main page's Jaryo colors and type.
 """
 from html import escape
 

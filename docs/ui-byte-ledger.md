@@ -61,9 +61,9 @@ CSS, the demo panel and the glue):
 | **net** | **-1,357** | **-1,343** | **-1,357** | **-1,343** |
 | free under the 102,000 gate | 2,609 | 2,664 | 2,380 | 1,638 |
 
-B-03 removed seven legacy rules that `jaryo.css` already overrides in every state: the four tone colours of the meter and
+B-03 removed seven legacy rules that `jaryo.css` already overrides in every state: the four tone colors of the meter and
 of the Shade title (with their glows, the `--tone-*` variables, the charging pulse and its `@keyframes`), the grey
-notice card with the yellow bar on Home, the Reload button's own black-on-white colours, the light-red low-battery colour and
+notice card with the yellow bar on Home, the Reload button's own black-on-white colors, the light-red low-battery color and
 the 13 px grey `#notice`. The `data-tone` attribute stays: it is still the word the code sets, and `jaryo.css` gives every tone the one
 Jaryo ink. Five tests that asserted the dead rules themselves were rewritten to assert what is true now (see the commit).
 

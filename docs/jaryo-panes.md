@@ -8,7 +8,7 @@
 - `OPOS_PANES=1` (an environment flag, off by default) makes the server answer `/panes.css` and `/panes.js` and add two tags to the pages that already take the on-screen keyboard's tags. `web.page()` does not change by a single byte. In short: with OPOS_PANES unset the panes assets and tags are absent and page() is unchanged; the Network, first-run and time zone pages carry the Jaryo conformance fixes either way (section 5), because those fixes are in the pages' own styles and not behind the flag.
 - On the Duo window that spans both panels (`OPOS_SPAN=675,42`, 1392 x 900 CSS px), each screen is strictly black and white. The **thumb pane** (the app or detail pane, where you act) is black with light text. The **list pane** (masthead, lists, the Shade) is white with dark text. The hinge strip is black. A **Hand** setting (Right by default, Left) says which physical pane is the thumb pane and mirrors the layout.
 - Pressed, active and on controls keep the Jaryo rule "inverted fill" relative to their own pane, because every Jaryo rule already reads `--jaryo-fg` and `--jaryo-bg`; the panes only change what those two names mean inside each pane.
-- The pane colours REPLACE Light/Dark/System while the window spans two panels. On a one-pane window nothing changes: `jaryo.css` paints exactly what it paints today.
+- The pane colors REPLACE Light/Dark/System while the window spans two panels. On a one-pane window nothing changes: `jaryo.css` paints exactly what it paints today.
 - Contrast measured 15.28:1 on the white pane and 16.25:1 on the black pane, the same two pairs as `jaryo.css` ("softer whites", docs/jaryo.md section 13). A single switch, `OPOS_PANES=1,pure`, gives the strict AGIW pair (`#000` / `#fff`, 21:1).
 
 ## 1. The brief, the reading, and what the AGIW logo says
@@ -23,18 +23,18 @@
 2. "The active screen" is the thumb pane: the pane that holds the app or detail the person is working in. It is black with white text. The other pane (list, master, masthead, shade) is white with black text. Section 2.4 says which is which in every state.
 3. Right-handed (the default): the right pane is the thumb pane. Left-handed: the mirror image. The left pane is the thumb pane and black, the right pane is the list pane and white, and the layout mirrors with it (section 4.3).
 4. "Text buttons and UI designed around Jaryo": the controls stay what docs/jaryo.md section 2.2 says they are (1 px solid border, inverted fill when pressed, dashed border when unavailable, 3 px double box for notices, no icons). Section 5 restates the rules and lists every control in the OS pages that breaks them today, with the fix.
-5. Reading 3 is the one most open to a second reading ("invert" as colours swapping while positions stay). That reading is one switch away (section 7, `OPOS_PANES=invert`). It is stated here so the owner can pick.
+5. Reading 3 is the one most open to a second reading ("invert" as colors swapping while positions stay). That reading is one switch away (section 7, `OPOS_PANES=invert`). It is stated here so the owner can pick.
 
 ### 1.3 What the AGIW logo handoff says about the mark
 
 Read from the AGIW logo handoff folder `agiw-logo-for-opos-20261108` (17 files: `identity/jaryo-identity.md`, `jaryo/README.md`, `jaryo/tokens.json`, `jaryo/primitives.css`, `jaryo/theme.mjs`, `logo/*.svg` and `*.png`, `superseded-d4-split/*.svg`). It arrived; nothing was waited for.
 
 - The mark is type. "The chrome name is the word AGIW in Inter ... weight 600, with the font's own kerning plus 0.02em tracking. This is provisional." The favicon and the square mark are the letters AG, white on black. "There is no geometric app mark."
-- Colour: "Strict black and white. No graphite, copper, or color accent in AGIW." "Dark treatment is white on black. Light treatment is black on white. Narrow treatment is the square mark alone."
+- Color: "Strict black and white. No graphite, copper, or color accent in AGIW." "Dark treatment is white on black. Light treatment is black on white. Narrow treatment is the square mark alone."
 - Theme: system light/dark is the default; Light or Dark is an explicit override (the same rule as OPOS's `#jaryo-theme`).
 - Icons: "Controls inside the pages stay text only. The marks are product icons, not UI glyphs."
 - D4 Split (a filled block beside an open block, the geometric cousin of a black pane beside a white pane) is recorded as rejected: "Superseded by the Inter wordmark."
-- Proportions, measured from `agiw-mark.svg` (1024 square) and `agiw-wordmark-on-light.svg` (1200 x 400): the AG run is 60 % of the square's width, centred on both axes, cap height 31.6 % of the square; the AGIW run is 80 % of the wordmark's width (10 % margin each side), cap height 63.6 % of its height, centred on both axes. In every file the letters sit exactly on the centre of a plain field of one colour, nothing else on it.
+- Proportions, measured from `agiw-mark.svg` (1024 square) and `agiw-wordmark-on-light.svg` (1200 x 400): the AG run is 60 % of the square's width, centred on both axes, cap height 31.6 % of the square; the AGIW run is 80 % of the wordmark's width (10 % margin each side), cap height 63.6 % of its height, centred on both axes. In every file the letters sit exactly on the centre of a plain field of one color, nothing else on it.
 - `primitives.css` names the pairs `--j-bg #000` / `--j-text #fff` / `--j-invert #fff` / `--j-invert-ink #000` (dark) and the swap (light). That is the same "inverted fill" rule as OPOS, with strict values. It also carries `--j-grid: rgb(255 255 255 / 0.16)`, a translucent tint that OPOS forbids; it is not used here.
 
 What this changes in OPOS, and what it does not:
@@ -91,7 +91,7 @@ Zero text or controls sit on the hinge in any of these states. Home, All apps an
 | Helper | masthead, "Helper", Technical details and Reset | Home, Ask field, Send, Cancel, Clear, Why, Plan, Wikipedia switch | `#helper` to the left pane |
 | Settings | masthead | Home, Settings (device type, Display with Theme and Hand, About) | `#settings` to the right pane |
 
-The status bar (`#sb`) keeps its text where it is (time, network note and "Helper on" in the left pane; battery in the right pane) and takes each pane's colours. The Shade and Lock buttons (`#jaryo-status-row`) move to the thumb side: right-aligned in Right, left-aligned in Left.
+The status bar (`#sb`) keeps its text where it is (time, network note and "Helper on" in the left pane; battery in the right pane) and takes each pane's colors. The Shade and Lock buttons (`#jaryo-status-row`) move to the thumb side: right-aligned in Right, left-aligned in Left.
 
 Settings stays one column in the thumb pane. A two-column Settings spanning both panes was tried and dropped: the shared grid rows push Device type below the whole Display section (the same artefact the audit recorded in geometry-15).
 
@@ -107,7 +107,7 @@ Settings stays one column in the thumb pane. A two-column Settings spanning both
 
 `html[data-panes="two"]` is the single switch. `panes.js` sets it only when the page is the main page with `data-ff="foldable"`, or one of the three OS pages. Every rule in `panes.css` starts with that selector (a test asserts it), inside the two-screen media gate. If `panes.js` is missing, blocked, or throws, the attribute is never set and the page is what Jaryo paints today (fail-open, as docs/jaryo.md section 9 requires).
 
-## 3. The colour model
+## 3. The color model
 
 ### 3.1 Custom properties (exact)
 
@@ -121,10 +121,10 @@ All names are prefixed `--jp-` and live on `html[data-panes="two"]`.
 | `--jp-x2` | `env(viewport-segment-left 1 0)` (rewritten to `calc(var(--pane) + var(--hinge))`) | where the second pane begins |
 | `--jp-l`, `--jp-l-ink`, `--jp-l-cs` | white, white ink, light | the physical LEFT pane |
 | `--jp-r`, `--jp-r-ink`, `--jp-r-cs` | black, black ink, dark | the physical RIGHT pane |
-| `--jp-act`, `--jp-act-ink`, `--jp-act-cs` | = `--jp-r` | ROLE: the thumb pane's colours |
-| `--jp-lst`, `--jp-lst-ink`, `--jp-lst-cs` | = `--jp-l` | ROLE: the list pane's colours |
+| `--jp-act`, `--jp-act-ink`, `--jp-act-cs` | = `--jp-r` | ROLE: the thumb pane's colors |
+| `--jp-lst`, `--jp-lst-ink`, `--jp-lst-cs` | = `--jp-l` | ROLE: the list pane's colors |
 
-Hand: Left swaps `--jp-l` with `--jp-r` (left becomes black, right white) and points `--jp-act` at the left pane and `--jp-lst` at the right pane. Content colours follow roles; only the backdrops, the status bar and the keyboard follow physical sides. That is why Left needs 4 rules for colour and the rest for placement.
+Hand: Left swaps `--jp-l` with `--jp-r` (left becomes black, right white) and points `--jp-act` at the left pane and `--jp-lst` at the right pane. Content colors follow roles; only the backdrops, the status bar and the keyboard follow physical sides. That is why Left needs 4 rules for color and the rest for placement.
 
 The four literals are the two token pairs of `jaryo.css` lines `--jaryo-fg:#e6e2d9;--jaryo-bg:#000` and `--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8`. A test pins them to those values so the two files cannot drift.
 
@@ -169,7 +169,7 @@ html[data-panes=two] :is(#phone>:is(#home,#apps-list,#jaryo-letters,#apps-close,
 
 ### 3.5 Native controls and placeholders
 
-Measured on the page with only the sections 3.1 to 3.4 rules: 40 computed values were off-palette, all on form controls (36 times `#fff` as text or outline colour on checkbox, radio and range, 4 times `#3b3b3b` as the range track). The fix is five rules:
+Measured on the page with only the sections 3.1 to 3.4 rules: 40 computed values were off-palette, all on form controls (36 times `#fff` as text or outline color on checkbox, radio and range, 4 times `#3b3b3b` as the range track). The fix is five rules:
 
 ```css
 html[data-panes=two] :is(input,select,progress){color:var(--jaryo-fg);accent-color:var(--jaryo-fg);outline-color:var(--jaryo-fg)}
@@ -184,7 +184,7 @@ Checked is the inverted fill, not a tick glyph. Placeholders are full ink and it
 
 ### 3.6 Theme (Light / Dark / System)
 
-- While `data-panes="two"` and the gate is true, the pane colours REPLACE the theme: one pane is always black, the other always white, whatever `#jaryo-theme` says. `html[data-theme]` is left alone, so the choice is back the moment the phone is used on one screen.
+- While `data-panes="two"` and the gate is true, the pane colors REPLACE the theme: one pane is always black, the other always white, whatever `#jaryo-theme` says. `html[data-theme]` is left alone, so the choice is back the moment the phone is used on one screen.
 - `#jaryo-theme` is not disabled (it still cycles and saves). While spanned, a CSS suffix tells the truth: `html[data-panes=two] #jaryo-theme::after { content: " (one screen only)" }`, so the label reads "Theme: System (one screen only)". `jaryo.js` rewrites only the button's `textContent`, so there is no conflict.
 - On a one-pane window the suffix is absent and nothing else changes.
 
@@ -225,7 +225,7 @@ Checked is the inverted fill, not a tick glyph. Placeholders are full ink and it
 | `#reload-shell` | right, 12 px | left, 12 px |
 | Stale-page banner | list pane (left), list tokens | list pane (right), list tokens |
 | `/network`, `/firstrun`, `/timezone` columns | list column left, thumb column right | swapped |
-| Status bar text (time, network, engine left; battery right) | unchanged | unchanged; the two halves take their pane's colours |
+| Status bar text (time, network, engine left; battery right) | unchanged | unchanged; the two halves take their pane's colors |
 | Grid template, hinge, widths | `675px 42px 1fr` | the same (equal panes) |
 
 Accepted deviation: DOM order is unchanged, so in Left the visual order (thumb pane first) differs from the Tab and reading order (list first). docs/jaryo.md section 4 forbids `order:`; this uses `grid-column`, as the Foldable layout already does, and `tests/test_uxp12_home.py` (which enforces DOM order) is unaffected.
@@ -237,13 +237,13 @@ Accepted deviation: DOM order is unchanged, so in Left the visual order (thumb p
 | Rule | Value |
 |---|---|
 | Label | Every control is a `<button>`, `<a>`, `<input>`, `<select>` or `<label>` whose meaning is in its words. No icons, SVG glyphs, images, `background-image`, tick marks or mystery symbols. Labels are words ("Hand: Left", "Show the password"). |
-| Colours | The two surfaces and their two inks only. No grey, tint, translucent, shadow, gradient, filter, or `opacity` used for dimming. |
+| Colors | The two surfaces and their two inks only. No grey, tint, translucent, shadow, gradient, filter, or `opacity` used for dimming. |
 | Corners | `border-radius: 0` on buttons, inputs, boxes (radios may be round). |
 | Default button | 1 px solid ink border, ink on surface. |
 | Pressed, active, `aria-pressed="true"` | Inverted fill. |
 | Toggle | Label `...: On` / `...: Off` plus inverted fill when on. |
 | Disabled | 1 px dashed border, full ink, no opacity; label ends " unavailable". |
-| Primary action in a row | 3 px solid border and bold (weight, not colour). |
+| Primary action in a row | 3 px solid border and bold (weight, not color). |
 | Notice or error | Text in a box with a 3 px double border. |
 | Rules | 1 px solid between sections, 3 px solid under a masthead. |
 | Focus | `:focus-visible { outline: 3px solid <ink>; outline-offset: 3px }`. |
@@ -264,7 +264,7 @@ The page has its own dark palette and ignores the light theme and `jaryo_theme`.
 
 | # | Today | Rule | Exact fix |
 |---|---|---|---|
-| N1 | 11 off-token colours: `#111` page, `#eee` text (30 elements), `#333 #444 #555 #666` borders, `#2a2a2a` buttons, `#1b1b1b` inputs and box, `#bbb` notes, `#9ecbff` link and primary, `#ffb4a9` error, `#fff` checkbox | two colours | Delete the page's whole `<style>` body. Start from `firstrun_page.CSS` (`from opos.firstrun_page import CSS as _BASE`): it has the token block with light and dark, buttons, focus ring, `.note`, `.btn`, `.kick`, `h1`/`h2`. Add the net-only rules of 5.3.1. Add the same one-line head script `_HEAD` uses to apply `jaryo_theme`. |
+| N1 | 11 off-token colors: `#111` page, `#eee` text (30 elements), `#333 #444 #555 #666` borders, `#2a2a2a` buttons, `#1b1b1b` inputs and box, `#bbb` notes, `#9ecbff` link and primary, `#ffb4a9` error, `#fff` checkbox | two colors | Delete the page's whole `<style>` body. Start from `firstrun_page.CSS` (`from opos.firstrun_page import CSS as _BASE`): it has the token block with light and dark, buttons, focus ring, `.note`, `.btn`, `.kick`, `h1`/`h2`. Add the net-only rules of 5.3.1. Add the same one-line head script `_HEAD` uses to apply `jaryo_theme`. |
 | N2 | 9 controls with `border-radius: 8px` (`button`, `#pw`, `#home`), `#sel` 12 px | square corners | covered by `_BASE` and the input rule below |
 | N3 | `button.go` (Join) is primary by `#9ecbff` fill | primary = weight | markup: `class="go"` to `class="main"` (3 px border, bold, from `_BASE`) |
 | N4 | `button:disabled { opacity: .45 }` on 5 buttons, solid border | dashed, no opacity, " unavailable" | `_BASE` has the dashed border; add `button:disabled::after { content: " unavailable" }` |
@@ -273,14 +273,14 @@ The page has its own dark palette and ignores the light theme and `jaryo_theme`.
 | N7 | "Show the password" label is 32 px tall (measured 609 x 32) | 48 px target | `#srow { display: flex; align-items: center; gap: 12px; min-height: 48px }` |
 | N8 | `body { font: 20px/1.4 }`, `h1 1.4em` | rem, serif headline, 3 px masthead rule | `_BASE`: `1rem`, Georgia h1 at 2.25rem with the 3 px rule; header `border-bottom: 3px solid var(--fg)` |
 | N9 | header and list rules `1px #333`, `1px #2a2a2a` | rules in ink | `border-bottom: 1px solid var(--fg)` on `#st li`; `section + section { border-top: 1px solid var(--fg) }` |
-| N10 | `#home` link is a coloured, rounded, outlined anchor | text button | markup: `class="btn"` |
+| N10 | `#home` link is a colored, rounded, outlined anchor | text button | markup: `class="btn"` |
 | N11 | no `:focus-visible` rule | 3 px ring | from `_BASE` |
 | N12 | inputs `#1b1b1b`, `1px #666`, 8 px radius, `padding: 0 12px` | token, 1 px ink, square | `input[type=password], input[type=text] { width: 100%; min-height: 48px; margin: 8px 0; padding: 8px 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--fg); border-radius: 0; font: inherit }` |
 | N13 | empty `<p class="note">` would render as an empty double box under `_BASE` | no empty boxes | `.note:empty { display: none }` |
 | N14 | two-column breakpoint 1200 px, `--hinge:42px` | align with the first-run page | `@media (min-width: 1000px)` (as `firstrun_page`) |
 | N15 | `#nets button` margin 4 px | 8 px between targets | `margin: 8px 0` |
-| N16 | `net_page.LINK` (the Network link in Settings, `OPOS_NETWORK=1` only) has inline `color:#9ecbff` | two colours | `style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline"` (+26 B, only where `OPOS_NETWORK=1`; `len(LINK)` goes 203 to 229, under the test's 300; `web.page()` default is unchanged) |
-| N17 | the "Show the password" checkbox is the engine's: blue (`#0075ff`, `#99c8ff`) when checked and white in the dark scheme, on a phone, below the two-panel gate and on the Duo image as it ships (`OPOS_SPAN` is still commented out); only the spanned window repaired it, through `panes.css` | two colours, a box, a word | `input[type=checkbox]` in `_NET_CSS` (below): `appearance: none`, a 24 px square, 2 px solid ink border, square corners, checked = background ink, `accent-color` and `color` ink. In the page's own style, so it holds with the panes off; `panes.css` rule 11 paints the same box on the spanned window |
+| N16 | `net_page.LINK` (the Network link in Settings, `OPOS_NETWORK=1` only) has inline `color:#9ecbff` | two colors | `style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline"` (+26 B, only where `OPOS_NETWORK=1`; `len(LINK)` goes 203 to 229, under the test's 300; `web.page()` default is unchanged) |
+| N17 | the "Show the password" checkbox is the engine's: blue (`#0075ff`, `#99c8ff`) when checked and white in the dark scheme, on a phone, below the two-panel gate and on the Duo image as it ships (`OPOS_SPAN` is still commented out); only the spanned window repaired it, through `panes.css` | two colors, a box, a word | `input[type=checkbox]` in `_NET_CSS` (below): `appearance: none`, a 24 px square, 2 px solid ink border, square corners, checked = background ink, `accent-color` and `color` ink. In the page's own style, so it holds with the panes off; `panes.css` rule 11 paints the same box on the spanned window |
 
 #### 5.3.1 The net-only rules (verified)
 
@@ -306,11 +306,11 @@ button:disabled::after{content:" unavailable"}
 .note:empty{display:none}
 ```
 
-The rendered page is 10,560 bytes (limit asserted in `tests/test_net.py`: 12,000), 118 of them the first-run lines F1 to F3, which the page shares. `tests/test_net.py` pins no colour or class of this page. `proto/patches/net_page.diff` is the complete edit.
+The rendered page is 10,560 bytes (limit asserted in `tests/test_net.py`: 12,000), 118 of them the first-run lines F1 to F3, which the page shares. `tests/test_net.py` pins no color or class of this page. `proto/patches/net_page.diff` is the complete edit.
 
 ### 5.4 `/firstrun` and `/timezone` (`firstrun_page.py`): measured
 
-They already follow Jaryo (tokens, light and dark, 0 off-palette colours, 0 radius, 0 controls under 48 px, 3 px focus ring, primary 3 px, disabled dashed, notices in 3 px double). What is left:
+They already follow Jaryo (tokens, light and dark, 0 off-palette colors, 0 radius, 0 controls under 48 px, 3 px focus ring, primary 3 px, disabled dashed, notices in 3 px double). What is left:
 
 | # | Today | Fix |
 |---|---|---|
@@ -391,7 +391,7 @@ Option B, if the owner does not want panes inside the keyboard module: five expl
 
 ### 6.5 What is shared with the keyboard
 
-The nonce check and tag shape, the "same bytes object while off" contract, the `serve` body (about 15 lines, copied rather than factored so `osk.py` stays small), the static-asset folder pattern, the `runtime-files.txt` inventory, the geometry (`--pane`/`--hinge` from `OPOS_SPAN`), and the injection point in the three routes. The keyboard's halves get panes colours through rule 7 of `panes.css`.
+The nonce check and tag shape, the "same bytes object while off" contract, the `serve` body (about 15 lines, copied rather than factored so `osk.py` stays small), the static-asset folder pattern, the `runtime-files.txt` inventory, the geometry (`--pane`/`--hinge` from `OPOS_SPAN`), and the injection point in the three routes. The keyboard's halves get panes colors through rule 7 of `panes.css`.
 
 ### 6.6 Deployment and docs
 
@@ -405,10 +405,10 @@ The nonce check and tag shape, the "same bytes object while off" contract, the `
 
 | Alternative | What it does | Switch | Status |
 |---|---|---|---|
-| Invert, not mirror ("invert for the left" read as colours swapping) | Left: layout does NOT mirror; the thumb pane stays on the right and becomes white, the list pane on the left becomes black | `OPOS_PANES=invert` (`panes-mirror.css` omitted; the colour swap stays) | built and screenshot-verified |
-| Both panes follow the system theme | no fixed black and white; both panes use `--jaryo-bg/--jaryo-fg` (Light, Dark or System); the split reads only by the 42 px hinge strip, which then has the page's background | `OPOS_PANES=theme` (the four literals become `var(--jaryo-bg/--jaryo-fg)`, `color-scheme: normal`) | built; computed colours verified (both panes equal) |
+| Invert, not mirror ("invert for the left" read as colors swapping) | Left: layout does NOT mirror; the thumb pane stays on the right and becomes white, the list pane on the left becomes black | `OPOS_PANES=invert` (`panes-mirror.css` omitted; the color swap stays) | built and screenshot-verified |
+| Both panes follow the system theme | no fixed black and white; both panes use `--jaryo-bg/--jaryo-fg` (Light, Dark or System); the split reads only by the 42 px hinge strip, which then has the page's background | `OPOS_PANES=theme` (the four literals become `var(--jaryo-bg/--jaryo-fg)`, `color-scheme: normal`) | built; computed colors verified (both panes equal) |
 | Strict AGIW pair | `#000` / `#fff`, contrast 21:1 | `OPOS_PANES=1,pure` | built; verified (`#fff` left pane) |
-| Active = last touched pane | colours (not content) follow the last pointer: the pane last touched is black; Hand is hidden | `OPOS_PANES=touch` (not a flag word yet) = `invert` plus: in `panes.js`, `document.addEventListener('pointerdown',function(e){d.dataset.black=e.clientX<(window.innerWidth/2)?'left':'right'},true)` with initial `right`, no `#jaryo-hand`; in `panes.css` the Left physical block's selector becomes `html[data-panes=two]:is([data-hand=left],[data-black=left])` | specified, not built |
+| Active = last touched pane | colors (not content) follow the last pointer: the pane last touched is black; Hand is hidden | `OPOS_PANES=touch` (not a flag word yet) = `invert` plus: in `panes.js`, `document.addEventListener('pointerdown',function(e){d.dataset.black=e.clientX<(window.innerWidth/2)?'left':'right'},true)` with initial `right`, no `#jaryo-hand`; in `panes.css` the Left physical block's selector becomes `html[data-panes=two]:is([data-hand=left],[data-black=left])` | specified, not built |
 | Home stays in the list pane (leave Home, All apps and Settings where `improve/hinge-layout` put them) | the thumb pane is empty on those three screens | delete the three `#home`, `#apps-list`, `#settings` entries from the placement list (4 rules in 2.4) | specified, not built |
 | White hinge | hinge strip is the white surface | change `background: var(--jp-k)` to `var(--jp-w)` on `html::after` | one declaration |
 
@@ -422,7 +422,7 @@ All stdlib, run on Linux (WSL) with the usual shim; skip when `node` or a headle
    - No `@font-face`, `url(`, gradient, `box-shadow`, `filter`, `text-shadow`, `rgb(`, `!important`, `transition`, `animation`; the only `opacity` is `opacity:1`.
    - Every rule inside the gate starts `html[data-panes=two]`; the one rule outside is `#jaryo-hand{display:none}`.
    - Without a span: one `(horizontal-viewport-segments:2)` block and the two `env()` names; with `Span(675,42)`: `(min-width:1055px)`, no `viewport-segment`, `:root{--pane:675px;--hinge:42px}` once.
-   - `invert` omits the mirror but keeps the colour swap; `pure` equals soft with four values replaced.
+   - `invert` omits the mirror but keeps the color swap; `pure` equals soft with four values replaced.
    - `page()` bytes are identical with and without `OPOS_PANES`, contain no `panes`, `jp-` or `jaryo_hand`, and stay under `PAGE_BUDGET` (102,400).
    - Injection: before the first `</head>`, after the page's `<style>`; idempotent; same object when off; bad nonce raises; chained through `osk.inject_bytes` with the keyboard on, off, and `web.osk = None`.
    - Routes (`webclient.Running`): flag off is 404 `{"error": "not found"}` for both files and a byte-identical page; flag on serves both with `no-store`, `nosniff`, correct content type, HEAD empty; `/network` carries the tags; the page minus the tags equals `page()`.
@@ -431,11 +431,11 @@ All stdlib, run on Linux (WSL) with the usual shim; skip when `node` or a headle
 2. **`tests/panes_dom_test.js` (node vm, fake DOM)**: default Right and no write; label `Hand: Right`; button right after `#jaryo-theme`; a tap flips to Left, stores `left`, relabels; tap again; reload reads the stored value in the head before the DOM exists (`readyState 'loading'`); garbage in storage is Right; throwing storage does not throw and the tap still flips the page; a `storage` event re-reads; other keys ignored; `data-panes` is `two` for `/` only with `data-ff=foldable` (and follows `data-ff` arriving or leaving), always for the three OS pages, never for other paths; no button without `#jaryo-theme`; one button after repeated `DOMContentLoaded`. 31 assertions pass in the prototype.
 3. **`tests/test_panes_browser.py` with `tests/panes_browser_driver.mjs` (browser geometry)**: serve with `OPOS_PANES=1` and `Span(675,42)`; headless Chromium driven over the DevTools port by node 22+ (the global `WebSocket`; the shared UXP21 driver speaks the pipe, which Windows Chrome and Edge do not), 1392 x 900, `deviceScaleFactor` 1 (CSS px equal at 2); each of lock, home, All apps, phone, messages, helper, settings, shade; each of Right and Left; each of light and dark (`jaryo_theme`). For each:
    - `data-ff="foldable"`, `data-panes="two"`, `data-hand` as set.
-   - Surfaces: computed `html::before` background (left pane) and `html` background (right pane) are `rgb(243,240,232)` and `rgb(0,0,0)` in Right, swapped in Left; screenshot pixels at (300, 880), (696, y) and (1000, 880) are those two colours and `#000000` for the hinge at three heights.
+   - Surfaces: computed `html::before` background (left pane) and `html` background (right pane) are `rgb(243,240,232)` and `rgb(0,0,0)` in Right, swapped in Left; screenshot pixels at (300, 880), (696, y) and (1000, 880) are those two colors and `#000000` for the hinge at three heights.
    - No text rectangle (a `Range` over each own text node, not over an element that contains controls) and no control intersects x 675 to 717.
    - Every interactive element is at least 48 x 48 (a radio or checkbox measured by its label; `#meter` exempt).
-   - Contrast: for each text rectangle, the computed ink against the screenshot colour at the rectangle's corners is at least 15:1 (measured minimum 15.28).
-   - Palette: computed `color`, `background-color`, border and outline colours of every visible element are in `{#000, #e6e2d9, #f3f0e8, #1a1a1a, transparent}`; no `box-shadow`, `filter`, `background-image`, or `opacity < 1`.
+   - Contrast: for each text rectangle, the computed ink against the screenshot color at the rectangle's corners is at least 15:1 (measured minimum 15.28).
+   - Palette: computed `color`, `background-color`, border and outline colors of every visible element are in `{#000, #e6e2d9, #f3f0e8, #1a1a1a, transparent}`; no `box-shadow`, `filter`, `background-image`, or `opacity < 1`.
    - Mirror: the thumb items' `left` is 729 in Right and 12 in Left; the masthead `left` is 0 and 717; the Shade is at x 0 and 717 with width 675; `#jaryo-status-row` buttons are in the thumb pane.
    - Clicking `#jaryo-hand` in Settings flips `data-hand` and the layout live and `localStorage.jaryo_hand`; Enter on the focused button does the same.
    - Off cases: 675 x 900 Auto, 1000 x 700, 1392 x 900 with Slab, and 675 x 900 with Foldable forced all have no `html::before` content and no visible `#jaryo-hand`.
@@ -444,14 +444,14 @@ All stdlib, run on Linux (WSL) with the usual shim; skip when `node` or a headle
    - Motion smoke: with `prefers-reduced-motion: no-preference`, open and close Messages, Phone, Helper and Settings from Home: no console error, animations end, focus returns to the tile, positions as in 2.4.
    - Pressed: every visible control of every state (the main page, the OS pages, the keyboard) is pressed with `:active` forced through the DevTools protocol, in both themes and both hands, and, in the dark run, with a real mouse-down that is also photographed (clicks are stopped before they reach the page). Each label reads at least 15:1 on its fill; every enabled control that is not already on inverts; Home, Close, Unlock, Call and the Network Home link are black on `#e6e2d9`; the picture of a pressed button still has a label in it (the browser restyles a pressed control a frame late, so the driver waits a frame and presses again before it believes "no change").
    - The root's computed `color` and `caret-color` are the right pane's ink (`#e6e2d9` in Right, `#1a1a1a` in Left).
-   - The Network page's password checkbox, unchecked and checked, at 390 x 844 and 1000 x 700 in both themes (the panes do not paint there) and at 1392 x 900 in both hands: appearance none, 24 px, 2 px ink border, square corners, and in the pixels of the box only the page's two colours (the ink in the border and, checked, in the middle).
+   - The Network page's password checkbox, unchecked and checked, at 390 x 844 and 1000 x 700 in both themes (the panes do not paint there) and at 1392 x 900 in both hands: appearance none, 24 px, 2 px ink border, square corners, and in the pixels of the box only the page's two colors (the ink in the border and, checked, in the middle).
    - The driver waits for the page it loaded, never a fixed time (`tests/panes_wait.mjs`, unit-tested by `tests/panes_wait_test.mjs`); a server that answers three seconds late must not break it.
-4. **Conformance tests for the OS pages** (`tests/test_panes_pages.py`, a new file so that the branches that edit `test_net.py` and `test_firstrun.py` do not conflict): the net page CSS has no colour literal outside the four tokens, no `border-radius` other than 0, no `opacity`, contains `button:disabled::after`, `#msg[data-bad]`, `.note:empty`; its JS has no `style.color`; the `Join` button has class `main`; `LINK` has no `#9ecbff`; the first-run CSS has `::placeholder` and the disabled label rule.
+4. **Conformance tests for the OS pages** (`tests/test_panes_pages.py`, a new file so that the branches that edit `test_net.py` and `test_firstrun.py` do not conflict): the net page CSS has no color literal outside the four tokens, no `border-radius` other than 0, no `opacity`, contains `button:disabled::after`, `#msg[data-bad]`, `.note:empty`; its JS has no `style.color`; the `Join` button has class `main`; `LINK` has no `#9ecbff`; the first-run CSS has `::placeholder` and the disabled label rule.
 5. **Existing tests that must keep passing** (run, do not edit): `test_osk` (identity of `inject_bytes` while off), `test_span` (all), `test_uxp30_budget`, `test_uxp22_twopane`, `test_net` (12,000 byte limit, `len(LINK) < 300`), `test_firstrun` (`Pages`), `test_duo_final` and `test_runtime_source_archive` inventories (the digest failure is the known one).
 
 Existing tests that this feature must not break are listed above. Numbers checked by hand on the prototype, for the record: `page()` 102,336 B (102,293 with a span) with and without `OPOS_PANES`, under 102,400; rendered net page 10,442 B under 12,000; `len(net_page.LINK)` 229 under 300.
 
-Prototype results, for the record (Edge 157, 1392 x 900): 18 main-page state, hand and theme combinations plus 12 OS-page combinations in each hand: 0 text or control on the hinge, 0 targets under 48 px, minimum contrast 15.28, palette limited to the four colours and transparent, hinge pixels `#000000` everywhere. One expected false positive when a `Range` is taken over a label that contains a checkbox (use text nodes).
+Prototype results, for the record (Edge 157, 1392 x 900): 18 main-page state, hand and theme combinations plus 12 OS-page combinations in each hand: 0 text or control on the hinge, 0 targets under 48 px, minimum contrast 15.28, palette limited to the four colors and transparent, hinge pixels `#000000` everywhere. One expected false positive when a `Range` is taken over a label that contains a checkbox (use text nodes).
 
 ## 9. Risks, limits, open questions
 
@@ -469,8 +469,8 @@ Open questions for Louis:
 
 1. Soft or strict whites? Default is the Nov 3 soft pair; `pure` is one word. Which should the Duo image set?
 2. Default on? Should `opos-server.service` set `OPOS_PANES=1` once `OPOS_SPAN` is enabled, or stay a commented line until the phone has shown it?
-3. Hinge colour: black (the physical hinge) or white?
-4. "Invert for the left": is it a mirror (built) or a colour swap with no mirror (`invert`)?
+3. Hinge color: black (the physical hinge) or white?
+4. "Invert for the left": is it a mirror (built) or a color swap with no mirror (`invert`)?
 5. The placeholder, checkbox and radio fixes: leave in `panes.css`, or move into `jaryo.css` when the page budget allows?
 6. Time zone list rows: 8 px gaps between boxes (strict), or rows with 1 px rules (section 4.6)?
 7. Should Settings > Display also offer "Hand" on one-pane windows (it does nothing there; currently hidden)?
@@ -484,13 +484,13 @@ Chromium at output scale 2, the real hinge mask and the native `env(viewport-seg
 |---|---|
 | `tests/test_panes.py` | 24 tests (19 first; then `touch` off, the root's ink, no role `color` on a button, two for the flag-off wording): flag words, tokens, no forbidden CSS, the gate on every rule, span rewriting, modes, the injection and its chain through `osk.py`, routes on and off (flag off serves `/` and `/network` byte for byte as `page()` and `net_page.render()` build them), the runtime inventory |
 | `tests/panes_dom_test.js` (run by `test_panes`) | 36 assertions (the Hand button with a throwing store and with a store whose writes fail) |
-| `tests/test_panes_pages.py` | 13 tests: the OS pages' colours, corners, opacity, disabled, primary, notice and link rules, the password checkbox rule |
-| `tests/test_panes_browser.py` (23 tests, Edge: 21 of the pages and 2 of the driver's waiting; about 225 s) | the pressed state of every visible control (forced and a real mouse-down), the root's ink, the password checkbox at three window sizes, and: 36 main-page and 20 OS-page state, hand and theme combinations: surfaces and hinge pixels `#000000`, 0 text or controls on the hinge, 0 targets under 48 px, minimum contrast at least 15, only the four palette colours, mirror positions, the Hand button (tap, reload, Enter), the one-pane windows unchanged, keyboard halves, motion smoke, 0 console errors |
+| `tests/test_panes_pages.py` | 13 tests: the OS pages' colors, corners, opacity, disabled, primary, notice and link rules, the password checkbox rule |
+| `tests/test_panes_browser.py` (23 tests, Edge: 21 of the pages and 2 of the driver's waiting; about 225 s) | the pressed state of every visible control (forced and a real mouse-down), the root's ink, the password checkbox at three window sizes, and: 36 main-page and 20 OS-page state, hand and theme combinations: surfaces and hinge pixels `#000000`, 0 text or controls on the hinge, 0 targets under 48 px, minimum contrast at least 15, only the four palette colors, mirror positions, the Hand button (tap, reload, Enter), the one-pane windows unchanged, keyboard halves, motion smoke, 0 console errors |
 | Existing, WSL Ubuntu | `test_osk` 29, `test_span` 43 (7 browser tests skipped: no Chromium in WSL), `test_uxp30_budget` (`page()` 100,641 B of 102,400), `test_net` 71, `test_firstrun` 82, `test_firstrun_wiring`, `test_uxp22_twopane`, `test_duo_final`, `test_docs_claims`, `test_duo_os_docs`, `test_duo_os_clock`, `test_selftest`, `test_web_security`, `test_duo_kiosk`, `test_lean_image` and the docs tests pass |
-| After the independent check (2026-11-08) | Six findings fixed (pressed label on Home, Close, Unlock, Call and the Network Home link; the Network checkbox with the panes off; the Hand label with storage blocked; the flag-off wording; the `touch` word and the root colour; the driver's fixed wait). Windows Python 3.13 and headless Edge: `test_panes`, `test_panes_pages`, `test_panes_browser`, 60 tests OK. WSL Ubuntu, Python 3.14.4, a native copy of the branch tip, the Windows node behind a shim: those three modules plus `test_net`, `test_firstrun`, `test_osk`, `test_uxp30_budget`, `test_docs_claims`, `test_docs_script_paths`, 260 tests OK (23 skipped: no Chromium in WSL). With the four source files of the fixes put back as they were, 13 of the new tests fail and the other 47 pass. |
+| After the independent check (2026-11-08) | Six findings fixed (pressed label on Home, Close, Unlock, Call and the Network Home link; the Network checkbox with the panes off; the Hand label with storage blocked; the flag-off wording; the `touch` word and the root color; the driver's fixed wait). Windows Python 3.13 and headless Edge: `test_panes`, `test_panes_pages`, `test_panes_browser`, 60 tests OK. WSL Ubuntu, Python 3.14.4, a native copy of the branch tip, the Windows node behind a shim: those three modules plus `test_net`, `test_firstrun`, `test_osk`, `test_uxp30_budget`, `test_docs_claims`, `test_docs_script_paths`, 260 tests OK (23 skipped: no Chromium in WSL). With the four source files of the fixes put back as they were, 13 of the new tests fail and the other 47 pass. |
 | Environment failures on `/mnt/c` only | `test_net` `test_actions_are_rate_limited` (wall-clock refill on a saturated VM), `test_firstrun` `Flag.test_the_flag_is_private_and_no_temp_file_is_left` and three `test_duo_kiosk` file-mode checks (drvfs reports 0777); all pass on ext4. `test_runtime_source_archive` fails on the release recipe digest, as it did before this branch |
 
-Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or without the flag, 100,573 B with a span; the `/network` and `/panes.*` rows were measured again after the checkbox rule, the root colour and the Hand fix, the rest are as first measured):
+Served bytes, with a real token and nonce (`page()` itself is 100,641 B with or without the flag, 100,573 B with a span; the `/network` and `/panes.*` rows were measured again after the checkbox rule, the root color and the Hand fix, the rest are as first measured):
 
 | Response | Flag off | `OPOS_PANES=1` | Duo image (`OSK`, `NETWORK`, `FIRSTRUN`, `PANES`, span) |
 |---|---|---|---|

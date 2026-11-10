@@ -193,7 +193,7 @@ def landing(token, nonce, demo=False):
                         '<p id="public-about">This public simulation runs on a web server. '
                         'It makes no model calls, changes no device settings and places no real calls. '
                         'The notices below describe the separate installable OPOS prototype.</p>', 1)
-    page = page.replace('Licence, privacy and tested limits</summary>',
+    page = page.replace('License, privacy and tested limits</summary>',
                         'Installed OPOS notices</summary>', 1)
     assets = Path(__file__).with_name("public_static")
     css = (assets / "public-demo.css").read_text(encoding="utf-8")
