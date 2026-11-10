@@ -1068,6 +1068,9 @@ class Handler(BaseHTTPRequestHandler):
     def _lock_act(self, data):
         """Set, skip, lock or unlock. Wrong-PIN waits are computed from data['now'] when a test sends it."""
         action = data.get("action") if isinstance(data, dict) else None
+        if lockpin.blocks(action if isinstance(action, str) else "", "/api/lock"):
+            self._deny(403, "locked", "lock")
+            return
         try:
             if action == "set":
                 lockpin.set_pin(data.get("pin"))

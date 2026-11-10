@@ -70,6 +70,44 @@ class Server(unittest.TestCase):
         page = web.page()
         self.assertNotIn(">Emergency<", page)
 
+    def test_set_and_skip_are_refused_while_locked(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            saved = lockpin._read()["record"]["hash"]
+            for action in ("set", "skip"):
+                code, raw = post(server, "/api/lock", {"action": action, "pin": "5678"}, token)
+                self.assertEqual(code, 403, raw)
+                self.assertEqual(json.loads(raw)["error"], "locked")
+            self.assertEqual(lockpin._read()["record"]["hash"], saved)
+            self.assertTrue(lockpin.is_locked())
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            code, raw = post(server, "/api/lock", {"action": "skip"}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(lockpin.has_pin())
+
+    def test_no_saved_pin_is_not_locked_and_an_empty_unlock_fails(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            self.assertFalse(lockpin.is_locked())
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": ""}, token)
+            self.assertEqual(code, 403, raw)
+            self.assertFalse(json.loads(raw)["locked"])
+            self.assertFalse(json.loads(raw)["has_pin"])
+            self.assertFalse(lockpin.has_pin())
+
 
 if __name__ == "__main__":
     unittest.main()

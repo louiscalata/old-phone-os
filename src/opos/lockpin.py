@@ -35,12 +35,16 @@ def _store():
 
 
 def _read():
-    data, _note = _store().read_json(_FILE, {"locked": True, "failures": 0, "wait_until": 0})
+    data, _note = _store().read_json(_FILE, {"locked": False, "failures": 0, "wait_until": 0})
     if not isinstance(data, dict):
-        data = {"locked": True, "failures": 0, "wait_until": 0}
-    data.setdefault("locked", True)
+        data = {"locked": False, "failures": 0, "wait_until": 0}
     data.setdefault("failures", 0)
     data.setdefault("wait_until", 0)
+    # A lock needs a saved PIN. A file that says locked without one is not a lock.
+    if not isinstance(data.get("record"), dict):
+        data["locked"] = False
+    else:
+        data.setdefault("locked", True)
     return data
 
 
@@ -72,7 +76,8 @@ def verify(pin, record):
 def is_locked():
     if not active():
         return False
-    return bool(_read().get("locked", True))
+    data = _read()
+    return isinstance(data.get("record"), dict) and bool(data.get("locked"))
 
 
 def has_pin():
@@ -100,6 +105,10 @@ def skip():
 
 def lock():
     data = _read()
+    if not isinstance(data.get("record"), dict):
+        data["locked"] = False
+        _write(data)
+        return
     data["locked"] = True
     _write(data)
 
@@ -113,10 +122,8 @@ def unlock(pin, now):
         return False, _status(data, now)
     record = data.get("record")
     if not isinstance(record, dict):
-        data["locked"] = False
-        data["failures"] = 0
-        _write(data)
-        return True, _status(data, now)
+        # There is no PIN. An empty unlock does not open a lock.
+        return False, _status(data, now)
     if verify(pin, record):
         data["locked"] = False
         data["failures"] = 0
@@ -151,11 +158,14 @@ def status(now=0):
 
 
 def blocks(action, path):
-    """True when a write must be refused. Alarm stop and snooze, hang up, and unlock stay allowed."""
+    """True when a write must be refused. Alarm stop and snooze, hang up, and unlock stay allowed.
+
+    set and skip change the PIN. They are refused while the phone is locked.
+    """
     if not is_locked():
         return False
     if path == "/api/lock":
-        return False
+        return action in {"set", "skip"}
     if path == "/api/clock" and action in {"stop", "snooze"}:
         return False
     if action in {"hang_up", "unlock"}:
