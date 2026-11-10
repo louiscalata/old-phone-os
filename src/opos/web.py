@@ -1085,10 +1085,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(lockpin.status())
                 return
             if action == "unlock":
-                now = data.get("now")
-                if isinstance(now, bool) or not isinstance(now, (int, float)):
-                    now = time.time()
-                ok, status = lockpin.unlock("" if data.get("pin") is None else str(data.get("pin")), now)
+                ok, status = lockpin.unlock("" if data.get("pin") is None else str(data.get("pin")))
                 self._json(status, 200 if ok else 403)
                 return
         except ValueError:
