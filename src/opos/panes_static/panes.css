@@ -69,5 +69,11 @@ html[data-panes=two] input[type=radio]{border-radius:50%}
 html[data-panes=two] :is(input[type=radio],input[type=checkbox]):checked{background:var(--jaryo-fg)}
 html[data-panes=two] input[type=range]{background:transparent}
 html[data-panes=two] ::placeholder{color:var(--jaryo-fg);opacity:1;font-style:italic}
+/* 12. Home is a front page. The masthead stays in the list pane. The stories split into two columns, and the second column is the other pane. */
+html[data-panes=two][data-ff] #phone[data-app=home]>#home{grid-column:1/-1;display:block;width:auto;max-width:none;margin:0;background:transparent}
+html[data-panes=two] #home-favourites{display:grid;grid-auto-flow:dense;grid-template-columns:var(--jp-x1) minmax(0,1fr);column-gap:calc(var(--jp-x2) - var(--jp-x1))}
+html[data-panes=two] #home-favourites>:nth-child(-n+4){grid-column:1;padding-left:16px;padding-right:16px;color:var(--jp-l-ink);--jaryo-fg:var(--jp-l-ink);--jaryo-bg:var(--jp-l)}
+html[data-panes=two] #home-favourites>:nth-child(n+5){grid-column:2;padding-left:16px;padding-right:16px;color:var(--jp-r-ink);--jaryo-fg:var(--jp-r-ink);--jaryo-bg:var(--jp-r)}
+html[data-panes=two] #home #allapps{grid-column:2;font-size:1.5rem}
 @MIRROR@
 }

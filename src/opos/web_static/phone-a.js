@@ -304,6 +304,9 @@ try{new MutationObserver(function(){try{jsc()}catch(e){}}).observe($('phone'),{a
 window.oposHooks.push(function(s){try{
 var home=$('home'),card=$('home-notice');
 if(home&&!card){var fav=E('div');fav.id='home-favourites';card=E('div');card.id='home-notice';card.setAttribute('role','status');while(home.firstChild)fav.appendChild(home.firstChild);home.appendChild(fav);home.appendChild(card);home.classList.add('polished');$('phone').classList.add('polished')}
+if(home&&!home.dataset.front){home.dataset.front='1';var d={phone:'Calls on this phone.',messages:'Messages on this phone.',helper:'Ask on this phone.',settings:'Display and sound.',allapps:'Every app.'},box=$('home-favourites')||home;[].slice.call(box.querySelectorAll('button')).forEach(function(b){var p=E('p');p.className='deck';p.textContent=d[b.dataset.open||b.id]||'';b.insertAdjacentElement('afterend',p)})}
+var brief=$('in-brief'),n=(s.threads||[]).length;if(brief)brief.textContent='In brief · '+n+' messages · Clock · No calendar';
+var mt=$('mast-time');if(mt&&s.clock)mt.textContent=s.clock;
 var notice=s.home_note||'';
 if(card&&card.textContent!==notice)card.textContent=notice;
 jl=s;jsc();
