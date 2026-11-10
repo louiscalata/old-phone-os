@@ -26,6 +26,7 @@ src/opos/evaleol.py
 src/opos/evaluate.py
 src/opos/firstrun.py
 src/opos/firstrun_page.py
+src/opos/fold.py
 src/opos/goalsim.py
 src/opos/governor.py
 src/opos/home.py
