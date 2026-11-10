@@ -62,6 +62,39 @@ class Hash(unittest.TestCase):
             self.assertEqual(code, 200, raw)
             self.assertFalse(json.loads(raw)["locked"])
 
+    def test_a_poisoned_wait_is_clamped_to_the_server_backoff(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        with unittest.mock.patch.dict(__import__("os").environ, {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}):
+            lockpin.set_clock(lambda: 1000)
+            lockpin.set_pin("1234")
+            data = lockpin._read()
+            data["failures"] = 5
+            data["locked"] = True
+            data["wait_until"] = 10 ** 12
+            lockpin._write(data)
+            status = lockpin.status()
+            self.assertLessEqual(status["wait_s"], 30)
+            self.assertGreater(status["wait_s"], 0)
+            self.assertLessEqual(lockpin._read()["wait_until"], 1030)
+            ok, early = lockpin.unlock("1234")
+            self.assertFalse(ok)
+            lockpin.set_clock(lambda: 1031)
+            ok, later = lockpin.unlock("1234")
+            self.assertTrue(ok)
+            self.assertFalse(later["locked"])
+            lockpin.set_pin("1234")
+            data = lockpin._read()
+            data["failures"] = 0
+            data["locked"] = True
+            data["wait_until"] = 10 ** 12
+            lockpin._write(data)
+            ok, opened = lockpin.unlock("1234")
+            self.assertTrue(ok)
+            self.assertFalse(opened["locked"])
+
 
 class Server(unittest.TestCase):
     def test_no_saved_pin_is_unlocked_and_empty_unlock_fails(self):

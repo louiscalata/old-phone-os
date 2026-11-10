@@ -17,6 +17,7 @@ ITERATIONS = 200_000
 _FILE = "lock.json"
 _STORE = None
 _WAIT = 30
+_MAX_WAIT = 3600
 _CLOCK = time.time
 
 
@@ -45,6 +46,17 @@ def _now():
     return float(_CLOCK())
 
 
+def _backoff_s(failures):
+    """The longest wait this failure count may impose, never more than one hour."""
+    try:
+        count = int(failures or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if isinstance(failures, bool) or count < 5:
+        return 0
+    return min(_WAIT * (2 ** (count - 5)), _MAX_WAIT)
+
+
 def _store():
     global _STORE
     if _STORE is None:
@@ -63,6 +75,19 @@ def _read():
         data["locked"] = False
     else:
         data.setdefault("locked", True)
+    return _clamp_wait(data)
+
+
+def _clamp_wait(data):
+    """A stored wait from the old client clock cannot outlast this failure count."""
+    try:
+        wait_until = float(data.get("wait_until") or 0)
+    except (TypeError, ValueError):
+        wait_until = 0.0
+    cap = _now() + _backoff_s(data.get("failures"))
+    if wait_until > cap:
+        data["wait_until"] = cap
+        _write(data)
     return data
 
 
@@ -150,8 +175,7 @@ def unlock(pin):
     data["failures"] = failures
     data["locked"] = True
     if failures >= 5:
-        wait = _WAIT * (2 ** (failures - 5))
-        data["wait_until"] = now + wait
+        data["wait_until"] = now + _backoff_s(failures)
     _write(data)
     return False, _status(data)
 
