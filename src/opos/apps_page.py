@@ -6,26 +6,23 @@ A raised app handler becomes a short error page with Home. The front page and Ph
 import re
 import secrets
 from html import escape
+from pathlib import Path
 
 from opos import appdoc, apps, secure
 
-# One link in All apps. Kept short: the served home page has little room under the 102,000 byte gate.
-_INJECT = (
-    '<style nonce="{nonce}">#more-apps{{display:block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline}}</style>'
-    '<script nonce="{nonce}">try{{var u=document.getElementById("apps-list");if(u&&!document.getElementById("more-apps"))'
-    '{{var a=document.createElement("a"),n=document.createElement("li");a.id="more-apps";a.href="/apps";a.textContent="More apps";'
-    'n.appendChild(a);u.appendChild(n)}}}}catch(e){{}}</script>'
-)
+# One short tag. The script file holds the link and later home behaviour, so the main page stays under the gate.
+_INJECT = '<script nonce="{nonce}" src="/apps-home.js"></script>'
+_HOME_JS = Path(__file__).with_name("apps_static") / "home.js"
 _BODY_END = re.compile(r"</body\s*>", re.I)
 
 
 def buckets():
-    return {"apps": secure.RateLimiter(2.0, 30)}
+    return {"apps": secure.RateLimiter(10.0, 80)}
 
 
 def inject(html, nonce, env=None):
     """html plus the More apps link, or html unchanged when no app is named."""
-    if not apps.switched_on(env) or 'id="more-apps"' in html:
+    if not apps.switched_on(env) or 'src="/apps-home.js"' in html:
         return html
     if not isinstance(nonce, str) or not secure._nonce_ok(nonce):
         return html
@@ -130,8 +127,28 @@ def _send_json(handler, obj, status=200):
     handler._json(obj, status)
 
 
+def _send_static(handler, body, content_type):
+    handler.send_response(200)
+    for key, value in secure.security_headers().items():
+        handler.send_header(key, value)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    if handler.command != "HEAD":
+        handler.wfile.write(body)
+
+
 def serve_get(handler, path):
     """Answer an app GET. False means this path is not an app path."""
+    if path == "/apps-home.js":
+        if not apps.switched_on():
+            return False
+        try:
+            body = _HOME_JS.read_bytes()
+        except OSError:
+            return False
+        _send_static(handler, body, "text/javascript; charset=utf-8")
+        return True
     if not _claims(path):
         return False
     nonce = secrets.token_urlsafe(16)

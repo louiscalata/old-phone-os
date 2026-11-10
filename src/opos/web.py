@@ -957,7 +957,7 @@ class Handler(BaseHTTPRequestHandler):
         if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
             self._deny(403, "forbidden", "token")
             return
-        if not self.limiter.allow("post"):
+        if not app_post and not self.limiter.allow("post"):
             self._deny(429, "too many requests", "rate")
             return
         try:
@@ -1182,6 +1182,13 @@ def main(argv=None):
         _firstrun.install(sys.modules[__name__])
     except Exception as e:  # never let first run keep the phone from starting
         print("opos: first run not available:", type(e).__name__, file=sys.stderr)
+    try:
+        from opos import apps as _apps
+        if "clock" in (_apps.names_from() or []):
+            from opos import clock_page as _clock_page
+            _clock_page.start_thread()
+    except Exception as e:
+        print("opos: clock not available:", type(e).__name__, file=sys.stderr)
     # <<< track firstboot
     live = None
     if args.live_battery or os.environ.get("OPOS_BATTERY") == "live":

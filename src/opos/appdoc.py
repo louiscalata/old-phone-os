@@ -66,11 +66,11 @@ ERROR_LIST = '<h1>This app could not open</h1><p>The phone and messages still wo
 ERROR_THUMB = '<p>Go back to the front page.</p>'
 
 
-def render(title, token, nonce, list_html, thumb_html, script=""):
+def render(title, token, nonce, list_html, thumb_html, script="", extra_css=""):
     """A full page. list_html and thumb_html are trusted markup from the app, not from the owner."""
     html = (_DOC.replace("@@TITLE@@", escape(title))
             .replace("@@TOKEN@@", escape(token, quote=True))
-            .replace("@@CSS@@", BASE_CSS + EXTRA_CSS)
+            .replace("@@CSS@@", BASE_CSS + EXTRA_CSS + extra_css)
             .replace("@@LIST@@", list_html)
             .replace("@@THUMB@@", thumb_html)
             .replace("@@SCRIPT@@", script))
