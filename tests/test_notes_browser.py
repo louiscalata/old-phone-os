@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Headless notes: type, see Saved, leave, and find the text again."""
+"""Headless notes: type, see Saved, confirm delete, and find the note gone."""
 import json
 import os
 import shutil
