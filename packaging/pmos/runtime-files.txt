@@ -17,10 +17,12 @@ src/opos/alarms.py
 src/opos/appdoc.py
 src/opos/apps.py
 src/opos/apps_page.py
+src/opos/apps_static/home.js
 src/opos/assist.py
 src/opos/battery.py
 src/opos/benchmark_model.py
 src/opos/budget.py
+src/opos/clock_page.py
 src/opos/clockcheck.py
 src/opos/contacts.py
 src/opos/dashboard.py
