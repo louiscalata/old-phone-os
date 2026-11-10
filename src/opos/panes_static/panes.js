@@ -12,7 +12,7 @@ function cur(){return d.dataset.hand==='left'?'left':'right'}
 function label(){var b=document.getElementById('jaryo-hand');if(b)b.textContent='Hand: '+(cur()==='left'?'Left':'Right')}
 function setHand(v){d.dataset.hand=v;label()}
 function kind(){if(P==='/')return 'app';if(P==='/network'||P==='/firstrun'||P==='/timezone')return 'page';try{if(d.getAttribute&&d.getAttribute('data-opos-app')!=null)return 'page'}catch(e){}return ''}
-function sync(){var k=kind();if(k==='page'||(k==='app'&&d.dataset.ff==='foldable'))d.dataset.panes='two';else delete d.dataset.panes}
+function sync(){var k=kind();if(k==='page'||(k==='app'&&d.dataset.ff==='foldable'))d.dataset.panes='two';else delete d.dataset.panes;try{detail()}catch(e){}}
 function mount(){try{var t=document.getElementById('jaryo-theme');if(!t||document.getElementById('jaryo-hand'))return;
 var b=document.createElement('button');b.type='button';b.id='jaryo-hand';
 b.onclick=function(){var v=cur()==='left'?'right':'left';put(v);setHand(v)};
@@ -22,7 +22,9 @@ try{new MutationObserver(sync).observe(d,{attributes:true,attributeFilter:['data
 try{window.addEventListener('storage',function(e){if(e.key===KEY||e.key===null)setHand(hand())})}catch(e){}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
 function detail(){try{
-var phone=document.getElementById('phone'),box=document.getElementById('pane-detail');
+var box=document.getElementById('pane-detail');
+if(d.dataset.panes!=='two'){if(box&&box.remove)box.remove();return}
+var phone=document.getElementById('phone');
 if(!phone)return;
 if(!box){box=document.createElement('div');box.id='pane-detail';box.setAttribute('role','status');phone.insertBefore(box,phone.firstChild)}
 var lines={phone:'Practice calls stay on this phone.',messages:'Practice messages stay on this phone.',helper:'Ask a question. The answer stays on this phone.',settings:'Display, sound, and the lock.'};
