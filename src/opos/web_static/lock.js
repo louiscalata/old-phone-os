@@ -2,6 +2,8 @@
 // Lock screen counts. Served only while OPOS_LOCK=1, so the main page stays the same size.
 window.oposLockCounts = true;
 try {
+  var blank = document.getElementById("lock-notice");
+  if (blank) blank.textContent = "";
   var tokenEl = document.querySelector("meta[name=opos-token]");
   if (!tokenEl) throw new Error("token");
   function countsText(data) {

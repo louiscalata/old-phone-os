@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Lock PIN: the hash, the growing wait, and the server refusing writes while locked."""
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -272,6 +274,51 @@ class Server(unittest.TestCase):
             injected = lockpin.inject_bytes(same, "nonce")
         self.assertIn(b'src="/lock.js"', injected)
         self.assertIn(b'nonce="nonce"', injected)
+
+    def test_the_lock_notice_stays_empty_until_the_lock_response(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        harness = r"""
+const vm = require('vm'), fs = require('fs');
+class Element {
+  constructor(){ this.id=''; this.text=''; this.children=[]; }
+  get textContent(){ return this.text; }
+  set textContent(v){ this.text = String(v); }
+}
+const note = new Element(); note.id = 'lock-notice'; note.text = 'Ana called';
+function find(id){ return id === 'lock-notice' ? note : null; }
+let mode = 'wait';
+const c = {
+  document: { getElementById: find, querySelector(){ return { content: 'tok' }; } },
+  fetch(){
+    if (mode === 'fail') return Promise.reject(new Error('down'));
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ enforced: true, locked: true, lock: { messages: 1, missed: 0 } }) });
+  },
+  setInterval(){}
+};
+c.window = c;
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), vm.createContext(c), { filename: 'lock.js' });
+const before = note.text;
+(async function () {
+  await new Promise(r => setTimeout(r, 20));
+  const after = note.text;
+  mode = 'fail';
+  note.text = 'Ana called';
+  c.window.oposLockCounts = true;
+  vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), vm.createContext(c), { filename: 'lock.js' });
+  await new Promise(r => setTimeout(r, 20));
+  console.log(JSON.stringify({ before, after, failed: note.text, flag: c.oposLockCounts }));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+        result = subprocess.run([node, "-e", harness, str(lockpin._JS)], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out["before"], "")
+        self.assertEqual(out["after"], "1 new messages. 0 missed calls")
+        self.assertNotIn("Ana", out["after"])
+        self.assertEqual(out["failed"], "")
+        self.assertTrue(out["flag"])
 
 
 if __name__ == "__main__":
