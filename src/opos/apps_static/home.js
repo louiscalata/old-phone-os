@@ -124,14 +124,29 @@ try {
       .then(function (data) { if (data) paintAlarm(data); })
       .catch(function () {});
   }
+  function contactsTile(on) {
+    document.documentElement.setAttribute("data-contacts", on ? "1" : "0");
+    var buttons = document.querySelectorAll("#apps-list button, #home button");
+    for (var i = 0; i < buttons.length; i++) {
+      if ((buttons[i].textContent || "").trim() !== "Contacts") continue;
+      var row = buttons[i].parentNode;
+      if (row && row.tagName === "LI") row.hidden = !on;
+      else buttons[i].hidden = !on;
+    }
+  }
   function pullPeople() {
     fetch("/api/contacts", { headers: { "X-OPOS-Token": tokenEl.content } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        lastPeople = (data && data.people) || [];
+        if (!data) {
+          contactsTile(false);
+          return;
+        }
+        contactsTile(true);
+        lastPeople = data.people || [];
         paintFav(lastPeople);
       })
-      .catch(function () {});
+      .catch(function () { contactsTile(false); });
   }
   window.oposHooks = window.oposHooks || [];
   window.oposHooks.push(function () { if (window.__oposAlarm) paintAlarm({ clock_ok: true, now: new Date().toISOString(), next: { text: window.__oposAlarm, at: new Date(Date.now() + 60000).toISOString() } }); });

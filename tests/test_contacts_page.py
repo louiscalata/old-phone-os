@@ -75,6 +75,26 @@ class ContactsApi(unittest.TestCase):
             code, raw = post(server, "/api/contacts", {"action": "add", "name": "No", "number": "abc"}, token)
             self.assertEqual(code, 400)
 
+    def test_routes_and_the_home_tile_stay_off_until_contacts_is_named(self):
+        # Importing the page registers it. A registered app still refuses until OPOS_APPS names it.
+        self.assertIsNotNone(contacts_page.snapshot)
+        with running({"OPOS_APPS": "clock"}) as server:
+            self.assertEqual(get(server, "/contacts")[0], 404)
+            self.assertEqual(get(server, "/api/contacts")[0], 404)
+            code, _raw = post(server, "/api/contacts", {"action": "add", "name": "Ana", "number": "+15550101"}, "x" * 20)
+            self.assertEqual(code, 404)
+            status, home = get(server, "/")
+            self.assertEqual(status, 200)
+            self.assertIn(b"dataset.scroll==='contacts'&&!contactsOn", home)
+            self.assertNotIn(b'data-contacts="1"', home)
+        with running({}) as server:
+            self.assertEqual(get(server, "/contacts")[0], 404)
+            self.assertEqual(get(server, "/api/contacts")[0], 404)
+        with running(self.env) as server:
+            token = server.RequestHandlerClass.token
+            self.assertEqual(get(server, "/contacts")[0], 200)
+            self.assertEqual(get(server, "/api/contacts", token)[0], 200)
+
     def test_practice_links_letter_index_and_the_main_page_does_not_grow(self):
         html = contacts_page.render("tok", "nonce")
         self.assertIn('id="letters"', html)

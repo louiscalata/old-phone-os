@@ -75,27 +75,37 @@ if(a&&card)card.textContent=a.getAttribute('data-card')||'';
     return appdoc.render("Apps", token, nonce, "<h1>Apps</h1><ul id=\"app-list\">%s</ul>" % lis, thumb, script)
 
 
+def _named(app):
+    """An imported app still stays off until OPOS_APPS names it."""
+    if app is None:
+        return None
+    names = apps.names_from() or []
+    if app.id not in names:
+        return None
+    return app
+
+
 def _claims(path):
     if not apps.switched_on():
         return False
     apps.load_enabled()
     if path == "/apps":
         return True
-    if apps.by_path(path) is not None:
+    if _named(apps.by_path(path)) is not None:
         return True
     api = _api_app(path)
     return api is not None and api.get_json is not None
 
 
 def _api_app(path):
-    """The app whose API is /api/<id>, or None."""
+    """The app whose API is /api/<id>, or None when that name is not on."""
     if not path.startswith("/api/"):
         return None
     name = path[5:]
     if "/" in name:
         return None
     apps.load_enabled()
-    return apps.by_id(name)
+    return _named(apps.by_id(name))
 
 
 def is_post(path):

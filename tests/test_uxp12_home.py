@@ -177,7 +177,7 @@ class UXP12Runtime(unittest.TestCase):
         o = self.run_js()
         self.assertEqual(o["start"], ["home", True, False, False, False, None])
         self.assertEqual(o["opened"], ["home", False, True, True, True, "Phone"])
-        self.assertEqual(o["shown"], "|".join(LIST))
+        self.assertEqual(o["shown"], "Phone|Messages|Helper|Settings|Threads")
         self.assertEqual(o["allapps"], "1")
         for k in ("closed", "back", "esc"):
             self.assertEqual(o[k], ["home", True, False, False, False, "allapps"], k)
@@ -192,7 +192,7 @@ class UXP12Runtime(unittest.TestCase):
         o = self.run_js("heading")
         self.assertEqual(o["opened"], ["home", False, True, True, True, "Phone"])
         self.assertEqual(o["allapps"], "1")
-        self.assertEqual(o["shown"], "C|" + "|".join(LIST))
+        self.assertEqual(o["shown"], "C|Phone|Messages|Helper|Settings|Threads")
         for key in ("closed", "back", "esc"):
             self.assertEqual(o[key], ["home", True, False, False, False, "allapps"], key)
 
