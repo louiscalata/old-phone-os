@@ -49,6 +49,7 @@ src/opos/monitor_web.py
 src/opos/muse.py
 src/opos/net.py
 src/opos/net_page.py
+src/opos/notes_page.py
 src/opos/notices.py
 src/opos/osk.py
 src/opos/osk_static/osk.css
