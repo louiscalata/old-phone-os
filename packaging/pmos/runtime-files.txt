@@ -61,6 +61,7 @@ src/opos/panes.py
 src/opos/panes_static/panes-mirror.css
 src/opos/panes_static/panes.css
 src/opos/panes_static/panes.js
+src/opos/posture.py
 src/opos/power.py
 src/opos/practice.py
 src/opos/profiles.py

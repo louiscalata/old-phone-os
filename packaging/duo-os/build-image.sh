@@ -108,6 +108,14 @@ fi
 echo "clock floor $floor ($(date -u -d "@$floor" +%FT%TZ 2>/dev/null || echo '?'))"
 # --- clock: END
 
+# Hinge posture is off unless OPOS_POSTURE=1. This does not start sensorfwd.
+if [ "${OPOS_POSTURE:-0}" = 1 ]; then
+    install -d "$r/etc/systemd/system/opos-server.service.d"
+    printf '%s\n' '[Service]' 'Environment=OPOS_POSTURE=1' > "$r/etc/systemd/system/opos-server.service.d/30-opos-posture.conf"
+    chmod 0644 "$r/etc/systemd/system/opos-server.service.d/30-opos-posture.conf"
+    echo "POSTURE: OPOS_POSTURE=1; sensorfwd is not started by this script"
+fi
+
 # --- track osk: the on-screen keyboard (packaging/duo-os/OSK.md) ---------------------------------------------------------
 # The default is the in-page keyboard: opos-server.service sets OPOS_OSK=1 and src/opos/osk.py serves /osk.js and /osk.css
 # from the OPOS tree archived above (src/opos/osk_static). The opt-in is the port's phosh-osk-stevia, started by
