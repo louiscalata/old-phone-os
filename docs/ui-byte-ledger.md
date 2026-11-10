@@ -137,7 +137,7 @@ larger (`test_uxp30_budget` checks that case against the cap).
 ## Everyday apps
 
 `OPOS_APPS` is not one of the six switches above. When it is absent, `page()` and the served home page are unchanged
-(`page()` is not edited). When it names an app, the served home page gains one script tag for `/apps-home.js`
-(68 bytes). The script file is not part of the page. Measured with the tag and the six switches, the served home page
-is 101,317 bytes (683 bytes under the 102,000 gate). Later apps must not add to this page. `tests/test_apps_shell.py`
-checks the gate.
+(`page()` is not edited). Naming one app or four apps adds the same one script tag, `/apps-home.js`, to the served
+home page. That script draws one More apps link. `page()` itself does not grow. The 102,000-byte gate is unchanged.
+`tests/test_apps_gate.py` checks that a route is off when its name is absent, and that a second app does not add
+another tag. `tests/test_apps_shell.py` checks the gate.
