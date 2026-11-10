@@ -141,6 +141,26 @@ class Server(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(got))
         self.assertNotIn("+15550100", json.dumps(got))
 
+    def test_a_locked_contacts_read_has_no_names(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name, "OPOS_APPS": "contacts"}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            status, body = get(server, "/api/contacts", token)
+            self.assertEqual(status, 200, body)
+            self.assertIn(b"Mom", body)
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            status, body = get(server, "/api/contacts", token)
+            self.assertEqual(status, 200, body)
+            parsed = json.loads(body)
+            self.assertTrue(parsed["locked"])
+            self.assertNotIn("people", parsed)
+            self.assertNotIn("Mom", body.decode("utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
