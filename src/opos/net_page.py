@@ -66,6 +66,13 @@ def handle(action, data, svc=None):
             return 200, n.forget(_str(data, "ssid", 64, True))
         if action == "net_wifi":
             return 200, n.wifi(_str(data, "mode", 16, True))
+        if action == "net_restart":
+            mode = _str(data, "mode", 16, True)
+            if mode == "wifi":
+                return 200, n.restart_wifi()
+            if mode == "modem":
+                return 200, n.restart_modem()
+            raise ValueError("mode")
     except ValueError:
         return 400, {"error": "bad request"}
     return 400, {"error": "unknown action"}
@@ -89,7 +96,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <section aria-labelledby="h-st"><h2 id="h-st">This phone</h2><ul id="st"><li>Reading the radios...</li></ul><p class="note" id="sim"></p><p class="note" id="ctl"></p><ul class="note" id="notes"></ul></section>
 <div id="gap" aria-hidden="true"></div>
 <section aria-labelledby="h-wf"><h2 id="h-wf">Wi-Fi</h2>
-<div><button id="scan" type="button">Scan</button><button id="tog" type="button" disabled>Turn Wi-Fi off</button><button id="disc" type="button" hidden>Disconnect</button><button id="hid" type="button" disabled>Hidden network</button></div>
+<div><button id="scan" type="button">Scan</button><button id="tog" type="button" disabled>Turn Wi-Fi off</button><button id="b-wifi-restart" type="button" disabled>Restart Wi-Fi</button><button id="b-modem-restart" type="button" disabled>Restart modem</button><button id="disc" type="button" hidden>Disconnect</button><button id="hid" type="button" disabled>Hidden network</button></div>
 <p id="msg" role="status" aria-live="polite"></p>
 <ul id="nets"></ul>
 <div id="sel" hidden><h3 id="sel-t"></h3><label id="hrow" hidden>Network name<input id="ssid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32"></label><p class="note" id="sel-n"></p><label id="prow"><span id="pwl">Password</span><input id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64"></label><label id="srow"><input id="show" type="checkbox"> Show the password</label><div><button id="b-join" type="button" class="main">Join</button><button id="b-forget" type="button">Forget</button><button id="b-disc" type="button">Disconnect</button><button id="b-cancel" type="button">Cancel</button></div></div>
@@ -108,7 +115,7 @@ if(r.status>=500)return{error:'Something went wrong in OPOS. Try again in a minu
 return j})}).catch(function(){return{error:'OPOS is not responding. Wait a few seconds, then reload this page.'}})}
 function say(t,bad){var m=G('msg');m.textContent=t||'';m.toggleAttribute('data-bad',!!bad)}
 function li(ul,t){var l=document.createElement('li');l.textContent=t;ul.appendChild(l)}
-function lock(){['tog','hid','b-join','b-forget','b-disc'].forEach(function(i){G(i).disabled=busy||!can});G('scan').disabled=busy}
+function lock(){['tog','hid','b-join','b-forget','b-disc','b-wifi-restart','b-modem-restart'].forEach(function(i){G(i).disabled=busy||!can});G('scan').disabled=busy}
 function paint(s){var u=G('st');u.textContent='';
 if(s.error){li(u,s.error);return}
 ['wifi','bluetooth','modem','sim','data','airplane','usb'].forEach(function(k){li(u,(s[k]||{}).summary||k+': unavailable')});
@@ -139,6 +146,8 @@ function disc(){work('Disconnecting...',{action:'net_wifi',mode:'disconnect'},fu
 G('b-disc').onclick=G('disc').onclick=disc;
 G('b-cancel').onclick=function(){G('pw').value='';G('sel').hidden=true};
 G('tog').onclick=function(){work('Changing Wi-Fi...',{action:'net_wifi',mode:wifiOn===false?'on':'off'},function(){refresh().then(function(){scan(false,true)})})};
+G('b-wifi-restart').onclick=function(){work('Restarting Wi-Fi...',{action:'net_restart',mode:'wifi'},function(){refresh().then(function(){scan(false,true)})})};
+G('b-modem-restart').onclick=function(){work('Restarting the modem...',{action:'net_restart',mode:'modem'},function(){refresh()})};
 G('scan').onclick=function(){scan(true).then(refresh)};
 G('hid').onclick=function(){pick({hidden:true,secure:true,supported:true,ssid:''})};
 G('show').onchange=function(){G('pw').type=G('show').checked?'text':'password'};

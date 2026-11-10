@@ -24,6 +24,8 @@ sleep 90
     echo "radios: bluetooth: $(timeout 5 bluetoothctl show 2>&1 | grep -E 'Powered|No default' | tr -d '\t' | tr '\n' ' ')"
     echo "radios: droidian may: $(timeout 5 runuser -u droidian -- nmcli -t general permissions 2>&1 | grep -E 'enable-disable-wifi|network-control|settings.modify.system|wifi.scan|rror' | sed 's/org.freedesktop.NetworkManager.//' | tr '\n' ' ')"
     # --- end track: network ---
+    echo "== radio watch"
+    PYTHONPATH=/opt/opos/src python3 -m opos.radio_watch || echo "watch: could not be read"
     echo "== power supplies"
     for d in /sys/class/power_supply/*; do echo "$d: $(cat "$d/type" 2>/dev/null) $(cat "$d/capacity" 2>/dev/null) $(cat "$d/status" 2>/dev/null)"; done
     echo "== OPOS units, this boot"

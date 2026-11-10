@@ -881,6 +881,47 @@ class Net:
             return _bad("Wi-Fi is on in software, but a hardware switch or airplane mode still blocks it. OPOS cannot lift that.")
         return _ok("Wi-Fi is on." if mode == "on" else "Wi-Fi is off.")
 
+    def restart_wifi(self):
+        """Turn the Wi-Fi radio off, then on. Needs enable-disable-wifi."""
+        def go():
+            q = _Q(self, 40)
+            _, err = self._ready(q, "power")
+            if err:
+                return err
+            off = q.call(["nmcli", "radio", "wifi", "off"], 15)
+            on = q.call(["nmcli", "radio", "wifi", "on"], 15)
+            if not off.ok or not on.ok:
+                return _bad(explain(off if not off.ok else on))
+            return _ok("Wi-Fi was restarted.")
+        return self._guard(go)
+
+    def restart_modem(self):
+        """Ask oFono to drop Online and then set it again. The answer text is not kept."""
+        def go():
+            path = self.env.get("OPOS_OFONO_MODEM", "/ril_0")
+            if not isinstance(path, str) or not path.startswith("/") or any(ch.isspace() for ch in path):
+                return _bad("The modem path is not usable.")
+
+            def one(value):
+                try:
+                    return self.runner(
+                        ["gdbus", "call", "--system", "--dest", "org.ofono", "--object-path", path,
+                         "--method", "org.ofono.Modem.SetProperty", "Online", value],
+                        8, None)
+                except Exception:
+                    return Run(126)
+
+            off = one("false")
+            if getattr(off, "missing", False):
+                return _bad("oFono's tool is not installed, so the modem was not restarted.")
+            if not getattr(off, "ok", False):
+                return _bad("The modem did not go offline.")
+            on = one("true")
+            if not getattr(on, "ok", False):
+                return _bad("The modem went offline and did not come back.")
+            return _ok("The modem was restarted.")
+        return self._guard(go)
+
 
 PROBES = (["nmcli", "-t", "-f", "RUNNING,STATE,CONNECTIVITY,WIFI-HW,WIFI,WWAN-HW,WWAN", "general", "status"], ["nmcli", "-t", "general", "permissions"],
           ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"], ["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE", "connection", "show"],
