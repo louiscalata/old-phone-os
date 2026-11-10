@@ -5,17 +5,19 @@ The schedule is opos.alarms. This module is the page and the /api/clock actions.
 A test may POST action "tick" only when OPOS_CLOCK_TEST=1.
 """
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from opos import alarms, appdoc, apps
+from opos import alarm_sound, alarms, appdoc, apps
 from opos.store import default_root
 
 _BOOK = None
 _FAKE = None
 _THREAD = None
+_PLAYER = None
 _CODES = {"hour", "minute", "days", "label", "full", "id", "seconds", "now", "enabled"}
 
 _CSS = """
@@ -120,10 +122,13 @@ window.oposClock={refresh:load};
 
 
 def reset():
-    """Tests drop the saved book and any pretended clock."""
-    global _BOOK, _FAKE
+    """Tests drop the saved book, any pretended clock, and the tone process."""
+    global _BOOK, _FAKE, _PLAYER
     _BOOK = None
     _FAKE = None
+    if _PLAYER is not None:
+        _PLAYER.stop()
+    _PLAYER = None
 
 
 def zone():
@@ -239,6 +244,41 @@ def render(token, nonce):
     return appdoc.render("Clock", token, nonce, _LIST, _THUMB, _SCRIPT, _CSS)
 
 
+class Paplay:
+    """The clock thread's paplay runner. stop terminates the process it started."""
+
+    def __init__(self, popen=None):
+        self._popen = popen
+        self.proc = None
+
+    def __call__(self, command):
+        if not command or command[0] != "paplay":
+            raise RuntimeError("no player")
+        self.stop()
+        popen = self._popen or subprocess.Popen
+        self.proc = popen(list(command), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return self.proc
+
+    def stop(self):
+        proc = self.proc
+        self.proc = None
+        alarm_sound.stop_process(proc)
+
+
+def _player():
+    global _PLAYER
+    if _PLAYER is None:
+        _PLAYER = Paplay()
+    return _PLAYER
+
+
+def _cycle():
+    """One check. The clock thread calls this after each wait, with the real player."""
+    events = book().tick(current_now(), clock_known())
+    if events:
+        _play(events)
+
+
 def start_thread():
     """The 30 second re-check. main() starts it when Clock is named. Tests do not."""
     global _THREAD
@@ -249,9 +289,7 @@ def start_thread():
         while True:
             time.sleep(30)
             try:
-                events = book().tick(current_now(), clock_known())
-                if events:
-                    _play(events)
+                _cycle()
             except Exception:
                 pass
 
@@ -260,11 +298,7 @@ def start_thread():
 
 
 def _play(events):
-    try:
-        from opos import alarm_sound
-    except ImportError:
-        return
-    alarm_sound.handle(events)
+    alarm_sound.handle(events, spawn=_player())
 
 
 apps.register(apps.App(
