@@ -3,10 +3,13 @@
 
 A raised app handler becomes a short error page with Home. The front page and Phone are not part of that handler.
 """
+import hashlib
+import hmac
 import re
 import secrets
 import urllib.parse
 from html import escape
+from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
 
 from opos import appdoc, apps, secure
@@ -15,6 +18,64 @@ from opos import appdoc, apps, secure
 _INJECT = '<script nonce="{nonce}" src="/apps-home.js"></script>'
 _HOME_JS = Path(__file__).with_name("apps_static") / "home.js"
 _BODY_END = re.compile(r"</body\s*>", re.I)
+_MEDIA_COOKIE = "opos_media"
+
+
+def _media_grant(token):
+    """A media capability for this session. It is not the API token."""
+    if not isinstance(token, str) or not token:
+        return ""
+    try:
+        key = token.encode("utf-8")
+    except UnicodeError:
+        return ""
+    return hmac.new(key, b"opos-media", hashlib.sha256).hexdigest()
+
+
+def _media_cookie_header(token):
+    grant = _media_grant(token)
+    if not grant:
+        return ""
+    return "%s=%s; HttpOnly; SameSite=Strict; Path=/media/" % (_MEDIA_COOKIE, grant)
+
+
+def _cookie(handler, name):
+    raw = handler.headers.get("Cookie")
+    if not isinstance(raw, str) or not raw:
+        return ""
+    jar = SimpleCookie()
+    try:
+        jar.load(raw)
+    except CookieError:
+        return ""
+    found = jar.get(name)
+    return found.value if found is not None else ""
+
+
+def _query_has_api_token(handler):
+    """True when any query value is the long-lived API token."""
+    expected = getattr(handler, "token", "")
+    query = urllib.parse.urlsplit(handler.path).query
+    for values in urllib.parse.parse_qs(query, keep_blank_values=True).values():
+        for value in values:
+            if secure.token_ok(value, expected):
+                return True
+    return False
+
+
+def _media_authorized(handler):
+    """Header or same-origin media cookie. The API token in the query never counts."""
+    expected = getattr(handler, "token", "")
+    if secure.token_ok(handler.headers.get("X-OPOS-Token"), expected):
+        return True
+    grant = _media_grant(expected)
+    supplied = _cookie(handler, _MEDIA_COOKIE)
+    if not grant or not supplied:
+        return False
+    try:
+        return hmac.compare_digest(supplied.encode("utf-8"), grant.encode("utf-8"))
+    except (TypeError, ValueError):
+        return False
 
 
 def buckets():
@@ -122,6 +183,10 @@ def _send_html(handler, html, status, nonce, app=None):
             headers = tweak(dict(headers)) or headers
         except Exception:
             pass
+    if app is not None and callable(getattr(app, "open_file", None)):
+        cookie = _media_cookie_header(getattr(handler, "token", ""))
+        if cookie:
+            headers["Set-Cookie"] = cookie
     handler.send_response(status)
     for key, value in headers.items():
         handler.send_header(key, value)
@@ -158,7 +223,10 @@ def _observe(handler, app):
 
 
 def _media(handler, path):
-    """GET /media/<app>/<id>?t=<token> for a file an app already listed. Anything else is not ours."""
+    """GET /media/<app>/<id> for a file an app already listed. Anything else is not ours.
+
+    The long-lived API token is refused in the query string. Callers send X-OPOS-Token or the media cookie.
+    """
     if not path.startswith("/media/"):
         return False
     if not apps.switched_on():
@@ -171,9 +239,7 @@ def _media(handler, path):
     opener = getattr(app, "open_file", None)
     if app is None or not callable(opener):
         return False
-    query = urllib.parse.parse_qs(urllib.parse.urlsplit(handler.path).query)
-    token = (query.get("t") or [""])[0]
-    if not secure.token_ok(token, getattr(handler, "token", "")):
+    if _query_has_api_token(handler) or not _media_authorized(handler):
         handler._deny(403, "forbidden", "token")
         return True
     opened = opener(parts[2])

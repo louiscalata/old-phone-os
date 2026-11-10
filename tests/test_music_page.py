@@ -93,7 +93,7 @@ class MusicPage(unittest.TestCase):
             ident = snap["albums"][0]["tracks"][0]["id"]
             missing, _ = get(server, "/media/music/" + ident)
             self.assertEqual(missing, 403)
-            status, audio = get(server, "/media/music/" + ident + "?t=" + token)
+            status, audio = get(server, "/media/music/" + ident, token)
             self.assertEqual(status, 200)
             self.assertTrue(audio.startswith(b"RIFF"))
             conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
@@ -104,6 +104,39 @@ class MusicPage(unittest.TestCase):
             conn.close()
         self.assertIn("media-src 'self'", policy)
         self.assertNotIn("http://", policy)
+
+    def test_the_api_token_is_rejected_in_the_media_query(self):
+        html = music_page.render("tok", "nonce")
+        self.assertIn("audio.src='/media/music/'+track.id;", html)
+        self.assertNotIn("?t=", html)
+        self.assertNotIn("encodeURIComponent(T)", html)
+        with running(self.env) as server:
+            token = server.RequestHandlerClass.token
+            status, body = get(server, "/api/music", token)
+            ident = json.loads(body)["albums"][0]["tracks"][0]["id"]
+            leaked, _ = get(server, "/media/music/" + ident + "?t=" + token, token)
+            self.assertEqual(leaked, 403)
+            bare, _ = get(server, "/media/music/" + ident + "?t=" + token)
+            self.assertEqual(bare, 403)
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+            conn.request("GET", "/music")
+            response = conn.getresponse()
+            set_cookie = response.getheader("Set-Cookie") or ""
+            response.read()
+            conn.close()
+            self.assertIn("opos_media=", set_cookie)
+            self.assertIn("HttpOnly", set_cookie)
+            self.assertIn("SameSite=Strict", set_cookie)
+            self.assertNotIn(token, set_cookie)
+            grant = set_cookie.split(";", 1)[0].split("=", 1)[1]
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+            conn.request("GET", "/media/music/" + ident, headers={"Cookie": "opos_media=" + grant})
+            played = conn.getresponse()
+            audio = played.read()
+            conn.close()
+            self.assertEqual(played.status, 200)
+            self.assertTrue(audio.startswith(b"RIFF"))
+            self.assertEqual(status, 200)
 
     def test_the_sleep_timer_is_the_clock_timer_and_does_not_write_a_calendar(self):
         music_page._FAKE = NOW

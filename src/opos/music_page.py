@@ -77,7 +77,7 @@ function choose(i){
   if(track.too_long){G('why').hidden=false;G('why').textContent='This file is too long to play here.';return}
   G('track').textContent=track.title;
   var audio=G('player');
-  audio.src='/media/music/'+track.id+'?t='+encodeURIComponent(T);
+  audio.src='/media/music/'+track.id;
   G('pos').textContent='0:00 / '+fmt(track.seconds);
   if(last&&last.paused){G('play').textContent='Play';return}
   playing=true;G('play').textContent='Pause';
