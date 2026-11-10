@@ -20,6 +20,7 @@ MODULES = {
     "calc": "opos.calc_page",
     "calls": "opos.calls_page",
     "convert": "opos.convert_page",
+    "notices": "opos.notices_page",
 }
 _APPS = {}
 _BROKEN = set()
