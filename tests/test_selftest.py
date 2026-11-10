@@ -1162,7 +1162,7 @@ class NetworkPage(PieceCase):
         f = self.f
         f.answer("nmcli-permissions", "org.freedesktop.NetworkManager.wifi.scan:auth\norg.freedesktop.NetworkManager.network-control:yes\n")
         r = f.run()
-        self.assertEqual(r.status("net.permissions"), "WARN")
+        self.assertEqual(r.status("net.permissions"), "FAIL")
         self.assertIn("wifi.scan=auth", r.ev("net.permissions"))
         self.assertIn("settings.modify.system=?", r.ev("net.permissions"))
         f.answer("nmcli-permissions", "")

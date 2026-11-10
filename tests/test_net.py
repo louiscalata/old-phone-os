@@ -1293,12 +1293,15 @@ class Packaging(unittest.TestCase):
         self.assertEqual([l for l in self.read("packaging/duo-os/opos-network.conf").splitlines() if l and not l.startswith("#")],
                          ["[Service]", "Environment=OPOS_NETWORK=1"])
 
-    def test_image_build_installs_both_and_the_rule_is_opt_in(self):
+    def test_image_build_installs_the_rule_by_default(self):
         b = self.read("packaging/duo-os/build-image.sh")
         blk = b[b.index("# --- track: network"):b.index("# --- end track: network")]
         self.assertIn("opos-network.conf", blk)
-        self.assertRegex(blk, r'if \[ "\$\{OPOS_NET_POLKIT:-0\}" = 1 \]')
+        self.assertRegex(blk, r'if \[ "\$\{OPOS_NET_POLKIT:-1\}" = 1 \]')
         self.assertLess(blk.index("OPOS_NET_POLKIT"), blk.index("50-opos-network.rules"))
+        rule = self.read("packaging/duo-os/50-opos-network.rules")
+        self.assertIn('subject.system_unit == "opos-server.service"', rule)
+        self.assertIn('subject.user == "droidian"', rule)
         for script in ("build-image.sh", "verify-image.sh", "opos-diag"):
             p = subprocess.run(["sh", "-n", str(ROOT / "packaging/duo-os" / script)], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, script + p.stderr)

@@ -963,7 +963,7 @@ def check_netpage(c):
         if all(x == "yes" for x in need.values()):
             c.emit("PASS", "net.permissions", "droidian may change Wi-Fi without being asked: " + ev)
         else:
-            c.emit("WARN", "net.permissions", "joining Wi-Fi from the UI will be refused or ask an administrator: " + ev)
+            c.emit("FAIL", "net.permissions", "joining Wi-Fi from the UI will be refused or ask an administrator: " + ev)
 
 
 def saved_zone(c):
