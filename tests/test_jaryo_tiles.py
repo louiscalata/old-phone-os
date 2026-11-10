@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""JRY04: Windows-Phone-style start tiles and the front-page lede.
+"""JRY04: the home front page.
 
-Sizes follow docs/jaryo.md 4.2: data-size is
-small|medium|wide, Phone and Messages medium, Helper small, All apps wide.
-Settings carries no attribute: small is the base #home button size, and
-tests/test_uxp13_settings.py pins its exact markup. Medium spans two grid rows;
-from 840px Home uses 4 tracks with column rules (docs/jaryo.md 3 and 4.2).
+The four-tile launcher is a newspaper column. The buttons stay in the same
+order, each full width and at least 48px, with a one-line deck. data-size
+remains on the markup. A wide window is still one column; the Duo span puts
+the second column in the other pane (panes.css).
 """
 import json
 import os
@@ -47,17 +46,15 @@ class TilesStatic(unittest.TestCase):
 
     def test_tile_css(self):
         css = _jaryo_css().replace(" ", "")
-        self.assertIn('#homebutton[data-size="wide"]{grid-column:1/-1;min-height:96px}', css)
-        # docs/jaryo.md 4.2: medium = 1 track x 2 rows; small = 1 x 1 and never stretches to a neighbour.
-        self.assertIn('#homebutton[data-size="medium"]{min-height:144px;grid-row:span2}', css)
-        self.assertIn('#homebutton[data-size="small"],#homebutton:not([data-size]){min-height:96px;grid-row:span1;align-self:start}', css)
         base = re.search(r"#homebutton\{([^}]*)\}", css).group(1)
-        for d in ("display:flex", "align-items:flex-end", "justify-content:flex-start", "text-align:left", "font-size:1.5rem",
-                  "overflow-wrap:anywhere", "background:var(--jaryo-bg,#fff)", "color:var(--jaryo-fg,#000)",
-                  "border:1pxsolidvar(--jaryo-fg,#000)", "border-radius:0", "box-shadow:none"):
+        for d in ("display:block", "width:100%", "min-height:48px", "text-align:left",
+                  "overflow-wrap:anywhere", "background:var(--jaryo-bg,#fff)", "border-radius:0", "box-shadow:none"):
             self.assertIn(d, base)
         self.assertNotRegex(base, r"(^|;)height:")
-        # Home-only rules hold at every width, not only below 840px.
+        self.assertNotIn("min-height:144px", css)
+        self.assertNotIn("grid-template-columns:repeat(4", css)
+        self.assertIn("#in-brief{", css)
+        self.assertIn(".wordmark{", css)
         top = css.split("@media", 1)[0]
         for d in ('#phone[data-app="home"]#intro{display:none}', "#screen[hidden]{display:none}"):
             self.assertIn(d, top)
@@ -65,13 +62,8 @@ class TilesStatic(unittest.TestCase):
         for d in ("margin-top:0", "border-top:1pxsolidvar(--jaryo-fg,#000)", "border-left:0",
                   "background:var(--jaryo-bg,#fff)", "color:var(--jaryo-fg,#000)"):
             self.assertIn(d, notice)
-        # Below 840px; phone-a.css keeps the page's single max-width:839px block (test_uxp22_twopane).
         self.assertIn('@medianotalland(min-width:840px){#phone:not([data-app="home"])#screen{margin-top:12px}}', css)
         self.assertNotIn("max-width:839px", css)
-        wide = css.split("@media(min-width:840px){", 1)[1]
-        self.assertIn('html:not([data-ff])#phone[data-app]#home:not([hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}', wide)
-        self.assertIn("#home[data-open]{border-width:1px001px}", wide)
-        self.assertIn("#home-favourites>[data-open]:first-child{border-left-width:0}", wide)
 
     def _assert_palette_and_no_reordering(self, source):
         css = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
@@ -112,6 +104,11 @@ class TilesStatic(unittest.TestCase):
         self.assertIn(".observe($('phone'),{attributes:true,attributeFilter:['data-app']})", js)
         self.assertIn("jl=s;jsc();", js)
 
+    def test_in_brief_counts_threads(self):
+        js = (STATIC / "phone-a.js").read_text(encoding="utf-8")
+        self.assertIn("var brief=$('in-brief'),n=(s.threads||[]).length;if(brief)brief.textContent='In brief · '+n+' threads · Clock · No calendar';", js)
+        self.assertNotIn("n+' messages · Clock", js)
+
 
 @unittest.skipUnless(uxp12.NODE, "node not installed")
 class TilesRuntime(unittest.TestCase):
@@ -131,12 +128,11 @@ CHECKS.jaryo_tiles = async function() {
     var out=[],s=await (await fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content}})).json();s.running=false;await render(s);
     var $=function(q){return document.querySelector(q)},hw=document.getElementById('home').getBoundingClientRect().width;
     var w=function(q){return $(q).getBoundingClientRect().width},h=function(q){return $(q).getBoundingClientRect().height};
-    if(w('#allapps')<.9*hw)out.push('All apps not wide');
-    ['phone','messages','helper','settings'].forEach(function(n){if(w('#home [data-open='+n+']')>.55*hw)out.push(n+' tile too wide')});
-    if(h('#home [data-open=phone]')<144)out.push('Phone not medium');
-    if(h('#home [data-open=settings]')<96)out.push('Settings below 96');
-    ['phone','messages'].forEach(function(n){var c=getComputedStyle($('#home [data-open='+n+']'));if(c.gridRowStart!=='span 2')out.push(n+' row end '+c.gridRowStart)});
-    ['helper','settings'].forEach(function(n){if(h('#home [data-open='+n+']')>=h('#home [data-open=phone]'))out.push(n+' small not shorter than medium')});
+    if(w('#allapps')<.9*hw)out.push('All apps not full width');
+    ['phone','messages','helper','settings'].forEach(function(n){var b=$('#home [data-open='+n+']');if(w('#home [data-open='+n+']')<.9*hw)out.push(n+' headline not full width');if(h('#home [data-open='+n+']')<48)out.push(n+' below 48')});
+    if(!document.getElementById('in-brief')||document.getElementById('in-brief').textContent.indexOf('In brief')<0)out.push('in brief missing');
+    if(!document.getElementById('mast-time'))out.push('masthead time missing');
+    if((document.querySelector('#jaryo-masthead .wordmark')||{}).textContent!=='OPOS')out.push('wordmark');
     // Allowed (text, background) pairs: each theme's own two tokens, either way round; never mixed across themes.
     var D=['rgb(230, 226, 217)','rgb(0, 0, 0)'],L=['rgb(26, 26, 26)','rgb(243, 240, 232)'];
     var PAIRS=[D.join('/'),D.slice().reverse().join('/'),L.join('/'),L.slice().reverse().join('/')];
@@ -180,24 +176,17 @@ CHECKS.jaryo_tiles = async function() {
     document.documentElement.style.fontSize='';
     return out;
   })()`);
-  // >=840px: 4 newspaper tracks with a 1px rule left of every column but the first (docs/jaryo.md 3, 4.2).
-  // The foldable keeps its hinge gap: All apps spans the left pane only (UXP21, test_uxp21_profiles).
+  // A wide window stays one column of headlines. The Duo span, not this width, makes the second column.
   for (const [w,h,ff] of [[1280,720,''],[1280,720,'tablet'],[1280,720,'foldable']]) {
     await load('home',w,h,true);
     out.push(...await ev(`(function(){
       if(${JSON.stringify(ff)})document.documentElement.dataset.ff=${JSON.stringify(ff)};
-      var out=[],tag='${w}x${h} ${ff||'auto'} ',home=document.getElementById('home'),hr=home.getBoundingClientRect(),lefts={},min=1e9;
+      var out=[],tag='${w}x${h} ${ff||'auto'} ',home=document.getElementById('home'),hr=home.getBoundingClientRect(),lefts={};
       var tiles=[].slice.call(document.querySelectorAll('#home [data-open]'));
-      tiles.forEach(function(b){var l=Math.round(b.getBoundingClientRect().left);lefts[l]=1;min=Math.min(min,l)});
-      var n=Object.keys(lefts).length,tracks=getComputedStyle(home).gridTemplateColumns.split(' ').length;
-      if(n!==4||tracks!==4)out.push(tag+'tile columns '+n+' tracks '+tracks+' != 4');
-      tiles.forEach(function(b){var c=getComputedStyle(b),first=Math.round(b.getBoundingClientRect().left)===min;
-        if(c.borderLeftWidth!==(first?'0px':'1px')||(!first&&c.borderLeftStyle!=='solid'))out.push(tag+'column rule '+b.textContent+' '+c.borderLeftWidth)});
-      if(getComputedStyle(document.querySelector('#home [data-open=phone]')).gridRowStart!=='span 2')out.push(tag+'Phone not two rows');
+      tiles.forEach(function(b){var r=b.getBoundingClientRect();lefts[Math.round(r.left)]=1;if(r.width<hr.width*.9)out.push(tag+b.textContent+' not full width')});
+      if(Object.keys(lefts).length!==1)out.push(tag+'headline columns '+Object.keys(lefts).length);
       if(__u.vis(document.getElementById('intro')))out.push(tag+'intro visible on home');
-      var aw=document.getElementById('allapps').getBoundingClientRect();
-      if(${JSON.stringify(ff)}==='foldable'){if(aw.right>hr.left+hr.width/2+1)out.push(tag+'All apps crosses the hinge')}
-      else if(aw.width<.9*hr.width)out.push(tag+'All apps not full row');
+      if(${JSON.stringify(ff)}==='foldable'&&hr.left<innerWidth/2&&hr.right>innerWidth/2+1)out.push(tag+'home crosses the hinge');
       return out;
     })()`));
   }

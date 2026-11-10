@@ -1629,8 +1629,8 @@ class MainPageIsUntouched(Env):
     # docs/ui-byte-ledger.md says how to measure the page. Re-recorded once on the merged tree integrate/w1 (the six ui/w1-* tracks:
     # room, practice, helper, resilience, status, layout); each track had recorded its own digests, which cannot all hold at once.
     # Re-recorded again when the status bar learned LOW, the status note, and the unset-clock rule.
-    MAIN_SHA256 = "12bf22e621baabf63e38fde061ea6e6d4e92648b3a8a4744de3b8081625f9e52"
-    DEMO_SHA256 = "c2731fb41be348f7e5f7364fe2c355ad042b7b599b18daa8d787b8c3cedad229"
+    MAIN_SHA256 = "bf07eaf1ea5873b0ab57c3a1963585949498db0a31150977e709595f9c66a10c"
+    DEMO_SHA256 = "aca852748f6e4e19733c6d6d830941674d53cf7606577605308c4cf793e053fd"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):

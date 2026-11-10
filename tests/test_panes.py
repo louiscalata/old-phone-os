@@ -116,6 +116,23 @@ class Sheet(unittest.TestCase):
         home = re.search(r"body>header>#home\{([^}]*)\}", out).group(1)
         self.assertNotRegex(home, r"(?:^|;)color:")
 
+    def test_front_page_span_column_and_pressed_ink(self):
+        # #home #allapps must not force column 2: the nth-child rules place All apps (and its deck) for each hand.
+        # color on the story cells is only for non-buttons, so #home button:active can invert the label.
+        src = (STATIC / "panes.css").read_text(encoding="utf-8")
+        mirror = (STATIC / "panes-mirror.css").read_text(encoding="utf-8")
+        out = re.sub(r"/\*.*?\*/", "", src + mirror, flags=re.S)
+        allapps = re.search(r"#home #allapps\{([^}]*)\}", out)
+        self.assertIsNotNone(allapps)
+        self.assertNotRegex(allapps.group(1), r"(?:^|;)grid-column:")
+        self.assertIn("font-size:1.5rem", allapps.group(1))
+        found = 0
+        for sel, body in re.findall(r"([^{}]*#home-favourites[^{]*)\{([^}]*)\}", out):
+            if re.search(r"(?:^|;)color:", body):
+                self.assertIn(":not(button)", sel, sel)
+                found += 1
+        self.assertGreaterEqual(found, 4)
+
     def test_gate_and_geometry_without_a_span(self):
         out = self.served()
         self.assertEqual(out.count("@media (horizontal-viewport-segments:2){"), 1)

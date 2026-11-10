@@ -37,10 +37,13 @@ var phone=G('phone');
 if(!phone)return;
 if(!G('jaryo-masthead')){
 var div=E('div'),s1=E('span'),br=E('br'),s2=E('span'),u=window.oposUI=window.oposUI||{};
-div.id='jaryo-masthead';s1.textContent='Old Phone OS Interface';
-(u.dateline=function(){var t=u.date?u.date(new Date()):'';if(s2.textContent!==t)s2.textContent=t})();
-div.appendChild(s1);div.appendChild(br);div.appendChild(s2);
+div.id='jaryo-masthead';s1.className='wordmark';s1.textContent='OPOS';s2.className='dateline';
+(u.dateline=function(){var t=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});if(s2.textContent!==t)s2.textContent=t})();
+var s3=E('span');s3.id='mast-time';
+div.appendChild(s1);div.appendChild(br);div.appendChild(s2);div.appendChild(s3);
 phone.insertBefore(div,phone.firstChild);
+var brief=E('p');brief.id='in-brief';brief.textContent='In brief';
+div.insertAdjacentElement('afterend',brief);
 }
 phone.querySelectorAll('h1,h2').forEach(function(h){h.classList.add('jaryo-head')});
 }catch(e){}
