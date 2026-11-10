@@ -51,7 +51,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_LOCAL_URL` | unset (the image does not set it and `monitor.env.example` does not list it) | the Helper's setting, not an Inference page setting: the page's check of the phone's own model server follows it only if you already set it for the Helper, and setting it changes the Helper too (it stops checking `/models` for a known model and drops its alternates); see the Inference page section of the image README |
 | `OPOS_KIOSK_RESTART` | unset (on) | `0` stops the server restarting Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | unset (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
-| `OPOS_SPAN` | unset (a commented line in `opos-server.service`) | `675,42`: pane and hinge widths in CSS pixels for the window that covers both panels, so the page lays out for two screens; `off` disables it; the same as `--span`. Not yet measured on the phone |
+| `OPOS_SPAN` | `675,42` (`opos-server.service`) | pane and hinge widths in CSS pixels for the window that covers both panels, so the page lays out for two screens; `off` disables it; the same as `--span`. Not yet measured on the phone |
 | `OPOS_PANES` | `1` (`opos-server.service`; it paints only while `OPOS_SPAN` is on) | the black and white pane surfaces and the Hand setting on the window that covers both panels (`/panes.css`, `/panes.js`, [jaryo-panes.md](jaryo-panes.md)); `1,pure` is the strict `#000`/`#fff` pair, `invert` swaps the colors for the left hand without mirroring; unset or `off`: no panes assets or tags and `page()` is unchanged (the Network, first-run and time zone pages carry the Jaryo conformance fixes either way). Not yet seen on the phone |
 | `OPOS_KIOSK_DEBUG_PORT` | unset; a dev image writes it into `/etc/default/opos-kiosk` | the kiosk Chromium's DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
 | `OPOS_DEV_USB_SHELL` | unset (off) | `1` at build time keeps a passwordless USB telnet root shell for a dev image and writes `enabled=1` in `/etc/opos/usb-shell.conf`; the default closes that shell. Not checked on a phone |
@@ -85,7 +85,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 - **Over-the-air updates are built but not seen on the phone** ([ota-update.md](ota-update.md), [ota-release-howto.md](ota-release-howto.md)):
   the root updater, the `/update` page, the release tool and the USB push script are tested on a computer against stand-ins for systemd,
   runuser and the browser. An image built without `OPOS_UPDATE_SIGNERS` accepts no update, and the selftest's `ota.updater` says so (WARN).
-  The clock floor, measured drain, the hinge layout (`OPOS_SPAN`, off until checked on the phone), the kiosk units with their restart loop and
+  The clock floor, measured drain, the hinge layout (`OPOS_SPAN=675,42` in the service file, not yet measured on the phone), the kiosk units with their restart loop and
   debug port, and the install docs are merged with the pieces above and tested with them on a computer, not yet on the phone. The
   first run's clock sentence still tests only for a year before 2026 (`clockcheck.py`); the server's own `clock_ok` also treats the
   image's floor as a guess, so on a first boot the setup does not yet say so.

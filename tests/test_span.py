@@ -341,10 +341,11 @@ class Wiring(unittest.TestCase):
         self.assertIn("--span", err.getvalue())
         make.assert_not_called()
 
-    def test_service_file_carries_the_value_commented_out(self):
+    def test_service_file_turns_the_span_on(self):
         lines = (ROOT / "packaging" / "duo-os" / "opos-server.service").read_text(encoding="utf-8").splitlines()
-        self.assertIn("#Environment=OPOS_SPAN=675,42", lines)
-        self.assertFalse([l for l in lines if l.startswith("Environment=OPOS_SPAN")])
+        self.assertIn("Environment=OPOS_SPAN=675,42", lines)
+        self.assertNotIn("#Environment=OPOS_SPAN=675,42", lines)
+        self.assertEqual([l for l in lines if l.startswith("Environment=OPOS_SPAN")], ["Environment=OPOS_SPAN=675,42"])
         self.assertEqual(parse("675,42"), DUO)
 
 
