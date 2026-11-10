@@ -28,11 +28,12 @@ var phone=document.getElementById('phone');
 if(!phone)return;
 if(!box){box=document.createElement('div');box.id='pane-detail';box.setAttribute('role','status');phone.insertBefore(box,phone.firstChild)}
 var lines={phone:'Practice calls stay on this phone.',messages:'Practice messages stay on this phone.',helper:'Ask a question. The answer stays on this phone.',settings:'Display, sound, and the lock.'};
-function show(btn){if(!btn)return;var name=btn.getAttribute('data-open')||'',label=(btn.textContent||'').replace(/\s+/g,' ').trim(),extra=lines[name]||'';box.textContent=label?(label+(extra?'. '+extra:'')):''}
+function show(btn){var pane=document.getElementById('pane-detail');if(!pane||!btn)return;var name=btn.getAttribute('data-open')||'',label=(btn.textContent||'').replace(/\s+/g,' ').trim(),extra=lines[name]||'';pane.textContent=label?(label+(extra?'. '+extra:'')):'';}
 var home=document.getElementById('home');
-if(!home||home.dataset.detail)return;home.dataset.detail='1';
+if(!home)return;
+if(!home.dataset.detail){home.dataset.detail='1';
 function pick(e){var b=e.target&&e.target.closest&&e.target.closest('button');if(b&&home.contains(b))show(b)}
-home.addEventListener('focusin',pick);home.addEventListener('pointerover',pick);
+home.addEventListener('focusin',pick);home.addEventListener('pointerover',pick);}
 show(home.querySelector('button'));
 }catch(e){}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',detail);else detail();
