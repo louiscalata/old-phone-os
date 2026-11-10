@@ -154,8 +154,7 @@ on one panel (675 px) keeps the phone layout. A Device type chosen in Settings i
 "Auto looks like: two screens" while the window spans both panels, and whatever the window's width it adds the window's
 size, the output scale and the span it was given ("Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675."), again after
 every resize, so the numbers can be checked on the phone. Unset, the served page is byte-for-byte what it was. The
-service file carries the setting commented out, to be enabled once the layout has been checked on the phone. Not
-handled: a rotated window (the hinge would run across it), a phone folded with one panel dark, and two things that
+service file sets `OPOS_SPAN=675,42`. A window under 1055 CSS px keeps the single-screen layout. Not yet measured on the phone. Not handled: a rotated window (the hinge would run across it), a phone folded with one panel dark, and two things that
 still cross the hinge: the thin battery bar along the top edge and, while it plays, the zoom from a tile to its
 app.
 
