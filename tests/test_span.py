@@ -21,7 +21,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import span as spanmod, web
+from opos import fonts, span as spanmod, web
 from opos.span import Span, apply, parse, rewrites, squeeze, variables
 from opos.web import Phone, page
 from tests import test_uxp21_profiles as profiles
@@ -281,7 +281,7 @@ class Wiring(unittest.TestCase):
             self.assertEqual(status, 200)
             nonce = re.search(rb'<style nonce="([^"]+)">', body)[1].decode()
             self.assertIn("nonce-" + nonce, headers["content-security-policy"])
-            self.assertEqual(body, page(token, nonce, span=span).encode())
+            self.assertEqual(body, fonts.inject(page(token, nonce, span=span).encode(), nonce))
             self.assertEqual(b"--pane:675px" in body, span is not None)
 
     def test_make_server_without_a_span_takes_the_old_arguments(self):

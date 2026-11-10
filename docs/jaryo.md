@@ -77,13 +77,13 @@ The `palette` CDP test (section 8) MUST verify that no visible element computes 
 
 ## 3. Type
 
-System stacks only; nothing downloaded (`@font-face` is forbidden in Jaryo files).
+Newsreader (headlines and the masthead) and Inter Tight (UI text) are served as separate files from `/fonts.css`. Both are SIL Open Font License. Louis reversed the earlier rule that forbade bundled fonts. `jaryo.css` still has no `@font-face` and no `url(`, so the sheet stays inside `page()`. The font files are Latin-only, `font-display: swap`, with a size-adjusted local face. The stacks below still name a system font, and that font is what shows when the files are missing.
 
 ```css
 :root{
- --jaryo-serif:Georgia,'Iowan Old Style','Times New Roman',serif;
- --jaryo-cond:'Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
- --jaryo-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+ --jaryo-serif:Newsreader,'Newsreader Fallback',Georgia,'Iowan Old Style','Times New Roman',serif;
+ --jaryo-cond:'Inter Tight','Inter Tight Fallback','Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
+ --jaryo-body:'Inter Tight','Inter Tight Fallback',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 ```
 
@@ -152,8 +152,8 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 ```
 
 - Status button row `#jaryo-status-row` (new, inserted by `jaryo.js` right under `#sb`): `[ Shade ]` (`#jaryo-shade`, calls `window.opos.open()`), `[ Lock ]` (`oposUI.lock()`). This is the visible button for the pull-down gesture; `#meter-hit` keeps working as the shortcut.
-- Masthead `#jaryo-masthead` = "Old Phone OS Interface" serif + dateline, 3px rule below.
-- Tiles = the existing `#home button[data-open]` elements, restyled as articles: headline label + one-line standfirst (`data-jaryo-sub`, filled from state: Phone → "Calls and texts" / "In call"; Messages → thread count from `s.threads.length`; Helper → "Ask a question" or "Resting to save power" when `s.mode==='CRITICAL'`; Settings → "Display, Battery, Device"). Sizes via `data-size="small|medium|wide"`: small = 1 track × 1 row (min 96 px), medium = 1 track × 2 rows, wide = all tracks. Defaults: Phone medium, Messages medium, Helper small, Settings small, favourites small; `#allapps` wide. The install wizard may change sizes (section 6); stored in `localStorage['jaryo_tiles']` as `{"phone":"medium",…}`. DOM order never changes.
+- Masthead `#jaryo-masthead` is the wordmark OPOS, the date, and the 24-hour time. One column on a single pane. The wordmark uses the same ink as the page. There is no red: a red name would be a third tone, and this front page stays the two Nov 3 tones.
+- Headlines replace the four-tile launcher. The same `#home button[data-open]` elements stay, in the same order, each with a one-line deck. They are full width and at least 48 px tall. `data-size` remains on the markup and is not used for a tile grid. On the Duo span the first two headlines stay with the masthead and the rest are the second column, in the other pane.
 - `#home-notice` becomes a one-column brief under the tiles (`margin-top:0`), and `#intro` is hidden on home.
 - **All apps** (`#allapps` → `#apps-list`): an A–Z list; `jaryo.js` inserts a condensed uppercase letter heading (`<li class="jaryo-letter" aria-hidden="true">`) before the first entry of each letter and a letter-jump row `#jaryo-letters` of ≥48 px text buttons (only letters that exist; others omitted, not greyed). Jumping = `scrollIntoView` on the heading. Contacts/Threads entries are dropped. `#apps-close` and `#back` MUST not both be visible.
 - Launcher = Home + All apps; there is no third surface.
@@ -357,7 +357,7 @@ Rules for every Jaryo file:
 
 - **Fail-open.** Code is wrapped in `try{…}catch(e){}` blocks, as in phone-a/b.js. If Jaryo throws, the inline shell, `oposUI.openApp`, lock/unlock and the shade must keep working.
 - **Quiet words.** Jaryo files never say "AI", "model" or "assistant"; the UI says "Helper". Message text is the owner's and is never redacted.
-- **No network, no downloads, no new dependencies.** System fonts only; no CDN, npm or Python packages.
+- **No network, no downloads, no new dependencies.** Newsreader and Inter Tight ship with the page (section 3). Nothing is fetched from a CDN. No npm or Python packages.
 - Existing ids and classes are never renamed; new ones are prefixed `jaryo-`.
 
 ## 10. Status
