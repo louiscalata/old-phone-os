@@ -856,15 +856,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with self.lock:
                 snap = self.phone.state()
+                log = list(self.phone.essentials.log)
             if lockpin.is_locked():
-                snap = lockpin.redact(snap)
+                snap = lockpin.redact(snap, log)
             self._json(snap)
         elif path == "/api/lock" and lockpin.active():
             if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
                 self._deny(403, "forbidden", "token")
                 return
             body = lockpin.status()
-            body["lock"] = lockpin.counts()
+            with self.lock:
+                log = self.phone.essentials.log
+            body["lock"] = lockpin.counts(log)
             self._json(body)
         elif path == "/api/update" and self.updater is not None:
             if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
