@@ -123,14 +123,14 @@ chmod 0644 "$r/etc/default/opos-osk"
 # --- end track osk --------------------------------------------------------------------------------------------------------
 
 # --- track: network (Wi-Fi and radio status): Settings > Network and /network may join Wi-Fi through NetworkManager ---
-# The drop-in turns it on (without it the page only reads). The polkit rule is installed by default.
-# OPOS_NET_POLKIT=0 leaves it out (docs/network.md).
+# The drop-in turns control on (without it the page only reads). The polkit rule is left out unless
+# OPOS_NET_POLKIT=1 (docs/network.md).
 install -d "$r/etc/systemd/system/opos-server.service.d"
 install -m 0644 "$here/opos-network.conf" "$r/etc/systemd/system/opos-server.service.d/20-opos-network.conf"
-if [ "${OPOS_NET_POLKIT:-1}" = 1 ]; then
+if [ "${OPOS_NET_POLKIT:-0}" = 1 ]; then
     install -d "$r/etc/polkit-1/rules.d"
     install -m 0644 "$here/50-opos-network.rules" "$r/etc/polkit-1/rules.d/50-opos-network.rules"
-    echo "NETWORK: polkit rule installed: droidian may change Wi-Fi in NetworkManager without being asked"
+    echo "NETWORK: polkit rule installed: opos-server.service as droidian may use the four NetworkManager actions"
 fi
 ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/20-opos-network.conf $(ls etc/polkit-1/rules.d/50-opos-network.rules 2>/dev/null) )
 # --- end track: network ---

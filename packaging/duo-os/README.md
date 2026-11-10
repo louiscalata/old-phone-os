@@ -197,7 +197,7 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
 
 - **Network.** Settings > Network opens `/network`: radio status, and scan, join, forget, disconnect and Wi-Fi on or off through
   NetworkManager as `droidian`. The `opos-network.conf` drop-in sets `OPOS_NETWORK=1`; the polkit rule is installed only when
-  building with `OPOS_NET_POLKIT=1`. See [docs/network.md](../../docs/network.md).
+  building with `OPOS_NET_POLKIT=1`, and it grants only `opos-server.service` running as `droidian`. See [docs/network.md](../../docs/network.md).
 - **First run and time zone.** A fresh phone opens a skippable setup; Settings > Date and time changes the zone later. The
   server applies the zone; the kiosk exports it to Chromium on every start. See [docs/duo-firstrun.md](../../docs/duo-firstrun.md).
 - **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key>` from
