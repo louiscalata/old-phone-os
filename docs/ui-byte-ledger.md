@@ -142,4 +142,4 @@ larger (`test_uxp30_budget` checks that case against the cap).
 is 101,317 bytes (683 bytes under the 102,000 gate). Later apps must not add to this page. `tests/test_apps_shell.py`
 checks the gate.
 
-Calendar does not change `page()` (99,973 bytes on this tree). The served home page with the six switches is 101,249 bytes. Naming `calendar` adds only the existing `/apps-home.js` tag, 68 bytes, so that served page is 101,317 bytes, 683 bytes under the 102,000 gate. The calendar document is `/calendar`.
+Calendar does not change `page()` (99,973 bytes on this tree). The served home page with the six switches is 101,249 bytes. Naming `calendar` adds only the existing `/apps-home.js` tag, 68 bytes, so that served page is 101,317 bytes, 683 bytes under the 102,000 gate. The calendar document is `/calendar`. Music is the same: naming `music` adds no second tag and does not change `page()`. Its document is `/music`.

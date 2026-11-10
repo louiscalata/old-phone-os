@@ -5,6 +5,7 @@ A raised app handler becomes a short error page with Home. The front page and Ph
 """
 import re
 import secrets
+import urllib.parse
 from html import escape
 from pathlib import Path
 
@@ -102,7 +103,7 @@ def is_post(path):
     return apps.switched_on() and _api_app(path) is not None and getattr(_api_app(path), "post", None) is not None
 
 
-def _send_html(handler, html, status, nonce):
+def _send_html(handler, html, status, nonce, app=None):
     body = html.encode("utf-8")
     try:
         from opos import osk
@@ -114,8 +115,15 @@ def _send_html(handler, html, status, nonce):
             body = osk.inject_bytes(body, nonce)
         except Exception:
             pass
+    headers = secure.security_headers(nonce)
+    tweak = getattr(app, "headers", None)
+    if callable(tweak):
+        try:
+            headers = tweak(dict(headers)) or headers
+        except Exception:
+            pass
     handler.send_response(status)
-    for key, value in secure.security_headers(nonce).items():
+    for key, value in headers.items():
         handler.send_header(key, value)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
@@ -139,8 +147,48 @@ def _send_static(handler, body, content_type):
         handler.wfile.write(body)
 
 
+def _observe(handler, app):
+    fn = getattr(app, "observe", None)
+    if not callable(fn):
+        return
+    try:
+        fn(handler)
+    except Exception:
+        pass
+
+
+def _media(handler, path):
+    """GET /media/<app>/<id>?t=<token> for a file an app already listed. Anything else is not ours."""
+    if not path.startswith("/media/"):
+        return False
+    if not apps.switched_on():
+        return False
+    parts = path.strip("/").split("/")
+    if len(parts) != 3 or parts[0] != "media":
+        return False
+    apps.load_enabled()
+    app = apps.by_id(parts[1])
+    opener = getattr(app, "open_file", None)
+    if app is None or not callable(opener):
+        return False
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(handler.path).query)
+    token = (query.get("t") or [""])[0]
+    if not secure.token_ok(token, getattr(handler, "token", "")):
+        handler._deny(403, "forbidden", "token")
+        return True
+    opened = opener(parts[2])
+    if not opened:
+        handler._json({"error": "not found"}, 404)
+        return True
+    body, content_type = opened
+    _send_static(handler, body, content_type)
+    return True
+
+
 def serve_get(handler, path):
     """Answer an app GET. False means this path is not an app path."""
+    if _media(handler, path):
+        return True
     if path == "/apps-home.js":
         if not apps.switched_on():
             return False
@@ -159,13 +207,14 @@ def serve_get(handler, path):
             return True
         app = apps.by_path(path)
         if app is not None:
-            _send_html(handler, app.render(handler.token, nonce), 200, nonce)
+            _send_html(handler, app.render(handler.token, nonce), 200, nonce, app)
             return True
         api = _api_app(path)
         if api is not None and api.get_json is not None:
             if not secure.token_ok(handler.headers.get("X-OPOS-Token"), handler.token):
                 handler._deny(403, "forbidden", "token")
                 return True
+            _observe(handler, api)
             _send_json(handler, api.get_json())
             return True
     except Exception:
@@ -187,6 +236,7 @@ def post(handler, path, data):
     if not handler.limiter.allow("apps"):
         handler._deny(429, "too many requests", "rate")
         return
+    _observe(handler, app)
     try:
         status, obj = app.post(data)
     except Exception:
