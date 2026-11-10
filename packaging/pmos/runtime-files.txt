@@ -2,6 +2,7 @@
 # Declared editable runtime inputs; add new source paths deliberately.
 src/opos/__init__.py
 src/opos/advisor.py
+src/opos/airplane.py
 src/opos/aitools/__init__.py
 src/opos/aitools/__main__.py
 src/opos/aitools/catalog.py
