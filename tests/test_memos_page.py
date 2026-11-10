@@ -116,6 +116,27 @@ class MemosPage(unittest.TestCase):
         self.assertIn("audio.src='/media/memos/'+memo.id;", html)
         self.assertNotIn("?t=", html)
 
+    def test_finish_rejects_a_count_above_the_chunk_cap(self):
+        with running(self.env) as server:
+            token = server.RequestHandlerClass.token
+            code, body = post(server, "/api/memos", {"action": "begin", "mime": "audio/wav"}, token)
+            ident = json.loads(body)["id"]
+            piece = base64.b64encode(b"abcd").decode("ascii")
+            code, body = post(server, "/api/memos", {
+                "action": "chunk", "id": ident, "n": 0, "data": piece,
+            }, token)
+            self.assertEqual(code, 200, body)
+            code, body = post(server, "/api/memos", {
+                "action": "finish", "id": ident, "count": 2000000000,
+            }, token)
+            self.assertEqual(code, 400, body)
+            self.assertEqual(json.loads(body)["error"], "count")
+            slot = memos_page._OPEN[ident]
+            slot["chunks"] = {index: b"x" for index in range(memos_page._MAX_PART + 1)}
+            code, saved = memos_page.post({"action": "finish", "id": ident, "count": memos_page._MAX_PART + 1})
+            self.assertEqual(code, 200, saved)
+            self.assertEqual(len(saved["memos"]), 1)
+
     def test_the_main_page_does_not_grow_and_a_broken_memo_leaves_phone(self):
         before = page()
         with mock.patch.dict(os.environ, {"OPOS_APPS": "memos"}):

@@ -17,6 +17,7 @@ from opos.store import default_root
 _MAX = 50
 _MAX_BYTES = 256 * 1024
 _CHUNK = 1200
+_MAX_PART = 400
 _MIMES = {"audio/webm": ".webm", "audio/wav": ".wav", "audio/ogg": ".ogg"}
 _TYPES = {ext: mime for mime, ext in _MIMES.items()}
 _OPEN = {}
@@ -244,7 +245,7 @@ def _chunk(ident, number, data):
     slot = _OPEN.get(ident)
     if slot is None:
         raise ValueError("id")
-    if isinstance(number, bool) or not isinstance(number, int) or number < 0 or number > 400:
+    if isinstance(number, bool) or not isinstance(number, int) or number < 0 or number > _MAX_PART:
         raise ValueError("data")
     if not isinstance(data, str) or len(data) > 2000:
         raise ValueError("data")
@@ -265,7 +266,7 @@ def _finish(ident, count):
     slot = _OPEN.get(ident)
     if slot is None:
         raise ValueError("id")
-    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1 or count > _MAX_PART + 1:
         raise ValueError("count")
     if set(slot["chunks"]) != set(range(count)):
         raise ValueError("count")
