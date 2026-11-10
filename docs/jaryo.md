@@ -77,13 +77,13 @@ The `palette` CDP test (section 8) MUST verify that no visible element computes 
 
 ## 3. Type
 
-System stacks only; nothing downloaded (`@font-face` is forbidden in Jaryo files).
+Newsreader (headlines and the masthead) and Inter Tight (UI text) are served as separate files from `/fonts.css`. Both are SIL Open Font License. Louis reversed the earlier rule that forbade bundled fonts. `jaryo.css` still has no `@font-face` and no `url(`, so the sheet stays inside `page()`. The font files are Latin-only, `font-display: swap`, with a size-adjusted local face. The stacks below still name a system font, and that font is what shows when the files are missing.
 
 ```css
 :root{
- --jaryo-serif:Georgia,'Iowan Old Style','Times New Roman',serif;
- --jaryo-cond:'Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
- --jaryo-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+ --jaryo-serif:Newsreader,'Newsreader Fallback',Georgia,'Iowan Old Style','Times New Roman',serif;
+ --jaryo-cond:'Inter Tight','Inter Tight Fallback','Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
+ --jaryo-body:'Inter Tight','Inter Tight Fallback',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 ```
 
@@ -357,7 +357,7 @@ Rules for every Jaryo file:
 
 - **Fail-open.** Code is wrapped in `try{…}catch(e){}` blocks, as in phone-a/b.js. If Jaryo throws, the inline shell, `oposUI.openApp`, lock/unlock and the shade must keep working.
 - **Quiet words.** Jaryo files never say "AI", "model" or "assistant"; the UI says "Helper". Message text is the owner's and is never redacted.
-- **No network, no downloads, no new dependencies.** System fonts only; no CDN, npm or Python packages.
+- **No network, no downloads, no new dependencies.** Newsreader and Inter Tight ship with the page (section 3). Nothing is fetched from a CDN. No npm or Python packages.
 - Existing ids and classes are never renamed; new ones are prefixed `jaryo-`.
 
 ## 10. Status

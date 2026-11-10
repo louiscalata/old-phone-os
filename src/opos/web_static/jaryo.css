@@ -20,9 +20,9 @@ html:is(:not([data-ff]),[data-ff="tablet"],[data-ff="foldable"]) #home-favourite
 #jaryo-status-row button:focus-visible{outline:3px solid var(--jaryo-fg,#000);outline-offset:3px}
 :root{
 --jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8;color-scheme:light;
---jaryo-serif:Georgia,'Iowan Old Style','Times New Roman',serif;
---jaryo-cond:'Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
---jaryo-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+--jaryo-serif:Newsreader,'Newsreader Fallback',Georgia,'Iowan Old Style','Times New Roman',serif;
+--jaryo-cond:'Inter Tight','Inter Tight Fallback','Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
+--jaryo-body:'Inter Tight','Inter Tight Fallback',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 @media(prefers-color-scheme:dark){html:not([data-theme]){--jaryo-fg:#e6e2d9;--jaryo-bg:#000;color-scheme:dark}}
 html[data-theme="light"]{--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8;color-scheme:light}
