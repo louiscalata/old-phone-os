@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Notes. One text file per note, kept on the phone. Plain text only."""
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -10,6 +11,7 @@ from opos.store import Store, default_root
 _STORE = None
 _CAP = 64 * 1024
 _MAX = 200
+_ID = re.compile(r"[0-9a-f]{8}")
 
 _CSS = """
 #body{width:100%;min-height:12rem;margin:8px 0;padding:8px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
@@ -19,15 +21,18 @@ _THUMB = """
 <p id="saved" role="status"></p>
 <textarea id="body" maxlength="65536" aria-label="Note"></textarea>
 <button id="fresh" type="button">New note</button>
+<button id="del" type="button" hidden>Delete</button>
 """
 _SCRIPT = r"""
 function G(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 var T=document.querySelector('meta[name=opos-token]').content, notes=[], cur=null, timer=null;
 function api(b){return fetch('/api/notes',{method:b?'POST':'GET',headers:Object.assign({'X-OPOS-Token':T},b?{'Content-Type':'application/json'}:{}),body:b?JSON.stringify(b):undefined}).then(function(r){return r.json()})}
-function paint(s){if(!s||s.error){G('saved').textContent=s&&s.error?s.error:'';return}notes=s.notes||[];var rows=G('rows');rows.textContent='';notes.forEach(function(n){var li=document.createElement('li'),b=el('button',null,n.title||'Empty note');b.type='button';b.onclick=function(){open(n.id)};li.appendChild(b);rows.appendChild(li)});if(s.saved)G('saved').textContent=s.saved;if(s.text!=null&&cur)G('body').value=s.text}
-function open(id){cur=id;api({action:'open',id:id}).then(paint)}
-G('fresh').onclick=function(){api({action:'add'}).then(function(s){cur=s.id;G('body').value='';paint(s)})};
+function armDelete(){var d=G('del');d.hidden=!cur;if(!cur)return;d.dataset.sure='';d.textContent='Delete'}
+function paint(s){if(!s||s.error){G('saved').textContent=s&&s.error?s.error:'';return}notes=s.notes||[];var rows=G('rows');rows.textContent='';notes.forEach(function(n){var li=document.createElement('li'),b=el('button',null,n.title||'Empty note');b.type='button';b.onclick=function(){open(n.id)};li.appendChild(b);rows.appendChild(li)});G('del').hidden=!cur;if(s.saved)G('saved').textContent=s.saved;if(s.text!=null&&cur)G('body').value=s.text}
+function open(id){cur=id;armDelete();api({action:'open',id:id}).then(paint)}
+G('fresh').onclick=function(){api({action:'add'}).then(function(s){cur=s.id;G('body').value='';armDelete();paint(s)})};
+G('del').onclick=function(){if(!cur)return;var d=G('del');if(d.dataset.sure!=='1'){d.dataset.sure='1';d.textContent='Delete this note?';return}api({action:'delete',id:cur}).then(function(s){cur=null;G('body').value='';armDelete();paint(s)})};
 G('body').oninput=function(){if(!cur)return;clearTimeout(timer);timer=setTimeout(function(){api({action:'save',id:cur,text:G('body').value}).then(paint)},400)};
 api().then(function(s){paint(s);if(notes[0])open(notes[0].id)});
 """
@@ -53,6 +58,17 @@ def _index():
 
 def _write_index(rows):
     _store().write_json("notes.json", {"notes": rows})
+
+
+def _remove_file(ident):
+    """Drop the note file when the id is one this page created. A missing file is already gone."""
+    if _ID.fullmatch(ident or "") is None:
+        return
+    path = _store().root / ("note-%s.txt" % ident)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
 
 
 def _title(text):
@@ -105,6 +121,13 @@ def post(data):
             found["title"] = _title(text)
             _write_index(rows)
             return 200, dict(snapshot(), id=ident, saved="Saved " + _clock())
+        if action == "delete":
+            ident = data.get("id")
+            if ident not in {row["id"] for row in rows}:
+                raise ValueError("id")
+            _write_index([row for row in rows if row["id"] != ident])
+            _remove_file(ident)
+            return 200, snapshot()
     except ValueError as exc:
         code = str(exc)
         return 400, {"error": code if code in {"id", "text", "full", "size"} else "bad request"}

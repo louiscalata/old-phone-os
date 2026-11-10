@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Notes: create, save unicode, refuse a note over 64 KB, and read it back from the file."""
 import json
+import os
 import tempfile
 import unittest
 
@@ -41,6 +42,31 @@ class Notes(unittest.TestCase):
             status, body = get(server, "/notes")
             self.assertEqual(status, 200)
             self.assertIn(b"New note", body)
+
+    def test_delete_confirms_on_the_page_and_removes_the_file(self):
+        html = notes_page.render("t", "n")
+        self.assertIn(">Delete<", html)
+        self.assertIn("Delete this note?", html)
+        with running(self.env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/notes", {"action": "add"}, token)
+            ident = json.loads(raw)["id"]
+            post(server, "/api/notes", {"action": "save", "id": ident, "text": "Cafe note"}, token)
+            code, raw = post(server, "/api/notes", {"action": "add"}, token)
+            other = json.loads(raw)["id"]
+            path = os.path.join(self.tmp.name, "note-%s.txt" % ident)
+            self.assertTrue(os.path.isfile(path))
+            code, raw = post(server, "/api/notes", {"action": "delete", "id": ident}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertEqual([row["id"] for row in json.loads(raw)["notes"]], [other])
+            self.assertFalse(os.path.isfile(path))
+            self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "note-%s.txt" % other)))
+            code, raw = post(server, "/api/notes", {"action": "delete", "id": ident}, token)
+            self.assertEqual(code, 400)
+            self.assertEqual(json.loads(raw)["error"], "id")
+            code, raw = post(server, "/api/notes", {"action": "delete", "id": "../secret"}, token)
+            self.assertEqual(code, 400)
+            self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "note-%s.txt" % other)))
 
 
 if __name__ == "__main__":
