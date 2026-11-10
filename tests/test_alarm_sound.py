@@ -17,21 +17,49 @@ class Sound(unittest.TestCase):
         self.assertEqual(alarm_sound.levels()[0], 20)
         self.assertEqual(alarm_sound.levels()[-1], 70)
 
-    def test_stop_runs_when_the_player_raises(self):
+    def test_stop_kills_the_tracked_paplay_when_the_player_raises(self):
         calls = []
+        killed = []
+
+        class Proc:
+            pid = 4242
+
+            def kill(self):
+                killed.append(self.pid)
 
         def spawn(command):
             calls.append(list(command))
             if command[0] == "paplay":
-                raise RuntimeError("boom")
-            return "stopped"
+                if sum(1 for call in calls if call[0] == "paplay") > 1:
+                    raise RuntimeError("boom")
+                return Proc()
+            return None
 
         with self.assertRaises(RuntimeError):
             alarm_sound.play(spawn, steps=3)
-        self.assertEqual(calls[-1], ["paplay-stop"])
+        self.assertEqual(killed, [4242, 4242])
+        self.assertFalse(any(call[0] == "paplay-stop" for call in calls))
         volumes = [int(call[2]) for call in calls if call[0] == "paplay"]
         self.assertTrue(volumes)
         self.assertTrue(all(volume <= 70 * 655 for volume in volumes))
+
+    def test_a_kill_that_fails_uses_the_process_id(self):
+        calls = []
+
+        class Proc:
+            pid = 77
+
+            def kill(self):
+                raise OSError("busy")
+
+        def spawn(command):
+            calls.append(list(command))
+            if command[0] == "paplay":
+                return Proc()
+            return None
+
+        alarm_sound.play(spawn, steps=2)
+        self.assertIn(["kill", "-TERM", "77"], calls)
 
     def test_haptic_stays_off_without_a_self_test(self):
         seen = []
@@ -46,15 +74,34 @@ class Sound(unittest.TestCase):
         self.assertEqual(seen[0]["on_ms"], 400)
         self.assertEqual(seen[0]["off_ms"], 600)
 
-    def test_a_ring_starts_and_a_miss_stops(self):
+    def test_a_ring_starts_and_a_miss_kills_the_tracked_player(self):
         calls = []
+        killed = []
+
+        class Proc:
+            pid = 55
+
+            def kill(self):
+                killed.append(self.pid)
+
         now = datetime(2026, 11, 16, 7, 0, tzinfo=timezone.utc)
-        alarm_sound.handle([Event("ring", "alarm", "a", now, "Alarm 07:00")], spawn=lambda command: calls.append(command[0]) or "ok")
+
+        def spawn(command):
+            calls.append(command[0])
+            if command[0] == "paplay":
+                return Proc()
+            return None
+
+        alarm_sound.handle([Event("ring", "alarm", "a", now, "Alarm 07:00")], spawn=spawn)
         self.assertIn("paplay", calls)
-        self.assertEqual(calls[-1], "paplay-stop")
-        calls.clear()
-        alarm_sound.handle([Event("missed", "alarm", "a", now, "Missed alarm 07:00")], spawn=lambda command: calls.append(command[0]))
-        self.assertEqual(calls, ["paplay-stop"])
+        self.assertIn(55, killed)
+        self.assertIsNone(alarm_sound._current)
+        left = Proc()
+        alarm_sound._current = left
+        before = len(killed)
+        alarm_sound.handle([Event("missed", "alarm", "a", now, "Missed alarm 07:00")], spawn=spawn)
+        self.assertEqual(len(killed), before + 1)
+        self.assertIsNone(alarm_sound._current)
 
     def test_the_alarm_media_role_is_not_in_the_source(self):
         for path in (ROOT / "src").rglob("*"):
@@ -62,6 +109,7 @@ class Sound(unittest.TestCase):
                 continue
             data = path.read_bytes()
             self.assertNotIn(b"media.role=alarm", data, str(path))
+            self.assertNotIn(b"paplay-stop", data, str(path))
         self.assertTrue(alarm_sound.TONE.is_file())
         self.assertLess(alarm_sound.TONE.stat().st_size, 20000)
 
