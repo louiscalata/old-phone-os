@@ -112,6 +112,7 @@ function lock(){['tog','hid','b-join','b-forget','b-disc'].forEach(function(i){G
 function paint(s){var u=G('st');u.textContent='';
 if(s.error){li(u,s.error);return}
 ['wifi','bluetooth','modem','sim','data','airplane','usb'].forEach(function(k){li(u,(s[k]||{}).summary||k+': unavailable')});
+if((s.modem||{}).cellular)li(u,s.modem.cellular);
 G('sim').textContent=s.simulated||'';var c=s.control||{};can=!!c.allowed;G('ctl').textContent=c.reason||'';
 var n=G('notes');n.textContent='';(s.notes||[]).forEach(function(t){li(n,t)});
 wifiOn=(s.wifi||{}).enabled;G('tog').textContent=wifiOn===false?'Turn Wi-Fi on':'Turn Wi-Fi off';

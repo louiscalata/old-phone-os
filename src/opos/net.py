@@ -23,6 +23,8 @@ import threading
 import time
 from typing import NamedTuple
 
+from opos.cell import explain as cell_line
+from opos.cell import read_ofono
 from opos.hw.battery import read_radios
 
 NM = "org.freedesktop.NetworkManager."
@@ -534,7 +536,7 @@ class Net:
             else:
                 m["summary"] = "Modem: unavailable (ModemManager is not answering)"
             sim["summary"] = "SIM card: unknown (the modem is not readable)"
-            return m, sim
+            return self._cellular(m, None), sim
         k = _kv(r.out)
         st = k.get("modem.generic.state", "unknown")
         why = k.get("modem.generic.state-failed-reason", "")
@@ -557,7 +559,16 @@ class Net:
             sim.update(present=True, locked=True, state="locked", summary="SIM card: present but locked (it needs a PIN, which OPOS cannot enter yet)")
         else:
             sim.update(present=True, locked=False, state="present", summary="SIM card: present")
-        return m, sim
+        return self._cellular(m, k), sim
+
+    def _cellular(self, modem, mm):
+        """A plain cellular line. oFono wins when it answers. Identifiers are not stored."""
+        ofono = read_ofono(self.runner)
+        spoken = cell_line(ofono, mm)
+        modem["cellular"] = spoken["line"]
+        if ofono:
+            modem["summary"] = spoken["line"]
+        return modem
 
     def _data(self, gs, profiles, wifi):
         d = {"configured": None, "on": None, "state": "unknown"}
