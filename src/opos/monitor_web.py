@@ -23,7 +23,7 @@ from opos.span import apply as apply_span
 
 TITLE = "<title>Inference - OPOS</title>"  # the anchor the drop-in README names; the token meta goes in front of it
 ANCHOR = '<section aria-labelledby="set-about">'  # Settings > About: the link goes ahead of it, as the Network and Time zone links do
-# 48 px tall like every other touch target on the page; the colour and border follow the page's theme.
+# 48 px tall like every other touch target on the page; the color and border follow the page's theme.
 LINK = ('<section aria-labelledby="set-inference"><h3 id="set-inference">Inference</h3><a id="mon-link" href="/monitor" '
         'style="display:inline-block;min-height:48px;line-height:48px;padding:0 16px;border:1px solid;color:inherit">'
         'Inference page</a></section>')

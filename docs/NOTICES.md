@@ -12,7 +12,7 @@ Version
 Build
 unpublished
 
-Licence
+License
 GNU GPL-3.0-or-later
 
 Source
@@ -28,7 +28,7 @@ Third-party notices
 - NetworkManager (GPL-2.0-or-later)
 - polkit (LGPL-2.0-or-later) and D-Bus (AFL-2.1 or GPL-2.0-or-later)
 - OpenRC (BSD-2-Clause) and psmisc (GPL-2.0-or-later)
-- Each of these keeps its own licence and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.
+- Each of these keeps its own license and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.
 
 Affiliation
 Old Phone OS Interface is not affiliated with or endorsed by postmarketOS, Microsoft, Google or any phone maker. All trademarks belong to their owners.

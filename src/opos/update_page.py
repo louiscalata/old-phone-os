@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """GET /update: the software-updates page. A separate small page, because the main page is at its size budget.
 
-It looks like the rest of OPOS because it inlines web_static/jaryo.css (the colour and type tokens, buttons, focus
+It looks like the rest of OPOS because it inlines web_static/jaryo.css (the color and type tokens, buttons, focus
 ring, light and dark). The facts are rendered here, escaped, so the page reads without its script; the script only
 adds the buttons and a live refresh from /api/update. Text size and theme follow the main page's saved choices.
 

@@ -6,13 +6,13 @@ Status: draft 1, 2026-11-01. Normative words: MUST, MUST NOT, SHOULD. Applies to
 
 ## 1. Name, intent, summary
 
-**Jaryo** is the UI/UX language of OPOS: black-and-white text buttons, Windows-Phone-8 placement (big left headings, labelled tiles, A–Z list, pivots, bottom action row), a newspaper layout (masthead, serif headlines, thin rules, columns), and zoom-into-article transitions. It exists so a web kiosk on a 2 GB phone reads like a printed front page, works with one thumb or a keyboard, and never depends on colour, icons, downloads or a GPU.
+**Jaryo** is the UI/UX language of OPOS: black-and-white text buttons, Windows-Phone-8 placement (big left headings, labelled tiles, A–Z list, pivots, bottom action row), a newspaper layout (masthead, serif headlines, thin rules, columns), and zoom-into-article transitions. It exists so a web kiosk on a 2 GB phone reads like a printed front page, works with one thumb or a keyboard, and never depends on color, icons, downloads or a GPU.
 
 Principles (in priority order; a lower one never overrides a higher one):
 
 1. **Simple, but works.** Every screen works with the existing inline shell alone. Jaryo is an additive layer; if it throws, the phone still calls and texts (section 9, fail-open).
 2. **Text only.** Every control is a `<button>`, `<a>`, `<input>`, `<select>` or `<label>` whose meaning is in its text. No icons, images, SVG glyphs, background images or mystery symbols.
-3. **Two colours.** Exactly `#000` and `#fff`. Light mode is black on white; dark mode swaps them. Nothing else, ever, including greys, tints, shadows, gradients, filters and opacity used as colour.
+3. **Two colors.** Exactly `#000` and `#fff`. Light mode is black on white; dark mode swaps them. Nothing else, ever, including greys, tints, shadows, gradients, filters and opacity used as color.
 4. **Editorial.** Masthead, serif headlines, condensed subheads, 1 px rules between sections, columns on wide screens, generous whitespace. Tiles read as section headlines.
 5. **Zoom.** Home is the newspaper page; opening an app zooms into that article; back zooms out to the same tile; moving between pages zooms through. Snappy but graceful, transform/opacity only, interruptible, reduced motion honoured.
 
@@ -26,13 +26,13 @@ html[data-theme="dark"]{--jaryo-fg:#fff;--jaryo-bg:#000}
 @media (prefers-color-scheme:dark){html:not([data-theme]){--jaryo-fg:#fff;--jaryo-bg:#000}}
 ```
 
-- The ONLY colour literals permitted in `jaryo.css` are `#000`, `#fff`, `transparent`, `currentColor`, and the two variables. Tests grep for anything else (section 8).
+- The ONLY color literals permitted in `jaryo.css` are `#000`, `#fff`, `transparent`, `currentColor`, and the two variables. Tests grep for anything else (section 8).
 - `html[data-theme]` MUST be `light` or `dark`. Absent attribute = follow `prefers-color-scheme`. `jaryo.js` MUST set the attribute before first paint from `localStorage['jaryo_theme']` (values `light|dark`; absent = system).
 - Settings › Display MUST offer a text button `#jaryo-theme` whose label is `Theme: Light` / `Theme: Dark` / `Theme: System`; tapping cycles and persists to `localStorage['jaryo_theme']`.
 - At install, the wizard writes the chosen default to `jaryo-setup.json` (section 6) and the server MUST render `<html data-theme="…">` from it so the first paint is right before any JS runs. If no install choice exists, the server omits the attribute.
 - `color-scheme: light dark` MUST be set on `html` so native controls (select, checkbox, time input) follow the theme without custom painting.
 
-### 2.2 Expressing state without colour
+### 2.2 Expressing state without color
 
 | State | Expression |
 |---|---|
@@ -44,12 +44,12 @@ html[data-theme="dark"]{--jaryo-fg:#fff;--jaryo-bg:#000}
 | Toggle on / off | label text `…: On` / `…: Off` plus inverted fill when On |
 | Low battery (≤15 %, `#sb-batt[data-low="true"]`) | text `LOW 12%` and `border:3px double var(--jaryo-fg)` |
 | Charging | text `Charging` after the percent; no animation |
-| Primary action in a row | 3px solid fg border (weight, not colour) |
+| Primary action in a row | 3px solid fg border (weight, not color) |
 | Error / notice | text in a box with 3px double border |
 | Section boundary | 1px solid fg rule |
 | Masthead boundary | 3px solid fg rule |
 
-### 2.3 Neutralising existing colours (ids are kept, only paint changes)
+### 2.3 Neutralising existing colors (ids are kept, only paint changes)
 
 `jaryo.css` is inlined LAST (section 9) so plain id selectors win by source order; `!important` is allowed only in this file and only for these overrides.
 
@@ -330,7 +330,7 @@ Methods: **py** = `python -m unittest`, string/regex asserts on `page()`/`wizard
 |---|---|---|
 | `jaryo_palette` | every visible element's computed `color`, `background-color`, `border-*-color`, `outline-color` ∈ {rgb(0,0,0), rgb(255,255,255), transparent}; no `box-shadow`, `filter`, `background-image`, `opacity<1` on visible nodes | cdp |
 | `jaryo_dark_inverse` | for each element, dark computed (fg,bg) == light (bg,fg) exactly | cdp |
-| `jaryo_css_literals` | `jaryo.css` contains no colour literal other than `#000`, `#fff`, `transparent`, `currentColor`; no `@font-face`, `url(` | py |
+| `jaryo_css_literals` | `jaryo.css` contains no color literal other than `#000`, `#fff`, `transparent`, `currentColor`; no `@font-face`, `url(` | py |
 | `jaryo_text_only_buttons` | every `button`, `[role=button]`, `a` has non-empty trimmed text and contains no `img/svg/canvas/picture/i[class]`; computed `background-image:none` | cdp + py |
 | `touch_targets` (existing) | ≥48×48, ≥8 px gaps, now including `#jaryo-status-row`, `#jaryo-pivots`, `#jaryo-letters` | cdp |
 | `contrast` (existing) | ≥4.5:1 (expect exactly 21:1 everywhere); run in both themes | cdp |
@@ -351,7 +351,7 @@ Methods: **py** = `python -m unittest`, string/regex asserts on `page()`/`wizard
 
 ## 9. How it was built
 
-Jaryo ships as four static files in `src/opos/web_static/`, inlined into the kiosk page by the `@@OPOS:…@@` placeholders in `opos.web.page()` (`src/opos/web.py`). `jaryo.css` (tokens, colour overrides, type) and `jaryo-layout.css` (layout rules, including landscape) come after `phone-b.css`, so plain id selectors win by source order. `jaryo.js` (theme, motion and `window.jaryo`) and `jaryo-layout.js` (the All apps A–Z list and tile sizes) run after `phone-b.js`. The install-time steps are rendered by `src/opos/setup/wizard_page.py` from `setup/jaryo_steps.py`, and `setup/prefs.py` validates and saves the answers. The disclaimer and notices come from `src/opos/notices.py` (section 11). Tests: `tests/test_jaryo_motion.py`, `test_jaryo_tiles.py`, `test_jaryo_typography.py`, `test_jaryo_apps.py`, `test_jaryo_landscape.py`, `test_jaryo_sbbutton.py`, `test_jaryo_setup_recovery.py`, and headless-browser checks in `tests/uxr_cdp.js`.
+Jaryo ships as four static files in `src/opos/web_static/`, inlined into the kiosk page by the `@@OPOS:…@@` placeholders in `opos.web.page()` (`src/opos/web.py`). `jaryo.css` (tokens, color overrides, type) and `jaryo-layout.css` (layout rules, including landscape) come after `phone-b.css`, so plain id selectors win by source order. `jaryo.js` (theme, motion and `window.jaryo`) and `jaryo-layout.js` (the All apps A–Z list and tile sizes) run after `phone-b.js`. The install-time steps are rendered by `src/opos/setup/wizard_page.py` from `setup/jaryo_steps.py`, and `setup/prefs.py` validates and saves the answers. The disclaimer and notices come from `src/opos/notices.py` (section 11). Tests: `tests/test_jaryo_motion.py`, `test_jaryo_tiles.py`, `test_jaryo_typography.py`, `test_jaryo_apps.py`, `test_jaryo_landscape.py`, `test_jaryo_sbbutton.py`, `test_jaryo_setup_recovery.py`, and headless-browser checks in `tests/uxr_cdp.js`.
 
 Rules for every Jaryo file:
 
@@ -370,7 +370,7 @@ The following paragraph MUST appear word for word on the install-time setup scre
 
 > Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk.
 
-Concise essentials shown beside it (setup screen: "About this software"; Settings > About), all from the same source and only facts true for the build, unpublished items shown as a visible placeholder: version and build hash; GPL-3.0 licence, source link and third-party notices (postmarketOS, Linux, bundled tools); not affiliated with postmarketOS, Microsoft, Google or the phone makers, trademarks belong to their owners; tested devices (others untested); risks (warranty, data loss from unlocking the bootloader, bricking, no emergency-calling guarantee); how to restore stock; privacy (each claim verified against the code in docs/notices-verification.md); contact or issue link; (c) 2026 Louis Calata. Style: Jaryo (serif, left, thin rules, two colours, native details/summary, no icons).
+Concise essentials shown beside it (setup screen: "About this software"; Settings > About), all from the same source and only facts true for the build, unpublished items shown as a visible placeholder: version and build hash; GPL-3.0 license, source link and third-party notices (postmarketOS, Linux, bundled tools); not affiliated with postmarketOS, Microsoft, Google or the phone makers, trademarks belong to their owners; tested devices (others untested); risks (warranty, data loss from unlocking the bootloader, bricking, no emergency-calling guarantee); how to restore stock; privacy (each claim verified against the code in docs/notices-verification.md); contact or issue link; (c) 2026 Louis Calata. Style: Jaryo (serif, left, thin rules, two colors, native details/summary, no icons).
 
 ## 12. Changes to this file
 
@@ -385,13 +385,13 @@ Changes made after the proposal are recorded as notes in section 13.
 - Lock PIN step (`j8`, step name `pin`): the design decisions of Nov 1 2026 (item 6) add a short lock PIN step after Wi-Fi. The kiosk lock has no PIN check (the lock opens with Unlock, swipe-up or Escape), so the step follows the j6 Wi-Fi precedent and is record-only: an `<h3>` title, two lines saying a lock PIN is not available in this build and can be set in Settings › Device later, the button "Set up later in Settings › Device", and the usual Skip/Back/Next. There is no input of any kind; Next, Skip and the button each record a skip. `prefs.validate_answer('pin', …)` accepts only `later` or `skip`, and `Phone.state()['prefs']` never publishes the answer (the kiosk sees the default `later`). In navigation, resume and page order the step follows Wi-Fi (`wifi`, `pin`, `helper`), as the decision says; section ids stay with their steps (`jaryo_steps.IDS`: Helper keeps `j7`, Lock PIN is `j8`), so the existing `j1`–`j7` ids and their tests stay untouched even though `j8` now precedes `j7` in the page. When a lock backend lands, this step gets the digits field with server-side validation and a salted hash in a separate 0600 file; until then nothing is collected.
 - Personal setup recovery derives progress from readable answers and skips. Missing or stale resume markers cannot bypass unfinished steps, and completion requires every step to be answered or skipped without overlap. Resuming restores the saved theme preview; skipping Theme restores Auto. These UI checks do not supply the separate server finish endpoint.
 
-- Settings, Helper and About repair (2026-11-03 UTC): adds a Settings Light/Dark/System control and real palette consumers, keeps a manual System choice independently of installer defaults, and maps the already offered Small preference to its own root scale while keeping 48 px controls. Complete draft pivots and server-rendered first-paint setup seeding are not part of this repair. The critical-battery Ask screen now distinguishes intentional rest from transport failure; newer NORMAL/SAVER state cannot be overwritten by an older rest response, and Clear does not hide the current rest status. Plan/Why and server policy are unchanged. Settings About renders the shared escaped disclaimer plus native expandable licence/privacy/limits beside the independent helper status. The page measured 97,625 UTF-8 bytes before this repair. With this repair the page exceeded the original 98,090-byte cap, so the page-size test was given an explicit 8 KiB increment (105,817 bytes total); the next note restores the original cap. This repair does not cover every draft feature.
+- Settings, Helper and About repair (2026-11-03 UTC): adds a Settings Light/Dark/System control and real palette consumers, keeps a manual System choice independently of installer defaults, and maps the already offered Small preference to its own root scale while keeping 48 px controls. Complete draft pivots and server-rendered first-paint setup seeding are not part of this repair. The critical-battery Ask screen now distinguishes intentional rest from transport failure; newer NORMAL/SAVER state cannot be overwritten by an older rest response, and Clear does not hide the current rest status. Plan/Why and server policy are unchanged. Settings About renders the shared escaped disclaimer plus native expandable license/privacy/limits beside the independent helper status. The page measured 97,625 UTF-8 bytes before this repair. With this repair the page exceeded the original 98,090-byte cap, so the page-size test was given an explicit 8 KiB increment (105,817 bytes total); the next note restores the original cap. This repair does not cover every draft feature.
 
 - Historical page-cap restoration (2026-11-03 UTC; superseded by the current page-budget note below): the 98,090-byte bound was enforced again. The repaired page is 97,852 bytes; a normal served demo with the generated token/nonce is 98,088 bytes (98,089 with the longest release build label). The earlier 105,817-byte proposal is superseded. Source formatting keeps all JavaScript literals, comments and script boundaries; pure dynamic DOM delegates remove repeated lookup/factory syntax. Explanatory CSS comments and full original headers are retained in docs/web-implementation-notes.md, while declarations and normalised CSS token strings stay unchanged. Required About/legal notices, accessibility, critical-rest, theme and persistence behavior are retained. The normal served demo also has an explicit regression check against the original bound. This restoration uses no deferred assets, content removal, new runtime dependency or user-visible tradeoff.
 
 - Setup tile-size completion (2026-11-03 UTC): j2 now exposes native Small/Medium/Wide selects for Phone, Messages, Helper and Settings, using the existing `layout.sizes` schema. Defaults match the kiosk (Phone and Messages Medium; Helper and Settings Small). Next saves the sizes with favourites; Back, reload and resume restore them, including defaults for older missing/partial size maps. The summary reports starting sizes and explicitly describes favourites as recorded only. Fresh kiosk profiles consume the applied sizes through the existing layout hook; previously stored screen choices remain authoritative. No tile is hidden or reordered, no new model/network/device feature is implied, and Wi-Fi/PIN and first-paint/full-pivot limitations remain unchanged.
 
-- Softer whites (2026-11-03 UTC, Louis's request to tone down the brightness of white): the tokens are now `#e6e2d9` on `#000` in dark mode and `#1a1a1a` on `#f3f0e8` in light mode, in the kiosk (`jaryo.css`) and the setup card (`setup/jaryo_steps.py`); the setup wizard shell uses `#e6e2d9` on `#000`. This supersedes the exact `#000`/`#fff` rule in section 1 item 3 and the 21:1 contrast expectation: contrast is now about 16.3:1 (dark) and 15.3:1 (light). Each theme still uses exactly two colours, never mixed across themes; `var()` fallbacks keep `#000`/`#fff`.
+- Softer whites (2026-11-03 UTC, Louis's request to tone down the brightness of white): the tokens are now `#e6e2d9` on `#000` in dark mode and `#1a1a1a` on `#f3f0e8` in light mode, in the kiosk (`jaryo.css`) and the setup card (`setup/jaryo_steps.py`); the setup wizard shell uses `#e6e2d9` on `#000`. This supersedes the exact `#000`/`#fff` rule in section 1 item 3 and the 21:1 contrast expectation: contrast is now about 16.3:1 (dark) and 15.3:1 (light). Each theme still uses exactly two colors, never mixed across themes; `var()` fallbacks keep `#000`/`#fff`.
 
 - Current page budget (2026-11-03 UTC): `tests/test_uxp30_budget.py` sets `PAGE_BUDGET = 100 * 1024`, or 102,400 UTF-8 bytes (100 KiB), for the Settings top-bar, brightness and volume controls. This supersedes the 98,090-byte cap above; the earlier page and served-demo sizes are historical measurements. The current `web.page()` measured 101,109 UTF-8 bytes on this date, without the generated token/nonce of a served demo. See [architecture.md](architecture.md) for the current budget.
 

@@ -58,7 +58,7 @@ class TestAboutNotices(unittest.TestCase):
         self.assertEqual(detail["tag"], "details")
         self.assertIs(detail["parent"], wrapper)
         self.assertEqual(summary["tag"], "summary")
-        self.assertEqual("".join(summary["text"]), "Licence, privacy and tested limits")
+        self.assertEqual("".join(summary["text"]), "License, privacy and tested limits")
         self.assertIs(summary["parent"], detail)
         self.assertEqual(body["tag"], "pre")
         self.assertIs(body["parent"], detail)
@@ -84,7 +84,7 @@ class TestAboutNotices(unittest.TestCase):
         parsed = _Elements(page)
         self.assertEqual(parsed.ids["about"]["tag"], "p")
         self.assertIsNot(parsed.ids["about"]["parent"], parsed.ids["about-notices"])
-        self.assertNotIn("Licence", "".join(parsed.ids["about"]["text"]))
+        self.assertNotIn("License", "".join(parsed.ids["about"]["text"]))
         self.assertIn("a.insertAdjacentElement('afterend',n)", page)
         # W1-08: the helper-status hook that rewrote About ("Helper set to ...") is gone; the line stays static.
         self.assertNotIn("a.textContent=e?", page)

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* OPOS on-screen keyboard (Duo OS). Served at /osk.css by opos.osk while OPOS_OSK=1. Colours are the page's own Jaryo tokens,
+/* OPOS on-screen keyboard (Duo OS). Served at /osk.css by opos.osk while OPOS_OSK=1. Colors are the page's own Jaryo tokens,
    so light and dark follow the page; sizes match osk.js (tests/test_osk.py checks that they agree). */
 #opos-osk{--osk-bg:var(--jaryo-bg,#f3f0e8);--osk-fg:var(--jaryo-fg,#1a1a1a);--osk-key:56px;--osk-bar:44px;--osk-gap:6px;
 position:fixed;left:0;right:0;bottom:0;z-index:2147483000;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px);

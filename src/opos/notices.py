@@ -63,7 +63,7 @@ THIRD_PARTY = (
     "NetworkManager (GPL-2.0-or-later)",
     "polkit (LGPL-2.0-or-later) and D-Bus (AFL-2.1 or GPL-2.0-or-later)",
     "OpenRC (BSD-2-Clause) and psmisc (GPL-2.0-or-later)",
-    "Each of these keeps its own licence and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.",
+    "Each of these keeps its own license and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.",
 )
 
 AFFILIATION = (
@@ -97,7 +97,7 @@ CONTACT = "See the project repository for support."
 COPYRIGHT = "© 2026 Louis Calata"
 
 FIELDS = ("disclaimer", "version", "build", "license", "source_url", "third_party", "affiliation", "tested_devices", "risks", "restore_stock", "privacy", "contact", "copyright")
-_TITLES = {"version": "Version", "build": "Build", "license": "Licence", "source_url": "Source", "third_party": "Third-party notices", "affiliation": "Affiliation", "tested_devices": "Tested devices", "risks": "Risks", "restore_stock": "Restore the original system", "privacy": "Privacy", "contact": "Contact", "copyright": "Copyright"}
+_TITLES = {"version": "Version", "build": "Build", "license": "License", "source_url": "Source", "third_party": "Third-party notices", "affiliation": "Affiliation", "tested_devices": "Tested devices", "risks": "Risks", "restore_stock": "Restore the original system", "privacy": "Privacy", "contact": "Contact", "copyright": "Copyright"}
 
 
 def notices():

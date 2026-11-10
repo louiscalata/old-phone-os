@@ -597,7 +597,7 @@ def _about_notices():
             + html_escape(notices.DISCLAIMER)
             + '</p><details id="about-notices-details">'
             '<summary id="about-notices-summary" style="min-height:48px">'
-            'Licence, privacy and tested limits</summary>'
+            'License, privacy and tested limits</summary>'
             '<pre id="about-notices-text" style="white-space:pre-wrap;'
             'overflow-wrap:anywhere;font:inherit">'
             + html_escape(notices.as_text()) + '</pre></details></div>')

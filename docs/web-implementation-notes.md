@@ -14,7 +14,7 @@ These explanatory comments were moved out of the stylesheets to keep the served 
 
 ```css
 /* Landscape layout (docs/jaryo.md 4.1, 4.3, 4.6 and section 13). Rules only: ids, DOM order and Tab order are unchanged,
-   no order:, no transition or animation, colour only through currentColor. Slab keeps its phone column and the foldable
+   no order:, no transition or animation, color only through currentColor. Slab keeps its phone column and the foldable
    keeps its two-pane hinge grid (phone-b.css), so both are excluded. Outside the two >=840px blocks the landscape layout adds
    only the lock button margin below; phone-a.css owns the page's single max-width:839px block. Home's four landscape tracks
    are in jaryo.css and the slide-out sticky #controls row is in phone-b.css. */
