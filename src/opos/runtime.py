@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The final decision: the policy's soft pauses, then the owner's overrides, then the hard floors."""
+import os
 from dataclasses import dataclass
 from opos.governor import PowerState, Priority, Task, Governor, Decision, Mode, rule_decide
 from opos.battery import Sample, DrainEstimator, hours_left, essentials_reserve
@@ -64,7 +65,8 @@ class Runtime:
         self.estimator.add(Sample(t_s, level))
         rate = self.estimator.rate()
         state = PowerState(level, charging, health, temp_c, goal_hours)
-        decision = self.governor.decide(state, self.tasks)
+        decision = self.governor.decide(
+            state, self.tasks, pause_inference=os.environ.get("OPOS_ON_PHONE") == "1")
         rules = rule_decide(state, self.tasks)
         names = tuple(t.name for t in self.tasks)
         known = set(names)

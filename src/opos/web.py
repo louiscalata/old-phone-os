@@ -49,6 +49,7 @@ from opos.runtime import Runtime
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
 from opos.dashboard import ROUGH, Dashboard, _format_goal_12h
+from opos.governor import heat_limit
 from opos.router import HOT_C
 from opos import notices, practice, secure, tokenfile, update_client, update_page
 from opos.span import apply as apply_span, parse as parse_span
@@ -120,14 +121,18 @@ def notice_for(status, in_call, sim=False):
         return "New message"
     return ""
 MAX_TICK_S = 5.0  # the longest real interval one simulation tick covers
-def poll_ms(mode, free, in_call):
+def poll_ms(mode, free, in_call, temp_c=None):
     if in_call:
         return 1000
     if mode == "CRITICAL":
-        return 5000
-    if mode == "SAVER" or (free is not None and free < 1536):
-        return 3000
-    return 1000
+        base = 5000
+    elif mode == "SAVER" or (free is not None and free < 1536):
+        base = 3000
+    else:
+        base = 1000
+    if isinstance(temp_c, (int, float)) and not isinstance(temp_c, bool) and heat_limit(temp_c)["hot"]:
+        return max(base, heat_limit(temp_c)["poll_ms"])
+    return base
 def _num(v, lo, hi):
     if isinstance(v, bool) or not isinstance(v, (int, float)):
         raise ValueError("bad number")
@@ -374,7 +379,7 @@ class Phone:
         m = int((self.clock_s % 3600) // 60)
         out["clock"] = f"{h:02d}:{m:02d}" if self.clock_ok else "--:--"
         out["lean"] = {"opos_mb": rss, "free_mb": free}
-        out["poll_ms"] = poll_ms(d.mode.name, free, self._in_call)
+        out["poll_ms"] = poll_ms(d.mode.name, free, self._in_call, self.sim.temp_c)
         statusbar.apply(self, out)  # track: status
         return out
     def _preferences(self):

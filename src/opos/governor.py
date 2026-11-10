@@ -42,6 +42,22 @@ def effective_level(state: PowerState) -> float:
         eff = 100.0
     return float(eff)
 
+HEAT_C = 40.0
+
+
+def heat_limit(temp_c: float) -> dict:
+    """What a warm battery changes. Brightness cap matches budget.budget_for. Not measured on a phone."""
+    if temp_c >= HEAT_C:
+        return {
+            "hot": True,
+            "poll_ms": 5000,
+            "brightness_cap": 30,
+            "pause_inference": True,
+            "line": "Battery is warm. Polling is slower, brightness is capped, and model inference is paused.",
+        }
+    return {"hot": False, "poll_ms": None, "brightness_cap": None, "pause_inference": False, "line": ""}
+
+
 def rule_decide(state: PowerState, tasks) -> Decision:
     if not 0 <= state.level <= 100:
         raise ValueError
@@ -77,9 +93,11 @@ class Governor:
     def __init__(self, advisor=None):
         self.advisor = advisor
 
-    def decide(self, state: PowerState, tasks):
+    def decide(self, state: PowerState, tasks, *, pause_inference=False):
         tasks = tuple(tasks)
         baseline = rule_decide(state, tasks)
+        if pause_inference and heat_limit(state.temp_c)["pause_inference"]:
+            return baseline
         if self.advisor is not None:
             with contextlib.suppress(Exception):
                 dec = self.advisor(state, tasks)
