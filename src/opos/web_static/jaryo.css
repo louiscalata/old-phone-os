@@ -31,7 +31,8 @@ body{font-family:var(--jaryo-body);font-size:1rem;font-weight:400;line-height:1.
 h1,h2,.jaryo-head,#settings h2,#headline{font-family:var(--jaryo-serif);font-size:1.5rem;font-weight:700;line-height:1.15}
 .jaryo-head{margin:0 0 .5rem;text-align:left}
 h3,#settings h3,summary,.jaryo-letter,.jaryo-letter-head,#lock-date{font-family:var(--jaryo-cond);font-size:1.125rem;font-weight:400;line-height:1.2;text-transform:uppercase;letter-spacing:.04em}
-#jaryo-masthead,#lock-time,#sheet-title{font-family:var(--jaryo-serif);font-size:2.25rem;font-weight:700;line-height:1.05;border-bottom:3px solid var(--jaryo-fg,currentColor);white-space:normal;overflow-wrap:anywhere}
+#jaryo-masthead,#sheet-title{font-family:var(--jaryo-serif);font-size:2.25rem;font-weight:700;line-height:1.05;border-bottom:3px solid var(--jaryo-fg,currentColor);white-space:normal;overflow-wrap:anywhere}
+#lock-time{font-family:var(--jaryo-serif);line-height:1}
 #jaryo-masthead{letter-spacing:.02em;border-top:1px solid var(--jaryo-fg,currentColor);padding:.5rem 0;text-align:left}
 #jaryo-masthead span:last-child{font-family:var(--jaryo-cond);font-size:1.125rem;font-weight:400;line-height:1.2;text-transform:uppercase;letter-spacing:.04em}
 #sb,#notice,#history-label,#helper-where{font-family:var(--jaryo-cond);font-size:.875rem;font-weight:400;line-height:1.3}

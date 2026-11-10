@@ -31,9 +31,9 @@ CHECKS.jaryo_typography = async function() {
       check('#settings h3','Arial Narrow',1.125,'400',1.2);
       check('#apps-list .jaryo-letter','Arial Narrow',1.125,'400',1.2);
       check('#sb','Arial Narrow',.875,'400',1.3);
-      check('#lock-time','Georgia',2.25,'700',1.05);
+      check('#lock-time','Georgia',5,'700',1);
       check('#sheet-title','Georgia',2.25,'700',1.05);
-      for(const selector of ['#jaryo-masthead','#lock-time','#sheet-title']){
+      for(const selector of ['#jaryo-masthead','#sheet-title']){
         const s=getComputedStyle(document.querySelector(selector));
         if(s.borderBottomWidth!=='3px'||s.borderBottomStyle!=='solid')errors.push(selector+' masthead rule');
       }
