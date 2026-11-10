@@ -8,7 +8,7 @@ import secrets
 from html import escape
 from pathlib import Path
 
-from opos import appdoc, apps, secure
+from opos import appdoc, apps, lockpin, secure
 
 # One short tag. The script file holds the link and later home behaviour, so the main page stays under the gate.
 _INJECT = '<script nonce="{nonce}" src="/apps-home.js"></script>'
@@ -165,6 +165,16 @@ def serve_get(handler, path):
         if api is not None and api.get_json is not None:
             if not secure.token_ok(handler.headers.get("X-OPOS-Token"), handler.token):
                 handler._deny(403, "forbidden", "token")
+                return True
+            if lockpin.is_locked():
+                phone = getattr(handler, "phone", None)
+                if phone is None:
+                    _send_json(handler, lockpin.redact({}))
+                else:
+                    with handler.lock:
+                        snap = phone.state()
+                        log = phone.essentials.log
+                    _send_json(handler, lockpin.redact(snap, log))
                 return True
             _send_json(handler, api.get_json())
             return True
