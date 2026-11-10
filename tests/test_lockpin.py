@@ -3,8 +3,10 @@
 import json
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from opos import lockpin, web
+from opos.essentials import Message
 from tests.test_apps_shell import get, post, running
 
 
@@ -189,6 +191,42 @@ class Server(unittest.TestCase):
             self.assertNotIn("locked", json.loads(body))
         page = web.page()
         self.assertNotIn(">Emergency<", page)
+
+    def test_counts_follow_the_phone_log(self):
+        log = [
+            Message("+15550100", "hello from ana", False),
+            Message("+15550100", "sent", True),
+            SimpleNamespace(kind="missed"),
+        ]
+        got = lockpin.counts(log)
+        self.assertEqual(got["messages"], 1)
+        self.assertEqual(got["missed"], 1)
+        dumped = json.dumps(got)
+        self.assertNotIn("hello", dumped)
+        self.assertNotIn("15550100", dumped)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api", {"action": "receive", "number": "+15550100", "text": "hello"}, token)
+            self.assertEqual(code, 200, raw)
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            status, body = get(server, "/api/lock", token)
+            self.assertEqual(status, 200, body)
+            parsed = json.loads(body)
+            self.assertEqual(parsed["lock"]["messages"], 1)
+            self.assertEqual(parsed["lock"]["missed"], 0)
+            self.assertNotIn(b"hello", body)
+            self.assertNotIn(b"Mom", body)
+            status, body = get(server, "/api/state", token)
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body)["lock"]["messages"], 1)
+            self.assertNotIn(b"hello", body)
+            self.assertNotIn(b"Mom", body)
 
 
 if __name__ == "__main__":

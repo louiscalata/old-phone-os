@@ -11,6 +11,7 @@ import os
 import time
 from pathlib import Path
 
+from opos import clock_page
 from opos.store import Store, default_root
 
 ITERATIONS = 200_000
@@ -213,19 +214,43 @@ def blocks(action, path):
     return True
 
 
-def counts():
-    """Counts only. No names and no message text."""
+def _missed(item):
+    if isinstance(item, dict):
+        return item.get("kind") == "missed" or item.get("missed") is True
+    return getattr(item, "kind", None) == "missed" or getattr(item, "missed", False) is True
+
+
+def _incoming(item):
+    if _missed(item):
+        return False
+    if isinstance(item, dict):
+        return item.get("outgoing") is False
+    return getattr(item, "outgoing", True) is False
+
+
+def counts(log=None):
+    """Counts only. No names and no message text.
+
+    messages is the number of incoming rows in the phone log.
+    missed is the number of missed-call rows in that log.
+    """
+    messages = 0
+    missed = 0
+    for item in list(log or []):
+        if _missed(item):
+            missed += 1
+        elif _incoming(item):
+            messages += 1
     alarm = ""
     try:
-        from opos import clock_page
         nxt = (clock_page.snapshot() or {}).get("next") or {}
         alarm = nxt.get("text") or ""
     except Exception:
         alarm = ""
-    return {"messages": 0, "missed": 0, "alarm": alarm}
+    return {"messages": messages, "missed": missed, "alarm": alarm}
 
 
-def redact(snap):
+def redact(snap, log=None):
     """The locked /api/state body. Battery percent and the clock stay. Names do not."""
     battery = snap.get("battery") if isinstance(snap.get("battery"), dict) else {}
     percent = battery.get("percent")
@@ -233,5 +258,5 @@ def redact(snap):
         "locked": True,
         "clock": snap.get("clock") if isinstance(snap.get("clock"), str) else "",
         "battery": {"percent": percent} if isinstance(percent, (int, float)) and not isinstance(percent, bool) else {},
-        "lock": counts(),
+        "lock": counts(log),
     }
