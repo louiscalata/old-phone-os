@@ -12,7 +12,7 @@ from opos.runtime import Runtime
 
 _ID = re.compile(r"[a-z][a-z0-9-]{0,20}")
 # Feature modules register themselves when imported. The map grows as each app lands.
-MODULES = {}
+MODULES = {"clock": "opos.clock_page"}
 _APPS = {}
 _BROKEN = set()
 

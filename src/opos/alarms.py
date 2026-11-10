@@ -230,6 +230,7 @@ class Book:
             if row is None:
                 raise ValueError("id")
             row.pop("done", None)
+            row.pop("ringing", None)
             row["enabled"] = True
             row["snooze_at"] = _iso(now + SNOOZE)
             self.last_seen = _iso(now)
@@ -246,6 +247,7 @@ class Book:
             if row is None:
                 raise ValueError("id")
             row.pop("snooze_at", None)
+            row.pop("ringing", None)
             if row.get("once"):
                 row["enabled"] = False
             self.last_seen = _iso(now)
@@ -310,6 +312,9 @@ class Book:
         if alarm_id is not None:
             return self._row(alarm_id)
         for row in self.alarms:
+            if row.get("ringing"):
+                return row
+        for row in self.alarms:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
                 when = _parse(snooze, self.zone)
@@ -346,7 +351,9 @@ class Book:
                 late = now - when > GRACE
                 self._finish_once(row, late)
                 if late:
+                    row.pop("ringing", None)
                     return Event("missed", "alarm", row["id"], when, "Missed alarm " + _hhmm(row["hour"], row["minute"]))
+                row["ringing"] = True
                 return Event("ring", "alarm", row["id"], when, text)
         if not row.get("enabled"):
             return None
@@ -356,7 +363,9 @@ class Book:
         late = now - when > GRACE
         self._finish_once(row, late)
         if late:
+            row.pop("ringing", None)
             return Event("missed", "alarm", row["id"], when, "Missed alarm " + _hhmm(row["hour"], row["minute"]))
+        row["ringing"] = True
         return Event("ring", "alarm", row["id"], when, "Alarm " + _hhmm(row["hour"], row["minute"]))
 
     def _timer_events(self, start, now):

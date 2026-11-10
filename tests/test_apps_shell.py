@@ -197,13 +197,13 @@ class PageTests(unittest.TestCase):
         self.assertNotIn(b"more-apps", plain)
         apps.register(SAMPLE)
         named = served_home_page({"OPOS_APPS": "sample"})
-        self.assertIn(b"More apps", named)
-        self.assertIn(b"more-apps", named)
+        self.assertIn(b"/apps-home.js", named)
+        self.assertNotIn(b">More apps<", named)
         self.assertLessEqual(len(named), WAVE_GATE)
         self.assertLess(len(named) - len(plain), 2500)
         both = served_home_page(dict(served_switches(), **{"OPOS_APPS": "sample"}))
         self.assertLessEqual(len(both), WAVE_GATE)
-        self.assertIn(b"More apps", both)
+        self.assertIn(b"/apps-home.js", both)
 
     def test_index_colours_disclosure_and_quiet_words(self):
         apps.register(SAMPLE)
@@ -241,7 +241,7 @@ class PageTests(unittest.TestCase):
             front, home = get(server, "/")
             self.assertEqual(front, 200)
             self.assertIn(b"Phone", home)
-            self.assertIn(b"More apps", home)
+            self.assertIn(b"/apps-home.js", home)
             def broken(_token, _nonce):
                 raise RuntimeError("broken render")
             SAMPLE.render = broken
@@ -281,7 +281,7 @@ class PageTests(unittest.TestCase):
         conf = (ROOT / "packaging/duo-os/opos-apps.conf").read_text(encoding="utf-8")
         active = [line for line in conf.splitlines() if line.strip() and not line.strip().startswith("#")]
         self.assertIn("[Service]", active)
-        self.assertNotIn("OPOS_APPS", "\n".join(active))
+        self.assertIn("Environment=OPOS_APPS=clock", active)
         script = (ROOT / "packaging/duo-os/build-image.sh").read_text(encoding="utf-8")
         self.assertIn("20-opos-apps.conf", script)
         self.assertIn("docs/apps.md", (ROOT / "ROADMAP.md").read_text(encoding="utf-8"))
