@@ -141,10 +141,10 @@ def clock_known():
     if flag == "1":
         return True
     try:
-        from opos.web import clock_ok
+        from opos.web import clock_ok  # web imports this module; the import stays inside the function
         return bool(clock_ok())
     except Exception:
-        return True
+        return False
 
 
 def current_now():

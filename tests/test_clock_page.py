@@ -88,5 +88,22 @@ class ClockPage(unittest.TestCase):
         self.assertNotIn(b"Snooze 10 min", served)
 
 
+class ClockKnown(unittest.TestCase):
+    def _without_flag(self):
+        return {key: value for key, value in os.environ.items() if key != "OPOS_CLOCK_OK"}
+
+    def test_a_failed_clock_check_is_not_treated_as_known(self):
+        with mock.patch.dict(os.environ, self._without_flag(), clear=True):
+            with mock.patch("opos.web.clock_ok", side_effect=OSError("unreadable")):
+                self.assertIs(clock_page.clock_known(), False)
+
+    def test_an_unset_flag_uses_the_clock_check(self):
+        with mock.patch.dict(os.environ, self._without_flag(), clear=True):
+            with mock.patch("opos.web.clock_ok", return_value=False):
+                self.assertIs(clock_page.clock_known(), False)
+            with mock.patch("opos.web.clock_ok", return_value=True):
+                self.assertIs(clock_page.clock_known(), True)
+
+
 if __name__ == "__main__":
     unittest.main()
