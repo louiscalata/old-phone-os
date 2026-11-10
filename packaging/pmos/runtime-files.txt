@@ -55,6 +55,7 @@ src/opos/public_demo.py
 src/opos/public_static/public-demo.css
 src/opos/public_static/public-demo.html
 src/opos/public_static/public-demo.js
+src/opos/radio_watch.py
 src/opos/reserve.py
 src/opos/router.py
 src/opos/runtime.py
