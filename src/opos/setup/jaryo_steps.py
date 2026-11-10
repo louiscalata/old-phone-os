@@ -119,9 +119,9 @@ def fragment():
         if name == 'wifi':
             parts.append('<p id="jaryo-radio" role="status">Wi-Fi radio: not detected</p><p>Radio detection does not show whether you are connected.</p><p>Joining a network is not available in this build. Continue or skip without changing your connection.</p><button type="button" data-jwifi>Set up later in Settings › Network</button>')
         if name == 'pin':
-            # JRY34: record-only, like Wi-Fi. The lock screen cannot check a PIN yet, so no digits are asked for or stored.
-            parts.append('<p id="jaryo-pin-note">A lock PIN is not available in this build. The lock screen opens with the Unlock button.</p>'
-                         '<p>No PIN is requested or saved. Continue or skip to save this choice for later.</p>'
+            # Record-only, like Wi-Fi. A PIN is saved on the phone when the lock is on, not by this step.
+            parts.append('<p id="jaryo-pin-note">This step does not save a lock PIN. When the lock is on, the phone asks for it on the lock screen.</p>'
+                         '<p>Continue or skip. This step stores no PIN.</p>'
                          '<button type="button" data-jpin>Set up later in Settings › Device</button>')
         parts.append('<div class="row"><button type="button" data-jskip>Skip</button><button type="button" data-jback>Back</button><button type="button" data-jnext>Next</button></div>')
         if i == 0:
