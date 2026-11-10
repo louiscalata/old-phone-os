@@ -15,6 +15,7 @@ src/opos/aitools/sessions.py
 src/opos/aitools/wizard.py
 src/opos/alarm_sound.py
 src/opos/alarms.py
+src/opos/alert.py
 src/opos/appdoc.py
 src/opos/apps.py
 src/opos/apps_page.py
