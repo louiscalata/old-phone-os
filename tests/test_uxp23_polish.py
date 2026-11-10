@@ -157,12 +157,14 @@ CHECKS.polish = async function() {
     return out;
   })()`));
   out.push(...await ev(`(async function(){
-    // a11y-cost-05 (a): a poll whose state is what was last drawn writes nothing (about 60 DOM records per poll before)
+    // a11y-cost-05 (a): a poll whose state is what was last drawn writes nothing (about 60 DOM records per poll before).
+    // The live timer is stopped so a late tick cannot write during the count.
     var out=[],rec=0,mo=new MutationObserver(function(l){rec+=l.length});
+    var savedArm=armPoll;armPoll=function(){};clearTimeout(pollTimer);
     mo.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
     await pollTick();mo.takeRecords();rec=0;
     await pollTick();await pollTick();await pollTick();
-    rec+=mo.takeRecords().length;mo.disconnect();
+    rec+=mo.takeRecords().length;mo.disconnect();armPoll=savedArm;
     if(rec)out.push('three polls of an unchanged state wrote '+rec+' DOM records');
     return out;
   })()`));
