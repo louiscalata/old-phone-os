@@ -43,8 +43,8 @@ renderNotices();
 }catch(e){}};
 li.appendChild(dismiss);ul.appendChild(li);
 });
-var status=G('lock-notice'),text=notices.length?notices[0].text:'';
-if(status&&status.textContent!==text)status.textContent=text;
+var status=G('lock-notice'),lockScript=document.querySelector&&document.querySelector('script[src="/lock.js"]');
+if(status&&!(lockScript&&window.oposLockCounts!==false)){var text=notices.length?notices[0].text:'';if(status.textContent!==text)status.textContent=text;}
 }
 function available(id,label,ready){
 var b=G(id);

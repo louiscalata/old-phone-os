@@ -820,6 +820,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
             return
+        if lockpin.serve(self, path):
+            return
         if path == "/network":  # track: network
             _net_serve(self)
             return
@@ -846,6 +848,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = monitor_web.link_bytes(body)  # track monitor: the Settings link to /monitor while OPOS_MONITOR=1, else the same bytes
             if path == "/":
                 body = apps_page.inject_bytes(body, nonce)  # More apps, only when OPOS_APPS names an app; otherwise the same bytes
+                body = lockpin.inject_bytes(body, nonce)  # the lock script, only while OPOS_LOCK=1; otherwise the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":

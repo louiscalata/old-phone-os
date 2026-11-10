@@ -121,6 +121,7 @@ src/opos/web_static/js-5.js
 src/opos/web_static/js-6.js
 src/opos/web_static/js-7.js
 src/opos/web_static/js-8.js
+src/opos/web_static/lock.js
 src/opos/web_static/monitor-theme.js
 src/opos/web_static/monitor.css
 src/opos/web_static/monitor.html
