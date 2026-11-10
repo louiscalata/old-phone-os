@@ -23,20 +23,44 @@ class Hash(unittest.TestCase):
         self.addCleanup(lockpin.reset)
         lockpin.reset()
         with unittest.mock.patch.dict(__import__("os").environ, {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}):
+            lockpin.set_clock(lambda: 1000)
             lockpin.set_pin("1234")
             for n in range(4):
-                ok, status = lockpin.unlock("0000", 1000)
+                ok, status = lockpin.unlock("0000")
                 self.assertFalse(ok)
                 self.assertEqual(status["wait_s"], 0)
-            ok, status = lockpin.unlock("0000", 1000)
+            ok, status = lockpin.unlock("0000")
             self.assertFalse(ok)
             self.assertGreaterEqual(status["wait_s"], 30)
-            ok, early = lockpin.unlock("1234", 1000)
+            ok, early = lockpin.unlock("1234")
             self.assertFalse(ok)
             self.assertGreater(early["wait_s"], 0)
-            ok, later = lockpin.unlock("1234", 1031)
+            lockpin.set_clock(lambda: 1031)
+            ok, later = lockpin.unlock("1234")
             self.assertTrue(ok)
             self.assertFalse(later["locked"])
+
+    def test_a_client_clock_cannot_skip_the_wait(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        lockpin.set_clock(lambda: 1000)
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            for _ in range(5):
+                code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "0000", "now": 10 ** 12}, token)
+                self.assertEqual(code, 403, raw)
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 10 ** 12}, token)
+            self.assertEqual(code, 403, raw)
+            self.assertGreater(json.loads(raw)["wait_s"], 0)
+            lockpin.set_clock(lambda: 1031)
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 0}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(json.loads(raw)["locked"])
 
 
 class Server(unittest.TestCase):
@@ -52,12 +76,12 @@ class Server(unittest.TestCase):
             self.assertFalse(lockpin.status()["has_pin"])
             lockpin.lock()
             self.assertFalse(lockpin.is_locked())
-            ok, status = lockpin.unlock("", 0)
+            ok, status = lockpin.unlock("")
             self.assertFalse(ok)
             self.assertFalse(status["locked"])
             lockpin._store().write_json("lock.json", {"locked": True, "failures": 0, "wait_until": 0})
             self.assertFalse(lockpin.is_locked())
-            ok, again = lockpin.unlock("", 0)
+            ok, again = lockpin.unlock("")
             self.assertFalse(ok)
             self.assertFalse(again["locked"])
         with running(env) as server:
@@ -95,7 +119,7 @@ class Server(unittest.TestCase):
             self.assertEqual(code, 403, raw)
             self.assertTrue(lockpin.verify("1234", lockpin._read()["record"]))
             self.assertFalse(lockpin.verify("5678", lockpin._read()["record"]))
-            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 50}, token)
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 10 ** 12}, token)
             self.assertEqual(code, 200, raw)
             self.assertFalse(json.loads(raw)["locked"])
             code, raw = post(server, "/api/lock", {"action": "skip"}, token)

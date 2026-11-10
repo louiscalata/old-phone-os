@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 from pathlib import Path
 
 from opos.store import Store, default_root
@@ -16,15 +17,32 @@ ITERATIONS = 200_000
 _FILE = "lock.json"
 _STORE = None
 _WAIT = 30
+_CLOCK = time.time
 
 
 def active():
     return os.environ.get("OPOS_LOCK") == "1"
 
 
+def set_clock(clock=None):
+    """Tests replace the server clock. Request bodies are not a clock."""
+    global _CLOCK
+    if clock is None:
+        _CLOCK = time.time
+        return
+    if not callable(clock):
+        raise TypeError("clock")
+    _CLOCK = clock
+
+
 def reset():
     global _STORE
     _STORE = None
+    set_clock(None)
+
+
+def _now():
+    return float(_CLOCK())
 
 
 def _store():
@@ -111,23 +129,23 @@ def lock():
     _write(data)
 
 
-def unlock(pin, now):
-    """(ok, status). now is a number the test can move. Wait text is included when a wait is running."""
+def unlock(pin):
+    """(ok, status). The wait uses the server clock. Wait text is included when a wait is running."""
     data = _read()
-    now = float(now)
+    now = _now()
     wait_until = float(data.get("wait_until") or 0)
     if now < wait_until:
-        return False, _status(data, now)
+        return False, _status(data)
     record = data.get("record")
     if not isinstance(record, dict):
         # There is no PIN to check. An empty unlock does not open a lock, because there is not one.
-        return False, _status(data, now)
+        return False, _status(data)
     if verify(pin, record):
         data["locked"] = False
         data["failures"] = 0
         data["wait_until"] = 0
         _write(data)
-        return True, _status(data, now)
+        return True, _status(data)
     failures = int(data.get("failures") or 0) + 1
     data["failures"] = failures
     data["locked"] = True
@@ -135,11 +153,11 @@ def unlock(pin, now):
         wait = _WAIT * (2 ** (failures - 5))
         data["wait_until"] = now + wait
     _write(data)
-    return False, _status(data, now)
+    return False, _status(data)
 
 
-def _status(data, now=0):
-    remaining = max(0, int(float(data.get("wait_until") or 0) - float(now)))
+def _status(data):
+    remaining = max(0, int(float(data.get("wait_until") or 0) - _now()))
     return {
         "ok": not data.get("locked", True),
         "locked": bool(data.get("locked", True)),
@@ -149,10 +167,10 @@ def _status(data, now=0):
     }
 
 
-def status(now=0):
+def status():
     if not active():
         return {"ok": True, "locked": False, "has_pin": False, "wait_s": 0, "enforced": False}
-    return dict(_status(_read(), now), enforced=True)
+    return dict(_status(_read()), enforced=True)
 
 
 def blocks(action, path):
