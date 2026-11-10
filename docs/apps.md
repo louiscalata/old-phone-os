@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Everyday apps
 
-`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image installs `opos-server.service.d/20-opos-apps.conf` with no names yet. The demo and the postmarketOS build do not set the variable.
+`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts,notes,calc`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image installs `opos-server.service.d/20-opos-apps.conf` with `OPOS_APPS=clock,contacts,notes,calc`. The demo and the postmarketOS build do not set the variable.
 
 Each named app is its own page. The main page gains one link, More apps, inside All apps. `web.page()` does not grow.
 
@@ -13,6 +13,6 @@ An app that fails to open shows a short page with Home. Phone and the front page
 
 ## Not run on a phone
 
-Clock is the first named app (`OPOS_APPS=clock` on the Duo image). It is its own page. The home page only gains the short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen.
+The Duo image names Clock, Contacts, Notes and Calculator (`OPOS_APPS=clock,contacts,notes,calc`). Each app is its own page. The home page only gains the short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen.
 
 No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN. Sound and vibration are not played yet.
