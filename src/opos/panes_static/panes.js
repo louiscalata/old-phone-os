@@ -21,4 +21,17 @@ setHand(hand());sync();
 try{new MutationObserver(sync).observe(d,{attributes:true,attributeFilter:['data-ff']})}catch(e){}
 try{window.addEventListener('storage',function(e){if(e.key===KEY||e.key===null)setHand(hand())})}catch(e){}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
+function detail(){try{
+var phone=document.getElementById('phone'),box=document.getElementById('pane-detail');
+if(!phone)return;
+if(!box){box=document.createElement('div');box.id='pane-detail';box.setAttribute('role','status');phone.insertBefore(box,phone.firstChild)}
+var lines={phone:'Practice calls stay on this phone.',messages:'Practice messages stay on this phone.',helper:'Ask a question. The answer stays on this phone.',settings:'Display, sound, and the lock.'};
+function show(btn){if(!btn)return;var name=btn.getAttribute('data-open')||'',label=(btn.textContent||'').replace(/\s+/g,' ').trim(),extra=lines[name]||'';box.textContent=label?(label+(extra?'. '+extra:'')):''}
+var home=document.getElementById('home');
+if(!home||home.dataset.detail)return;home.dataset.detail='1';
+function pick(e){var b=e.target&&e.target.closest&&e.target.closest('button');if(b&&home.contains(b))show(b)}
+home.addEventListener('focusin',pick);home.addEventListener('pointerover',pick);
+show(home.querySelector('button'));
+}catch(e){}}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',detail);else detail();
 })()}catch(e){}
