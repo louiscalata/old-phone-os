@@ -131,6 +131,16 @@ class Server(unittest.TestCase):
             self.assertEqual(code, 200, raw)
             self.assertFalse(json.loads(raw)["locked"])
 
+    def test_counts_come_from_the_phone_log(self):
+        incoming = type("Row", (), {"outgoing": False, "text": "secret", "number": "+15550100"})()
+        missed = type("Row", (), {"kind": "missed", "number": "+15550101"})()
+        sent = type("Row", (), {"outgoing": True, "text": "hello"})()
+        got = lockpin.counts([incoming, incoming, missed, sent])
+        self.assertEqual(got["messages"], 2)
+        self.assertEqual(got["missed"], 1)
+        self.assertNotIn("secret", json.dumps(got))
+        self.assertNotIn("+15550100", json.dumps(got))
+
 
 if __name__ == "__main__":
     unittest.main()
