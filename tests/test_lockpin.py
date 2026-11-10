@@ -108,6 +108,29 @@ class Server(unittest.TestCase):
             self.assertFalse(json.loads(raw)["has_pin"])
             self.assertFalse(lockpin.has_pin())
 
+    def test_the_wait_uses_the_server_clock_not_the_request(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        clock = {"t": 1000.0}
+        lockpin.set_clock(lambda: clock["t"])
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            post(server, "/api/lock", {"action": "unlock", "pin": "1234"}, token)
+            for _ in range(5):
+                code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "0000", "now": 99999}, token)
+                self.assertEqual(code, 403, raw)
+            self.assertGreaterEqual(json.loads(raw)["wait_s"], 30)
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 99999}, token)
+            self.assertEqual(code, 403, raw)
+            clock["t"] = 1031.0
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234", "now": 1000}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(json.loads(raw)["locked"])
+
 
 if __name__ == "__main__":
     unittest.main()
