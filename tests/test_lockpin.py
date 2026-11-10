@@ -40,6 +40,37 @@ class Hash(unittest.TestCase):
 
 
 class Server(unittest.TestCase):
+    def test_no_saved_pin_is_unlocked_and_empty_unlock_fails(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
+        with unittest.mock.patch.dict(__import__("os").environ, env):
+            self.assertFalse(lockpin.is_locked())
+            self.assertFalse(lockpin.status()["locked"])
+            self.assertFalse(lockpin.status()["has_pin"])
+            lockpin.lock()
+            self.assertFalse(lockpin.is_locked())
+            ok, status = lockpin.unlock("", 0)
+            self.assertFalse(ok)
+            self.assertFalse(status["locked"])
+            lockpin._store().write_json("lock.json", {"locked": True, "failures": 0, "wait_until": 0})
+            self.assertFalse(lockpin.is_locked())
+            ok, again = lockpin.unlock("", 0)
+            self.assertFalse(ok)
+            self.assertFalse(again["locked"])
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": ""}, token)
+            self.assertEqual(code, 403, raw)
+            self.assertFalse(json.loads(raw)["locked"])
+            code, raw = post(server, "/api/lock", {"action": "lock"}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertFalse(json.loads(raw)["locked"])
+            code, raw = post(server, "/api", {"action": "call", "number": "+15550100"}, token)
+            self.assertNotEqual(code, 403, raw)
+
     def test_locked_state_has_no_names_and_writes_are_refused(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
