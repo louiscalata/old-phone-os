@@ -3,6 +3,7 @@ html[data-panes=two][data-hand=left]{--jp-act:var(--jp-l);--jp-act-ink:var(--jp-
 html[data-panes=two][data-hand=left][data-ff] #phone>:is(#jaryo-masthead,.at,#screen,#contacts,#intro,#threads,#helper){grid-column:2}
 html[data-panes=two][data-hand=left] #home-favourites>:nth-child(-n+4){grid-column:2;color:var(--jp-r-ink);--jaryo-fg:var(--jp-r-ink);--jaryo-bg:var(--jp-r)}
 html[data-panes=two][data-hand=left] #home-favourites>:nth-child(n+5){grid-column:1;color:var(--jp-l-ink);--jaryo-fg:var(--jp-l-ink);--jaryo-bg:var(--jp-l)}
+html[data-panes=two][data-hand=left] #home-notice{margin-left:var(--jp-x2);color:var(--jp-r-ink);background:var(--jp-r);--jaryo-fg:var(--jp-r-ink);--jaryo-bg:var(--jp-r)}
 html[data-panes=two][data-hand=left][data-ff] #phone>:is(#home,#apps-list,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),
 html[data-panes=two][data-hand=left][data-ff] #phone[data-app=home][data-allapps]>#jaryo-letters{grid-column:1}
 html[data-panes=two][data-hand=left][data-ff] #lock>*{grid-column:2}

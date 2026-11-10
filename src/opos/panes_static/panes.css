@@ -75,5 +75,6 @@ html[data-panes=two] #home-favourites{display:grid;grid-auto-flow:dense;grid-tem
 html[data-panes=two] #home-favourites>:nth-child(-n+4){grid-column:1;padding-left:16px;padding-right:16px;color:var(--jp-l-ink);--jaryo-fg:var(--jp-l-ink);--jaryo-bg:var(--jp-l)}
 html[data-panes=two] #home-favourites>:nth-child(n+5){grid-column:2;padding-left:16px;padding-right:16px;color:var(--jp-r-ink);--jaryo-fg:var(--jp-r-ink);--jaryo-bg:var(--jp-r)}
 html[data-panes=two] #home #allapps{grid-column:2;font-size:1.5rem}
+html[data-panes=two] #home-notice{box-sizing:border-box;max-width:var(--jp-x1);margin-left:0;padding-left:16px;padding-right:16px;color:var(--jp-l-ink);background:var(--jp-l);--jaryo-fg:var(--jp-l-ink);--jaryo-bg:var(--jp-l)}
 @MIRROR@
 }
