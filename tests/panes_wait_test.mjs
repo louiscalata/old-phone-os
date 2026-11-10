@@ -1,3 +1,6 @@
+/*
+# SPDX-License-Identifier: GPL-3.0-or-later
+*/
 // SPDX-License-Identifier: GPL-3.0-or-later
 // tests/panes_wait.mjs: the readiness conditions and the poll the browser driver uses. Run: node tests/panes_wait_test.mjs
 import assert from 'node:assert';

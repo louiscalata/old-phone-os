@@ -61,7 +61,7 @@ PRIVATE = [re.compile(p) for p in (
     r'-----BEGIN [A-Z ]*PRIVATE' + ' KEY',
     r'\b(sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_]{16,}',
     r'AKIA[0-9A-Z]{16}',
-    r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*[\"'][^\"']{8,}",
+    r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*[\"'](?!var\(--)[^\"']{8,}",
 )]
 def extra_patterns(cfg):
     """Compile site-specific patterns from the untracked guard.json key private_extra."""

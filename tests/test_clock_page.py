@@ -73,6 +73,16 @@ class ClockPage(unittest.TestCase):
             self.assertEqual(len(snap["alarms"]), 1)
             self.assertEqual(snap["notices"], [])
 
+    def test_clock_known_fails_closed_when_the_check_raises(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OPOS_CLOCK_OK", None)
+            with mock.patch("opos.web.clock_ok", side_effect=OSError("unreadable")):
+                self.assertIs(clock_page.clock_known(), False)
+            with mock.patch("opos.web.clock_ok", return_value=False):
+                self.assertIs(clock_page.clock_known(), False)
+            with mock.patch("opos.web.clock_ok", return_value=True):
+                self.assertIs(clock_page.clock_known(), True)
+
     def test_tick_is_refused_without_the_test_hook_and_the_main_page_does_not_grow(self):
         before = page()
         env = dict(self.env, OPOS_CLOCK_TEST="0")

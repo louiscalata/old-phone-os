@@ -1,3 +1,6 @@
+/*
+# SPDX-License-Identifier: GPL-3.0-or-later
+*/
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The browser half of tests/test_panes_browser.py: headless Chromium over the DevTools port (node 22+ for the global WebSocket) at
 // 1392x900 CSS px, against a real server started with OPOS_PANES=1 and a 675,42 span. It measures; the test file asserts.

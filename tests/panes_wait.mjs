@@ -1,3 +1,6 @@
+/*
+# SPDX-License-Identifier: GPL-3.0-or-later
+*/
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Waiting for a page, not for the clock. tests/panes_browser_driver.mjs polls these conditions after every load instead of sleeping a
 // fixed time: on a busy machine a page can take longer than any fixed time, and then the driver calls into a page that is not there yet.
