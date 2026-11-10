@@ -1,18 +1,41 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """oFono call and message calls, off unless OPOS_CALLS=1.
 
-Practice mode is the default. With the flag on, dial sends 911, 112, 999, 000,
-110 and 119 straight to oFono. There is no PIN, lock or confirmation here.
-Another short number with no leading plus is still refused. Not tried on a phone,
-and not used without a SIM.
+Practice mode is the default. With the flag on, the phone page uses this modem.
+dial sends 911, 112, 999, 000, 110 and 119 straight to oFono. There is no PIN,
+lock or confirmation here. Another short number with no leading plus is still
+refused. Not tried on a phone, and not used without a SIM.
 """
 from __future__ import annotations
+
+import subprocess
 
 from opos import practice
 
 
 def calls_enabled(env) -> bool:
     return str((env or {}).get("OPOS_CALLS", "")) == "1"
+
+
+def _quote(text: str) -> str:
+    return "'" + text.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+class SystemBus:
+    """gdbus on the system bus. Tests pass their own object with call()."""
+
+    def call(self, bus_name: str, path: str, interface: str, method: str, *args: str):
+        argv = ["gdbus", "call", "--system", "--dest", bus_name, "--object-path", path, "--method", interface + "." + method]
+        for arg in args:
+            if not isinstance(arg, str):
+                raise OSError("bad argument")
+            argv.append(_quote(arg))
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=10, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise OSError("gdbus timed out") from exc
+        if result.returncode != 0:
+            raise OSError(result.stderr.strip() or "gdbus failed")
 
 
 class OfonoPhone:

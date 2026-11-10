@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """oFono stays off until OPOS_CALLS=1. Emergency numbers then reach Dial. Other short numbers do not."""
+import json
 import os
+import tempfile
+import threading
 import unittest
-from pathlib import Path
 from unittest import mock
 
-from opos import practice
+from opos import lockpin, practice
 from opos.ofono_phone import OfonoPhone, calls_enabled
 from opos.ui import ScreenModem
-from opos.web import Phone
-
-ROOT = Path(__file__).resolve().parents[1]
+from opos.web import Phone, make_server
+from tests.test_apps_shell import post
 
 
 class Bus:
@@ -93,17 +94,45 @@ class Ofono(unittest.TestCase):
                 self.assertFalse(state["in_call"])
                 self.assertEqual(phone.essentials.modem.events, [])
 
-    def test_ofono_is_not_installed_as_the_phone_modem(self):
-        for path in (ROOT / "src").rglob("*.py"):
-            if path.name == "ofono_phone.py":
-                continue
-            text = path.read_text(encoding="utf-8")
-            self.assertNotIn("OfonoPhone", text, str(path))
-            self.assertNotIn("ofono_phone", text, str(path))
-        with mock.patch.dict(os.environ, {"OPOS_CALLS": "1"}):
-            phone = Phone()
+    def test_calls_on_uses_ofono_and_calls_off_stays_on_the_practice_modem(self):
+        phone = Phone()
         self.assertIs(type(phone.modem), ScreenModem)
-        self.assertIs(type(phone.essentials.modem), ScreenModem)
+        with mock.patch.dict(os.environ, {"OPOS_CALLS": "1"}):
+            live = Phone()
+        self.assertIs(type(live.modem), OfonoPhone)
+        self.assertIs(type(live.essentials.modem), OfonoPhone)
+
+    def test_an_emergency_call_is_not_blocked_by_the_lock(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        bus = Bus()
+        env = {"OPOS_CALLS": "1", "OPOS_LOCK": "1", "OPOS_STATE_DIR": folder.name}
+        with mock.patch.dict(os.environ, env):
+            phone = Phone()
+            phone.modem.bus = bus
+            lockpin.set_pin("1234")
+            for number in ("911", "112", "999", "000", "110", "119"):
+                self.assertFalse(lockpin.blocks("call", "/api", number))
+            self.assertTrue(lockpin.blocks("call", "/api", "5550100"))
+            self.assertTrue(lockpin.blocks("call", "/api"))
+            server = make_server(0, phone)
+            self.addCleanup(server.server_close)
+            self.addCleanup(server.shutdown)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api", {"action": "call", "number": "911"}, token)
+            self.assertEqual(code, 200, raw)
+            body = json.loads(raw)
+            self.assertNotEqual(body.get("error"), "locked")
+            self.assertTrue(body["in_call"])
+            self.assertEqual(bus.calls[-1][3], "Dial")
+            self.assertEqual(bus.calls[-1][4], "911")
+            code, raw = post(server, "/api", {"action": "call", "number": "5550100"}, token)
+            self.assertEqual(code, 403)
+            self.assertEqual(json.loads(raw)["error"], "locked")
+            self.assertEqual([row[4] for row in bus.calls], ["911"])
 
 
 if __name__ == "__main__":

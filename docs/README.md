@@ -43,7 +43,7 @@ evidence about the current source.
 <!-- track: network -->
 - [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.
 - [VoLTE](duo-volte.md): the IMS package and registration checks, which have not been run.
-- [Calls through oFono](duo-ofono.md): dial, hang up, and send only when `OPOS_CALLS=1`; 911, 112, 999, 000, 110 and 119 are dialed, and other short numbers are refused. Not tried with a SIM.
+- [Calls through oFono](duo-ofono.md): dial, hang up, and send only when `OPOS_CALLS=1`; 911, 112, 999, 000, 110 and 119 are dialed, including while locked. Not tried with a SIM.
 <!-- end track: network -->
 <!-- track: monitor -->
 - [Inference page on the Duo OS](../packaging/duo-os/README.md#inference-page): Settings > Inference (`/monitor`): whether a model server on the phone answers, the battery numbers it was given, and an optional AGIW monitor on a computer you own; the three variables, why only loopback egress works on the hardened units, and a reverse-tunnel recipe; tested against fakes and loopback servers, not on the phone.
