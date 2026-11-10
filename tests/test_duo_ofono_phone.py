@@ -78,6 +78,21 @@ class Ofono(unittest.TestCase):
         self.assertEqual(phone.calls, ["+911", "5550100"])
         self.assertEqual([row[3] for row in bus.calls], ["Dial", "Dial"])
 
+    def test_with_calls_off_an_emergency_number_says_calls_are_off(self):
+        for number in ("911", "112", "999", "000", "110", "119"):
+            with self.subTest(number=number):
+                screen = ScreenModem()
+                with self.assertRaises(RuntimeError) as caught:
+                    screen.dial(number)
+                self.assertEqual(str(caught.exception), "calls are off")
+                self.assertEqual(screen.events, [])
+                phone = Phone()
+                phone.call(number)
+                state = phone.state()
+                self.assertEqual(state["notice"], "Calls are off.")
+                self.assertFalse(state["in_call"])
+                self.assertEqual(phone.essentials.modem.events, [])
+
     def test_ofono_is_not_installed_as_the_phone_modem(self):
         for path in (ROOT / "src").rglob("*.py"):
             if path.name == "ofono_phone.py":

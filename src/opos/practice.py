@@ -12,6 +12,7 @@ from opos.ui import ScreenModem
 CALL = "Practice call. No real call is made."
 NOTICES = {"call ended": "Practice call ended.", "sent": "Practice message. Nothing was sent."}
 REFUSED = "error: this phone cannot call emergency numbers. Use another phone."
+CALLS_OFF = "error: calls are off."
 HOME = "Practice mode: calls, texts and tasks are simulated."
 HOME_LIVE = "Calls and messages are on."
 MAX_SHORT_DIGITS = 4  # 911, 112, 999, 1234: a number this short without a plus is a service number, not a phone number

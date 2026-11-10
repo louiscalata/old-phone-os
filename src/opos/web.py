@@ -460,6 +460,9 @@ class Phone:
         self.status = "ready"
     def call(self, number):
         self.status_app = "phone"
+        if practice.simulated(self.essentials) and practice.emergency(number):
+            self.status = practice.CALLS_OFF
+            return
         if practice.simulated(self.essentials) and practice.refuses(number):  # the practice phone must not pretend to reach 911 or 112
             self.status = practice.REFUSED
             return
@@ -475,8 +478,8 @@ class Phone:
             self.status = "in call"
         except ValueError:
             self.status = "error: number not valid"
-        except RuntimeError:
-            self.status = "error: already in a call"
+        except RuntimeError as exc:
+            self.status = practice.CALLS_OFF if str(exc) == "calls are off" else "error: already in a call"
     def hang_up(self):
         self.status_app = "phone"
         try:

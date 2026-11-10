@@ -100,15 +100,21 @@ class TestPhoneNotice(unittest.TestCase):
         self.assertEqual(p.state()["notice"], "Number not valid")
 
     def test_emergency_numbers_are_refused_not_dialled(self):
-        for number in ("911", "112", "999", "000", "1234", "(911)", " 9 1 1 "):
+        for number in ("911", "112", "999", "000", "110", "119", "(911)", " 9 1 1 "):
             with self.subTest(number=number):
                 p = Phone()
                 p.call(number)
                 s = p.state()
                 self.assertFalse(s["in_call"])
-                self.assertEqual(s["notice"], "This phone cannot call emergency numbers. Use another phone.")
+                self.assertEqual(s["notice"], "Calls are off.")
                 self.assertEqual(p.essentials.modem.events, [])
                 self.assertEqual(s["notice_app"], "phone")
+        p = Phone()
+        p.call("1234")
+        s = p.state()
+        self.assertFalse(s["in_call"])
+        self.assertEqual(s["notice"], "This phone cannot call emergency numbers. Use another phone.")
+        self.assertEqual(p.essentials.modem.events, [])
 
     def test_longer_and_international_numbers_still_make_a_practice_call(self):
         for number in ("12345", "5550100", "+911", "+15550100", "+1 555 0100"):

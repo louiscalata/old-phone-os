@@ -2,6 +2,8 @@
 import argparse
 import time
 
+from opos.essentials import emergency_number
+
 
 def render(tick):
     return "\n".join(tick.screen)
@@ -11,6 +13,8 @@ class ScreenModem:
     def __init__(self):
         self.events = []
     def dial(self, number):
+        if emergency_number(number):
+            raise RuntimeError("calls are off")
         self.events.append(("dial", number))
     def hang_up(self):
         self.events.append(("hang_up",))

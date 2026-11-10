@@ -107,9 +107,9 @@ class PhoneState(unittest.TestCase):
         p = Phone()
         p.call("911")
         s = p.state()
-        self.assertEqual(s["status"], "error: this phone cannot call emergency numbers. Use another phone.")
+        self.assertEqual(s["status"], "error: calls are off.")
         self.assertFalse(s["in_call"])
-        self.assertEqual(s["notice"], "This phone cannot call emergency numbers. Use another phone.")
+        self.assertEqual(s["notice"], "Calls are off.")
         self.assertEqual(p.essentials.modem.events, [])
         self.assertFalse(p.essentials.in_call)
 
@@ -117,12 +117,12 @@ class PhoneState(unittest.TestCase):
         p = Phone()
         p.call("+15550100")
         p.call("112")  # in a call already: the useful answer is still "use another phone"
-        self.assertEqual(p.state()["notice"], "This phone cannot call emergency numbers. Use another phone.")
+        self.assertEqual(p.state()["notice"], "Calls are off.")
         self.assertTrue(p.state()["in_call"], "the practice call that was running is not ended by the refusal")
         p = Phone()
         p.set_battery(0)
         p.call("911")
-        self.assertEqual(p.state()["notice"], "This phone cannot call emergency numbers. Use another phone.")
+        self.assertEqual(p.state()["notice"], "Calls are off.")
 
     def test_a_practice_call_to_a_normal_number(self):
         p = Phone()
@@ -160,7 +160,7 @@ class Server(unittest.TestCase):
         code, s = self.post({"action": "call", "number": "911"})
         self.assertEqual(code, 200)
         self.assertFalse(s["in_call"])
-        self.assertEqual(s["notice"], "This phone cannot call emergency numbers. Use another phone.")
+        self.assertEqual(s["notice"], "Calls are off.")
         code, s = self.post({"action": "call", "number": "+15550100"})
         self.assertTrue(s["in_call"])
         self.assertEqual(s["notice"], "Practice call. No real call is made.")
