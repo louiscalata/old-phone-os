@@ -22,7 +22,7 @@ _CSS = """
 #pivots button,#days button{min-height:48px}
 #readout,#night-time,#timer-read,#w-read{font:700 2.25rem/1.1 Georgia,'Times New Roman',serif;margin:8px 0}
 #stop,#snooze{min-height:72px;display:block;width:100%;margin:12px 0}
-input[type=time],input[type=text]{width:100%;min-height:48px;margin:8px 0;padding:8px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
+input[type=text]{width:100%;min-height:48px;margin:8px 0;padding:8px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
 html[data-bed=1] #editor,html[data-bed=1] #pivots,html[data-bed=1] #rows,html[data-bed=1] #timer-box,html[data-bed=1] #watch-box{display:none!important}
 """
 
@@ -48,7 +48,7 @@ _THUMB = """
 <button id="m-minus" type="button">− 5 min</button>
 <button id="m-plus" type="button">+ 5 min</button>
 </div>
-<label>Time <input id="clock-time" type="time" value="07:00"></label>
+<label>Time, 24-hour <input id="clock-time" type="text" inputmode="numeric" value="07:00" maxlength="5" autocomplete="off" spellcheck="false"></label>
 <div id="days"></div>
 <label>Label <input id="clock-label" type="text" maxlength="40" autocomplete="off"></label>
 <button id="save" class="main" type="button">Save</button>
@@ -98,7 +98,7 @@ G('h-minus').onclick=function(){hour=(hour+23)%24;show()};
 G('h-plus').onclick=function(){hour=(hour+1)%24;show()};
 G('m-minus').onclick=function(){minute=(minute+55)%60;show()};
 G('m-plus').onclick=function(){minute=(minute+5)%60;show()};
-G('clock-time').onchange=function(){var p=(G('clock-time').value||'').split(':');if(p.length<2)return;hour=+p[0];minute=+p[1];show()};
+G('clock-time').onchange=function(){var p=(G('clock-time').value||'').split(':');var h=+p[0],m=+p[1];if(p.length!==2||!(h>=0&&h<=23&&m>=0&&m<=59)){show();return}hour=h;minute=m;show()};
 G('save').onclick=function(){var body={action:sel?'edit':'add',hour:hour,minute:minute,days:chosen(),label:G('clock-label').value};if(sel)body.id=sel;api(body).then(function(s){sel=null;G('del').hidden=true;paint(s)})};
 G('fresh').onclick=function(){sel=null;hour=7;minute=0;on={};G('clock-label').value='';G('del').hidden=true;show();dayButtons()};
 G('del').onclick=function(){if(!sel)return;if(G('del').dataset.sure!=='1'){G('del').dataset.sure='1';G('del').textContent='Delete this alarm?';return}api({action:'delete',id:sel}).then(function(s){sel=null;G('del').hidden=true;paint(s)})};
