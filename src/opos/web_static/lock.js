@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Lock counts and the PIN pad. Served only while OPOS_LOCK=1, so the main page stays the same size.
 window.oposLockCounts = true;
+window.oposLockHeld = true;
 try {
   var blank = document.getElementById("lock-notice");
   if (blank) blank.textContent = "";
   var tokenEl = document.querySelector("meta[name=opos-token]");
   if (!tokenEl) throw new Error("token");
   var pin = "";
-  window.oposLockHeld = true;
   function countsText(data) {
     var c = (data && data.lock) || {};
     var missed = c.missed || 0;
@@ -25,7 +25,6 @@ try {
     pad.id = "lock-pad";
     pad.setAttribute("role", "group");
     pad.setAttribute("aria-label", "PIN");
-    pad.style.display = "grid";
     pad.style.gridTemplateColumns = "repeat(3, minmax(48px, 1fr))";
     pad.style.gap = "8px";
     pad.style.width = "min(100%, 280px)";
@@ -53,22 +52,33 @@ try {
     showEntered();
     return pad;
   }
+  function setPadVisible(pad, on) {
+    pad.hidden = !on;
+    pad.style.display = on ? "grid" : "none";
+  }
+  function tryAgain() {
+    var line = document.getElementById("lock-pin") || document.getElementById("lock-notice");
+    if (line) line.textContent = "Try again.";
+  }
   function paint(data) {
-    var locked = !!(data && data.enforced && data.locked);
-    var held = locked && !!(data && data.has_pin);
+    if (!data || typeof data.locked !== "boolean" || typeof data.enforced !== "boolean") {
+      tryAgain();
+      return;
+    }
+    var locked = data.enforced === true && data.locked === true;
     window.oposLockCounts = locked;
-    window.oposLockHeld = held;
+    window.oposLockHeld = locked;
     var note = document.getElementById("lock-notice");
     if (note && locked) note.textContent = countsText(data);
     var pad = document.getElementById("lock-pad");
-    if (held) {
+    if (locked) {
       if (!pad) pad = buildPad();
-      pad.hidden = false;
+      setPadVisible(pad, true);
       if (data.wait_s) {
         var wait = document.getElementById("lock-pin");
         if (wait) wait.textContent = "Wait " + data.wait_s + " seconds";
       }
-    } else if (pad) pad.hidden = true;
+    } else if (pad) setPadVisible(pad, false);
   }
   function post(body) {
     return fetch("/api/lock", {
@@ -82,18 +92,22 @@ try {
     pin = "";
     showEntered();
     post({ action: "unlock", pin: sent }).then(function (res) {
-      paint(res.body);
-      if (res.ok && res.body && !res.body.locked) {
-        window.oposLockHeld = false;
-        window.oposLockCounts = false;
-        if (window.oposUI && window.oposUI.unlock) window.oposUI.unlock();
+      if (!res.ok) {
+        tryAgain();
         return;
       }
-      var line = document.getElementById("lock-pin");
-      if (!line) return;
-      if (res.body && res.body.wait_s) line.textContent = "Wait " + res.body.wait_s + " seconds";
-      else line.textContent = "Wrong PIN";
-    }).catch(function () { window.oposLockHeld = false; });
+      paint(res.body);
+      if (window.oposLockHeld) {
+        var line = document.getElementById("lock-pin");
+        if (!line) return;
+        if (res.body && res.body.wait_s) line.textContent = "Wait " + res.body.wait_s + " seconds";
+        else line.textContent = "Wrong PIN";
+        return;
+      }
+      window.oposLockCounts = false;
+      if (window.oposUI && window.oposUI.unlock) window.oposUI.unlock();
+      return;
+    }).catch(tryAgain);
   }
   function onKey(label) {
     if (!window.oposLockHeld) return;
@@ -106,8 +120,8 @@ try {
   function pull() {
     fetch("/api/lock", { headers: { "X-OPOS-Token": tokenEl.content } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) { if (data) paint(data); else window.oposLockHeld = false; })
-      .catch(function () { window.oposLockHeld = false; });
+      .then(function (data) { if (data) paint(data); else tryAgain(); })
+      .catch(tryAgain);
   }
   var unlockBtn = document.getElementById("unlock");
   if (unlockBtn && unlockBtn.addEventListener) {
@@ -120,4 +134,7 @@ try {
   }
   pull();
   setInterval(pull, 2000);
-} catch (e) { window.oposLockHeld = false; }
+} catch (e) {
+  var line = document.getElementById("lock-notice");
+  if (line) line.textContent = "Try again.";
+}

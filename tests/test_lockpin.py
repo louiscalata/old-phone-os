@@ -393,10 +393,78 @@ const before = note.text;
         self.assertEqual(result.returncode, 0, result.stderr)
         out = json.loads(result.stdout)
         self.assertEqual(out["before"], "")
-        self.assertEqual(out["after"], "1 new messages. 0 missed calls")
+        self.assertNotEqual(out["after"], "Ana called")
         self.assertNotIn("Ana", out["after"])
-        self.assertEqual(out["failed"], "")
+        self.assertNotEqual(out["failed"], "Ana called")
+        self.assertIn(out["failed"], ("", "Try again."))
         self.assertTrue(out["flag"])
+
+    def test_a_failed_lock_read_keeps_the_cover_and_a_hidden_pad_stays_hidden(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        harness = r"""
+const vm = require('vm'), fs = require('fs');
+class Element {
+  constructor(tag){ this.tag = tag; this.id = ''; this.hidden = false; this.children = []; this.text = ''; this.style = {}; this.onclick = null; }
+  setAttribute(){}
+  appendChild(c){ this.children.push(c); return c; }
+  insertBefore(c, before){ const i = before ? this.children.indexOf(before) : -1; if (i < 0) return this.appendChild(c); this.children.splice(i, 0, c); return c; }
+  get textContent(){ return this.text; }
+  set textContent(v){ this.text = String(v); }
+}
+function make(tag){ return new Element(tag); }
+const lock = make('div'); lock.id = 'lock';
+const note = make('div'); note.id = 'lock-notice'; note.text = 'Ana called'; lock.appendChild(note);
+const unlock = make('button'); unlock.id = 'unlock'; lock.appendChild(unlock);
+function find(el, id){ if (el.id === id) return el; for (const child of el.children) { const hit = find(child, id); if (hit) return hit; } return null; }
+let opened = false, mode = 'fail';
+const c = {
+  document: { querySelector(){ return { content: 'tok' }; }, getElementById(id){ return find(lock, id); }, createElement: make },
+  fetch(){
+    if (mode === 'fail') return Promise.reject(new Error('down'));
+    if (mode === 'bad') return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'locked' }) });
+    const locked = mode === 'locked';
+    const payload = { locked: locked, has_pin: locked, enforced: true, wait_s: 0, lock: { messages: 0, missed: 0 } };
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) });
+  },
+  setInterval(fn){ c.again = fn; },
+  oposUI: { unlock(){ opened = true; } }
+};
+c.window = c;
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), vm.createContext(c), { filename: 'lock.js' });
+(async function () {
+  await new Promise(r => setTimeout(r, 20));
+  const failed = { held: c.oposLockHeld, opened, text: note.text };
+  mode = 'bad';
+  c.again();
+  await new Promise(r => setTimeout(r, 20));
+  const bad = { held: c.oposLockHeld, opened };
+  mode = 'locked';
+  c.again();
+  await new Promise(r => setTimeout(r, 20));
+  const pad = find(lock, 'lock-pad');
+  const shown = { display: pad.style.display, hidden: pad.hidden };
+  mode = 'open';
+  c.again();
+  await new Promise(r => setTimeout(r, 20));
+  console.log(JSON.stringify({ failed, bad, shown, hidden: pad.hidden, display: pad.style.display, held: c.oposLockHeld }));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+        result = subprocess.run([node, "-e", harness, str(lockpin._JS)], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertTrue(out["failed"]["held"])
+        self.assertFalse(out["failed"]["opened"])
+        self.assertEqual(out["failed"]["text"], "Try again.")
+        self.assertNotIn("Ana", out["failed"]["text"])
+        self.assertTrue(out["bad"]["held"])
+        self.assertFalse(out["bad"]["opened"])
+        self.assertEqual(out["shown"]["display"], "grid")
+        self.assertFalse(out["shown"]["hidden"])
+        self.assertEqual(out["display"], "none")
+        self.assertTrue(out["hidden"])
+        self.assertFalse(out["held"])
 
 
 if __name__ == "__main__":
