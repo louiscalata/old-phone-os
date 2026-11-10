@@ -38,7 +38,11 @@ class ClockPage(unittest.TestCase):
         self.assertIn('type="time"', html)
         self.assertEqual(set(), css_hexes(style_of(html)) - TOKENS)
         self.assertTrue(is_quiet(visible(html)))
-        self.assertIn("Works offline: yes. Sends data: no. Uses: speaker, vibration. Real or practice: real.", apps.by_id("clock").card())
+        self.assertIn(
+            "Works offline: yes. Sends data: no. Uses: none. Real or practice: real. "
+            "The schedule is real. Sound and vibration are not played yet.",
+            apps.by_id("clock").card(),
+        )
 
     def test_ring_snooze_stop_and_a_clock_that_is_not_set(self):
         with running(self.env) as server:
