@@ -157,6 +157,7 @@ if(window.opos)window.opos.open=window.openSheet;
 }
 // unlock definition start
 window.oposUI.unlock=function(){
+if(window.oposLockHeld)return;
 try{cover.hidden=true;}finally{phone.inert=false;}
 };
 // unlock definition end
