@@ -3,7 +3,7 @@
 
 What main already has, set against a short list of everyday phone jobs. Read from the source. Nothing in this note was run on a Surface Duo. Every on-device check is **NOT_RUN**.
 
-`web.page()` on this tree is 99,973 bytes. With `OPOS_SPAN=675,42` it is 99,988 bytes. The home page the server sends with every switch on is 101,014 bytes, and 101,082 bytes when `OPOS_APPS=clock,contacts,notes,calc` is added. All four are under the 102,000-byte gate. Later apps stay off that page.
+`web.page()` on this tree is 99,973 bytes. With `OPOS_SPAN=675,42` it is 99,988 bytes. The home page from `tests.test_uxp30_budget.served_home_page` is 100,202 bytes with no switch, 101,249 bytes with every switch on, and 101,317 bytes when `OPOS_APPS=clock,contacts,notes,calc` is added to those switches. All of these are under the 102,000-byte gate. Later apps stay off that page.
 
 ## Already on main
 

@@ -12,6 +12,8 @@ class GapNote(unittest.TestCase):
         text = DOC.read_text(encoding="utf-8")
         self.assertIn("NOT_RUN", text)
         self.assertIn("99,973", text)
+        self.assertIn("101,249", text)
+        self.assertIn("101,317", text)
         self.assertIn("102,000", text)
         for phrase in (
             "oFono",
