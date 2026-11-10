@@ -70,7 +70,7 @@ class TestStatusBar(unittest.TestCase):
         locking = lock.split('window.oposUI.lock=function(){try{', 1)[1].split('}catch(e)', 1)[0]
         self.assertIn("G('unlock').focus()", locking)
         self.assertIn("if(e.key==='Escape')window.oposUI.unlock()", lock)
-        self.assertIn("if(!/(^|[?&])(lock=0|demo=1|app=full)(&|$)/.test(location.search))window.oposUI.lock();", lock)
+        self.assertIn("if(!/(^|[?&])(lock=0|demo=1|app=full)(&|$)/.test(location.search)||/(^|[?&])practice=/.test(location.search))window.oposUI.lock();", lock)
         unlock = lock.split('// unlock definition start', 1)[1].split('// unlock definition end', 1)[0]
         self.assertIn('cover.hidden=true', unlock)
         self.assertIn('phone.inert=false', unlock)

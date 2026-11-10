@@ -42,17 +42,49 @@ try {
       engine.textContent = text ? (cur ? cur + " " : "") + "Alarm" : cur;
     }
   }
-  function openPractice(which, number) {
-    if (which !== "phone" && which !== "messages") return;
+  var pendingPractice = null;
+  function lockCoverOn() {
+    var cover = document.getElementById("lock");
+    return !!(cover && !cover.hidden);
+  }
+  function showPractice(which, number) {
     var ui = window.oposUI;
-    if (!ui || typeof ui.openApp !== "function") return;
-    if (typeof ui.unlock === "function") ui.unlock();
     ui.openApp(which);
     var field = document.getElementById("number");
     if (field) field.value = number || "";
     var line = which === "messages" ? "Practice message. Nothing was sent." : "Practice call. No real call is made.";
     if (typeof showNotice === "function") showNotice(line, which);
   }
+  function openPractice(which, number) {
+    if (which !== "phone" && which !== "messages") return;
+    var ui = window.oposUI;
+    if (!ui || typeof ui.openApp !== "function") return;
+    if (lockCoverOn()) {
+      pendingPractice = { which: which, number: number || "" };
+      return;
+    }
+    pendingPractice = null;
+    showPractice(which, number);
+  }
+  function resumePractice() {
+    if (!pendingPractice || lockCoverOn()) return;
+    var next = pendingPractice;
+    pendingPractice = null;
+    openPractice(next.which, next.number);
+  }
+  function watchUnlock() {
+    var ui = window.oposUI;
+    if (!ui || typeof ui.unlock !== "function" || ui.unlock.oposPractice) return;
+    var base = ui.unlock;
+    function wrapped() {
+      var result = base.apply(this, arguments);
+      try { resumePractice(); } catch (err) {}
+      return result;
+    }
+    wrapped.oposPractice = true;
+    ui.unlock = wrapped;
+  }
+  watchUnlock();
   function fromQuery() {
     if (openedPractice) return;
     var which = "";
@@ -104,7 +136,9 @@ try {
   window.oposHooks = window.oposHooks || [];
   window.oposHooks.push(function () { if (window.__oposAlarm) paintAlarm({ clock_ok: true, now: new Date().toISOString(), next: { text: window.__oposAlarm, at: new Date(Date.now() + 60000).toISOString() } }); });
   window.oposHooks.push(function () {
+    try { watchUnlock(); } catch (e) {}
     try { fromQuery(); } catch (e) {}
+    try { resumePractice(); } catch (e) {}
     try { if (lastPeople.length) paintFav(lastPeople); } catch (e) {}
   });
   pull();

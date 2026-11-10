@@ -33,7 +33,7 @@ var call=document.getElementById('call');
 var text=document.getElementById('text');
 var letters=[].map.call(document.querySelectorAll('#letters button'),function(b){return (b.textContent||'').trim()});
 if(letters.indexOf('A')<0)out.push('no letter A');
-if(!call||(call.href||'').indexOf('practice=phone')<0||(call.href||'').indexOf('lock=0')<0)out.push('call href '+(call&&call.getAttribute('href')));
+if(!call||(call.href||'').indexOf('practice=phone')<0||(call.href||'').indexOf('lock=0')>=0)out.push('call href '+(call&&call.getAttribute('href')));
 if(!text||(text.href||'').indexOf('practice=messages')<0)out.push('text href '+(text&&text.getAttribute('href')));
 if((call.getAttribute('href')||'').indexOf('5550101')<0)out.push('call number');
 if(window.innerWidth>=1200){
@@ -48,21 +48,34 @@ resolve({problems:out,next:call?call.href:''});
 """
 AFTER = r"""
 return new Promise(function(resolve){
-var n=0,t=setInterval(function(){
+var n=0,opened=false,t=setInterval(function(){
 n++;
+var lock=document.getElementById('lock');
 var phone=document.getElementById('phone');
 var app=phone&&phone.getAttribute('data-app');
-var notice=(document.getElementById('notice')||{}).textContent||'';
-if(app!=='phone'&&notice.indexOf('Practice call')<0&&n<40)return;
+if(app==='phone')opened=true;
+if(lock&&!lock.hidden){
 clearInterval(t);
 var out=[];
-if(app!=='phone')out.push('not phone '+(app||''));
+if(opened)out.push('opened before unlock');
+var btn=document.getElementById('unlock');
+if(!btn){out.push('no unlock');resolve(out);return;}
+btn.click();
+setTimeout(function(){
+var phone2=document.getElementById('phone');
+var app2=phone2&&phone2.getAttribute('data-app');
+var notice=(document.getElementById('notice')||{}).textContent||'';
 var num=document.getElementById('number');
+var lock2=document.getElementById('lock');
+if(app2!=='phone')out.push('not phone '+(app2||''));
 if(!num||num.value.indexOf('5550101')<0)out.push('number '+(num&&num.value));
 if(notice.indexOf('Practice call')<0)out.push('notice '+notice);
-var lock=document.getElementById('lock');
-if(lock&&!lock.hidden)out.push('locked');
+if(lock2&&!lock2.hidden)out.push('still locked');
 resolve(out);
+},400);
+return;
+}
+if(n>50){clearInterval(t);resolve(['lock never covered']);}
 },80);
 });
 """
@@ -90,19 +103,34 @@ resolve(out);
 """
 MESSAGES = r"""
 return new Promise(function(resolve){
-var n=0,t=setInterval(function(){
+var n=0,opened=false,t=setInterval(function(){
 n++;
+var lock=document.getElementById('lock');
 var phone=document.getElementById('phone');
 var app=phone&&phone.getAttribute('data-app');
-var notice=(document.getElementById('notice')||{}).textContent||'';
-if(app!=='messages'&&notice.indexOf('Practice message')<0&&n<40)return;
+if(app==='messages')opened=true;
+if(lock&&!lock.hidden){
 clearInterval(t);
 var out=[];
-if(app!=='messages')out.push('not messages '+(app||''));
+if(opened)out.push('opened before unlock');
+var btn=document.getElementById('unlock');
+if(!btn){out.push('no unlock');resolve(out);return;}
+btn.click();
+setTimeout(function(){
+var phone2=document.getElementById('phone');
+var app2=phone2&&phone2.getAttribute('data-app');
+var notice=(document.getElementById('notice')||{}).textContent||'';
 var num=document.getElementById('number');
+var lock2=document.getElementById('lock');
+if(app2!=='messages')out.push('not messages '+(app2||''));
 if(!num||num.value.indexOf('5550101')<0)out.push('text number '+(num&&num.value));
 if(notice.indexOf('Practice message')<0)out.push('text notice '+notice);
+if(lock2&&!lock2.hidden)out.push('still locked');
 resolve(out);
+},400);
+return;
+}
+if(n>50){clearInterval(t);resolve(['lock never covered']);}
 },80);
 });
 """

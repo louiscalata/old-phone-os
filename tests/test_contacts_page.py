@@ -80,7 +80,8 @@ class ContactsApi(unittest.TestCase):
         self.assertIn('id="letters"', html)
         self.assertIn("practiceUrl('phone'", html)
         self.assertIn("practiceUrl('messages'", html)
-        self.assertIn("lock=0", html)
+        self.assertNotIn("lock=0", html)
+        self.assertIn("/?practice='+which", html)
         self.assertIn("Jump to ", html)
         self.assertNotIn("dial(", html)
         self.assertNotIn("action:'call'", html)
@@ -97,8 +98,12 @@ class ContactsApi(unittest.TestCase):
         self.assertIn('data-fav', home)
         self.assertIn("favourite", home)
         self.assertIn('practice', home)
+        self.assertNotIn("unlock()", home)
         self.assertNotIn("action:'call'", home)
         self.assertNotIn('action:"call"', home)
+        page_script = page()
+        self.assertIn("||/(^|[?&])practice=/.test(location.search))window.oposUI.lock();", page_script)
+        self.assertLessEqual(len(page_script.encode("utf-8")), WAVE_GATE)
 
 
 if __name__ == "__main__":

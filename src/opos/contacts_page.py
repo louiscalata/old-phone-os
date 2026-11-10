@@ -71,7 +71,7 @@ var T=document.querySelector('meta[name=opos-token]').content, people=[], sel=nu
 function api(b){return fetch('/api/contacts',{method:b?'POST':'GET',headers:Object.assign({'X-OPOS-Token':T},b?{'Content-Type':'application/json'}:{}),body:b?JSON.stringify(b):undefined}).then(function(r){return r.json()})}
 function letterOf(name){var c=(name||'').charAt(0).toUpperCase();return (c>='A'&&c<='Z')?c:'#'}
 function letterKey(letter){return letter==='#'?'other':letter}
-function practiceUrl(which, number){return '/?lock=0&practice='+which+'&n='+encodeURIComponent(number||'')}
+function practiceUrl(which, number){return '/?practice='+which+'&n='+encodeURIComponent(number||'')}
 function paint(s){if(!s||s.error)return;people=s.people||[];G('practice').hidden=!s.practice;G('skipped').hidden=!s.skipped;G('skipped').textContent=s.skipped?('Skipped '+s.skipped+' fields.'):'';
 var q=(G('find').value||'').toLowerCase(), rows=G('rows'), letters=G('letters');rows.textContent='';letters.textContent='';
 var shown=people.filter(function(p){return !q||(p.name+' '+(p.numbers||[]).map(function(n){return n.number}).join(' ')).toLowerCase().indexOf(q)>=0});
