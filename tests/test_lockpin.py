@@ -274,6 +274,84 @@ class Server(unittest.TestCase):
             injected = lockpin.inject_bytes(same, "nonce")
         self.assertIn(b'src="/lock.js"', injected)
         self.assertIn(b'nonce="nonce"', injected)
+        self.assertIn("oposLockHeld", page)
+        self.assertNotIn('type="password"', page)
+
+    def test_digit_pad_posts_the_pin_and_does_not_hide_the_screen(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        script = lockpin._JS.read_text(encoding="utf-8")
+        harness = r"""
+const vm = require('vm');
+const script = process.argv[1];
+const fs = require('fs');
+class Element {
+  constructor(tag){ this.tag = tag; this.id = ''; this.hidden = false; this.children = []; this.attrs = {}; this.text = ''; this.style = {}; this.onclick = null; this.listeners = []; }
+  setAttribute(k, v){ this.attrs[k] = v; }
+  appendChild(c){ this.children.push(c); c.parent = this; return c; }
+  insertBefore(c, before){ const i = before ? this.children.indexOf(before) : -1; if (i < 0) return this.appendChild(c); this.children.splice(i, 0, c); c.parent = this; return c; }
+  addEventListener(type, fn){ this.listeners.push(fn); }
+  get textContent(){ return this.text; }
+  set textContent(v){ this.text = String(v); }
+}
+function make(tag){ return new Element(tag); }
+const lock = make('div'); lock.id = 'lock';
+const note = make('div'); note.id = 'lock-notice'; note.text = 'Ana called'; lock.appendChild(note);
+const unlock = make('button'); unlock.id = 'unlock'; unlock.text = 'Unlock'; lock.appendChild(unlock);
+function find(el, id){ if (el.id === id) return el; for (const child of el.children) { const hit = find(child, id); if (hit) return hit; } return null; }
+let opened = false;
+const c = {
+  document: {
+    querySelector(){ return { content: 'tok' }; },
+    getElementById(id){ return find(lock, id); },
+    createElement: make
+  },
+  fetch(url, opts){
+    const body = opts && opts.body ? JSON.parse(opts.body) : null;
+    c.posts.push(body);
+    const unlocked = !!(body && body.pin === '1234');
+    const payload = unlocked
+      ? { ok: true, locked: false, has_pin: true, enforced: true, lock: { messages: 0, missed: 0 } }
+      : { locked: true, has_pin: true, enforced: true, wait_s: 0, lock: { messages: 2, missed: 1, alarm: 'Alarm 07:00' } };
+    return Promise.resolve({ ok: !body || unlocked, json: () => Promise.resolve(payload) });
+  },
+  setInterval(){},
+  posts: [],
+  oposUI: { unlock(){ opened = true; } }
+};
+c.window = c;
+const context = vm.createContext(c);
+vm.runInContext(fs.readFileSync(script, 'utf8'), context, { filename: script });
+(async function () {
+  await new Promise(r => setTimeout(r, 20));
+  const pad = find(lock, 'lock-pad');
+  const labels = pad.children.filter(e => e.tag === 'button').map(e => e.text);
+  const out = { labels, notice: note.text, held: c.oposLockHeld, opened };
+  function press(label){ pad.children.find(e => e.text === label).onclick(); }
+  press('1'); press('2'); press('3'); press('4');
+  out.entered = find(lock, 'lock-pin').text;
+  press('Unlock');
+  await new Promise(r => setTimeout(r, 20));
+  out.posts = c.posts;
+  out.openedAfter = opened;
+  out.heldAfter = c.oposLockHeld;
+  console.log(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+        result = subprocess.run([node, "-e", harness, str(lockpin._JS)], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out["labels"], ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "Unlock"])
+        self.assertEqual(out["notice"], "2 new messages. 1 missed call. Alarm 07:00")
+        self.assertNotIn("Ana", out["notice"])
+        self.assertTrue(out["held"])
+        self.assertFalse(out["opened"])
+        self.assertEqual(out["entered"], "Entered 4")
+        self.assertEqual(out["posts"][0], None)
+        self.assertEqual(out["posts"][-1], {"action": "unlock", "pin": "1234"})
+        self.assertTrue(out["openedAfter"])
+        self.assertFalse(out["heldAfter"])
 
     def test_the_lock_notice_stays_empty_until_the_lock_response(self):
         node = shutil.which("node")
