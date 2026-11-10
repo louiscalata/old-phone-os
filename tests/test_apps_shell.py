@@ -281,7 +281,7 @@ class PageTests(unittest.TestCase):
         conf = (ROOT / "packaging/duo-os/opos-apps.conf").read_text(encoding="utf-8")
         active = [line for line in conf.splitlines() if line.strip() and not line.strip().startswith("#")]
         self.assertIn("[Service]", active)
-        self.assertIn("Environment=OPOS_APPS=clock,contacts,notes", active)
+        self.assertIn("Environment=OPOS_APPS=clock,contacts,notes,calc", active)
         script = (ROOT / "packaging/duo-os/build-image.sh").read_text(encoding="utf-8")
         self.assertIn("20-opos-apps.conf", script)
         self.assertIn("docs/apps.md", (ROOT / "ROADMAP.md").read_text(encoding="utf-8"))

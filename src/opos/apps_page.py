@@ -78,6 +78,7 @@ if(a&&card)card.textContent=a.getAttribute('data-card')||'';
 def _claims(path):
     if not apps.switched_on():
         return False
+    apps.load_enabled()
     if path == "/apps":
         return True
     if apps.by_path(path) is not None:
