@@ -20,7 +20,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from opos.hw.battery import _read_int, _read_text, read_battery
+from opos.hw.battery import _read_int, _read_text, read_battery, read_duo_gauges
 
 REFRESH_S = 15.0
 _TERMUX_TIMEOUT_S = 10.0
@@ -119,6 +119,19 @@ def _sysfs_counter(root="/"):
 
 
 def _sysfs_status(root="/"):
+    gauges = read_duo_gauges(root)
+    if gauges is not None and gauges["capacity_pct"] is not None:
+        out = {
+            "level": float(gauges["capacity_pct"]),
+            "temp_c": gauges["temp_c"],
+            "charging": (gauges["status"] or "").lower() in ("charging", "full"),
+            "source": "sysfs",
+            "counter": _sysfs_counter(root),
+        }
+        if gauges["health"] is not None:
+            out["health"] = float(gauges["health"])
+            out["health_source"] = "sysfs"
+        return out
     b = read_battery(root)
     if not b["present"] or b["capacity_pct"] is None:
         return None
@@ -154,8 +167,9 @@ def read_live(env=None, root="/", run=subprocess.run, which=shutil.which):
     r = _termux_status(run, which) or _sysfs_status(root)
     if r is None:
         return None
-    design = design_mah(env, run) if r.get("charge_counter_uah") else None
-    r["health"], r["health_source"] = _health(env, root, r, design)
+    if "health" not in r:
+        design = design_mah(env, run) if r.get("charge_counter_uah") else None
+        r["health"], r["health_source"] = _health(env, root, r, design)
     return r
 
 

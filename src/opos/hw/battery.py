@@ -249,6 +249,67 @@ def _rfkill_types(root_path: Path) -> list[str]:
     return result
 
 
+def _same_unit(full: int, design: int) -> int:
+    """charge_full is µAh and charge_full_design is mAh on these gauges. Scale the smaller design up."""
+    if design > 0 and full > design * 50:
+        return design * 1000
+    return design
+
+
+def read_duo_gauges(root: str | Path = "/") -> dict | None:
+    """Level, health and temperature from bq27742 gauges when they are present.
+
+    The PMIC node typed Battery is not the pack. charge_now / charge_full is the level.
+    Health uses charge_full against charge_full_design after the mAh/µAh correction.
+    temp is deci-degrees C. None when no gauge is readable, so other phones stay on read_battery.
+    """
+    base = Path(root) / "sys/class/power_supply"
+    if not base.is_dir():
+        return None
+    gauges = []
+    try:
+        for entry in sorted(base.iterdir()):
+            if not entry.name.startswith("bq27742"):
+                continue
+            if _read_text(entry / "present") == "0":
+                continue
+            gauges.append(entry)
+    except OSError:
+        return None
+    if not gauges:
+        return None
+    now_sum = full_sum = design_sum = 0
+    pairs = temps = 0
+    temp_sum = 0
+    status = None
+    for entry in gauges:
+        if status is None:
+            status = _read_text(entry / "status")
+        now = _read_int(entry / "charge_now")
+        full = _read_int(entry / "charge_full")
+        design = _read_int(entry / "charge_full_design")
+        temp = _read_int(entry / "temp")
+        if now is not None and full is not None and full > 0:
+            now_sum += max(0, now)
+            full_sum += full
+            pairs += 1
+            if design is not None and design > 0:
+                design_sum += _same_unit(full, design)
+        if temp is not None:
+            temp_sum += temp
+            temps += 1
+    if pairs == 0 or full_sum <= 0:
+        return None
+    level = int(now_sum / full_sum * 100)
+    level = 0 if level < 0 else 100 if level > 100 else level
+    health = None
+    if design_sum > 0:
+        health = full_sum / design_sum
+        health = 0.0 if health < 0 else 1.0 if health > 1 else health
+    temp_c = (temp_sum / temps) / 10.0 if temps else None
+    return {"capacity_pct": level, "health": health, "temp_c": temp_c, "status": status}
+
+
 def read_radios(root: str | Path = "/") -> dict:
     root_path = Path(root)
     net = _net_ifaces(root_path)
