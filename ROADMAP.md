@@ -71,6 +71,24 @@ includes the public Settings layout, battery history, app status, rules-helper,
 simulator-control and link-checker fixes. Handler-level checks, native browser
 checks and deployment observations remain separate evidence.
 
+## On-device checks
+
+These rows are the phone-features checks D1 through D11. Date stays empty and Result stays NOT_RUN until a phone run fills both, with an evidence link. The link in Evidence today is the feature pull request, not a device receipt. No row here records a pass.
+
+| ID | Check | Date | Result | Evidence |
+|---|---|---|---|---|
+| D1 | The alarm tone plays on the speaker and steps from 20 percent to 70 percent. | | NOT_RUN | [PR #28](https://github.com/louiscalata/old-phone-os/pull/28) |
+| D2 | An alarm rings when it is due, and it stays silent while the clock is unknown. | | NOT_RUN | [PR #25](https://github.com/louiscalata/old-phone-os/pull/25) |
+| D3 | Clock: save an alarm, snooze, stop, and open bedside. | | NOT_RUN | [PR #26](https://github.com/louiscalata/old-phone-os/pull/26) |
+| D4 | Notes are still on the phone after a restart. | | NOT_RUN | [PR #29](https://github.com/louiscalata/old-phone-os/pull/29) |
+| D5 | The lock PIN works on the glass. | | NOT_RUN | [PR #31](https://github.com/louiscalata/old-phone-os/pull/31) |
+| D6 | Contacts stay on the phone, including a vCard brought in from outside. | | NOT_RUN | [PR #27](https://github.com/louiscalata/old-phone-os/pull/27) |
+| D7 | Battery drain with the panels soft-blanked. | | NOT_RUN | [PR #36](https://github.com/louiscalata/old-phone-os/pull/36) |
+| D8 | The calculator works on the glass. | | NOT_RUN | [PR #30](https://github.com/louiscalata/old-phone-os/pull/30) |
+| D9 | A camera still, and the drain while it is taken. | | NOT_RUN | [PR #32](https://github.com/louiscalata/old-phone-os/pull/32) |
+| D10 | Folded posture, and bedside on the real hinge. | | NOT_RUN | [PR #21](https://github.com/louiscalata/old-phone-os/pull/21) |
+| D11 | The apps index and More apps on the glass. | | NOT_RUN | [PR #23](https://github.com/louiscalata/old-phone-os/pull/23) |
+
 ## Next
 
 Linux CI portability fixes were verified on a Debian VM. Hosted CI results for
