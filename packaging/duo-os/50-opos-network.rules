@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Duo OS image: lets the OPOS server change Wi-Fi through NetworkManager without an administrator prompt.
-// The server is a system unit with no login session, so polkit's default for these actions is to ask, and nothing on the phone can answer.
-// polkitd that sets subject.system_unit (128 and later) grants only opos-server.service. Older polkitd has no system_unit, so the rule falls back to user droidian.
-// Only the four actions the Network page needs. They also let that user connect or disconnect any
-// NetworkManager connection and add, change or delete system connections, including mobile data and VPNs.
+// Duo OS image: the four NetworkManager actions the Network page uses.
+// YES only for opos-server.service running as user droidian. An ssh login is not that unit.
+// Polkit that does not set subject.system_unit is not granted.
+// These actions also let that service connect or disconnect any NetworkManager connection
+// and add, change or delete system connections, including mobile data and VPNs.
+// Whether a running phone grants them is NOT_RUN.
 polkit.addRule(function(action, subject) {
     var ids = [
         "org.freedesktop.NetworkManager.enable-disable-wifi",
@@ -14,13 +15,7 @@ polkit.addRule(function(action, subject) {
     if (ids.indexOf(action.id) < 0) {
         return;
     }
-    if (typeof subject.system_unit == "string") {
-        if (subject.system_unit == "opos-server.service") {
-            return polkit.Result.YES;
-        }
-        return;
-    }
-    if (subject.user == "droidian") {
+    if (subject.user == "droidian" && subject.system_unit == "opos-server.service") {
         return polkit.Result.YES;
     }
 });

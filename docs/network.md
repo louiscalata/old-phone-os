@@ -49,9 +49,10 @@ NetworkManager as the unprivileged user the server runs as (`droidian`). Nothing
 - **Limits.** A Wi-Fi password is 8 to 63 characters (or 64 hex digits). Networks that need a user name (802.1X, "company or school")
   and WEP are listed but not joinable. Hidden networks can be joined by typing the name. Names starting with a dash are refused.
 
-The Duo image installs `packaging/duo-os/50-opos-network.rules` by default. `OPOS_NET_POLKIT=0` leaves it out.
-On polkitd that reports a system unit, only `opos-server.service` may use the four actions. Older polkitd falls back to user `droidian`.
-The actions also let that service connect or disconnect any connection and add, change or delete system connections (mobile data and
+The Duo image installs `packaging/duo-os/50-opos-network.rules` only when the build is run with `OPOS_NET_POLKIT=1`. Unset leaves it out.
+The rule returns yes only when `subject.user` is `droidian` and `subject.system_unit` is `opos-server.service`, and only for
+`enable-disable-wifi`, `network-control`, `settings.modify.system` and `wifi.scan`. An ssh login is not that unit, so it is not granted.
+Polkit that does not report `subject.system_unit` is not granted. The actions also let that service connect or disconnect any connection and add, change or delete system connections (mobile data and
 VPNs included). Whether a running phone actually grants them is **NOT_RUN**.
 
 **Who can change Wi-Fi.** The page token is served on `GET /network` like the home page, so any local user or process on the phone
@@ -77,8 +78,10 @@ As `droidian` over ssh, on the image's checkout (`/opt/opos/src`):
 ```sh
 python3 -m opos.net probe     # the raw nmcli, rfkill, ip, bluetoothctl, mmcli output, to compare with the parsers
 python3 -m opos.net status    # what the page will show
-nmcli -t general permissions  # wifi.scan, network-control, settings.modify.system, enable-disable-wifi should say yes
+nmcli -t general permissions  # this shell's own result; the rule does not grant an ssh login
 ```
+
+Whether `opos-server.service` is granted the four actions on a phone is **NOT_RUN**.
 
 Then open Settings > Network on the phone, scan, and join a network. The phone's clock reads 1970 until set, which does not stop
 a WPA join but does stop secure websites and updates until the time is set.
