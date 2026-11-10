@@ -256,6 +256,21 @@ class Server(unittest.TestCase):
             self.assertEqual(status, 200, body)
             self.assertIn(b"Mom", body)
 
+    def test_lock_screen_script_shows_counts_and_page_stays_under_the_gate(self):
+        page = web.page()
+        self.assertIn("oposLockCounts", page)
+        self.assertNotIn('src="/lock.js"', page)
+        self.assertLessEqual(len(page.encode("utf-8")), 102000)
+        script = lockpin._JS.read_text(encoding="utf-8")
+        self.assertIn("new messages", script)
+        self.assertNotIn("notices", script)
+        same = b"<html><body></body></html>"
+        self.assertIs(lockpin.inject_bytes(same, "n"), same)
+        with unittest.mock.patch.dict(__import__("os").environ, {"OPOS_LOCK": "1"}):
+            injected = lockpin.inject_bytes(same, "nonce")
+        self.assertIn(b'src="/lock.js"', injected)
+        self.assertIn(b'nonce="nonce"', injected)
+
 
 if __name__ == "__main__":
     unittest.main()

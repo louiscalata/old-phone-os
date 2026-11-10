@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 
-from opos import clock_page
+from opos import clock_page, secure
 from opos.store import Store, default_root
 
 ITERATIONS = 200_000
@@ -20,6 +20,8 @@ _STORE = None
 _WAIT = 30
 _MAX_WAIT = 3600
 _CLOCK = time.time
+_JS = Path(__file__).with_name("web_static") / "lock.js"
+_TAG = '<script nonce="{nonce}" src="/lock.js"></script>'
 
 
 def active():
@@ -248,6 +250,40 @@ def counts(log=None):
     except Exception:
         alarm = ""
     return {"messages": messages, "missed": missed, "alarm": alarm}
+
+
+def inject_bytes(body, nonce):
+    """The same bytes object while OPOS_LOCK is unset. The script is not part of page()."""
+    if not active() or not isinstance(body, (bytes, bytearray)) or b'src="/lock.js"' in body:
+        return body
+    if not secure._nonce_ok(nonce):
+        return body
+    tag = _TAG.format(nonce=nonce).encode("utf-8")
+    lower = body.lower()
+    at = lower.rfind(b"</body>")
+    if at < 0:
+        return body + tag
+    return body[:at] + tag + body[at:]
+
+
+def serve(handler, path):
+    """Serve /lock.js while the lock is on. False means this path is not ours."""
+    if path != "/lock.js" or not active():
+        return False
+    try:
+        body = _JS.read_bytes()
+    except OSError:
+        handler._json({"error": "not found"}, 404)
+        return True
+    handler.send_response(200)
+    for key, value in secure.security_headers().items():
+        handler.send_header(key, value)
+    handler.send_header("Content-Type", "text/javascript; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    if handler.command != "HEAD":
+        handler.wfile.write(body)
+    return True
 
 
 def redact(snap, log=None):
