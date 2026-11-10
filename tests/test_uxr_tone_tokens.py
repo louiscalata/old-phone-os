@@ -90,6 +90,20 @@ class TestUxrToneTokens(unittest.TestCase):
         sample = "TO" + "KEN = '" + "abcd1234'"
         self.assertTrue(any(p.search(sample) for p in mod.PRIVATE))
 
+    def test_guard_flags_a_var_prefix_that_is_not_a_whole_css_value(self):
+        guard = Path(__file__).resolve().parents[1] / "guard" / "check.py"
+        spec = importlib.util.spec_from_file_location("opos_guard_check_prefix", guard)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        broken = "pass" + "word = \"" + "var(--not-css-secret\""
+        trailed = "TO" + "KEN = '" + "var(--jaryo-fg)" + "actualsecret'"
+        whole = "TO" + "KEN = '" + "var(--jaryo-fg)'"
+        quoted = "TO" + "KEN = \"" + "var(--jaryo-fg)\""
+        self.assertTrue(any(p.search(broken) for p in mod.PRIVATE))
+        self.assertTrue(any(p.search(trailed) for p in mod.PRIVATE))
+        self.assertFalse(any(p.search(whole) for p in mod.PRIVATE))
+        self.assertFalse(any(p.search(quoted) for p in mod.PRIVATE))
+
     def test_every_tone_reads_as_the_jaryo_token(self):
         rules = _rules(_page())
         for tone in TONES:
