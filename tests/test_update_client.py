@@ -24,7 +24,7 @@ import unittest
 import urllib.request
 from unittest import mock
 
-from opos import notices, update_client as uc, update_page
+from opos import fonts, notices, update_client as uc, update_page
 from tests import webclient
 
 
@@ -1678,7 +1678,7 @@ class MainPageIsUntouched(Env):
             with webclient.Running(updater=self.client()) as run:
                 s, h, b = webclient.request(run.port, "GET", "/")
                 self.assertEqual(s, 200)
-                self.assertEqual(b, webclient.web.page(run.token, csp_nonce(h)).encode(), have_updates)
+                self.assertEqual(b, fonts.inject(webclient.web.page(run.token, csp_nonce(h)).encode(), csp_nonce(h)), have_updates)
 
     def test_state_and_demo_actions_are_unchanged(self):
         run = webclient.Running(updater=self.client())
