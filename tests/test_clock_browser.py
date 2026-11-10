@@ -43,9 +43,13 @@ return new Promise(function(resolve){
 var n=0,t=setInterval(function(){
 n++;
 var row=document.querySelector('#rows button');
-if(!row&&n<30)return;
+if(!row||row.textContent.indexOf(stamp)<0){
+  if(n<40)return;
+  clearInterval(t);
+  resolve(['no '+stamp+' row']);
+  return;
+}
 clearInterval(t);
-if(!row||row.textContent.indexOf(stamp)<0){resolve(['no '+stamp+' row']);return;}
 if(row.textContent.indexOf('\u00b7 On')<0)out.push('not on '+row.textContent);
 var token=document.querySelector('meta[name=opos-token]').content;
 function send(body){return fetch('/api/clock',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':token},body:JSON.stringify(body)}).then(function(r){return r.json()})}
