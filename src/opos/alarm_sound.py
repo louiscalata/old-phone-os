@@ -2,7 +2,7 @@
 """Play an alarm tone and, only after a self-test file says so, a haptic pulse.
 
 The tone is a short self-made beep. Volume steps from 20% to 70% on the paplay
-stream, not the sink, so an alert cannot scale it. The player we started is stopped
+stream, not the sink, so a sink-wide duck does not scale it. The player we started is stopped
 by its process id. This never sets a media role of
 alarm: that role crashes PulseAudio on this phone. Vibration stays off until a
 self-test file exists.
