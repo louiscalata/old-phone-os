@@ -159,6 +159,10 @@ chmod 0644 "$r/etc/opos/monitor.env.example"
 ( cd "$r" && sha256sum etc/opos/monitor.env.example )
 # --- end track: monitor ---
 
+# The Duo server user is droidian. The postmarketOS modem rule names user opos and is not installed here.
+install -d "$r/etc/polkit-1/rules.d"
+install -m 0644 "$here/50-opos-modem.rules" "$r/etc/polkit-1/rules.d/50-opos-modem.rules"
+
 # DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
 # droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
 # for an image that is meant to be carried: without it nothing new can log in.
