@@ -270,6 +270,6 @@ def _play(events):
 apps.register(apps.App(
     "clock", "Clock", "/clock",
     "Alarms, a timer, a stopwatch and a bedside clock.",
-    "yes", "no", "speaker, vibration", "real", "alarms", "ESSENTIAL", 0.1,
+    "yes", "no", "none", "the schedule is real, but sound and vibration are not played yet", "alarms", "ESSENTIAL", 0.1,
     render, snapshot, post,
 ))
