@@ -228,6 +228,34 @@ class Server(unittest.TestCase):
             self.assertNotIn(b"hello", body)
             self.assertNotIn(b"Mom", body)
 
+    def test_locked_app_gets_are_redacted(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name, "OPOS_APPS": "contacts,notes,clock,calc"}
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            status, body = get(server, "/api/contacts", token)
+            self.assertEqual(status, 200, body)
+            self.assertIn(b"Mom", body)
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            for path in ("/api/contacts", "/api/notes", "/api/clock", "/api/calc"):
+                status, body = get(server, path, token)
+                self.assertEqual(status, 200, body)
+                parsed = json.loads(body)
+                self.assertTrue(parsed["locked"], path)
+                self.assertNotIn("people", parsed)
+                self.assertNotIn("notes", parsed)
+                self.assertNotIn("alarms", parsed)
+                self.assertNotIn(b"Mom", body)
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            status, body = get(server, "/api/contacts", token)
+            self.assertEqual(status, 200, body)
+            self.assertIn(b"Mom", body)
+
 
 if __name__ == "__main__":
     unittest.main()
