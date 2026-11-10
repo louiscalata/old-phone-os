@@ -241,8 +241,9 @@ class TestPageNotice(unittest.TestCase):
         self.assertIn("#notice[data-tone=call]:not([hidden])", page())
         self.assertIn("#notice[hidden]{display:block;visibility:hidden}", page())
 
-    def test_the_lock_line_is_the_newest_notice(self):
-        self.assertIn("text=notices.length?notices[0].text:''", page())
+    def test_the_lock_line_is_a_count(self):
+        self.assertIn("text=n?n+' new':''", page())
+        self.assertNotIn("notices[0].text", page())
 
     def test_notice_before_demo_and_outside(self):
         h = page()
