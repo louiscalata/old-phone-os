@@ -1234,6 +1234,13 @@ def main(argv=None):
             _clock_page.start_thread()
     except Exception as e:
         print("opos: clock not available:", type(e).__name__, file=sys.stderr)
+    try:
+        from opos import apps as _apps_cal
+        if "calendar" in (_apps_cal.names_from() or []):
+            from opos import calendar_page as _calendar_page
+            _calendar_page.start_thread()
+    except Exception as e:
+        print("opos: calendar not available:", type(e).__name__, file=sys.stderr)
     # <<< track firstboot
     live = None
     if args.live_battery or os.environ.get("OPOS_BATTERY") == "live":

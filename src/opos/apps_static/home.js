@@ -69,3 +69,27 @@ try {
   pullLock();
   setInterval(pullLock, 2000);
 } catch (e) {}
+try {
+  var calToken = document.querySelector("meta[name=opos-token]");
+  if (!calToken) throw new Error("token");
+  function paintNext(data) {
+    var text = data && data.clock_ok && typeof data.next_lock === "string" ? data.next_lock : "";
+    var date = document.getElementById("lock-date");
+    if (!date) return;
+    var line = document.getElementById("lock-next");
+    if (!line) {
+      line = document.createElement("div");
+      line.id = "lock-next";
+      date.parentNode.insertBefore(line, date.nextSibling);
+    }
+    line.textContent = text;
+  }
+  function pullNext() {
+    fetch("/api/calendar", { headers: { "X-OPOS-Token": calToken.content } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { if (data) paintNext(data); })
+      .catch(function () {});
+  }
+  pullNext();
+  setInterval(pullNext, 30000);
+} catch (e) {}
