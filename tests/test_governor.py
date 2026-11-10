@@ -2,7 +2,7 @@
 import ast
 import unittest
 from pathlib import Path
-from opos.governor import PowerState, Mode, Priority, Task, Decision, rule_decide, Governor
+from opos.governor import PowerState, Mode, Priority, Task, Decision, rule_decide, Governor, heat_limit
 
 class TestRuleDecide(unittest.TestCase):
     def test_normal_by_effective(self):
@@ -531,6 +531,32 @@ class TestThermalPolicyEnforcement(unittest.TestCase):
         self.assertNotIn('o', d.allowed)
         self.assertIn('o', d.deferred)
         self.assertEqual(d.reason, 'advisor')
+
+class TestHeatLimit(unittest.TestCase):
+    def test_below_40_is_unchanged(self):
+        self.assertFalse(heat_limit(39.9)["hot"])
+        state = PowerState(80, False, 1.0, 39.9)
+        tasks = (Task('e', Priority.ESSENTIAL, 1), Task('o', Priority.OPTIONAL, 1))
+        d = rule_decide(state, tasks)
+        self.assertEqual(d.mode, Mode.NORMAL)
+        self.assertIn('o', d.allowed)
+
+    def test_at_40_pauses_inference_and_slows_the_poll(self):
+        limit = heat_limit(40)
+        self.assertEqual(limit["poll_ms"], 5000)
+        self.assertEqual(limit["brightness_cap"], 30)
+        self.assertTrue(limit["pause_inference"])
+        self.assertIn("Battery is warm", limit["line"])
+        calls = []
+        state = PowerState(80, False, 1.0, 40)
+        tasks = (Task('e', Priority.ESSENTIAL, 1),)
+        adv = lambda s, t: calls.append(1) or Decision(Mode.NORMAL, ('e',), (), 'advisor')
+        d = Governor(adv).decide(state, tasks, pause_inference=True)
+        self.assertEqual(calls, [])
+        self.assertEqual(d.reason, 'rules')
+        Governor(adv).decide(state, tasks)
+        self.assertEqual(calls, [1])
+
 
 class TestNoSilentExceptPass(unittest.TestCase):
     def test_no_except_handler_with_only_pass(self):

@@ -28,6 +28,10 @@ class PollIntervalTests(unittest.TestCase):
         self.assertEqual(poll_ms("CRITICAL", 8192, False), 5000)
         self.assertEqual(poll_ms("CRITICAL", 1535, False), 5000)
         self.assertEqual(poll_ms("CRITICAL", 0, False), 5000)
+        self.assertEqual(poll_ms("NORMAL", None, False, 39.9), 1000)
+        self.assertEqual(poll_ms("NORMAL", None, False, 40), 5000)
+        self.assertEqual(poll_ms("CRITICAL", None, False, 40), 5000)
+        self.assertEqual(poll_ms("NORMAL", None, True, 50), 1000)
 
     def test_poll_call_overrides(self):
         for mode in MODES:
