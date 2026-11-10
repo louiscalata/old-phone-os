@@ -104,6 +104,11 @@ class TilesStatic(unittest.TestCase):
         self.assertIn(".observe($('phone'),{attributes:true,attributeFilter:['data-app']})", js)
         self.assertIn("jl=s;jsc();", js)
 
+    def test_in_brief_counts_threads(self):
+        js = (STATIC / "phone-a.js").read_text(encoding="utf-8")
+        self.assertIn("var brief=$('in-brief'),n=(s.threads||[]).length;if(brief)brief.textContent='In brief · '+n+' threads · Clock · No calendar';", js)
+        self.assertNotIn("n+' messages · Clock", js)
+
 
 @unittest.skipUnless(uxp12.NODE, "node not installed")
 class TilesRuntime(unittest.TestCase):
