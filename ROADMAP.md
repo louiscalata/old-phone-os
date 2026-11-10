@@ -17,6 +17,7 @@ and what comes next. Plans are intentions, not promises.
   non-essential tasks, never fewer.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
+- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. No extra app is on until its name is added. App data stays in local files.
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
   (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. The kiosk runs the
   same server as the desktop demo, with the same simulated battery, calls and texts: it does not
