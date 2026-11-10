@@ -261,6 +261,11 @@ done
 ( cd "$r" && sha256sum usr/libexec/opos-updater/opos-updater etc/opos/base-version etc/opos/update/allowed_signers )
 # ---- END OPOS OTA updates ----------------------------------------------------------------------------------------
 
+# --- track: exposure: container debug port on loopback, no passwordless USB root shell ---
+# OPOS_DEV_USB_SHELL=1 keeps a telnet root shell for a dev image. The default closes it.
+sh "$here/close-exposure.sh" "$r"
+# --- end track: exposure ---
+
 sync
 echo "manifest:"
 set -- opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch usr/local/sbin/sfduo-composer-watchdog
