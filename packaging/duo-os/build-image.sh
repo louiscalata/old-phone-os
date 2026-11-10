@@ -139,6 +139,10 @@ fi
 install -d "$r/etc/systemd/system/opos-server.service.d"
 install -m 0644 "$here/opos-apps.conf" "$r/etc/systemd/system/opos-server.service.d/20-opos-apps.conf"
 
+# The Duo server user is droidian. The postmarketOS modem rule names user opos and is not installed here.
+install -d "$r/etc/polkit-1/rules.d"
+install -m 0644 "$here/50-opos-modem.rules" "$r/etc/polkit-1/rules.d/50-opos-modem.rules"
+
 # --- track: monitor (the Inference page; packaging/duo-os/README.md, "Inference page") ---
 # opos-server.service sets OPOS_MONITOR=1 and reads /etc/opos/monitor.env when it exists. The image installs no such file and
 # nothing secret: only the directory and a commented example, so the page fetches nothing but the phone's own 127.0.0.1 model-port

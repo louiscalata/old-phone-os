@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Duo image. The postmarketOS file deploy/50-opos-modemmanager.rules names user opos.
+// This image's server user is droidian. Only Voice and Messaging.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "droidian") {
+        if (action.id == "org.freedesktop.ModemManager1.Messaging" || action.id == "org.freedesktop.ModemManager1.Voice") {
+            return polkit.Result.YES;
+        }
+    }
+});
