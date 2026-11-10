@@ -573,3 +573,15 @@ the keyboard's Hide key, and any of it on the Duo.
 ## Appendix. `panes.py` API (`src/opos/panes.py`)
 
 `modes(env=None) -> set`, `enabled(env=None) -> bool`, `css_text(span=None, env=None) -> str` (placeholders, `@MIRROR@`, then `span.rewrites` and `span.variables`), `asset(path, span=None, env=None) -> (bytes, content_type) | None`, `tags(nonce) -> str`, `inject(html, nonce, env=None) -> str`, `inject_bytes(body, nonce, env=None) -> bytes` (the same object while off), `serve(handler, path, env=None) -> bool`. Constants `SOFT`, `PURE`, `THEME` hold the surface literals.
+
+## Everyday app panes
+
+Microsoft's archived dual-screen patterns are list-detail (also called master-detail), companion pane, and extended canvas ([Xamarin.Forms dual-screen design patterns](https://learn.microsoft.com/en-us/previous-versions/xamarin/xamarin-forms/app-fundamentals/dual-screen/design-patterns), [Large-screen design patterns](https://devblogs.microsoft.com/surface-duo/large-screen-design-patterns/)). On a spanned Duo window the hinge is the band from x 675 to x 717. None of these apps use an extended canvas, because a control must not sit on that band. Below 1000 CSS px the two columns become one stack. These pages do not read the hinge sensor. Folded behavior on a phone is **NOT_RUN**.
+
+| App | Pattern | List pane | Thumb pane | Single pane | Folded |
+|---|---|---|---|---|---|
+| Apps index | list-detail | the app names | about these apps, and Home | the same blocks, stacked | the same stack |
+| Clock | list-detail | alarms, timer, stopwatch | the editor, Stop, Snooze, Bedside, and Home | stacked | stacked; Bedside is a button until posture is seen on the phone |
+| Contacts | list-detail | search and the names | the person and Call | stacked | stacked |
+| Notes | list-detail | the titles | the note and New note | stacked | stacked |
+| Calculator | companion pane | the result and the tape | the keys | stacked, result above the keys | stacked |
