@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local contacts and vCard: add Ana, keep her, and do not put her name in the phone state."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from opos import contacts_page, vcard, web
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible
 from tests.test_panes_pages import TOKENS, css_hexes, style_of
+from tests.test_uxp30_budget import WAVE_GATE, page, served_home_page
 
 ANA = {"action": "add", "name": "Ana", "number": "+1 555 0101", "label": "Mobile", "favorite": True}
 
@@ -71,6 +74,31 @@ class ContactsApi(unittest.TestCase):
             self.assertEqual(json.loads(raw)["people"][0]["name"], "Bo")
             code, raw = post(server, "/api/contacts", {"action": "add", "name": "No", "number": "abc"}, token)
             self.assertEqual(code, 400)
+
+    def test_practice_links_letter_index_and_the_main_page_does_not_grow(self):
+        html = contacts_page.render("tok", "nonce")
+        self.assertIn('id="letters"', html)
+        self.assertIn("practiceUrl('phone'", html)
+        self.assertIn("practiceUrl('messages'", html)
+        self.assertIn("lock=0", html)
+        self.assertIn("Jump to ", html)
+        self.assertNotIn("dial(", html)
+        self.assertNotIn("action:'call'", html)
+        self.assertNotIn('action:"call"', html)
+        before = page()
+        with mock.patch.dict(os.environ, {"OPOS_APPS": "contacts"}):
+            self.assertEqual(page(), before)
+        served = served_home_page({"OPOS_APPS": "contacts"})
+        self.assertLessEqual(len(served), WAVE_GATE)
+        self.assertIn(b"/apps-home.js", served)
+        self.assertNotIn(b"practiceUrl", served)
+        self.assertNotIn(b'id="letters"', served)
+        home = Path(__file__).resolve().parents[1].joinpath("src/opos/apps_static/home.js").read_text(encoding="utf-8")
+        self.assertIn('data-fav', home)
+        self.assertIn("favourite", home)
+        self.assertIn('practice', home)
+        self.assertNotIn("action:'call'", home)
+        self.assertNotIn('action:"call"', home)
 
 
 if __name__ == "__main__":

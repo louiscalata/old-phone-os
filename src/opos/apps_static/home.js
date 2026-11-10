@@ -16,6 +16,8 @@ try {
 try {
   var tokenEl = document.querySelector("meta[name=opos-token]");
   if (!tokenEl) throw new Error("token");
+  var lastPeople = [];
+  var openedPractice = false;
   function paintAlarm(data) {
     var text = "";
     if (data && data.clock_ok && data.next && data.next.text && data.next.at) {
@@ -40,16 +42,75 @@ try {
       engine.textContent = text ? (cur ? cur + " " : "") + "Alarm" : cur;
     }
   }
+  function openPractice(which, number) {
+    if (which !== "phone" && which !== "messages") return;
+    var ui = window.oposUI;
+    if (!ui || typeof ui.openApp !== "function") return;
+    if (typeof ui.unlock === "function") ui.unlock();
+    ui.openApp(which);
+    var field = document.getElementById("number");
+    if (field) field.value = number || "";
+    var line = which === "messages" ? "Practice message. Nothing was sent." : "Practice call. No real call is made.";
+    if (typeof showNotice === "function") showNotice(line, which);
+  }
+  function fromQuery() {
+    if (openedPractice) return;
+    var which = "";
+    var number = "";
+    try {
+      var q = new URLSearchParams(location.search);
+      which = q.get("practice") || "";
+      number = q.get("n") || "";
+    } catch (e) {
+      return;
+    }
+    if (which !== "phone" && which !== "messages") return;
+    openedPractice = true;
+    openPractice(which, number);
+  }
+  function paintFav(people) {
+    var home = document.getElementById("home");
+    if (!home) return;
+    var old = home.querySelectorAll("[data-fav]");
+    for (var i = 0; i < old.length; i++) old[i].parentNode.removeChild(old[i]);
+    var box = document.getElementById("home-favourites") || home;
+    (people || []).forEach(function (p) {
+      if (!p || !p.favorite || !p.name) return;
+      var b = document.createElement("button");
+      var num = (p.numbers && p.numbers[0] && p.numbers[0].number) || "";
+      b.type = "button";
+      b.setAttribute("data-fav", "1");
+      b.textContent = p.name;
+      b.setAttribute("aria-label", p.name + ", favourite");
+      b.addEventListener("click", function () { openPractice("phone", num); });
+      box.appendChild(b);
+    });
+  }
   function pull() {
     fetch("/api/clock", { headers: { "X-OPOS-Token": tokenEl.content } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) { if (data) paintAlarm(data); })
       .catch(function () {});
   }
+  function pullPeople() {
+    fetch("/api/contacts", { headers: { "X-OPOS-Token": tokenEl.content } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        lastPeople = (data && data.people) || [];
+        paintFav(lastPeople);
+      })
+      .catch(function () {});
+  }
   window.oposHooks = window.oposHooks || [];
   window.oposHooks.push(function () { if (window.__oposAlarm) paintAlarm({ clock_ok: true, now: new Date().toISOString(), next: { text: window.__oposAlarm, at: new Date(Date.now() + 60000).toISOString() } }); });
+  window.oposHooks.push(function () {
+    try { fromQuery(); } catch (e) {}
+    try { if (lastPeople.length) paintFav(lastPeople); } catch (e) {}
+  });
   pull();
+  pullPeople();
   setInterval(pull, 30000);
+  setInterval(pullPeople, 30000);
   function lockLine(data) {
     if (!data || !data.enforced || !data.locked) return;
     var note = document.getElementById("lock-notice");
