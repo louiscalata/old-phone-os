@@ -45,7 +45,7 @@ What this changes in OPOS, and what it does not:
 | Everything centred and symmetric | Panes are equal width and the hinge sits in the middle. The only asymmetry is which pane is black, and the person chooses it (Hand). |
 | Type is the mark; controls are text only | No AGIW mark, wordmark, favicon or any drawn shape goes into the OPOS UI. The split is a surface rule, never a logo. |
 | D4 Split was rejected as the mark | The black/white split MUST NOT be drawn as an emblem (no filled block beside an outlined block anywhere in chrome). |
-| Inter 600 | Not adopted in OPOS. Jaryo section 3 forbids `@font-face` and downloads, and the CSP is `default-src 'none'` with no `font-src`. OPOS keeps its system serif, condensed and body stacks. |
+| Inter 600 | The AGIW wordmark face is not the OPOS UI face. OPOS serves Newsreader and Inter Tight (both OFL) from `/fonts.css`, with `font-src 'self'`. `jaryo.css` still has no `@font-face`. The system stacks stay in place as the fallback. |
 | Strict `#000` / `#fff` | Default stays the softer OPOS pair (`#e6e2d9` on `#000`, `#1a1a1a` on `#f3f0e8`) because Louis asked for toned-down whites on 2026-11-03 and the task requires 15:1 "as today". `OPOS_PANES=1,pure` gives the AGIW pair. Open question 1. |
 
 ## 2. The pane model
