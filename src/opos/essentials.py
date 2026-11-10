@@ -27,6 +27,19 @@ def normalize_number(raw: str) -> str:
     return cleaned
 
 
+# Numbers the short-number rule already covers. "08" is two digits, so normalize_number rejects it.
+EMERGENCY = frozenset({"911", "112", "999", "000", "110", "119"})
+
+
+def emergency_number(raw: str) -> bool:
+    """True for 911, 112, 999, 000, 110 or 119 after the ordinary number cleanup."""
+    try:
+        cleaned = normalize_number(raw)
+    except ValueError:
+        return False
+    return not cleaned.startswith("+") and cleaned in EMERGENCY
+
+
 def normalize_sender(raw: str) -> str:
     if not isinstance(raw, str):
         raise ValueError

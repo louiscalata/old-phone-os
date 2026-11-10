@@ -2,7 +2,8 @@
 """Optional lock PIN. The hash is PBKDF2-HMAC-SHA256. Five wrong tries start a 30 second wait that grows.
 
 The server starts enforcing only when OPOS_LOCK=1. With the variable unset, the phone behaves as before.
-There is no emergency button: practice mode cannot place that call, and a real one has not been tested.
+There is no emergency button on the page. An emergency number is still accepted while locked.
+That has not been tried on a phone.
 """
 import hashlib
 import hmac
@@ -10,6 +11,7 @@ import json
 import os
 from pathlib import Path
 
+from opos.practice import emergency
 from opos.store import Store, default_root
 
 ITERATIONS = 200_000
@@ -150,8 +152,8 @@ def status(now=0):
     return dict(_status(_read(), now), enforced=True)
 
 
-def blocks(action, path):
-    """True when a write must be refused. Alarm stop and snooze, hang up, and unlock stay allowed."""
+def blocks(action, path, number=None):
+    """True when a write must be refused. Alarm stop and snooze, hang up, unlock, and an emergency call stay allowed."""
     if not is_locked():
         return False
     if path == "/api/lock":
@@ -159,6 +161,8 @@ def blocks(action, path):
     if path == "/api/clock" and action in {"stop", "snooze"}:
         return False
     if action in {"hang_up", "unlock"}:
+        return False
+    if action == "call" and emergency(number):
         return False
     return True
 

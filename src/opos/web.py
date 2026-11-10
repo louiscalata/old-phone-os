@@ -59,6 +59,7 @@ except ImportError:
 from opos import net_page  # track: network
 from opos import apps_page  # everyday apps: /apps and /api/<app>; the page is unchanged unless OPOS_APPS names one
 from opos import lockpin  # optional PIN. Off unless OPOS_LOCK=1, so the demo is unchanged.
+from opos.ofono_phone import OfonoPhone, SystemBus, calls_enabled
 try:  # track monitor: the Inference page is optional; a runtime shipped without src/opos/monitor.py serves what it always served
     from opos import monitor, monitor_web
 except ImportError:
@@ -215,7 +216,7 @@ class Phone:
     def __init__(self, visible=False, live_battery=None):
         self.visible = bool(visible)
         self.runtime = Runtime(visible=self.visible)
-        self.modem = ScreenModem()
+        self.modem = OfonoPhone(SystemBus(), os.environ) if calls_enabled(os.environ) else ScreenModem()
         self.essentials = Essentials(self.modem)
         self.book = Book(DEMO_CONTACTS)
         # live_battery: a LiveBattery reading the phone's own battery and wall clock in place of the demo's noon simulation.
@@ -460,6 +461,9 @@ class Phone:
         self.status = "ready"
     def call(self, number):
         self.status_app = "phone"
+        if practice.simulated(self.essentials) and practice.emergency(number):
+            self.status = practice.CALLS_OFF
+            return
         if practice.simulated(self.essentials) and practice.refuses(number):  # the practice phone must not pretend to reach 911 or 112
             self.status = practice.REFUSED
             return
@@ -475,8 +479,8 @@ class Phone:
             self.status = "in call"
         except ValueError:
             self.status = "error: number not valid"
-        except RuntimeError:
-            self.status = "error: already in a call"
+        except RuntimeError as exc:
+            self.status = practice.CALLS_OFF if str(exc) == "calls are off" else "error: already in a call"
     def hang_up(self):
         self.status_app = "phone"
         try:
@@ -981,7 +985,9 @@ class Handler(BaseHTTPRequestHandler):
         if lock_post:
             self._lock_act(data)
             return
-        if lockpin.blocks(data.get("action") if isinstance(data.get("action"), str) else "", path):
+        action = data.get("action") if isinstance(data.get("action"), str) else ""
+        number = data.get("number") if isinstance(data.get("number"), str) else None
+        if lockpin.blocks(action, path, number):
             self._deny(403, "locked", "lock")
             return
         if app_post:
