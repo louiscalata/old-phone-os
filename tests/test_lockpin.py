@@ -162,5 +162,28 @@ class Server(unittest.TestCase):
             self.assertNotIn("Mom", body.decode("utf-8"))
 
 
+class PinPad(unittest.TestCase):
+    def test_the_pad_is_served_only_while_the_lock_is_on(self):
+        self.assertNotIn("/lock.js", web.page("t" * 43, "n" * 22))
+        with running({}) as server:
+            status, body = get(server, "/")
+            self.assertEqual(status, 200)
+            self.assertNotIn(b"/lock.js", body)
+            missing, _ = get(server, "/lock.js")
+            self.assertNotEqual(missing, 200)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with running({"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}) as server:
+            status, body = get(server, "/")
+            self.assertEqual(status, 200)
+            text = body.decode("utf-8")
+            self.assertIn('src="/lock.js"', text)
+            self.assertIn("nonce=", text)
+            status, script = get(server, "/lock.js")
+            self.assertEqual(status, 200)
+            self.assertIn(b"Unlock", script)
+            self.assertIn(b"Clear", script)
+
+
 if __name__ == "__main__":
     unittest.main()

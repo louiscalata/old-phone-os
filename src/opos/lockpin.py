@@ -11,7 +11,11 @@ import os
 import time
 from pathlib import Path
 
+from opos import secure
 from opos.store import Store, default_root
+
+_JS = Path(__file__).with_name("web_static") / "lock.js"
+_TAG = '<script nonce="{nonce}" src="/lock.js"></script>'
 
 ITERATIONS = 200_000
 _FILE = "lock.json"
@@ -23,6 +27,26 @@ _CLOCK = time.time
 
 def active():
     return os.environ.get("OPOS_LOCK") == "1"
+
+
+def script_bytes():
+    try:
+        return _JS.read_bytes()
+    except OSError:
+        return b""
+
+
+def inject_bytes(body, nonce):
+    """The same bytes while the lock is off. The script is not part of page()."""
+    if not active() or not isinstance(body, (bytes, bytearray)) or b'src="/lock.js"' in body:
+        return body
+    if not isinstance(nonce, str) or not secure._nonce_ok(nonce):
+        return body
+    tag = _TAG.format(nonce=nonce).encode("utf-8")
+    found = body.rfind(b"</body>")
+    if found < 0:
+        return body + tag
+    return body[:found] + tag + body[found:]
 
 
 def set_clock(clock=None):

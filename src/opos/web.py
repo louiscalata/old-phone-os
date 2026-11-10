@@ -820,6 +820,18 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
             return
+        if path == "/lock.js" and lockpin.active():
+            body = lockpin.script_bytes()
+            if body:
+                self.send_response(200)
+                for key, value in secure.security_headers().items():
+                    self.send_header(key, value)
+                self.send_header("Content-Type", "text/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(body)
+                return
         if path == "/network":  # track: network
             _net_serve(self)
             return
@@ -846,6 +858,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = monitor_web.link_bytes(body)  # track monitor: the Settings link to /monitor while OPOS_MONITOR=1, else the same bytes
             if path == "/":
                 body = apps_page.inject_bytes(body, nonce)  # More apps, only when OPOS_APPS names an app; otherwise the same bytes
+                body = lockpin.inject_bytes(body, nonce)  # the PIN pad, only while OPOS_LOCK=1; otherwise the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
@@ -1069,7 +1082,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(snap)
     def _lock_act(self, data):
-        """Set, skip, lock or unlock. Wrong-PIN waits are computed from data['now'] when a test sends it."""
+        """Set, skip, lock or unlock. The wait uses the server clock."""
         action = data.get("action") if isinstance(data, dict) else None
         if lockpin.blocks(action if isinstance(action, str) else "", "/api/lock"):
             self._deny(403, "locked", "lock")
