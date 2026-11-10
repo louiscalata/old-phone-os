@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Declared editable runtime inputs; add new source paths deliberately.
+
 src/opos/__init__.py
 src/opos/advisor.py
 src/opos/aitools/__init__.py
@@ -12,6 +13,9 @@ src/opos/aitools/place.py
 src/opos/aitools/power.py
 src/opos/aitools/sessions.py
 src/opos/aitools/wizard.py
+src/opos/appdoc.py
+src/opos/apps.py
+src/opos/apps_page.py
 src/opos/assist.py
 src/opos/battery.py
 src/opos/benchmark_model.py
@@ -77,6 +81,7 @@ src/opos/setup/wizard_page.py
 src/opos/sim.py
 src/opos/span.py
 src/opos/statusbar.py
+src/opos/store.py
 src/opos/storyboard.py
 src/opos/timezone.py
 src/opos/tokenfile.py

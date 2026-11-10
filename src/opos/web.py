@@ -57,6 +57,7 @@ try:  # track osk: the on-screen keyboard is optional; a runtime shipped without
 except ImportError:
     osk = None
 from opos import net_page  # track: network
+from opos import apps_page  # everyday apps: /apps and /api/<app>; the page is unchanged unless OPOS_APPS names one
 try:  # track monitor: the Inference page is optional; a runtime shipped without src/opos/monitor.py serves what it always served
     from opos import monitor, monitor_web
 except ImportError:
@@ -821,6 +822,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/network":  # track: network
             _net_serve(self)
             return
+        if apps_page.serve_get(self, path):
+            return
         if path in ("/monitor", "/api/monitor") and monitor_web is not None and monitor_web.enabled():  # track: monitor (OPOS_MONITOR=1 only)
             _monitor_serve(self, path)
             return
@@ -840,6 +843,8 @@ class Handler(BaseHTTPRequestHandler):
                 body = osk.inject_bytes(body, nonce)  # track osk: adds the keyboard's two tags while OPOS_OSK=1, else the same bytes
             if path == "/" and monitor_web is not None:
                 body = monitor_web.link_bytes(body)  # track monitor: the Settings link to /monitor while OPOS_MONITOR=1, else the same bytes
+            if path == "/":
+                body = apps_page.inject_bytes(body, nonce)  # More apps, only when OPOS_APPS names an app; otherwise the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
@@ -935,7 +940,9 @@ class Handler(BaseHTTPRequestHandler):
                 pass
     def _post(self):
         """Handle API POST."""
-        if self.path != "/api":
+        path = urllib.parse.urlsplit(self.path).path
+        app_post = apps_page.is_post(path)
+        if path != "/api" and not app_post:
             self._deny(404, "not found", "path")
             return
         if not secure.host_ok(self.headers.get("Host"), self.port):
@@ -959,6 +966,9 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(e.status, e.message, "body")
             return
         self._disarm()
+        if app_post:
+            apps_page.post(self, path, data)
+            return
         a = data.get("action")
         if not isinstance(a, str):
             self._deny(400, "bad request", "action")
@@ -1112,6 +1122,7 @@ class _Limits:
         self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3),
                          "update_check": secure.RateLimiter(0.2, 3), "update_download": secure.RateLimiter(0.1, 2), "update_rollback": secure.RateLimiter(0.1, 2)}
         self._buckets.update(net_page.buckets())  # track: network
+        self._buckets.update(apps_page.buckets())
         if monitor_web is not None:
             self._buckets.update(monitor_web.buckets())  # track: monitor
     def allow(self, key):

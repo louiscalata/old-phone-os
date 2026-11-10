@@ -11,7 +11,7 @@ function hand(){return stored()==='left'?'left':'right'}
 function cur(){return d.dataset.hand==='left'?'left':'right'}
 function label(){var b=document.getElementById('jaryo-hand');if(b)b.textContent='Hand: '+(cur()==='left'?'Left':'Right')}
 function setHand(v){d.dataset.hand=v;label()}
-function kind(){return P==='/'?'app':P==='/network'||P==='/firstrun'||P==='/timezone'?'page':''}
+function kind(){if(P==='/')return 'app';if(P==='/network'||P==='/firstrun'||P==='/timezone')return 'page';try{if(d.getAttribute&&d.getAttribute('data-opos-app')!=null)return 'page'}catch(e){}return ''}
 function sync(){var k=kind();if(k==='page'||(k==='app'&&d.dataset.ff==='foldable'))d.dataset.panes='two';else delete d.dataset.panes}
 function mount(){try{var t=document.getElementById('jaryo-theme');if(!t||document.getElementById('jaryo-hand'))return;
 var b=document.createElement('button');b.type='button';b.id='jaryo-hand';

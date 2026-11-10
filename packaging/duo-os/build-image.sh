@@ -135,6 +135,10 @@ fi
 ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/20-opos-network.conf $(ls etc/polkit-1/rules.d/50-opos-network.rules 2>/dev/null) )
 # --- end track: network ---
 
+# Everyday apps (/apps). The drop-in is installed with no names, so the main page stays as it is until a name is set.
+install -d "$r/etc/systemd/system/opos-server.service.d"
+install -m 0644 "$here/opos-apps.conf" "$r/etc/systemd/system/opos-server.service.d/20-opos-apps.conf"
+
 # --- track: monitor (the Inference page; packaging/duo-os/README.md, "Inference page") ---
 # opos-server.service sets OPOS_MONITOR=1 and reads /etc/opos/monitor.env when it exists. The image installs no such file and
 # nothing secret: only the directory and a commented example, so the page fetches nothing but the phone's own 127.0.0.1 model-port

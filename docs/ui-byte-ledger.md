@@ -133,3 +133,10 @@ Run it before a change and after each item, and keep both "served" figures under
 `served({"OPOS_OSK": "1"})` (and pass `span=span` only for `OPOS_SPAN`). A checkout reports its build as `unpublished`
 (11 bytes); a release build puts a git hash of at most 12 characters in its place, so a shipped image is at most one byte
 larger (`test_uxp30_budget` checks that case against the cap).
+
+## Everyday apps
+
+`OPOS_APPS` is not one of the six switches above. When it is absent, `page()` and the served home page are unchanged
+(`page()` is not edited). When it names an app, the served home page gains one More apps link, injected after `page()`.
+Measured with the link on: the link is 452 bytes, and the served home page with the six switches plus `OPOS_APPS` is
+101,701 bytes (299 bytes under the 102,000 gate). `tests/test_apps_shell.py` checks that figure.
