@@ -6,7 +6,7 @@ sent" only inside the server. While that is so, the page must say practice, not 
 must never pretend to reach an emergency number. web.py keeps one-line hooks into this module (notice_for, Phone.call,
 Phone.state); everything here is plain text and arithmetic.
 """
-from opos.essentials import normalize_number
+from opos.essentials import emergency_number, normalize_number
 from opos.ui import ScreenModem
 
 CALL = "Practice call. No real call is made."
@@ -32,6 +32,11 @@ def notice(status, in_call, sim):
     if in_call:
         return CALL
     return NOTICES.get(status, "")
+
+
+def emergency(number):
+    """True when the short-number rule covers this emergency number. Two digits, including 08, do not."""
+    return refuses(number) and emergency_number(number)
 
 
 def refuses(number):

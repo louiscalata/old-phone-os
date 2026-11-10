@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """oFono call and message calls, off unless OPOS_CALLS=1.
 
-Practice mode is the default. With the flag on, dial still refuses a short
-number with no leading plus, the same rule as the practice phone, including
-911, 112 and 999. This module is not installed as Phone.modem. The phone page
-is not wired to it. Not measured on a phone, and not used without a SIM.
+Practice mode is the default. With the flag on, dial sends 911, 112, 999, 000,
+110 and 119 straight to oFono. There is no PIN, lock or confirmation here.
+Another short number with no leading plus is still refused. Not tried on a phone,
+and not used without a SIM.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class OfonoPhone:
 
     def dial(self, number: str) -> None:
         self._require()
-        if practice.refuses(number):
+        if practice.refuses(number) and not practice.emergency(number):
             raise ValueError(practice.REFUSED)
         self.bus.call("org.ofono", self.path, "org.ofono.VoiceCallManager", "Dial", number, "default")
         self.calls.append(number)

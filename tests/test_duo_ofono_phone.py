@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""oFono call plumbing stays in practice mode until OPOS_CALLS=1, and still refuses a short number."""
+"""oFono stays off until OPOS_CALLS=1. Emergency numbers then reach Dial. Other short numbers do not."""
 import os
 import unittest
 from pathlib import Path
@@ -46,20 +46,37 @@ class Ofono(unittest.TestCase):
         self.assertEqual(bus.calls[1][3], "SendMessage")
         self.assertEqual(bus.calls[2][3], "HangupAll")
 
-    def test_a_short_or_emergency_number_is_refused_before_the_bus(self):
+    def test_an_emergency_number_reaches_the_dial_call(self):
         bus = Bus()
         phone = OfonoPhone(bus, {"OPOS_CALLS": "1"})
-        for number in ("911", "112", "999", "1234", "9-1-1", " 911 "):
+        for number in ("911", "112", "999", "000", "110", "119", "9-1-1"):
+            with self.subTest(number=number):
+                before = len(bus.calls)
+                phone.dial(number)
+                self.assertEqual(bus.calls[-1][3], "Dial")
+                self.assertEqual(bus.calls[-1][4], number)
+                self.assertEqual(len(bus.calls), before + 1)
+        self.assertEqual(phone.calls, ["911", "112", "999", "000", "110", "119", "9-1-1"])
+
+    def test_another_short_number_is_still_refused(self):
+        bus = Bus()
+        phone = OfonoPhone(bus, {"OPOS_CALLS": "1"})
+        for number in ("1234", "100", "123"):
             with self.subTest(number=number):
                 with self.assertRaises(ValueError) as caught:
                     phone.dial(number)
                 self.assertEqual(str(caught.exception), practice.REFUSED)
         self.assertEqual(bus.calls, [])
-        self.assertEqual(phone.calls, [])
+        self.assertFalse(practice.refuses("08"))
+        self.assertFalse(practice.emergency("08"))
+
+    def test_a_longer_number_still_dials(self):
+        bus = Bus()
+        phone = OfonoPhone(bus, {"OPOS_CALLS": "1"})
         phone.dial("+911")
         phone.dial("5550100")
         self.assertEqual(phone.calls, ["+911", "5550100"])
-        self.assertEqual(len(bus.calls), 2)
+        self.assertEqual([row[3] for row in bus.calls], ["Dial", "Dial"])
 
     def test_ofono_is_not_installed_as_the_phone_modem(self):
         for path in (ROOT / "src").rglob("*.py"):
