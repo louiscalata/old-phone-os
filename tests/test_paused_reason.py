@@ -194,7 +194,7 @@ process.stdout.write(JSON.stringify({html,stable,replaced,calls,remaining:list.c
 CDP = r"""
 const fs=require('fs'),path=require('path'),{spawn}=require('child_process');
 const [chrome,url,stateFile,profile]=process.argv.slice(2),S=JSON.parse(fs.readFileSync(stateFile,'utf8'));
-const child=spawn(chrome,['--headless','--no-sandbox','--disable-gpu',...(process.platform==='darwin'?['--single-process']:[]),'--disable-background-networking','--remote-debugging-pipe','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
+const child=spawn(chrome,['--headless','--use-mock-keychain','--password-store=basic','--no-sandbox','--disable-gpu',...(process.platform==='darwin'?['--single-process']:[]),'--disable-background-networking','--remote-debugging-pipe','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
 let seq=0,buf=Buffer.alloc(0),session,errors='';const pending=new Map();
 child.stderr.on('data',d=>errors+=d);
 child.on('exit',(code,signal)=>{for(const p of pending.values())p.reject(Error('browser exited '+(signal||code)+': '+errors.slice(-800)));pending.clear()});

@@ -33,7 +33,7 @@ class CdpClient {
   off(method, cb) { const arr = this.#listeners.get(method); if (!arr) return; const i = arr.indexOf(cb); if (i !== -1) arr.splice(i, 1); if (arr.length === 0) this.#listeners.delete(method); }
 }
 const spawnChrome = () => new Promise((res, rej) => {
-  chromeProc = spawn(chromePath, ['--headless=new','--remote-debugging-port=0','--user-data-dir='+tmpDir,'--no-first-run','--window-size=360,780','--disable-gpu'], { stdio: ['ignore','ignore','pipe'] });
+  chromeProc = spawn(chromePath, ['--headless=new','--use-mock-keychain','--password-store=basic','--remote-debugging-port=0','--user-data-dir='+tmpDir,'--no-first-run','--window-size=360,780','--disable-gpu'], { stdio: ['ignore','ignore','pipe'] });
   let out = '';
   chromeProc.stderr.on('data', d => { out += d.toString(); const m = out.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/); if (m) { res(m[1]); } });
   chromeProc.on('error', rej);

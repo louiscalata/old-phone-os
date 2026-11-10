@@ -92,7 +92,7 @@ def _launch(chrome, tmp):
     err_path = os.path.join(tmp, "chrome.err")
     with open(err_path, "wb") as err:
         proc = subprocess.Popen(
-            [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--remote-debugging-port=0",
+            [chrome, "--headless", "--use-mock-keychain", "--password-store=basic", "--no-sandbox", "--disable-gpu", "--remote-debugging-port=0",
              "--user-data-dir=" + udd, "--no-first-run", "--no-default-browser-check", "about:blank"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
     active = os.path.join(udd, "DevToolsActivePort")
