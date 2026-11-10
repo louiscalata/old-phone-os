@@ -212,10 +212,11 @@ try{
 (function(){
 var reload=G('reload-shell'),failures=0;
 if(!reload)return;
+function forceAttr(el,name,on){if(el.hasAttribute&&el.hasAttribute(name)===on)return;el.toggleAttribute(name,on)}
 function stateResult(failed){try{
 failures=failed?failures+1:0;
-reload.toggleAttribute('hidden',failures<2);
-document.body.toggleAttribute('data-stale',failures>1);
+forceAttr(reload,'hidden',failures<2);
+forceAttr(document.body,'data-stale',failures>1);
 if(failures===2)render({error:'offline'});
 }catch(e){}}
 window.oposPoll=ok=>stateResult(!ok);
