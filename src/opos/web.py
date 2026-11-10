@@ -961,7 +961,8 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(429, "too many requests", "rate")
             return
         try:
-            data = secure.read_json_body(self.rfile, self.headers)
+            limit = 70000 if path == "/api/notes" else secure.MAX_BODY
+            data = secure.read_json_body(self.rfile, self.headers, limit)
         except secure.BodyError as e:
             self._deny(e.status, e.message, "body")
             return
