@@ -26,3 +26,4 @@ Do not record device identifiers, radio identifiers, or hardware addresses in th
 | Calls and texts through the modem, only after a SIM is present | NOT_RUN |
 | Voice over LTE registers, or it is confirmed unavailable | NOT_RUN |
 | A short alert plays and stops, and does not crash audio | NOT_RUN |
+| Alarm tone steps from quiet to the cap and then stops | NOT_RUN |
