@@ -7,6 +7,8 @@ Old Phone OS Interface is GPL-3.0-or-later (see LICENSE).
 
 No third-party code is bundled. The software uses only the Python standard library (Python 3.11 or newer); `requirements.txt` and `guard/deps.json` list no packages.
 
+`src/opos/sounds/alarm.wav` is a 0.4 second tone made for OPOS. It is released CC0. It is not taken from another project.
+
 ## Models
 
 OPOS ships no model weights. It talks over HTTP to model servers that you run or opt into. The models it is written for carry their own licenses:
