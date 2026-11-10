@@ -13,6 +13,6 @@ An app that fails to open shows a short page with Home. Phone and the front page
 
 ## Not run on a phone
 
-The Duo image names clock, contacts, notes and calc. Clock is its own page. The home page only gains the short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen.
+The Duo image names clock, contacts, notes and the calculator (`OPOS_APPS=clock,contacts,notes,calc`). Clock is its own page. The home page only gains the short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen.
 
 No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN. Sound and vibration are not played yet.

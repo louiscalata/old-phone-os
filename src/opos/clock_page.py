@@ -135,16 +135,18 @@ def zone():
 
 
 def clock_known():
+    """True only when the clock check says the time is set. A failed check is unknown."""
     flag = os.environ.get("OPOS_CLOCK_OK")
     if flag == "0":
         return False
     if flag == "1":
         return True
     try:
+        # web imports this module while serving, so clock_ok is imported on use.
         from opos.web import clock_ok
         return bool(clock_ok())
     except Exception:
-        return True
+        return False
 
 
 def current_now():

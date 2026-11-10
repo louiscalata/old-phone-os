@@ -277,7 +277,7 @@ class PageTests(unittest.TestCase):
                 storemod.Store(folder).write_json("contacts.json", {"people": []})
         self.assertIn("Sample", html)
 
-    def test_image_drop_in_names_no_app_yet(self):
+    def test_image_drop_in_names_clock_contacts_notes_calc(self):
         conf = (ROOT / "packaging/duo-os/opos-apps.conf").read_text(encoding="utf-8")
         active = [line for line in conf.splitlines() if line.strip() and not line.strip().startswith("#")]
         self.assertIn("[Service]", active)

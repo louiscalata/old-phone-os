@@ -6,8 +6,11 @@ coloured #sheet-title and a coloured #meter-fill. The Jaryo palette (docs/jaryo.
 else) overrides all of them in every state, so they were dead rules, and B-03 of the interface plan retired them. What these
 tests pin now is the truth that remains: no tone colour reaches the screen, and each tone still reads as the two Jaryo tokens.
 """
+import importlib.util
 import re
 import unittest
+from pathlib import Path
+
 import opos.web
 
 TONES = ['low', 'normal', 'full', 'charging']
@@ -75,6 +78,31 @@ class TestUxrToneTokens(unittest.TestCase):
                 for prop in ('color', 'background', 'background-color', 'box-shadow', 'animation'):
                     if prop in decls:
                         self.assertIn(decls[prop], (TOKEN, 'var(--jaryo-bg)', 'none'), (selector, prop))
+
+    def test_guard_does_not_flag_the_jaryo_css_token(self):
+        guard = Path(__file__).resolve().parents[1] / "guard" / "check.py"
+        spec = importlib.util.spec_from_file_location("opos_guard_check", guard)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        text = Path(__file__).read_text(encoding="utf-8")
+        self.assertIn("TOKEN = 'var(--jaryo-fg)'", text)
+        self.assertFalse(any(p.search(text) for p in mod.PRIVATE))
+        sample = "TO" + "KEN = '" + "abcd1234'"
+        self.assertTrue(any(p.search(sample) for p in mod.PRIVATE))
+
+    def test_guard_flags_a_var_prefix_that_is_not_a_whole_css_value(self):
+        guard = Path(__file__).resolve().parents[1] / "guard" / "check.py"
+        spec = importlib.util.spec_from_file_location("opos_guard_check_prefix", guard)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        broken = "pass" + "word = \"" + "var(--not-css-secret\""
+        trailed = "TO" + "KEN = '" + "var(--jaryo-fg)" + "actualsecret'"
+        whole = "TO" + "KEN = '" + "var(--jaryo-fg)'"
+        quoted = "TO" + "KEN = \"" + "var(--jaryo-fg)\""
+        self.assertTrue(any(p.search(broken) for p in mod.PRIVATE))
+        self.assertTrue(any(p.search(trailed) for p in mod.PRIVATE))
+        self.assertFalse(any(p.search(whole) for p in mod.PRIVATE))
+        self.assertFalse(any(p.search(quoted) for p in mod.PRIVATE))
 
     def test_every_tone_reads_as_the_jaryo_token(self):
         rules = _rules(_page())
