@@ -1,0 +1,1105 @@
+#!/usr/bin/python3 -IB
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""opos-selftest: read-only acceptance checks of a running OPOS OS on the Surface Duo.
+
+One line per check, "STATUS id evidence", STATUS being PASS, FAIL, WARN or SKIP; the exit status is 1 when any
+line is FAIL. It needs no root and runs as the droidian user over ssh. It reads /proc, /sys, /etc, /var and /opt,
+asks systemctl, journalctl, timedatectl, ip, nmcli and wlr-randr for status only (run() refuses any other
+command or verb) and sends HTTP GETs to the OPOS server on loopback. It writes nothing and changes nothing.
+
+PASS is evidence that a thing works from this side (a process, a sysfs value, an HTTP answer); it is not a look at
+the glass. The checks that need eyes and hands are in docs/duo-acceptance.md.
+
+Test seams (arguments, never environment): --root, --bin, --url, --now.
+"""
+import argparse
+import fnmatch
+import ipaddress
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import urljoin
+
+VERSION = 1
+DEFAULT_URL = "http://127.0.0.1:8765/"
+MIB = 1024 * 1024
+DISK_FAIL, DISK_WARN = 64 * MIB, 512 * MIB
+MEM_FAIL, MEM_WARN = 150 * MIB, 500 * MIB
+DIAG_DUE_S = 300  # opos-diag sleeps 90 s after multi-user.target; a slower boot than that is itself a finding
+YEAR_MIN = 2026
+OUTPUT_PX = (2784, 1800)
+OUTPUT_SCALE = 2.0
+USB_IFACES = ("usb0", "rndis0")
+CHROME_NAMES = ("chromium", "chromium-browser", "chrome", "google-chrome")
+TRUTHY = ("1", "on", "yes", "true", "y")
+DEFAULT_BIN = ("/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
+JOURNAL_DENY = ("--rotate", "--vacuum-size", "--vacuum-time", "--vacuum-files", "--flush", "--sync", "--relinquish-var",
+                "--smart-relinquish-var", "--setup-keys", "--update-catalog", "--verify", "--cursor-file")
+
+
+class Refused(Exception):
+    """A command the read-only allow-list does not know."""
+
+
+def _systemctl_ok(a):
+    verbs = [x for x in a if not x.startswith("-")]
+    return bool(verbs) and verbs[0] in ("show", "is-active", "is-system-running", "is-enabled", "list-units")
+
+
+READONLY = {
+    "systemctl": _systemctl_ok,
+    "journalctl": lambda a: not any(x.split("=")[0] in JOURNAL_DENY for x in a),
+    "timedatectl": lambda a: a[:1] == ["show"],
+    "ip": lambda a: "show" in a and not set(a) & {"add", "del", "delete", "set", "flush", "change", "replace", "append", "up", "down"},
+    "nmcli": lambda a: a in (["-t", "-f", "DEVICE,TYPE,STATE", "device"], ["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"], ["-t", "general", "permissions"]),
+    "wlr-randr": lambda a: a == [],
+}
+
+
+class Res:
+    def __init__(self, rc=None, out="", err=""):
+        self.rc, self.out, self.err = rc, out, err
+
+    @property
+    def found(self):
+        return self.rc is not None
+
+
+class Ctx:
+    def __init__(self, root="/", bins=None, url=DEFAULT_URL, now=None, only=None):
+        self.root, self.bins, self.url, self.now, self.only = root, bins, url, now, only
+        self.rows = []
+        self.cache = {}
+
+    # --- output
+    def emit(self, status, cid, ev):
+        if self.only and not any(cid.startswith(o) for o in self.only):
+            return
+        ev = " ".join("".join(ch if ch.isprintable() else " " for ch in str(ev)).split())  # phone text may carry control characters
+        if len(ev) > 230:
+            ev = ev[:227] + "..."
+        self.rows.append((status, cid, ev))
+        print("%-4s  %-22s %s" % (status, cid, ev), flush=True)
+
+    # --- files, rooted for the test seam
+    def p(self, path):
+        return os.path.join(self.root, path.lstrip("/"))
+
+    def rd(self, path, limit=1 << 20):
+        try:
+            with open(self.p(path), "rb") as f:
+                return f.read(limit).decode("utf-8", "replace")
+        except OSError:
+            return None
+
+    def rd_abs(self, path, limit=1 << 20):
+        try:
+            with open(path, "rb") as f:
+                return f.read(limit).decode("utf-8", "replace")
+        except OSError:
+            return None
+
+    def ls(self, path):
+        try:
+            return sorted(os.listdir(self.p(path)))
+        except OSError:
+            return None
+
+    def exists(self, path):
+        return os.path.lexists(self.p(path))
+
+    # --- commands: status queries only
+    def which(self, name):
+        dirs = self.bins if self.bins is not None else (os.environ.get("PATH", "").split(os.pathsep) + list(DEFAULT_BIN))
+        for d in dirs:
+            f = os.path.join(d, name)
+            if d and os.path.isfile(f) and os.access(f, os.X_OK):
+                return f
+        return None
+
+    def run(self, cmd, timeout=10, env=None):
+        ok = READONLY.get(cmd[0])
+        if ok is None or not ok(cmd[1:]):
+            raise Refused(" ".join(cmd))
+        exe = self.which(cmd[0])
+        if exe is None:
+            return Res()
+        e = dict(os.environ if env is None else env)
+        e.update({"LANG": "C", "LC_ALL": "C", "SYSTEMD_PAGER": "", "SYSTEMD_COLORS": "0"})
+        try:
+            r = subprocess.run([exe] + cmd[1:], capture_output=True, text=True, timeout=timeout, env=e, stdin=subprocess.DEVNULL, errors="replace")
+        except subprocess.TimeoutExpired:
+            return Res(124, "", "timed out after %ds" % timeout)
+        except OSError as x:
+            return Res(None, "", str(x))
+        return Res(r.returncode, r.stdout, r.stderr)
+
+    def unit(self, name, extra=()):
+        r = self.run(["systemctl", "show", "--property=" + ",".join(("LoadState", "ActiveState", "SubState", "Result") + tuple(extra)), name])
+        if not r.found:
+            return None
+        d = {}
+        for line in r.out.splitlines():
+            k, _, v = line.partition("=")
+            d[k.strip()] = v.strip()
+        return d if d.get("ActiveState") else None
+
+    # --- processes
+    def procs(self):
+        if "procs" not in self.cache:
+            out = []
+            for n in self.ls("/proc") or []:
+                if not n.isdigit():
+                    continue
+                d = "/proc/" + n
+                try:
+                    with open(self.p(d + "/cmdline"), "rb") as f:
+                        raw = f.read(1 << 16)
+                except OSError:
+                    continue
+                argv = [a.decode("utf-8", "replace") for a in raw.split(b"\0") if a]
+                if len(argv) == 1 and " --" in argv[0]:  # a helper that rewrote its title: one string, arguments joined by spaces
+                    argv = argv[0].split()
+                st = self.rd(d + "/status") or ""
+                m = re.search(r"^Uid:\s*(\d+)", st, re.M)
+                out.append({"pid": int(n), "comm": (self.rd(d + "/comm") or "").strip(), "argv": argv, "uid": int(m.group(1)) if m else None, "dir": d})
+            self.cache["procs"] = sorted(out, key=lambda x: x["pid"])
+        return self.cache["procs"]
+
+    def environ(self, proc):
+        raw = self.rd(proc["dir"] + "/environ")
+        d = {}
+        for kv in (raw or "").split("\0"):
+            k, sep, v = kv.partition("=")
+            if sep:
+                d[k] = v
+        return d
+
+    def uptime(self):
+        t = (self.rd("/proc/uptime") or "").split()
+        try:
+            return float(t[0])
+        except (IndexError, ValueError):
+            return None
+
+    def time(self):
+        return self.now if self.now is not None else time.time()
+
+
+def base(argv):
+    return os.path.basename(argv[0]) if argv else ""
+
+
+def cmdline(proc, n=150):
+    s = " ".join(proc["argv"])
+    return s if len(s) <= n else s[:n - 3] + "..."
+
+
+def phoc_procs(c):
+    return [p for p in c.procs() if base(p["argv"]) == "phoc" or p["comm"] == "phoc"]
+
+
+def has_shell_flag(argv):
+    for a in argv[1:]:
+        if a == "--shell" or a.startswith("--shell="):
+            return True
+        if re.fullmatch(r"-[A-Za-z]+", a) and "S" in a:
+            return True
+    return False
+
+
+def chrome_procs(c):
+    return [p for p in c.procs() if base(p["argv"]) in CHROME_NAMES]
+
+
+def browser_procs(c):
+    return [p for p in chrome_procs(c) if not any(a.startswith("--type=") for a in p["argv"])]
+
+
+def kiosk_browser(c):
+    for p in browser_procs(c):
+        if "--kiosk" in p["argv"]:
+            return p
+    return None
+
+
+def fmt_t(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+# ---------------------------------------------------------------- services
+REQUIRED = (("svc.lxc-android", "lxc@android.service"), ("svc.hwcomposer", "android-service@hwcomposer.service"),
+            ("svc.opos-server", "opos-server.service"), ("svc.opos", "opos.service"))
+NOT_RUNNING = (("svc.phosh-off", "phosh.service"), ("svc.item-off", "item.service"))
+
+
+def describe(u):
+    return "%s (%s)" % (u["ActiveState"], u.get("SubState", "?"))
+
+
+def check_services(c):
+    for cid, name in REQUIRED:
+        u = c.unit(name)
+        if u is None:
+            c.emit("FAIL", cid, "cannot ask systemctl about %s" % name)
+        elif u["ActiveState"] == "active":
+            c.emit("PASS", cid, "%s is %s" % (name, describe(u)))
+        else:
+            c.emit("FAIL", cid, "%s is %s%s" % (name, describe(u), "; not installed" if u.get("LoadState") == "not-found" else ""))
+    for cid, name in NOT_RUNNING:
+        u = c.unit(name)
+        if u is None:
+            c.emit("FAIL", cid, "cannot ask systemctl about %s" % name)
+        elif u["ActiveState"] in ("active", "activating", "reloading"):
+            c.emit("FAIL", cid, "%s is %s: a second shell next to OPOS" % (name, describe(u)))
+        elif u["ActiveState"] == "inactive":
+            c.emit("PASS", cid, "%s is inactive (kept as the fallback shell)" % name)
+        else:
+            c.emit("WARN", cid, "%s is %s (result %s)" % (name, describe(u), u.get("Result", "?")))
+    u = c.unit("opos-fallback.service", ("ExecMainStartTimestampMonotonic",))
+    if u is None:
+        c.emit("SKIP", "svc.fallback", "systemctl unavailable")
+    elif u["ActiveState"] in ("active", "activating") or u.get("ExecMainStartTimestampMonotonic", "0") not in ("0", ""):
+        c.emit("WARN", "svc.fallback", "opos-fallback.service ran this boot (%s): OPOS failed at some point and phosh was started" % describe(u))
+    else:
+        c.emit("PASS", "svc.fallback", "opos-fallback.service has not run this boot")
+    r = c.run(["systemctl", "is-system-running"])
+    state = r.out.strip()
+    if not r.found:
+        c.emit("SKIP", "svc.system", "systemctl unavailable")
+    elif state == "running":
+        c.emit("PASS", "svc.system", "systemd reports running (no failed units)")
+    elif state == "degraded":
+        f = c.run(["systemctl", "list-units", "--failed", "--no-legend", "--plain"])
+        names = [ln.split()[0] for ln in f.out.splitlines() if ln.split()]
+        c.emit("WARN", "svc.system", "systemd is degraded; failed: %s" % (", ".join(names[:8]) + (" +%d more" % (len(names) - 8) if len(names) > 8 else "") if names else "unknown"))
+    elif state in ("starting", "initializing"):
+        c.emit("WARN", "svc.system", "systemd is still %s; run again in a minute" % state)
+    else:
+        c.emit("FAIL", "svc.system", "systemd reports '%s'" % (state or r.err.strip() or "nothing"))
+
+
+# ---------------------------------------------------------------- compositor and panels
+def check_phoc(c):
+    ph = phoc_procs(c)
+    if not ph:
+        c.emit("FAIL", "phoc.process", "no phoc process")
+        c.emit("SKIP", "phoc.no-shell-mode", "no phoc process")
+        return
+    if len(ph) > 1:
+        c.emit("FAIL", "phoc.process", "%d phoc processes (pids %s)" % (len(ph), ", ".join(str(p["pid"]) for p in ph)))
+    else:
+        c.emit("PASS", "phoc.process", "pid %d, uid %s: %s" % (ph[0]["pid"], ph[0]["uid"], cmdline(ph[0])))
+    shell = [p for p in ph if has_shell_flag(p["argv"])]
+    if shell:
+        c.emit("FAIL", "phoc.no-shell-mode", "pid %d runs with -S: phoc keeps a black shield over the panels (%s)" % (shell[0]["pid"], cmdline(shell[0], 100)))
+    else:
+        c.emit("PASS", "phoc.no-shell-mode", "no -S/--shell in /proc/%d/cmdline" % ph[0]["pid"])
+
+
+def check_composer(c):
+    hits = [p for p in c.procs() if "composer" in base(p["argv"]).lower()]
+    if hits:
+        c.emit("PASS", "gfx.composer", "pid %d: %s" % (hits[0]["pid"], hits[0]["argv"][0]))
+    else:
+        c.emit("FAIL", "gfx.composer", "no vendor composer process (a *composer* binary) in /proc")
+
+
+def parse_wlr_randr(text):
+    outs, cur = [], None
+    for line in text.splitlines():
+        if line and not line[0].isspace():
+            cur = {"name": line.split()[0], "enabled": None, "mode": None, "scale": None}
+            outs.append(cur)
+            continue
+        if cur is None:
+            continue
+        s = line.strip()
+        if s.startswith("Enabled:"):
+            cur["enabled"] = s.split(":", 1)[1].strip().lower() == "yes"
+        elif s.startswith("Scale:"):
+            try:
+                cur["scale"] = float(s.split(":", 1)[1])
+            except ValueError:
+                pass
+        elif "current" in s:
+            m = re.match(r"(\d+)x(\d+) px", s)
+            if m:
+                cur["mode"] = (int(m.group(1)), int(m.group(2)))
+    return outs
+
+
+def wayland_env(c):
+    """XDG_RUNTIME_DIR and WAYLAND_DISPLAY the session really uses: the kiosk Chromium's own, else phoc's uid and a socket."""
+    b = kiosk_browser(c)
+    env = c.environ(b) if b else {}
+    ph = phoc_procs(c)
+    uid = ph[0]["uid"] if ph else None
+    xdg = env.get("XDG_RUNTIME_DIR") or ("/run/user/%s" % uid if uid is not None else None)
+    wl = env.get("WAYLAND_DISPLAY")
+    if not wl and xdg:
+        socks = [n for n in (c.ls(xdg) or []) if re.fullmatch(r"wayland-\d+", n)]
+        wl = socks[0] if socks else "wayland-0"
+    return xdg, wl
+
+
+def check_output(c):
+    if not phoc_procs(c):
+        c.emit("SKIP", "gfx.output", "no phoc process to ask")
+        return
+    xdg, wl = wayland_env(c)
+    env = {"PATH": os.environ.get("PATH", "")}
+    env.update({k: v for k, v in (("XDG_RUNTIME_DIR", xdg), ("WAYLAND_DISPLAY", wl)) if v})  # a None would break subprocess
+    r = c.run(["wlr-randr"], timeout=10, env=env)
+    if not r.found:
+        c.emit("SKIP", "gfx.output", "wlr-randr is not installed")
+        return
+    if r.rc != 0:
+        c.emit("WARN", "gfx.output", "wlr-randr could not query %s in %s (exit %s): %s" % (wl, xdg, r.rc, r.err.strip()[:120] or "no message"))
+        return
+    outs = parse_wlr_randr(r.out)
+    if not outs:
+        c.emit("FAIL", "gfx.output", "wlr-randr lists no output")
+        return
+    on = [o for o in outs if o["enabled"]]
+    desc = "; ".join("%s %s%s scale %s" % (o["name"], "enabled" if o["enabled"] else "DISABLED", " %dx%d" % o["mode"] if o["mode"] else "", "%g" % o["scale"] if o["scale"] else "?") for o in outs)
+    if not on:
+        c.emit("FAIL", "gfx.output", "no output is enabled: " + desc)
+    elif not any(o["mode"] == OUTPUT_PX and o["scale"] == OUTPUT_SCALE for o in on):
+        c.emit("WARN", "gfx.output", "enabled, but not %dx%d at scale %g: %s" % (OUTPUT_PX + (OUTPUT_SCALE, desc)))
+    else:
+        c.emit("PASS", "gfx.output", "%s (WAYLAND_DISPLAY=%s)" % (desc, wl))
+
+
+def check_backlight(c):
+    names = c.ls("/sys/class/backlight")
+    rows = []
+    for n in names or []:
+        d = "/sys/class/backlight/" + n
+        bp = (c.rd(d + "/bl_power") or "").strip()
+        if not bp:
+            continue
+        lv = (c.rd(d + "/actual_brightness") or c.rd(d + "/brightness") or "?").strip()
+        rows.append((n, bp, lv, (c.rd(d + "/max_brightness") or "?").strip()))
+    panels = [r for r in rows if r[0].startswith("panel")] or rows
+    if not panels:
+        c.emit("FAIL", "gfx.backlight", "no backlight with a bl_power file in /sys/class/backlight")
+        return
+    desc = "; ".join("%s bl_power=%s brightness=%s/%s" % r for r in panels)
+    off = [r for r in panels if r[1] != "0"]
+    dark = [r for r in panels if r[1] == "0" and r[2] == "0"]
+    if off:
+        c.emit("FAIL", "gfx.backlight", "panel off (bl_power 4 = off): " + desc)
+    elif dark:
+        c.emit("WARN", "gfx.backlight", "power on but brightness 0: " + desc)
+    elif len(panels) < 2:
+        c.emit("WARN", "gfx.backlight", "one panel only: " + desc)
+    else:
+        c.emit("PASS", "gfx.backlight", desc)
+
+
+# ---------------------------------------------------------------- kiosk
+def check_kiosk(c):
+    chromes = chrome_procs(c)
+    br = kiosk_browser(c)
+    if br is None:
+        others = browser_procs(c)
+        c.emit("FAIL", "kiosk.chromium", "no kiosk Chromium (--kiosk)" + ("; a browser without --kiosk runs: pid %d" % others[0]["pid"] if others else "; no Chromium at all"))
+        c.emit("SKIP", "kiosk.gpu", "no kiosk Chromium")
+        return
+    c.emit("PASS", "kiosk.chromium", "pid %d, %d chromium processes, page %s" % (br["pid"], len(chromes), br["argv"][-1]))
+    gpu = [p for p in chromes if "--type=gpu-process" in p["argv"]]
+    nogpu = "--disable-gpu" in br["argv"]
+    if not gpu:
+        c.emit("FAIL", "kiosk.gpu", "no --type=gpu-process among %d chromium processes" % len(chromes))
+    elif nogpu:
+        c.emit("WARN", "kiosk.gpu", "gpu process pid %d, but the kiosk runs with --disable-gpu (it fell back after repeated exits)" % gpu[0]["pid"])
+    else:
+        c.emit("PASS", "kiosk.gpu", "gpu process pid %d" % gpu[0]["pid"])
+    kiosk = c.rd("/usr/libexec/opos/opos-kiosk") or ""
+    if "logger -t opos-kiosk" not in kiosk:
+        c.emit("SKIP", "kiosk.restarts", "this kiosk script does not log restarts")
+        return
+    r = c.run(["journalctl", "-b", "-t", "opos-kiosk", "--no-pager", "-o", "cat"], timeout=20)
+    n = len([ln for ln in r.out.splitlines() if "chromium exited" in ln])
+    if not r.found:
+        c.emit("SKIP", "kiosk.restarts", "journalctl unavailable")
+    elif n:
+        last = [ln for ln in r.out.splitlines() if "chromium exited" in ln][-1]
+        c.emit("WARN", "kiosk.restarts", "Chromium exited %d time(s) this boot; last: %s" % (n, last[:120]))
+    else:
+        c.emit("PASS", "kiosk.restarts", "no Chromium exit logged this boot")
+
+
+# ---------------------------------------------------------------- the OPOS server
+def http_get(url, headers=None, timeout=5):
+    op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    t0 = time.monotonic()
+    try:
+        with op.open(urllib.request.Request(url, headers=headers or {}, method="GET"), timeout=timeout) as r:
+            return r.status, r.read(4 << 20), int((time.monotonic() - t0) * 1000), None
+    except urllib.error.HTTPError as e:
+        e.close()
+        return e.code, b"", int((time.monotonic() - t0) * 1000), None
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return None, b"", int((time.monotonic() - t0) * 1000), str(getattr(e, "reason", e))
+
+
+def num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def check_server(c):
+    st, body, ms, err = http_get(c.url)
+    if st != 200:
+        c.emit("FAIL", "server.http", "GET %s -> %s" % (c.url, st if st else err))
+        for cid in ("server.state", "server.token-gate"):
+            c.emit("SKIP", cid, "the server did not answer")
+        return
+    page = body.decode("utf-8", "replace")
+    c.cache["page"] = page
+    m = re.search(r'name="opos-token" content="([^"]+)"', page)
+    if not m:
+        c.emit("FAIL", "server.http", "200 in %d ms, %d bytes, but the page carries no opos-token" % (ms, len(body)))
+        c.emit("SKIP", "server.state", "no token")
+        c.emit("SKIP", "server.token-gate", "no token")
+        return
+    c.emit("PASS", "server.http", "GET %s -> 200 in %d ms, %d bytes, token present" % (c.url, ms, len(body)))
+    api = urljoin(c.url, "api/state")
+    st, body, ms, err = http_get(api, {"X-OPOS-Token": m.group(1)})
+    js = None
+    if st == 200:
+        try:
+            js = json.loads(body.decode("utf-8"))
+        except ValueError:
+            js = None
+    if not isinstance(js, dict):
+        c.emit("FAIL", "server.state", "GET /api/state with the token -> %s" % (st if st else err))
+    else:
+        c.cache["state"] = js
+        b = js.get("battery") if isinstance(js.get("battery"), dict) else {}
+        src = js.get("battery_source") if isinstance(js.get("battery_source"), dict) else None
+        miss = [k for k, ok in (("battery.percent", num(b.get("percent"))), ("charging", isinstance(js.get("charging"), bool)),
+                                ("temp_c", num(js.get("temp_c"))), ("battery_source", src is not None)) if not ok]
+        if miss:
+            c.emit("FAIL", "server.state", "/api/state lacks or mistypes: %s%s" % (", ".join(miss), "" if src is not None else " (the server is not on the live battery)"))
+        else:
+            ev = "battery %g%%, charging %s, temp_c %g, source %s, health_source %s" % (b["percent"], js["charging"], js["temp_c"], src.get("source"), src.get("health_source"))
+            if src.get("source") != "sysfs":
+                c.emit("FAIL", "server.state", ev + ": expected the sysfs source on the Duo OS")
+            elif src.get("health_source") != "sysfs":
+                c.emit("WARN", "server.state", ev + ": battery health is not measured from sysfs")
+            else:
+                c.emit("PASS", "server.state", ev)
+    st, _, _, err = http_get(api)
+    if st == 403:
+        c.emit("PASS", "server.token-gate", "GET /api/state without the token -> 403")
+    else:
+        c.emit("FAIL", "server.token-gate", "GET /api/state without the token -> %s (expected 403)" % (st if st else err))
+
+
+# ---------------------------------------------------------------- battery
+def supplies(c):
+    rows = []
+    for n in c.ls("/sys/class/power_supply") or []:
+        d = "/sys/class/power_supply/" + n
+
+        def val(f):
+            v = c.rd(d + "/" + f)
+            return v.strip() if v is not None else None
+        cap, tmp = val("capacity"), val("temp")
+        rows.append({"name": n, "type": val("type"), "status": val("status"), "present": val("present"), "online": val("online"),
+                     "cap": int(cap) if cap and re.fullmatch(r"-?\d+", cap) else None, "temp": int(tmp) / 10.0 if tmp and re.fullmatch(r"-?\d+", tmp) else None})
+    return rows
+
+
+def check_battery(c):
+    rows = supplies(c)
+    bats = [r for r in rows if r["type"] == "Battery" and r["present"] != "0"]
+    other = ["%s %s %s" % (r["name"], r["type"], "online=" + r["online"] if r["online"] is not None else "present=" + r["present"]) for r in rows
+             if (r["type"] or "").startswith(("USB", "Mains", "Wireless")) and (r["online"] is not None or r["present"] is not None)]
+    if not bats:
+        c.emit("FAIL", "battery.sysfs", "no present Battery in /sys/class/power_supply (%s)" % (", ".join(r["name"] for r in rows) or "empty"))
+        c.emit("SKIP", "battery.api-match", "no sysfs battery")
+        c.emit("SKIP", "battery.temp", "no sysfs battery")
+        return
+    desc = "; ".join("%s %s%% %s" % (r["name"], r["cap"] if r["cap"] is not None else "?", r["status"] or "?") for r in bats)
+    bad = [r["name"] for r in bats if r["cap"] is None or not 0 <= r["cap"] <= 100]
+    ev = desc + ("; " + "; ".join(other) if other else "")
+    if bad:
+        c.emit("FAIL", "battery.sysfs", "no plausible capacity (0-100) for %s: %s" % (", ".join(bad), ev))
+    else:
+        c.emit("PASS", "battery.sysfs", ev)
+    js = c.cache.get("state")
+    if not js or not isinstance(js.get("battery"), dict) or not num(js["battery"].get("percent")):
+        c.emit("SKIP", "battery.api-match", "no /api/state battery reading to compare")
+        c.emit("SKIP", "battery.temp", "no /api/state reading to compare")
+        return
+    caps = [r["cap"] for r in bats if r["cap"] is not None]
+    mean = sum(caps) / len(caps) if caps else None
+    api = js["battery"]["percent"]
+    chg = any((r["status"] or "").lower() in ("charging", "full") for r in bats)
+    if mean is None:
+        c.emit("SKIP", "battery.api-match", "no sysfs capacity to compare")
+    elif abs(api - mean) > 10:
+        c.emit("WARN", "battery.api-match", "OPOS shows %g%% but sysfs says %g%% (mean of %d gauge(s))" % (api, mean, len(caps)))
+    elif bool(js.get("charging")) != chg:
+        c.emit("WARN", "battery.api-match", "OPOS says charging=%s, sysfs says %s (the server re-reads every 15 s)" % (js.get("charging"), "charging" if chg else "not charging"))
+    else:
+        c.emit("PASS", "battery.api-match", "OPOS %g%% charging=%s; sysfs mean %g%%, %s" % (api, js.get("charging"), mean, "charging" if chg else "not charging"))
+    temps = [r["temp"] for r in bats if r["temp"] is not None]
+    t = js.get("temp_c")
+    if not num(t):
+        c.emit("SKIP", "battery.temp", "no temp_c in /api/state")
+    elif temps and abs(t - max(temps)) > 3:
+        c.emit("WARN", "battery.temp", "OPOS temp_c %g but the battery reports %g C: the heat rules read the wrong number" % (t, max(temps)))
+    elif not temps and t == 30.0:
+        c.emit("WARN", "battery.temp", "temp_c is exactly 30.0 and sysfs has no temp: probably OPOS's default, not a measurement")
+    else:
+        c.emit("PASS", "battery.temp", "OPOS temp_c %g%s" % (t, "; battery reports %g C" % max(temps) if temps else ""))
+
+
+# ---------------------------------------------------------------- clock
+def droid_home(c):
+    for ln in (c.rd("/etc/passwd") or "").splitlines():
+        f = ln.split(":")
+        if len(f) >= 6 and f[0] == "droidian":
+            return f[5].rstrip("/")
+    return None
+
+
+def timezone(c):
+    r = c.run(["timedatectl", "show", "-p", "Timezone", "-p", "NTPSynchronized"])
+    d = dict(ln.partition("=")[::2] for ln in r.out.splitlines())
+    tz = d.get("Timezone", "").strip()
+    if not tz:
+        tz = (c.rd("/etc/timezone") or "").strip()
+    if not tz:
+        try:
+            tz = os.readlink(c.p("/etc/localtime")).split("zoneinfo/")[-1]
+        except OSError:
+            tz = ""
+    return tz, d.get("NTPSynchronized", "").strip()
+
+
+def check_clock(c):
+    now = c.time()
+    year = time.gmtime(now).tm_year
+    tz, ntp = timezone(c)
+    home = droid_home(c)
+    own = ((c.rd(home + "/.config/opos/timezone") or "").strip().splitlines() or [""])[0].strip() if home else ""
+    ntp_s = {"yes": ", NTP synchronized", "no": ", not NTP synchronized"}.get(ntp, "")
+    guess = c.exists("/run/opos/clock-floor")
+    floor = (c.rd("/opt/opos/CLOCK_FLOOR") or "").strip()
+    if year < YEAR_MIN:
+        c.emit("WARN", "clock.year", "clock reads %s: nobody has set the time (a RAM-booted Duo starts in 1970)" % fmt_t(now))
+    elif guess:
+        c.emit("WARN", "clock.year", "clock reads %s but it is the image's floor, a guess, until network time or a set%s" % (fmt_t(now), ntp_s))
+    elif floor.isdigit() and now < int(floor):
+        c.emit("WARN", "clock.year", "clock reads %s, earlier than the image's floor %s" % (fmt_t(now), fmt_t(int(floor))))
+    else:
+        c.emit("PASS", "clock.year", "clock reads %s%s" % (fmt_t(now), ntp_s))
+    if own:
+        c.emit("PASS", "clock.timezone", "timezone is %s (OPOS's own setting; the system zone is %s)" % (own, tz or "unset"))
+    elif not tz:
+        c.emit("WARN", "clock.timezone", "no timezone is set: OPOS shows UTC")
+    elif tz in ("UTC", "Etc/UTC", "Etc/UCT", "Universal"):
+        c.emit("WARN", "clock.timezone", "timezone is %s, the default: the lock screen clock shows UTC" % tz)
+    else:
+        c.emit("PASS", "clock.timezone", "timezone is %s" % tz)
+
+
+# ---------------------------------------------------------------- logs
+def check_logs(c):
+    conf = c.rd("/etc/systemd/journald.conf.d/50-opos-persistent.conf") or ""
+    jdir = c.ls("/var/log/journal")
+    if "Storage=persistent" not in conf:
+        c.emit("FAIL", "log.journal", "50-opos-persistent.conf with Storage=persistent is missing")
+    elif jdir is None:
+        c.emit("FAIL" if not c.exists("/var/log/journal") else "WARN", "log.journal", "/var/log/journal %s" % ("does not exist" if not c.exists("/var/log/journal") else "is not readable by this user"))
+    else:
+        files = []
+        for sub in jdir:
+            for f in c.ls("/var/log/journal/" + sub) or []:
+                if f.endswith(".journal"):
+                    try:
+                        files.append(os.path.getsize(c.p("/var/log/journal/%s/%s" % (sub, f))))
+                    except OSError:
+                        pass
+        if files:
+            c.emit("PASS", "log.journal", "persistent: %d journal file(s), %.1f MiB in /var/log/journal" % (len(files), sum(files) / MIB))
+        else:
+            c.emit("FAIL", "log.journal", "Storage=persistent is configured but /var/log/journal holds no .journal file")
+    up = c.uptime()
+    diag = c.rd("/var/log/opos-boot-diag.txt")
+    m = re.search(r"\bup (\d+(?:\.\d+)?)s", (diag or "").split("\n", 1)[0])  # opos-diag writes the uptime as 93.52
+    if up is not None and up < DIAG_DUE_S:
+        c.emit("SKIP", "log.diag", "uptime %ds: opos-diag writes its dump 90 s after multi-user.target; run again after %d s" % (up, DIAG_DUE_S))
+    elif diag and m and up is not None and float(m.group(1)) > up:
+        c.emit("WARN", "log.diag", "the dump says 'up %ss' but this boot is only %ds old: it is left over from an earlier boot" % (m.group(1), up))
+    elif diag:
+        lines = diag.splitlines()
+        sysline = next((ln for ln in lines if ln.startswith("== system state:")), "")
+        c.emit("PASS", "log.diag", "%d lines; %s; %s" % (len(lines), lines[0][:90], sysline[3:]))
+    else:
+        c.emit("FAIL", "log.diag", "/var/log/opos-boot-diag.txt is %s although uptime is %ds" % ("empty" if diag == "" else "missing", up or 0))
+    counts, limited = {}, False
+    for u in ("opos.service", "opos-server.service", "opos-fallback.service"):
+        r = c.run(["journalctl", "-b", "-p", "err", "-u", u, "--no-pager", "-o", "cat"], timeout=20)
+        if not r.found:
+            c.emit("SKIP", "log.opos-errors", "journalctl unavailable")
+            return
+        counts[u] = [ln for ln in r.out.splitlines() if ln.strip() and not ln.startswith("-- ")]
+        limited = limited or "not seeing messages" in r.err
+    total = sum(len(v) for v in counts.values())
+    desc = ", ".join("%s %d" % (u.replace(".service", ""), len(v)) for u, v in counts.items())
+    if total:
+        first = next(v[0] for v in counts.values() if v)
+        c.emit("WARN", "log.opos-errors", "%d error line(s) this boot: %s; first: %s" % (total, desc, first[:100]))
+    else:
+        c.emit("PASS", "log.opos-errors", "no error-level journal lines this boot (%s)%s" % (desc, "; limited view: this user sees only its own messages" if limited else ""))
+
+
+# ---------------------------------------------------------------- resources
+def check_resources(c):
+    try:
+        s = os.statvfs(c.p("/"))
+        free, total = s.f_bavail * s.f_frsize, s.f_blocks * s.f_frsize
+        ev = "/ has %.0f MiB free of %.0f MiB" % (free / MIB, total / MIB)
+        c.emit("FAIL" if free < DISK_FAIL else "WARN" if free < DISK_WARN else "PASS", "res.disk", ev)
+    except OSError as e:
+        c.emit("FAIL", "res.disk", "cannot stat /: %s" % e)
+    mi = c.rd("/proc/meminfo") or ""
+    m = re.search(r"^MemAvailable:\s*(\d+) kB", mi, re.M)
+    t = re.search(r"^MemTotal:\s*(\d+) kB", mi, re.M)
+    if not m or not t:
+        c.emit("FAIL", "res.mem", "no MemAvailable in /proc/meminfo")
+    else:
+        avail = int(m.group(1)) * 1024
+        ev = "%.0f MiB available of %.0f MiB" % (avail / MIB, int(t.group(1)) / 1024)
+        c.emit("FAIL" if avail < MEM_FAIL else "WARN" if avail < MEM_WARN else "PASS", "res.mem", ev)
+
+
+# ---------------------------------------------------------------- network and ssh
+def check_usb(c):
+    u = c.unit("sfduo-usb.service")
+    if u is not None and u.get("LoadState") == "not-found":
+        u = None  # systemd reports a unit it does not know as inactive; judge by the interface alone
+    iface = next((i for i in USB_IFACES if c.exists("/sys/class/net/" + i)), None)
+    if iface is None:
+        what = "no %s interface (sfduo-usb.service is %s)" % (" or ".join(USB_IFACES), describe(u) if u else "not installed or unknown")
+        # With the gadget service installed a missing interface is a fault; without it the phone may simply be reached over Wi-Fi.
+        c.emit("FAIL" if u is not None else "WARN", "net.usb", what)
+        return
+    r = c.run(["ip", "-4", "-o", "addr", "show", "dev", iface])
+    addrs = re.findall(r"inet (\d+\.\d+\.\d+\.\d+/\d+)", r.out)
+    car = (c.rd("/sys/class/net/%s/carrier" % iface) or "?").strip()
+    state = (c.rd("/sys/class/net/%s/operstate" % iface) or "?").strip()
+    ev = "%s %s, operstate %s, carrier %s" % (iface, ", ".join(addrs) or "no IPv4 address", state, car)
+    if u and u["ActiveState"] != "active":
+        c.emit("FAIL", "net.usb", "sfduo-usb.service is %s: %s" % (describe(u), ev))
+    elif r.found and not addrs:
+        c.emit("FAIL", "net.usb", ev)
+    else:
+        c.emit("PASS", "net.usb", ev + ("" if r.found else " (ip not found)"))
+
+
+def sshd_settings(c):
+    """First-match-wins global settings and Match blocks from sshd_config and its Include files (as configured, not probed).
+
+    As in OpenSSH, an Include inside a Match block puts the included file's settings in that block, a Match line in an included
+    file opens a block of its own that ends with that file, and after the Include the including file is back in its own block."""
+    glob_, matches, stack, reads = {}, [], [], [0]
+
+    def one(path, cur):
+        if path in stack or len(stack) > 10 or reads[0] > 40:
+            return
+        reads[0] += 1
+        text = c.rd(path)
+        if text is None:
+            return
+        stack.append(path)
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = re.split(r"[\s=]+", line, maxsplit=1)
+            k, v = parts[0].lower(), (parts[1].strip().strip("\"") if len(parts) > 1 else "")
+            if k == "match":
+                cur = {"cond": v, "set": {}}
+                matches.append(cur)
+            elif k == "include":
+                for pat in v.split():
+                    pat = pat if pat.startswith("/") else "/etc/ssh/" + pat
+                    d, _, fn = pat.rpartition("/")
+                    for f in sorted(c.ls(d) or []):
+                        if fnmatch.fnmatch(f, fn):
+                            one(d + "/" + f, cur)
+            elif cur is not None:
+                cur["set"].setdefault(k, v.lower())
+            else:
+                glob_.setdefault(k, v.lower())
+        stack.pop()
+    one("/etc/ssh/sshd_config", None)
+    return glob_, matches
+
+
+def private_net(cond):
+    m = re.fullmatch(r"Address\s+(\S+)", cond.strip(), re.I)
+    if not m:
+        return None
+    nets = []
+    for part in m.group(1).split(","):  # Match Address takes a list: every entry must be a private network; a !negation only narrows
+        if part.startswith("!"):
+            continue
+        try:
+            n = ipaddress.ip_network(part, strict=False)
+        except ValueError:
+            return None
+        if not (n.is_private and n.prefixlen >= 16):
+            return None
+        nets.append(n)
+    return nets[0] if nets else None
+
+
+def check_ssh(c):
+    if c.rd("/etc/ssh/sshd_config") is None:
+        c.emit("FAIL", "ssh.auth", "/etc/ssh/sshd_config is unreadable")
+        return
+    g, matches = sshd_settings(c)
+    pw = g.get("passwordauthentication", "yes")
+    kbd = g.get("kbdinteractiveauthentication", g.get("challengeresponseauthentication", "yes"))
+    root = g.get("permitrootlogin", "prohibit-password")
+    empty = g.get("permitemptypasswords", "no")
+    pub = g.get("pubkeyauthentication", "yes")
+    allowed = [m for m in matches if m["set"].get("passwordauthentication") == "yes" or m["set"].get("kbdinteractiveauthentication") == "yes"]
+    odd = [m["cond"] for m in allowed if private_net(m["cond"]) is None]
+    ev = "PasswordAuthentication %s, KbdInteractiveAuthentication %s, PermitRootLogin %s, Pubkey %s%s" % (pw, kbd, root, pub, "; passwords allowed only for: " + ", ".join(m["cond"] for m in allowed) if allowed else "")
+    bad = []
+    if pw != "no":
+        bad.append("global PasswordAuthentication is %s%s" % (pw, "" if "passwordauthentication" in g else " (OpenSSH's default)"))
+    if kbd != "no":
+        bad.append("global KbdInteractiveAuthentication is %s%s (with UsePAM it asks for a password)" % (kbd, "" if "kbdinteractiveauthentication" in g else " (the default)"))
+    if empty == "yes":
+        bad.append("PermitEmptyPasswords yes")
+    if root == "yes":
+        bad.append("PermitRootLogin yes")
+    if pub == "no":
+        bad.append("PubkeyAuthentication no: nothing could log in")
+    if bad:
+        c.emit("FAIL", "ssh.auth", "; ".join(bad) + ". " + ev)
+    elif odd:
+        c.emit("WARN", "ssh.auth", "password logins are also allowed for a non-private match (%s). %s" % (", ".join(odd), ev))
+    else:
+        c.emit("PASS", "ssh.auth", "key-only except as listed. " + ev)
+
+
+def check_network(c):
+    u = c.unit("NetworkManager.service")
+    if u is None or u.get("LoadState") == "not-found":
+        c.emit("SKIP", "net.manager", "NetworkManager is not installed")
+        c.emit("SKIP", "net.wifi", "NetworkManager is not installed")
+        return
+    c.emit("PASS" if u["ActiveState"] == "active" else "FAIL", "net.manager", "NetworkManager.service is %s" % describe(u))
+    r = c.run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"])
+    if not r.found:
+        c.emit("SKIP", "net.wifi", "nmcli is not installed")
+        return
+    wifi = [ln.split(":") for ln in r.out.splitlines() if ln.count(":") >= 2 and ln.split(":")[1] == "wifi"]
+    if r.rc != 0:
+        c.emit("WARN", "net.wifi", "nmcli failed (exit %s): %s" % (r.rc, r.err.strip()[:100]))
+    elif not wifi:
+        c.emit("WARN", "net.wifi", "NetworkManager lists no Wi-Fi device")
+    elif any(w[2] in ("unavailable", "unmanaged") for w in wifi):
+        c.emit("WARN", "net.wifi", "; ".join("%s %s" % (w[0], w[2]) for w in wifi))
+    else:
+        c.emit("PASS", "net.wifi", "; ".join("%s %s" % (w[0], w[2]) for w in wifi))
+
+
+# ---------------------------------------------------------------- over-the-air updater, keyboard, dev markers
+def check_ota(c):
+    if not c.exists("/var/lib/opos-update"):
+        c.emit("SKIP", "ota.updater", "no /var/lib/opos-update: this image has no over-the-air updater")
+        return
+    try:
+        rel = os.readlink(c.p("/opt/opos"))
+    except OSError:
+        rel = None
+    sg = [ln for ln in (c.rd("/etc/opos/update/allowed_signers") or "").splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    try:
+        stj = json.loads(c.rd("/var/lib/opos-update/status.json") or "")
+        stj = stj if isinstance(stj, dict) else {}
+    except ValueError:
+        stj = {}
+    phase = str(stj.get("phase", "none yet"))
+    path = c.unit("opos-update.path")
+    ev = "/opt/opos -> %s; phase %s%s; %d trusted signer(s)" % (rel or "(a plain directory)", phase, " (%s)" % str(stj["message"])[:60] if stj.get("message") else "", len(sg))
+    if path is None or path["ActiveState"] != "active":
+        c.emit("FAIL", "ota.updater", "opos-update.path is %s: %s" % (describe(path) if path else "unknown", ev))
+    elif phase in ("failed", "rolled-back"):
+        c.emit("WARN", "ota.updater", "the last update ended %s: %s" % (phase, ev))
+    elif phase in ("verifying", "applying", "checking"):
+        c.emit("WARN", "ota.updater", "an update is in progress: " + ev)
+    elif not sg:
+        c.emit("WARN", "ota.updater", "no signer is installed, so this image accepts no update: " + ev)
+    else:
+        c.emit("PASS", "ota.updater", "opos-update.path active; " + ev)
+
+
+def file_setting(c, name):
+    """(value, file) of NAME= in the image files that could set it (unit files and drop-ins, /etc/default, the session scripts)."""
+    units = ["/etc/systemd/system/" + n for n in c.ls("/etc/systemd/system") or [] if n.startswith("opos")]
+    names = [u + "/" + f for u in units if c.ls(u) for f in c.ls(u)] + [u for u in units if not c.ls(u)]
+    names += ["/etc/default/" + n for n in c.ls("/etc/default") or [] if n.startswith("opos")]
+    for f in ["/etc/default/opos-kiosk", "/usr/libexec/opos/opos-kiosk", "/usr/libexec/opos/opos-session"] + names:
+        for line in (c.rd(f) or "").splitlines():
+            m = None if line.strip().startswith("#") else re.search(r"\b%s=[\"']?([^\s\"']*)" % re.escape(name), line)
+            if m:
+                return m.group(1), f
+    return None, None
+
+
+def env_setting(c, name):
+    """(value, where, stale): NAME from the running server's environment; with no server running, from the files.
+
+    stale is a sentence when a file sets NAME but the running server was started without it (a unit edited, not restarted).
+    """
+    srv = [p for p in c.procs() if "opos.web" in " ".join(p["argv"]) and base(p["argv"]).startswith("python")]
+    fv, ff = file_setting(c, name)
+    if not srv:
+        return fv, ff, None
+    v = c.environ(srv[0]).get(name)
+    if v is not None:
+        return v, "the server's environment", None
+    return None, None, ("%s=%s is set in %s but the running server was started without it; restart opos-server" % (name, fv, ff)) if fv is not None else None
+
+
+def ships(c, mod):
+    """Whether the OPOS tree on this phone carries src/opos/<mod>.py, i.e. the image was built with that part."""
+    return c.exists("/opt/opos/src/opos/%s.py" % mod)
+
+
+def web_osk(c):
+    """True when the server runs the in-page keyboard (OPOS_OSK=1 or web)."""
+    return (env_setting(c, "OPOS_OSK")[0] or "").lower() in ("1", "web")
+
+
+def check_osk(c):
+    v, where, stale = env_setting(c, "OPOS_OSK")
+    mode = {"1": "web", "web": "web", "stevia": "stevia"}.get((v or "").lower(), "")
+    shipped = ships(c, "osk")
+    if stale:
+        c.emit("WARN", "osk.keyboard", stale)
+    elif v is None and shipped:
+        c.emit("FAIL", "osk.keyboard", "this image ships the on-screen keyboard (src/opos/osk.py) but opos-server runs without OPOS_OSK: touching a field raises no keyboard")
+    elif v is None:
+        c.emit("SKIP", "osk.keyboard", "OPOS_OSK is not set (no on-screen keyboard in this image)")
+    elif not mode:
+        c.emit("WARN" if shipped else "SKIP", "osk.keyboard", "OPOS_OSK=%s in %s: off%s" % (v, where, "; this image has a keyboard, so no field can be typed into by touch" if shipped else ""))
+    elif mode == "stevia":
+        kb = [p for p in c.procs() if any(w in base(p["argv"]).lower() for w in ("stevia", "squeekboard"))]
+        if kb:
+            c.emit("PASS", "osk.keyboard", "OPOS_OSK=stevia in %s; the port's keyboard runs: pid %d %s" % (where, kb[0]["pid"], base(kb[0]["argv"])))
+        else:
+            c.emit("WARN", "osk.keyboard", "OPOS_OSK=stevia in %s but no stevia/squeekboard process runs" % where)
+    elif "page" not in c.cache:
+        c.emit("SKIP", "osk.keyboard", "OPOS_OSK=%s in %s, but the server did not answer" % (v, where))
+    else:
+        js, css = http_get(urljoin(c.url, "osk.js")), http_get(urljoin(c.url, "osk.css"))
+        tag = 'src="/osk.js"' in c.cache["page"]
+        ev = "OPOS_OSK=%s in %s; page loads /osk.js: %s; /osk.js -> %s (%d bytes), /osk.css -> %s" % (v, where, "yes" if tag else "NO", js[0] or js[3], len(js[1]), css[0] or css[3])
+        c.emit("PASS" if tag and js[0] == 200 and js[1] and css[0] == 200 else "FAIL", "osk.keyboard", ev)
+
+
+NM_ACTIONS = ("wifi.scan", "network-control", "settings.modify.system", "enable-disable-wifi")
+
+
+def check_netpage(c):
+    v, where, stale = env_setting(c, "OPOS_NETWORK")
+    if stale:
+        c.emit("WARN", "net.page", stale)
+        c.emit("SKIP", "net.permissions", "OPOS_NETWORK is not on in the running server")
+        return
+    shipped = ships(c, "net_page")
+    if v != "1":  # opos.net_page honours exactly 1
+        if v is None and shipped:
+            c.emit("FAIL", "net.page", "this image ships the Network page (src/opos/net_page.py) but opos-server runs without OPOS_NETWORK=1: Settings has no link to it and it cannot change Wi-Fi")
+        elif v is not None and (shipped or v.lower() in TRUTHY):
+            c.emit("WARN", "net.page", "OPOS_NETWORK=%s in %s, but the server honours only 1: the Wi-Fi page is read-only" % (v, where))
+        else:
+            c.emit("SKIP", "net.page", "OPOS_NETWORK is not on (no Wi-Fi page in this image)")
+        c.emit("SKIP", "net.permissions", "OPOS_NETWORK is not on")
+        return
+    if "page" not in c.cache:
+        c.emit("SKIP", "net.page", "OPOS_NETWORK=%s in %s, but the server did not answer" % (v, where))
+    else:
+        st, body, ms, err = http_get(urljoin(c.url, "network"))
+        link = 'href="/network"' in c.cache["page"]
+        kb = web_osk(c)
+        kbtag = 'src="/osk.js"' in body.decode("utf-8", "replace")  # the password field needs the keyboard
+        ev = "OPOS_NETWORK=%s in %s; GET /network -> %s in %d ms, %d bytes; Settings links to it: %s" % (v, where, st or err, ms, len(body), "yes" if link else "NO")
+        if kb:
+            ev += "; keyboard loaded on it: %s" % ("yes" if kbtag else "NO")
+        c.emit("PASS" if st == 200 and body and link and (kbtag or not kb) else "FAIL", "net.page", ev)
+    r = c.run(["nmcli", "-t", "general", "permissions"])
+    perms = {}
+    for ln in r.out.splitlines():
+        k, _, val = ln.rpartition(":")
+        if k.startswith("org.freedesktop.NetworkManager."):
+            perms[k.split("NetworkManager.", 1)[1]] = val
+    if not r.found:
+        c.emit("SKIP", "net.permissions", "nmcli is not installed")
+    elif not perms:
+        c.emit("WARN", "net.permissions", "nmcli printed no permission table (exit %s)" % r.rc)
+    else:
+        need = {a: perms.get(a, "?") for a in NM_ACTIONS}
+        ev = ", ".join("%s=%s" % kv for kv in need.items())
+        if all(x == "yes" for x in need.values()):
+            c.emit("PASS", "net.permissions", "droidian may change Wi-Fi without being asked: " + ev)
+        else:
+            c.emit("WARN", "net.permissions", "joining Wi-Fi from the UI will be refused or ask an administrator: " + ev)
+
+
+def saved_zone(c):
+    """First line of the owner's own zone file (the one the setup writes and opos-kiosk reads), or ''."""
+    home = droid_home(c)
+    return ((c.rd(home + "/.config/opos/timezone") or "").strip().splitlines() or [""])[0].strip() if home else ""
+
+
+def timezone_shape_ok(z):
+    """/api/timezone as src/opos/firstrun.py sends it: zone names, where they came from, the saved and the active zone, the clock.
+    The setup page loads this together with /api/firstrun, so without a good answer it cannot open."""
+    if not isinstance(z, dict):
+        return False
+    zones, saved = z.get("zones"), z.get("saved")
+    return (isinstance(zones, list) and bool(zones) and all(isinstance(n, str) and n for n in zones) and z.get("source") in ("system", "builtin")
+            and (saved is None or isinstance(saved, str)) and isinstance(z.get("active"), str) and isinstance(z.get("clock"), dict))
+
+
+def api_json(c, path, token):
+    """(status, parsed JSON or None) for GET /<path> with the page token."""
+    st, body, ms, err = http_get(urljoin(c.url, path), {"X-OPOS-Token": token} if token else None)
+    try:
+        js = json.loads(body.decode("utf-8")) if st == 200 else None
+    except ValueError:
+        js = None
+    return st if st else err, js if isinstance(js, dict) else None
+
+
+def check_firstrun(c):
+    v, where, stale = env_setting(c, "OPOS_FIRSTRUN")
+    shipped = ships(c, "firstrun")
+    if stale:
+        c.emit("WARN", "firstrun.flag", stale)
+    elif v == "1":
+        c.emit("PASS", "firstrun.flag", "OPOS_FIRSTRUN=1 in %s" % where)
+    elif v is None and shipped:
+        c.emit("FAIL", "firstrun.flag", "this image ships the first run and time zone pages (src/opos/firstrun.py) but opos-server runs without OPOS_FIRSTRUN=1: no setup, no time zone choice")
+    elif v is not None and shipped:
+        c.emit("WARN", "firstrun.flag", "OPOS_FIRSTRUN=%s in %s, but the server honours only 1: first run and the time zone page are off" % (v, where))
+    else:
+        c.emit("SKIP", "firstrun.flag", "OPOS_FIRSTRUN is not on (no first run in this image)")
+    if v != "1" or stale:
+        c.emit("SKIP", "firstrun.routes", "first run is not on")
+        c.emit("SKIP", "clock.kiosk-tz", "first run is not on")
+        return
+    page = c.cache.get("page")
+    m = re.search(r'name="opos-token" content="([^"]+)"', page or "")
+    if not m:
+        c.emit("SKIP", "firstrun.routes", "the server did not answer")
+    else:
+        fr, tz = http_get(urljoin(c.url, "firstrun")), http_get(urljoin(c.url, "timezone"))
+        st, state = api_json(c, "api/firstrun", m.group(1))
+        gate = http_get(urljoin(c.url, "api/firstrun"))[0]
+        zst, zone = api_json(c, "api/timezone", m.group(1))
+        zok = zst == 200 and timezone_shape_ok(zone)
+        link = 'href="/timezone"' in page
+        pending, clock = (state or {}).get("pending"), (state or {}).get("clock")
+        ev = "GET /firstrun -> %s, /timezone -> %s, /api/firstrun -> %s (no token -> %s), /api/timezone -> %s%s; Settings links to /timezone: %s" % (
+            fr[0] or fr[3], tz[0] or tz[3], st, gate, zst, "" if zok or zst != 200 else " (not JSON in the shape the setup page needs)", "yes" if link else "NO")
+        if isinstance(pending, bool) and isinstance(clock, dict):
+            ev += "; first run %s" % ("PENDING: the next screen start shows the setup" if pending else "done")
+        if zok:
+            ev += "; zone saved %s, server uses %s" % (zone.get("saved") or "none", zone.get("active") or "its default")
+        good = (fr[0] == 200 and tz[0] == 200 and state is not None and isinstance(pending, bool) and isinstance(clock, dict) and gate == 403 and link
+                and zok)
+        if good:
+            skew = zone.get("saved") and zone.get("active") != zone.get("saved")
+            c.emit("WARN" if skew else "PASS", "firstrun.routes", ev + ("; the server has not applied the saved zone: restart opos-server" if skew else ""))
+        else:
+            c.emit("FAIL", "firstrun.routes", ev)
+    own, br = saved_zone(c), kiosk_browser(c)
+    script = c.rd("/usr/libexec/opos/opos-kiosk") or ""
+    if "/timezone" not in script or "export TZ" not in script:  # the kiosk is what puts the saved zone into Chromium's environment
+        c.emit("FAIL", "clock.kiosk-tz", "the kiosk script /usr/libexec/opos/opos-kiosk does not read the saved zone and export TZ: Chromium would show UTC whatever is chosen")
+    elif not own:
+        c.emit("SKIP", "clock.kiosk-tz", "no time zone has been chosen yet")
+    elif br is None:
+        c.emit("SKIP", "clock.kiosk-tz", "no kiosk Chromium")
+    else:
+        tzv = c.environ(br).get("TZ")
+        if tzv == own:
+            c.emit("PASS", "clock.kiosk-tz", "the kiosk Chromium runs with TZ=%s, the saved zone" % own)
+        else:
+            c.emit("WARN", "clock.kiosk-tz", "the saved zone is %s but the kiosk Chromium has TZ=%s: the screen shows the wrong time until Chromium restarts (pkill chromium)" % (own, tzv or "unset"))
+
+
+def check_dev(c):
+    pw = droid_home(c)
+    keys = [ln for ln in (c.rd(pw + "/.ssh/authorized_keys") or "").splitlines() if ln.strip() and not ln.lstrip().startswith("#")] if pw else []
+    if keys:
+        c.emit("WARN", "dev.ssh-key", "DEV image: %d authorized ssh key(s) for droidian; an image meant to be carried has none" % len(keys))
+    else:
+        c.emit("PASS", "dev.ssh-key", "no authorized ssh key for droidian: nothing new can log in")
+    dbg = [a for p in browser_procs(c) for a in p["argv"] if a.startswith("--remote-debugging-port")]
+    cfg = re.search(r"^OPOS_KIOSK_DEBUG_PORT=(\d+)", c.rd("/etc/default/opos-kiosk") or "", re.M)
+    if dbg or cfg:
+        c.emit("WARN", "dev.devtools", "DEV image: Chromium DevTools %s" % (dbg[0] if dbg else "is configured (port %s) but Chromium does not run with it" % cfg.group(1)))
+    else:
+        c.emit("PASS", "dev.devtools", "no Chromium DevTools port")
+    if c.exists("/etc/systemd/system/multi-user.target.wants/opos-clock-set.path"):
+        c.emit("WARN", "dev.time-drop", "DEV image: opos-clock-set.path sets the clock from a file in droidian's home")
+    else:
+        c.emit("PASS", "dev.time-drop", "no clock-setting file drop")
+
+
+CHECKS = (check_services, check_phoc, check_composer, check_output, check_backlight, check_kiosk, check_server, check_battery,
+          check_clock, check_logs, check_resources, check_usb, check_ssh, check_network, check_ota, check_osk, check_netpage, check_firstrun, check_dev)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="opos-selftest", formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 description="Read-only acceptance checks of the running OPOS OS.\nOne PASS/FAIL/WARN/SKIP line per check; exit 1 when any is FAIL.\nChanges nothing on the phone (the server does its usual work to answer /api/state, and ssh logins are logged).")
+    ap.add_argument("--only", action="append", metavar="PREFIX", help="print only checks whose id starts with PREFIX (svc, phoc, gfx, kiosk, server, battery, clock, log, res, net, ssh, ota, osk, firstrun, dev); repeatable")
+    ap.add_argument("--root", default="/", help="test seam: the directory standing in for / when reading /proc, /sys, /etc, /var, /opt")
+    ap.add_argument("--bin", action="append", metavar="DIR", help="test seam: find systemctl, journalctl, wlr-randr and the other helpers only in these directories")
+    ap.add_argument("--url", default=DEFAULT_URL, help="the OPOS server (default %(default)s)")
+    ap.add_argument("--now", type=float, help="test seam: the Unix time to treat as now")
+    a = ap.parse_args(argv)
+    c = Ctx(a.root, a.bin, a.url, a.now, a.only)
+    up = c.uptime()
+    rev = (c.rd("/opt/opos/REVISION") or "").strip()
+    print("# opos-selftest %d  %s  host=%s  uptime=%s  opos=%s  read-only" % (VERSION, fmt_t(c.time()), socket.gethostname(), "%ds" % up if up is not None else "?", rev[:12] or "?"), flush=True)
+    for fn in CHECKS:
+        try:
+            fn(c)
+        except Refused as e:
+            c.emit("FAIL", "selftest.refused", "internal error: refused to run '%s'" % e)
+        except Exception as e:
+            c.emit("FAIL", "selftest.error", "internal error in %s: %s: %s" % (fn.__name__, type(e).__name__, e))
+    n = {s: sum(1 for r in c.rows if r[0] == s) for s in ("PASS", "WARN", "SKIP", "FAIL")}
+    print("SELFTEST: %(PASS)d PASS, %(WARN)d WARN, %(SKIP)d SKIP, %(FAIL)d FAIL" % n, flush=True)
+    if not c.rows:
+        print("opos-selftest: no check matches --only", file=sys.stderr)
+        return 2
+    return 1 if n["FAIL"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

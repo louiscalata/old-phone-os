@@ -79,7 +79,8 @@ def local_route(env=None, free=None):
             p = urllib.parse.urlparse(env_url)
             if p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost"):
                 url = env_url
-    where = "on this phone" if PHONE_BUILD else "on this computer"
+    # OPOS_ON_PHONE=1: set by deploy/termux-setup.sh, where the packaged-install check cannot see the phone.
+    where = "on this phone" if PHONE_BUILD or env.get("OPOS_ON_PHONE") == "1" else "on this computer"
     # The server already holds whichever size it loaded, so either exact id verifies it; the free-memory pick goes first.
     other = tuple((m, n) for m, n in LOCAL_MODELS.items() if m != model)
     return muse.Route("local", LOCAL_MODELS[model], where, url or DEFAULT_LOCAL_URL, model, verify_model=url is None, alternates=other if url is None else ())
@@ -170,6 +171,32 @@ def _with_idk_hint(text, web):
             hint += ", or tick Search Wikipedia for general questions"
         return text + hint + "."
     return text
+_PAUSE_Q = re.compile(r"\bpaus\w*|\bstopped\b|\bturned off\b|\bwhy is \w+(?: \w+)? off\b", re.I)
+_TIME_Q = re.compile(r"\bhow long\b|\btime left\b|\brun out\b|\blast\b|\bdie\b|\bbattery life\b", re.I)
+RULES_ENGINE = "battery rules"
+def _rules_reply(text):
+    return {"ok": True, "text": text, "engine": RULES_ENGINE, "where": "on this phone", "sources": []}
+def rules_answer(question, facts):
+    """The rules' own answer to a question about pauses or time left, or None.
+
+    These facts are exact in the final decision; a small on-phone model restates a question's
+    premise or misreads a goal time as a duration, so Ask gives this instead of waking it.
+    """
+    if not isinstance(facts, dict):
+        return None
+    why = facts.get("why_paused")
+    if _PAUSE_Q.search(question) and isinstance(why, str) and why.strip():
+        return _rules_reply(why.strip()[:500] + " Calls and messages are never paused.")
+    left, goal = facts.get("time_left"), facts.get("goal")
+    if _TIME_Q.search(question) and isinstance(left, str) and left.strip():
+        if facts.get("charging") is True:
+            text = "The phone is charging, so the battery is filling, not running down."
+        else:
+            text = left.strip().rstrip(".") + " at the current rate."
+            if isinstance(goal, str) and goal:
+                text += f" That reaches your {goal} goal." if facts.get("goal_met") is True else f" That falls short of your {goal} goal, so the phone pauses less important tasks."
+        return _rules_reply(text + " Calls and messages are never paused.")
+    return None
 def answer(question, web=False, env=None, opener=None, free=None, context=None):
     if env is None:
         env = os.environ
@@ -177,9 +204,10 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
     if not q:
         return {"ok": False, "text": "Ask a question.", "engine": "none", "where": "", "sources": []}
     if is_resting(context):
-        return {"ok": False, "text": "Battery is critical, so the helper is resting to save power. Calls, messages and alarms still work. Ask again once the battery recovers or the phone is charging.", "engine": "rules", "where": "on this phone", "sources": []}
-    sources = search(q, opener) if web else []
+        return {"ok": False, "text": "Battery is critical, so the helper is resting to save power. Calls and messages are never paused. Ask again once the battery recovers or the phone is charging.", "engine": "rules", "where": "on this phone", "sources": []}
     use_facts = isinstance(context, dict) and len(context) > 0
+    ruled = rules_answer(q, context) if use_facts and not web else None
+    sources = search(q, opener) if web else []
     if use_facts:
         prompt = "Answer in at most four short sentences. Use the phone facts for questions about the phone and any listed sources for other information; cite sources as [1], [2]. When asked why something is paused, off or not working, the why_paused fact is the reason: restate it in plain words. If neither the facts nor the sources covers the question, say you do not know.\n"
     else:
@@ -196,17 +224,29 @@ def answer(question, web=False, env=None, opener=None, free=None, context=None):
             prompt += "If asked about a task listed in paused_by_glimmer, say that Muse Glimmer chose to pause it.\n"
     prompt += "\nQuestion: " + q
     deadline = time.monotonic() + muse.HELPER_DEADLINE_S
+    contradicted = False
     for route, timeout in muse._attempts(ask_routes(q, env, free), env, deadline):
+        if route.key == "local" and ruled is not None:
+            # The small on-phone model gets these facts wrong; Glimmer on a computer may still restate them.
+            return ruled
         try:
             text = muse.ask(route, prompt, env=env, opener=opener, timeout=timeout, max_tokens=200 if route.key == "local" else 400)
+            if use_facts and muse.contradicts(text, context):
+                contradicted = True
+                continue
             used = muse.answered_by(text, route)
             text = _with_idk_hint(_strip_stray_citations(str(text), sources), web)
             return {"ok": True, "text": text, "engine": used.name, "where": used.where, "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
         except muse.MuseError:
             continue
+    why = context.get("why_paused") if use_facts else None
+    if contradicted and isinstance(why, str) and why.strip():
+        # The model claimed a pause the phone does not have; the rules' own sentence is the answer.
+        return _rules_reply(why.strip()[:500] + " Calls and messages are never paused.")
     if sources:
-        return {"ok": True, "text": "No model answered, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
-    detail = "No model answered. "
-    if free is not None and free < MIN_MB_1B:
-        return {"ok": False, "text": detail + f"Not enough free memory for the on-phone model (about {free} MB free, needs 1536).", "engine": "none", "where": "", "sources": []}
-    return {"ok": False, "text": detail + "Calls, messages and battery saving still work.", "engine": "none", "where": "", "sources": []}
+        return {"ok": True, "text": "The helper did not answer, so here are the sources I found.", "engine": "none", "where": "", "sources": [{"title": s["title"], "url": s["url"]} for s in sources]}
+    detail = "The helper did not answer. "
+    # Memory only explains the failure when the on-phone helper was the one route; a LAN or Glimmer server the owner set up does not run here.
+    if free is not None and free < MIN_MB_1B and lan_route(env) is None and not env.get("OPOS_GLIMMER_URL"):
+        return {"ok": False, "text": detail + f"The phone has only about {free} MB of free memory and the helper needs {MIN_MB_1B} MB.", "engine": "none", "where": "", "sources": []}
+    return {"ok": False, "text": detail + "The battery rules still work.", "engine": "none", "where": "", "sources": []}

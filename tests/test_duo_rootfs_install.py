@@ -55,8 +55,11 @@ class TestDuoRootfsInstall(unittest.TestCase):
 
             boot_lines = [l for l in lines if l.startswith('+ fastboot boot') and l.rstrip().endswith('boot.img')]
             self.assertEqual(len(boot_lines), 1)
-            for l in lines:
-                self.assertNotIn('reboot', l)
+            # Only TWRP may be left for the bootloader, before the one RAM-boot; the RAM-booted kernel
+            # itself is never rebooted (docs/duo-usb-install.md).
+            reboots = [i for i, l in enumerate(lines) if 'reboot' in l]
+            self.assertEqual([lines[i].strip() for i in reboots], ['+ adb reboot bootloader'])
+            self.assertLess(reboots[0], lines.index(boot_lines[0]))
 
             result_n = subprocess.run(['sh', '-n', SCRIPT], capture_output=True, text=True)
             self.assertEqual(result_n.returncode, 0)
@@ -101,12 +104,13 @@ class TestDuoRootfsInstall(unittest.TestCase):
             with open(calls_log) as f:
                 lines = f.read().splitlines()
 
-            self.assertEqual(len(lines), 4)
+            self.assertEqual(len(lines), 5)
             self.assertEqual(lines[0], 'fastboot format:ext4 userdata')
             self.assertTrue(lines[1].startswith('fastboot boot ') and lines[1].endswith('twrp.img'))
             self.assertEqual(lines[2], 'adb wait-for-recovery')
-            self.assertTrue(lines[3].startswith('adb push '))
-            self.assertTrue(lines[3].endswith('/data/rootfs.img'))
+            self.assertEqual(lines[3], 'adb shell mountpoint -q /data || mount -t ext4 /dev/block/platform/soc/1d84000.ufshc/by-name/userdata /data')
+            self.assertTrue(lines[4].startswith('adb push '))
+            self.assertTrue(lines[4].endswith('/data/rootfs.img'))
 
             for l in lines:
                 if l.startswith('fastboot boot'):

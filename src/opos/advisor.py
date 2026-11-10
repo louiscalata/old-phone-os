@@ -72,7 +72,7 @@ class GlimmerAdvisor:
             self.pending.add(key)
         def do():
             try:
-                prompt = f"You help a phone save battery. State: battery {state.level} percent, health {state.health}, {state.temp_c} C, charging {state.charging}, goal hours {state.goal_hours if state.goal_hours is not None else 'none'}. These optional tasks are currently allowed: {', '.join(noness)}. Reply with only JSON like {{\"defer\": [names]}} listing which of them to pause to protect calls, messages and alarms. Use an empty list if all are fine."
+                prompt = f"You help a phone save battery. State: battery {state.level} percent, health {state.health}, {state.temp_c} C, charging {state.charging}, goal hours {state.goal_hours if state.goal_hours is not None else 'none'}. These optional tasks are currently allowed: {', '.join(noness)}. Reply with only JSON like {{\"defer\": [names]}} listing which of them to pause to protect calls and messages. Use an empty list if all are fine."
                 reply = self.ask(self.route, prompt, timeout=120, max_tokens=60)
                 raw = _parse_defer(reply)
                 filt = tuple(n for n in raw if isinstance(n, str) and n in noness)

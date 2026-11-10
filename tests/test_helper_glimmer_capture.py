@@ -95,7 +95,7 @@ class ExplainCapture(unittest.TestCase):
         opener = mock.Mock(side_effect=[completion("private", "length"),
                                        completion("<think>private</think>Maps rest.")])
         out = muse.explain(FACTS, [lan, GLIMMER], env={}, opener=opener)
-        self.assertEqual(out, {"ok": True, "engine": "Muse Glimmer", "where": "on this device", "text": "Maps rest."})
+        self.assertEqual(out, {"ok": True, "engine": "Muse Glimmer", "where": "on a local server", "text": "Maps rest."})
 
 
 class StatusCapture(unittest.TestCase):
@@ -132,8 +132,8 @@ class StatusCapture(unittest.TestCase):
                   {"helper": {"glimmer_status": "not reachable"}},
                   {"helper": {"glimmer_status": "off"}}, {},
                   {"helper": {"glimmer_status": "ready"}, "battery": {"why": "router+glimmer"}}]
-        self.assertEqual(render(states)["lines"], ["Glimmer: also paused email", "Glimmer: not reachable",
-                                                  "Glimmer: off", "Glimmer: off", "Glimmer: no extra pauses"])
+        self.assertEqual(render(states)["lines"], ["Helper: also paused email", "Helper: not reachable",
+                                                  "Helper: off", "Helper: off", "Helper: no extra pauses"])
 
     @unittest.skipUnless(shutil.which("node"), "node missing")
     def test_plan_credit_does_not_hide_pauses_and_new_decision_clears_it(self):
@@ -144,10 +144,10 @@ class StatusCapture(unittest.TestCase):
                 "credit": "Muse Glimmer kept this order"}
         out = credit.TestContributionLine().render(events=[{"state": state}, {"plan": plan},
                                                          {"state": state}, {"state": changed}])
-        self.assertEqual(out["eventLines"], ["Glimmer: also paused email",
-                                            "Glimmer: also paused email; kept the plan order",
-                                            "Glimmer: also paused email; kept the plan order",
-                                            "Glimmer: also paused email"])
+        self.assertEqual(out["eventLines"], ["Helper: also paused email",
+                                            "Helper: also paused email; kept the plan order",
+                                            "Helper: also paused email; kept the plan order",
+                                            "Helper: also paused email"])
 
 
 if __name__ == "__main__":

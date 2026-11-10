@@ -19,7 +19,7 @@ HARNESS = r"""
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const read=name=>fs.readFileSync(path.join(process.argv[1],name),'utf8');
 const bar=read('js-3.js'),state=read('js-6.js'),phone=read('phone-a.js');
-const start=phone.indexOf("(function(){\nvar time=G('sb-time');");
+const start=phone.indexOf("(function(){\nvar time=G('sb-time')");
 if(start<0)throw Error('Status-bar clock missing');
 const clock=phone.slice(start,phone.indexOf('})();',start)+5);
 function run(o={}){
@@ -50,7 +50,7 @@ function run(o={}){
     window:win,navigator:{onLine:true},location:{search:o.demoQuery?'?demo=1':''},URLSearchParams,
     G:el,meterEl:el('meter'),barM:undefined,barE:undefined,
     handleEl:el('handle'),titleEl:el('title'),timeEl:el('time'),gripEl:el('grip'),scrimEl:el('scrim'),
-    closeSheet(){},Date:class{getHours(){return +wall.slice(0,2)}getMinutes(){return +wall.slice(3)}},
+    closeSheet(){},Date:class{getHours(){return +wall.slice(0,2)}getMinutes(){return +wall.slice(3)}getFullYear(){return 2026}},
     setInterval(f,ms){timers.push({f,ms})},
     MutationObserver:class{constructor(f){this.f=f}observe(e,options){if(!options.childList)throw Error('Clock text not observed');e.observers.push(this)}},
     localStorage:{getItem(k){if(o.blocked)throw Error('denied');return store[k]??null},
@@ -60,6 +60,7 @@ function run(o={}){
   vm.runInContext(bar,c);
   vm.runInContext('function renderState(s){'+state+'}}',c);
   vm.runInContext(phone.split('\n').find(line=>line.startsWith('var demoTime=')),c);
+  vm.runInContext(phone.split('\n').find(line=>line.startsWith('function pct(')),c);  // the file's top-level battery text, which the bar calls
   vm.runInContext(clock,c);
   function flush(){let n=0;while(queue.size){if(++n>10)throw Error('Clock observer did not settle');const batch=[...queue];queue.clear();for(const ob of batch)ob.f()}}
   function snapshot(){return {time:el('sb-time').textContent,filter:root.style.filter,

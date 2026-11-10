@@ -1,0 +1,29 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# opos-switch opos|phosh|status: which shell the phone starts, now and on later boots.
+set -e
+case "$1" in
+opos)
+    systemctl disable --now phosh.service item.service 2>/dev/null || true
+    [ -x /usr/libexec/item/item-composer-fresh ] && /usr/libexec/item/item-composer-fresh
+    systemctl enable --now opos-server.service
+    systemctl enable opos.service
+    systemctl reset-failed opos.service 2>/dev/null || true
+    systemctl start opos.service
+    ;;
+phosh)
+    systemctl disable --now opos.service
+    [ -x /usr/libexec/item/item-composer-fresh ] && /usr/libexec/item/item-composer-fresh
+    systemctl enable phosh.service
+    systemctl start phosh.service
+    ;;
+status|"")
+    for u in opos opos-server phosh item; do
+        printf '%-12s %s, %s\n' "$u" "$(systemctl is-enabled $u.service 2>/dev/null)" "$(systemctl is-active $u.service 2>/dev/null)"
+    done
+    ;;
+*)
+    echo "opos-switch opos|phosh|status" >&2
+    exit 2
+    ;;
+esac

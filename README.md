@@ -15,7 +15,7 @@ PYTHONPATH=src python3 -m opos.web --port 8765
 
 Open **http://127.0.0.1:8765/?demo=1** for the unlocked simulator controls. **Leave this terminal running; Ctrl-C to stop.** Or [open the public demo](https://opos-demo-production.up.railway.app), which answers from battery rules with Glimmer off.
 
-Battery, calls and messages are simulated. This source has not run on a physical phone; on-phone inference is untested. The noon panel's estimate is a snapshot: a separate recorded rules-only noon-to-16:00 run, with no model or owner overrides, displayed **0% at 16:00; goal not met (`goal_met=false`)**.
+In this demo the battery, calls and messages are simulated; the Surface Duo routes that read a real battery are described under [Limits](#limits), and on-phone Muse inference is untested. The noon panel's estimate is a snapshot: a separate recorded rules-only noon-to-16:00 run, with no model or owner overrides, displayed **0% at 16:00; goal not met (`goal_met=false`)**.
 
 ## Try the battery features
 
@@ -30,7 +30,7 @@ Use `?demo=1`, leave simulation paused, and follow these rows in order. Close ba
 | Heat floor | While charging, close details and set **Temp (°C)** to 45. Open details and expand a paused reason. | “Battery rules paused this because the phone is hot.” Only calls and messages stay allowed in this demo. |
 | Call reserve | Restore Temp to 30°C, keep **Charging** checked, and set **Battery** to 0%. Open details and expand a paused reason. | “Battery rules paused this to keep a battery reserve for calls.” The absolute reserve engages at **0.7% charge or less**, even while charging; this shows it independently of the low-battery floor. |
 | Plan's saving steps | Restore **Battery** to 60%, untick **Charging**, close details and click **Plan**. | “dim screen > short screen timeout > batch sync”. Plan proposes the order; it does not run those steps. |
-| Worn battery / usable charge and Why? | At the restored 60%, click **Why?**. | “60% health” and “36% usable”: 60% charge × 60% health ≈ 36% usable. The explanation names maps and photos backup; locally it ends “Rules text. The helper did not answer this request.” |
+| Worn battery / usable charge and Why? | At the restored 60%, click **Why?**. | “The battery is worn. It holds 60% of what it did when new, so 60% is really about 36%”: 60% charge × 60% health ≈ 36% usable. On a real phone whose health was never read, the sentence says only “The battery is at 60%”. The explanation names maps and photos backup; locally it ends “Rules text. The helper did not answer this request.” |
 
 The call reserve above is separate from the **worn-battery reserve**: the latter requires health below 50%, no charging, and charge within its reserve margin. This demo fixes health at 60%, so that reserve stays off and cannot be tried with its sliders. The general measured reserve can also include one hour of observed drain; that added amount is waived with a daily goal while unplugged and below 45°C. See [the hard floors](docs/design-safety-floor.md).
 
@@ -187,7 +187,7 @@ OPOS_REPO_URL=https://github.com/louiscalata/old-phone-os OPOS_REF=main sh boots
 
 As recorded in [docs/pmos.md](docs/pmos.md), on November 3, 2026 a postmarketOS aarch64 image booted in QEMU 9.1.2 (TCG, OpenRC) to the OPOS lock screen, and Unlock reached Home. It used the packaged tinydm Pixman renderer hook without a manual renderer override; the same image without the hook stayed on the console with a GLES2/GBM failure. See [docs/pmos.md](docs/pmos.md) for the recorded run, toolchain and local-source staging.
 
-This later virtual-machine boot does not finish integration acceptance. The earlier private-baseline QEMU run described in [docs/provenance.md](docs/provenance.md#validation-scope) used a manual, QA-only Pixman renderer override. The November 3 image had no model server or route to one; on-phone inference and physical-phone behavior remain untested for this source.
+This later virtual-machine boot does not finish integration acceptance. The earlier private-baseline QEMU run described in [docs/provenance.md](docs/provenance.md#validation-scope) used a manual, QA-only Pixman renderer override. The November 3 image had no model server or route to one; on-phone inference and physical-phone behavior remain untested for the postmarketOS image.
 
 The kiosk starts the same `opos.web` server as the desktop demo, so it uses the same simulated battery (`DrainSim`) and simulated modem (`ScreenModem`): it does not read the phone's battery, place real calls or send real texts. A ModemManager adapter (`src/opos/mm_modem.py`) exists but is not connected yet, and the sysfs battery reader (`src/opos/hw/battery.py`) is used only by setup to describe the device, not by the phone screen.
 
@@ -210,9 +210,11 @@ Optional maintainer check, from the root of an OPOS Git checkout: `python3 -B gu
 
 **Focused package inputs; performance gains remain unmeasured.** See [docs/lean.md](docs/lean.md).
 
-Demo is simulation only, and so is the postmarketOS kiosk: both use the simulated battery and modem. No physical phone testing is claimed and native on-phone inference is not tested. The November 3 final-tree Ask and Why? UI response times are reported individually in [Muse Glimmer answering](#muse-glimmer-answering); these desktop measurements do not establish phone inference speed. Desktop Ask rests when the mode is CRITICAL, the phone is not charging, and less than 15% of the charge is usable. Spark Open is off by default and requires user credentials. Wikipedia search is opt-in.
+The desktop demo is simulation only, and so is the postmarketOS kiosk: both use the simulated battery and modem, and no physical phone testing is claimed for either. Native on-phone inference of the Muse models is not tested. The November 3 final-tree Ask and Why? UI response times are reported individually in [Muse Glimmer answering](#muse-glimmer-answering); these desktop measurements do not establish phone inference speed. Desktop Ask rests when the mode is CRITICAL, the phone is not charging, and less than 15% of the charge is usable. Spark Open is off by default and requires user credentials. Wikipedia search is opt-in.
 
-The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-yet-verified), and [Surface Duo work is paused](docs/duo-usb-install.md); those paths are documented separately.
+The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-yet-verified); that path is documented separately.
+
+**Surface Duo: one phone, one day (November 7, 2026).** [OPOS as the whole OS](packaging/duo-os/README.md) ran on the owner's Duo, RAM-booted from a PC with no Android, and the owner confirmed on the screens that it was working; logs from the phone showed the real battery read from sysfs. [OPOS on stock Android](docs/duo-android.md) ran through Termux with the real battery, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens per second. Nothing here measures speed, battery life or stability over time. Calls and texts are still simulated on both routes. The OS image is RAM-boot only, so a power cycle returns the phone to Android and wipes it. The older [Droidian USB notes](docs/duo-usb-install.md) are historical.
 
 ## Documentation
 

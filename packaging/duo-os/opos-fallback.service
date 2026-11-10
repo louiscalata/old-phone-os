@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# As the port's item-fallback: if the OPOS shell fails, the phone still gets a working shell.
+[Unit]
+Description=OPOS failed: phosh instead
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'sleep 2; s=$(systemctl show -p ActiveState --value opos.service); case $s in active|activating|reloading) exit 0;; esac; systemctl reset-failed opos.service; [ -x /usr/libexec/item/item-composer-fresh ] && /usr/libexec/item/item-composer-fresh; systemctl start phosh.service'

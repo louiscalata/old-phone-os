@@ -1,19 +1,57 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """UXP30: audit the effective inline CSS and the optional browser motion path."""
+import http.client
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
+import threading
 import unittest
 from unittest import mock
 
+from opos import firstrun, web
 from opos.web import page
 from tests import test_uxr_acceptance as acceptance
 
 # Page cap: 100 KiB of UTF-8 (Louis, 2026-11-03). It was 67,370 bytes plus 30 KiB (98,090)
 # until the Settings top-bar, brightness and volume controls needed the room.
 PAGE_BUDGET = 100 * 1024
+
+# The interface plan's wave rule (section 3): after every item, page() and the home page the server really sends with every switch
+# on must both be at most 102,000 bytes. The 400 bytes under the 102,400 cap above are the reserve for what the server adds around
+# page(): the keyboard's and the panes' tags, the Settings links, and the first-run decoration.
+WAVE_GATE = 102000
+SWITCHES = {"OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1", "OPOS_MONITOR": "1", "OPOS_PANES": "1", "OPOS_SPAN": "675,42"}
+
+
+def served_home_page(switches):
+    """What GET / returns from a server built the way web.main() builds it, with the given switches (the others are off).
+
+    main() lets opos.firstrun hook page() before it makes the Phone; make_server() alone does not, so a measurement that skips
+    that step leaves out what OPOS_FIRSTRUN=1 adds (253 bytes at the time of writing)."""
+    env = dict.fromkeys(SWITCHES, "")
+    env.update(switches)
+    with tempfile.TemporaryDirectory() as config, mock.patch.dict(os.environ, dict(env, OPOS_CONFIG_DIR=config)):
+        undo = firstrun.install(web)
+        server = web.make_server(0, web.Phone(), span=web.parse_span(switches["OPOS_SPAN"]) if "OPOS_SPAN" in switches else None)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=20)
+            conn.request("GET", "/")
+            response = conn.getresponse()
+            body = response.read()
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(10)
+            if undo is not None:
+                undo()
+    assert response.status == 200 and int(response.getheader("Content-Length")) == len(body), response.status
+    return body
 
 
 def rules(css, context=()):
@@ -75,15 +113,20 @@ class Budget(unittest.TestCase):
                     for prop in transition_properties(declarations[name]):
                         self.assertIn(prop, ('transform', 'opacity', 'visibility', 'none'),
                                       (context, selector, name, declarations[name]))
-            for name in ('animation', 'animation-name'):
+            for name in ('animation', 'animation-name', 'animation-iteration-count'):
                 if name in declarations and declarations[name] != 'none':
-                    animations.update(item.strip().split()[0]
-                                      for item in declarations[name].split(','))
+                    # Nothing animates at idle: a looping animation is a defect. (The charging pulse that used to be the
+                    # fixture here was a dead rule, retired by B-03 of the interface plan.)
+                    self.assertNotIn('infinite', declarations[name], (context, selector, name))
+                    if name != 'animation-iteration-count':
+                        animations.update(item.strip().split()[0]
+                                          for item in declarations[name].split(','))
         self.assertGreater(count, 0)
-        self.assertTrue(animations)
-        for name in animations:
+        self.assertNotIn('pulse', frames)
+        for name in animations:  # whatever animation may be added later: declared frames, and only transform and opacity
             self.assertIn(name, frames)
-            self.assertTrue(frames[name] <= {'transform', 'opacity'}, frames[name])
+        for name, props in frames.items():
+            self.assertTrue(props <= {'transform', 'opacity'}, (name, props))
 
     def test_sheet_keeps_base_transition(self):
         # An override here once dropped the base `visibility 0s .25s` delay.
@@ -132,6 +175,29 @@ class Budget(unittest.TestCase):
         message = f'page(): {size:,} bytes; PAGE_BUDGET: {PAGE_BUDGET:,} bytes'
         print(message)
         self.assertLessEqual(size, PAGE_BUDGET, message)
+
+
+class WaveGate(unittest.TestCase):
+    def test_page_and_the_served_home_page_with_every_switch_fit_the_wave_gate(self):
+        sizes = {
+            "page()": len(page().encode("utf-8")),
+            "page(), OPOS_SPAN=675,42": len(page(span=web.parse_span(SWITCHES["OPOS_SPAN"])).encode("utf-8")),
+            "served, no switch": len(served_home_page({})),
+            "served, every switch": len(served_home_page(SWITCHES)),
+        }
+        message = "; ".join(f"{name}: {size:,}" for name, size in sizes.items()) + f"; wave gate: {WAVE_GATE:,} bytes"
+        print(message)
+        for name, size in sizes.items():
+            self.assertLessEqual(size, WAVE_GATE, f"{name} is over the wave gate ({message})")
+
+    def test_the_measurement_includes_what_each_switch_adds(self):
+        # A measurement that silently drops a switch would pass the gate for the wrong reason.
+        plain = len(served_home_page({}))
+        for switch, value in SWITCHES.items():
+            if switch == "OPOS_SPAN":
+                continue  # the squeeze makes the page smaller; it is in the every-switch figure
+            with self.subTest(switch=switch):
+                self.assertGreater(len(served_home_page({switch: value})), plain)
 
 
 CHECK = r"""

@@ -16,7 +16,7 @@ class HelperCallStatusTest(unittest.TestCase):
         third = "else if(r.status>=500)"
         first_msg = "Too many questions in a row. Wait a few seconds, then try again."
         second_msg = "This page is out of date. Reload it, then try again."
-        third_msg = "Something went wrong in OPOS. Try again in a minute."
+        third_msg = "Something went wrong. Try again in a minute."
         timing = "if(!j.error&&j.engine"
         cleanup = "if(btn.parentNode)btn.parentNode.removeChild(btn);"
         parsed = body.index("await r.json()")

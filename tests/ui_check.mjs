@@ -283,12 +283,13 @@ const reloadAndWait = async (cdp) => {
     await check('call state and error line', async () => {
       await apiPost({ action: 'battery', level: 42 }); await reloadAndWait(cdp); await waitTone(cdp);
       await apiPost({ action: 'call', number: '+15550100' }); await reloadAndWait(cdp); await waitTone(cdp);
-      const v = await evalJs(cdp, "(() => { const n = document.querySelector('#notice'); const phone = document.querySelector('#phone'); const demo = document.querySelector('#demo'); const cs = n ? getComputedStyle(n) : null; return { text: n ? n.textContent : null, visible: !!n && cs.display !== 'none' && cs.visibility !== 'hidden' && n.offsetHeight > 0, inPhone: !!(n && phone && phone.contains(n)), inDemo: !!(n && demo && demo.contains(n)), fontSize: cs ? parseFloat(cs.fontSize) : null }; })()");
+      const v = await evalJs(cdp, "(() => { const n = document.querySelector('#notice'); const phone = document.querySelector('#phone'); const demo = document.querySelector('#demo'); const cs = n ? getComputedStyle(n) : null; return { text: n ? n.textContent : null, visible: !!n && cs.display !== 'none' && cs.visibility !== 'hidden' && n.offsetHeight > 0, inPhone: !!(n && phone && phone.contains(n)), inDemo: !!(n && demo && demo.contains(n)), fontSize: cs ? parseFloat(cs.fontSize) : null, fontWeight: cs ? cs.fontWeight : null, border: cs ? cs.borderTopWidth + ' ' + cs.borderTopStyle : null }; })()");
       if (!v.visible) throw new Error('notice not visible');
-      if (v.text !== 'In call') throw new Error(`notice ${v.text}`);
+      if (v.text !== 'Practice call. No real call is made.') throw new Error(`notice ${v.text}`);
       if (!v.inPhone) throw new Error('notice not in phone');
       if (v.inDemo) throw new Error('notice in demo');
-      if (!(v.fontSize < 16)) throw new Error(`font-size ${v.fontSize}`);
+      // A call is a boxed bold notice, not a caption (interface plan W1-06): at least 20 px, bold, a 3 px double box.
+      if (!(v.fontSize >= 20) || v.fontWeight !== '700' || v.border !== '3px double') throw new Error(`call notice ${v.fontSize}px ${v.fontWeight} ${v.border}`);
       if (/battery|AI|model|governor|assistant/i.test(v.text || '')) throw new Error('notice bad text');
       await apiPost({ action: 'hang_up' }); await apiPost({ action: 'call', number: 'abc' }); await reloadAndWait(cdp); await waitTone(cdp);
       const e = await evalJs(cdp, "(() => { const n = document.querySelector('#notice'); const cs = n ? getComputedStyle(n) : null; return { text: n ? n.textContent : null, visible: !!n && cs.display !== 'none' && cs.visibility !== 'hidden' && n.offsetHeight > 0 }; })()");

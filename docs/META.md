@@ -72,7 +72,7 @@ Muse Code (Meta) is paid, needs an account, and runs on Mac and Windows. It is o
 
 `guard/check.py` is an optional static repository check. Its fixed non-Meta-name pattern scans `src/`, `deploy/`, `install.sh`, `install.ps1` and `requirements.txt`; its URL-host check scans `src/` and `deploy/`. A violation makes the check fail when it is run. It reads source text and does not monitor or restrict runtime network traffic.
 
-Configured starting destinations are loopback model servers, a user-supplied private-IP LAN endpoint, en.wikipedia.org for an explicitly requested search, dev.meta.ai for Muse Code installation, and Baseten for explicit paid opt-in. This is not an enforced network allowlist: Wikipedia search and model requests ignore HTTP_PROXY and system proxy settings and do not follow redirects, and the OPOS Muse Code installer downloader also refuses redirects. This describes the initial installer download; downloads performed by the vendor script are a separate scope.
+Configured starting destinations are loopback model servers, a user-supplied private-IP LAN endpoint, an AGIW monitor address the owner sets for the Inference page (`OPOS_AGIW_URL`: loopback or private network only, read only, fetched only while that page is open), en.wikipedia.org for an explicitly requested search, dev.meta.ai for Muse Code installation, and Baseten for explicit paid opt-in. This is not an enforced network allowlist: Wikipedia search and model requests ignore HTTP_PROXY and system proxy settings and do not follow redirects, and the OPOS Muse Code installer downloader also refuses redirects. This describes the initial installer download; downloads performed by the vendor script are a separate scope.
 
 ## How OPOS was built
 

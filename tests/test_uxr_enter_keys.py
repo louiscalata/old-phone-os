@@ -11,7 +11,7 @@ class TestEnterKeys(unittest.TestCase):
         cls.js8 = js_path.read_text(encoding='utf-8')
 
     def _handler(self, src, el):
-        anchor = "document.getElementById('" + el + "').addEventListener('keydown'"
+        anchor = "G('" + el + "').addEventListener('keydown'"
         self.assertEqual(src.count(anchor), 1)
         i = src.find(anchor)
         j = src.find('});', i)
@@ -23,7 +23,7 @@ class TestEnterKeys(unittest.TestCase):
         self.assertIn("'Enter'", slice_)
         self.assertIn('isComposing', slice_)
         self.assertIn('preventDefault()', slice_)
-        self.assertIn("getElementById('msg').focus()", slice_)
+        self.assertIn("G('msg').focus()", slice_)
         self.assertNotIn('go(', slice_)
         self.assertNotIn('click()', slice_)
 
@@ -41,17 +41,17 @@ class TestEnterKeys(unittest.TestCase):
         self.assertIn('isComposing', slice_)
         self.assertIn('repeat', slice_)
         self.assertIn('preventDefault()', slice_)
-        self.assertIn("getElementById('askbtn').click()", slice_)
+        self.assertIn("G('askbtn').click()", slice_)
         self.assertNotIn('helperCall', slice_)
 
     def test_position(self):
         html = self.html
-        start_marker = "document.getElementById('goal-clear').onclick="
+        start_marker = "G('goal-clear').onclick="
         end_marker = "let pollMs=1000,pollTimer=null"
         anchors = [
-            "document.getElementById('number').addEventListener('keydown'",
-            "document.getElementById('msg').addEventListener('keydown'",
-            "document.getElementById('q').addEventListener('keydown'",
+            "G('number').addEventListener('keydown'",
+            "G('msg').addEventListener('keydown'",
+            "G('q').addEventListener('keydown'",
         ]
         start_idx = html.find(start_marker)
         end_idx = html.find(end_marker)

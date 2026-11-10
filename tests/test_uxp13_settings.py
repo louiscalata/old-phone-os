@@ -71,7 +71,7 @@ class UXP13SettingsStatic(unittest.TestCase):
         self.assertEqual(len(re.findall(r"<select ", self.s)), 2)
         self.assertIn('<label>Top bar<select id="topbar">', self.s)
         self.assertIn('<label><input id="night" type="checkbox" role="switch">Dim at night</label>', self.s)
-        for text, ident in (("Page brightness", "bright"), ("Volume (simulated in the demo)", "vol")):
+        for text, ident in (("Page brightness", "bright"), ("Volume (practice only; sound is not changed)", "vol")):
             self.assertIn('<label>%s<input id="%s" type="range"' % (text, ident), self.s)
 
     def test_about_default_and_quiet_words(self):
@@ -212,9 +212,13 @@ class UXP13SettingsRuntime(unittest.TestCase):
         self.assertFalse(r["settingsAfterBack"])
         self.assertTrue(r["homeAfterBack"])
 
-    def test_about_uses_helper_label_or_name(self):
+    def test_about_names_no_configured_engine(self):
+        # W1-08: the configured route is not a verified one, so About no longer prints "Helper set to ...".
         self.assertEqual(self.r["empty"]["about"], "Old Phone OS Interface")
-        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface. Helper set to on this phone")
+        self.assertEqual(self.r["engine"]["about"], "Old Phone OS Interface")
+        js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
+        self.assertNotIn("sb-engine", js)
+        self.assertNotIn("Helper set to", js)
 
 
 class UXP13Wizard(unittest.TestCase):

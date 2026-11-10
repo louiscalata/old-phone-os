@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* OPOS on-screen keyboard (Duo OS). Served at /osk.css by opos.osk while OPOS_OSK=1. Colours are the page's own Jaryo tokens,
+   so light and dark follow the page; sizes match osk.js (tests/test_osk.py checks that they agree). */
+#opos-osk{--osk-bg:var(--jaryo-bg,#f3f0e8);--osk-fg:var(--jaryo-fg,#1a1a1a);--osk-key:56px;--osk-bar:44px;--osk-gap:6px;
+position:fixed;left:0;right:0;bottom:0;z-index:2147483000;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px);
+color:var(--osk-fg);font:600 22px/1 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;
+-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
+@media (prefers-color-scheme:dark){#opos-osk{--osk-bg:var(--jaryo-bg,#000);--osk-fg:var(--jaryo-fg,#e6e2d9)}}
+#opos-osk[hidden]{display:none}
+#opos-osk,#opos-osk *{box-sizing:border-box}
+#opos-osk .osk-grid{display:grid;align-items:end}
+#opos-osk .osk-grid.osk-split{grid-template-columns:1fr 1fr}
+#opos-osk .osk-panel{pointer-events:auto;touch-action:none;display:flex;flex-direction:column;gap:var(--osk-gap);padding:6px;background:var(--osk-bg);border:1px solid var(--osk-fg)}
+#opos-osk .osk-row{display:flex;gap:var(--osk-gap);min-height:var(--osk-key)}
+#opos-osk .osk-barrow{min-height:var(--osk-bar);align-items:stretch}
+#opos-osk .osk-key{flex:1 1 0;min-width:0;min-height:var(--osk-key);margin:0;padding:0 4px;display:flex;align-items:center;justify-content:center;
+border:1px solid var(--osk-fg);border-radius:0;background:var(--osk-bg);color:var(--osk-fg);font:inherit;line-height:1;cursor:default;
+overflow:hidden;white-space:nowrap}
+#opos-osk .osk-key.fn{font-size:17px}
+#opos-osk .osk-key.bar{min-height:var(--osk-bar);min-width:72px;padding:0 14px}
+#opos-osk .osk-key.go,#opos-osk .osk-key[aria-pressed="true"]{background:var(--osk-fg);color:var(--osk-bg)}
+#opos-osk .osk-key[data-caps]{box-shadow:inset 0 0 0 3px var(--osk-bg),inset 0 0 0 5px var(--osk-fg)}
+#opos-osk .osk-key.on,#opos-osk .osk-key:active{background:var(--osk-fg);color:var(--osk-bg)}
+#opos-osk .osk-key.go.on,#opos-osk .osk-key.go:active,#opos-osk .osk-key[aria-pressed="true"].on{background:var(--osk-bg);color:var(--osk-fg)}
+#opos-osk .osk-key:focus-visible{outline:3px solid var(--osk-fg);outline-offset:-6px}
+#opos-osk .osk-gap{flex:1 1 0;min-width:0}
+#opos-osk .osk-info{flex:1 1 0;min-width:0;display:flex;align-items:center;padding:0 10px;font-size:20px;font-variant-numeric:tabular-nums;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (forced-colors:active){#opos-osk .osk-key,#opos-osk .osk-panel{border-color:ButtonText}}

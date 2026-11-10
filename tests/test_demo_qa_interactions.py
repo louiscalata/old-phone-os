@@ -33,7 +33,8 @@ SCENARIOS = r"""
  out.empty={requests,renders,text:notice.textContent,hidden:notice.hidden};
  w.ids.msg.value='Hello';await ctx.go('receive');out.valid={requests,renders};
  // Run the real notice-history hook; errors must not become durable notices.
- const source=read('phone-a.js'),start=source.indexOf('var notices=[]'),end=source.indexOf('})();',start);
+ const source=read('phone-a.js'),start=source.indexOf('var notices=[]'),end=source.indexOf('})();',start),helper=source.indexOf('function pct(');
+ vm.runInContext(source.slice(helper,source.indexOf(String.fromCharCode(10),helper)),ctx); // the file's top-level battery text, which the hook calls
  vm.runInContext('(function(){'+source.slice(start,end)+'})();',ctx);
  ctx.demoTime='Demo time 12:00';
  ctx.oposHooks.at(-1)({status:'error: message empty or too long',notice:'Message empty or too long',battery:{percent:60},clock:'12:04'});

@@ -50,7 +50,7 @@ Privacy
 - Old Phone OS Interface sends no telemetry or analytics.
 - The phone and setup pages are loopback-only; the public demo server listens on the network.
 - By default the Helper uses its built-in rules and programs on this phone only.
-- Old Phone OS Interface's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.
+- Old Phone OS Interface's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper or the Inference page at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.
 - postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS Interface's control.
 
 Contact

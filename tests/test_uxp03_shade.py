@@ -11,6 +11,7 @@ from opos.web import Phone, make_server, page
 
 JS = Path(__file__).resolve().parents[1] / 'src/opos/web_static/phone-a.js'
 NODE = shutil.which('node')
+# The page builds window.oposUI itself and no script replaces it (a notice is stamped with its hhmm), so the stubs below go onto that object.
 HARNESS = r"""
 const fs=require('fs'),vm=require('vm');
 class Element {
@@ -37,7 +38,7 @@ const c={document:{getElementById:get,createElement:()=>new Element()},
   setInterval(){},navigator:{onLine:true},
   closeSheet(){calls.push('close')},toggleVis(){calls.push('toggle');return Promise.reject(Error('offline'))}};
 c.window=c;vm.createContext(c);vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
-c.oposUI={lock(){calls.push('lock')},openApp(name){calls.push(name)}};
+c.oposUI=Object.assign(c.oposUI||{},{lock(){calls.push('lock')},openApp(name){calls.push(name)}});
 // Exercise the shade hook registered by the complete, unmodified script.
 const hook=c.oposHooks[0],out={};
 hook({helper_visible:false,notice:''});

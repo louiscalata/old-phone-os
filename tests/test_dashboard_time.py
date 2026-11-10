@@ -46,7 +46,8 @@ class TestDashboardTimeHistory(unittest.TestCase):
         d.record(50, clock_s=7200)
         d.record(40, clock_s=100)
         self.assertNotIn(50, d.history)
-        self.assertEqual(set(d.history), {40})
+        self.assertEqual(d.history, [40])  # one sample, as the name says; it used to be [40, 40], a flat line on the page
+        self.assertEqual(d._times, [100])
         self.assertEqual(len(d.history), len(d._times))
 
     def test_view_only_smooths_last_hour(self):

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import unittest
 
@@ -17,13 +18,17 @@ class PolishStatic(unittest.TestCase):
         self.assertRegex(out, r'#phone\{width:100%;max-width:none;box-sizing:border-box;padding:16px')
         self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', out)
         # JRY04: the notice is the front-page lede directly under the tiles (margin-top:0, no void). The old grey
-        # card with a yellow bar (phone-a.css) is neutralised by the later jaryo.css rule (docs/jaryo.md 2.3), so
-        # this no longer pins background:#1e1e1e; it checks the override wins by source order.
-        old = out.index('#home-notice{background:#1e1e1e')
-        new = out.index('#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);')
-        self.assertLess(old, new)
-        self.assertIn('Calls and messages are on.', out)
-        self.assertIn('Paused to save power: ', out)
+        # card with a yellow bar (phone-a.css) is gone (B-03 of the interface plan); the Jaryo rule (docs/jaryo.md 2.3)
+        # is the only one that sets its colours.
+        self.assertNotIn('#1e1e1e', out)
+        self.assertNotIn('#f2c14e', out)
+        self.assertNotRegex(out, r'#home-notice\{(?:[^}]*;)?(?:background|color):#')
+        self.assertIn('#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);', out)
+        # W1-01: the card's words are made once, on the server (opos.practice.home_note), so a practice phone cannot say
+        # "Calls and messages are on."; the page only shows what the state carries.
+        self.assertIn("var notice=s.home_note||'';", out)
+        self.assertNotIn('Calls and messages are on.', out)
+        self.assertNotIn('Paused to save power: ', out)
 
     def test_helper_and_lock(self):
         out = page()
@@ -42,8 +47,54 @@ class PolishStatic(unittest.TestCase):
         self.assertIn('<details id="shade-technical"><summary>Technical details</summary>', out)
         self.assertIn('#features:empty', out)
         self.assertIn('scrollbar-width:none', out)
-        self.assertIn('percent<=15', out)
-        self.assertIn('#sb-batt[data-low="true"]{color:#ff7075;font-weight:700}', out)
+        self.assertIn('low=p<=15', out)  # the Shade title's LOW threshold (the bar's chip is pinned by test_uxp01_statusbar)
+        # The low-battery chip is bold with a double border; its colour is the Jaryo ink (jaryo.css), not #ff7075.
+        self.assertIn('#sb-batt[data-low="true"]{font-weight:700}', out)
+        self.assertRegex(out, r'#sb-batt\[data-low="true"\][^{}]*\{[^}]*color:var\(--jaryo-fg\)')
+        self.assertNotIn('#ff7075', out)
+
+
+class KeyedSyncStatic(unittest.TestCase):
+    """W1-09: a node is rebuilt only when its markup changed, so a tap or the focus on it survives a poll."""
+
+    def test_lists_are_rebuilt_only_when_their_markup_changed(self):
+        out = page()
+        self.assertEqual(out.count("const sync=(el,html,wire)=>{if(el._k!==html){el._k=html;el.innerHTML=html;wire&&wire(el)}};"), 1)
+        for el in ("contacts", "threads", "thread", "features", "events"):
+            self.assertIn("sync(G('%s')," % el, out, el)
+            self.assertNotIn("G('%s').innerHTML" % el, out, el)
+            self.assertNotIn("getElementById('%s').innerHTML" % el, out, el)
+        # the buttons are wired inside the callback, not by a second pass over the document on every poll
+        self.assertNotIn("document.querySelectorAll('#contacts button')", out)
+        self.assertNotIn("document.querySelectorAll('#threads button')", out)
+
+    def test_the_helper_box_is_rebuilt_once_per_change_and_enhanced_once(self):
+        out = page()
+        self.assertIn("const h=G('helper'),hk=JSON.stringify(s.helper);", out)
+        self.assertIn("if(h._k!==hk){h._k=hk;h.textContent='Helper", out)
+        self.assertIn("else{h.hidden=true;h.textContent='';h._k=''}", out)
+        # phone-a.js: an enhanced box holds a details element; its button branch would take Reset or Restart for "Why?"
+        self.assertIn("button=helper.querySelector('details')?null:helper.querySelector('button')", out)
+
+    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    def test_sync_writes_and_wires_only_on_a_change(self):
+        src = (Path(__file__).resolve().parent.parent / 'src/opos/web_static/js-4.js').read_text(encoding='utf-8')
+        line = next(l for l in src.splitlines() if l.startswith('const sync='))
+        code = line + r"""
+const el={writes:0,set innerHTML(v){this.writes++;this.html=v}};let wired=0;
+sync(el,'<b>a</b>',()=>wired++);sync(el,'<b>a</b>',()=>wired++);sync(el,'<b>a</b>');
+const same=[el.writes,wired];
+sync(el,'<b>b</b>',()=>wired++);sync(el,'<b>b</b>',()=>wired++);
+sync(el,'',()=>wired++);sync(el,'');
+console.log(JSON.stringify({same,after:[el.writes,wired],last:el.html}));
+"""
+        r = subprocess.run(['node', '-e', code], capture_output=True, text=True, timeout=20)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        import json
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(out['same'], [1, 1], 'three identical renders: one write, one wiring')
+        self.assertEqual(out['after'], [3, 3], 'a changed markup, then an emptied one: one write and one wiring each')
+        self.assertEqual(out['last'], '')
 
 
 CHECK = r"""
@@ -55,7 +106,7 @@ CHECKS.polish = async function() {
     // JRY04: the Jaryo notice may be dark on light, so take the contrast ratio in either direction.
     var a=__u.lum(__u.rgba(c.color))+.05,b=__u.lum(__u.rgba(c.backgroundColor))+.05,ratio=Math.max(a,b)/Math.min(a,b);
     if(ratio<4.5)out.push('notice contrast '+ratio);
-    if(!n.textContent.startsWith('Calls and messages are on.'))out.push('notice copy');
+    if(!n.textContent.startsWith('Practice mode: calls, texts and tasks are simulated.'))out.push('notice copy: '+n.textContent);
     return out;
   })()`);
   out.push(...await ev(`(async function(){
@@ -90,6 +141,29 @@ CHECKS.polish = async function() {
     technical.open=true;
     if(!why.checkVisibility()||!__u.vis(why)||why.textContent!==s.battery.why)out.push('Battery explanation missing from open details');
     technical.open=false;
+    return out;
+  })()`));
+  out.push(...await ev(`(async function(){
+    var out=[],s=await (await fetch('/api/state',{headers:{'X-OPOS-Token':document.querySelector('[name=opos-token]').content}})).json();s.running=false;
+    await render(s);
+    var snap=function(){return {contact:document.querySelector('#contacts button'),why:document.getElementById('whybtn'),details:document.querySelector('#helper details'),feature:document.querySelector('#features>*'),event:document.querySelector('#events>*')}};
+    var a=snap();await render(s);await render(s);var b=snap();
+    ['contact','why','details'].forEach(function(k){if(!a[k])out.push('missing '+k);else if(a[k]!==b[k])out.push('rebuilt by an unchanged render: '+k)});
+    ['feature','event'].forEach(function(k){if(a[k]&&a[k]!==b[k])out.push('rebuilt by an unchanged render: '+k)});
+    s.helper=Object.assign({},s.helper,{hours_left:123.4});await render(s);
+    if(document.querySelectorAll('#helper details').length!==1)out.push('changed helper: details x'+document.querySelectorAll('#helper details').length);
+    if(document.querySelectorAll('#whybtn').length!==1)out.push('changed helper: whybtn x'+document.querySelectorAll('#whybtn').length);
+    if(document.querySelectorAll('.helper-actions button').length!==3)out.push('changed helper: actions '+document.querySelectorAll('.helper-actions button').length);
+    return out;
+  })()`));
+  out.push(...await ev(`(async function(){
+    // a11y-cost-05 (a): a poll whose state is what was last drawn writes nothing (about 60 DOM records per poll before)
+    var out=[],rec=0,mo=new MutationObserver(function(l){rec+=l.length});
+    mo.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+    await pollTick();mo.takeRecords();rec=0;
+    await pollTick();await pollTick();await pollTick();
+    rec+=mo.takeRecords().length;mo.disconnect();
+    if(rec)out.push('three polls of an unchanged state wrote '+rec+' DOM records');
     return out;
   })()`));
   await sleep(350);

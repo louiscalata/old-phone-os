@@ -123,7 +123,7 @@ class DemoQAState(unittest.TestCase):
             phone.set_battery(level)
             histories.append(phone.state()['battery']['history'])
         source = (STATIC / 'js-7.js').read_text()
-        fragment = source[source.index('const poly='):source.index('const feats=')]
+        fragment = source[source.index('const poly='):source.index("sync(G('features')")]
         rendered = node_json(self, r"""
 const vm = require('node:vm'), fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -143,7 +143,9 @@ process.stdout.write(JSON.stringify(out));
 """, {'histories': histories, 'fragment': fragment})
         self.assertEqual(histories[-1][-1], 30)
         self.assertEqual(len(set(rendered)), len(histories))
-        for points in rendered:
+        self.assertEqual(len(histories[0]), 1)
+        self.assertEqual(rendered[0], '')  # W1-07: one sample draws no line (it used to draw a flat "last hour")
+        for points in rendered[1:]:
             vertices = [tuple(map(float, point.split(','))) for point in points.split()]
             self.assertEqual(vertices[0][0], 0)
             self.assertEqual(vertices[-1][0], 100)

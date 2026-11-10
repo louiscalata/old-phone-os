@@ -136,12 +136,12 @@ class TestDemoDay(unittest.TestCase):
         self.assertEqual(dash.hours_to_goal(6 * 3600), 16)
 
     def test_usable_percent_is_floored_in_sentence_and_fact(self):
-        self.assertIn("about 14% usable", web.why_paused(24.5, .6, 30, False, ["maps"]))
+        self.assertIn("so 24% is really about 14%", web.why_paused(24.5, .6, 30, False, ["maps"]))
         phone = web.Phone(visible=True)
         phone.set_battery(24.5)
         helper = phone.state()["helper"]
         self.assertEqual(helper["usable_percent"], 14)
-        self.assertIn("about 14% usable", helper["why_paused"])
+        self.assertIn("so 24% is really about 14%", helper["why_paused"])
 
     def test_charging_after_goal_has_no_success_note(self):
         phone = self.phone()

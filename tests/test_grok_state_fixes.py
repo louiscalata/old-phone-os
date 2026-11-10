@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from opos.advisor import GlimmerAdvisor
+from opos.dashboard import ROUGH
 from opos.web import Phone, why_paused
 
 
@@ -81,7 +82,9 @@ class TestGrokStateFixes(unittest.TestCase):
         self.assertIn("may not last until 16:00", helper["why_paused"])
         self.assertIn("nothing is paused", helper["why_paused"])
         self.assertIn("at this rate", helper["why_paused"])
-        self.assertIn(helper["time_left"].lower(), helper["why_paused"])
+        self.assertTrue(helper["time_left"].startswith(ROUGH))  # the demo's figure is the model's
+        self.assertIn(helper["time_left"][len(ROUGH):].lower(), helper["why_paused"])  # the sentence says "at this rate", not "rough estimate"
+        self.assertNotIn("rough estimate", helper["why_paused"])
 
     def test_c_undo_updates_home_and_decision(self):
         for visible in (False, True):
@@ -130,10 +133,10 @@ class TestGrokStateFixes(unittest.TestCase):
         helper = phone.state()["helper"]
         self.assertEqual(helper["usable_percent"], 14)
         self.assertEqual(helper["mode"], "CRITICAL")
-        self.assertIn("24% charge is about 14% usable", helper["why_paused"])
+        self.assertIn("so 24% is really about 14%", helper["why_paused"])
 
     def test_d_direct_sentence_truncates_usable(self):
-        self.assertIn("about 14% usable", why_paused(24.5, .6, 30, False, []))
+        self.assertIn("so 24% is really about 14%", why_paused(24.5, .6, 30, False, []))
 
     def test_e_stopped_empty_battery_ends_call_immediately(self):
         phone = self.phone()

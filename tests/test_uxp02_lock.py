@@ -7,7 +7,7 @@ from opos.web import page
 
 class TestLock(unittest.TestCase):
     def lock_script(self):
-        return page().split("var cover=document.getElementById('lock')", 1)[1].split('</script>', 1)[0]
+        return page().split("var cover=G('lock')", 1)[1].split('</script>', 1)[0]
 
     def test_lock_markup_hidden_by_default(self):
         html = page()
@@ -27,7 +27,7 @@ class TestLock(unittest.TestCase):
         self.assertIn('phone.inert=false', body)
         self.assertNotIn('fetch', body)
         self.assertNotIn('api(', body)
-        self.assertIn("document.getElementById('unlock').onclick=safe(function(){window.oposUI.unlock();})", html)
+        self.assertIn("G('unlock').onclick=safe(function(){window.oposUI.unlock();})", html)
         self.assertIn("if(e.key==='Escape')window.oposUI.unlock()", html)
         self.assertNotIn("cover.addEventListener('click'", html)
         self.assertIn("startY-e.clientY>40", html)
@@ -46,10 +46,10 @@ class TestLock(unittest.TestCase):
         lock = script.split('window.oposUI.lock=function()', 1)[1].split('function safe', 1)[0]
         self.assertIn('cover.hidden=false;', lock)
         self.assertIn('phone.inert=true;', lock)
-        self.assertIn("document.getElementById('unlock').focus();", lock)
+        self.assertIn("G('unlock').focus();", lock)
         self.assertIn('catch(e){window.oposUI.unlock();}', lock)
         self.assertIn('catch(err){window.oposUI.unlock();}', script)
-        self.assertIn("phone.inert=!document.getElementById('lock').hidden;", script)
+        self.assertIn("phone.inert=!G('lock').hidden;", script)
         self.assertIn('if(lockFallback)lockFallback.hidden=true;', script)
         self.assertIn('if(phoneFallback)phoneFallback.inert=false;', script)
 

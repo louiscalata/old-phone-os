@@ -70,6 +70,7 @@ html[data-theme="dark"]{--jaryo-fg:#fff;--jaryo-bg:#000}
 | `.box{background:#222}`, `#demo`, `.paused-row{border-bottom:#333}`, `.feature-bar/.feature-fill`, `#textsize{background:#111;border:#444}`, `#askbtn{background:#fff;color:#111}`, `#history polyline{stroke:#fff}` | bg/fg variables; `.feature-fill` becomes fg; the SVG polyline gets `stroke:currentColor` via CSS |
 | `#sb{background:#000}`, `#sb-engine{opacity:.8}`, `#time-left{opacity:.85}`, `#history-label{opacity:.6}`, `#why{opacity:.9}`, `#events{opacity:.8}` | `background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)`; all opacities `1` |
 | `:focus-visible{outline:2px solid #fff}` (web.py:399, phone-b.css:42,53) | `outline:3px solid var(--jaryo-fg);outline-offset:3px` |
+| A call in progress (was a 14 px centred grey line) | `#notice[data-tone=call]`: 1.25 rem bold, `padding:12px`, `3px double` box in the pane's ink (the "Error / notice" row above), left aligned. `Hang up` beside it is the inverted fill (`#notice[data-tone=call]~#controls [data-go=hang_up]`) and goes back to the plain look while pressed, so a press is always a visible change. The status bar says "In call"; Home's card says "In a practice call with <name or number>" ("practice" while the modem is the simulated one); the lock line shows the notice text |
 | Wizard: `#meter-fill{background:#30a46c}`, `.dot.*`, `#error{color:#e5484d}`, `a{color:#30a46c}` | wizard gets the same tokens; progress dots become text `pending/running/ok/failed/skipped` in a condensed face |
 
 The `palette` CDP test (section 8) MUST verify that no visible element computes to anything but `rgb(0,0,0)`/`rgb(255,255,255)` after the overrides.
@@ -112,11 +113,11 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 | 14:32                 (masthead) |     | 14:32                 | About 30 min left   |
 | ================================ |     | Sunday, 1 November    | Saving power for    |
 | Sunday, 1 November  (dateline)   |     | ===================== | calls, messages     |
-|                                  |     | 23%  LOW              | New notice          |
+|                                  |     | 23%  LOW              | In call             |
 | 23%  LOW            (dbl border) |     |                       |                     |
 | About 30 min left · Saving power |     |                       | [ Unlock          ] |
 | for calls, messages (#lock-power)|     |                       | [ Phone ] [ Helper] |
-| New notice            (#lock-notice)   +---------------------------------------------+
+| In call               (#lock-notice)   +---------------------------------------------+
 |                                  |     Foldable: left pane = masthead/dateline/power,
 | [ Unlock                       ] |     right pane = buttons (phone-b.css:58 already
 | [ Phone ]  [ Helper ]            |     puts #lock>button in column 2).
@@ -124,6 +125,7 @@ Global rules: every gesture has a visible button; every target ≥48×48 CSS px 
 ```
 
 - Masthead = time (`#lock-time`, serif 2.25rem on phones, 40px rule at landscape ≤520 px stays), dateline `#lock-date` in condensed uppercase.
+- The notice line `#lock-notice` is the text of the newest notice in the Shade's Recent notices (`phone-a.js`), for example "In call", "Call ended", "Message sent", "New message". Those are the server's own fixed phrases (`notice_for` in `web.py`), never a message body or a number, so the line stays public state; it replaced the words "New notice" (interface plan W1-06).
 - Public power line `#lock-power` = `s.battery.time_left` + `s.battery.headline` joined by ` · ` (already redacted when the helper is hidden: dashboard.py:235). Never shows `why`, paused names or model names.
 - Buttons: `#unlock` primary (3px border). `#lock-call` MUST be relabelled "Phone" (it unlocks and opens the Phone app, phone-a.js:178). `#lock-ask` ("Helper") stays `hidden` by default; privacy rationale: the lock screen shows only redacted public state, and the helper's answers are private detail, so Helper from lock = Unlock then the Helper tile. Showing `#lock-ask` is a Settings › Device choice (`localStorage['jaryo_lock_helper']='1'`), off by default.
 - Swipe-up unlock stays as a shortcut; the button is the contract.
@@ -227,7 +229,7 @@ Pivots in order: **Display** (theme, text size, tile sizes), **Battery** (`#head
 ```
 
 - Ask = `#hs-bar` Send/Cancel/Retry/Clear (the chat-style helper screen). Plan = `#planbtn` (POST `plan`). Why = the existing "Why?" button (POST `explain`) relabelled "Why is power being saved?" with `s.battery.headline` as its headline. `#helper` technical lines live under a `<details>` in Why.
-- Rest state: when `s.mode === 'CRITICAL'` the server refuses (assist.py:106); the UI MUST show "Resting to save power. Calls and messages still work." in `#hs-status`, set `#hs-send[disabled]` (dashed border) and keep Plan/Why usable (they are rule-based). The Helper tile standfirst says the same.
+- Rest state: when `s.mode === 'CRITICAL'` the server refuses (assist.py:106); the UI MUST show "The helper is resting to save power. Plug the phone in, then ask again." in `#hs-status` (`REST` in `phone-b.js`, worded by W1-08; the server's rest reply still says calls and messages are never paused), set `#hs-send[disabled]` (dashed border) and keep Plan/Why usable (they are rule-based). The Helper tile standfirst is the shorter "Resting to save power".
 - Wide screens keep the existing two-column helper grid (phone-b.css:70–75).
 
 ### 4.6 Phone and Messages (`#screen #contacts #threads #thread #number #msg #controls`)
@@ -306,8 +308,8 @@ All reads come from `GET /api/state` = `Phone.state()` (web.py:174) unless noted
 
 | Screen | Reads today | Writes today | Pending / not wired |
 |---|---|---|---|
-| Status bar `#sb` | `battery.percent`, `helper.engine` (visible only), `navigator.onLine` | — | real radio state; `in_call` tone shown as text "In call" from `notice` |
-| Lock | `battery.percent`, `battery.time_left`, `battery.headline`, `in_call`, `notice` | `hang_up` | — |
+| Status bar `#sb` | `clock` (`--:--` = not set), `in_call`, `status_note` ("Simulated battery", "Battery not readable", "Clock not set"; `statusbar.py`), `navigator.onLine`, `battery.percent` (`LOW 12%` at 15 or less, with the double border), `helper` (present: "Helper on", never a model name) | — | real radio state. The network slot says "In call", else the note, else "Offline" |
+| Lock | `battery.percent`, `battery.time_left`, `battery.headline`, `in_call`, `notice` (the newest notice is the lock line), `clock` (unset: `--:--` and "Time not set") | `hang_up` | — |
 | Home tiles | `in_call`, `threads.length`, `mode` (NEW additive field, `d.mode.name`, always present), `battery.paused` for the brief | — | app badges beyond messages |
 | Shade | `battery.{percent,time_left,headline,steps,paused,events,history,goal,goal_note,worn_note}`, `brightness`, `helper_visible`, `notice` | `visible`, `goal`, `undo`, `in_use` (not exposed) | real screen brightness (value is the budget's wish, budget.py; no sysfs writer) |
 | Settings › Display | localStorage `jaryo_theme`, `opos_text`, `jaryo_tiles` | localStorage | server-side persistence after install (config `jaryo`) |
@@ -392,3 +394,5 @@ Changes made after the proposal are recorded as notes in section 13.
 - Softer whites (2026-11-03 UTC, Louis's request to tone down the brightness of white): the tokens are now `#e6e2d9` on `#000` in dark mode and `#1a1a1a` on `#f3f0e8` in light mode, in the kiosk (`jaryo.css`) and the setup card (`setup/jaryo_steps.py`); the setup wizard shell uses `#e6e2d9` on `#000`. This supersedes the exact `#000`/`#fff` rule in section 1 item 3 and the 21:1 contrast expectation: contrast is now about 16.3:1 (dark) and 15.3:1 (light). Each theme still uses exactly two colours, never mixed across themes; `var()` fallbacks keep `#000`/`#fff`.
 
 - Current page budget (2026-11-03 UTC): `tests/test_uxp30_budget.py` sets `PAGE_BUDGET = 100 * 1024`, or 102,400 UTF-8 bytes (100 KiB), for the Settings top-bar, brightness and volume controls. This supersedes the 98,090-byte cap above; the earlier page and served-demo sizes are historical measurements. The current `web.page()` measured 101,109 UTF-8 bytes on this date, without the generated token/nonce of a served demo. See [architecture.md](architecture.md) for the current budget.
+
+- Panes (2026-11-07 UTC): with `OPOS_PANES=1` and a window that spans both panels, one pane is black and the other white and they replace Light/Dark/System there; see [jaryo-panes.md](jaryo-panes.md). `jaryo.css` is unchanged and paints exactly what it painted on a one-pane window.

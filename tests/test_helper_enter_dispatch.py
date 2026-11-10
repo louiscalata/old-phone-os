@@ -41,7 +41,7 @@ function world(opt={}){
    click(){if(!this.disabled){this.clicks++;return this.fire('click')}}};
   all.push(e);return e;
  }
- const doc={documentElement:el('html'),createElement(tag){if(opt.failLinks&&tag==='a')throw new Error('render failed');return el('',tag)},
+ const doc={documentElement:el('html'),createElement(tag){return el('',tag)},createTextNode(t){if(opt.failSources)throw new Error('render failed');const n=el('','#text');n._text=String(t);return n},
   getElementById(id){return ids[id]||all.find(e=>e.id===id&&e.parentNode)||null},
   querySelector(s){return s==='meta[name=opos-token]'||s==='[name=opos-token]'?{content:'synthetic-test-token'}:null},querySelectorAll(){return []}};
  for(const id of ['phone','home','back','settings','ask','q','askbtn','planbtn','answer','webq','why','demo-phone-note',
@@ -49,7 +49,7 @@ function world(opt={}){
   'simbtn','visbtn','helpertoggle','temp','charge','goal','goal-clear','number','msg','screen'])ids[id]=el(id);
  ids.phone.appendChild(ids.ask);ids.ask.appendChild(ids.q);ids.ask.appendChild(ids.askbtn);ids.ask.appendChild(ids.answer);
  if(opt.unavailable)ids.phone.appendChild(ids.q); // Enhancement cannot claim a non-direct input.
- const ctx={document:doc,location:{search:''},URLSearchParams,Promise,AbortController,JSON,String,Date,performance:{now:()=>Date.now()},
+ const ctx={document:doc,location:{search:''},URLSearchParams,Promise,AbortController,AbortSignal,JSON,String,Date,performance:{now:()=>Date.now()},
   localStorage:{getItem(){return null},setItem(){},removeItem(){}},matchMedia(){return{matches:false}},
   addEventListener(){},scrollTo(){},render:async()=>{},api:async()=>({}),go(){},toggleSim(){},
   setTimeout(f,ms){const t={f,ms,live:true};timers.push(t);return t},clearTimeout(t){if(t)t.live=false},
@@ -77,7 +77,7 @@ function world(opt={}){
 (async()=>{
  const out={};
  for(const kind of ['normal','visibleSend','composing','repeat','prevented','inFlight','fallback','failedEnhancement','settledRepeat','empty','otherKey']){
-  const w=world({unavailable:kind==='fallback',failLinks:kind==='failedEnhancement'});await w.open();w.ids.q.value='Synthetic question';
+  const w=world({unavailable:kind==='fallback',failSources:kind==='failedEnhancement'});await w.open();w.ids.q.value='Synthetic question';
   if(kind==='visibleSend')await w.send();
   else if(kind==='inFlight'){await w.send();out.inFlightBefore=w.state();await w.key()}
   else if(kind==='settledRepeat'){

@@ -26,7 +26,7 @@ c.document.addEventListener=function(){};
 get('time-left').scrollIntoView=function(){calls.push('battery')};
 c.window=c;""")
 HARNESS = HARNESS.replace(
-    "c.oposUI={lock(){calls.push('lock')},openApp(name){calls.push(name)}};",
+    "c.oposUI=Object.assign(c.oposUI||{},{lock(){calls.push('lock')},openApp(name){calls.push(name)}});",
     "c.oposUI.openApp=function(name){calls.push(name)};")
 HARNESS += r"""
 const out={},render=s=>c.oposHooks.forEach(f=>f(s));
@@ -49,6 +49,7 @@ out.sameDismiss=get('qs-notices').children[0].children[3]===item.children[3];
 out.sameStatusWrites=get('lock-notice').writes===writes;
 render({notice:'second',helper_visible:true});
 out.addStatusWrites=get('lock-notice').writes===writes;
+out.lockAfterSecond=get('lock-notice').textContent;
 out.on=[get('qs-helper').textContent,get('qs-helper').attrs['aria-pressed']];
 get('qs-notices').children[0].children[3].onclick();
 out.remaining=get('qs-notices').children.map(e=>e.children[2].textContent);
@@ -97,8 +98,9 @@ class TestPrivateLockShade(unittest.TestCase):
     def test_private_lock_and_shade(self):
         out = self.run_js()
         self.assertTrue(out['locked'])
-        self.assertEqual(out['lock'], 'New notice')
-        self.assertNotIn('secret demo text', out['lock'])
+        # The lock line is the newest notice itself (interface plan W1-06): the server's notices are fixed phrases ("In call",
+        # "Call ended", "New message"), never a message body or a number, so "New notice" told the owner nothing for no gain.
+        self.assertEqual(out['lock'], 'secret demo text')
         self.assertIn('secret demo text', out['shade'])
         self.assertEqual(out['emptyLock'], '')
         self.assertEqual(out['unlocked'], [True, False])
@@ -109,12 +111,14 @@ class TestPrivateLockShade(unittest.TestCase):
     def test_unchanged_poll_preserves_dismiss_button_and_live_region(self):
         out = self.run_js()
         self.assertTrue(out['sameDismiss'])
-        self.assertTrue(out['sameStatusWrites'])
-        self.assertTrue(out['addStatusWrites'])
+        self.assertTrue(out['sameStatusWrites'])  # an unchanged poll does not touch the lock line
+        # The lock line is the newest notice (W1-06), so a different notice is one more write, and only that.
+        self.assertFalse(out['addStatusWrites'])
+        self.assertEqual(out['lockAfterSecond'], 'second')
 
     def test_lock_status_tracks_pending_notices(self):
         out = self.run_js()
-        self.assertEqual(out['pendingLock'], 'New notice')
+        self.assertEqual(out['pendingLock'], 'secret demo text')  # the newest notice still pending after 'second' was dismissed
         self.assertEqual(out['dismissedLock'], '')
         self.assertEqual(out['emptyShade'], 'No recent notices')
         self.assertEqual(out['dismissedPollLock'], '')
@@ -130,6 +134,42 @@ class TestPrivateLockShade(unittest.TestCase):
         self.assertEqual(out['dismissType'], 'button')
         self.assertEqual(out['remaining'], ['secret demo text'])
         self.assertEqual(out['afterPoll'], ['secret demo text'])
+
+    def test_a_notice_is_stamped_with_the_pages_own_clock(self):
+        """The Shade's Recent notices use the one clock rule (W1-04): a browser clock before 2026 stamps "--:--", never a guessed time."""
+        if not NODE:
+            self.skipTest('node not installed')
+        stamps = {}
+        for year in (2026, 1970):
+            harness = HARNESS.replace(
+                "setInterval(){},navigator:{onLine:true},",
+                "setInterval(){},navigator:{onLine:true},Date:class extends Date{constructor(){super(%d,10,3,16,0)}}," % year, 1)
+            self.assertIn('Date:class extends Date', harness)
+            result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', harness, str(JS)],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            stamps[year] = json.loads(result.stdout)['item'][1][1]
+        self.assertEqual(stamps, {2026: '16:00', 1970: '--:--'})
+
+    def test_the_battery_reads_the_same_on_the_lock_and_in_the_shade(self):
+        """Both draw pct(): the rounded level, or "—" / "unknown" for anything that is not a finite number."""
+        if not NODE:
+            self.skipTest('node not installed')
+        tail = r"""
+const out={},render=s=>c.oposHooks.forEach(f=>f(s));
+for(const [k,v] of Object.entries({r:41.6,nan:NaN,inf:Infinity,text:'12',nul:null}))
+  {render({battery:{percent:v}});out[k]=[get('lock-batt').textContent,get('qs-batt').textContent]}
+render({});out.none=[get('lock-batt').textContent,get('qs-batt').textContent];
+console.log(JSON.stringify(out));
+"""
+        harness = HARNESS.split("const out={},render=", 1)[0] + tail
+        result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', harness, str(JS)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out['r'], ['42%', 'Battery: 42%'])
+        for key in ('nan', 'inf', 'text', 'nul', 'none'):
+            self.assertEqual(out[key], ['—', 'Battery: unknown'], key)
 
     def test_helper_state_and_unavailable(self):
         out = self.run_js()

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The developer's PC sets the phone's time without a password: it drops the Unix seconds into this file over ssh and
+# opos-clock-set.service, which runs as root, checks them and sets the clock. build-image.sh fills in @DROP@ (the
+# droidian user's home) and enables this unit only in an image built with OPOS_DEV_SSH_PUBKEY.
+[Unit]
+Description=OPOS: watch for a time file from the developer's PC
+
+[Path]
+PathChanged=@DROP@
+
+[Install]
+WantedBy=multi-user.target

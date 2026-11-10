@@ -12,7 +12,8 @@ from unittest import mock
 from opos import assist, muse
 
 
-QUESTION = "What is paused right now?"
+# Not a pause or time-left question: those go to the battery rules before the local model (assist.rules_answer).
+QUESTION = "Which apps can I use right now?"
 FACTS = {"mode": "SAVER", "paused": ["email"], "why_paused": "The battery is worn, so email is paused."}
 LOCAL_BASE = "http://127.0.0.1:8080/v1"
 GLIMMER_BASE = muse.glimmer_route({}).base_url

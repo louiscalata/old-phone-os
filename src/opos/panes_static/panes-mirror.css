@@ -1,0 +1,20 @@
+/* 10. Hand: Left mirrors the layout. The thumb pane is the physical left pane, the list pane the right one. */
+html[data-panes=two][data-hand=left]{--jp-act:var(--jp-l);--jp-act-ink:var(--jp-l-ink);--jp-act-cs:var(--jp-l-cs);--jp-lst:var(--jp-r);--jp-lst-ink:var(--jp-r-ink);--jp-lst-cs:var(--jp-r-cs)}
+html[data-panes=two][data-hand=left][data-ff] #phone>:is(#jaryo-masthead,.at,#screen,#contacts,#intro,#threads,#helper){grid-column:2}
+html[data-panes=two][data-hand=left][data-ff] #phone>:is(#home,#apps-list,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),
+html[data-panes=two][data-hand=left][data-ff] #phone[data-app=home][data-allapps]>#jaryo-letters{grid-column:1}
+html[data-panes=two][data-hand=left][data-ff] #lock>*{grid-column:2}
+html[data-panes=two][data-hand=left][data-ff] #lock>button{grid-column:1}
+html[data-panes=two][data-hand=left][data-ff] #jaryo-status-row{justify-content:flex-start}
+html[data-panes=two][data-hand=left][data-ff] #reload-shell{left:12px;right:auto}
+html[data-panes=two][data-hand=left] [data-stale] #phone>#notice{left:var(--jp-x2)}
+html[data-panes=two][data-hand=left] #meter{left:auto;right:0}
+html[data-panes=two][data-hand=left] #meter-hit::after{left:calc(var(--jp-x2) + var(--jp-x1)/2)}
+html[data-panes=two][data-hand=left] #sheet{left:auto;right:0;transform:translateX(100%)}
+html[data-panes=two][data-hand=left] body.sheet-open #sheet{transform:translateX(0)}
+html[data-panes=two][data-hand=left] .l{grid-column:3}
+html[data-panes=two][data-hand=left] .r{grid-column:1}
+html[data-panes=two][data-hand=left] main:not(.cols)>section:nth-of-type(1){grid-column:3}
+html[data-panes=two][data-hand=left] main:not(.cols)>section:nth-of-type(2){grid-column:1}
+html[data-panes=two][data-hand=left] body>header>h1{grid-column:3}
+html[data-panes=two][data-hand=left] body>header>#home{grid-column:1}

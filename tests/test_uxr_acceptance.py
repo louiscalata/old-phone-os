@@ -40,6 +40,14 @@ VERBOSE = os.environ.get("OPOS_UXR_VERBOSE") == "1"
 ALLOW_SIZE = {
     "#meter": (0, "4px visual bar; taps land on the 44px #meter-hit laid over it"),
 }
+# test_touch_targets: selectors that float over other controls on purpose, and the views in which they may. In those views the 8 px gap rule
+# is replaced by a stricter one for the controls under them: where they overlap, a 48 x 48 px part of the covered control must stay free
+# (so it can still be tapped). The size rule still applies to the floating control.
+ALLOW_OVERLAP = {
+    "#reload-shell": (("full",), "the Reload button of a page that cannot reach its server is a fixed 48 px button at the bottom right (W1-02); "
+                                 "in the boot-failure view (state fetches fail) it floats over whatever scrolls under it, at 360x640 over part of #number; "
+                                 "in the 'home' view it is hidden and takes part in the gap rule like any control"),
+}
 # test_real_controls: selector -> reason for a non-native element that may be clickable.
 ALLOW_CONTROLS = {}
 
@@ -136,7 +144,7 @@ class TestUxrAcceptance(unittest.TestCase):
         Path(cls.state).write_text(json.dumps({
             "hidden": Phone().state(),
             "visible": Phone(visible=True).state(),
-            "allow": {"size": {k: v[0] for k, v in ALLOW_SIZE.items()}, "controls": dict(ALLOW_CONTROLS)},
+            "allow": {"size": {k: v[0] for k, v in ALLOW_SIZE.items()}, "controls": dict(ALLOW_CONTROLS), "overlap": {k: list(v[0]) for k, v in ALLOW_OVERLAP.items()}},
         }, default=str), encoding="utf-8")
 
     @classmethod

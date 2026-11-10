@@ -10,7 +10,8 @@ from opos.web import page
 from opos import assist
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
-STD = "Standard answer: the helper did not reply."
+STD = "The helper did not reply."
+REST = "The helper is resting to save power. Plug the phone in, then ask again."
 WHY = "Battery is low, so the helper keeps calls first."
 
 # Fake DOM + fake fetch so phone-b.js runs under node. Each scenario gets a fresh context; fetch behaviour is a queue.
@@ -29,7 +30,7 @@ function world(opt){opt=opt||{};
   addEventListener(t,f){(L[t]=L[t]||[]).push(f)},
   fire(t,ev){ev=ev||{};ev.target=ev.target||this;ev.preventDefault=ev.preventDefault||function(){};(L[t]||[]).forEach(f=>f(ev))}};
   all.push(e);return e}
- const doc={documentElement:el('html'),createElement(t){return el('',t)},querySelector(s){return /opos-token/.test(s)?{content:'tok'}:null},
+ const doc={documentElement:el('html'),createElement(t){return el('',t)},createTextNode(t){const n=el('','#text');n._t=String(t);return n},querySelector(s){return /opos-token/.test(s)?{content:'tok'}:null},
   getElementById(i){return ids[i]||all.find(e=>e.id===i&&e.parentNode)||null}};
  ['phone','home','back','settings','ask','q','askbtn','answer','webq','why','demo-phone-note'].forEach(i=>ids[i]=el(i));
  ids.ask.hidden=true;ids.ask.appendChild(ids.q);ids.ask.appendChild(ids.answer);ids.phone.appendChild(ids.ask);ids.why.textContent=WHY;
@@ -112,13 +113,12 @@ const S={
   await w.ask('two');return{st:w.ui.state(),sameRow:w.$('hs-log').children[0]===li}},
  async sources(){const w=world();w.hooks();await w.open('helper');w.queue.push('src');await w.ask('wiki');
   const ap=w.$('hs-log').children[0].children[1];
-  return{log:w.ui.state().log,links:ap.children.filter(c=>c.tagName==='A').map(a=>({t:a.textContent,href:a.href||'',rel:a.rel}))}},
+  return{log:w.ui.state().log,parts:ap.children.map(c=>({tag:c.tagName,t:c.textContent,href:c.href||'',target:c.target||'',rel:c.rel||''}))}},
  async noabort(){const w=world({noAbort:true});w.hooks();await w.open('helper');return{st:w.ui.state(),hs:!!w.$('hs-send')}},
  async throwfetch(){const w=world({throwFetch:true});w.hooks();await w.open('helper');await w.ask('x');const st=w.ui.state();
   w.ids.q.value='y';w.ids.q.fire('keydown',{key:'Enter'});await w.flush();const again=w.ui.state();
   w.$('back').fire('click');await w.flush();return{st,again,app:w.ui.state().app}},
- async renderfail(){const w=world();w.hooks();await w.open('helper');const create=w.ctx.document.createElement;
-  w.ctx.document.createElement=function(t){if(t==='a')throw new Error('render fails');return create(t)};
+ async renderfail(){const w=world();w.hooks();await w.open('helper');w.ctx.document.createTextNode=function(t){throw new Error('render fails')};  // a source line is a text node since W2-16
   w.queue.push('src');await w.ask('wiki');const st=w.ui.state();
   let prevented=false;w.ids.q.fire('keydown',{key:'Enter',preventDefault(){prevented=true}});await w.flush();
   w.$('back').fire('click');await w.flush();const home=w.ui.state().app;await w.open('helper');
@@ -139,11 +139,16 @@ class UXP31Static(unittest.TestCase):
         self.assertIn("Rules text. The helper did not answer this request.",
                       (STATIC / "js-5.js").read_text(encoding="utf-8"))
         self.assertIn(STD, out)
+        self.assertIn(REST, out)
+        self.assertNotIn("Standard answer", out)
+        self.assertNotIn("Showing the standard answer", out)
         js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
         mod = js[js.index("UXP31"):]
         for t in ("'Send'", "'Cancel'", "'Retry'", "'Clear'", "Waiting...", "AbortController", "ASK_WAIT_MS=125000", "MAX=6"):
             self.assertIn(t, mod)
         self.assertNotIn("innerHTML", mod)
+        self.assertIn("'Something went wrong. Try again in a minute.'", mod)
+        self.assertNotIn("in OPOS", mod)
         visible = " ".join(re.findall(r"'([^']*[A-Za-z][^']*)'", mod))
         for word in ("AI", "model", "governor", "assistant"):
             self.assertNotRegex(visible, r"\b%s\b" % word)
@@ -175,7 +180,7 @@ class UXP31HelperScreenJS(unittest.TestCase):
         a = r["rested"]
         self.assertIn("resting to save power", a["log"][-1])
         self.assertNotIn(STD, a["log"][-1])
-        self.assertEqual(a["status"], "Resting to save power. Calls and messages still work.")
+        self.assertEqual(a["status"], REST)
         self.assertTrue(a["sendDisabled"])
         self.assertTrue(a["retryHidden"])
         self.assertEqual((a["liveTimers"], a["liveIntervals"]), (0, 0))
@@ -196,25 +201,25 @@ class UXP31HelperScreenJS(unittest.TestCase):
                 self.assertIn("resting to save power", a["log"][-1])
                 self.assertNotIn(STD, a["log"][-1])
         self.assertTrue(r["CRITICAL"]["sendDisabled"])
-        self.assertEqual(r["CRITICAL"]["status"], "Resting to save power. Calls and messages still work.")
+        self.assertEqual(r["CRITICAL"]["status"], REST)
 
     def test_clearing_history_preserves_the_current_rest_status(self):
         r = self.r["restresponse"]["cleared"]
         self.assertEqual(r["log"], [])
         self.assertTrue(r["sendDisabled"])
-        self.assertEqual(r["status"], "Resting to save power. Calls and messages still work.")
+        self.assertEqual(r["status"], REST)
 
     def test_goal_driven_critical_with_usable_charge_keeps_the_helper_answering(self):
         r = self.r["goalcritical"]
         self.assertFalse(r["36"]["sendDisabled"])
-        self.assertNotIn("Resting", r["36"]["status"])
+        self.assertNotIn("resting", r["36"]["status"])
         self.assertTrue(r["9"]["sendDisabled"])
-        self.assertIn("Resting to save power", r["9"]["status"])
+        self.assertEqual(r["9"]["status"], REST)
 
     def test_known_critical_mode_blocks_only_new_asks_until_recovery(self):
         r = self.r["reststate"]
         self.assertTrue(r["opened"]["sendDisabled"])
-        self.assertIn("Resting to save power", r["opened"]["status"])
+        self.assertEqual(r["opened"]["status"], REST)
         self.assertEqual(r["blocked"]["fetches"], 0)
         self.assertFalse(r["recovered"]["sendDisabled"])
         self.assertEqual(r["after"]["fetches"], 1)
@@ -226,7 +231,7 @@ class UXP31HelperScreenJS(unittest.TestCase):
         self.assertFalse(r["waiting"]["cancelDisabled"])
         self.assertTrue(r["cancelled"]["sendDisabled"])
         self.assertTrue(r["cancelled"]["retryHidden"])
-        self.assertEqual(r["cancelled"]["status"], "Resting to save power. Calls and messages still work.")
+        self.assertEqual(r["cancelled"]["status"], REST)
         self.assertEqual(r["after"]["log"], r["cancelled"]["log"])
         self.assertFalse(any("Stale answer" in text for text in r["after"]["log"]))
         self.assertEqual((r["after"]["liveTimers"], r["after"]["liveIntervals"]), (0, 0))
@@ -239,11 +244,10 @@ class UXP31HelperScreenJS(unittest.TestCase):
 
     def test_simulation_disclosure_requires_explicit_server_signal(self):
         r = self.r["backends"]
-        self.assertEqual(r["simulated"], "Demo: calls and texts are simulated.")
-        self.assertTrue(r["helper"].startswith("Demo phone. "))
+        self.assertEqual(r["simulated"], "Practice only: this phone cannot make real calls or send real texts yet.")
+        self.assertEqual(r["helper"], "Answers are made on this phone when possible. Web search is off.")  # no "Demo phone." in front
         for key in ("absent", "external", "unknown"):
-            self.assertEqual(r[key], "Calls and texts may use your configured phone connection.")
-            self.assertNotIn("simulated", r[key])
+            self.assertEqual(r[key], "")
 
     def test_slow_reply_is_not_aborted_at_fifteen_seconds(self):
         r = self.r["slowreply"]
@@ -279,7 +283,8 @@ class UXP31HelperScreenJS(unittest.TestCase):
         for kind, message in (("403", "Reload"), ("429", "Too many"), ("500", "Something went wrong")):
             self.assertIn(message, r[kind]["status"])
             self.assertFalse(r[kind]["retryHidden"])
-        self.assertIn(STD, r["empty"]["log"][-1])
+        self.assertTrue(r["empty"]["log"][-1].endswith("Helper: " + STD + " You can try again."))
+        self.assertEqual(r["empty"]["status"], "No reply. Tap Retry.")
         self.assertNotIn("Muse Glimmer", r["empty"]["log"][-1])
         self.assertNotEqual(r["empty"]["status"], "Answered.")
         self.assertFalse(r["empty"]["retryHidden"])
@@ -339,8 +344,9 @@ class UXP31HelperScreenJS(unittest.TestCase):
         self.assertEqual(r["timers"], 1)
         a = r["after"]
         self.assertEqual(a["aborted"], [True])
-        self.assertIn(STD, a["log"][-1])
-        self.assertIn(WHY, a["log"][-1])
+        self.assertTrue(a["log"][-1].endswith("Helper: " + STD + " You can try again."))
+        self.assertNotIn(WHY, a["log"][-1])  # the Why? text is not shown as if it answered
+        self.assertEqual(a["status"], "No reply after 125 s. Tap Retry.")
         self.assertFalse(a["sendDisabled"])
         self.assertFalse(a["retryHidden"])
         self.assertNotEqual(a["status"], "Waiting...")
@@ -365,13 +371,14 @@ class UXP31HelperScreenJS(unittest.TestCase):
         self.assertIn("A:two", st["log"][-1])
         self.assertTrue(r["sameRow"])  # old rows are kept, so only the new turn is announced
 
-    def test_wikipedia_sources_kept_and_checked(self):
+    def test_wikipedia_sources_are_plain_text(self):
+        # W2-16 / D11: a source is a line of text, never a link (a kiosk window opened by a link has no way back).
         r = self.r["sources"]
         self.assertIn("Wiki says hi", r["log"][-1])
-        self.assertEqual([l["t"] for l in r["links"]], ["Battery", "Bad"])
-        self.assertEqual(r["links"][0]["href"], "https://en.wikipedia.org/wiki/Battery")
-        self.assertEqual(r["links"][1]["href"], "")  # only Wikipedia URLs become links
-        self.assertEqual(r["links"][0]["rel"], "noopener noreferrer")
+        self.assertEqual([p["t"] for p in r["parts"] if p["tag"] == "#TEXT"],
+                         ["Source: Battery, Wikipedia", "Source: Bad, Wikipedia"])
+        self.assertNotIn("A", [p["tag"] for p in r["parts"]])
+        self.assertEqual([(p["href"], p["target"], p["rel"]) for p in r["parts"]], [("", "", "")] * len(r["parts"]))
 
     def test_no_abortcontroller_keeps_ask(self):
         r = self.r["noabort"]
@@ -407,10 +414,11 @@ class UXP31HelperScreenJS(unittest.TestCase):
 
     def test_failure_keeps_home_and_back_working(self):
         r = self.r["failure"]
-        self.assertIn(STD, r["net"]["log"][-1])
+        self.assertTrue(r["net"]["log"][-1].endswith("Helper: " + STD + " You can try again."))
         self.assertFalse(r["net"]["sendDisabled"])
-        self.assertIn(STD, r["okfalse"]["log"][-1])
-        self.assertIn("There is no answer right now.", r["okfalse"]["log"][-1])
+        # A reason from the server stands alone: no second "did not reply" in front of it.
+        self.assertTrue(r["okfalse"]["log"][-1].endswith("Helper: There is no answer right now."))
+        self.assertNotIn(STD, r["okfalse"]["log"][-1])
         self.assertEqual(r["afterBack"], "home")
         t = r["afterTile"]
         self.assertEqual(t["app"], "helper")

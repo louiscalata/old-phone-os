@@ -1,4 +1,4 @@
-// jaryo-layout.js: Jaryo layout screens
+// jaryo-layout.js
 try{(function(){
 window.jaryo=window.jaryo||{};
 function $(i){return document.getElementById(i)}

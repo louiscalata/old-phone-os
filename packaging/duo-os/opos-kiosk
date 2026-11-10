@@ -1,0 +1,118 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# OPOS's session client: run by opos-session as phoc's -E command, so phoc starts exactly as the port
+# starts it for phosh (hwcomposer output, hinge seam, scale). Waits for the OPOS server before every start
+# of Chromium (wait_for_server, at the top of the loop, before the start time is taken), then keeps
+# Chromium on the OPOS page full-screen. A Chromium that exits is started again at once when it had run
+# for a while; when it keeps dying within seconds the pause grows (2 s up to 60 s) and from the third quick
+# exit on it runs without the GPU. Every exit is logged: journalctl -t opos-kiosk
+# Giving up: after 6 quick exits in a row (about 30 s of back-off, so at most about 2 minutes) Chromium is not
+# going to start (an unwritable profile, a broken install); and a Chromium that crashes every 20-60 s never counts
+# as quick, so 10 exits of any length within 10 minutes give up too. The kiosk then writes a marker file
+# (opos-gave-up in the runtime directory) and exits 1. opos-session, which runs phoc as its child, sees the marker,
+# ends phoc (TERM, a few seconds, KILL) and exits 75; opos.service has RestartPreventExitStatus=75, so it fails at
+# once and OnFailure= starts phosh. No start-limit arithmetic is involved. Only if the marker cannot be written is
+# phoc asked to end (it may not), and the unit restarts the session, as before.
+# shellcheck disable=SC1090,SC1091
+# dash ends the script when `.` cannot open its file, whatever follows it, so the file is tested first.
+if [ -r /etc/profile.d/zz-droidian.sh ]; then . /etc/profile.d/zz-droidian.sh; fi
+# Dev images only: build-image.sh writes this file when OPOS_DEV_SSH_PUBKEY is set (OPOS_KIOSK_DEBUG_PORT=9222).
+# Tried in a subshell first, so a typo in it cannot end the phone's only interface. The port is unset before
+# the file is read: only the file can open it, never an Environment= line in a unit or the caller's environment.
+defaults=${OPOS_KIOSK_DEFAULTS:-/etc/default/opos-kiosk}
+unset OPOS_KIOSK_DEBUG_PORT
+if [ -r "$defaults" ] && (. "$defaults") >/dev/null 2>&1; then . "$defaults"; fi
+# Chromium connects by WAYLAND_DISPLAY. phoc 0.47.0 as the port builds it hands its -E command that and no
+# WAYLAND_SOCKET (checked in the source); a research fork that adds one does so in shell mode only, and
+# opos-session does not use -S. Unset anyway: a restarted Chromium must never adopt a spent connection.
+unset WAYLAND_SOCKET
+url=http://127.0.0.1:8765/
+dir=$HOME/.cache/opos-kiosk
+quick=20 giveup=6 roll_n=10 roll_s=600 gpu='' fails=0 delay=2 recent=''
+gave_up=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/opos-gave-up
+log() { logger -t opos-kiosk "$*" 2>/dev/null || echo "opos-kiosk: $*" >&2; }
+now() { date +%s 2>/dev/null || echo 0; }
+# >>> track ota: wait for the server before EVERY start of the browser, not only the first. An update restarts the
+# server and stops the browser together (docs/ota-update.md); a browser that came back first would load an error page.
+wait_for_server() {
+    n=0
+    until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
+        n=$((n + 1))
+        if [ "$n" -ge 120 ]; then
+            log "the OPOS server does not answer after ${n} tries; starting chromium anyway"
+            break
+        fi
+        sleep 1
+    done
+}
+# <<< track ota
+# note_exit TIME: keeps the times of the last $roll_n exits; succeeds when that many exits fit in $roll_s seconds. A clock that
+# went back (a negative span) never counts, as for a quick exit.
+note_exit() {
+    set -- $recent "$1"
+    while [ "$#" -gt "$roll_n" ]; do shift; done
+    recent=$*
+    [ "$#" -ge "$roll_n" ] || return 1
+    first=$1
+    for last; do :; done
+    span=$((last - first))
+    [ "$span" -ge 0 ] && [ "$span" -le "$roll_s" ]
+}
+# give_up WHY: opos-session ends phoc when it finds the marker, and opos.service then fails with 75 (see the top).
+give_up() {
+    log "$1; giving up: the session ends so that opos.service fails and starts phosh"
+    if { printf '%s\n' "$1" > "$gave_up"; } 2>/dev/null; then
+        exit 1
+    fi
+    log "cannot write $gave_up; asking phoc to end instead (the session then restarts, and the unit reaches phosh only through its start limit)"
+    pkill -TERM -u "$(id -u)" -x phoc >/dev/null 2>&1
+    exit 1
+}
+set -- --kiosk --ozone-platform=wayland --no-first-run --noerrdialogs --disable-translate \
+    --disable-features=Translate,MediaRouter --password-store=basic --user-data-dir="$dir"
+case ${OPOS_KIOSK_DEBUG_PORT:-} in
+'') ;;
+*[!0-9]*) log "OPOS_KIOSK_DEBUG_PORT=$OPOS_KIOSK_DEBUG_PORT is not a port number; no debugging port" ;;
+*) set -- "$@" --remote-debugging-port="$OPOS_KIOSK_DEBUG_PORT" --remote-debugging-address=127.0.0.1 ;;
+esac
+while :; do
+    wait_for_server # track ota: before every start, and before t0 below so the wait is not counted as a quick exit
+    # >>> track firstboot: the owner's time zone, saved by src/opos/timezone.py. Chromium reads TZ when it starts, so every start re-reads it.
+    z=; f=${OPOS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opos}/timezone
+    [ -f "$f" ] && IFS= read -r z < "$f"
+    case "$z" in ''|*[!A-Za-z0-9_+/-]*|[+-]*|/*|*//*|*..*) ;; *) [ "${#z}" -le 64 ] && export TZ="$z" ;; esac
+    # <<< track firstboot
+    # A lock left by a Chromium that died with the phone (hard reset, RAM-boot) can name a host or pid that
+    # Chromium then takes for a live owner. Never while a Chromium is still running on this profile.
+    if pgrep -f -- "--user-data-dir=$dir" >/dev/null 2>&1; then
+        log "a chromium is still running on $dir; its profile lock stays"
+    else
+        rm -f "$dir/SingletonLock" "$dir/SingletonCookie" "$dir/SingletonSocket"
+    fi
+    t0=$(now)
+    chromium "$@" ${gpu:+--disable-gpu} "$url"
+    rc=$?
+    t1=$(now)
+    ran=$((t1 - t0))
+    if [ "$ran" -ge 0 ] && [ "$ran" -lt "$quick" ]; then
+        fails=$((fails + 1))
+        if [ "$fails" -ge 3 ]; then
+            delay=$((delay * 2))
+            [ "$delay" -le 60 ] || delay=60
+            if [ -z "$gpu" ]; then
+                gpu=1
+                log "chromium exited $fails times in a row within ${quick}s; from now on without the GPU (--disable-gpu)"
+            fi
+        fi
+    else
+        fails=0 delay=2
+    fi
+    if [ "$fails" -ge "$giveup" ]; then
+        give_up "chromium exited $fails times in a row within ${quick}s (last status $rc)"
+    fi
+    if note_exit "$t1"; then
+        give_up "chromium exited $roll_n times within ${roll_s}s, however long each ran (last status $rc, last run ${ran}s)"
+    fi
+    log "chromium exited with status $rc after ${ran}s (quick exits in a row: $fails); starting it again in ${delay}s"
+    sleep "$delay"
+done

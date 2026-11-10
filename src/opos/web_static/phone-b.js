@@ -2,10 +2,11 @@
 var G=i=>document.getElementById(i),E=t=>document.createElement(t);
 try{(function(){
 var FF=['slab','foldable','slideout','tablet'],d=document.documentElement,v='auto';
-function $(i){return document.getElementById(i)}
-function apply(x){if(x==='slide')x='slideout';if(FF.indexOf(x)<0)x='auto';v=x;if(x==='auto')delete d.dataset.ff;else d.dataset.ff=x}
+var $=G;
+var TWO='(horizontal-viewport-segments:2)';
+function apply(x){if(x==='slide')x='slideout';if(FF.indexOf(x)<0)x='auto';v=x;if(x!=='auto')d.dataset.ff=x;else if(mq(TWO))d.dataset.ff='foldable';else delete d.dataset.ff}
 function mq(q){try{return window.matchMedia(q).matches}catch(e){return false}}
-function guess(){var g=$('ff-detected');if(g)g.textContent='Auto looks like: '+(mq('(min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3)')?'foldable':mq('(orientation:landscape) and (max-height:520px)')?'slide-out':'slab')}
+function guess(){try{apply(v)}catch(e){}var g=$('ff-detected');if(g)g.textContent='Auto looks like: '+(mq(TWO)?'two screens':mq('(min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3)')?'foldable':mq('(orientation:landscape) and (max-height:520px)')?'slide-out':'slab')}
 try{v=localStorage.getItem('opos_ff')}catch(e){v='auto'}
 try{apply(v)}catch(e){}
 try{var f=$('ff'),r=f&&f.querySelector('input[value="'+v+'"]');if(r)r.checked=true;guess();window.addEventListener('resize',guess);
@@ -15,7 +16,7 @@ try{if(v==='auto')localStorage.removeItem('opos_ff');else localStorage.setItem('
 })()}catch(e){}
 try{(function(){
 var ui=window.oposUI=window.oposUI||{},APPS=['home','phone','messages','helper','settings'],first=true,last='',pend=false;
-function $(i){return document.getElementById(i)}
+var $=G;
 function full(){var p=$('phone'),h=$('home'),b=$('back'),s=$('settings');if(p)delete p.dataset.app;if(h)h.hidden=true;if(b)b.hidden=true;if(s)s.hidden=true}
 function done(){pend=false;try{var p=$('phone'),a=$('ask');if(!p||!a||p.dataset.app!=='helper')return;if(a.hidden){full();return}
 if(typeof a.scrollIntoView==='function')a.scrollIntoView({block:'nearest'});var q=$('q');if(q)q.focus()}catch(e){full()}}
@@ -28,7 +29,7 @@ var prev=p.dataset.app;
 p.dataset.app=name;
 if(typeof scopeNotice==='function')scopeNotice();
 if(h)h.hidden=name!=='home';if(b)b.hidden=name==='home';if(s)s.hidden=name!=='settings';
-try{window.scrollTo(0,0)}catch(e){}
+try{window.scrollTo(0,0);document.body.scrollTop=0}catch(e){}
 if(name==='home'){var t=last&&h&&h.querySelector('[data-open='+last+']');if(t&&prev&&prev!=='home')t.focus();return}
 last=name;
 if(name!=='helper'){pend=false;if(b)b.focus();return}
@@ -48,14 +49,14 @@ if(!first)return;first=false;if(!/(^|[?&])(demo=1|app=full)(&|$)/.test(location.
 try{(function(){
 var a=G('ask'),c=G('webq');if(!a||!a.parentNode||G('helper-where'))return;
 var w=E('p');w.id='helper-where';w.hidden=a.hidden;a.insertBefore(w,G('q').nextSibling);
-var lan=false,simulated=false;
-function set(){w.textContent=(simulated?'Demo phone. ':'')+(c&&c.checked?'Web search is on: your question is sent to Wikipedia.':lan?'Answers may be made on a computer you own. Web search is off.':'Answers are made on this phone when possible. Web search is off.')}
+var lan=false;
+function set(){w.textContent=(c&&c.checked?'Web search is on: your question is sent to Wikipedia.':lan?'Answers may be made on a computer you own. Web search is off.':'Answers are made on this phone when possible. Web search is off.')}
 set();if(c)c.addEventListener('change',set);
-(window.oposHooks=window.oposHooks||[]).push(function(s){var e=s&&s.helper&&s.helper.engine;if(typeof e!=='string')return;var x=/computer you own/.test(e),y=!!(s.simulation&&s.simulation.modem===true);if(x!==lan||y!==simulated){lan=x;simulated=y;set()}});
+(window.oposHooks=window.oposHooks||[]).push(function(s){var e=s&&s.helper&&s.helper.engine;if(typeof e!=='string')return;var x=/computer you own/.test(e);if(x!==lan){lan=x;set()}});
 try{var n=G('answer');if(n&&typeof MutationObserver==='function')new MutationObserver(function(){try{set()}catch(e){}}).observe(n,{childList:true,characterData:true})}catch(e){}
 })()}catch(e){}
 try{(function(){
-var ui=window.oposUI;function $(i){return document.getElementById(i)}
+var ui=window.oposUI;var $=G;
 var p=$('phone'),h=$('home'),a=$('allapps'),ul=$('apps-list'),x=$('apps-close');if(!ui||!ui.openApp||!p||!h||!a||!ul||!x)return;
 var L=[['phone','Phone'],['messages','Messages'],['helper','Helper'],['settings','Settings'],['contacts','Contacts','phone'],['threads','Threads','messages']],open=false,o=ui.openApp;
 L.forEach(function(e){var li=E('li'),b=E('button');b.type='button';b.textContent=e[1];b.dataset.open=e[2]||e[0];if(e[2])b.dataset.scroll=e[0];li.appendChild(b);ul.appendChild(li)});
@@ -77,30 +78,27 @@ function set(x){if(T.indexOf(x)<0)x='n';d.dataset.text=x;if(s)s.value=x;return x
 try{v=localStorage.getItem('opos_text')}catch(e){}
 set(v);
 if(s)s.addEventListener('change',function(){var x=set(s.value);try{localStorage.setItem('opos_text',x)}catch(e){}});
-var a=G('about'),g=G('sb-engine');
-if(a&&g)(window.oposHooks=window.oposHooks||[]).push(function(){var e=(g.textContent||'').trim();a.textContent=e?'Old Phone OS Interface. '+(/^Helper set to /.test(e)?e:'Helper set to '+e):'Old Phone OS Interface'});
 })()}catch(e){}
 try{(function(){
 var n=G('demo-phone-note');if(!n)return;
-function set(s){n.textContent=s&&s.simulation&&s.simulation.modem===true?'Demo: calls and texts are simulated.':'Calls and texts may use your configured phone connection.'}
+function set(s){n.textContent=s&&s.simulation&&s.simulation.modem===true?'Practice only: this phone cannot make real calls or send real texts yet.':''}
 set();(window.oposHooks=window.oposHooks||[]).push(set);
 })()}catch(e){}
-// UXP31: one Ask request and error mapping shared by the conversation and fallback button.
+// UXP31:
 function helperAsk(text,web,request){return request({action:'ask',text:text,web:web}).then(function(r){if(r&&r.error)r.error=r.error==='helper hidden'?'Tap Show helper first':r.error;return r})}
 try{(function(){
 var ui=window.oposUI;if(!ui||!ui.openApp)return;
-var o=ui.openApp,built=false,dead=false,T=[],MAX=6,ASK_WAIT_MS=125000,ctl=null,timer=null,pulse=null,lastQ='',ask,log,st,bar,bs,bc,br,resting=false,modeVersion=0,REST='Resting to save power. Calls and messages still work.',STD='Standard answer: the helper did not reply.';
-function $(i){return document.getElementById(i)}
+var o=ui.openApp,built=false,dead=false,T=[],MAX=6,ASK_WAIT_MS=125000,ctl=null,timer=null,pulse=null,lastQ='',ask,log,st,bar,bs,bc,br,resting=false,modeVersion=0,REST='The helper is resting to save power. Plug the phone in, then ask again.',STD='The helper did not reply.';
+var $=G;
 function mk(t){return document.createElement(t)}
 function btn(id,t){var b=mk('button');b.type='button';b.id=id;b.textContent=t;return b}
 function clearWait(){if(timer!==null){clearTimeout(timer);timer=null}if(pulse!==null){clearInterval(pulse);pulse=null}}
 function off(){dead=true;clearWait();try{if(ctl)ctl.abort()}catch(e){}ctl=null;try{bar.hidden=true;log.hidden=true;st.textContent=''}catch(e){}if(ask)delete ask.dataset.hs}
 function g(f){return function(){if(dead)return;try{return f.apply(this,arguments)}catch(e){off()}}}
 function row(t){if(!t.li){t.li=mk('li');var q=mk('p');t.ap=mk('p');q.textContent='You: '+t.q;t.li.appendChild(q);t.li.appendChild(t.ap)}
-if(t.shown===t.a)return t.li;t.shown=t.a;t.ap.textContent='Helper: '+(t.a||'...');(t.src||[]).forEach(function(s){if(!s||typeof s.title!=='string')return;var a=mk('a');a.textContent=s.title;
-if(typeof s.url==='string'&&s.url.indexOf('https://en.wikipedia.org/')===0)a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';t.ap.appendChild(mk('br'));t.ap.appendChild(a)});return t.li}
-function draw(){var k=T.map(row);while(log.firstChild&&k.indexOf(log.firstChild)<0)log.removeChild(log.firstChild);k.forEach(function(li){if(li.parentNode!==log)log.appendChild(li)});log.hidden=!T.length}
-function std(j){var w=$('why'),x=j&&typeof j.text==='string'&&j.text.trim()||w&&(w.textContent||'').trim()||'You can try again.';return STD+' '+x}
+if(t.shown===t.a)return t.li;t.shown=t.a;t.ap.textContent='Helper: '+(t.a||'...');(t.src||[]).forEach(function(s){if(!s||typeof s.title!=='string')return;t.ap.appendChild(mk('br'));t.ap.appendChild(document.createTextNode('Source: '+s.title+', Wikipedia'))});return t.li}
+function draw(){var k=T.map(row);while(log.firstChild&&k.indexOf(log.firstChild)<0)log.removeChild(log.firstChild);k.forEach(function(li){if(li.parentNode!==log)log.appendChild(li)});log.hidden=!T.length;log.scrollTop=log.scrollHeight;var f=$('q');if(document.activeElement===f)f.scrollIntoView({block:'nearest'})}
+function std(j){return j&&typeof j.text==='string'&&j.text.trim()||STD+' You can try again.'}
 function setRest(v){resting=v;if(!bs)return;bs.disabled=resting||!!ctl;if(!ctl){if(resting){st.textContent=REST;br.hidden=true}else if(st.textContent===REST)st.textContent=''}}
 (window.oposHooks=window.oposHooks||[]).push(function(s){var m=s&&s.helper&&s.helper.mode;if(m==='CRITICAL'||m==='NORMAL'||m==='SAVER'){modeVersion++;setRest(m==='CRITICAL'&&!(s.helper.usable_percent>=15))}});
 function end(t,a,s,retry,src){try{clearWait();ctl=null;t.a=a||'(no answer)';t.src=src;draw();bs.disabled=resting;bc.disabled=true;st.textContent=resting?REST:s;br.hidden=resting||!retry}catch(e){off()}}
@@ -109,14 +107,14 @@ var t={q:q,a:''},c=new AbortController(),started=Date.now(),askedModeVersion=mod
 T.push(t);while(T.length>MAX)T.shift();ctl=c;draw();bs.disabled=true;bc.disabled=false;
 function waiting(){if(ctl===c)st.textContent='Waiting... '+Math.max(0,Math.floor((Date.now()-started)/1000))+' s elapsed. Cancel to stop waiting.'}
 waiting();pulse=setInterval(waiting,5000);
-timer=setTimeout(function(){if(ctl!==c||dead)return;c.abort();end(t,std(null),'No reply after '+(ASK_WAIT_MS/1000)+' s. Showing the standard answer.',true)},ASK_WAIT_MS);
+timer=setTimeout(function(){if(ctl!==c||dead)return;c.abort();end(t,std(null),'No reply after '+(ASK_WAIT_MS/1000)+' s. Tap Retry.',true)},ASK_WAIT_MS);
 helperAsk(q,!!(w&&w.checked),function(payload){return fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':m?m.content:''},body:JSON.stringify(payload),signal:c.signal})
-.then(function(r){return r.json().then(function(j){if(r.ok)return j;return{error:r.status===429?'Too many questions in a row. Wait a few seconds, then try again.':r.status===403?'This page is out of date. Reload it, then try again.':r.status>=500?'Something went wrong in OPOS. Try again in a minute.':j&&j.error||'The request failed. Try again.'}},function(){return{ok:false}})})})
-.then(function(j){if(ctl!==c||dead)return;if(j&&j.error)return end(t,j.error,j.error,true);if(j&&j.ok===false&&j.engine==='rules'&&typeof j.text==='string'&&j.text.trim()){if(modeVersion===askedModeVersion)setRest(true);return end(t,j.text.trim(),resting?REST:'This request rested to save power. You can ask again.',false)}if(!j||j.ok===false)return end(t,std(j),'No reply. Showing the standard answer.',true);
-var text=typeof j.text==='string'?j.text.trim():'';if(!text)return end(t,std(j),'No reply. Showing the standard answer.',true);
+.then(function(r){return r.json().then(function(j){if(r.ok)return j;return{error:r.status===429?'Too many questions in a row. Wait a few seconds, then try again.':r.status===403?'This page is out of date. Reload it, then try again.':r.status>=500?'Something went wrong. Try again in a minute.':j&&j.error||'The request failed. Try again.'}},function(){return{ok:false}})})})
+.then(function(j){if(ctl!==c||dead)return;if(j&&j.error)return end(t,j.error,j.error,true);if(j&&j.ok===false&&j.engine==='rules'&&typeof j.text==='string'&&j.text.trim()){if(modeVersion===askedModeVersion)setRest(true);return end(t,j.text.trim(),resting?REST:'This request rested to save power. You can ask again.',false)}if(!j||j.ok===false)return end(t,std(j),'No reply. Tap Retry.',true);
+var text=typeof j.text==='string'?j.text.trim():'';if(!text)return end(t,std(j),'No reply. Tap Retry.',true);
 var input=$('q');if(input&&input.value.trim()===q)input.value='';
 end(t,text+(j.engine&&j.engine!=='none'&&j.where?' (reply: '+j.engine+', '+j.where+')':''),'Answered.',false,Array.isArray(j.sources)?j.sources:null)})
-.catch(function(){if(ctl!==c||dead)return;end(t,std(null),'No reply. Showing the standard answer.',true)})
+.catch(function(){if(ctl!==c||dead)return;end(t,std(null),'No reply. Tap Retry.',true)})
 .catch(off)}
 function build(){var a=$('ask'),q=$('q');if(!a||!q||q.parentNode!==a||typeof AbortController!=='function'||typeof fetch!=='function')return;
 var l=mk('ol'),s=mk('p'),b=mk('div');ask=a;bar=b;

@@ -15,7 +15,6 @@ html:is(:not([data-ff]),[data-ff="tablet"],[data-ff="foldable"]) #home [data-ope
 html:is(:not([data-ff]),[data-ff="tablet"],[data-ff="foldable"]) #home-favourites>[data-open]:first-child{border-left-width:0}
 }
 #jaryo-status-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 16px 0}
-#jaryo-status-row:has(+#reload-shell:not([hidden])){margin-top:64px}
 #jaryo-status-row button{min-height:48px;min-width:48px;width:auto;margin:0;padding:0 16px;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);border:1px solid var(--jaryo-fg,#000);border-radius:0;box-shadow:none;font-size:1rem}
 #jaryo-status-row button:active{background:var(--jaryo-fg,#000);color:var(--jaryo-bg,#fff)}
 #jaryo-status-row button:focus-visible{outline:3px solid var(--jaryo-fg,#000);outline-offset:3px}
@@ -41,12 +40,11 @@ h3,#settings h3,summary,.jaryo-letter,.jaryo-letter-head,#lock-date{font-family:
 html,body,#phone,#lock,#sheet,#sheet-grip,#history,#sb,#demo,.box,#screen,#reload-shell{background:var(--jaryo-bg);color:var(--jaryo-fg)}
 button,input[type=text],input[type=time],select,#topbar,#textsize,#goal-clear,#goal-row button,#goal-row input[type=time],#askbtn{background:var(--jaryo-bg);color:var(--jaryo-fg);border-color:var(--jaryo-fg);color-scheme:inherit;border-radius:0;min-height:48px;min-width:48px}
 html[data-ff="slideout"] #controls{background:var(--jaryo-bg)}
-button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active{background:var(--jaryo-fg);color:var(--jaryo-bg)}
+button:active,button[aria-pressed="true"],#goal-clear:active,#askbtn:active,#reload-shell:active{background:var(--jaryo-fg);color:var(--jaryo-bg)}
 button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-disabled="true"],#goal-clear:disabled{background:var(--jaryo-bg);color:var(--jaryo-fg);opacity:1;border-style:dashed}
 #screen{border:1px solid var(--jaryo-fg);border-radius:0;filter:none!important}
-#sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#answer a,#demo label{color:var(--jaryo-fg)}
-#sb-batt[data-low="true"]{border:3px double var(--jaryo-fg)}
-#answer a{text-decoration:underline}
+#sheet-title[data-tone],#sb-batt[data-low="true"],#goal-note,#goal-row label,#notice,#notice[data-tone],#demo label{color:var(--jaryo-fg)}
+#sb-batt[data-low="true"]{border:3px double var(--jaryo-fg);box-sizing:border-box;line-height:20px}
 #meter{background:var(--jaryo-bg);border-bottom:1px solid var(--jaryo-fg)}
 #meter[data-tone] #meter-fill,.feature-fill{background:var(--jaryo-fg);box-shadow:none}
 #meter[data-tone]{animation:none}
@@ -55,9 +53,14 @@ button:disabled,[aria-disabled="true"],#home button:disabled,#home button[aria-d
 .feature-bar{background:var(--jaryo-bg);border:1px solid var(--jaryo-fg);border-radius:0}
 .paused-row{border-color:var(--jaryo-fg)}.paused-row button{min-height:48px}
 #history polyline{stroke:var(--jaryo-fg)}
-#sb-engine,#time-left,#history-label,#why,#events{opacity:1}
+#history-label{opacity:1}
 #charge::before{background:var(--jaryo-bg);border-color:var(--jaryo-fg)}
 #charge:checked::before{background:var(--jaryo-fg);color:var(--jaryo-bg);border-color:var(--jaryo-fg)}
 :focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible,#textsize:focus-visible,#meter:focus-visible,#sheet-title:focus-visible{outline:3px solid var(--jaryo-fg);outline-offset:3px}
 #apps-list .jaryo-letter{padding:8px 0 0;text-transform:uppercase;font-stretch:condensed;font-weight:400;grid-column:1/-1}
 input[type=radio],input[type=checkbox]{accent-color:var(--jaryo-fg)}
+[data-stale] #notice:not([hidden]){position:fixed;top:28px;left:0;right:0;z-index:120;background:var(--jaryo-bg);border:3px double var(--jaryo-fg);padding:8px 16px;font-size:1rem;text-align:left;pointer-events:none}
+[data-stale] #sb-batt::before{content:"? "}
+#notice[data-tone=call]:not([hidden]){font-size:1.25rem;font-weight:700;padding:12px;border:3px double var(--jaryo-fg);margin:8px 12px;text-align:left}
+#notice[data-tone=call]~#controls [data-go=hang_up]{background:var(--jaryo-fg);color:var(--jaryo-bg)}
+#notice[data-tone=call]~#controls [data-go=hang_up]:active{background:var(--jaryo-bg);color:var(--jaryo-fg)}

@@ -48,9 +48,20 @@ from opos.essentials import Essentials, normalize_number, normalize_sender
 from opos.runtime import Runtime
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
-from opos.dashboard import Dashboard, _format_goal_12h
+from opos.dashboard import ROUGH, Dashboard, _format_goal_12h
 from opos.router import HOT_C
-from opos import notices, secure
+from opos import notices, practice, secure, tokenfile, update_client, update_page
+from opos.span import apply as apply_span, parse as parse_span
+try:  # track osk: the on-screen keyboard is optional; a runtime shipped without src/opos/osk.py serves what it always served
+    from opos import osk
+except ImportError:
+    osk = None
+from opos import net_page  # track: network
+try:  # track monitor: the Inference page is optional; a runtime shipped without src/opos/monitor.py serves what it always served
+    from opos import monitor, monitor_web
+except ImportError:
+    monitor = monitor_web = None
+from opos import statusbar  # track: status (the status bar's note, the call line on Home)
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -83,7 +94,7 @@ _EMPTY_NOTICES = {
     "error: battery empty, charge the phone to send": "Charge the phone to send",
     "call ended: battery empty": "Call ended. Charge the phone",
 }
-def notice_for(status, in_call):
+def notice_for(status, in_call, sim=False):
     if status in _EMPTY_NOTICES:
         return _EMPTY_NOTICES[status]
     if isinstance(status, str) and status.startswith("error: "):
@@ -97,6 +108,8 @@ def notice_for(status, in_call):
         if _NOTICE_FORBIDDEN_RE.search(out):
             return ""
         return out
+    if (p := practice.notice(status, in_call, sim)):  # a practice phone says so: no real call, no real text
+        return p
     if in_call:
         return "In call"
     if status == "call ended":
@@ -133,10 +146,10 @@ def _join(names):
 # Owner-facing words call a battery "worn" below 80 percent health. The worn-battery
 # reserve (opos.reserve) only engages below opos.eol.WORN_HEALTH (50 percent).
 WORN_WORDS_HEALTH = 0.8
-def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True):
-    """A short lock-screen fact, using effective pauses rather than helper visibility."""
+def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True, *, health_known=True):
+    """A short lock-screen fact, using effective pauses rather than helper visibility. A health nobody read is not said."""
     prefix = ("Charging. " if charging else "Phone hot. " if temp_c >= HOT_C else
-              "Battery low. " if level < 20 else "Worn battery. " if health < WORN_WORDS_HEALTH else "")
+              "Battery low. " if level < 20 else "Worn battery. " if health_known and health < WORN_WORDS_HEALTH else "")
     names = sorted(set(paused))
     suffix = ""
     if goal and not charging:
@@ -149,14 +162,19 @@ def lock_story(level, health, temp_c, charging, paused, goal=None, goal_met=True
     if len(prefix + action + suffix) > 48 and names:
         action = f"{len(names)} task{'s' if len(names) != 1 else ''} paused"
     return prefix + action + suffix + "."
-def why_paused(level, health, temp_c, charging, paused, goal=None, goal_met=True, time_left=None, *, usable_percent=None):
-    """One plain sentence, from the numbers alone, that the helper repeats for why-questions."""
+def why_paused(level, health, temp_c, charging, paused, goal=None, goal_met=True, time_left=None, *, usable_percent=None, health_known=True):
+    """One plain sentence, from the numbers alone, that the helper repeats for why-questions.
+
+    Health is said only when it was read and is under 80 percent; the time left is said without its "Rough estimate" label.
+    """
     pct, hp = int(round(level)), int(round(health * 100))
     usable = int(level * health) if usable_percent is None else usable_percent
-    if health < WORN_WORDS_HEALTH:
-        s = f"The battery is worn ({hp}% health), so {pct}% charge is about {usable}% usable"
+    if time_left:
+        time_left = time_left.removeprefix(ROUGH)
+    if health_known and health < WORN_WORDS_HEALTH:
+        s = f"The battery is worn. It holds {hp}% of what it did when new, so {pct}% is really about {usable}%"
     else:
-        s = f"The battery is at {pct}% ({hp}% health, about {usable}% usable)"
+        s = f"The battery is at {pct}%"
     if temp_c >= HOT_C:
         s += f", the phone is hot ({temp_c:.0f}°C)"
     s += " and it is charging" if charging else " and it is not charging"
@@ -180,23 +198,40 @@ def _contact(c):
     if isinstance(c, (list, tuple)):
         return {"name": str(c[0]), "number": str(c[1])}
     return {"name": str(c.name), "number": str(c.number)}
+def _local_clock_s():
+    t = time.localtime()
+    return t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec
+CLOCK_MIN_YEAR = 2026  # an earlier year is a clock nobody set: the Duo boots at 1970
+CLOCK_GUESS = "/run/opos/clock-floor"  # the OS image's opos-clock writes it when it raised an unset clock to its floor
+CLOCK_SYNCED = "/run/systemd/timesync/synchronized"  # systemd-timesyncd touches it once it has network time
+def clock_ok(now=None, guess=CLOCK_GUESS, synced=CLOCK_SYNCED):
+    """False while the wall clock is a guess: before 2026, or only raised to the image's floor and not set since."""
+    if time.gmtime(time.time() if now is None else now).tm_year < CLOCK_MIN_YEAR:
+        return False
+    return not os.path.exists(guess) or os.path.exists(synced)
 class Phone:
-    def __init__(self, visible=False):
+    def __init__(self, visible=False, live_battery=None):
         self.visible = bool(visible)
         self.runtime = Runtime(visible=self.visible)
         self.modem = ScreenModem()
         self.essentials = Essentials(self.modem)
         self.book = Book(DEMO_CONTACTS)
-        self.sim = DrainSim(60.0, health=0.6, temp_c=30.0, speed=1.0)  # Saver at start: the helper answers, maps and photos backup rest
+        # live_battery: a LiveBattery reading the phone's own battery and wall clock in place of the demo's noon simulation.
+        self.live = live_battery is not None
+        self.sim = live_battery if self.live else DrainSim(60.0, health=0.6, temp_c=30.0, speed=1.0)  # Saver at start: the helper answers, maps and photos backup rest
         self.dash = Dashboard(self.runtime.tasks)
-        self.clock_s = 43200
-        self.charging = False
+        if self.live:
+            self.runtime.estimator = self.sim.rate_estimator()  # reserve and hours_left follow measured discharge, not raw level steps
+        self.clock_s = _local_clock_s() if self.live else 43200
+        self.clock_ok = clock_ok() if self.live else True  # the demo's clock is its own simulation
+        self.charging = bool(self.sim.charging) if self.live else False
         self.running = False
         self.open_number = None
         self.status = "ready"
         self.status_app = ""
         self.dash.record(self.sim.level, self.clock_s)
         self._in_call = False
+        self._call_with = ""  # who the call is with (a contact's name, else the number), for the Home line
         self._tick_obj = None
         self._undo_mode = None  # the mode an Undo was made in; a different mode ends it
         self._last_tick_time = time.monotonic()
@@ -206,7 +241,17 @@ class Phone:
         The runtime applies the owner's Undo and foreground app over soft pauses, then the hard
         floors. An Undo lasts until the mode changes.
         """
-        hours = self.dash.hours_to_goal(self.clock_s)
+        if self.live:
+            self.sim.refresh()
+            self.charging = bool(self.sim.charging)
+            self.clock_s = _local_clock_s()
+            self.dash.record(self.sim.level, self.clock_s)  # the last-hour graph grows while the phone is read, not only when the demo ticks
+            was_ok, self.clock_ok = self.clock_ok, clock_ok()
+            if self.clock_ok and not was_ok and self.dash.goal:
+                # A goal set against a guessed clock counts as set before its time. The clock is real now, so
+                # judge the goal again as if it were set just now: inside its grace window it means the next one.
+                self.dash.set_goal(self.dash.goal, self.clock_s)
+        hours = self.dash.hours_to_goal(self._goal_clock())
         def step(undone):
             return self.runtime.step(self.sim.t_s, self.sim.level, health=self.sim.health, temp_c=self.sim.temp_c,
                                      charging=self.charging, goal_hours=hours, in_use=self.dash.in_use, undone=undone)
@@ -221,6 +266,9 @@ class Phone:
             tick = step(frozenset())
         self._tick_obj = tick
         return tick
+    def _goal_clock(self):
+        """The time of day goals may read: None while the live clock is a guess, so no goal or arrival time rests on it."""
+        return self.clock_s if self.clock_ok else None
     def undo(self, name):
         """Turn a paused task back on, unless a hard floor holds it (then Undo has no effect)."""
         real_name = self.dash.task_name(name)
@@ -231,7 +279,7 @@ class Phone:
         return set(self.dash.paused_names)
     def _goal_label(self):
         """The goal still ahead as HH:MM, plus " tomorrow" past midnight; None without one."""
-        hours = self.dash.hours_to_goal(self.clock_s)
+        hours = self.dash.hours_to_goal(self._goal_clock())
         if hours is None:
             return None
         return self.dash.goal + (" tomorrow" if self.clock_s + hours * 3600 >= 86400 else "")
@@ -265,19 +313,34 @@ class Phone:
     def state(self):
         tick = self._tick()
         d = tick.decision
-        reached = self.dash.goal_reached(self.clock_s)
-        out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
+        reached = self.dash.goal_reached(self._goal_clock())
+        health_known = getattr(self.sim, "health_source", None) != "assumed"  # a health nobody read is not said
+        out = {"screen": [html.escape(str(s)) for s in tick.screen], "brightness": int(tick.budget.screen_brightness), "status": self.status, "in_call": self._in_call, "notice": notice_for(self.status, self._in_call, practice.simulated(self.essentials)), "helper_visible": self.visible, "running": self.running, "contacts": [_contact(c) for c in DEMO_CONTACTS], "threads": threads(self.book, self.essentials.log), "thread": thread(self.book, self.essentials.log, self.open_number) if self.open_number else []}
         out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
-        out["simulation"] = {"modem": type(getattr(self.essentials, "modem", None)) is ScreenModem}
+        out["simulation"] = {"modem": practice.simulated(self.essentials)}
+        if self.live:
+            out["battery_source"] = {"source": self.sim.source, "health_source": self.sim.health_source}
         out["prefs"] = self._preferences()
         out["temp_c"] = round(float(self.sim.temp_c), 1)
         out["charging"] = bool(self.charging)
         free, rss, engine = self._environment()
         if self.visible:
             out["helper"] = {"mode": d.mode.name, "allowed": list(d.allowed), "paused": list(d.deferred), "hours_left": None if math.isinf(tick.hours_left) else round(tick.hours_left, 1), "reserve": round(tick.reserve, 1), "source": "router" if d.reason.startswith("router") else "rules", "engine": engine}
-        out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self.clock_s, self.visible, d.reason,
-                                        deferred=d.deferred, steps=tick.steps, drain_per_h=tick.drain_per_h)
+        drain, drain_info = tick.drain_per_h, None
+        if self.live:
+            drain, drain_info = self.sim.drain_rate(drain)  # the phone's measured discharge once trusted, else the model's
+        out["battery"] = self.dash.view(self.sim.level, d.mode, self.charging, self.sim.health, self._goal_clock(), self.visible, d.reason,
+                                        deferred=d.deferred, steps=tick.steps, drain_per_h=drain,
+                                        measured=bool(drain_info and drain_info["basis"] == "measured"))
+        if self.live:
+            out["battery"]["clock_ok"] = self.clock_ok
+            if not self.clock_ok and self.dash.goal:
+                out["battery"]["goal_note"] = "Clock not set, so the goal time is not used"
+        if drain_info is not None:
+            out["battery"]["drain"] = drain_info
+            if "why" in out["battery"] and not self.charging:
+                out["battery"]["why"] += "; " + self.sim.drain_words(drain_info)
         reasons = self._paused_reasons(tick, goal_met=out["battery"]["goal_met"])
         held = set(tick.held)
         for item in out["battery"]["paused"]:
@@ -285,31 +348,34 @@ class Phone:
             item["reason"] = reasons[name]
             item["held"] = name in held  # a hard floor holds it: the page shows no Undo
         goal_label = self._goal_label()
-        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, d.deferred, goal_label, out["battery"]["goal_met"])
+        out["lock_story"] = lock_story(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, d.deferred, goal_label, out["battery"]["goal_met"], health_known=health_known)
         if self.visible and "helper" in out:
             hf = out["helper"]
             advisor = self.runtime.governor.advisor
             hf["glimmer_status"] = advisor.status() if isinstance(advisor, GlimmerAdvisor) else "off"
             hf["battery_percent"] = int(round(self.sim.level))
-            hf["battery_health_percent"] = int(round(self.sim.health * 100))
+            if health_known:
+                hf["battery_health_percent"] = int(round(self.sim.health * 100))
             hf["usable_percent"] = int(self.sim.level * self.sim.health)  # floor: 14.7% usable must not read as 15
             hf["temp_c"] = out["temp_c"]
             hf["charging"] = out["charging"]
-            hf["goal"] = self.dash.goal
+            hf["goal"] = self.dash.goal if self.clock_ok else ""
             hf["goal_met"] = bool(out["battery"]["goal_met"])
             hf["time_left"] = out["battery"]["time_left"]
-            hf["why_paused"] = why_paused(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, hf["paused"], goal_label, goal_met=hf["goal_met"], time_left=hf["time_left"], usable_percent=hf["usable_percent"])
+            hf["why_paused"] = why_paused(self.sim.level, self.sim.health, self.sim.temp_c, self.charging, hf["paused"], goal_label, goal_met=hf["goal_met"], time_left=hf["time_left"], usable_percent=hf["usable_percent"], health_known=health_known)
             if reached and hf["goal_met"]:
                 # After the goal, goal_met must not read as "lasts until the goal time".
                 hf["why_paused"] = hf["why_paused"][:-1] + f"; the {_format_goal_12h(self.dash.goal)} goal time has passed and calls and messages stay on."
             glimmer = [n for n, cause in tick.causes if cause == "glimmer"]
             if glimmer:
                 hf["paused_by_glimmer"] = glimmer
+        out["home_note"] = practice.home_note(out["simulation"]["modem"], out["battery"]["paused"])  # the Home card, worded once here
         h = int(self.clock_s // 3600) % 24
         m = int((self.clock_s % 3600) // 60)
-        out["clock"] = f"{h:02d}:{m:02d}"
+        out["clock"] = f"{h:02d}:{m:02d}" if self.clock_ok else "--:--"
         out["lean"] = {"opos_mb": rss, "free_mb": free}
         out["poll_ms"] = poll_ms(d.mode.name, free, self._in_call)
+        statusbar.apply(self, out)  # track: status
         return out
     def _preferences(self):
         """Host preferences for the local UI; isolated simulations override this seam."""
@@ -341,7 +407,7 @@ class Phone:
         """Facts, saving steps and the ordered routes (Spark Open first when the goal is hard)."""
         s = self.state()
         h = s["helper"]
-        goal = self.dash.hours_to_goal(self.clock_s)
+        goal = self.dash.hours_to_goal(self._goal_clock())
         hard = muse.choose(muse.is_hard(goal, h["hours_left"]))
         routes = assist.explain_routes(free=assist.free_mb())
         if hard.key == "spark-open":
@@ -392,6 +458,9 @@ class Phone:
         self.status = "ready"
     def call(self, number):
         self.status_app = "phone"
+        if practice.simulated(self.essentials) and practice.refuses(number):  # the practice phone must not pretend to reach 911 or 112
+            self.status = practice.REFUSED
+            return
         if round(self.sim.level) <= 0:
             self.status = "error: battery empty, charge the phone to call"
             return
@@ -399,7 +468,7 @@ class Phone:
             self.status = "error: already in a call"
             return
         try:
-            self.essentials.call(number)
+            self._call_with = self.book.name_for(self.essentials.call(number))
             self._in_call = True
             self.status = "in call"
         except ValueError:
@@ -534,22 +603,21 @@ def _about_notices():
 
 FAVICON = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000100000001008060000001ff3ff610000002a49444154789c63f8fae1c97f4a3003ba808888105e4c9401b86c1b3560d400fa1a30f049992217908a01dc7a527c28c3ed9a0000000049454e44ae426082")
 
-def page(token="", nonce="", *, demo=False):
+def page(token="", nonce="", *, demo=False, span=None):
     html = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Old Phone OS Interface</title><link rel="icon" href="/favicon.ico" type="image/png"><style>
 @@OPOS:css-1.css@@
 @@OPOS:css-2.css@@
 @@OPOS:css-3.css@@
 @@OPOS:css-4.css@@
-.box{background:#222;border-radius:8px;padding:8px;margin:6px 12px;white-space:pre-wrap}
-#answer a{color:#9ecbff;display:inline-block;min-height:44px;line-height:44px}
+.box{border-radius:8px;padding:8px;margin:6px 12px;white-space:pre-wrap}
+#upd{display:block;line-height:48px;color:inherit}
 label,input,button{font-size:1rem;margin:4px 0}
 input[type=text],input[type=range]{width:100%}
 input[type=range]{min-height:44px}input[type=checkbox]{width:24px;height:24px}
 #number,#msg{width:calc(100% - 24px);box-sizing:border-box}
 button{min-height:44px;margin-right:8px}
 #controls{margin:12px}
-#demo{background:#1b1b1b;border:1px solid #333;border-radius:12px;padding:12px;margin:12px auto;max-width:420px}
-#demo label{color:#eee}
+#demo{border:1px solid #333;border-radius:12px;padding:12px;margin:12px auto;max-width:420px}
 @media (min-width:1000px){#demo{position:fixed;top:12px;left:calc(50% + 232px);width:260px;margin:0;z-index:80}}
 
 #number,#msg,#controls button,#helpertoggle,#battery,#temp,#simbtn,#visbtn{min-height:48px}
@@ -558,8 +626,8 @@ button{min-height:44px;margin-right:8px}
 #demo .box>label{display:block;margin:8px 0}
 #demo .box>label:last-child{min-height:48px;padding:12px}
 #charge{appearance:none;-webkit-appearance:none;flex:none;width:48px;height:48px;margin:0;display:grid;place-content:center;background:transparent;border:0;padding:12px}
-#charge::before{content:"";display:block;width:24px;height:24px;box-sizing:border-box;border:2px solid #aaa;border-radius:3px;background:#222}
-#charge:checked::before{content:"✓";background:#fff;color:#111;border-color:#fff;text-align:center;font-size:20px;line-height:20px}
+#charge::before{content:"";display:block;width:24px;height:24px;box-sizing:border-box;border:2px solid;border-radius:3px}
+#charge:checked::before{content:"✓";text-align:center;font-size:20px;line-height:20px}
 @@OPOS:phone-a.css@@
 @@OPOS:phone-b.css@@
 @@OPOS:jaryo.css@@
@@ -579,12 +647,11 @@ window.oposHooks=window.oposHooks||[];
 (function(){try{var a=G('about'),n=G('about-notices');if(a&&n)a.insertAdjacentElement('afterend',n)}catch(e){}})();
 @@OPOS:js-2.js@@
 @@OPOS:js-3.js@@
-let helperCtl=null;let helperTimer=null;async function helperCall(o,ans){let expected=60;try{let v=parseInt(localStorage.getItem('opos_helper_s_'+o.action),10);if(isFinite(v)){expected=Math.max(5,Math.min(300,v))}}catch(e){}if(document.getElementById('helperwait'))return null;if(helperTimer){clearInterval(helperTimer);helperTimer=null}let oldP=G('helperwait');if(oldP&&oldP.parentNode)oldP.parentNode.removeChild(oldP);let oldB=G('helpercancel');if(oldB&&oldB.parentNode)oldB.parentNode.removeChild(oldB);let prog=E('progress');prog.id='helperwait';prog.setAttribute('aria-label','Waiting for the helper');prog.max=expected;prog.value=0;ans.parentNode.insertBefore(prog,ans.nextSibling);let btn=E('button');btn.id='helpercancel';btn.textContent='Cancel';ans.parentNode.insertBefore(btn,prog.nextSibling);let start=Date.now();let elapsed=0;let act='Thinking';if(o.web){act='Searching Wikipedia and thinking'}else if(o.action==='plan'){act='Planning'}else if(o.action==='explain'){act='Explaining'}function tick(){elapsed=Math.floor((Date.now()-start)/1000);if(elapsed<expected){ans.textContent=(act==='Thinking'?'Thinking... about ':act+'... about ')+(expected-elapsed)+' s left';prog.value=elapsed}else{ans.textContent=(act==='Thinking'?'Still thinking... ':'Still '+act.toLowerCase()+'... ')+elapsed+' s so far';prog.removeAttribute('value')}}tick();helperTimer=setInterval(tick,1000);helperCtl=new AbortController();const fin=()=>{clearInterval(helperTimer);helperTimer=null;if(prog.parentNode)prog.parentNode.removeChild(prog);if(btn.parentNode)btn.parentNode.removeChild(btn)};btn.onclick=function(){helperCtl.abort();fin();ans.textContent='Cancelled. Nothing changed on the phone.'};try{let r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':document.querySelector('meta[name=opos-token]').content},body:JSON.stringify(o),signal:helperCtl.signal});let j=await r.json();clearInterval(helperTimer);helperTimer=null;if(prog.parentNode)prog.parentNode.removeChild(prog);if(btn.parentNode)btn.parentNode.removeChild(btn);if(r.status===429){j={error:'Too many questions in a row. Wait a few seconds, then try again.'}}else if(r.status===403){j={error:'This page is out of date. Reload it, then try again.'}}else if(r.status>=500){j={error:'Something went wrong in OPOS. Try again in a minute.'}}if(!j.error&&j.engine!=='rules'&&j.engine!=='none'&&j.engine!=='fixed order'){try{let s=Math.max(1,Math.round((Date.now()-start)/1000));localStorage.setItem('opos_helper_s_'+o.action,String(s))}catch(e){}}return j}catch(e){fin();if(e.name==='AbortError')return null;return{error:'OPOS is not responding. Wait a few seconds, reload this page, then try again.'}}}
-function helperReset(){if(helperCtl){helperCtl.abort();helperCtl=null}if(helperTimer){clearInterval(helperTimer);helperTimer=null}let e=G('helperwait');if(e&&e.parentNode)e.parentNode.removeChild(e);let c=G('helpercancel');if(c&&c.parentNode)c.parentNode.removeChild(c);let ans=G('answer');if(ans)ans.textContent='Ready.';let rb=G('helperrestart');if(rb)rb.hidden=false}G('helperreset').onclick=helperReset;document.getElementById('helperrestart').onclick=function(){helperReset();let ans=G('answer');if(ans)ans.textContent='Restarting the helper... this page reloads in a few seconds.';api({action:'restart_helper'}).then(r=>{if(r&&r.error){if(ans)ans.textContent=r.error;return}setTimeout(()=>location.reload(),6000)}).catch(()=>{setTimeout(()=>location.reload(),6000)})};
+let helperCtl=null;let helperTimer=null;async function helperCall(o,ans){let expected=60;try{let v=parseInt(localStorage.getItem('opos_helper_s_'+o.action),10);if(isFinite(v)){expected=Math.max(5,Math.min(300,v))}}catch(e){}if(document.getElementById('helperwait'))return null;if(helperTimer){clearInterval(helperTimer);helperTimer=null}let oldP=G('helperwait');if(oldP&&oldP.parentNode)oldP.parentNode.removeChild(oldP);let oldB=G('helpercancel');if(oldB&&oldB.parentNode)oldB.parentNode.removeChild(oldB);let prog=E('progress');prog.id='helperwait';prog.setAttribute('aria-label','Waiting for the helper');prog.max=expected;prog.value=0;ans.parentNode.insertBefore(prog,ans.nextSibling);let btn=E('button');btn.id='helpercancel';btn.textContent='Cancel';ans.parentNode.insertBefore(btn,prog.nextSibling);let start=Date.now();let elapsed=0;let act='Thinking';if(o.web){act='Searching Wikipedia and thinking'}else if(o.action==='plan'){act='Planning'}else if(o.action==='explain'){act='Explaining'}function tick(){elapsed=Math.floor((Date.now()-start)/1000);if(elapsed<expected){ans.textContent=(act==='Thinking'?'Thinking... about ':act+'... about ')+(expected-elapsed)+' s left';prog.value=elapsed}else{ans.textContent=(act==='Thinking'?'Still thinking... ':'Still '+act.toLowerCase()+'... ')+elapsed+' s so far';prog.removeAttribute('value')}}tick();helperTimer=setInterval(tick,1000);helperCtl=new AbortController();const fin=()=>{clearInterval(helperTimer);helperTimer=null;if(prog.parentNode)prog.parentNode.removeChild(prog);if(btn.parentNode)btn.parentNode.removeChild(btn)};btn.onclick=function(){helperCtl.abort();fin();ans.textContent='Cancelled. Nothing changed on the phone.'};try{let r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':document.querySelector('meta[name=opos-token]').content},body:JSON.stringify(o),signal:helperCtl.signal});let j=await r.json();clearInterval(helperTimer);helperTimer=null;if(prog.parentNode)prog.parentNode.removeChild(prog);if(btn.parentNode)btn.parentNode.removeChild(btn);if(r.status===429){j={error:'Too many questions in a row. Wait a few seconds, then try again.'}}else if(r.status===403){j={error:'This page is out of date. Reload it, then try again.'}}else if(r.status>=500){j={error:'Something went wrong. Try again in a minute.'}}if(!j.error&&j.engine!=='rules'&&j.engine!=='none'&&j.engine!=='fixed order'){try{let s=Math.max(1,Math.round((Date.now()-start)/1000));localStorage.setItem('opos_helper_s_'+o.action,String(s))}catch(e){}}return j}catch(e){fin();if(e.name==='AbortError')return null;return{error:'The helper did not reply. Wait a few seconds, then try again.'}}}
+function helperReset(){if(helperCtl){helperCtl.abort();helperCtl=null}if(helperTimer){clearInterval(helperTimer);helperTimer=null}let e=G('helperwait');if(e&&e.parentNode)e.parentNode.removeChild(e);let c=G('helpercancel');if(c&&c.parentNode)c.parentNode.removeChild(c);let ans=G('answer');if(ans)ans.textContent='Ready.';let rb=G('helperrestart');if(rb)rb.hidden=false}G('helperreset').onclick=helperReset;G('helperrestart').onclick=function(){helperReset();let ans=G('answer');if(ans)ans.textContent='Restarting the helper... this page reloads in a few seconds.';const back=()=>setInterval(healReload,2000);api({action:'restart_helper'}).then(r=>{if(r&&r.error){if(ans)ans.textContent=r.error;return}back()}).catch(back)};
 @@OPOS:js-4.js@@
 @@OPOS:js-5.js@@
- document.querySelectorAll('#threads button').forEach(b=>b.onclick=async()=>{G('number').value=b.dataset.n;render(await api({action:'open',number:b.dataset.n}))});
- G('thread').innerHTML='<b>Thread</b><br>'+(s.thread||[]).map(x=>esc(typeof x==='string'?x:(x.text||JSON.stringify(x)))).join('<br>');
+ sync(G('thread'),'<b>Thread</b><br>'+(s.thread||[]).map(x=>esc(typeof x==='string'?x:(x.text||JSON.stringify(x)))).join('<br>'));
 @@OPOS:js-6.js@@
    let bv=document.getElementById('battery-val');if(!bv){bv=document.createElement('span');bv.id='battery-val';G('battery').insertAdjacentElement('afterend',bv)}
    if(document.activeElement!==document.getElementById('battery')){document.getElementById('battery').value=s.battery.percent;document.getElementById('battery-val').textContent=Math.round(s.battery.percent)+'%'}
@@ -605,17 +672,84 @@ const renderBase=render;render=async function(s){const r=await renderBase(s);if(
 <script>
 @@OPOS:jaryo-layout.js@@
 </script></body></html>"""
-    html = _inline_assets(html)
+    html = apply_span(_inline_assets(html), span)
     html = html.replace('@@ABOUT_NOTICES@@', _about_notices(), 1)
     if demo:
         html = html.replace('<div id="demo" hidden>', '<div id="demo" data-demo="1">', 1)
     html = html.replace("<title>Old Phone OS Interface</title>", '<meta name="opos-token" content="' + html_escape(token, quote=True) + '"><title>Old Phone OS Interface</title>', 1)
+    html = net_page.add_settings_link(html, os.environ)  # track: network (OPOS_NETWORK=1 only)
     return secure.add_nonce(html, nonce) if nonce else html
-_RATE_ACTIONS = {"call": "call", "send": "send", "receive": "receive", "explain": "explain", "ask": "ask", "plan": "plan", "restart_helper": "restart_helper"}
+_RATE_ACTIONS = {"call": "call", "send": "send", "receive": "receive", "explain": "explain", "ask": "ask", "plan": "plan", "restart_helper": "restart_helper",
+                 "update_check": "update_check", "update_download": "update_download", "update_rollback": "update_rollback"}
 _INJECT_ACTIONS = ("receive",)
+_UPDATE_ACTIONS = {"update_check": "check", "update_download": "start_download", "update_rollback": "request_rollback"}  # opos.update_client
+# --- track: network (Wi-Fi and radio status): GET /network and the net_* actions; logic in opos.net, page in opos.net_page ---
+def _net_serve(h):
+    nonce = secrets.token_urlsafe(16)
+    body = net_page.render(h.token, nonce).encode()
+    if osk is not None:
+        body = osk.inject_bytes(body, nonce)  # track osk: the password field needs the keyboard; the same bytes while OPOS_OSK is off
+    h.send_response(200)
+    for k, v in secure.security_headers(nonce).items():
+        h.send_header(k, v)
+    h.send_header("Content-Type", "text/html; charset=utf-8")
+    h.send_header("Content-Length", str(len(body)))
+    h.end_headers()
+    if h.command != "HEAD":
+        h.wfile.write(body)
+def _net_act(h, a, data):
+    if not h.limiter.allow(a):
+        h._deny(429, "too many requests", "rate")
+        return
+    code, obj = net_page.handle(a, data)
+    h._json(obj, code)
+# --- end track: network ---
+# --- track: monitor (the Inference page): GET /monitor and GET /api/monitor, only while OPOS_MONITOR=1; data in opos.monitor, glue in opos.monitor_web ---
+def _monitor_serve(h, path):
+    """Answer /monitor (the document) or /api/monitor (its data). The Host check has been made by _get."""
+    if path == "/monitor":
+        nonce = secrets.token_urlsafe(16)
+        try:
+            # The same inliner page() uses, then the two-panel rewrite, the token meta and the nonce (monitor_web.document).
+            body = monitor_web.document(_inline_assets(_asset("monitor.html")), h.token, nonce, h.span).encode()
+        except (OSError, ValueError) as e:  # a missing part, or a drop-in whose title is not the one expected: send nothing half-built
+            logging.getLogger("opos.security").warning("monitor page not built: %s", type(e).__name__)
+            h._json({"error": "internal error"}, 500)
+            return
+        h.send_response(200)
+        for k, v in secure.security_headers(nonce).items():
+            h.send_header(k, v)
+        h.send_header("Content-Type", "text/html; charset=utf-8")
+        h.send_header("Content-Length", str(len(body)))
+        h.end_headers()
+        if h.command != "HEAD":
+            h.wfile.write(body)
+        return
+    if not secure.token_ok(h.headers.get("X-OPOS-Token"), h.token):
+        h._deny(403, "forbidden", "token")
+        return
+    if h.command == "HEAD":  # a HEAD would start the monitor's collection and return nothing
+        logging.getLogger("opos.security").warning("rejected: %s", "method")
+        h.send_response(405)
+        h.send_header("Allow", "GET")
+        h.send_header("Content-Length", "0")
+        for k, v in secure.security_headers().items():
+            h.send_header(k, v)
+        h.end_headers()
+        return
+    if not h.limiter.allow(monitor_web.LIMIT_KEY):  # an unknown key is refused, so a server built without the bucket answers 429
+        h._deny(429, "too many requests", "rate")
+        return
+    with h.lock:
+        snap = h.phone.state()
+        health = getattr(getattr(h.phone, "sim", None), "health", None)
+    # Outside the lock: a slow LAN host can use the monitor's whole 6 s budget, and the phone must go on answering meanwhile.
+    h._json(monitor.get().snapshot(monitor_web.local_state(snap, health)))
+# --- end track: monitor ---
 class Handler(BaseHTTPRequestHandler):
     """Loopback web handler."""
     phone = None
+    span = None
     lock = threading.Lock()
     DEADLINE = 15.0
     def setup(self):
@@ -682,13 +816,30 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "forbidden", "host")
             return
         path = urllib.parse.urlsplit(self.path).path
-        if path in ("/", "/favicon.ico"):
+        if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
+            return
+        if path == "/network":  # track: network
+            _net_serve(self)
+            return
+        if path in ("/monitor", "/api/monitor") and monitor_web is not None and monitor_web.enabled():  # track: monitor (OPOS_MONITOR=1 only)
+            _monitor_serve(self, path)
+            return
+        if path in ("/", "/favicon.ico") or (path == "/update" and self.updater is not None):  # track ota: /update only where an updater exists
             nonce = secrets.token_urlsafe(16)
-            body = FAVICON if path == "/favicon.ico" else page(self.token, nonce).encode()
+            if path == "/favicon.ico":
+                body = FAVICON
+            elif path == "/update":  # its own document: no text field (no keyboard) and no Settings (no links to add); the decorations below are for "/" only
+                body = update_page.page(self.token, nonce, self.updater.snapshot()).encode()
+            else:
+                body = page(self.token, nonce, span=self.span).encode()
             self.send_response(200)
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)
             self.send_header("Content-Type", "image/png" if path == "/favicon.ico" else "text/html; charset=utf-8")
+            if path == "/" and osk is not None:
+                body = osk.inject_bytes(body, nonce)  # track osk: adds the keyboard's two tags while OPOS_OSK=1, else the same bytes
+            if path == "/" and monitor_web is not None:
+                body = monitor_web.link_bytes(body)  # track monitor: the Settings link to /monitor while OPOS_MONITOR=1, else the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
@@ -700,6 +851,11 @@ class Handler(BaseHTTPRequestHandler):
             with self.lock:
                 snap = self.phone.state()
             self._json(snap)
+        elif path == "/api/update" and self.updater is not None:
+            if not secure.token_ok(self.headers.get("X-OPOS-Token"), self.token):
+                self._deny(403, "forbidden", "token")
+                return
+            self._json(self.updater.snapshot())
         else:
             self._json({"error": "not found"}, 404)
     def do_GET(self):
@@ -719,6 +875,7 @@ class Handler(BaseHTTPRequestHandler):
     port = 0
     limiter = None
     allow_inject = False
+    updater = None
     timeout = 10
     def _deny(self, code, message, reason):
         """Reject with JSON error."""
@@ -813,11 +970,25 @@ class Handler(BaseHTTPRequestHandler):
         if a in _RATE_ACTIONS and not self.limiter.allow(a):
             self._deny(429, "too many requests", "rate")
             return
+        if a in _UPDATE_ACTIONS:
+            if self.updater is None or len(data) != 1:
+                self._deny(400, "bad request", "shape")
+                return
+            try:
+                getattr(self.updater, _UPDATE_ACTIONS[a])()
+            except update_client.UpdateError as e:
+                self._json({"error": e.message, "code": e.code}, e.status)
+                return
+            self._json(dict(self.updater.snapshot(), ok=True))
+            return
         for k, m in (("number", 64), ("name", 64), ("time", 64), ("text", 1000)):
             v = data.get(k)
             if isinstance(v, str) and len(v) > m:
                 self._deny(400, "bad request", "size")
                 return
+        if a in net_page.ACTIONS:  # track: network
+            _net_act(self, a, data)
+            return
         if a == "explain":
             with self.lock:
                 req = self.phone.explain_routes()
@@ -913,7 +1084,7 @@ def apply_phone_action(phone, data):
         phone.charging = data["on"]
     elif a == "goal" and isinstance(data.get("time"), str):
         try:
-            phone.dash.set_goal(data["time"], phone.clock_s)
+            phone.dash.set_goal(data["time"], phone._goal_clock())
         except ValueError:
             bad = True
     elif a == "undo" and isinstance(data.get("name"), str):
@@ -938,22 +1109,28 @@ def apply_phone_action(phone, data):
 class _Limits:
     """Per-action rate limits."""
     def __init__(self):
-        self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3)}
+        self._buckets = {"post": secure.RateLimiter(20.0, 40), "send": secure.RateLimiter(0.2, 5), "call": secure.RateLimiter(0.2, 5), "receive": secure.RateLimiter(2.0, 20), "explain": secure.RateLimiter(0.2, 3), "ask": secure.RateLimiter(0.2, 3), "plan": secure.RateLimiter(0.2, 3), "restart_helper": secure.RateLimiter(0.2, 3),
+                         "update_check": secure.RateLimiter(0.2, 3), "update_download": secure.RateLimiter(0.1, 2), "update_rollback": secure.RateLimiter(0.1, 2)}
+        self._buckets.update(net_page.buckets())  # track: network
+        if monitor_web is not None:
+            self._buckets.update(monitor_web.buckets())  # track: monitor
     def allow(self, key):
         """Delegate key to its bucket."""
         b = self._buckets.get(key)
         return b.allow("all") if b is not None else False
-def make_server(port, phone, host="127.0.0.1", token=None):
-    """Bind loopback server."""
+def make_server(port, phone, host="127.0.0.1", token=None, span=None, updater=None):
+    """Bind loopback server. updater: an opos.update_client.UpdateClient (default: this install's)."""
     secure.check_bind(host)
     class Bound(Handler):
         pass
     Bound.phone = phone
+    Bound.span = span
     if token is not None:
         _validate_token(token)
     Bound.token = token if token else secure.new_token()
     Bound.limiter = _Limits()
-    Bound.allow_inject = type(phone) is Phone
+    Bound.allow_inject = type(phone) is Phone and not phone.live  # a real phone takes no injected texts
+    Bound.updater = updater if updater is not None else update_client.UpdateClient()
     server = _Server((host, port), Bound)
     Bound.port = server.server_address[1]
     return server
@@ -967,15 +1144,43 @@ def _install_helper_visible(flag):
     except Exception:
         return False
 DEMO_GOAL = "16:00"  # the plain quickstart demo's goal, so the 60% / 60% health / noon demo starts in Saver with email still allowed
+def _arm_configured_goal(phone, cfg):
+    """Set the saved goal, read against the clock goals may use (none while a live clock is a guess)."""
+    goal = cfg["goal"]
+    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone._goal_clock())
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--visible", action="store_true")
     p.add_argument("--token-file", default=None)
+    p.add_argument("--live-battery", action="store_true", help="read this phone's battery and clock instead of simulating (also OPOS_BATTERY=live)")
+    p.add_argument("--span", metavar="PANE,HINGE", help="the window covers both panels of a two-screen phone: pane and hinge widths in CSS px, 675,42 on the Surface Duo 1 (also OPOS_SPAN; off disables)")
     args = p.parse_args(argv)
+    import sys
+    span = None
+    try:
+        span = parse_span(args.span if args.span is not None else os.environ.get("OPOS_SPAN"))
+    except ValueError as e:
+        if args.span is not None:
+            p.error(f"--span: {e}")
+        print(f"opos: ignoring OPOS_SPAN: {e}", file=sys.stderr)
+    # >>> track firstboot: Duo OS first run and time zone (src/opos/firstrun.py); does nothing unless OPOS_FIRSTRUN=1.
+    # It applies the saved time zone, so it must run before Phone() reads the clock.
+    try:
+        from opos import firstrun as _firstrun
+        _firstrun.install(sys.modules[__name__])
+    except Exception as e:  # never let first run keep the phone from starting
+        print("opos: first run not available:", type(e).__name__, file=sys.stderr)
+    # <<< track firstboot
+    live = None
+    if args.live_battery or os.environ.get("OPOS_BATTERY") == "live":
+        from opos.hw.live_battery import LiveBattery
+        live = LiveBattery()
+        if not live.ok:
+            print("opos: no readable battery (termux-battery-status or sysfs); using the simulation", file=sys.stderr)
+            live = None
     token = None
-    if args.token_file is not None:
-        import sys
+    if args.token_file is not None and tokenfile.usable(args.token_file, sys.stderr):  # first start: make it, mode 0600, so a restart keeps the token
         try:
             with open(args.token_file, encoding="utf-8") as f:
                 token = f.read().strip()
@@ -983,19 +1188,32 @@ def main(argv=None):
         except Exception:
             print("opos: cannot read session token", file=sys.stderr)
             raise SystemExit(2)
-    phone = Phone(visible=_install_helper_visible(args.visible))
+    phone = Phone(visible=_install_helper_visible(args.visible), live_battery=live)
+    if live is not None and not phone.clock_ok:
+        print("opos: the clock is not set (before 2026, or only the image's floor); goal times stay off until it is", file=sys.stderr)
     try:
         cfg = setup_config.load()
         if cfg is None:
             cfg = setup_config.default_config()
-            cfg["goal"] = {"enabled": True, "time": DEMO_GOAL}
+            cfg["goal"] = {"enabled": live is None, "time": DEMO_GOAL}  # a real phone has no goal until its owner picks one
     except Exception:
         cfg = setup_config.default_config()
-    goal = cfg["goal"]
-    phone.dash.set_goal(goal["time"] if goal["enabled"] else None, phone.clock_s)
+    _arm_configured_goal(phone, cfg)
     _route_with_glimmer(phone, os.environ)
-    server = make_server(args.port, phone, token=token)
-    print(f"OPOS desktop demo: http://127.0.0.1:{args.port}/?demo=1 (Ctrl-C to stop)", flush=True)
+    server = make_server(args.port, phone, token=token, **({} if span is None else {"span": span}))
+    if span is not None:
+        print(f"OPOS two-screen span: {span.pane:g} + {span.hinge:g} + {span.pane:g} CSS px", flush=True)
+    server.RequestHandlerClass.updater.start_auto_check()  # only when /etc/opos/update.json opts in with auto_check; it checks, never downloads
+    try:
+        port = server.server_address[1]  # not args.port: --port 0 lets the kernel pick, and the update smoke test reads the real one from this line
+    except (AttributeError, IndexError, TypeError):
+        port = args.port
+    if type(port) is not int:  # a test double
+        port = args.port
+    if live is not None:
+        print(f"OPOS live battery ({live.source}, health {live.health_source}): http://127.0.0.1:{port}/ (Ctrl-C to stop)", flush=True)
+    else:
+        print(f"OPOS desktop demo: http://127.0.0.1:{port}/?demo=1 (Ctrl-C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

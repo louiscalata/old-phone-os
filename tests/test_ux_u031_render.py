@@ -15,7 +15,7 @@ class RenderErrorTest(unittest.TestCase):
         self.assertIn("const errorNotice=document.getElementById('notice');", part)
         self.assertIn("s.error==='too many requests'", part)
         rate = "Too many taps. Wait a few seconds, then try again."
-        fallback = "That did not work. Reload the page, then try again."
+        fallback = "That did not work. Try again."  # W1-02: never "Reload the page"; the stale page has its own Reload button
         assign = "errorNotice.textContent"
         self.assertIn(assign, part)
         ai = part.index(assign)

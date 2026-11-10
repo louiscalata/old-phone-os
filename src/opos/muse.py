@@ -93,8 +93,8 @@ def glimmer_route(env=None):
         with contextlib.suppress(Exception):
             p = urllib.parse.urlparse(url)
             if p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost"):
-                return Route("glimmer", "Muse Glimmer", "on this device", url, "muse-glimmer-30b")
-    return Route("glimmer", "Muse Glimmer", "on this device", default, "muse-glimmer-30b")
+                return Route("glimmer", "Muse Glimmer", "on a local server", url, "muse-glimmer-30b")
+    return Route("glimmer", "Muse Glimmer", "on a local server", default, "muse-glimmer-30b")
 SPARK_OPEN = Route("spark-open", "Muse Spark Open", "Baseten partner inference", "https://inference.baseten.co/v1", "meta-models/muse-spark-open-1026")
 def choose(hard, env=None):
     """Choose Spark Open when hard and env allows."""
@@ -225,9 +225,39 @@ def _join_names(names):
             return ", ".join(shown) + " and other tasks" if shown else "some tasks"
         shown.append(n)
     return ", ".join(shown)
+_PAUSE_RE = re.compile(r"\bpaus", re.I)
+_NO_PAUSE_RE = re.compile(r"\b(?:not|never|no|nothing|none)\b[^.!?;]{0,40}\bpaus|n't\b[^.!?;]{0,20}\bpaus|\bpaus\w*\b[^.!?;]{0,20}\b(?:nothing|none)\b", re.I)
+_SENTENCE_RE = re.compile(r"(?<=[.!?;])\s+")
+def contradicts(text, fact_dict):
+    """True when model text claims a pause the final decision does not have.
+
+    A sentence that says something is paused contradicts the facts when nothing is paused, or when it
+    names a task the decision still allows (calls, messages and alarms excepted: they always stay on).
+    Small on-phone models restate a question's premise; the rules answer replaces such text.
+    """
+    paused = fact_dict.get("paused") if isinstance(fact_dict, dict) else None
+    if not isinstance(paused, list):
+        return False
+    allowed = fact_dict.get("allowed")
+    running = [a.lower() for a in allowed if isinstance(a, str) and a not in paused and a.lower() not in ALWAYS_ON] if isinstance(allowed, list) else []
+    for sentence in _SENTENCE_RE.split(str(text)):
+        if not _PAUSE_RE.search(sentence) or _NO_PAUSE_RE.search(sentence):
+            continue
+        if not paused:
+            return True
+        low = sentence.lower()
+        if any(re.search(r"\b" + re.escape(name) + r"\b", low) for name in running):
+            return True
+    return False
 def explain(fact_dict, route, env=None, opener=None):
-    """Explain pause using facts via the first route that answers, with a rules fallback."""
+    """Explain pause using facts via the first route that answers, with a rules fallback.
+
+    With nothing paused there is nothing to explain, so the rules answer without waking a model, and
+    an answer that contradicts the paused list falls through to the next route or the rules.
+    """
     paused_by_glimmer = glimmer_paused(fact_dict)
+    if fact_dict.get("paused") == [] and not paused_by_glimmer:
+        route = ()
     # why_paused already reconciles the battery, goal and final task decision. Sending
     # the raw estimates too invites Glimmer to reconcile them again before answering.
     why = fact_dict.get("why_paused")
@@ -235,7 +265,7 @@ def explain(fact_dict, route, env=None, opener=None):
     context.pop("paused_by_glimmer", None)
     if paused_by_glimmer:
         context["paused_by_glimmer"] = paused_by_glimmer
-    prompt = "Explain why tasks are paused in at most four short sentences. Restate the supplied reason in plain words; do not recalculate or propose a new plan. Say calls, messages and alarms stay on. Facts: " + json.dumps(context)
+    prompt = "Explain why tasks are paused in at most four short sentences. Restate the supplied reason in plain words; do not recalculate or propose a new plan. Say calls and messages are never paused. Facts: " + json.dumps(context)
     if paused_by_glimmer:
         prompt += " If a paused_by_glimmer fact is present, also say that Muse Glimmer chose to pause those tasks."
     deadline = time.monotonic() + HELPER_DEADLINE_S
@@ -244,6 +274,8 @@ def explain(fact_dict, route, env=None, opener=None):
             # Match Ask's answer budget; Glimmer still receives reasoning headroom
             # and low effort via _payload. A token cap is not a wall-clock timeout.
             text = ask(r, prompt, env=env, opener=opener, timeout=timeout, max_tokens=200 if r.key == "local" else 400)
+            if contradicts(text, fact_dict):
+                continue
             used = answered_by(text, r)
             return {"text": str(text), "engine": used.name, "where": used.where, "ok": True}
         except MuseError:
@@ -254,11 +286,11 @@ def explain(fact_dict, route, env=None, opener=None):
         text = why_paused.strip()[:500]
         if paused_by_glimmer:
             text += " Muse Glimmer chose to pause " + _join_names(paused_by_glimmer) + "."
-        text += " Calls, messages and alarms always stay on."
+        text += " Calls and messages are never paused."
     elif isinstance(paused, list) and not paused:
-        text = "Calls, messages and alarms stay on; nothing is paused right now."
+        text = "Calls and messages are never paused. Nothing is paused right now."
     else:
-        text = "Calls, messages and alarms stay on; other tasks are paused to save battery."
+        text = "Calls and messages are never paused. Other tasks are paused to save battery."
     return {"text": text, "engine": "rules", "where": "on this device", "ok": False}
 class Order(list):
     """Step order plus the answering route (None when no usable answer arrived)."""

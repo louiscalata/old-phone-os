@@ -53,7 +53,7 @@ class TestGRouteBudget(unittest.TestCase):
             self.assertEqual(result.route.key, "glimmer")
         else:
             self.assertTrue(result["ok"])
-            self.assertEqual(result["where"], "on this device")
+            self.assertEqual(result["where"], "on a local server")
 
     def test_why_reaches_third_route_after_two_timeouts(self):
         self.run_slow_routes("why")
@@ -73,9 +73,9 @@ class TestGRouteBudget(unittest.TestCase):
         with mock.patch.object(muse, "ask", side_effect=muse.MuseError("down")):
             result = assist.answer("word " * 20, env=self.ENV, free=2000)
         self.assertFalse(result["ok"])
-        self.assertIn("No model answered.", result["text"])
+        self.assertIn("The helper did not answer.", result["text"])
         self.assertNotIn("Muse Glimmer", result["text"])
-        self.assertNotIn("on this device", result["text"])
+        self.assertNotIn("on a local server", result["text"])
         self.assertNotIn("on your computer is busy", result["text"])
 
     def test_ask_error_is_neutral_when_only_one_route_was_attempted(self):
@@ -89,9 +89,9 @@ class TestGRouteBudget(unittest.TestCase):
                 mock.patch.object(muse, "ask", side_effect=expired) as ask:
             result = assist.answer("word " * 20, env=self.ENV, free=2000)
         ask.assert_called_once()
-        self.assertIn("No model answered.", result["text"])
+        self.assertIn("The helper did not answer.", result["text"])
         self.assertNotIn("on a computer you own", result["text"])
-        self.assertNotIn("on this device", result["text"])
+        self.assertNotIn("on a local server", result["text"])
 
 
 class TestHPlanLists(unittest.TestCase):
@@ -323,7 +323,7 @@ class TestOWhyFallback(unittest.TestCase):
                     "Nothing is paused; calls and messages remain on."):
             with self.subTest(why=why), mock.patch.object(muse, "ask", side_effect=muse.MuseError("down")):
                 result = muse.explain({"why_paused": why}, muse.glimmer_route({}), env={})
-                self.assertEqual(result["text"], why + " Calls, messages and alarms always stay on.")
+                self.assertEqual(result["text"], why + " Calls and messages are never paused.")
                 self.assertFalse(result["ok"])
                 self.assertEqual(result["engine"], "rules")
 
