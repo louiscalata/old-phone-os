@@ -51,6 +51,7 @@ evidence about the current source.
 <!-- <<< track firstboot -->
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; ran on the owner's Duo on November 7, 2026, one session.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; the current Duo routes are the two above.
+- [On-device checklist](duo-on-device-checklist.md): every check that needs the physical phone. Each one is **NOT_RUN**.
 
 ## Security and privacy
 

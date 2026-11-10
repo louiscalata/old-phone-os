@@ -367,6 +367,10 @@ Remove it from a running phone with `rm ~/.ssh/authorized_keys` as `droidian` (t
 file, not only the one the build added) or by deleting that one line. Rebuilding without the variable gives an
 image without it. The key lives in userdata until the next format.
 
+## Debug port and USB shell
+
+The image build binds the container debug port to `127.0.0.1` and installs a filter that drops new inbound packets on `wlan0`. A passwordless USB root shell (telnetd started as a shell) is closed. `OPOS_DEV_USB_SHELL=1` at build time keeps that shell and records `enabled=1` in `/etc/opos/usb-shell.conf`. The kiosk DevTools port, when a dev image opens one, is `127.0.0.1` only. None of this has been checked on a phone (**NOT_RUN**).
+
 ## Boot evidence: persistent journal and opos-diag
 
 The rootfs lives on userdata, so a failed boot would otherwise leave nothing behind. The image sets
