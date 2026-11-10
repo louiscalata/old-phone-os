@@ -88,7 +88,9 @@ class TestSetupScreens(unittest.TestCase):
         block = fragment[start:fragment.index('</section>', start)]
         self.assertNotIn('<input', block)
         self.assertIn('<h3 tabindex="-1">Lock PIN</h3>', block)
-        self.assertIn('not available in this build', block)
+        self.assertIn('This step does not set a PIN', block)
+        self.assertIn('Nothing entered does not open the lock', block)
+        self.assertNotIn('opens with the Unlock button', block)
         self.assertIn('<button type="button" data-jpin>Set up later in Settings › Device</button>', block)
         for word in ('password', 'inputmode', 'digits'):
             self.assertNotIn(word, block)
