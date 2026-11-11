@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import monitor, monitor_web, notices, secure, web
+from opos import fonts, monitor, monitor_web, notices, secure, web
 from opos.span import parse as parse_span
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -184,7 +184,7 @@ class SwitchOff(WiringCase):
         s = self.server()
         st, h, body = s.get("/")
         self.assertEqual(st, 200)
-        self.assertEqual(body, web.page(s.token, nonce_of(h)).encode("utf-8"), "byte for byte")
+        self.assertEqual(body, fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)), "byte for byte, plus the font sheet")
         self.assertNotIn(b"/monitor", body)
         self.assertNotIn(b"mon-link", body)
 
@@ -193,7 +193,7 @@ class SwitchOff(WiringCase):
         for value in ("0", "true", "", "yes"):
             with mock.patch.dict(os.environ, {"OPOS_MONITOR": value}):
                 st, h, body = s.get("/")
-                self.assertEqual(body, web.page(s.token, nonce_of(h)).encode("utf-8"), value)
+                self.assertEqual(body, fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)), value)
 
     def test_the_monitor_is_never_asked_for_anything(self):
         fake = self.fake_monitor()
@@ -404,7 +404,7 @@ class SwitchOn(WiringCase):
             self.assertEqual(s.get("/monitor")[0], 404)
             self.assertEqual(s.get("/api/monitor")[0], 404)
             st, h, body = s.get("/")
-            self.assertEqual(body, web.page(s.token, nonce_of(h)).encode("utf-8"))
+            self.assertEqual(body, fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)))
 
 
 class Limits(WiringCase):
@@ -512,8 +512,8 @@ class SettingsLink(WiringCase):
         self.assertEqual(home.count(monitor_web.LINK), 1)
         self.assertEqual(home.count('aria-labelledby="set-about"'), 1)
         self.assertLess(home.index('href="/monitor"'), home.index('<section aria-labelledby="set-about">'), "ahead of About")
-        self.assertEqual(home.replace(monitor_web.LINK, "", 1).encode("utf-8"), web.page(s.token, nonce_of(h)).encode("utf-8"),
-                         "the link is the only difference")
+        self.assertEqual(home.replace(monitor_web.LINK, "", 1).encode("utf-8"), fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)),
+                         "the monitor link is the only difference besides the font sheet")
         self.assertEqual(int(h["content-length"]), len(body))
         with mock.patch.dict(os.environ, {"OPOS_MONITOR": "0"}):
             self.assertNotIn(b'href="/monitor"', s.get("/")[2])

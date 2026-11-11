@@ -24,7 +24,7 @@ import unittest
 import urllib.request
 from unittest import mock
 
-from opos import notices, update_client as uc, update_page
+from opos import fonts, notices, update_client as uc, update_page
 from tests import webclient
 
 
@@ -1629,9 +1629,9 @@ class MainPageIsUntouched(Env):
     # docs/ui-byte-ledger.md says how to measure the page. Re-recorded once on the merged tree integrate/w1 (the six ui/w1-* tracks:
     # room, practice, helper, resilience, status, layout); each track had recorded its own digests, which cannot all hold at once.
     # Re-recorded again when the status bar learned LOW, the status note, and the unset-clock rule.
-    # Re-recorded from the combined runtime tree after the lock reach changes.
-    MAIN_SHA256 = "a6ed3219bdc7d92feb8ab5ece5e8906a6374c40e42ad99bd66f68e4ed2503c08"
-    DEMO_SHA256 = "178ea6ec42b91eeb600ee69e854452f1d6033958dfc510d8c5f462e71636046a"
+    # Re-recorded for the combined thumb-pane/detail layout and separate font assets.
+    MAIN_SHA256 = "3656a43140014c13d1226c268562cb0c2e5ce1834c0fc7fdefa45d4b7598b5b9"
+    DEMO_SHA256 = "cede6a1bb1293349e78bc315a273e7286a737148c2adf0ea3de5df8910baeef2"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):
@@ -1679,7 +1679,7 @@ class MainPageIsUntouched(Env):
             with webclient.Running(updater=self.client()) as run:
                 s, h, b = webclient.request(run.port, "GET", "/")
                 self.assertEqual(s, 200)
-                self.assertEqual(b, webclient.web.page(run.token, csp_nonce(h)).encode(), have_updates)
+                self.assertEqual(b, fonts.inject(webclient.web.page(run.token, csp_nonce(h)).encode(), csp_nonce(h)), have_updates)
 
     def test_state_and_demo_actions_are_unchanged(self):
         run = webclient.Running(updater=self.client())
