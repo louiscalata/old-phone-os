@@ -1630,8 +1630,9 @@ class MainPageIsUntouched(Env):
     # room, practice, helper, resilience, status, layout); each track had recorded its own digests, which cannot all hold at once.
     # Re-recorded again when the status bar learned LOW, the status note, and the unset-clock rule.
     # Re-recorded for the combined thumb-pane/detail layout and separate font assets.
-    MAIN_SHA256 = "3656a43140014c13d1226c268562cb0c2e5ce1834c0fc7fdefa45d4b7598b5b9"
-    DEMO_SHA256 = "cede6a1bb1293349e78bc315a273e7286a737148c2adf0ea3de5df8910baeef2"
+    # Re-recorded for phone-page freshness: error snapshots count as misses, with compact response and freshness handling.
+    MAIN_SHA256 = "ab5ffc0f188bcdb73aa48236db6ac3f8394b02ad800b471ac95ba0cd58dd8248"
+    DEMO_SHA256 = "a254d15c26f860638c00dbad674246d583b89e93d43e9766e47be81df16340f5"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):

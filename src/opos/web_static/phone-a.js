@@ -210,41 +210,39 @@ if(phoneFallback)phoneFallback.inert=false;
 }
 try{
 (function(){
-var reload=G('reload-shell'),failures=0;
-if(!reload)return;
-function forceAttr(el,name,on){if(el.hasAttribute&&el.hasAttribute(name)===on)return;el.toggleAttribute(name,on)}
-function stateResult(failed){try{
-failures=failed?failures+1:0;
-forceAttr(reload,'hidden',failures<2);
-forceAttr(document.body,'data-stale',failures>1);
-if(failures===2)render({error:'offline'});
+var retry=G('reload-shell'),m=0;
+if(!retry)return;
+function attr(e,n,on){if(!e.hasAttribute||e.hasAttribute(n)!==on)e.toggleAttribute(n,on)}
+function stepFresh(failed){try{
+m=failed?m+1:0;
+var stale=m>1;
+attr(retry,'hidden',!stale);
+attr(document.body,'data-stale',stale);
+if(m===2)render({error:'offline'});
 }catch(e){}}
-window.oposPoll=ok=>stateResult(!ok);
-reload.onclick=healReload;
+window.oposPoll=ok=>stepFresh(!ok);
+retry.onclick=healReload;
 window.oposHooks=window.oposHooks||[];
-window.oposHooks.push(function(){stateResult(false);});
-if(typeof window.api==='function'){
-window.api=async function(o){
-var r,s;
+window.oposHooks.push(()=>stepFresh(false));
+if(typeof window.api==='function')window.api=async o=>{
 try{
-r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':document.querySelector('meta[name=opos-token]').content},body:JSON.stringify(o)});
-s=await r.json();
-}catch(e){stateResult(true);throw e;}
-stateResult(r.status>=500||r.status===403);
+var r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':document.querySelector('meta[name=opos-token]').content},body:JSON.stringify(o)});
+var s=await r.json();
+stepFresh(r.status>=500||r.status===403);
 return s;
+}catch(e){stepFresh(true);throw e;}
 };
-}
 var screen=G('screen');
 if(screen&&typeof MutationObserver==='function'){
 function bootFailed(){try{
 if(screen.textContent==='Could not reach Old Phone OS Interface. Reload the page in a few seconds.'){
-failures=2;reload.hidden=false;bootWatch.disconnect();
+m=2;retry.hidden=false;w.disconnect();
 }
 }catch(e){}}
-var bootWatch=new MutationObserver(bootFailed);
-bootWatch.observe(screen,{childList:true,characterData:true,subtree:true});
+var w=new MutationObserver(bootFailed);
+w.observe(screen,{childList:true,characterData:true,subtree:true});
 bootFailed();
-window.oposHooks.push(function(){try{bootWatch.disconnect();}catch(e){}});
+window.oposHooks.push(()=>{try{w.disconnect()}catch(e){}});
 }
 })();
 }catch(e){}
