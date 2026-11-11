@@ -87,6 +87,12 @@ class ClockPage(unittest.TestCase):
         self.assertIn(b"/apps-home.js", served)
         self.assertNotIn(b"Snooze 10 min", served)
 
+    def test_an_unknown_clock_check_does_not_count_as_known(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OPOS_CLOCK_OK", None)
+            with mock.patch("opos.web.clock_ok", side_effect=RuntimeError("boom")):
+                self.assertFalse(clock_page.clock_known())
+
 
 if __name__ == "__main__":
     unittest.main()
