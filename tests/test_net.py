@@ -653,6 +653,17 @@ class Status(unittest.TestCase):
         self.assertTrue(s["ok"])
         self.assertEqual(s["wifi"]["state"], "unavailable")
 
+    def test_clock_syncs_only_after_full_connectivity(self):
+        f = Fake(self)
+        tool = f.bin / "timedatectl"
+        tool.write_text("#!/bin/sh\necho NTPSynchronized=no\n", encoding="utf-8")
+        tool.chmod(0o755)
+        self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: syncing")
+        tool.write_text("#!/bin/sh\necho NTPSynchronized=yes\n", encoding="utf-8")
+        self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: set from the network")
+        f.put("general_status", "running:connected:none:enabled:enabled:enabled:enabled\n")
+        self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: no network time yet")
+
     def test_clock_note_and_cache(self):
         f = Fake(self)
         n = f.net()

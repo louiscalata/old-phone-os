@@ -443,11 +443,27 @@ class Net:
         bt = self._bluetooth(q, rf, radios)
         s = {"ok": True, "wifi": wifi, "bluetooth": bt, "modem": modem, "sim": sim,
              "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf, bt, radios, modem), "usb": self._usb(ips, radios),
+             "clock": self._net_clock(q, gs),
              "control": self._control(q, gs, perms), "simulated": SIMULATED, "notes": []}
         if self._wall() < 1.6e9:
             s["notes"].append("The phone's clock is not set yet, so secure websites and updates may fail until it is.")
         s["tools_missing"] = sorted(q.missing)
         return s
+
+    def _net_clock(self, q, gs):
+        """Network time. 'syncing' only while NetworkManager reports full connectivity and NTP is not done."""
+        if not gs or gs.get("connectivity") != "full":
+            return {"state": "offline", "summary": "Clock: no network time yet"}
+        try:
+            r = self.runner(["timedatectl", "show", "-p", "NTPSynchronized"], 3, None)
+        except Exception:
+            r = Run(126)
+        text = (r.out or "").replace(" ", "").lower()
+        if r.ok and "ntpsynchronized=yes" in text:
+            return {"state": "set", "summary": "Clock: set from the network"}
+        if r.missing:
+            return {"state": "unknown", "summary": "Clock: syncing could not be checked"}
+        return {"state": "syncing", "summary": "Clock: syncing"}
 
     def _wifi(self, q, gs, devs, ips, radios):
         w = {"present": True if "wifi" in radios["radios_present"] else None, "enabled": None, "state": "unavailable", "device": None,
