@@ -11,12 +11,31 @@ import tempfile
 import threading
 import time
 import urllib.request
+from enum import Enum
 from pathlib import Path
 from typing import Callable, Mapping
 from opos.setup.config import config_dir, config_path, ensure_token, save, token_path, validate
 from opos.setup.services import Runner, ServiceError, install_services, uninstall_services
 STEP_IDS = ("config", "token", "key", "services", "health", "tools")
 STEP_LABELS = {"config": "Save your preferences", "token": "Create the session token", "key": "Set aside your SSH key", "services": "Install the background service", "health": "Check that it is running", "tools": "Install AI coding tools"}
+class StepState(str, Enum):
+    """Step states, serialized using the existing status words."""
+    PENDING = "pending"
+    RUNNING = "running"
+    OK = "ok"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+class RunState(Enum):
+    """Completion of the selected steps, independent of persisted core readiness."""
+    RUNNING = "running"
+    SUCCEEDED = "ok"
+    FAILED = "failed"
+def derive_state(steps: list[dict[str, str]]) -> RunState:
+    """Derive completion from one snapshot; skipped steps count as successful."""
+    statuses = [StepState(s["status"]) for s in steps]
+    if any(s in (StepState.PENDING, StepState.RUNNING) for s in statuses):
+        return RunState.RUNNING
+    return RunState.FAILED if StepState.FAILED in statuses else RunState.SUCCEEDED
 def _sanitize(detail: str) -> str:
     """Sanitize detail string."""
     return "".join(ch for ch in detail if ord(ch) >= 32 and ord(ch) != 127)[:300]
@@ -25,54 +44,52 @@ class Progress:
     def __init__(self) -> None:
         """Initialize progress."""
         self._lock = threading.Lock()
-        self._steps: list[dict[str, str]] = [{"id": sid, "label": STEP_LABELS[sid], "status": "pending", "detail": ""} for sid in STEP_IDS]
+        self._steps: list[dict[str, str]] = [{"id": sid, "label": STEP_LABELS[sid], "status": StepState.PENDING.value, "detail": ""} for sid in STEP_IDS]
         self._index: dict[str, dict[str, str]] = {s["id"]: s for s in self._steps}
     def _get(self, step_id: str) -> dict[str, str]:
         """Get step or raise."""
         if step_id not in self._index:
             raise KeyError(step_id)
         return self._index[step_id]
+    def _transition(self, step_id: str, state: StepState, detail: str = "") -> None:
+        """Own step writes; terminal steps cannot reopen within a run."""
+        clean = _sanitize(detail)
+        with self._lock:
+            rec = self._get(step_id)
+            current = StepState(rec["status"])
+            # Config's second save can fail after its initial save succeeded.
+            final_save_failure = step_id == "config" and current is StepState.OK and state is StepState.FAILED
+            if state is StepState.PENDING or (current not in (StepState.PENDING, StepState.RUNNING, state) and not final_save_failure):
+                raise ValueError(f"invalid setup transition: {step_id} {current.value} -> {state.value}")
+            rec.update(status=state.value, detail=clean)
     def start(self, step_id: str) -> None:
         """Mark step running."""
-        with self._lock:
-            rec = self._get(step_id)
-            rec["status"] = "running"
-            rec["detail"] = ""
+        self._transition(step_id, StepState.RUNNING)
     def finish(self, step_id: str, detail: str = "") -> None:
         """Mark step ok."""
-        clean = _sanitize(detail)
-        with self._lock:
-            rec = self._get(step_id)
-            rec["status"] = "ok"
-            rec["detail"] = clean
+        self._transition(step_id, StepState.OK, detail)
     def fail(self, step_id: str, detail: str) -> None:
         """Mark step failed."""
-        clean = _sanitize(detail)
-        with self._lock:
-            rec = self._get(step_id)
-            rec["status"] = "failed"
-            rec["detail"] = clean
+        self._transition(step_id, StepState.FAILED, detail)
     def skip(self, step_id: str, detail: str = "") -> None:
         """Mark step skipped."""
-        clean = _sanitize(detail)
-        with self._lock:
-            rec = self._get(step_id)
-            rec["status"] = "skipped"
-            rec["detail"] = clean
+        self._transition(step_id, StepState.SKIPPED, detail)
     def snapshot(self) -> list[dict[str, str]]:
         """Return copy."""
         with self._lock:
             return [dict(s) for s in self._steps]
     def done(self) -> bool:
         """Return if finished."""
-        with self._lock:
-            return all(s["status"] not in ("pending", "running") for s in self._steps)
+        return bool(self.result()["done"])
     def ok(self) -> bool:
         """Return overall success."""
-        with self._lock:
-            if any(s["status"] in ("pending", "running") for s in self._steps):
-                return False
-            return all(s["status"] != "failed" for s in self._steps)
+        return bool(self.result()["ok"])
+    def result(self) -> dict[str, object]:
+        """Return the legacy payload with every field derived from the same copy."""
+        steps = self.snapshot()
+        state = derive_state(steps)
+        done = state is not RunState.RUNNING
+        return {"running": not done, "done": done, "ok": state is RunState.SUCCEEDED, "steps": steps}
 def http_health(port: int, timeout_s: float = 10.0, interval_s: float = 0.5, opener=None, token: str | None = None) -> tuple[bool, str]:
     """Poll health endpoint."""
     if opener is None:
@@ -224,6 +241,16 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                 except Exception as exc:
                     prog.fail("health", type(exc).__name__)
                     failed = True
+        if not dry_run and derive_state([s for s in prog.snapshot() if s["id"] != "tools"]) is RunState.SUCCEEDED:
+            # Commit core readiness while tools is still pending, before done can be true.
+            try:
+                cpath = config_path(env, platform)
+                data = dict(cfg)
+                data["applied"] = True
+                save(data, cpath)
+            except Exception as exc:
+                prog.fail("config", type(exc).__name__)
+                failed = True
         if failed:
             prog.skip("tools", "skipped after an earlier failure")
         else:
@@ -247,15 +274,6 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                         prog.fail("tools", str(exc))
                     else:
                         prog.fail("tools", type(exc).__name__)
-        if not dry_run:
-            _snap = prog.snapshot()
-            _ok = all(s["status"] not in ("pending", "running", "failed") for s in _snap if s["id"] != "tools")
-            if _ok:
-                with contextlib.suppress(Exception):
-                    cpath = config_path(env, platform)
-                    data = dict(cfg)
-                    data["applied"] = True
-                    save(data, cpath)
     return prog
 def uninstall(*, home: Path, platform: str, env: Mapping[str, str] | None = None, dry_run: bool = False, runner: Runner | None = None, keep_config: bool = False, tools_uninstaller: Callable | None = None) -> list[str]:
     """Remove services and config."""

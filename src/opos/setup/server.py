@@ -192,10 +192,7 @@ def make_server(port: int, ctx: SetupContext, host: str = "127.0.0.1") -> Thread
                 progress = state.progress
             if progress is None:
                 return {"running": False, "done": False, "ok": False, "steps": []}
-            snap = progress.snapshot()
-            steps = snap.get("steps", []) if isinstance(snap, dict) else snap
-            done = bool(progress.done())
-            return {"running": not done, "done": done, "ok": bool(progress.ok()), "steps": list(steps)}
+            return progress.result()
 
         def _apply(self, cfg: Any) -> None:
             """Validate and start an apply run, or report why not."""
