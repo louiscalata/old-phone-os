@@ -1595,6 +1595,44 @@ SELFTEST_OUT = (
 REV = "0123456789abcdef0123456789abcdef01234567"
 
 
+def _assert_read_only_key_ssh(test, calls, key):
+    remote = [c[-1] for c in calls if "-N" not in c]
+    test.assertEqual(sorted(set(remote)), sorted(["/usr/sbin/opos-selftest", "cat /opt/opos/REVISION", "test -r /var/log/opos-boot-diag.txt", "cat /var/log/opos-boot-diag.txt"]))
+    tunnels = [c for c in calls if "-N" in c]
+    test.assertEqual(len(tunnels), 1)
+    spec = tunnels[0][tunnels[0].index("-L") + 1]
+    test.assertRegex(spec, r"^127\.0\.0\.1:\d+:127\.0\.0\.1:9222$")
+    for c in calls:
+        test.assertIn("BatchMode=yes", c)
+        test.assertIn("PasswordAuthentication=no", c)
+        test.assertIn("droidian@phone.test", c)
+        test.assertEqual(c[c.index("-i") + 1], str(key), "-Key reaches ssh as -i")
+        test.assertNotIn("scp", c)
+
+
+class ReadOnlySshAssertions(unittest.TestCase):
+    def test_path_data_is_allowed_but_transfer_commands_are_rejected(self):
+        key = Path("fixture-key")
+        base = ["-o", "BatchMode=yes", "-o", "PasswordAuthentication=no",
+                "-o", "UserKnownHostsFile=/tmp/scp-allowed-evidence/known_hosts",
+                "-i", str(key), "droidian@phone.test"]
+        calls = [base + [command] for command in (
+            "/usr/sbin/opos-selftest", "cat /opt/opos/REVISION",
+            "test -r /var/log/opos-boot-diag.txt", "cat /var/log/opos-boot-diag.txt")]
+        calls.append(["-N", "-L", "127.0.0.1:12345:127.0.0.1:9222"] + base)
+        _assert_read_only_key_ssh(self, calls, key)
+        for command in ("scp", "scp file target", "/usr/bin/scp file target"):
+            with self.subTest(command=command):
+                bad = [list(call) for call in calls]
+                bad.append(base + [command])
+                with self.assertRaises(AssertionError):
+                    _assert_read_only_key_ssh(self, bad, key)
+        bad = [list(call) for call in calls]
+        bad[0].insert(-1, "scp")
+        with self.assertRaises(AssertionError):
+            _assert_read_only_key_ssh(self, bad, key)
+
+
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed here; the text checks and the parser stand in")
 class AcceptanceRun(unittest.TestCase):
     """deploy/duo-acceptance.ps1 run by pwsh against tests/fixtures/fake_ssh.py (no phone, no network)."""
@@ -1662,21 +1700,14 @@ class AcceptanceRun(unittest.TestCase):
         self.assertEqual((run / "selftest.txt").read_bytes().replace(b"\r\n", b"\n"), SELFTEST_OUT.encode())
 
     def test_it_asks_the_phone_only_read_only_things_with_key_only_ssh(self):
+        self.out = self.tmp / "scp-allowed-evidence"
         self.scenario()
         p, run = self.run_ps1("-Key", str(self.fake))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        remote = [c[-1] for c in self.calls() if "-N" not in c]
-        self.assertEqual(sorted(set(remote)), sorted(["/usr/sbin/opos-selftest", "cat /opt/opos/REVISION", "test -r /var/log/opos-boot-diag.txt", "cat /var/log/opos-boot-diag.txt"]))
-        tunnels = [c for c in self.calls() if "-N" in c]
-        self.assertEqual(len(tunnels), 1)
-        spec = tunnels[0][tunnels[0].index("-L") + 1]
-        self.assertRegex(spec, r"^127\.0\.0\.1:\d+:127\.0\.0\.1:9222$")
-        for c in self.calls():
-            self.assertIn("BatchMode=yes", c)
-            self.assertIn("PasswordAuthentication=no", c)
-            self.assertIn("droidian@phone.test", c)
-            self.assertEqual(c[c.index("-i") + 1], str(self.fake), "-Key reaches ssh as -i")
-            self.assertNotIn("scp", " ".join(c))
+        calls = self.calls()
+        self.assertTrue(any(arg.startswith("UserKnownHostsFile=") and "scp-allowed-evidence" in arg
+                            for call in calls for arg in call))
+        _assert_read_only_key_ssh(self, calls, self.fake)
 
     def test_a_fail_line_fails_the_run_and_says_so_in_the_report(self):
         self.scenario(selftest=("# opos-selftest 1  2026-11-06T21:20:00Z  host=p  uptime=9s  opos=x  read-only\nFAIL  svc.opos               opos.service is failed (failed)\nSELFTEST: 0 PASS, 0 WARN, 0 SKIP, 1 FAIL\n", 1))
