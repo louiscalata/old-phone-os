@@ -55,6 +55,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from enum import Enum
 
 from opos import notices
 from opos.secure import clean_text
@@ -96,6 +97,15 @@ class UpdateError(Exception):
         self.code = code
         self.message = message
         self.status = status
+
+
+class JobState(Enum):
+    """Client work only; delivered says nothing about root's independent result."""
+    IDLE = "idle"
+    CHECKING = "checking"  # internal only: the legacy job stays unchanged during a check
+    DOWNLOADING = "downloading"
+    DELIVERED = "done"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -329,9 +339,7 @@ class UpdateClient:
         self._clock = clock
         self._lock = threading.Lock()  # guards _job, _check and _thread
         self._busy = threading.Lock()  # held for the length of one network job
-        self._job = self._idle_job()
-        self._check = None
-        self._thread: threading.Thread | None = None
+        self._transition("init")
         self._auto: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -355,6 +363,8 @@ class UpdateClient:
         cur = d.get("current") if isinstance(d.get("current"), dict) else {}
         version, revision, release = cur.get("version"), cur.get("revision"), cur.get("release")
         failed = d.get("failed")
+        failed = sorted({n for n in (_int(x) for x in failed) if n is not None}) if isinstance(failed, list) else []
+        floor = d.get("floor", 0)
         previous = d.get("previous")
         staged = d.get("pending_boot")
         return {
@@ -366,7 +376,8 @@ class UpdateClient:
             "stepped_back": _int(d.get("stepped_back")),
             "staged": _int(staged.get("serial")) if isinstance(staged, dict) else None,
             "cancels_staged": type(d.get("floor")) is int and d["floor"] >= 0,  # a proxy, not a handshake: an updater that keeps a floor reads `cancel-staged` (docs/ota-update.md, Client)
-            "failed": sorted({n for n in (_int(x) for x in failed) if n is not None}) if isinstance(failed, list) else [],
+            "failed": failed,
+            "floor": max(floor, max(failed, default=0)) if type(floor) is int and floor >= 0 else None,
         }
 
     def read_status(self) -> dict | None:
@@ -543,22 +554,22 @@ class UpdateClient:
             return False, "You have the latest update."
         if serial < st["serial"]:
             return False, f"The source offers update {serial}, older than the installed update {st['serial']}."
+        if st["floor"] is None:
+            return False, "OPOS cannot read which update is installed, so it will not download one."
+        if serial <= st["floor"]:
+            return False, f"Update {serial} is not above {st['floor']}, the highest update that failed on this phone, so OPOS will not fetch it."
         return True, f"Version {version} (update {serial}) is available."
-
-    def _remember(self, res: dict) -> None:
-        with self._lock:
-            self._check = res
 
     def _check_locked(self, cfg: Config) -> tuple[dict, Index]:
         stamp = time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(self._clock()))
         try:
             idx = self._fetch_index(cfg)
         except UpdateError as e:
-            self._remember({"time": stamp, "ok": False, "newer": None, "serial": None, "version": None, "size": None, "message": e.message})
+            self._transition("remember", check={"time": stamp, "ok": False, "newer": None, "serial": None, "version": None, "size": None, "message": e.message})
             raise
         newer, why = self._verdict(idx.serial, idx.version)
         res = {"time": stamp, "ok": True, "newer": newer, "serial": idx.serial, "version": idx.version, "size": idx.size, "message": why}
-        self._remember(res)
+        self._transition("remember", check=res)
         return res, idx
 
     def _need(self) -> Config:
@@ -569,18 +580,14 @@ class UpdateClient:
             raise UpdateError("not_configured", NOT_CONFIGURED, 409)
         return cfg
 
-    def _take(self) -> None:
-        if not self._busy.acquire(blocking=False):
-            raise UpdateError("busy", "An update check or download is already running.", 409)
-
     def check(self) -> dict:
         """Fetch latest.json and compare serials. Returns the check result."""
         cfg = self._need()
-        self._take()
+        self._transition("begin")
         try:
             return self._check_locked(cfg)[0]
         finally:
-            self._busy.release()
+            self._transition("end-check")
 
     # ---- download ----
 
@@ -588,9 +595,52 @@ class UpdateClient:
     def _idle_job() -> dict:
         return {"kind": None, "phase": "idle", "bytes": 0, "total": None, "serial": None, "message": ""}
 
-    def _set_job(self, **kw) -> None:
+    def _job_state(self) -> JobState:
+        """Derive the state under _lock; the public job retains the last download while checking."""
+        phase = JobState(self._job["phase"])
+        return JobState.CHECKING if self._busy.locked() and phase != JobState.DOWNLOADING else phase
+
+    def _transition(self, event: str, **kw) -> None:
+        """Only writer of the job, check, worker and busy ownership. Root observations are independent."""
         with self._lock:
-            self._job.update(kw)
+            if event == "init":
+                self._job = self._idle_job()
+                self._check = None
+                self._thread = None
+                return
+            state = self._job_state()
+            if event == "begin":
+                if not self._busy.acquire(blocking=False):
+                    raise UpdateError("busy", "An update check or download is already running.", 409)
+            elif event == "remember":
+                assert state == JobState.CHECKING
+                self._check = kw["check"]
+            elif event == "end-check":
+                assert state == JobState.CHECKING
+                self._busy.release()
+            elif event == "download":
+                assert state == JobState.CHECKING
+                idx = kw["idx"]
+                self._job.update(kind="download", phase=JobState.DOWNLOADING.value, bytes=0,
+                                 total=idx.size, serial=idx.serial, message="Downloading.")
+                try:
+                    self._thread = threading.Thread(target=self._download_thread, args=(kw["cfg"], idx),
+                                                    daemon=True, name="opos-update-download")
+                    self._thread.start()
+                except BaseException:
+                    self._job.update(phase=JobState.FAILED.value, message="The download failed.")
+                    self._thread = None  # wait() must never join a thread that did not start
+                    self._busy.release()
+                    raise
+            elif event == "progress":
+                self._job["bytes"] = kw["bytes"]
+            elif event == "finish":
+                assert state == JobState.DOWNLOADING
+                assert kw["state"] in (JobState.DELIVERED, JobState.FAILED)
+                self._job.update(phase=kw["state"].value, message=kw["message"])
+                self._busy.release()
+            else:
+                raise ValueError("unknown update job event")
 
     def job(self) -> dict:
         with self._lock:
@@ -599,7 +649,7 @@ class UpdateClient:
     def start_download(self) -> dict:
         """Refetch the index, and if it is newer start streaming its bundle into the inbox. Returns at once."""
         cfg = self._need()
-        self._take()
+        self._transition("begin")
         try:
             res, idx = self._check_locked(cfg)
             if not res["newer"]:
@@ -609,34 +659,32 @@ class UpdateClient:
                 raise UpdateError("pending", f"An update is already waiting to be applied ({waiting[0]}).", 409)
             if not os.path.isdir(self.paths.inbox):
                 raise UpdateError("inbox", "The update inbox is missing.", 503)
-            self._set_job(kind="download", phase="downloading", bytes=0, total=idx.size, serial=idx.serial, message="Downloading.")
-            t = threading.Thread(target=self._download_thread, args=(cfg, idx), daemon=True, name="opos-update-download")
-            self._thread = t
-            t.start()
         except BaseException:
-            self._busy.release()
+            self._transition("end-check")
             raise
+        self._transition("download", cfg=cfg, idx=idx)
         return self.job()
 
     def wait(self, timeout: float | None = None) -> bool:
         """Join the download thread (tests and shutdown). True when no download is running."""
-        t = self._thread
+        with self._lock:
+            t = self._thread
         if t is not None:
             t.join(timeout)
             return not t.is_alive()
         return True
 
     def _download_thread(self, cfg: Config, idx: Index) -> None:
+        state, message = JobState.FAILED, "The download failed."
         try:
             self.download(cfg, idx)
-            self._set_job(phase="done", message="Downloaded. The updater applies it next.")
+            state, message = JobState.DELIVERED, "Downloaded. The updater applies it next."
         except UpdateError as e:
-            self._set_job(phase="failed", message=e.message)
+            message = e.message
         except Exception:
             _log.warning("download failed", exc_info=True)
-            self._set_job(phase="failed", message="The download failed.")
         finally:
-            self._busy.release()
+            self._transition("finish", state=state, message=message)
 
     def download(self, cfg: Config, idx: Index) -> str:
         """Stream idx's bundle to inbox/<name>.partial, fsync, rename to .opos-update. Returns the final path.
@@ -677,7 +725,7 @@ class UpdateClient:
                         n += len(piece)
                         if len(head) < 512:
                             head += piece[:512 - len(head)]
-                        self._set_job(bytes=n)
+                        self._transition("progress", bytes=n)
                         if n - looked >= self.limits.space_step:
                             looked = n
                             f.flush()  # so that what the file system reports is what has been written
