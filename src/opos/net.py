@@ -5,9 +5,9 @@ Status reads NetworkManager (nmcli), ModemManager (mmcli), rfkill, BlueZ (blueto
 injectable runner with a timeout: a missing tool, a failure or a timeout reads as "unavailable", never as an
 exception. Wi-Fi control (scan, join, forget, disconnect, on/off) goes through NetworkManager as the unprivileged
 user the server runs as. `nmcli general permissions` is read first, and a refusal by polkit is reported in plain
-words instead of failing. A Wi-Fi password travels only on nmcli's standard input (`nmcli --ask`, documented to
-prompt for the missing password), never in an argument, so it is not in the process list. It is not kept, not
-logged and not put in any state; NetworkManager itself stores the profile. Nothing here is part of /api/state, so
+words instead of failing. A Wi-Fi password travels in a temporary mode 0600 file (or on terminal input when
+OPOS_NET_TTY=1), never in an argument. The temporary file is removed after the attempt. The password is not
+logged or put in OPOS state; NetworkManager itself stores the profile. Nothing here is part of /api/state, so
 no network name reaches the helper. Calls and texts are still simulated, and every status says so.
 
     python3 -m opos.net [status|scan|probe]     what OPOS sees (probe: the raw tool output, to refine the parsers)
@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from typing import NamedTuple
 
 from opos.hw.battery import read_radios
@@ -219,9 +220,21 @@ def check_ssid(ssid):
 def _secret_file(password):
     """A mode 0600 file nmcli can read as `passwd-file`. The caller deletes it."""
     fd, path = tempfile.mkstemp(prefix="opos-wifi-")
-    os.fchmod(fd, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write("802-11-wireless-security.psk:" + password + "\n")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = None  # the file object now owns the descriptor, including on write failure
+            handle.write("802-11-wireless-security.psk:" + password + "\n")
+    except BaseException:
+        try:
+            if fd is not None:
+                os.close(fd)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        raise
     return path
 
 
@@ -810,11 +823,13 @@ class Net:
             if self.env.get("OPOS_NET_TTY") == "1":
                 r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
             else:
+                # Profile names are not unique; activation must select the new profile, not an old same-name one.
+                new_uuid = str(uuid.uuid4())
                 secret = _secret_file(password)
                 try:
                     added = q.call(["nmcli", "connection", "add", "type", "wifi", "con-name", ssid, "ssid", ssid,
-                                    "wifi-sec.key-mgmt", "wpa-psk"] + ifn + (["wifi.hidden", "yes"] if hidden else []))
-                    r = added if not added.ok else q.call(["nmcli"] + wait + ["connection", "up", "id", ssid, "passwd-file", secret], JOIN_WAIT_S + JOIN_EXTRA_S)
+                                    "connection.uuid", new_uuid, "wifi-sec.key-mgmt", "wpa-psk"] + ifn + (["wifi.hidden", "yes"] if hidden else []))
+                    r = added if not added.ok else q.call(["nmcli"] + wait + ["connection", "up", "uuid", new_uuid, "passwd-file", secret], JOIN_WAIT_S + JOIN_EXTRA_S)
                 finally:
                     try:
                         os.remove(secret)

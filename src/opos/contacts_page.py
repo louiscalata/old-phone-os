@@ -75,7 +75,7 @@ function practiceUrl(which, number){return '/?practice='+which+'&n='+encodeURICo
 function paint(s){if(!s||s.error)return;people=s.people||[];G('practice').hidden=!s.practice;G('skipped').hidden=!s.skipped;G('skipped').textContent=s.skipped?('Skipped '+s.skipped+' fields.'):'';
 var q=(G('find').value||'').toLowerCase(), rows=G('rows'), letters=G('letters');rows.textContent='';letters.textContent='';
 var shown=people.filter(function(p){return !q||(p.name+' '+(p.numbers||[]).map(function(n){return n.number}).join(' ')).toLowerCase().indexOf(q)>=0});
-shown.sort(function(a,b){var x=(a.name||'').toLowerCase(),y=(b.name||'').toLowerCase();return x<y?-1:x>y?1:0});
+shown.sort(function(a,b){var x=letterOf(a.name),y=letterOf(b.name);if(x!==y)return x<y?-1:1;x=(a.name||'').toLowerCase();y=(b.name||'').toLowerCase();return x<y?-1:x>y?1:0});
 var prev='';
 shown.forEach(function(p){
 var letter=letterOf(p.name);

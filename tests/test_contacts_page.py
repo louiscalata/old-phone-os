@@ -2,6 +2,8 @@
 """Local contacts and vCard: add Ana, keep her, and do not put her name in the phone state."""
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,6 +29,68 @@ class VCardTests(unittest.TestCase):
         self.assertEqual(again[0]["numbers"][0]["number"], "+15550101")
         self.assertEqual(skipped2, 0)
         self.assertIn("Ana García", vcard.emit(people))
+
+
+class ContactsAlphabet(unittest.TestCase):
+    def test_mixed_names_have_one_letter_bucket_and_one_jump_target(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        harness = r"""
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const nodes = new Map();
+let focused = null, scrolled = null;
+class Element {
+  constructor(tag) { this.tagName = tag; this.children = []; this.value = ''; this.dataset = {}; }
+  set textContent(value) { this.text = value; this.children = []; }
+  get textContent() { return this.text || ''; }
+  appendChild(child) { child.parent = this; this.children.push(child); return child; }
+  setAttribute() {}
+  addEventListener() {}
+  get nextElementSibling() { return this.parent.children[this.parent.children.indexOf(this) + 1]; }
+  querySelector(tag) { return this.children.find(child => child.tagName === tag); }
+  focus() { focused = this.textContent; }
+  scrollIntoView() { scrolled = this.id; }
+}
+const context = {
+  document: {
+    getElementById(id) {
+      const row = nodes.get('rows');
+      const heading = row && row.children.find(child => child.id === id);
+      if (heading) return heading;
+      if (!nodes.has(id)) nodes.set(id, new Element('div'));
+      return nodes.get(id);
+    },
+    createElement: tag => new Element(tag),
+    querySelector: () => ({content: 'fixture-token'})
+  },
+  fetch: () => new Promise(() => {}), window: {}
+};
+vm.createContext(context);
+vm.runInContext(JSON.parse(require('node:fs').readFileSync(0, 'utf8')), context);
+const names = ['Zulu', 'Élodie', 'Ana', '7 Eleven', '李', 'Alex', 'Özlem'];
+context.paint({people: names.map((name, id) => ({id: String(id), name, numbers: []}))});
+const rows = nodes.get('rows').children;
+const headings = rows.filter(row => row.className === 'letter-head');
+assert.deepEqual(headings.map(row => row.id), ['letter-other', 'letter-A', 'letter-Z']);
+assert.deepEqual(nodes.get('letters').children.map(button => button.textContent), ['#', 'A', 'Z']);
+let bucket = '';
+const groups = {};
+for (const row of rows) {
+  if (row.className === 'letter-head') { bucket = row.textContent; groups[bucket] = []; }
+  else groups[bucket].push(row.children[0].textContent);
+}
+assert.deepEqual(groups['#'], ['7 Eleven', 'Élodie', 'Özlem', '李']);
+assert.deepEqual(groups.A, ['Alex', 'Ana']);
+assert.deepEqual(groups.Z, ['Zulu']);
+nodes.get('letters').children[0].onclick();
+assert.equal(focused, '7 Eleven');
+assert.equal(scrolled, 'letter-other');
+console.log('mixed-name groups and jump target passed');
+"""
+        result = subprocess.run([node, "-e", harness], input=json.dumps(contacts_page._SCRIPT), text=True, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("mixed-name groups and jump target passed", result.stdout)
 
 
 class ContactsApi(unittest.TestCase):

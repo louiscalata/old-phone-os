@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from pathlib import Path
 from unittest import mock
 
@@ -118,7 +119,7 @@ case "$1 $2" in
       cat "$D/connections"
     fi;;
   "connection delete") echo "$4" >> "$D/deleted"; grep -v ":$4:" "$D/connections" > "$D/c.new"; mv "$D/c.new" "$D/connections"; echo "Connection successfully deleted.";;
-  "connection add") printf '%s\n' "$*" > "$D/cmdline.log"; echo "Connection '$6' (@UNEW@) successfully added.";;
+  "connection add") printf '%s\n' "$*" > "$D/cmdline.log"; echo "$6" > "$D/created_ssid"; echo "Connection '$6' (@UNEW@) successfully added.";;
   "connection up")
     if [ -n "$PWFILE" ]; then
       tr '\0' ' ' < /proc/$$/cmdline >> "$D/cmdline.log"
@@ -129,11 +130,11 @@ case "$1 $2" in
       [ -f "$D/join_hang" ] && exec sleep 30
       pw=$(sed -n 's/.*psk://p' "$PWFILE" | head -n 1)
       if [ -f "$D/psk" ] && [ "$pw" != "$(cat "$D/psk")" ]; then
-        if [ -f "$D/leave_profile" ]; then echo "$4:@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$4" > "$D/ssid_@UNEW@"; fi
+        if [ -f "$D/leave_profile" ]; then echo "$(cat "$D/created_ssid"):@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$(cat "$D/created_ssid")" > "$D/ssid_@UNEW@"; fi
         echo "Error: Connection activation failed: (7) Secrets were required, but not provided. [$pw]" >&2; exit 4
       fi
       if [ -f "$D/activation_fails" ]; then
-        if [ -f "$D/leave_profile" ]; then echo "$4:@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$4" > "$D/ssid_@UNEW@"; fi
+        if [ -f "$D/leave_profile" ]; then echo "$(cat "$D/created_ssid"):@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$(cat "$D/created_ssid")" > "$D/ssid_@UNEW@"; fi
         cat "$D/activation_fails" >&2; exit 4
       fi
       if [ -f "$D/quiet_ok" ]; then echo "Connection activated"; exit 0; fi
@@ -224,6 +225,10 @@ class Fake:
     """A private directory of fake tools and canned outputs, plus a sysfs root for read_radios."""
 
     def __init__(self, test):
+        # Keep the created profile UUID consistent with this fake NetworkManager's receipts.
+        generated_uuid = mock.patch("uuid.uuid4", return_value=uuid.UUID(UUID_NEW))
+        generated_uuid.start()
+        test.addCleanup(generated_uuid.stop)
         self.dir = Path(tempfile.mkdtemp(prefix="opos-net-"))
         test.addCleanup(shutil.rmtree, self.dir, True)
         self.bin = self.dir / "bin"
@@ -271,6 +276,58 @@ class Fake:
         env = {"OPOS_NETWORK": "1"} if env is None else env if env is os.environ else {"OPOS_NETWORK": "1", **env}
         runner = net.make_runner(path or f"{self.bin}:{self.tools}")
         return net.Net(runner=runner, root=self.root, env=env, sleep=lambda s: None, wall=lambda: 1.8e9, **kw)
+
+
+class SecretFile(unittest.TestCase):
+    def test_success_is_private_and_contains_only_the_expected_key(self):
+        path = net._secret_file(PW)
+        self.addCleanup(lambda: Path(path).unlink(missing_ok=True))
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), "802-11-wireless-security.psk:" + PW + "\n")
+
+    def test_creation_failures_close_the_descriptor_and_remove_the_file(self):
+        real_mkstemp, real_fdopen = tempfile.mkstemp, os.fdopen
+        for stage in ("permissions", "open", "write"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as folder:
+                made = []
+
+                def create(**kw):
+                    fd, path = real_mkstemp(dir=folder, **kw)
+                    made.append((fd, path))
+                    return fd, path
+
+                class BrokenWriter:
+                    def __init__(self, fd, *args, **kw):
+                        self.handle = real_fdopen(fd, *args, **kw)
+
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *exc):
+                        self.handle.close()
+
+                    def write(self, value):
+                        self.handle.write(value)
+                        self.handle.flush()
+                        raise OSError("injected write failure")
+
+                target = "fchmod" if stage == "permissions" else "fdopen"
+                failure = BrokenWriter if stage == "write" else OSError("injected creation failure")
+                with mock.patch.object(net.tempfile, "mkstemp", side_effect=create), mock.patch.object(net.os, target, side_effect=failure):
+                    with self.assertRaises(OSError):
+                        net._secret_file(PW)
+                fd, path = made[0]
+                # Clean up even on the old implementation, so this regression itself leaks nothing.
+                try:
+                    with self.assertRaises(OSError):
+                        os.fstat(fd)
+                    self.assertFalse(os.path.exists(path))
+                    self.assertEqual(os.listdir(folder), [])
+                finally:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
 
 
 class Terse(unittest.TestCase):
@@ -868,6 +925,41 @@ class Join(unittest.TestCase):
         r = self.f.net().join("Cafe: Free WiFi", "")  # an empty password means none
         self.assertTrue(r["ok"], r)
         self.assertIn(UUID_CAFE, self.f.read("up"))
+
+    def test_same_name_profiles_activate_only_the_new_uuid(self):
+        second = "77777777-7777-4777-8777-777777777777"
+        self.f.put("connections", self.f.read("connections") + f"HomeNet:{second}:wifi:\n")
+        self.f.put(f"ssid_{second}", "802-11-wireless.ssid:HomeNet\n")
+        n = self.f.net()
+        original = n.runner
+        added, activated, deleted = [], [], []
+
+        def only_exact_uuid(argv, timeout, stdin):
+            if argv[1:3] == ["connection", "add"]:
+                added.append(argv)
+            if "up" in argv and "connection" in argv:
+                i = argv.index("up")
+                activated.append(argv[i + 1:i + 3])
+                # Two profiles already have this name. A name-based activation is ambiguous.
+                if argv[i + 1:i + 3] != ["uuid", UUID_NEW]:
+                    return net.Run(10, err="ambiguous profile name")
+                if any(uid not in self.f.read("connections") for uid in (UUID_HOME, second)):
+                    return net.Run(10, err="old profile removed before activation")
+            if argv[1:3] == ["connection", "delete"]:
+                deleted.append(argv[-1])
+            return original(argv, timeout, stdin)
+
+        n.runner = only_exact_uuid
+        with mock.patch("uuid.uuid4", return_value=uuid.UUID(UUID_NEW)):
+            result = n.join("HomeNet", PW)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(len(added), 1)
+        self.assertIn("connection.uuid", added[0])
+        self.assertEqual(added[0][added[0].index("connection.uuid") + 1], UUID_NEW)
+        self.assertEqual(activated, [["uuid", UUID_NEW]])
+        self.assertEqual(set(deleted), {UUID_HOME, second})
+        self.assertNotIn(UUID_NEW, deleted)
+        self.assertNotIn(PW, self.f.calls())
 
     def test_a_new_password_replaces_the_saved_entry(self):
         self.f.put("psk", "brand new pass")
