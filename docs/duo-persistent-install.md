@@ -1,22 +1,25 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Persistent kernel on the Duo: the gated first device session
 
-Status, November 7, 2026: **a plan; none of it has been run on a phone.** The probe script (`deploy/duo-persist-probe.ps1`)
-and this text were tested against fake tools and file checks only. Nothing here authorizes a write to the phone: gates
-G3, G4, G5 and G6 each need the owner's explicit word in chat, after the read-only gates have been shown to him. G3, G4
-and G6 write; G5 is the first plain power-on, which can start Android's wipe path, so it needs the word too.
+Status, November 11, 2026: **a plan; none of it has been run on a phone.** The probe script (`deploy/duo-persist-probe.ps1`)
+and this text were tested against fake tools and file checks only. Nothing here authorizes a write to the phone. After
+the read-only gates, G2b requires the owner's explicit acceptance of the last-resort risk before any write. G3, G3b,
+G4, G5, G5b and G6 each require the owner's separate word; G3, G3b and G4 write, and G5 is the first menu-start check,
+which can start Android and destroy the OPOS install. A powered-off start remains **NOT_RUN**. All device checks in this plan remain **NOT_RUN**.
 
 ## The goal and what changes for the owner
 
 Today the OPOS OS on the Surface Duo 1 keeps its root filesystem in the phone's storage (`/data/rootfs.img` inside the
 ext4 userdata) but its **kernel is pushed from a Windows PC at every start** (`fastboot boot boot.img`, a RAM-boot).
-A plain power cycle starts stock Android, which is expected not to accept the foreign userdata and to wipe it (that
-sequence was not re-measured); the misc brake exists to stop that. The owner wants OPOS "installed like a regular Android OS": the kernel image in the phone's own
+A power cycle can start stock Android. Read-only observations from the PC session on November 11, 2026 record that any
+stock Android boot on OPOS userdata applies metadata encryption in place, making the OPOS rootfs unreadable to Linux.
+Returning to Android this way destroys the OPOS install; it is not a harmless exit. The misc brake was intended to stop
+that, but its protection is unproven. The owner wants OPOS "installed like a regular Android OS": the kernel image in the phone's own
 storage, so the power button starts OPOS with no PC, and, later, kernel updates over the air.
 
-The project believes the bootloader refuses to let us write the boot partition. That belief rests on one log line
-(see "What is known"). This runbook is a small experiment that finds out, safely, in this order: read, back up,
-look at what the phone reports, and only then, one gate at a time and each on the owner's word, write.
+Fastboot flash or erase of `boot`, `vbmeta` and `dtbo` is expected to fail on this phone and is never used here.
+The proposed route is hash-guarded `dd` from RAM-booted TWRP. It remains an experiment, not a proven rescue: read,
+back up, review the risks and then proceed one gate at a time only on the owner's word.
 
 If everything passes, the owner would see:
 
@@ -24,25 +27,23 @@ If everything passes, the owner would see:
 - **Stock Android's kernel (and the recovery inside it) gone from the slot that was written.** It is backed up in G1 and
   can be put back from TWRP. Boot Select's "Recovery mode" would then start OPOS's kernel, and Microsoft's sideload restore
   would need the stock image put back first (see "Risks").
-- **The misc brake becomes optional**, but only after G6.
+- **No misc writes** are part of these gates; the brake is not a measured protection for this plan.
 
 What does not change: the bootloader stays unlocked; no step writes the bootloader chain; vbmeta and dtbo are not
 written; the install chain (`deploy/duo-opos-boot.ps1`) is untouched and keeps working as the fallback way to start OPOS.
 
 **Prerequisites that this runbook does not solve.**
 
-1. USB data must work: every command below needs fastboot and adb over USB. It worked on November 7 (the install chain
-   pushed a 5.7 GB image over it); it was broken before that, so check it in G0 (the
-   [packaging/duo-os/README.md](../packaging/duo-os/README.md) line that says otherwise is out of date).
+1. USB data must work: every command below needs fastboot and adb over USB. The owner confirmed USB data works on November 11, 2026; check it in G0.
 2. G4 and later need the OPOS rootfs on userdata. That is the install chain's job, it erases Android's data, and it is
-   a separate decision of the owner. G0 to G3 do not touch userdata and do not need the rootfs.
+   a separate decision of the owner. G0 through G3b do not touch userdata and do not need the rootfs.
 3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`, `misc-brake.img`), battery 20 percent or more,
    the phone on a good cable.
 
 ## What is known, and what the experiment settles
 
 Grades: **MEASURED** (a command output or a hash, with where it is), **REPORTED** (a document or a person, dated where the
-source has a date), **INFERRED** (follows from measured or reported facts by reasoning; nobody has tried it), **UNKNOWN**.
+source has a date), **INFERRED** (follows from measured or reported facts by reasoning; nobody has tried it), **UNKNOWN**. PC research labels **VERIFIED**, **REPORTED** and **NOT_RUN** retain their original meanings below.
 A **HYPOTHESIS** is an UNKNOWN that is a candidate explanation, not a finding. "Re-checked" means compared against the
 files while this runbook was written.
 
@@ -52,13 +53,13 @@ files while this runbook was written.
 | 2 | Nothing else about that attempt was kept: not the exact output, not the image, not raw or sparse, not which fastboot mode, not what `misc` held. | UNKNOWN | No raw tool output was found in the agent transcripts that were searched. |
 | 3 | `vbmeta` is refused the same way. | UNKNOWN | [packaging/duo-os/README.md](../packaging/duo-os/README.md) says "reported"; no first-hand record exists. |
 | 4 | The same bootloader's fastboot does write other partitions: on November 7 `erase misc`, `flash misc`, `format:ext4 userdata` and the boot of two images all answered OKAY. That is all this row says. | MEASURED, re-checked | The boot-chain log of the November 7 run (`boot-chain.log` beside the images). |
-| 4b | HYPOTHESIS: the October 31 refusal is specific to the boot slots, not a general write block. Nothing measures it: row 1 is one reported line and row 2 lists what is missing. Other explanations fit the same facts: (a) a poisoned `misc` (the port's README says it makes the bootloader reject operations per slot, and describes a per-slot RAM-boot wedge that also prints `Device Error` while the getvars look normal); (b) the mode, a write that only fastbootd accepts (row 10); (c) an `EFI_DEVICE_ERROR` from the bootloader's storage layer for the boot LUN, which is what `Device Error` is in the firmware's own terms (INFERRED from the strings of the phone's bootloader image, where policy refusals have their own texts such as "Flashing is not allowed"). The port's cure order, if a slot rejects operations: hold Volume-down plus Power to reach the bootloader menu, RAM-boot TWRP once, zero the first 2048 bytes of `misc` from TWRP, switch slot, and never retry a crashed kernel from the last good slot (the last two steps are writes, so each needs the owner's word). | UNKNOWN (HYPOTHESIS) | The port's README ("Known kernel traps"), the port's trap table, the planning research. G1's reading of `misc` excludes (a) when it is all zero or the brake. |
+| 4b | HYPOTHESIS: the refusal concerns the boot LUN; a poisoned `misc` or mode might also matter. Do not try a cure that writes `misc` or changes slots in these gates. | UNKNOWN (HYPOTHESIS) | The port's trap notes and planning research; G1 reads `misc` but does not establish a cure. |
 | 5 | On October 31 `boot_a` held a Magisk-patched image (the hash equals the patched file prepared that day); the October 9 content was reported to be stock. So something wrote it. The reported route is Magisk "Direct Install" from a RAM-booted rooted session, a write made on the phone by root, not by fastboot. This is the strongest evidence we have that a root-side block write to the boot LUN (`sde`) works while `fastboot flash boot_a` was refused the same day. It says nothing yet about a write from TWRP. | October 31 hash MEASURED, re-checked; stock on October 9 and the route REPORTED; the conclusion about a root-side write INFERRED | `SHA256SUMS` of the 2026-10-31 backup; friction log item 34; the planning research. |
 | 6 | `boot_b` is a complete stock image of an older build than slot a; slot b has never been started by this project. | hash match REPORTED by the planning research (not re-checked), starting it UNKNOWN | Backup hashes; AVB parse of `vbmeta_b`. |
 | 7 | Do not copy a past bootloader snapshot into this runbook. G0 reads the current slot, lock state and battery on the day of the install. | UNKNOWN | G0 reads the current values. |
 | 8 | This bootloader has no `flashing unlock_critical`; changing the lock state makes it wipe data. Never run `flashing lock` or `flashing unlock`. | REPORTED (strings of the phone's own bootloader image), not re-checked | Planning research; the image is in the October 31 backup, so anyone can re-check. |
 | 9 | The text `Device Error` also appears for unrelated causes (a slot that rejects RAM-boots after a crashed kernel, a poisoned `misc`). | REPORTED | The port's own README (undated). |
-| 10 | The community (WOA-Project) dual-boot page for the Duo 1 reaches **fastbootd** (userspace fastboot) through stock recovery > "Enter fastboot" and runs `fastboot flash boot <image>` there, with the plain partition name. Its test steps use `adb reboot bootloader` and then `fastboot boot <image>`. It names no firmware version and no carrier. Never tried here. That the bootloader's own fastboot is used there only for `fastboot boot` is this runbook's reading of the page's steps, not a statement on the page. | REPORTED | https://github.com/WOA-Project/SurfaceDuo-Guides/blob/main/Install/DualBoot.md (undated page, read November 7 and November 8, 2026). Its Troubleshooting advice is a G5 row; it also says a bootloader cannot be relocked while the boot image modified by the guide is installed. |
+| 10 | The community (WOA-Project) dual-boot page for the Duo 1 reaches **fastbootd** (userspace fastboot) through stock recovery > "Enter fastboot" and runs `fastboot flash boot <image>` there, with the plain partition name. Its test steps use `adb reboot bootloader` and then `fastboot boot <image>`. It names no firmware version and no carrier. Never tried here. That the bootloader's own fastboot is used there only for `fastboot boot` is this runbook's reading of the page's steps, not a statement on the page. | REPORTED | https://github.com/WOA-Project/SurfaceDuo-Guides/blob/main/Install/DualBoot.md (undated page, read November 7 and November 8, 2026). Its Troubleshooting advice is outside these gates; it also says a bootloader cannot be relocked while the boot image modified by the guide is installed. |
 | 11 | The port's own rule is to write the kernel to the slots only after it has started Linux on that phone, which the November 7 RAM-boot did. So the port does not forbid slot writes in general. The standing rule "never flash boot, vbmeta, dtbo or recovery" is the owner's, and G3 asks to relax it for one partition. | REPORTED, re-checked | The header of the port's `release-add-boot.sh`. |
 | 12 | The OPOS kernel image fits: 33,972,224 bytes in a 100,663,296-byte partition, header version 2 like the stock images, no AVB footer, unsigned. | MEASURED | SHA-256 `abec1fe9ce4cbb7a9296c3abd4fd7b4acc1283842e86f2bfe0879a7e84fae552`, re-checked on this PC. |
 | 13 | The bootloader continued to start a Magisk-patched `boot_a` whose AVB hash does not match its `vbmeta`, in the unlocked ("orange") state. So no vbmeta change is needed while the phone stays unlocked; **never relock**. | REPORTED (parse of the backup), not re-checked | Planning research. |
@@ -67,14 +68,39 @@ files while this runbook was written.
 | 16 | Current content of `boot_a`, `boot_b` and `misc`, the read-only flags of the boot LUN, and whether a write from TWRP is accepted. | UNKNOWN | G1 to G3 find out. |
 | 17 | What the bootloader does with the misc brake on a plain power-on. It has no literal `bootonce-bootloader` string; on October 31 a reboot with the brake armed reached stock recovery, not fastboot. | UNKNOWN (the November 7 chain worked with the brake armed, but only for RAM-boots) | Friction log item 33; planning research. |
 | 18 | TWRP's `dd` wrote `misc` on October 9: the first 2048 bytes (`bs=2048 count=1`) of `sda5`, the brake of the install chain, and it was accepted. The attempt that used a `conv=` option was refused by TWRP's `dd` (attempt 3 failed, attempt 4 worked). `misc` is on the LUN `sda`; the boot slots are on `sde`, so this does not show that a write to `sde` works from TWRP. | MEASURED (not re-checked against the raw log) | Install procedure of October 9, step 5; the Codex session's attempts 3 and 4. |
-| 19 | `fastboot boot` of TWRP works whatever the boot slots hold, so every rollback below can start. | INFERRED, not measured | `fastboot boot` takes the image from the PC and the bootloader menu does not read the boot slots. Against it: the port's README reports a slot that rejects RAM-boots with `Device Error` after a crashed kernel or a poisoned `misc` (row 4b). |
-| 20 | The tools in the pinned TWRP (3.5.2_9, a Mi 9 build): toybox 0.7.6 with `blockdev`, `readlink`, `sha256sum`, `sync`, `df`, `head`, `dmesg`, `getenforce`, `ls`, `cat`; a separate BSD-style `dd` with `conv` disabled and no `status=`; `sgdisk`; a `/tmp`. **`bootctl` and the boot-control HAL are absent.** | REPORTED (an unpack of the pinned image, read-only; nothing was run on a phone). Measured on this TWRP by earlier sessions: the by-name path, `readlink -f`, `blockdev --getsize64`, `sha256sum` of a block device and `adb exec-out`. | The independent check of this runbook; the October 9 backup tool and the November 7 boot-chain log. The pull as `exec-out dd ... 2>/dev/null` itself was never run: the October 9 tool read with `exec-out head -c <size> <block>`. |
+| 19 | `fastboot boot` of TWRP after a damaged boot or failed OPOS start may be refused. The exit must not be assumed to work. | REPORTED; NOT_RUN on this phone | PC research, November 8, 2026: two reports; G5b checks the exit only after a successful plain start. |
+| 20 | The pinned TWRP contains toybox tools, BSD-style `dd` without `conv=` or `status=`, and `sgdisk`; `bootctl` and its HAL are absent. The boot-node `dd` reads and TWRP `blockdev` probes have not been run on this phone. | REPORTED for unpack; NOT_RUN for those phone commands | PC research, November 8, 2026; the pinned-image unpack. |
 
-**What the experiment settles.** G1 to G2: whether the block devices are writable on the kernel side and what the phone
-holds now. G3: whether a write from TWRP is accepted and reads back exact. G4 to G5: whether the OPOS kernel starts
-from a slot and how the slot counters behave. G6: whether the power button alone suffices.
-**What it does not settle:** *why* fastboot refused on October 31. G3 uses TWRP, not fastboot. Whether fastbootd would
-accept the write (row 10) is a separate, later experiment, listed under "What if the probes say no".
+**PC research, November 8, 2026.** The following labels are the PC research's own; this session did not independently
+verify them. **VERIFIED** there: the ABL strings identify the reported flashing error as `EFI_DEVICE_ERROR` below the
+policy layer; boot, vbmeta and dtbo are not in the critical table. On October 31 only `boot_a` changed in the compared
+backup hashes after a Linux-side Magisk write. Of 20 A/B firmware pairs only abl and sftpfw matched; slot b has older
+firmware. ABL strings say `set_successful` is refused in customer mode. **REPORTED**: other Duo owners saw the same
+fastboot error on the boot LUN and used TWRP `dd`; two reports describe a damaged slot rejecting TWRP RAM-boots.
+**NOT_RUN**: TWRP `dd` to or from either boot slot, TWRP `blockdev --getro` and `--getsize64` on those nodes, and
+the boot-slot `dd` hash read on this phone. The mechanism behind the fastboot failure remains unknown.
+
+**Read-only observations from the PC session, November 11, 2026.** In the RAM-booted Halium initramfs,
+`/dev/disk/by-partlabel` mapped `boot_a` to `sde9` and `boot_b` to `sde26`, each 100,663,296 bytes; there was no
+`/dev/block/by-name` there. BusyBox 1.22.1 supplied `blockdev`, `dd`, `sha256sum` and `readlink`. This is a second
+Linux-side environment besides TWRP, an untested alternative only: every `dd` or hash of an `sde` node in either
+environment is **NOT_RUN**. Tool presence and the mapping do not establish that a boot-slot write works.
+
+The RAM-boot command line's boot-image part was recorded as:
+
+`rcupdate.rcu_expedited=1 rcu_nocbs=0-7 cgroup.memory=nokmem,nosocket androidboot.hardware=surfaceduo androidboot.hardware.platform=qcom androidboot.console=ttyMSM0 androidboot.memcg=1 lpm_levels.sleep_disabled=1 video=vfb:640x400,bpp=32,memsize=3072000 msm_rtb.filter=0x237 service_locator.enable=1 swiotlb=2048 loop.max_part=7 androidboot.usbcontroller=a600000.dwc3 kpti=off buildvariant=user console=tty0 datapart=/dev/sda6 droidian.lvm.disable page_poison=off debug_pagealloc=off`.
+
+On `fastboot boot` the bootloader appended further arguments; the PC record gives `androidboot.bootloader=2022.815.527`,
+`verifiedbootstate=orange`, `slot_suffix=_a`, `dtbo_idx=4`, `dtb_idx=0`, `force_normal_boot=1` and
+`product.hardware.sku=att`, followed by an ellipsis. These reproduce the record's abbreviated names, not a complete
+transcription of the appended part. What it appends on a plain start from the slot
+remains unknown. The same session observed Android's in-place metadata encryption of OPOS userdata, leaving the rootfs
+unreadable to Linux.
+
+**What the experiment settles.** G1 and G2 inventory and probe; G3 tests an identity write to `boot_b`; G3b rehearses
+the `boot_a` backup restore; G4 writes OPOS to `boot_a`; G5 tests a menu start; G5b tests one TWRP RAM-boot exit after
+that start. G6 is a further menu-start observation, not a powered-off start. None of these settles *why* fastboot refused or proves recovery after a failed
+start. Every future phone result is **NOT_RUN** until recorded.
 
 ## Ground rules
 
@@ -82,6 +108,7 @@ accept the write (row 10) is a separate, later experiment, listed under "What if
   devinfo, apdp, uefivarstore, ddr, modem, dsp, and the calibration and identity partitions persist, modemst1, modemst2, fsg,
   fsc. There is no rescue.
 - Never run `flashing lock`, `flashing unlock` or any `oem` command. Never write `vbmeta`, `dtbo` or `super`.
+- Never fastboot flash or erase boot, vbmeta or dtbo. Never write `misc` in these gates; never routinely set active slot b.
 - Never run `reboot` or `systemctl reboot` on a RAM-booted OPOS; use `reboot bootloader`
   ([docs/duo-usb-install.md](duo-usb-install.md)).
 - One RAM-boot of the OPOS kernel per attempt, never retried; a crashed kernel can leave a slot rejecting more
@@ -150,12 +177,9 @@ stderr that the script reads.
 
 **Precondition.** G0 passed. The probe folder is on a disk with room for about 300 MiB.
 
-State first what is unknown: `misc` may or may not hold the brake (the last measured arming was before the November 7
-kernel RAM-boot). The next command RAM-boots TWRP exactly as every earlier session did. If TWRP crashed and the phone
-started stock Android on a userdata it does not recognize, the OS image on it could be wiped. The project's guard against
-that is the brake, which is a write to `misc`; this runbook does not make that write before the owner has seen the
-probes. If the owner wants it first, he says "arm the brake" and the operator runs the two commands of the install chain
-(`fastboot erase misc`, then `fastboot flash misc "$images\misc-brake.img"`), nothing else.
+State first what is unknown: `misc` may or may not hold the brake. A TWRP crash could lead to stock Android starting
+on foreign userdata and a wipe. The brake is not a measured protection; PC research dated November 8, 2026 reports
+that the same bytes were present before any project write. No `misc` write is part of these gates.
 
 **Commands (PC, PowerShell, phone in the bootloader menu).**
 
@@ -182,11 +206,10 @@ to stdout. The full list is the allow-list at the top of the script. The script 
 BSD-style binary: it takes `if=`, `of=`, `bs=`, `count=` and `skip=` as plain decimal numbers, has `conv` disabled
 (measured on October 9) and no `status=`, so this runbook uses only `if=`, `of=`, `bs=` and `count=`. `sgdisk` is
 present. **`bootctl` and the boot-control HAL are absent**, so the probe does not call `bootctl`, and nothing in this
-runbook relies on it. What earlier sessions measured on this TWRP: the by-name path, `readlink -f`,
-`blockdev --getsize64`, `sha256sum` of a block device and `adb exec-out`. The one step nobody has run is the pull as
-`exec-out dd if=<block> bs=4096 count=<n> 2>/dev/null`; the October 9 backup tool read partitions with
-`exec-out head -c <size> <block>`. If the `dd` pull returns the wrong size, the probe stops at the size check
-("short or long read"); run it again into a new folder with `-PullWith head`, which uses the form proven on October 9.
+runbook relies on it. PC research dated November 8, 2026 labels TWRP `dd` to or from the boot slots and TWRP
+`blockdev --getro` and `--getsize64` on them **NOT_RUN** on this phone. The `exec-out dd` pull is also **NOT_RUN**;
+the October 9 backup tool used `exec-out head -c <size> <block>`. If the pull has the wrong size, stop and investigate;
+only after the cause is understood, a new folder and `-PullWith head` select that earlier form.
 
 **Expected.** One `ok` line per step, `Done. Nothing was written to the phone.`, and in the folder: `boot_a.img`,
 `boot_b.img`, `vbmeta_a.img`, `vbmeta_b.img`, `dtbo_a.img`, `dtbo_b.img`, `misc.img`, `sde-table-head.bin`, `SHA256SUMS`,
@@ -196,11 +219,8 @@ Each partition was hashed on the phone, copied, hashed on the PC and read a seco
 
 **What it proves.** The by-name links resolve to the nodes in the October 31 partition table (`boot_a` is `sde9`, `boot_b`
 `sde26`, `vbmeta_a` `sde14`, `vbmeta_b` `sde31`, `dtbo_a` `sde15`, `dtbo_b` `sde32`, `misc` `sda5`), none of them is mounted,
-and we hold verified copies of everything G3 or G4 variant B could change, plus the partition table head that carries the
-slot attributes. It does NOT cover G4 variant A: `set_active` may also change the UFS boot-LUN selector (REPORTED from the
-bootloader strings) and G1 saves only the first 1 MiB of `sde`, with no read of the other LUNs' slot bits, so variant A has
-no complete backup (the planner recommends variant B for that reason). It proves nothing about whether a write would be
-accepted.
+and the backups match the phone reads and PC hashes. It proves nothing about whether a write would be accepted;
+the saved partition table head is not a complete backup of all slot-selection state.
 
 **Decision table.**
 
@@ -213,7 +233,7 @@ accepted.
 | `boot_b` hashes to `cf6baf1d7940f2bf3d982e2645e251c0d7edcf89de4e0a6a7ff8ea620cdf8094` | As on October 31. Expected. |
 | `boot_b` hashes to anything else | Stop and ask the owner: something wrote the inactive slot. |
 | `boot_a` hashes to `bdd438e8fb798344f465deb275e821a9ae8399bd421c90dce7ec7042c02c873f` (patched) or `11a3e3979b92664d1900ef88dffe265fa94ebff865002225e6f33d9cb7867c39` (stock) | Known. Record which. |
-| `boot_a` hashes to anything else | Record it; ask the owner before G4 variant B. |
+| `boot_a` hashes to anything else | Record it; ask the owner before G3b or G4. |
 | `misc` first 2048 bytes: equal to the brake, all zero, other | Record it for G5. "Other" means a request is pending: ask the owner. |
 | `dtbo_a` or `dtbo_b` not present | The script skips them and says so. Not a failure. |
 
@@ -247,12 +267,12 @@ here). The probes are where a "no" can show up before any write is tried.
 
 | Reading | Meaning | Action |
 |---|---|---|
-| `ro` is 1 for `boot_b` or for the `sde` LUN, in either source | Write-protected on the kernel side | Stop. Go to "What if the probes say no". |
-| `ro` is 0 everywhere | Open on the kernel side; not proof | May go to the owner for G3. |
+| `ro` is 1 for `boot_a`, `boot_b` or the `sde` LUN, in either source | Write-protected on the kernel side | Stop. Go to "What if the probes say no". |
+| `ro` is 0 everywhere | Open on the kernel side; not proof | May present the risks to the owner at G2b. |
 | `is-userspace: no` | The bootloader's fastboot, as expected | Note it. (fastbootd would say yes; it was not tried.) |
-| `partition-size:boot_a` is `0x6000000` and the plain `boot` is an error | The bootloader maps the slot names, not the plain name | Note it for the fastbootd experiment. |
-| `slot-unbootable:b` is yes, or `slot-retry-count:b` is 0 | Slot b is not usable as a boot target | G4 variant A is out; variant B or stop. |
-| `slot-successful:a` is yes | Slot a is marked good; a write to it in place needs no `set_active` | Note it for G4. |
+| `partition-size:boot_a` is `0x6000000` and the plain `boot` is an error | The bootloader maps the slot names, not the plain name | Record it; no fastbootd experiment is part of these gates. |
+| `slot-unbootable:b` is yes, or `slot-retry-count:b` is 0 | Slot b is not usable as a boot target | Stop: the proposed emergency exit is not established. |
+| `slot-successful:a` is yes, `slot-unbootable:a` is no, retry count is present and nonzero, and current slot is a | Baseline for the in-place write and later comparison | Record these and both slots' successful, unbootable and retry-count values from G0. Stop on missing or unexpected values; do not use `set_active` to repair them. |
 | `sgdisk -i 9` and `-i 26` printed attribute flags | Baseline for the slot bits before and after | Keep with the backups. |
 | `sgdisk` unavailable | No slot attribute baseline from the phone's side | Not a failure; note that the baseline is missing. (`bootctl` is not probed: the pinned TWRP does not have it, row 20.) |
 | `df /tmp` shows less than 114688 available (1K blocks) | `/tmp` cannot take the 96 MiB image with some margin | Stop; G3 would fail at the push. Ask. |
@@ -261,29 +281,31 @@ here). The probes are where a "no" can show up before any write is tried.
 
 **The summary for the owner.** The operator pastes into chat: the "Summary for the owner" block of both reports, plus a
 line each for: what `boot_a` and `boot_b` hold, the read-only flags, the slot counters, the `misc` state, and "nothing was
-written". Then the operator **stops and waits**. The gates that need the owner's word are G3, G4, G5 and G6 (G3, G4 and G6
-write, and G5 is the first plain power-on); the owner's word for G3 is the message "go G3", and likewise "go G4",
-"go G5" and "go G6" for the others. Anything else, including silence, is a no.
+written". Then the operator **stops and waits** for G2b. Silence is not consent.
 
 **Rollback.** None: nothing was written.
 
-## G3. Write the OPOS kernel image to the inactive slot [OWNER SAYS GO]
+## G2b. Owner accepts the last-resort risk [OWNER SAYS GO]
 
-**Precondition.** The owner has said "go G3" in chat after reading the G2 summary. G1 and G2 passed; the backups exist
-in two places. Phone in TWRP (the same RAM-booted session, or a fresh one), on a cable, battery 20 percent or more. The
-slot named here is **b** (inactive, never started by this project); the active slot is not changed by this gate. The
-owner is told that this relaxes his standing rule "never flash boot, vbmeta, dtbo or recovery" for **one** partition,
-`boot_b`.
+**Precondition.** G0 through G2 passed and two separately checked backups exist. Present the current results and all
+unknowns to the owner. The slot-b emergency exit is not guaranteed: **VERIFIED** in the PC research dated November 8,
+2026, its firmware differs and is older; **REPORTED**, a damaged slot may reject a TWRP RAM-boot. Anti-rollback of the
+older chain is **UNKNOWN**. If neither TWRP nor the older chain starts, no rescue is known to this project. Writing
+slot a in place has no demonstrated automatic fallback. Neither the backup nor a successful identity write guarantees
+recovery after a failed boot.
 
-**Commands (PC, PowerShell).** Five blocks, in this order, in one PowerShell window (`$serial`, `$images`, `$repo` and
-`$probe` come from the setup above, `$run` from G1). Blocks 1 and 2 define helpers and build a file on the PC; they touch
-no phone. Blocks 3 and 4 touch the phone. Each of them is one statement (`& { ... }`), so a failed check throws and ends
-the whole block before the next line runs, even when the block is pasted into a console. A `STOP:` message means that
-nothing after that line ran: read it and do not retry before you know why.
+**Decision.** Before any write, the owner must explicitly accept that last-resort risk in chat. Then each subsequent
+gate needs its own explicit go. Silence, a general request to investigate, or approval of this documentation is not
+acceptance. The owner decides whether to proceed; the operator cannot authorize it on the owner's behalf. Stop if the
+owner declines or any precondition is missing. No phone command is run at this gate.
 
-Block 1 defines the helpers. It holds the **only `dd` in this runbook** (the line marked WRITE, inside
-`Write-BootPartition`). The function takes only `boot_a` or `boot_b`, and it throws before that line unless every check
-listed after block 3 has passed. Paste it again in any new PowerShell window: G4 to G6 use it too.
+## G3. Identity write of inactive boot_b [OWNER SAYS GO]
+
+**Precondition.** G2b acceptance is recorded; the owner has said "go G3". G1 and G2 passed, both backup copies were
+checked, `boot_b` matches the known stock backup, and TWRP is running with battery at least 20 percent. This relaxes
+the standing boot-write rule only for this identity write and its rollback. It does not select slot b or put OPOS there.
+
+**Commands (PC, PowerShell).** Define these helpers in the same window. They contain the only partition-writing `dd`:
 
 ```powershell
 $ByName = '/dev/block/platform/soc/1d84000.ufshc/by-name'
@@ -366,8 +388,103 @@ function Write-BootPartition {
 }
 ```
 
-Block 2 builds the exact bytes to be written: the pinned image padded with zeros to the size of the partition, so that
-the partition holds a file whose hash is known and no stale AVB footer remains.
+The guards require recovery state, the expected link, full size, `--getro` of 0, no mount of the target or LUN, the
+recorded backup hash before a normal write, and a verified pushed image. The image and the full partition must be
+100663296 bytes. `sync`, cache drop and hash read-back follow the write. The pinned TWRP's `dd` refuses `conv=`
+(PC research dated November 8, 2026; the October 9 result); it also has no `status=`. Use no `conv=` option.
+
+The first write puts the exact G1 `boot_b` backup back onto `boot_b`:
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $sums = Read-Sums "$run\SHA256SUMS"
+    Write-BootPartition -Name boot_b -Image "$run\boot_b.img" -ImageHash $sums['boot_b.img'] -CurrentHash $sums['boot_b.img']
+}
+```
+
+Cold re-read in a fresh TWRP RAM-boot; compare both slots:
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $sums = Read-Sums "$run\SHA256SUMS"
+    Invoke-Adb reboot bootloader | Out-Null
+    Wait-Fastboot
+    Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null
+    Wait-Recovery
+    Assert-Equal 'cold SHA-256 of boot_b' (Get-PhoneSha /dev/block/sde26) $sums['boot_b.img']
+    Assert-Equal 'cold SHA-256 of boot_a (untouched)' (Get-PhoneSha /dev/block/sde9) $sums['boot_a.img']
+}
+```
+
+**Expected.** Both warm and cold hashes match the backups. `dd` may report `24576+0 records` or another summary;
+the hashes are the check. Slot b remains stock. No `misc` or slot-selection write is made.
+
+**What it proves.** If successful, the identity write command returned and the original bytes read back exactly. Because those bytes were
+already present, even warm and cold hashes cannot detect a write silently ignored by the device. It does not prove that
+a different payload can be written or that a failed write can be recovered.
+
+**Decision table.**
+
+| Outcome | Action |
+|---|---|
+| A pre-write guard fails | Stop before `dd`; investigate. |
+| Write fails or either hash differs | Stop; do not start G3b. If `boot_b` differs, use the G3 rollback; if `boot_a` differs, use the G4 `boot_a` backup rollback. Restore either only while TWRP is reachable, then cold verify both hashes against G1 and record the result. |
+| Both cold hashes match | Report and stop for the owner's separate G3b decision. |
+
+**Rollback (restores `boot_b` to its G1 content).** This is a write and is contingent on reaching TWRP:
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $sums = Read-Sums "$run\SHA256SUMS"
+    if (-not (Test-Recovery)) { Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null }
+    Wait-Recovery
+    Write-BootPartition -Name boot_b -Image "$run\boot_b.img" -ImageHash $sums['boot_b.img'] -Restore
+}
+```
+
+After a rollback, cold re-read in a fresh TWRP and compare both slots to G1. If TWRP is unreachable, stop; there is no
+proven rollback. Do not keep retrying a crashed kernel from the same slot.
+
+## G3b. Rehearse the boot_a backup restore [OWNER SAYS GO]
+
+**Precondition.** G3 passed its cold read; the owner has said "go G3b" after G2b. The current `boot_a` hash still
+matches the checked G1 backup and that backup's identity has been reviewed. This is an identity restore rehearsal,
+not an OPOS write. If G1 captured a patched image, it restores that image, not stock Android. Identify an appropriate stock backup before
+claiming a return to stock Android; G3b must rehearse the same backup that G4 rollback would use.
+
+**Commands.** In TWRP, use the G3 helper; require the current hash before invoking its restore mode:
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $sums = Read-Sums "$run\SHA256SUMS"
+    Assert-Equal 'boot_a before restore rehearsal' (Get-PhoneSha /dev/block/sde9) $sums['boot_a.img']
+    Write-BootPartition -Name boot_a -Image "$run\boot_a.img" -ImageHash $sums['boot_a.img'] -Restore
+}
+```
+
+Reboot to the bootloader, RAM-boot a fresh TWRP once, then compare `boot_a` and `boot_b` to their G1 hashes, as in
+G3's cold re-read. Record commands, results and hashes. The warm read alone is insufficient.
+
+**Expected.** Both hashes equal G1 in the fresh TWRP. **What it proves:** the command returned and the backed-up bytes
+read back on this occasion. Because the target already matched the backup, this rehearsal cannot detect a silently
+ignored write or demonstrate restoration after different bytes were present. It does not prove a later rescue will be reachable. **Decision table:** on any error, mismatch,
+or unreachable TWRP, stop; do not write OPOS. **Rollback:** if the target differs and TWRP remains reachable, the G4
+rollback describes the guarded backup restore; cold verify it. A restore rehearsal must pass before G4.
+
+## G4. Write OPOS to boot_a in place [OWNER SAYS GO]
+
+**Precondition.** G3 and G3b passed including cold reads; the owner has said "go G4". The OPOS rootfs is already on
+userdata under a separately authorized installation, battery is at least 20 percent, and TWRP is running. `boot_b`
+remains stock. Slot a remains active; never routinely `set_active b` and never put OPOS into both slots.
+
+**Commands (PC, PowerShell).** First prepare a padded copy on the PC. The full image is the pinned `boot.img`. An
+optional first payload is `boot-nowrite.img` (PC research dated November 8, 2026 reports a November 4 RAM-boot);
+its provenance and hash must be independently identified and accepted by the owner before use. Its plain start remains
+**NOT_RUN**. The block below prepares the pinned full image; do not silently substitute another image.
 
 ```powershell
 $work = '<a folder on the PC>'
@@ -385,186 +502,47 @@ Assert-Equal 'the first bytes of the padded image hash like boot.img' $head (Get
 $all = $null
 ```
 
-Block 3 is the write. It needs the phone in TWRP.
+If choosing the optional image, stop for a separately reviewed preparation and recorded hash; no hash is pinned here.
+Before any later full-image replacement, repeat the applicable gates and separately authorize it; the current-hash
+guard must use the independently recorded cold hash of the optional image, not the old G1 hash. Preserve G1 for restore.
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
     $sums = Read-Sums "$run\SHA256SUMS"
-    Write-BootPartition -Name boot_b -Image $pad -ImageHash $padHash -CurrentHash $sums['boot_b.img']
-}
-```
-
-`Write-BootPartition` throws before the `dd`, and so before anything is written, unless all of these hold: adb says
-`recovery`; the image file on the PC is exactly 100663296 bytes and hashes to the recorded hash; the by-name link of the
-partition resolves to its node from the G1 inventory (`/dev/block/sde26` for `boot_b`, `/dev/block/sde9` for `boot_a`);
-`blockdev --getsize64` of that node is 100663296 and `--getro` is 0; no mount names the node, the whole `sde` LUN or the
-by-name path; the SHA-256 of the node now equals its backup hash in the G1 `SHA256SUMS` (a restore skips this one and
-prints what the node holds); and the image pushed to the phone's `/tmp` hashes, on the phone, to the recorded hash. After
-the `dd` it runs `sync`, drops the caches and requires the node to hash to the image; a mismatch throws, and the
-Rollback below is then the next step. TWRP's `dd` is BSD-style: only `if=`, `of=`, `bs=` and plain decimal numbers are
-used; `conv=` is refused by it (measured on October 9) and there is no `status=`.
-
-Block 4 is the cold re-read: the phone goes back to the bootloader menu, a fresh TWRP is started (fresh RAM, no cache),
-and both slots are read again. Then the bootloader phase of the probe runs again (reads only).
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    $sums = Read-Sums "$run\SHA256SUMS"
-    Invoke-Adb reboot bootloader | Out-Null
-    Wait-Fastboot
-    Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null
-    Wait-Recovery
-    Assert-Equal 'cold SHA-256 of boot_b' (Get-PhoneSha /dev/block/sde26) $padHash
-    Assert-Equal 'cold SHA-256 of boot_a (untouched)' (Get-PhoneSha /dev/block/sde9) $sums['boot_a.img']
-    Invoke-Adb reboot bootloader | Out-Null
-    Wait-Fastboot
-}
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "$repo\deploy\duo-persist-probe.ps1" -Phase bootloader -Serial $serial -OutDir $probe
-```
-
-Nothing else is written: not `boot_a`, not vbmeta, not dtbo, not `misc`, no slot change. The last command is the read-only
-bootloader phase again; its slot counters must equal the first run's.
-
-**Expected.** `dd` ends with `24576+0 records in` and `24576+0 records out` (some `dd` builds print a different summary or
-none; the hashes are what count). The hash after the write equals `$padHash`, the cold re-read equals it too, `boot_a` is
-unchanged, and the slot counters are as before.
-
-**What it proves.** That a root-side write to the boot LUN is accepted and reads back exact. It does **not** show that the
-OPOS kernel starts from that slot, and it does not show why fastboot refused on October 31.
-
-**Decision table.**
-
-| Outcome | Action |
-|---|---|
-| Any check before the write fails (a `STOP:` line naming the check) | Stop. Nothing was written: the block threw before the `dd`. |
-| The push to `/tmp` fails for lack of room | Stop and ask. A fallback exists (push the unpadded image and write only its 8294 blocks) but it leaves the old tail, including a stale AVB footer; that is a different write and needs the owner's word. |
-| `dd` reports an error (I/O error, read-only, not permitted) | Stop. Read `boot_b` back; if its hash is not the backup's, restore it (Rollback). The OPOS image is not in a slot: go to "What if the probes say no". |
-| The hash after the write differs from `$padHash` | Restore from the backup at once, verify the restore, stop. |
-| Hash equal, cold re-read equal | Success. `boot_b` holds the OPOS kernel. Report to the owner and **stop**. G4 is a separate word. |
-| The cold re-read differs from the warm one | The write did not reach the flash. Restore; stop. |
-| `boot_a` changed | Impossible with these commands; if it happens, restore it from its backup (the G4 Rollback block for `boot_a`) and stop everything. |
-
-**Rollback (restores `boot_b` to its G1 content).** One block. It RAM-boots TWRP unless TWRP is already running, waits
-until `adb devices` lists the phone as `recovery`, and then runs the same checks as the write, with the backup as the
-image: the file is pushed, hashed on the phone against the G1 `SHA256SUMS`, written with `dd`, synced, the caches are
-dropped, and the partition is read back and must hash to the backup.
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    $sums = Read-Sums "$run\SHA256SUMS"
-    if (-not (Test-Recovery)) { Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null }
-    Wait-Recovery
-    Write-BootPartition -Name boot_b -Image "$run\boot_b.img" -ImageHash $sums['boot_b.img'] -Restore
-}
-```
-
-`boot_b` is the inactive slot, so a bad `boot_b` does not change how the phone starts. **INFERRED, not measured:**
-`fastboot boot` takes its image from the PC and the bootloader menu does not read the boot slots, so TWRP should stay
-reachable whatever a slot holds (row 19). The port's own notes report the opposite for a slot that rejects RAM-boots
-after a crashed kernel or a poisoned `misc`; if the first line of the Rollback fails with `Device Error`, use the cure
-order under "What if the probes say no".
-
-## G4. Make the written slot the next start [OWNER SAYS GO]
-
-**Precondition.** G3 succeeded. The owner has said "go G4" and has chosen a variant after reading this section. OPOS
-rootfs is on userdata (the install chain ran, Prerequisite 2). The phone is in the bootloader menu. Battery 20 percent or
-more. The helper block of G3 has been pasted in this PowerShell window, and `$pad`, `$padHash` and `$run` are still set
-(variant B needs them; if the window is new, repeat blocks 1 and 2 of G3 and set `$run` as in G1).
-
-There are two ways, and they are not equally safe. **None is the right answer if either check fails.**
-
-| | **Variant A: `fastboot set_active b`** | **Variant B: no slot change; also write `boot_a`** |
-|---|---|---|
-| What it does | Makes slot b, which G3 wrote, the slot the bootloader starts. Slot a (stock) stays as the fallback. | Writes the same padded image to `boot_a`, the active slot, from TWRP with the same procedure as G3. Slot b already holds it. |
-| Mechanism | The bootloader's own `set_active` in fastboot. `bootctl` is not in the pinned TWRP, so nothing here uses it. | `dd` in TWRP through `Write-BootPartition`, then the same hash checks. |
-| What else changes | The slot attributes **and, per the strings of the phone's own bootloader, the UFS boot LUN, so the phone would start slot b's xbl, tz, hyp, modem and dsp: an older build that this project has never started** (REPORTED, not measured). If that older chain does not come up, there is no rescue. | Nothing outside `boot_a`. The firmware chain stays the one that has been starting all along. |
-| Fallback after failed starts | The bootloader gives up slot b after its retries and starts slot a: **stock Android on the OPOS userdata, the wipe path.** OPOS never marks a start successful (the port's slot guard is masked in the current image), so the retries are a countdown. | Slot a is already marked successful, which per the A/B contract should mean no countdown (inferred, not measured). The other slot also holds OPOS, so a fallback lands in OPOS, never in Android. |
-| Cost | The brick risk above, and the countdown. | The stock kernel and its recovery are gone from slot a (kept in the backup); "Recovery mode" in the menu starts OPOS. |
-| Undo | `fastboot set_active a`, if the bootloader menu can still be reached. | `Write-BootPartition -Restore` of the backed-up `boot_a`, verified. |
-
-My reading, as the planner and not a measurement: **variant B is the safer one**, because it changes no firmware chain and
-has no countdown. Variant A is what the original plan described, and it is only worth its risk if the owner specifically
-wants stock Android to remain the automatic fallback. The owner chooses; the operator does not.
-
-**Commands, variant A (PC, PowerShell, bootloader menu).**
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    if ((Invoke-Fastboot getvar slot-unbootable:b) -notmatch 'slot-unbootable:b:\s*no\b') { throw 'STOP: slot b is not marked bootable' }
-    if ((Invoke-Fastboot getvar slot-retry-count:b) -notmatch 'slot-retry-count:b:\s*[1-9]') { throw 'STOP: slot b has no retries left' }
-    Invoke-Fastboot set_active b | Out-Null                 # WRITE: slot attributes and, per the bootloader's strings, the boot LUN
-    if ((Invoke-Fastboot getvar current-slot) -notmatch 'current-slot:\s*b\b') { throw 'STOP: the bootloader did not switch to slot b; run the Rollback' }
-}
-```
-
-**Commands, variant B (PC, PowerShell).** The same checks as G3 with `boot_a` for `boot_b`: the by-name link of `boot_a`
-must resolve to `/dev/block/sde9`, the size must be 100663296, `--getro` 0, and the hash before the write must equal the
-G1 backup of `boot_a`. They are the checks of `Write-BootPartition`, which throws before the `dd` if one fails. Block 1:
-the write; the phone must be in TWRP (the first line RAM-boots it from the bootloader menu).
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    $sums = Read-Sums "$run\SHA256SUMS"
-    if (-not (Test-Recovery)) { Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null }
-    Wait-Recovery
     Write-BootPartition -Name boot_a -Image $pad -ImageHash $padHash -CurrentHash $sums['boot_a.img']
 }
 ```
 
-Block 2: the cold re-read in a fresh TWRP; both slots must now hash to `$padHash`.
-
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
+    $sums = Read-Sums "$run\SHA256SUMS"
     Invoke-Adb reboot bootloader | Out-Null
     Wait-Fastboot
     Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null
     Wait-Recovery
     Assert-Equal 'cold SHA-256 of boot_a' (Get-PhoneSha /dev/block/sde9) $padHash
-    Assert-Equal 'cold SHA-256 of boot_b' (Get-PhoneSha /dev/block/sde26) $padHash
+    Assert-Equal 'cold SHA-256 of boot_b (stock)' (Get-PhoneSha /dev/block/sde26) $sums['boot_b.img']
     Invoke-Adb reboot bootloader | Out-Null
     Wait-Fastboot
 }
 ```
 
-**Expected.** Variant A: `current-slot: b` and nothing else changed (`getvar all` again; compare with G0 and keep both).
-Variant B: both `boot_a` and `boot_b` hash to `$padHash`, cold.
-
-**What it proves.** That the bootloader accepted the slot change (A), or that the root-side write to the active slot is
-exact (B). Not that OPOS starts.
+**Expected.** Warm and fresh-TWRP cold hashes of `boot_a` equal the padded image; `boot_b` equals its G1 stock backup.
+**What it proves:** the bytes read back, not that OPOS starts or that recovery remains reachable. No slot or `misc`
+write is made.
 
 **Decision table.**
 
 | Outcome | Action |
 |---|---|
-| A: a `STOP:` line before `set_active` | Nothing changed. Stop; offer variant B. |
-| A: `set_active` prints FAILED, or `current-slot` does not become b | Nothing changed (check `getvar all`). Stop; offer variant B. |
-| A: after `set_active b` the bootloader menu cannot be reached again | There is no remedy in this runbook. This is the risk the table names. |
-| A: `current-slot` is b, counters as expected | Go to G5. |
-| B: a `STOP:` line before the write | Nothing was written. Stop. |
-| B: any hash differs after the write | Restore `boot_a` from its backup (the Rollback for variant B), stop. |
-| B: both slots equal `$padHash` | Go to G5. |
+| A pre-write guard fails | Stop before `dd`. |
+| Write or read-back fails | Stop; restore `boot_a` if TWRP is reachable, then cold verify. |
+| Both cold hashes match | Report and wait for G5. |
 
-**Rollback, variant A** (phone in the bootloader menu): back to the slot that was active.
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    Invoke-Fastboot set_active a | Out-Null
-    if ((Invoke-Fastboot getvar current-slot) -notmatch 'current-slot:\s*a\b') { throw 'STOP: current-slot is not a' }
-}
-```
-
-**Rollback, variant B** (from the bootloader menu or from TWRP): `boot_a` goes back to its G1 content, the stock image or
-the Magisk-patched one, whichever the backup holds.
+**Rollback (boot_a).** This uses the G1 backup and requires TWRP to remain reachable; it may be patched rather than
+stock, as recorded in G1. Verify the restored partition in a fresh TWRP and compare both slot hashes to G1.
 
 ```powershell
 & {
@@ -576,203 +554,111 @@ the Magisk-patched one, whichever the backup holds.
 }
 ```
 
-## G5. First unattended start with the brake still armed [OWNER SAYS GO]
+## G5. First menu start [OWNER SAYS GO]
 
-**Precondition.** G4 done. **The owner has said "go G5"**, which also covers the rollback writes listed under this gate
-(they only put the phone back to its state before G5). It was said after being told that this is the first step that can start
-stock Android on the OPOS userdata (its wipe path) or, in variant A, begin the retry countdown, and that either can cost
-the OPOS rootfs and a reinstall with the install chain. Userdata holds the OPOS rootfs. The misc brake is armed: the G1
-report says `misc` equals `misc-brake.img`. If it does not, arming it is the install chain's two commands
-(`fastboot erase misc`, `fastboot flash misc "$images\misc-brake.img"`) and needs the owner's word, because it is a write.
-A PC with the USB network adapter is attached so the phone can be found; the battery is 20 percent or more.
+**Precondition.** G4 passed, slot a remains active, slot b is stock, and the owner has said "go G5". A plain start may
+reach stock Android on foreign userdata and its wipe path; the brake is unproven and no misc write is authorized here.
 
-**How the brake and the new slot interact (what is known).** The brake asks the bootloader to stop in the bootloader menu
-on the next start. The bootloader has no literal `bootonce-bootloader` string, and on October 31 a reboot with it armed
-reached stock recovery instead; only RAM-boots have been measured with it armed. So three things can happen and G5 is the
-test that tells which:
+**Commands.** Record the cable state before starting. From Boot Select, choose Start once. At the orange unlocked warning,
+**Press nothing else.** Observe for up to five minutes, a safety limit rather than a measured start time. If a cable or
+charger connection causes an unexpected start, record the cable state and time; treat it as the single attempt, do not
+press Start or Power again, and observe under the same timeout and failure rules. Charger-triggered behavior is unknown.
+Success requires OPOS visible on the screens **and** the PC finding its USB network and SSH answering; record both.
+Do not choose factory reset while either slot holds OPOS. Do not use plain software `reboot` from persistent OPOS until
+a power cycle has been observed and separately approved; from RAM-booted OPOS never use plain `reboot`.
 
-1. **The menu appears and stays.** The brake was honoured. Nothing is wrong with the kernel image. Do not pick any menu
-   entry; go to G6's first step to learn whether the brake is one-shot.
-2. **OPOS starts anyway.** The bootloader ignored the brake on a normal start. The brake is then no safety here and the
-   owner should know it.
-3. **Something else** (stock recovery with "Can't load Android system", a black screen, a restart loop): see the table.
+After a successful start, use `reboot bootloader` to reach Boot Select, run the G0 bootloader probe into a new folder,
+and compare `current-slot`, `slot-successful`, `slot-unbootable` and `slot-retry-count` for both slots against the G0
+baseline. Stop on missing, failed or unexpected values, including a changed or decreasing retry count; do not use
+`set_active` to repair them. Do not leave the phone unattended until any discrepancy and countdown behavior are understood.
 
-**Commands.** Phone in the bootloader menu.
+**Expected.** OPOS starts from slot a, meets both success criteria, and the slot values match G0. **What it proves:**
+only the observed menu start and recorded counters, not a powered-off start, continued recovery or charger behavior.
+**Decision table:** on recovery, Android setup, a black screen, a restart loop, or timeout, stop: hold Power until the
+screen is dark (about twenty to thirty seconds), then hold Volume-down plus Power to enter Boot Select as in G0. Handle
+the cable deliberately, record whether it is attached, and watch for an automatic start when connecting it; do not
+automatically retry a crashed kernel, write `misc`, or switch slots. Do not select factory reset. If the phone cannot be
+stopped or the menu reached, stop and report; rescue is unproven. **Rollback:** if the bootloader and TWRP remain
+reachable, restore `boot_a` with G4's rollback and cold verify; otherwise stop and report that no rescue was established.
 
-1. Power off: hold Power until the screen is dark (twenty to thirty seconds). The project's recorded trap is that a
-   charger or cable plugged into an OFF phone auto-boots stock Android: so unplug the cable first, power off, and plug the
-   cable back in at the moment you choose for step 2. If the phone starts by itself with the cable attached, that counts as
-   step 2: note the time and carry on from there (the armed brake is the safety for this case).
-2. Press Power once. **Press nothing else.** Note the time. Watch the screens. (The Button steps say never to press Power
-   alone at the orange warning. That rule protects the RAM-boot flow, where a normal start means stock Android. Here the
-   normal start is the thing under test, which is why the brake is armed.)
-3. On the PC, wait for the Linux USB gadget (device id `VID_1D6B&PID_0104`, the same one the install chain waits for) and
-   for TCP port 22 of the phone to answer; `deploy\duo-opos-boot.ps1` documents the discovery, and
-   `pwsh -File deploy\duo-acceptance.ps1 -Host <phone address> -Key <private key file>` runs the read-only acceptance
-   checks once it answers.
+## G5b. Test the TWRP exit after the menu start [OWNER SAYS GO]
 
-**Expected.** One of the three cases above, within the timeout. Only the first two leave the phone in a state that needs no
+**Precondition.** G5 actually started OPOS and the owner has said "go G5b". This gate is **NOT_RUN**. A successful
+check does not prove the exit would work after a failed start.
+
+**Commands.** After G5's post-start slot comparison, RAM-boot the pinned TWRP from Boot Select
+once using `fastboot boot`; wait for adb recovery. No `misc` or slot write is included. Stop if TWRP does not appear;
+do not loop. Record the result and re-read both slot hashes against G4.
+
+**Expected.** TWRP is reachable and both hashes match G4. **What it proves:** the exit worked once after this particular
+menu start. **Decision table:** mismatch or no TWRP means stop and report; success permits a separate G6 decision.
+**Rollback:** use G4's backup restore only if TWRP is reachable, with a fresh cold read; otherwise there is no proven
 rollback.
 
-**Success criteria.** The owner sees OPOS on the screens, **and** the PC finds the phone on the USB network.
-**Timeout.** Wait up to five minutes from the Power press. This is a limit chosen for safety, not a measured start time;
-the persistent path has never been timed. When it passes without success: hold Power until the screen is dark
-(twenty to thirty seconds), then Volume-down plus Power to the bootloader menu, and use the rollback.
+## G6. Observe a further menu start [OWNER SAYS GO]
 
-**After a success.** From OPOS, run `reboot bootloader` (never `reboot`), then the bootloader phase of the probe script
-again. Compare `slot-retry-count`, `slot-successful` and `slot-unbootable` with G0: this shows whether an OPOS start
-consumes a retry, which decides whether the slot guard must be made to work before anything is left unattended.
+**Precondition.** G5b passed, results were recorded and the owner has said "go G6". No `misc` writes are included.
+**Commands:** return to Boot Select from TWRP and select Start once. Record cable state and apply G5's orange-screen,
+unexpected cable-triggered start, screen-plus-USB/SSH success criteria, timeout and physical failure response. After
+success, return via `reboot bootloader`, run the G0 bootloader probe into another new folder, and compare `current-slot`,
+`slot-successful`, `slot-unbootable` and `slot-retry-count` for both slots against G0. **Expected:** OPOS starts and
+the values match G0. **What it proves:** only this observed menu start and counter comparison. **Decision table:** stop
+on missing or unexpected results; prohibit unattended use until discrepancies and countdown behavior are understood.
+Do not retry automatically, write `misc`, or use `set_active`. **Rollback:** G4's restore is conditional on TWRP
+remaining reachable and must be cold verified.
 
-**What it proves.** That the OPOS kernel, started by the bootloader itself from the phone's storage, reaches a working
-OPOS; and what the brake does on a plain start. It does not prove that the next start works, that the brake is not
-needed (G6), or anything about stability.
-
-**Decision table.**
-
-| What the owner sees | Meaning | Action |
-|---|---|---|
-| OPOS, and the PC finds the phone | Success | Read the counters; report; wait for the owner's word on G6. |
-| The bootloader menu, no OPOS | Brake honoured (case 1) | Do not choose Start. Report. Power-cycle once more only if the owner says so. |
-| The device keeps returning to the bootloader menu although the brake is not the cause | The community page's Troubleshooting advice (REPORTED, undated) is to run `fastboot set_active` to the other slot and then back to the original slot | Not part of this runbook: it is two slot writes, so it needs the owner's separate word. In variant B no slot was ever changed. |
-| Stock recovery, "Can't load Android system" | A start reached Android's recovery | **Do not pick Factory data reset** while OPOS is wanted. Hold Power until dark, enter the bootloader menu, roll back. Read `misc` from TWRP before anything else. |
-| Stock Android setup screens | Slot a was started on the OPOS userdata | The wipe path ran or is running. Power off; roll back; expect to reinstall the rootfs with the install chain. |
-| Black screens, process lights, nothing on the PC | The kernel started and OPOS did not, or the kernel did not start | Hold Power until dark; bootloader menu; roll back. Do not retry. |
-| The restart loop | A failing start | Hold Power until dark; bootloader menu; roll back. |
-
-**Rollback.** Hold Power until the screen is dark, then Volume-down plus Power to the bootloader menu (from off). The
-blocks below need the helper block of G3 pasted in the PowerShell window. Then run **one** of the next two blocks, the one
-for the variant that was used, and then the third block, which re-arms the brake.
-
-Variant A (phone in the bootloader menu): back to slot a.
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    Invoke-Fastboot set_active a | Out-Null
-    if ((Invoke-Fastboot getvar current-slot) -notmatch 'current-slot:\s*a\b') { throw 'STOP: current-slot is not a' }
-}
-```
-
-Variant B (RAM-boots TWRP, restores `boot_a` from the G1 backup, verifies):
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    $sums = Read-Sums "$run\SHA256SUMS"
-    if (-not (Test-Recovery)) { Invoke-Fastboot boot "$images\surfaceduo1-twrp.img" | Out-Null }
-    Wait-Recovery
-    Write-BootPartition -Name boot_a -Image "$run\boot_a.img" -ImageHash $sums['boot_a.img'] -Restore
-}
-```
-
-Both variants, then: re-arm the brake and carry on with the RAM-boot flow, which is unchanged.
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    if (Test-Recovery) { Invoke-Adb reboot bootloader | Out-Null }
-    Wait-Fastboot
-    Invoke-Fastboot erase misc | Out-Null
-    Invoke-Fastboot flash misc "$images\misc-brake.img" | Out-Null
-}
-```
-
-## G6. Disarm the brake and test a plain power cycle [OWNER SAYS GO]
-
-**Precondition.** G5 succeeded. The owner has said "go G6". The counters after G5 are known. The helper block of G3 is
-pasted in the PowerShell window.
-
-**Commands.**
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    # Phone in the bootloader menu (from OPOS: reboot bootloader)
-    Invoke-Fastboot erase misc | Out-Null                # WRITE: the first step of the install chain, leaves misc all zero
-}
-```
-
-Then: hold Power until dark, press Power once, watch, same success criteria and timeout as G5. A software `reboot` from
-OPOS is a separate step: it stays forbidden until the owner has seen the plain power cycle work and says so.
-
-**Expected.** OPOS starts with the brake gone. `misc` all zero is a clean request block.
-
-**What it proves.** That the power button alone suffices and that the brake is not needed for this start. Not stability
-over hours, battery life, or what happens after an Android update.
-
-**Decision table.**
-
-| Outcome | Action |
-|---|---|
-| OPOS starts | Success. Record the date, the variant, the counters. |
-| Anything else in the table of G5 | Same actions as there; then re-arm the brake. |
-| OPOS starts only the first time | Read the counters; the retry countdown is probably running (variant A). Do not leave the phone unattended; ask the owner. |
-
-**Rollback.** Bootloader menu (Volume-down plus Power from off), then re-arm the brake with the last block of the G5
-Rollback, repeated here:
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    if (Test-Recovery) { Invoke-Adb reboot bootloader | Out-Null }
-    Wait-Fastboot
-    Invoke-Fastboot erase misc | Out-Null
-    Invoke-Fastboot flash misc "$images\misc-brake.img" | Out-Null
-}
-```
+A powered-off start remains **NOT_RUN**. It needs a separate owner-approved gate specifying cable state and handling
+before the phone is powered off. A charger-triggered start is a separate unknown, not proof of power-button start.
 
 ## G7. What an over-the-air kernel update could then mean (a separate, later design)
 
-Not part of this runbook; nothing here is built. [docs/ota-update.md](ota-update.md) says that today the kernel cannot be
-updated over the air because the boot partitions were thought unwritable, and its `scope` field has the value `boot` for
-changes applied at the next start. If G3 to G6 pass, a kernel update would be a different kind of bundle: a signed image
-that the root updater writes to the inactive slot with `dd`, verifies by hash, and then switches to. That brings exactly
-the questions above into the updater: which slot to write, how to switch (G4's two variants), who marks a start good (the
-slot guard, which is masked today), and what the rollback is. It must be designed, reviewed and approved separately; until
-then OTA stays app-level only.
+No kernel OTA is authorized or designed by these gates. [docs/ota-update.md](ota-update.md) describes the current
+update work. Preserving a stock emergency slot, write guards, boot success and rollback need separate design and owner
+approval; until then OTA stays app-level only.
+
+## Return to Android
+
+Read-only observations from the PC session on November 11, 2026 record that any stock Android boot on OPOS userdata
+applies metadata encryption in place and makes the OPOS rootfs unreadable to Linux. A power cycle that reaches Android
+destroys the OPOS install; returning to Android is not a harmless exit and requires a separately informed decision.
+
+The only return to stock Android performed on this phone was a factory reset from stock recovery on November 7, 2026.
+It was possible because the OPOS installs had left boot, super and firmware untouched (PC research dated November 8,
+2026). No partition restore from the backup or stock payload has ever been done or rehearsed. In particular, a `dd`
+restore of `boot_a` from the backup has **NOT_RUN**. The G3b restore rehearsal must pass before the persistent OPOS write
+in G4. A G1 backup may contain the patched image: identify a suitable stock backup before claiming a return to Android.
+A later restore still depends on reaching TWRP, and factory reset must not be used while a slot holds OPOS.
 
 ## What if the probes say no
 
-Keep the RAM-boot. Nothing changes for the owner: the install chain starts OPOS from the PC as it does today.
+Keep the existing RAM-boot route, subject to its separate authorization and risks. If a layout, backup, read-only flag,
+write, cold hash or TWRP reachability check fails, stop and record the result. Do not infer the cause from a refusal.
+Entering fastbootd can write `misc` and is outside these gates; it requires a separate gate. Fastboot flash or erase of
+boot, vbmeta and dtbo is never used. Do not try a slot switch or misc write as an automatic recovery.
 
-| Probe result | What to do |
-|---|---|
-| Layout differs, a mount, or a failed backup | Stop; fix the cause; nothing was written. |
-| A read-only flag is 1 | The boot LUN is write-protected on the kernel side. Document it in [packaging/duo-os/README.md](../packaging/duo-os/README.md) with the report attached; keep the RAM-boot. |
-| G3's `dd` is refused although the flags are 0 | Both fastboot (October 31) and TWRP refuse: something lower, UFS or the bootloader, protects the boot LUN. Document it. |
-| Slot b cannot be used | Variant B, or stop. |
-| Everything passes but G5 or G6 fails | Roll back; document which case of G5 happened; keep the RAM-boot. |
-| `fastboot boot` of TWRP is rejected with `Device Error` (row 19 was only inferred) | Do not retry the same slot's RAM-boot in a loop. The port's cure order, which needs the owner's word because the last steps write: Volume-down plus Power to the bootloader menu; RAM-boot TWRP once; if it starts, read `misc` and, only if it holds a request, zero its first 2048 bytes from TWRP; then try the other slot (a `set_active`). Never retry a crashed kernel from the last good slot. If TWRP will not start at all, there is no rollback in this runbook: stop. |
+## Never
 
-Other explanations of October 31 (row 4b) that the probes help to separate: a poisoned `misc` (G1 reads it) and an error
-from the storage layer for the boot LUN (G3's `dd` from TWRP shows whether the kernel side can write). The leading
-*untested* alternative is mode and naming (row 10): the community writes the
-partition from fastbootd with `fastboot flash boot`. Testing it means starting stock recovery on this phone's userdata and
-sending `fastboot reboot-fastboot` (a bootloader command that writes a request to `misc`); both have side effects nobody
-has measured here. It is a separate experiment with its own gate and the owner's word; it starts with read-only
-`getvar is-userspace`, `has-slot:boot` and `partition-size:boot` answers in fastbootd. It is not part of this session.
+- Fastboot flash or erase boot, vbmeta or dtbo; write the bootloader or firmware chain, including xbl, xbl_config, abl,
+  tz, hyp, keymaster, devcfg, aop, qupfw, uefisecapp, cmnlib, devinfo, modem, dsp, persist, modemst, fsg or fsc.
+- Use `sgdisk`, `bootctl` or `qbootctl` to write, edit GPT, change lock state, or run `oem set` or `oem clear`.
+  The probe's `sgdisk -p` and `-i` are reads only.
+- Routinely set active slot b, put non-stock images in both boot slots, or retry a crashed kernel from the same slot.
+- Run `reboot` from RAM-booted OPOS, or Android OTA, Magisk direct install or factory reset while a slot holds OPOS.
+- Enter fastbootd without a separate gate, use a multi-chunk sparse userdata flash, or use web EDL/firehose tools.
+- Write `misc` in these gates. Nothing here grants a separate authorization for any excluded action.
+
+## Unknown
+
+PC research dated November 8, 2026 leaves these **NOT_RUN** or unknown on this phone: whether TWRP `dd` into the boot
+LUN succeeds and reads back exact; whether TWRP RAM-boot survives OPOS in slot a or a failed start; whether a plain
+start appends different command-line arguments or passes different dtbo data and starts the image; the powered-off
+power-button start; how a powered-off phone reacts to a charger
+(the initramfs could loop); and whether a successful slot-a flag avoids a countdown. Whether slot b's older firmware
+passes anti-rollback is also unknown. The G5b check only addresses TWRP after a successful start, not after failure.
 
 ## Risks
 
-- **The bootloader chain.** No step here writes it. The ways it could still be affected are the ones the tables name:
-  `set_active` (variant A changes the boot LUN), a `dd` aimed at the wrong node (the only `dd` is inside
-  `Write-BootPartition`, which takes `boot_a` or `boot_b` only and throws before it unless `readlink`, size, read-only,
-  mount and hash checks pass, and the nodes of the probe are in the allow-list of the script), and a power loss in the
-  middle of a write (battery 20 percent or more and a cable).
-- **Android's wipe path.** A start of stock Android on the OPOS userdata wipes it. The rootfs is rebuildable (a copy is kept
-  on the PC), and Android's own data is already gone, but a wipe still costs a reinstall.
-- **The brake is unproven for plain starts** (row 17) and **the retry countdown** (variant A) is real if OPOS never marks a
-  start good.
-- **Relocking.** The OPOS image is unsigned and starts only because the bootloader is unlocked. Never relock, never
-  `flashing lock`. The community page says the same: the bootloader cannot be relocked while a boot image modified by its
-  guide is installed (row 10).
-- **Microsoft's restore** needs stock recovery, which lives in the boot image of a slot. After G4 the slot that was
-  written no longer has it until the backup is put back from TWRP.
-- **After a normal (not RAM) start** the bootloader may pass the kernel extra command-line items or a different reason for
-  starting (for example after a charger insert); the Halium initramfs was only seen with a RAM-boot. UNKNOWN.
-- **Tool traps:** `fastboot` exits 0 on `FAILED`; after a multi-chunk sparse flash every fastboot command can time out
-  (hold Power twenty to thirty seconds; the probe script kills a hung command after `-TimeoutSec` seconds and stops); Windows `adb shell` turns line feeds into CRLF (use `exec-out`); USB addresses
-  differ per image.
-- **This runbook and the script were never run against hardware.** The script's logic is tested with a stand-in adb and
-  fastboot; real TWRP output may differ in shape (for example `readlink` or `blockdev` flags, `ls -l` layout, a missing
-  `sgdisk`), in which case the script stops with a reason rather than guessing. That is the intended failure direction.
+No step here writes the bootloader chain. A wrong target or interrupted `dd` can still be serious. Android's wipe path
+can destroy the OPOS userdata. The brake is unproven for plain starts. Never relock. Microsoft's restore depends on
+stock recovery, and the `boot_a` backup could be patched. `fastboot` exits 0 on `FAILED`, so inspect its output.
+The plan and probe were never run against hardware; all future device checks remain **NOT_RUN** until recorded.

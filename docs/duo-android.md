@@ -2,8 +2,7 @@
 # OPOS on a stock-Android Surface Duo
 
 Status, November 7, 2026: **running on the owner's Surface Duo** (AT&T `duo-att`, stock 2022.902.48 after a
-factory reset), deployed over wireless debugging because the phone's USB-C port charges but no longer carries
-data. Results below are from that phone on that day; they are one device and one session, not a field test.
+factory reset), deployed over wireless debugging; the owner confirmed on November 11, 2026 that the phone's USB-C port carries data. Results below are from that phone on that day; they are one device and one session, not a field test.
 
 ## Results on the phone, November 7, 2026
 
