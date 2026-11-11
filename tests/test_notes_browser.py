@@ -16,13 +16,21 @@ DRIVER = Path(__file__).resolve().parent / "apps_cdp.js"
 FLOW = r"""
 const out=[];
 var typed=false;
+var rowsBefore=document.querySelectorAll('#rows button').length;
 document.getElementById('fresh').click();
 return new Promise(function(resolve){
 var n=0,t=setInterval(function(){
 n++;
 var box=document.getElementById('body');
-var saved=box&&document.getElementById('saved').textContent.indexOf('Saved')>=0;
-if(!typed&&document.querySelector('#rows button')){typed=true;box.value='Hello note';box.dispatchEvent(new Event('input'));}
+var rows=document.querySelectorAll('#rows button');
+if(!typed){
+  if(!box||rows.length<=rowsBefore||rows[0].textContent!=='Empty note'||box.value!==''){
+    if(n<120)return;
+    clearInterval(t);resolve(['new note not ready']);return;
+  }
+  typed=true;box.value='Hello note';box.dispatchEvent(new Event('input'));return;
+}
+var saved=box&&document.getElementById('saved').textContent.indexOf('Saved')>=0&&rows[0]&&rows[0].textContent==='Hello note';
 if(!saved&&n<120)return;
 clearInterval(t);
 if(!box||box.value!=='Hello note'){resolve(['text missing']);return;}
