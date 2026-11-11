@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   unittest:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "box-linux"]' || '"ubuntu-latest"') }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -40,8 +40,12 @@ jobs:
           echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum --check
           tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
           sudo install -m 0755 "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
-          echo "CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
-          echo "OPOS_TEST_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          # Keep headless CI browsers off the runner's keychain and password store.
+          # printf avoids a YAML-indented heredoc breaking the shebang.
+          printf '%s\n' '#!/bin/sh' 'exec google-chrome --use-mock-keychain --password-store=basic "$@"' > "$RUNNER_TEMP/opos-chrome"
+          chmod 0755 "$RUNNER_TEMP/opos-chrome"
+          echo "CHROME=$RUNNER_TEMP/opos-chrome" >> "$GITHUB_ENV"
+          echo "OPOS_TEST_CHROME=$RUNNER_TEMP/opos-chrome" >> "$GITHUB_ENV"
           node --version
           node -e 'if (typeof WebSocket !== "function") process.exit(1)'
           google-chrome --version
