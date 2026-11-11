@@ -62,7 +62,7 @@ var L=[['phone','Phone'],['messages','Messages'],['helper','Helper'],['settings'
 L.forEach(function(e){var li=E('li'),b=E('button');b.type='button';b.textContent=e[1];b.dataset.open=e[2]||e[0];if(e[2])b.dataset.scroll=e[0];li.appendChild(b);ul.appendChild(li)});
 function hide(){open=false;delete p.dataset.allapps;ul.hidden=true;x.hidden=true}
 function show(){if(p.dataset.app!=='home')return;var f=null,i,li,b,t,k=$('back');
-try{for(i=0;i<ul.children.length;i++){li=ul.children[i];b=li.firstChild;if(!b||!b.dataset)continue;if(!b.dataset.open)continue;t=b.dataset.scroll?$(b.dataset.scroll):h.querySelector('[data-open='+b.dataset.open+']');li.hidden=!t||!!t.hidden;if(!li.hidden&&!f)f=b}
+try{for(i=0;i<ul.children.length;i++){li=ul.children[i];b=li.firstChild;if(!b||!b.dataset)continue;if(!b.dataset.open)continue;t=b.dataset.scroll?$(b.dataset.scroll):h.querySelector('[data-open='+b.dataset.open+']');var contactsOn=false;try{contactsOn=document.documentElement.getAttribute('data-contacts')==='1'}catch(e){}if(b.dataset.scroll==='contacts'&&!contactsOn)t=null;li.hidden=!t||!!t.hidden;if(!li.hidden&&!f)f=b}
 open=true;p.dataset.allapps='1';ul.hidden=false;x.hidden=false;if(k)k.hidden=false;h.hidden=true}
 catch(e){try{hide()}catch(e2){}h.hidden=false;if(k)k.hidden=true;return}
 try{if(f)f.focus()}catch(e){}}

@@ -29,16 +29,108 @@ clearInterval(t);
 if(!row){resolve(['Ana missing']);return;}
 if(row.textContent.indexOf('Favorite')<0)out.push('not favorite');
 row.click();
-document.getElementById('call').click();
-var line=document.getElementById('call-line').textContent||'';
-if(line.indexOf('Practice call')<0)out.push('call line '+line);
+var call=document.getElementById('call');
+var text=document.getElementById('text');
+var letters=[].map.call(document.querySelectorAll('#letters button'),function(b){return (b.textContent||'').trim()});
+if(letters.indexOf('A')<0)out.push('no letter A');
+if(!call||(call.href||'').indexOf('practice=phone')<0||(call.href||'').indexOf('lock=0')>=0)out.push('call href '+(call&&call.getAttribute('href')));
+if(!text||(text.href||'').indexOf('practice=messages')<0)out.push('text href '+(text&&text.getAttribute('href')));
+if((call.getAttribute('href')||'').indexOf('5550101')<0)out.push('call number');
 if(window.innerWidth>=1200){
-  var call=document.getElementById('call').getBoundingClientRect();
-  var mid=call.left+call.width/2;
+  var box=call.getBoundingClientRect();
+  var mid=box.left+box.width/2;
   if(mid>=675&&mid<=717)out.push('Call on hinge');
 }
 if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
+resolve({problems:out,next:call?call.href:''});
+},80);
+});
+"""
+AFTER = r"""
+return new Promise(function(resolve){
+var n=0,opened=false,t=setInterval(function(){
+n++;
+var lock=document.getElementById('lock');
+var phone=document.getElementById('phone');
+var app=phone&&phone.getAttribute('data-app');
+if(app==='phone')opened=true;
+if(lock&&!lock.hidden){
+clearInterval(t);
+var out=[];
+if(opened)out.push('opened before unlock');
+var btn=document.getElementById('unlock');
+if(!btn){out.push('no unlock');resolve(out);return;}
+btn.click();
+setTimeout(function(){
+var phone2=document.getElementById('phone');
+var app2=phone2&&phone2.getAttribute('data-app');
+var notice=(document.getElementById('notice')||{}).textContent||'';
+var num=document.getElementById('number');
+var lock2=document.getElementById('lock');
+if(app2!=='phone')out.push('not phone '+(app2||''));
+if(!num||num.value.indexOf('5550101')<0)out.push('number '+(num&&num.value));
+if(notice.indexOf('Practice call')<0)out.push('notice '+notice);
+if(lock2&&!lock2.hidden)out.push('still locked');
 resolve(out);
+},400);
+return;
+}
+if(n>50){clearInterval(t);resolve(['lock never covered']);}
+},80);
+});
+"""
+HOME = r"""
+return new Promise(function(resolve){
+var n=0,t=setInterval(function(){
+n++;
+var fav=[].filter.call(document.querySelectorAll('#home [data-fav]'),function(b){return (b.textContent||'').indexOf('Ana')>=0})[0];
+if(!fav&&n<40)return;
+clearInterval(t);
+var out=[];
+if(!fav){resolve(['Ana not on home']);return;}
+fav.click();
+setTimeout(function(){
+var phone=document.getElementById('phone');
+if(!phone||phone.getAttribute('data-app')!=='phone')out.push('favourite did not open phone');
+var num=document.getElementById('number');
+if(!num||num.value.indexOf('5550101')<0)out.push('favourite number '+(num&&num.value));
+var notice=(document.getElementById('notice')||{}).textContent||'';
+if(notice.indexOf('Practice call')<0)out.push('favourite notice '+notice);
+resolve(out);
+},200);
+},80);
+});
+"""
+MESSAGES = r"""
+return new Promise(function(resolve){
+var n=0,opened=false,t=setInterval(function(){
+n++;
+var lock=document.getElementById('lock');
+var phone=document.getElementById('phone');
+var app=phone&&phone.getAttribute('data-app');
+if(app==='messages')opened=true;
+if(lock&&!lock.hidden){
+clearInterval(t);
+var out=[];
+if(opened)out.push('opened before unlock');
+var btn=document.getElementById('unlock');
+if(!btn){out.push('no unlock');resolve(out);return;}
+btn.click();
+setTimeout(function(){
+var phone2=document.getElementById('phone');
+var app2=phone2&&phone2.getAttribute('data-app');
+var notice=(document.getElementById('notice')||{}).textContent||'';
+var num=document.getElementById('number');
+var lock2=document.getElementById('lock');
+if(app2!=='messages')out.push('not messages '+(app2||''));
+if(!num||num.value.indexOf('5550101')<0)out.push('text number '+(num&&num.value));
+if(notice.indexOf('Practice message')<0)out.push('text notice '+notice);
+if(lock2&&!lock2.hidden)out.push('still locked');
+resolve(out);
+},400);
+return;
+}
+if(n>50){clearInterval(t);resolve(['lock never covered']);}
 },80);
 });
 """
@@ -58,7 +150,8 @@ class ContactsBrowser(unittest.TestCase):
         os.environ["OPOS_APPS"] = "contacts"
         os.environ["OPOS_STATE_DIR"] = cls.tmp
         contacts_page.reset()
-        cls.server = web.make_server(0, web.Phone())
+        cls.phone = web.Phone()
+        cls.server = web.make_server(0, cls.phone)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.origin = "http://127.0.0.1:%d" % cls.server.server_address[1]
@@ -91,12 +184,15 @@ class ContactsBrowser(unittest.TestCase):
         acceptance._kill(getattr(self, "proc", None))
 
     def test_add_ana_and_practice_call(self):
-        cases = [{"url": self.origin + "/contacts", "width": w, "height": h, "theme": t, "scale": s, "hand": "right", "script": FLOW} for w, h, t, s in CASES]
+        cases = [{"url": self.origin + "/contacts", "width": w, "height": h, "theme": t, "scale": s, "hand": "right", "script": FLOW, "after": AFTER} for w, h, t, s in CASES]
+        cases.append({"url": self.origin + "/?lock=0", "width": 1392, "height": 900, "theme": "light", "scale": 1, "hand": "right", "script": HOME})
+        cases.append({"url": self.origin + "/?lock=0&practice=messages&n=%2B15550101", "width": 360, "height": 640, "theme": "dark", "scale": 1, "hand": "right", "script": MESSAGES})
         plan = os.path.join(self.run, "plan.json")
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90)
+        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stderr[-1200:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
+        self.assertEqual(list(self.phone.modem.events), [])
 
 
 if __name__ == "__main__":

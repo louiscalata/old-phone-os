@@ -195,7 +195,7 @@ var story=G('lock-story'),text=s.lock_story||'';if(story&&story.textContent!==te
 G('lock-hangup').hidden=!s.in_call;
 if(first){
         first=false;
-if(!/(^|[?&])(lock=0|demo=1|app=full)(&|$)/.test(location.search))window.oposUI.lock();
+if(!/(^|[?&])(lock=0|demo=1|app=full)(&|$)/.test(location.search)||/(^|[?&])practice=/.test(location.search))window.oposUI.lock();
 }
 }catch(e){window.oposUI.unlock();}finally{
 phone.inert=!G('lock').hidden;
