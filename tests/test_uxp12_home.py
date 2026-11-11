@@ -115,7 +115,8 @@ if(mode.indexOf('nosettings')<0)el('SECTION','settings').hidden=true;
 el('DIV','threads');if(mode.indexOf('nocontacts')<0)el('DIV','contacts');el('DIV','ask').hidden=true;
 // JRY08 (jaryo-layout.js) inserts letter headings: an li whose first child is a text node, not a button.
 if(mode.indexOf('heading')>=0){const head=el('LI');head.className='jaryo-letter-head';head.children.push({textContent:'C'});head.parentNode=ul;ul.children.unshift(head);}
-const ff=process.argv[4]||'';const docEl={dataset:{}};
+const ff=process.argv[4]||'';const docEl={dataset:{contacts:mode.indexOf('contacts-on')>=0?'1':'0'},
+ getAttribute(name){if(name.indexOf('data-')!==0)return null;const key=name.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase());return Object.prototype.hasOwnProperty.call(this.dataset,key)?String(this.dataset[key]):null}};
 const keys=[];
 const c={window:{addEventListener(t,f){if(t==='keydown')keys.push(f)},scrollTo(){},matchMedia(){return{matches:false}}},
  document:{getElementById:i=>E[i]||null,documentElement:docEl,createElement:t=>el(t.toUpperCase())},
@@ -183,6 +184,16 @@ class UXP12Runtime(unittest.TestCase):
             self.assertEqual(o[k], ["home", True, False, False, False, "allapps"], k)
         self.assertIsNone(o["allapps2"])
 
+    def test_contacts_flag_controls_visible_entry(self):
+        for mode, enabled in (("contacts-off", False), ("contacts-on", True)):
+            with self.subTest(mode=mode):
+                o = self.run_js(mode)
+                expected = LIST if enabled else [name for name in LIST if name != "Contacts"]
+                self.assertEqual(o["shown"], "|".join(expected))
+                self.assertEqual(o["opened"], ["home", False, True, True, True, "Phone"])
+                for key in ("closed", "back", "esc"):
+                    self.assertEqual(o[key], ["home", True, False, False, False, "allapps"])
+
     def test_letter_headings_are_not_entries(self):
         # JRY08 adds <li class="jaryo-letter-head"> rows holding only text. The list must still open
         # (test_uxp20_continuity "Escape skipped All apps level"): headings are skipped, not hidden.
@@ -204,13 +215,13 @@ class UXP12Runtime(unittest.TestCase):
         self.assertEqual(o['headingEscape'], ['home', True, False, False, False, 'allapps'])
 
     def test_entries_open_and_scroll(self):
-        o = self.run_js()
+        o = self.run_js("contacts-on")
         self.assertEqual(o["contacts"], ["phone", False, 1])
         self.assertEqual(o["threads"], ["messages", False, 1])
         self.assertEqual(o["messages"], ["messages", False, True])
 
     def test_missing_targets_hide_entries(self):
-        o = self.run_js("nocontacts-nosettings")
+        o = self.run_js("contacts-on-nocontacts-nosettings")
         self.assertEqual(o["shown"], "Phone|Messages|Helper|Threads")
         self.assertEqual(o["contacts"][2], None)
 

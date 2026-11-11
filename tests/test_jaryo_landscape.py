@@ -224,18 +224,21 @@ class AllAppsRuntime(unittest.TestCase):
     def test_letter_heading_does_not_abort_all_apps(self):
         self.assertIn(ANCHOR, uxp12.HARNESS)
         harness = uxp12.HARNESS.replace(ANCHOR, HEAD, 1)
-        with tempfile.TemporaryDirectory() as d:
-            h = Path(d) / "h.js"
-            h.write_text(harness, encoding="utf-8")
-            r = subprocess.run([uxp12.NODE, str(h), str(STATIC / "phone-b.js"), "", ""],
-                               capture_output=True, text=True, timeout=30)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        o = json.loads(r.stdout)
-        self.assertEqual(o["opened"], ["home", False, True, True, True, "Phone"])
-        self.assertFalse(o["headHidden"])
-        self.assertEqual(o["allapps"], "1")
-        self.assertEqual(o["shown"], "|".join(uxp12.LIST))
-        self.assertEqual(o["esc"], ["home", True, False, False, False, "allapps"])
+        for mode, enabled in (("contacts-off", False), ("contacts-on", True)):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as d:
+                h = Path(d) / "h.js"
+                h.write_text(harness, encoding="utf-8")
+                r = subprocess.run([uxp12.NODE, str(h), str(STATIC / "phone-b.js"), mode, ""],
+                                   capture_output=True, text=True, timeout=30)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                o = json.loads(r.stdout)
+                self.assertEqual(o["opened"], ["home", False, True, True, True, "Phone"])
+                self.assertFalse(o["headHidden"])
+                self.assertEqual(o["allapps"], "1")
+                expected = uxp12.LIST if enabled else [name for name in uxp12.LIST if name != "Contacts"]
+                self.assertEqual(o["shown"], "|".join(expected))
+                for key in ("closed", "back", "esc"):
+                    self.assertEqual(o[key], ["home", True, False, False, False, "allapps"])
 
 
 CHECK = r"""
