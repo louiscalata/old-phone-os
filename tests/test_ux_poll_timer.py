@@ -58,8 +58,8 @@ class TestPollTimerSource(unittest.TestCase):
         # told (oposPoll), counts the misses, and draws its own banner after two (tests/test_uxp10_reliable.py).
         tick = re.search(r"async function pollTick\(\)\{.*?\n", self.js).group(0)
         self.assertNotIn("renderShown({error:", self.js)
-        self.assertIn("oposPoll(1)}}catch(e){running||oposPoll(0)}finally{", tick)
-        self.assertLess(tick.find("await render(s)"), tick.find("oposPoll(1)"))
+        self.assertIn("oposPoll(s&&!s.error?1:0)}}catch(e){running||oposPoll(0)}finally{", tick)
+        self.assertLess(tick.find("await render(s)"), tick.find("oposPoll(s&&!s.error?1:0)"))
         self.assertIn("var oposPoll=()=>0;", self.js, "a no-op until phone-a.js installs the counter")
 
     def test_a_simulation_tick_is_counted_once_by_api_not_again_by_the_poll(self):
@@ -67,7 +67,7 @@ class TestPollTimerSource(unittest.TestCase):
         # one lost request look like two misses, so the banner came after one failed poll whenever the simulation ran.
         tick = re.search(r"async function pollTick\(\)\{.*?\n", self.js).group(0)
         self.assertEqual(tick.count("oposPoll("), 2)
-        self.assertLess(tick.find("else{"), tick.find("oposPoll(1)"), "only a state poll reports success itself")
+        self.assertLess(tick.find("else{"), tick.find("oposPoll(s&&!s.error?1:0)"), "only a state poll reports success itself")
         self.assertIn("catch(e){running||oposPoll(0)}", tick)
 
     def test_an_unchanged_state_is_not_drawn_again(self):
