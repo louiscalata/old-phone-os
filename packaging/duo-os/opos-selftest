@@ -15,6 +15,7 @@ Test seams (arguments, never environment): --root, --bin, --url, --now.
 import argparse
 import fnmatch
 import ipaddress
+import importlib.util
 import json
 import os
 import re
@@ -26,13 +27,23 @@ import urllib.error
 import urllib.request
 from urllib.parse import urljoin
 
+# Load the same rule the server uses. The second path is for running from a checkout.
+_rule_path = "/opt/opos/src/opos/clock_health.py"
+if not os.path.isfile(_rule_path):
+    _rule_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src/opos/clock_health.py"))
+try:
+    _spec = importlib.util.spec_from_file_location("opos_clock_health", _rule_path)
+    _clock_rule = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_clock_rule)
+except (OSError, ImportError, AttributeError):
+    _clock_rule = None
+
 VERSION = 1
 DEFAULT_URL = "http://127.0.0.1:8765/"
 MIB = 1024 * 1024
 DISK_FAIL, DISK_WARN = 64 * MIB, 512 * MIB
 MEM_FAIL, MEM_WARN = 150 * MIB, 500 * MIB
 DIAG_DUE_S = 300  # opos-diag sleeps 90 s after multi-user.target; a slower boot than that is itself a finding
-YEAR_MIN = 2026
 OUTPUT_PX = (2784, 1800)
 OUTPUT_SCALE = 2.0
 USB_IFACES = ("usb0", "rndis0")
@@ -590,19 +601,22 @@ def timezone(c):
 
 def check_clock(c):
     now = c.time()
-    year = time.gmtime(now).tm_year
     tz, ntp = timezone(c)
     home = droid_home(c)
     own = ((c.rd(home + "/.config/opos/timezone") or "").strip().splitlines() or [""])[0].strip() if home else ""
     ntp_s = {"yes": ", NTP synchronized", "no": ", not NTP synchronized"}.get(ntp, "")
-    guess = c.exists("/run/opos/clock-floor")
-    floor = (c.rd("/opt/opos/CLOCK_FLOOR") or "").strip()
-    if year < YEAR_MIN:
+    guess = os.path.exists(c.p("/run/opos/clock-floor"))
+    synced = os.path.exists(c.p("/run/systemd/timesync/synchronized"))
+    floor = (c.rd("/opt/opos/CLOCK_FLOOR", limit=1024) or "").strip()
+    status = _clock_rule.clock_status(now, guess, synced, floor) if _clock_rule else "unavailable"
+    if status == "unavailable":
+        c.emit("WARN", "clock.year", "the shared clock rule is unavailable")
+    elif status == "year":
         c.emit("WARN", "clock.year", "clock reads %s: nobody has set the time (a RAM-booted Duo starts in 1970)" % fmt_t(now))
-    elif guess:
+    elif status == "guess":
         c.emit("WARN", "clock.year", "clock reads %s but it is the image's floor, a guess, until network time or a set%s" % (fmt_t(now), ntp_s))
-    elif floor.isdigit() and now < int(floor):
-        c.emit("WARN", "clock.year", "clock reads %s, earlier than the image's floor %s" % (fmt_t(now), fmt_t(int(floor))))
+    elif status == "floor":
+        c.emit("WARN", "clock.year", "clock reads %s, at or below the image's floor %s" % (fmt_t(now), fmt_t(int(floor))))
     else:
         c.emit("PASS", "clock.year", "clock reads %s%s" % (fmt_t(now), ntp_s))
     if own:

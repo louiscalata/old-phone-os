@@ -290,7 +290,8 @@ What the image does now:
   The unit comes after those two and before only `opos-server`; it has no `Before=` on sysinit, the time targets or the
   network, because such an ordering on a clock unit made a cycle on the port once (NetworkManager never started).
 - A raised clock is a guess, not the time. `/run/opos/clock-floor` says so until `systemd-timesyncd` reports network time
-  (`/run/systemd/timesync/synchronized`) or the time is set below. A clean shutdown keeps the guess for the next boot
+  (`/run/systemd/timesync/synchronized`) or the time is set below. Readers ignore the guess once that boot's
+  synchronized file exists, but a clock at or below the image floor is never OK. A clean shutdown keeps the guess for the next boot
   (`/var/lib/opos/clock-guess`), because `timekeeper` stores whatever the clock was.
 - The OPOS server reads those files. While the clock is a guess, or before 2026, `/api/state` has
   `battery.clock_ok: false`, `clock` reads `--:--`, goals and `calls_until` are not computed against it, the governor
