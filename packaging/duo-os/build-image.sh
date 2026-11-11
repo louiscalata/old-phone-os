@@ -14,9 +14,21 @@ set -eu
 base=$1 out=$2 ref=${3:-HEAD}
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "$here/../.." && pwd)
+g() { git -c safe.directory="$src" -C "$src" "$@"; }
+# --- identity epoch: BEGIN (scratch-root tests; no mount in this block)
+# An omitted release time comes from the selected ref, never the wall clock.
+if [ "${SOURCE_DATE_EPOCH+x}" != x ]; then
+    # --no-show-signature: log.showSignature would put signature text before the timestamp.
+    SOURCE_DATE_EPOCH=$(g log -1 --no-show-signature --format=%ct "$ref")
+fi
+case $SOURCE_DATE_EPOCH in '' | *[!0-9]*) echo "SOURCE_DATE_EPOCH must be nonnegative Unix seconds" >&2; exit 2 ;; esac
+export SOURCE_DATE_EPOCH
+# --- identity epoch: END
 [ "$(readlink -f "$base")" != "$(readlink -f "$out")" ] || { echo "OUT must differ from BASE" >&2; exit 2; }
 mnt=$(mktemp -d)
-cleanup() { umount "$mnt" 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; }
+identity_work=$(mktemp -d)
+identity_state=$identity_work/state
+cleanup() { umount "$mnt" 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; rm -f "$identity_state" "$identity_state.metadata"; rmdir "$identity_work" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "copying $base -> $out"
@@ -27,11 +39,15 @@ r=$mnt
 [ -f "$r/usr/bin/phosh-session" ] && [ -x "$r/usr/bin/chromium" ] && [ -x "$r/usr/bin/python3" ] \
     || { echo "base rootfs lacks phosh-session, chromium or python3" >&2; exit 1; }
 
-g() { git -c safe.directory="$src" -C "$src" "$@"; }
+# --- identity prepare: BEGIN (scratch-root tests; no mount in this block)
+g show "$ref:pyproject.toml" > "$identity_state.metadata"
+python3 -I -B "$src/tools/opos-image-identity.py" prepare --root "$r" --state "$identity_state" \
+    --base "$base" --metadata "$identity_state.metadata" --revision "$(g rev-parse "$ref")"
+# --- identity prepare: END
 echo "installing OPOS $(g rev-parse --short "$ref") into /opt/opos"
 rm -rf "$r/opt/opos"
 mkdir -p "$r/opt/opos"
-g archive "$ref" src LICENSE THIRD_PARTY.md | tar -x -C "$r/opt/opos"
+g archive "$ref" src LICENSE THIRD_PARTY.md pyproject.toml | tar -x -C "$r/opt/opos"
 g rev-parse "$ref" > "$r/opt/opos/REVISION"
 
 install -d "$r/usr/libexec/opos"
@@ -275,6 +291,9 @@ install -m 0644 "$here/opos-brightness.service" "$r/etc/systemd/system/opos-brig
 ln -sfn /etc/systemd/system/opos-brightness.service \
     "$r/etc/systemd/system/multi-user.target.wants/opos-brightness.service"
 
+# --- identity finish: BEGIN (after all OPOS installs and base edits)
+python3 -I -B "$src/tools/opos-image-identity.py" finish --root "$r" --state "$identity_state"
+# --- identity finish: END
 sync
 echo "manifest:"
 set -- opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch usr/local/sbin/sfduo-composer-watchdog
@@ -283,5 +302,7 @@ if [ -e "$r/etc/default/opos-kiosk" ]; then set -- "$@" etc/default/opos-kiosk; 
 umount "$mnt"
 trap - EXIT
 rmdir "$mnt"
+rm -f "$identity_state" "$identity_state.metadata"
+rmdir "$identity_work"
 e2fsck -fn "$out" >/dev/null && echo "fsck clean"
 sha256sum "$out"

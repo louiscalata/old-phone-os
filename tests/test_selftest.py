@@ -21,6 +21,7 @@ import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SELFTEST = ROOT / "packaging/duo-os/opos-selftest"
@@ -110,7 +111,7 @@ ST = load()
 class Fake:
     """A temporary directory shaped like a healthy Duo OS phone; tests break one thing at a time."""
 
-    def __init__(self, url="http://127.0.0.1:1/"):
+    def __init__(self, url="http://127.0.0.1:1/", *, identity=True):
         self.tmp = Path(tempfile.mkdtemp(prefix="opos-selftest-"))
         self.root, self.bin, self.states = self.tmp / "root", self.tmp / "bin", self.tmp / "states"
         for d in (self.root, self.bin, self.states, self.tmp / "journal"):
@@ -123,6 +124,11 @@ class Fake:
             self.script(name, FAKE_CAT % {"name": name})
         self.script("nmcli", FAKE_NMCLI)
         self.build()
+        if identity:
+            from tests.duo_identity_fixture import add_identity
+            add_identity(self.root)
+        else:
+            self.put("etc/os-release", 'NAME="Droidian"\nID=droidian\nID_LIKE=debian\n')
 
     def cleanup(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -374,6 +380,74 @@ class SelftestCase(unittest.TestCase):
 
     def run_st(self, *a, **k):
         return self.f.run(*a, **k)
+
+
+class IdentityCompatibility(unittest.TestCase):
+    """Identity checks alone use no server, sockets, phone or command probes."""
+
+    def fixture(self, *, identity=True):
+        f = Fake(identity=identity)
+        self.addCleanup(f.cleanup)
+        return f
+
+    def test_legacy_fixture_skips_identity_in_normal_and_identity_only_runs(self):
+        f = self.fixture(identity=False)
+        self.assertFalse((f.root / "etc/opos/image.json").exists())
+        self.assertFalse((f.root / "usr/libexec/opos/image_identity.py").exists())
+        # Exercise normal dispatch without invoking the unrelated HTTP checks.
+        with mock.patch.object(ST, "CHECKS", (ST.check_identity,)):
+            for args in ((), ("--only", "identity")):
+                r = f.run(*args)
+                self.assertEqual(r.rc, 0, r.text)
+                self.assertEqual(r.by("SKIP"), ["identity.image"], r.text)
+                self.assertIn("legacy", r.ev("identity.image"))
+        self.assertEqual(f.calls(), [])
+
+    def test_advertised_identity_fails_if_helper_or_manifest_or_both_are_missing(self):
+        for missing in (("usr/libexec/opos/image_identity.py",), ("etc/opos/image.json",),
+                        ("usr/libexec/opos/image_identity.py", "etc/opos/image.json", "usr/bin/opos-version")):
+            with self.subTest(missing=missing):
+                f = self.fixture()
+                for name in missing:
+                    (f.root / name).unlink()
+                r = f.run("--only", "identity")
+                self.assertEqual(r.rc, 1, r.text)
+                self.assertEqual(r.status("identity.image"), "FAIL", r.text)
+                self.assertEqual(f.calls(), [])
+
+    def test_legacy_base_with_partial_identity_advertisement_fails(self):
+        for name in ("etc/opos/image.json", "usr/libexec/opos/image_identity.py", "usr/bin/opos-version"):
+            with self.subTest(name=name):
+                f = self.fixture(identity=False)
+                f.put(name, "# incomplete identity\n")
+                r = f.run("--only", "identity")
+                self.assertEqual(r.rc, 1, r.text)
+                self.assertEqual(r.status("identity.image"), "FAIL", r.text)
+
+    @unittest.skipIf(os.geteuid() == 0, "requires an unprivileged UID to exercise filesystem permission denial")
+    def test_unreadable_private_file_warns_and_readable_hash_mismatch_still_fails(self):
+        from opos import image_identity
+        f = self.fixture()
+        private = f.put("etc/opos/monitor.env", "# simulated private configuration\n", mode=0o600)
+        manifest = f.root / "etc/opos/image.json"
+        m = json.loads(manifest.read_bytes())
+        m["files"].append(image_identity.record(f.root, "etc/opos/monitor.env"))
+        manifest.write_bytes(image_identity.canonical(m))
+        private.chmod(0o000)  # permission-denial stand-in; real root ownership has its own root-only test
+        try:
+            r = f.run("--only", "identity")
+            self.assertEqual(r.rc, 0, r.text)
+            self.assertEqual(r.status("identity.image"), "WARN", r.text)
+            self.assertIn("incomplete coverage", r.ev("identity.image"))
+            self.assertIn("etc/opos/monitor.env", r.ev("identity.image"))
+            self.assertEqual(private.stat().st_mode & 0o777, 0)
+            f.put("etc/issue", "damaged\n")
+            r = f.run("--only", "identity")
+            self.assertEqual(r.rc, 1, r.text)
+            self.assertEqual(r.status("identity.image"), "FAIL", r.text)
+        finally:
+            private.chmod(0o600)
+        self.assertEqual(f.calls(), [])
 
 
 class HealthyPhone(SelftestCase):

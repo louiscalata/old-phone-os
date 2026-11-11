@@ -1406,7 +1406,7 @@ class Page(unittest.TestCase):
             self.assertEqual(b.get("type"), "button")
         for ref in p.labelled:
             self.assertIn(ref, ids)
-        self.assertEqual(p.tags.count("section"), 5)
+        self.assertEqual(p.tags.count("section"), 6)  # About plus the five update sections
         self.assertIn('aria-live="polite"', h)
         self.assertRegex(h, r'<progress[^>]*aria-label="Download progress"')
         self.assertIn("<noscript>", h)
