@@ -13,6 +13,12 @@ NON_META = re.compile(r'\b(gpt-?[0-9o]|claude|gemini|mistral|mixtral|qwen|deepse
 # This public snapshot has no private-history provenance exceptions.
 META_HOSTS = {'dev.meta.ai', 'developer.meta.ai', 'ai.developer.meta.com', 'api.meta.ai', 'meta.ai', 'inference.baseten.co', '127.0.0.1', 'localhost'}
 SEARCH_HOSTS = {'en.wikipedia.org'}  # free search hosts, not models, used for cited web grounding
+# URLs in these reviewed, exact legal notices are not runtime network routes.
+# Any text or path change loses this exception and needs review again.
+FONT_LICENSE_TEXT_SHA256 = {
+    'src/opos/web_static/fonts/INTERTIGHT-OFL.txt': '50240ab035cf1b6b3307940235481d515c4b6de3ab1fa843dbe59e7892cb9d58',
+    'src/opos/web_static/fonts/NEWSREADER-OFL.txt': 'fdfad38143ec470553cae82a1e45320bdd1b9ec70415d37bd0171051d8a4ded8',
+}
 def meta_only_errors(f, text):
     if not (f.startswith('src/') or f.startswith('deploy/') or f in ('install.sh', 'install.ps1', 'requirements.txt')):
         return []
@@ -24,6 +30,9 @@ def meta_only_errors(f, text):
         # Only these literal navigation anchors in the public landing are project links.
         # Model/network URLs, other files and other anchor targets remain checked.
         host_text = text
+        notice_digest = FONT_LICENSE_TEXT_SHA256.get(f)
+        if notice_digest and hashlib.sha256(text.encode('utf-8')).hexdigest() == notice_digest:
+            host_text = ''
         if f == 'src/opos/public_static/public-demo.html':
             for link in ('https://github.com/louiscalata/old-phone-os',
                          'https://fortheloveof.studio/code/old-phone-os/'):
