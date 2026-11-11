@@ -8,8 +8,8 @@ screens and said "it's working".** One phone, one day, one person watching. It i
 lives on userdata and starts only from a RAM-boot (see below), and a power cycle returns the phone to Android.
 The pieces added since (keyboard, Network page, first run and time zone, acceptance suite) are built and tested off the phone only.
 [docs/duo-os-final.md](../../docs/duo-os-final.md) says what the OS does now, what is still simulated, what is not known, and
-lists the live checks in order. The owner's Duo cannot take a fresh install yet: its USB-C port charges but carries no data, and
-every install route below needs fastboot over USB. Android's wireless debugging cannot write partitions.
+lists the live checks in order. The owner confirmed on November 11, 2026 that the Duo's USB-C port carries data.
+Every install route below needs fastboot over USB. Android's wireless debugging cannot write partitions.
 
 ## What was seen, and what was not
 
