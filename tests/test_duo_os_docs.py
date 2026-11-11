@@ -43,7 +43,9 @@ class TestDuoOsReadme(unittest.TestCase):
         head = flat(self.text[:self.text.index("## What was seen")])
         for phrase in ("Status, November 7, 2026", "ran on the owner's Surface Duo 1, RAM-booted from a PC",
                        '"it\'s working"', "One phone, one day, one person watching",
-                       "a power cycle returns the phone to Android"):
+                       "A power cycle can return the phone to Android, destroying the OPOS install",
+                       "read-only observations from the PC session on November 11, 2026",
+                       "metadata encryption in place", "unreadable to Linux"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, head)
         for stale in ("not yet booted on a phone", "image built and checked offline", "Install, once USB data works"):
@@ -161,7 +163,8 @@ class TestDuoOsReadme(unittest.TestCase):
     def test_known_issues_and_restore_are_documented(self):
         issues = flat(section(self.text, "## Known issues"))
         restore = flat(section(self.text, "## Restore to Android"))
-        for phrase in ("The clock reads 1970 until it is set", "A power cycle boots stock Android, which wipes the OS image",
+        for phrase in ("The clock reads 1970 until it is set", "A power cycle that reaches stock Android destroys the OPOS install",
+                       "metadata encryption in place", "rootfs unreadable to Linux",
                        "Calls and texts are simulated", "have not been exercised on the phone"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, issues)
@@ -189,12 +192,14 @@ class TestDuoOsReadme(unittest.TestCase):
         restore = section(self.text, "## Restore to Android")
         step1 = flat(restore[restore.index("1. Power cycle"):restore.index("2. If Android")])
         step2 = flat(restore[restore.index("2. If Android"):restore.index("3. For a full stock reflash")])
-        # Step 1 is no more certain than the Known-issues bullet it repeats.
-        self.assertIn("not re-measured here", flat(section(self.text, "## Known issues")))
-        for phrase in ("expect it not to accept the OS image's userdata", "that sequence was not re-measured here"):
+        # The PC session recorded encryption, while the result of a power cycle and the brake are not guaranteed.
+        for phrase in ("Android may start", "destroy the OPOS install", "may instead reach Boot Select",
+                       "behavior is not guaranteed"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, step1)
-        self.assertNotRegex(step1, r"(?i)\bdoes not accept\b")
+        for phrase in ("read-only observations from the pc session on november 11, 2026", "metadata encryption in place",
+                       "rootfs unreadable to linux", "if a slot holds persistent opos, do not select factory reset"):
+            self.assertIn(phrase, flat(restore).lower())
         # The install guide forbids Factory data reset; the restore says when that rule does not apply.
         usb = flat(read("docs/duo-usb-install.md"))
         self.assertIn("Never pick Start, Recovery Mode or Factory data reset", usb)

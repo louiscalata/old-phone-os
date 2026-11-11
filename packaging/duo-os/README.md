@@ -5,11 +5,12 @@ An OPOS phone with no Android system: the Surface Duo boots a Linux rootfs whose
 
 Status, November 7, 2026: **ran on the owner's Surface Duo 1, RAM-booted from a PC; the owner looked at the
 screens and said "it's working".** One phone, one day, one person watching. It is not an installed system: it
-lives on userdata and starts only from a RAM-boot (see below), and a power cycle returns the phone to Android.
+lives on userdata and starts only from a RAM-boot (see below). A power cycle can return the phone to Android, destroying
+the OPOS install: read-only observations from the PC session on November 11, 2026 record that any stock Android boot on
+OPOS userdata applies metadata encryption in place, leaving the OPOS rootfs unreadable to Linux.
 The pieces added since (keyboard, Network page, first run and time zone, acceptance suite) are built and tested off the phone only.
 [docs/duo-os-final.md](../../docs/duo-os-final.md) says what the OS does now, what is still simulated, what is not known, and
-lists the live checks in order. The owner's Duo cannot take a fresh install yet: its USB-C port charges but carries no data, and
-every install route below needs fastboot over USB. Android's wireless debugging cannot write partitions.
+lists the live checks in order. The owner confirmed on November 11, 2026 that the Duo's USB-C port carries data; every install route below needs fastboot over USB. Android's wireless debugging cannot write partitions.
 
 ## What was seen, and what was not
 
@@ -392,9 +393,9 @@ mounting userdata and loop-mounting `/data/rootfs.img`; that has not been rehear
 - **The clock reads 1970 until it is set.** Nothing sets it at boot. OPOS takes its time from the phone's clock,
   so goal times and "time left" are not meaningful until it is set (for example `sudo date -s …` over ssh), and
   journal timestamps before that are wrong. No automatic fix has been tried.
-- **A power cycle boots stock Android, which wipes the OS image.** The RAM-boot does not survive a restart, and
-  Android does not accept this userdata and sets itself up on it (the port's notes expect that; the sequence was
-  not re-measured here). To get the image back, run the install chain
+- **A power cycle that reaches stock Android destroys the OPOS install.** The RAM-boot does not survive a restart.
+  Read-only observations from the PC session on November 11, 2026 record that any stock Android boot on OPOS userdata
+  applies metadata encryption in place, making the rootfs unreadable to Linux. To get the image back, run the install chain
   again with the phone in Boot Select (Power held about 20 seconds, then Volume-down and Power;
   [docs/duo-usb-install.md](../../docs/duo-usb-install.md), "Button steps").
 - Calls and texts are simulated (see above); the real modem is not used.
@@ -453,11 +454,15 @@ boots.
 
 Nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed, so the stock Android
 (2022.902.48) is still installed and is what the phone starts when the OS image is not RAM-booted.
+Read-only observations from the PC session on November 11, 2026 record that any stock Android boot on OPOS userdata
+applies metadata encryption in place and makes the OPOS rootfs unreadable to Linux. Returning to Android this way
+destroys the OPOS install; it is not a harmless exit.
+These restore steps assume the RAM-boot-only state above. If a slot holds persistent OPOS, do not select factory reset;
+the separate persistent-install plan describes the unproven restore dependencies.
 
-1. Power cycle the phone (Power held about 20 seconds). Android starts from the untouched boot partition. The
-   port's notes expect it not to accept the OS image's userdata and to set itself up from scratch, which leaves
-   the OS image and everything on userdata gone; that sequence was not re-measured here. (If a failed install
-   left the brake armed, the first start goes to Boot Select once; power cycle again.)
+1. Power cycle the phone (Power held about 20 seconds). Android may start from the untouched boot partition and
+   destroy the OPOS install as described above. If the brake is armed, the phone may instead reach Boot Select;
+   its behavior is not guaranteed. Do not treat an Android start as preserving the OPOS image or its data.
 2. If Android does not come up (a boot loop, or a recovery that offers to wipe), use the stock recovery's factory
    reset; that cured an earlier boot loop on this phone on November 7. The "never pick Factory data reset" rule
    in the Button steps of [docs/duo-usb-install.md](../../docs/duo-usb-install.md) applies while the OS image is
