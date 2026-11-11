@@ -7,8 +7,10 @@ There is no emergency button: practice mode cannot place that call, and a real o
 import hashlib
 import hmac
 import json
+import math
 import os
 from pathlib import Path
+import time
 
 from opos.store import Store, default_root
 
@@ -41,6 +43,24 @@ def _read():
     data.setdefault("locked", True)
     data.setdefault("failures", 0)
     data.setdefault("wait_until", 0)
+    try:
+        if (type(data["locked"]) is not bool or type(data["failures"]) is not int
+                or data["failures"] < 0 or type(data["wait_until"]) not in (int, float)
+                or not math.isfinite(data["wait_until"]) or data["wait_until"] < 0):
+            raise ValueError("lock state")
+    except (ValueError, OverflowError):
+        data.update(locked=True, failures=0, wait_until=0)
+    if "record" in data:
+        try:
+            record = data["record"]
+            if (not isinstance(record, dict) or type(record.get("iterations")) is not int
+                    or not 0 < record["iterations"] <= 2**31 - 1
+                    or len(bytes.fromhex(record["hash"])) != 32):
+                raise ValueError("PIN record")
+            bytes.fromhex(record["salt"])
+        except (KeyError, TypeError, ValueError):
+            # A damaged PIN record must not become a PIN-less unlock.
+            data.update(record={}, locked=True)
     return data
 
 
@@ -69,10 +89,67 @@ def verify(pin, record):
     return hmac.compare_digest(fresh["hash"], str(record.get("hash") or ""))
 
 
-def is_locked():
+def _clock(now=None):
+    """Use the server clock; explicit times work only with OPOS_LOCK_TEST_CLOCK=1."""
+    if os.environ.get("OPOS_LOCK_TEST_CLOCK") == "1" and type(now) in (int, float):
+        try:
+            if math.isfinite(now):
+                return float(now)
+        except OverflowError:
+            pass
+    return time.time()
+
+
+def _state(data, now):
+    """Derive the internal state from the saved data and the clock."""
     if not active():
-        return False
-    return bool(_read().get("locked", True))
+        return "OFF"
+    if not data["locked"]:
+        return "UNLOCKED"
+    if "record" not in data:
+        return "LOCKED_NO_PIN"
+    return "WAITING" if now < data["wait_until"] else "LOCKED_PIN"
+
+
+def _transition(state, event, data, now, pin=None):
+    """Return (allowed, new data). All lock transition policy lives here."""
+    if (event in {"set", "skip"} and state in {"LOCKED_PIN", "WAITING"}
+            or event in {"unlock_ok", "unlock_wrong"} and state == "WAITING"):
+        return False, data
+    changed = dict(data)
+    if event == "set":
+        changed.update(record=hash_pin(pin), locked=True, failures=0, wait_until=0)
+    elif event == "skip":
+        changed.pop("record", None)
+        changed.update(locked=False, failures=0, wait_until=0)
+    elif event == "lock":
+        changed["locked"] = True
+    elif event == "unlock_ok":
+        changed.update(locked=False, failures=0, wait_until=0)
+    elif event == "unlock_wrong":
+        failures = changed["failures"] + 1
+        changed.update(locked=True, failures=failures)
+        if failures >= 5:
+            changed["wait_until"] = now + _WAIT * (2 ** (failures - 5))
+    else:
+        raise ValueError("lock event")
+    return True, changed
+
+
+def _change(event, pin=None, now=None):
+    data = _read()
+    now = _clock(now)
+    if event == "unlock":
+        event = "unlock_ok" if "record" not in data or verify(pin, data["record"]) else "unlock_wrong"
+    allowed, changed = _transition(_state(data, now), event, data, now, pin)
+    if allowed:
+        _write(changed)
+    return allowed and event != "unlock_wrong", _status(changed, now)
+
+
+def is_locked():
+    data = _read() if active() else {}
+    return _status(data, _clock())["locked"]
 
 
 def has_pin():
@@ -80,74 +157,42 @@ def has_pin():
 
 
 def set_pin(pin):
-    data = _read()
-    data["record"] = hash_pin(pin)
-    data["locked"] = True
-    data["failures"] = 0
-    data["wait_until"] = 0
-    _write(data)
+    return _change("set", pin=pin)[0]
 
 
 def skip():
     """The owner chose no PIN. The screen can still lock, and unlock needs no digits."""
-    data = _read()
-    data.pop("record", None)
-    data["locked"] = False
-    data["failures"] = 0
-    data["wait_until"] = 0
-    _write(data)
+    return _change("skip")[0]
 
 
 def lock():
-    data = _read()
-    data["locked"] = True
-    _write(data)
+    return _change("lock")[0]
 
 
-def unlock(pin, now):
-    """(ok, status). now is a number the test can move. Wait text is included when a wait is running."""
-    data = _read()
-    now = float(now)
-    wait_until = float(data.get("wait_until") or 0)
-    if now < wait_until:
-        return False, _status(data, now)
-    record = data.get("record")
-    if not isinstance(record, dict):
-        data["locked"] = False
-        data["failures"] = 0
-        _write(data)
-        return True, _status(data, now)
-    if verify(pin, record):
-        data["locked"] = False
-        data["failures"] = 0
-        data["wait_until"] = 0
-        _write(data)
-        return True, _status(data, now)
-    failures = int(data.get("failures") or 0) + 1
-    data["failures"] = failures
-    data["locked"] = True
-    if failures >= 5:
-        wait = _WAIT * (2 ** (failures - 5))
-        data["wait_until"] = now + wait
-    _write(data)
-    return False, _status(data, now)
+def unlock(pin, now=None):
+    """Return (ok, status); now is honoured only with OPOS_LOCK_TEST_CLOCK=1."""
+    return _change("unlock", pin=pin, now=now)
 
 
-def _status(data, now=0):
-    remaining = max(0, int(float(data.get("wait_until") or 0) - float(now)))
+def _status(data, now):
+    state = _state(data, now)
+    locked = state in {"LOCKED_NO_PIN", "LOCKED_PIN", "WAITING"}
+    remaining = max(0, int(data["wait_until"] - now)) if state == "WAITING" else 0
     return {
-        "ok": not data.get("locked", True),
-        "locked": bool(data.get("locked", True)),
+        "ok": not locked,
+        "locked": locked,
         "has_pin": isinstance(data.get("record"), dict),
         "wait_s": remaining,
         "failures": int(data.get("failures") or 0),
     }
 
 
-def status(now=0):
-    if not active():
+def status(now=None):
+    data = _read() if active() else {}
+    now = _clock(now)
+    if _state(data, now) == "OFF":
         return {"ok": True, "locked": False, "has_pin": False, "wait_s": 0, "enforced": False}
-    return dict(_status(_read(), now), enforced=True)
+    return dict(_status(data, now), enforced=True)
 
 
 def blocks(action, path):

@@ -1069,26 +1069,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(snap)
     def _lock_act(self, data):
-        """Set, skip, lock or unlock. Wrong-PIN waits are computed from data['now'] when a test sends it."""
+        """Set, skip, lock or unlock. Request now works only with OPOS_LOCK_TEST_CLOCK=1."""
         action = data.get("action") if isinstance(data, dict) else None
         try:
             if action == "set":
-                lockpin.set_pin(data.get("pin"))
-                self._json(lockpin.status())
+                allowed = lockpin.set_pin(data.get("pin"))
+                self._json(lockpin.status(), 200 if allowed else 403)
                 return
             if action == "skip":
-                lockpin.skip()
-                self._json(lockpin.status())
+                allowed = lockpin.skip()
+                self._json(lockpin.status(), 200 if allowed else 403)
                 return
             if action == "lock":
                 lockpin.lock()
                 self._json(lockpin.status())
                 return
             if action == "unlock":
-                now = data.get("now")
-                if isinstance(now, bool) or not isinstance(now, (int, float)):
-                    now = time.time()
-                ok, status = lockpin.unlock("" if data.get("pin") is None else str(data.get("pin")), now)
+                ok, status = lockpin.unlock("" if data.get("pin") is None else str(data.get("pin")), data.get("now"))
                 self._json(status, 200 if ok else 403)
                 return
         except ValueError:
