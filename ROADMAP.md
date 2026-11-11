@@ -91,9 +91,27 @@ These rows are the phone-features checks D1 through D11. Date stays empty and Re
 
 ## Next
 
-Linux CI portability fixes were verified on a Debian VM. Hosted CI results for
-the Python 3.11/3.13 matrix in `.github/workflows/tests.yml` are still pending;
-the Debian verification does not establish a hosted CI pass.
+Linux CI portability fixes were verified on a Debian VM. On November 10,
+2026, the [hosted Ubuntu baseline](https://github.com/louiscalata/old-phone-os/pull/103)
+passed the Python 3.11/3.13 matrix: each version discovered 4,880 tests with
+43 explicit skips and zero failures. This does not establish a pass for later
+source changes or for the skipped checks.
+
+The combined runtime candidate for #100, #15, #16, #24, #94, #47, #75, #74,
+#78, #76 and the font commits from #79 is under review. It retains release-bound
+recipe checksums and dynamic runtime inventory checks from #101. The reversible
+review candidate uses thumb-pane tiles and separate detail; the later #80
+newspaper proposal is preserved separately, pending the final Home decision.
+Exact rendered-page snapshots were regenerated. The served page with all switches
+on measures 101,868 bytes against the unchanged 102,000-byte gate. Focused local
+checks ran 255 tests: 253 passed and two Linux-specific fixture checks failed on
+Mac, with no skips. Those failures are not passes or skips. Eight actual-script
+Notes cases passed, including deletion/save ordering and edits made before a late
+open response; storage error and retry tests also passed. The candidate activates
+new Wi-Fi profiles by UUID, cleans private files on creation failures, and keeps
+one Contacts jump target per letter bucket. Final browser and hosted Python
+matrix checks remain pending for the reviewed combined source. All on-device
+checks above remain NOT_RUN.
 
 1. **Battery life on a real phone.** Run a Duo route (the OS image or Android with Termux) through
    the same daily routine as the stock system and record battery life; no such measurement exists.

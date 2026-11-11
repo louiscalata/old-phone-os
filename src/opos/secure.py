@@ -114,7 +114,7 @@ def csp(nonce: str) -> str:
     """Build the exact content security policy."""
     if not _nonce_ok(nonce):
         raise ValueError("bad nonce")
-    return f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    return f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def security_headers(nonce: str | None = None) -> dict[str, str]:

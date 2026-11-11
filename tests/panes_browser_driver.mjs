@@ -91,6 +91,11 @@ const contrast = (a, b) => { const x = lum(a), y = lum(b), h = Math.max(x, y), l
 const parseRgb = s => /rgba?\(([^)]+)\)/.exec(s)[1].split(',').slice(0, 3).map(Number);
 const hex = c => '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
 
+// Measure the actual Home buttons, including their fractional bounds, independently of the outer padded grid.
+const HOME_TILES = `(function(){return [].slice.call(document.querySelectorAll('#home button')).filter(function(e){
+ var r=e.getBoundingClientRect(),cs=getComputedStyle(e);return r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none'&&e.getClientRects().length>0
+ }).map(function(e){var r=e.getBoundingClientRect();return {id:e.id||e.dataset.open,l:r.left,r:r.right,w:r.width,h:r.height}})})()`;
+
 // What the page looks like right now: text rectangles, controls, colours, effects. Text rectangles come from text nodes of an element
 // that owns text; a control is measured by its label when it is a radio or a checkbox.
 const MEASURE = `(function(){
@@ -127,7 +132,7 @@ const MEASURE = `(function(){
  res.surface={left:getComputedStyle(root,'::before').backgroundColor,right:getComputedStyle(root).backgroundColor,hinge:getComputedStyle(root,'::after').backgroundColor};
  res.cols=(function(){var m=document.querySelector('main,.cols');return m?getComputedStyle(m).gridTemplateColumns:null})();
  function B(id){var e=document.getElementById(id);if(!e)return null;var r=e.getBoundingClientRect();return r.width>0?{l:Math.round(r.left),r:Math.round(r.right),w:Math.round(r.width)}:null}
- res.at={masthead:B('jaryo-masthead'),home:B('home'),back:B('back'),settings:B('settings'),threads:B('threads'),thread:B('thread'),number:B('number'),msg:B('msg'),helper:B('helper'),ask:B('ask'),
+ res.at={masthead:B('jaryo-masthead'),home:B('home'),homeTiles:${HOME_TILES},back:B('back'),settings:B('settings'),threads:B('threads'),thread:B('thread'),number:B('number'),msg:B('msg'),helper:B('helper'),ask:B('ask'),
   sheet:B('sheet'),contacts:B('contacts'),appsList:B('apps-list'),appsClose:B('apps-close'),unlock:B('unlock'),lockTime:B('lock-time'),notice:B('notice'),reload:B('reload-shell'),
   status:[].map.call(document.querySelectorAll('#jaryo-status-row button'),function(b){var r=b.getBoundingClientRect();return [Math.round(r.left),Math.round(r.right)]})};
  res.noticeCss=(function(){var e=document.getElementById('notice');if(!e)return null;var cs=getComputedStyle(e);return {bg:cs.backgroundColor,fg:cs.color,border:cs.borderTopStyle+' '+cs.borderTopWidth+' '+cs.borderTopColor,events:cs.pointerEvents,position:cs.position}})();
@@ -436,7 +441,7 @@ try {
       await p.ev(`document.querySelector('#home [data-open=${app}]').click()`); await sleep(900);
       const st = await p.ev(`(function(){var u=document.getElementById('back').getBoundingClientRect();return {app:document.getElementById('phone').dataset.app,backL:Math.round(u.left),backR:Math.round(u.right),anims:document.getAnimations().length}})()`);
       await p.ev(`document.getElementById('back').click()`); await sleep(900);
-      const home = await p.ev(`(function(){var h=document.getElementById('home').getBoundingClientRect();return {app:document.getElementById('phone').dataset.app,homeL:Math.round(h.left),homeR:Math.round(h.right),anims:document.getAnimations().length,focus:document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.open||null}})()`);
+      const home = await p.ev(`(function(){var h=document.getElementById('home').getBoundingClientRect();return {app:document.getElementById('phone').dataset.app,homeL:Math.round(h.left),homeR:Math.round(h.right),tiles:${HOME_TILES},anims:document.getAnimations().length,focus:document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.open||null}})()`);
       res.push({ app, st, home });
     }
     out.motion[hand] = res;

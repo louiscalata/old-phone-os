@@ -69,5 +69,21 @@ html[data-panes=two] input[type=radio]{border-radius:50%}
 html[data-panes=two] :is(input[type=radio],input[type=checkbox]):checked{background:var(--jaryo-fg)}
 html[data-panes=two] input[type=range]{background:transparent}
 html[data-panes=two] ::placeholder{color:var(--jaryo-fg);opacity:1;font-style:italic}
+/* 12. Home: the tiles stay inside the thumb pane with a full border, and the other pane names the selected tile. */
+html[data-panes=two] #phone[data-app=home] #home:not([hidden]){box-sizing:border-box;width:100%;max-width:100%;margin:0;padding:12px;grid-template-columns:1fr 1fr;column-gap:12px;row-gap:12px}
+html[data-panes=two][data-ff] #home-favourites>button[data-open],html[data-panes=two][data-ff] #home #allapps{border-style:solid;border-color:var(--jaryo-fg);border-width:1px;box-sizing:border-box}
+html[data-panes=two] #pane-detail{position:absolute;z-index:2;top:11.5rem;left:0;width:var(--jp-x1);box-sizing:border-box;margin:0;padding:0 16px;font-size:1.5rem;line-height:1.3}
+html[data-panes=two] #phone:not([data-app=home]) #pane-detail{display:none}
+/* 13. Lock: the time stays at the top of the list pane and the actions sit at the bottom of the thumb pane. */
+html[data-panes=two] #lock:not([hidden]){align-content:stretch;align-items:start;grid-template-rows:auto auto auto minmax(0,1fr) auto auto auto auto}
+html[data-panes=two] #lock>#lock-time{grid-row:1}
+html[data-panes=two] #lock>#lock-date{grid-row:2}
+html[data-panes=two] #lock>#lock-batt{grid-row:3}
+html[data-panes=two] #lock>#lock-story{grid-row:4}
+html[data-panes=two] #lock>#lock-notice{grid-row:4;align-self:end}
+html[data-panes=two] #lock>#lock-ask{grid-row:5;justify-self:center}
+html[data-panes=two] #lock>#unlock{grid-row:6;justify-self:center}
+html[data-panes=two] #lock>#lock-call{grid-row:7;justify-self:center}
+html[data-panes=two] #lock>#lock-hangup{grid-row:8;justify-self:center}
 @MIRROR@
 }

@@ -2,7 +2,7 @@
 """Network status and Wi-Fi control (opos.net, opos.net_page) against fake nmcli/mmcli/rfkill/ip/bluetoothctl scripts.
 
 The fakes are shell scripts on a private PATH, so the real runner, its timeouts and the way a password is handed
-to nmcli (standard input, never an argument) are exercised for real. What these cannot show: how the phone's own
+to nmcli (a private file, or opted-in terminal input, never a password argument) are exercised for real. What these cannot show: how the phone's own
 NetworkManager, ModemManager and polkit behave; that needs the live recipe on the device.
 """
 import http.client
@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from pathlib import Path
 from unittest import mock
 
@@ -81,6 +82,19 @@ UUID_NEW = "99999999-0000-4000-8000-000000000001"
 NMCLI = r"""#!/bin/sh
 D='@D@'
 echo "$@" >> "$D/calls.log"
+PWFILE=
+kept=
+: > "$D/argv.new"
+while [ $# -gt 0 ]; do
+  if [ "$1" = "passwd-file" ]; then PWFILE=$2; shift 2; continue; fi
+  printf '%s\n' "$1" >> "$D/argv.new"
+  shift
+done
+set --
+while IFS= read -r kept; do
+  set -- "$@" "$kept"
+done < "$D/argv.new"
+rm -f "$D/argv.new"
 ASK=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -105,7 +119,29 @@ case "$1 $2" in
       cat "$D/connections"
     fi;;
   "connection delete") echo "$4" >> "$D/deleted"; grep -v ":$4:" "$D/connections" > "$D/c.new"; mv "$D/c.new" "$D/connections"; echo "Connection successfully deleted.";;
-  "connection up") echo "$4" >> "$D/up"; echo "Connection successfully activated.";;
+  "connection add") printf '%s\n' "$*" > "$D/cmdline.log"; echo "$6" > "$D/created_ssid"; echo "Connection '$6' (@UNEW@) successfully added.";;
+  "connection up")
+    if [ -n "$PWFILE" ]; then
+      tr '\0' ' ' < /proc/$$/cmdline >> "$D/cmdline.log"
+      echo "$PWFILE" > "$D/pwfile"
+      stat -c %a "$PWFILE" > "$D/pwmode" 2>/dev/null || true
+      cp "$PWFILE" "$D/seen-key"
+      [ -f "$D/join_denied" ] && { echo "Error: Failed to add/activate new connection: Not authorized to control networking." >&2; exit 1; }
+      [ -f "$D/join_hang" ] && exec sleep 30
+      pw=$(sed -n 's/.*psk://p' "$PWFILE" | head -n 1)
+      if [ -f "$D/psk" ] && [ "$pw" != "$(cat "$D/psk")" ]; then
+        if [ -f "$D/leave_profile" ]; then echo "$(cat "$D/created_ssid"):@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$(cat "$D/created_ssid")" > "$D/ssid_@UNEW@"; fi
+        echo "Error: Connection activation failed: (7) Secrets were required, but not provided. [$pw]" >&2; exit 4
+      fi
+      if [ -f "$D/activation_fails" ]; then
+        if [ -f "$D/leave_profile" ]; then echo "$(cat "$D/created_ssid"):@UNEW@:wifi:" >> "$D/connections"; echo "802-11-wireless.ssid:$(cat "$D/created_ssid")" > "$D/ssid_@UNEW@"; fi
+        cat "$D/activation_fails" >&2; exit 4
+      fi
+      if [ -f "$D/quiet_ok" ]; then echo "Connection activated"; exit 0; fi
+      echo "Device 'wlan0' successfully activated with '$(cat "$D/activated_uuid" 2>/dev/null || echo @UNEW@)'."
+    else
+      echo "$4" >> "$D/up"; echo "Connection successfully activated."
+    fi;;
   "radio wifi") echo "$3" > "$D/radio";;
   "device disconnect") echo "$3" > "$D/disc"; echo "Device successfully disconnected.";;
   "device wifi")
@@ -189,13 +225,17 @@ class Fake:
     """A private directory of fake tools and canned outputs, plus a sysfs root for read_radios."""
 
     def __init__(self, test):
+        # Keep the created profile UUID consistent with this fake NetworkManager's receipts.
+        generated_uuid = mock.patch("uuid.uuid4", return_value=uuid.UUID(UUID_NEW))
+        generated_uuid.start()
+        test.addCleanup(generated_uuid.stop)
         self.dir = Path(tempfile.mkdtemp(prefix="opos-net-"))
         test.addCleanup(shutil.rmtree, self.dir, True)
         self.bin = self.dir / "bin"
         self.bin.mkdir()
         self.tools = self.dir / "tools"  # only what the fake scripts call, so a real nmcli or ip can never be reached
         self.tools.mkdir()
-        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout"):
+        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout", "rm", "cp", "stat"):
             if shutil.which(tool):
                 (self.tools / tool).symlink_to(shutil.which(tool))
         self.root = self.dir / "root"
@@ -236,6 +276,58 @@ class Fake:
         env = {"OPOS_NETWORK": "1"} if env is None else env if env is os.environ else {"OPOS_NETWORK": "1", **env}
         runner = net.make_runner(path or f"{self.bin}:{self.tools}")
         return net.Net(runner=runner, root=self.root, env=env, sleep=lambda s: None, wall=lambda: 1.8e9, **kw)
+
+
+class SecretFile(unittest.TestCase):
+    def test_success_is_private_and_contains_only_the_expected_key(self):
+        path = net._secret_file(PW)
+        self.addCleanup(lambda: Path(path).unlink(missing_ok=True))
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), "802-11-wireless-security.psk:" + PW + "\n")
+
+    def test_creation_failures_close_the_descriptor_and_remove_the_file(self):
+        real_mkstemp, real_fdopen = tempfile.mkstemp, os.fdopen
+        for stage in ("permissions", "open", "write"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as folder:
+                made = []
+
+                def create(**kw):
+                    fd, path = real_mkstemp(dir=folder, **kw)
+                    made.append((fd, path))
+                    return fd, path
+
+                class BrokenWriter:
+                    def __init__(self, fd, *args, **kw):
+                        self.handle = real_fdopen(fd, *args, **kw)
+
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *exc):
+                        self.handle.close()
+
+                    def write(self, value):
+                        self.handle.write(value)
+                        self.handle.flush()
+                        raise OSError("injected write failure")
+
+                target = "fchmod" if stage == "permissions" else "fdopen"
+                failure = BrokenWriter if stage == "write" else OSError("injected creation failure")
+                with mock.patch.object(net.tempfile, "mkstemp", side_effect=create), mock.patch.object(net.os, target, side_effect=failure):
+                    with self.assertRaises(OSError):
+                        net._secret_file(PW)
+                fd, path = made[0]
+                # Clean up even on the old implementation, so this regression itself leaks nothing.
+                try:
+                    with self.assertRaises(OSError):
+                        os.fstat(fd)
+                    self.assertFalse(os.path.exists(path))
+                    self.assertEqual(os.listdir(folder), [])
+                finally:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
 
 
 class Terse(unittest.TestCase):
@@ -516,6 +608,14 @@ class Status(unittest.TestCase):
             shutil.rmtree(f.root / p)
         self.assertEqual(f.net().status(True)["bluetooth"]["state"], "unavailable")
 
+    def test_vendor_bt_power_does_not_turn_hci_off(self):
+        f = Fake(self)
+        f.put("rfkill_out", RFKILL + "2: bt_power: Bluetooth\n\tSoft blocked: yes\n\tHard blocked: no\n")
+        s = f.net().status(True)
+        self.assertEqual(s["bluetooth"]["state"], "on")
+        self.assertNotIn("blocked", s["airplane"]["summary"])
+        self.assertNotIn("bt_power", f.calls())
+
     def test_modem_and_sim_cases(self):
         f = Fake(self)
         f.put("mmcli_out", "error: couldn't find modem\n")
@@ -609,6 +709,35 @@ class Status(unittest.TestCase):
         s = net.Net(runner=boom, root="/nonexistent", env={}).status(True)
         self.assertTrue(s["ok"])
         self.assertEqual(s["wifi"]["state"], "unavailable")
+
+    def test_clock_reports_explicit_sync_state_only_after_full_connectivity(self):
+        f = Fake(self)
+        tool = f.bin / "timedatectl"
+        tool.write_text("#!/bin/sh\necho NTPSynchronized=no\n", encoding="utf-8")
+        tool.chmod(0o755)
+        self.assertEqual(f.net().status(True)["clock"],
+                         {"state": "unsynchronized", "summary": "Clock: not synced"})
+        tool.write_text("#!/bin/sh\necho NTPSynchronized=yes\n", encoding="utf-8")
+        self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: set from the network")
+        f.put("general_status", "running:connected:none:enabled:enabled:enabled:enabled\n")
+        self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: no network time yet")
+
+    def test_clock_query_failure_or_unknown_reply_does_not_claim_syncing(self):
+        for reply in (net.Run(1, out="NTPSynchronized=yes"), net.Run(0),
+                      net.Run(0, out="unexpected response"),
+                      net.Run(0, out="NTPSynchronized=maybe"),
+                      net.Run(0, out="NTPSynchronized=yes\nNTPSynchronized=no")):
+            with self.subTest(reply=reply):
+                n = net.Net(runner=lambda *args, result=reply: result,
+                            root="/nonexistent", env={})
+                clock = n._net_clock(None, {"connectivity": "full"})
+                self.assertEqual(clock["state"], "unknown")
+                self.assertIn("could not be checked", clock["summary"])
+
+        def unavailable(*args):
+            raise OSError("fixture tool failure")
+        n = net.Net(runner=unavailable, root="/nonexistent", env={})
+        self.assertEqual(n._net_clock(None, {"connectivity": "full"})["state"], "unknown")
 
     def test_clock_note_and_cache(self):
         f = Fake(self)
@@ -717,7 +846,7 @@ class Join(unittest.TestCase):
         self.f = Fake(self)
         self.f.put("psk", PW)
 
-    def test_wpa_join_sends_the_password_on_stdin_only(self):
+    def test_wpa_join_uses_a_private_password_file_not_arguments(self):
         r = self.f.net().join("Neighbor 5G", PW)
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["message"], "Connected to Neighbor 5G. The password is kept by the phone's network service, not by OPOS.")
@@ -725,9 +854,13 @@ class Join(unittest.TestCase):
         self.assertNotIn(PW, self.f.calls())
         self.assertNotIn(PW, self.f.read("cmdline.log"))
         cmd = self.f.read("cmdline.log")
-        self.assertIn("--ask", cmd)
-        self.assertIn("device wifi connect Neighbor 5G ifname wlan0", cmd)
+        self.assertIn("passwd-file", cmd)
+        self.assertNotIn("--ask", cmd)
+        self.assertNotIn(PW, cmd)
         self.assertNotIn("password", cmd)
+        self.assertEqual(self.f.read("pwmode").strip(), "600")
+        self.assertFalse(os.path.exists(self.f.read("pwfile").strip()))
+        self.assertIn("802-11-wireless-security.psk:" + PW, self.f.read("seen-key"))
         self.assertEqual(self.f.read("deleted"), "")
 
     def test_wrong_password_says_why_and_leaves_nothing(self):
@@ -793,6 +926,41 @@ class Join(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         self.assertIn(UUID_CAFE, self.f.read("up"))
 
+    def test_same_name_profiles_activate_only_the_new_uuid(self):
+        second = "77777777-7777-4777-8777-777777777777"
+        self.f.put("connections", self.f.read("connections") + f"HomeNet:{second}:wifi:\n")
+        self.f.put(f"ssid_{second}", "802-11-wireless.ssid:HomeNet\n")
+        n = self.f.net()
+        original = n.runner
+        added, activated, deleted = [], [], []
+
+        def only_exact_uuid(argv, timeout, stdin):
+            if argv[1:3] == ["connection", "add"]:
+                added.append(argv)
+            if "up" in argv and "connection" in argv:
+                i = argv.index("up")
+                activated.append(argv[i + 1:i + 3])
+                # Two profiles already have this name. A name-based activation is ambiguous.
+                if argv[i + 1:i + 3] != ["uuid", UUID_NEW]:
+                    return net.Run(10, err="ambiguous profile name")
+                if any(uid not in self.f.read("connections") for uid in (UUID_HOME, second)):
+                    return net.Run(10, err="old profile removed before activation")
+            if argv[1:3] == ["connection", "delete"]:
+                deleted.append(argv[-1])
+            return original(argv, timeout, stdin)
+
+        n.runner = only_exact_uuid
+        with mock.patch("uuid.uuid4", return_value=uuid.UUID(UUID_NEW)):
+            result = n.join("HomeNet", PW)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(len(added), 1)
+        self.assertIn("connection.uuid", added[0])
+        self.assertEqual(added[0][added[0].index("connection.uuid") + 1], UUID_NEW)
+        self.assertEqual(activated, [["uuid", UUID_NEW]])
+        self.assertEqual(set(deleted), {UUID_HOME, second})
+        self.assertNotIn(UUID_NEW, deleted)
+        self.assertNotIn(PW, self.f.calls())
+
     def test_a_new_password_replaces_the_saved_entry(self):
         self.f.put("psk", "brand new pass")
         r = self.f.net().join("HomeNet", "brand new pass")
@@ -843,7 +1011,7 @@ class Join(unittest.TestCase):
         r = self.f.net().join("HomeNet", "brand new pass")
         self.assertTrue(r["ok"], r)
         calls = self.f.calls().splitlines()
-        join_at = next(i for i, c in enumerate(calls) if "device wifi connect" in c)
+        join_at = next(i for i, c in enumerate(calls) if "passwd-file" in c)
         delete_at = next(i for i, c in enumerate(calls) if "connection delete" in c)
         self.assertLess(join_at, delete_at, "the old entry is deleted after the new one is up, not before")
         self.assertEqual(self.f.read("deleted").split(), [UUID_HOME])
@@ -905,7 +1073,7 @@ class Join(unittest.TestCase):
     def test_hidden_network(self):
         r = self.f.net().join("Secret Net", PW, hidden=True)
         self.assertTrue(r["ok"], r)
-        self.assertIn("hidden yes", self.f.read("cmdline.log"))
+        self.assertIn("wifi.hidden yes", self.f.read("cmdline.log"))
         self.f.net().join("Secret Net", PW, hidden="yes")  # only a real True counts
         self.assertNotIn("hidden", self.f.read("cmdline.log"))
 
@@ -938,9 +1106,9 @@ class Join(unittest.TestCase):
 
     def test_tty_mode_for_an_nmcli_that_insists_on_a_terminal(self):
         self.f.put("need_tty")
-        r = self.f.net().join("Neighbor 5G", PW)  # standard input is a pipe: this fake refuses
-        self.assertFalse(r["ok"])
-        self.assertIn("password was not accepted", r["error"])
+        r = self.f.net().join("Neighbor 5G", PW)  # passwd-file does not need a terminal
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(os.path.exists(self.f.read("pwfile").strip()))
         with mock.patch.dict(os.environ, {"PATH": f"{self.f.bin}:{self.f.tools}"}):
             r = net.Net(root=self.f.root, env={"OPOS_NETWORK": "1", "OPOS_NET_TTY": "1"}, sleep=lambda s: None).join("Neighbor 5G", PW)
         self.assertTrue(r["ok"], r)

@@ -3,6 +3,7 @@ html[data-panes=two][data-hand=left]{--jp-act:var(--jp-l);--jp-act-ink:var(--jp-
 html[data-panes=two][data-hand=left][data-ff] #phone>:is(#jaryo-masthead,.at,#screen,#contacts,#intro,#threads,#helper){grid-column:2}
 html[data-panes=two][data-hand=left][data-ff] #phone>:is(#home,#apps-list,#apps-close,#back,#settings,#notice,#thread,#number,#msg,#controls,#ask),
 html[data-panes=two][data-hand=left][data-ff] #phone[data-app=home][data-allapps]>#jaryo-letters{grid-column:1}
+html[data-panes=two][data-hand=left] #pane-detail{left:var(--jp-x2)}
 html[data-panes=two][data-hand=left][data-ff] #lock>*{grid-column:2}
 html[data-panes=two][data-hand=left][data-ff] #lock>button{grid-column:1}
 html[data-panes=two][data-hand=left][data-ff] #jaryo-status-row{justify-content:flex-start}

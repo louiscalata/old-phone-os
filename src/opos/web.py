@@ -64,6 +64,7 @@ try:  # track monitor: the Inference page is optional; a runtime shipped without
 except ImportError:
     monitor = monitor_web = None
 from opos import statusbar  # track: status (the status bar's note, the call line on Home)
+from opos import fonts  # Newsreader and Inter Tight, served as files; not part of page()
 
 
 def self_rss_mb(path="/proc/self/status"):
@@ -818,6 +819,8 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "forbidden", "host")
             return
         path = urllib.parse.urlsplit(self.path).path
+        if fonts.serve(self, path):
+            return
         if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
             return
         if path == "/network":  # track: network
@@ -835,7 +838,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/update":  # its own document: no text field (no keyboard) and no Settings (no links to add); the decorations below are for "/" only
                 body = update_page.page(self.token, nonce, self.updater.snapshot()).encode()
             else:
-                body = page(self.token, nonce, span=self.span).encode()
+                body = fonts.inject(page(self.token, nonce, span=self.span).encode(), nonce)
             self.send_response(200)
             for k, v in secure.security_headers(nonce).items():
                 self.send_header(k, v)

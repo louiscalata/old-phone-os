@@ -35,11 +35,19 @@ class TestLock(unittest.TestCase):
     def test_lock_first_render_and_bypass(self):
         script = self.lock_script()
         self.assertIn('if(first){\n        first=false;', script)
-        pattern = re.search(r'if\(!/(.+)/\.test\(location.search\)\)window\.oposUI\.lock\(\)', script).group(1)
+        found = re.search(
+            r'if\(!/(?P<bypass>.+?)/\.test\(location.search\)\|\|/(?P<practice>.+)/\.test\(location.search\)\)window\.oposUI\.lock\(\)',
+            script,
+        )
+        self.assertIsNotNone(found)
+        bypass, practice = found.group('bypass'), found.group('practice')
         for query in ('?lock=0', '?demo=1', '?app=full', '?x=1&lock=0&y=2'):
-            self.assertRegex(query, pattern)
+            self.assertRegex(query, bypass)
+            self.assertNotRegex(query, practice)
         for query in ('', '?block=0', '?lock=01', '?demo=10', '?app=fuller', '?x=lock=0'):
-            self.assertNotRegex(query, pattern)
+            self.assertNotRegex(query, bypass)
+        for query in ('?practice=phone', '?lock=0&practice=phone&n=1', '?demo=1&practice=messages'):
+            self.assertRegex(query, practice)
 
     def test_lock_focus_and_fail_open(self):
         script = self.lock_script()

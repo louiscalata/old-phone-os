@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import clockcheck, firstrun, firstrun_page, web
+from opos import clockcheck, firstrun, firstrun_page, fonts, web
 from opos import timezone as tzmod
 from opos.setup import config as setup_config
 from opos.setup import prefs
@@ -416,7 +416,8 @@ class Off(Http):
         self.assertNotIn(b"tz-link", b)
         self.assertNotIn(b"/timezone", b)
         norm = lambda t: re.sub(r'nonce="[^"]+"', 'nonce="N"', t)
-        self.assertEqual(norm(web.page(self.token, "abc")), norm(b.decode()))
+        expected = fonts.inject(web.page(self.token, "abc").encode(), "abc").decode()
+        self.assertEqual(norm(expected), norm(b.decode()))
 
     def test_install_does_nothing_for_other_values(self):
         for v in ("0", "", "true", "yes"):

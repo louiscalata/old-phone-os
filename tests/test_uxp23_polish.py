@@ -97,6 +97,99 @@ console.log(JSON.stringify({same,after:[el.writes,wired],last:el.html}));
         self.assertEqual(out['last'], '')
 
 
+# Test-owned tracking is inserted before the page schedules its first automatic poll.
+POLL_ENTRY = "\narmPoll(pollMs);\nfunction fetchState()"
+POLL_TRACKER = r"""
+(function(){
+  var original=pollTick,tracked=window.__uxp23Polls={active:new Set(),calls:0};
+  pollTick=function(){
+    tracked.calls++;
+    var result=original.apply(this,arguments);tracked.active.add(result);
+    return Promise.resolve(result).finally(function(){tracked.active.delete(result)});
+  };
+})();
+"""
+
+
+def instrument_idle_polls(html):
+    if html.count(POLL_ENTRY) != 1:
+        raise ValueError("expected exactly one initial poll entrypoint")
+    return html.replace(POLL_ENTRY, "\n" + POLL_TRACKER + POLL_ENTRY, 1)
+
+
+IDLE_POLL_CHECK = r"""
+(async function(){
+  var out=[],records=[],inputs=[],mo=null,savedArm=armPoll,savedFetch=fetchState;
+  var tracked=window.__uxp23Polls,sheet=document.getElementById('sheet');
+  if(!tracked||!sheet)return ['idle fixture is missing poll tracking or Shade'];
+  function describe(r){var e=r.target.nodeType===1?r.target:r.target.parentElement;return {type:r.type,target:e&&(e.id?'#'+e.id:e.tagName)||'document',attribute:r.attributeName||''}}
+  function busy(){return {polls:tracked.active.size,shade:sheet.style.willChange,animations:document.getAnimations().filter(function(a){return a.playState==='running'||a.pending}).length}}
+  async function settle(){
+    var end=performance.now()+2000,quiet=0;
+    while(true){var b=busy();
+      if(!b.polls&&b.shade===''&&!b.animations){if(quiet>=2)return;quiet++}else quiet=0;
+      if(performance.now()>=end)throw new Error('idle readiness timeout '+JSON.stringify(b));
+      // jaryo.js onfinish/oncancel cleanup can follow the animation's finished state.
+      // Two rendering frames plus their microtasks drain that queued cleanup before observation.
+      await new Promise(function(resolve,reject){
+        var timer=setTimeout(function(){reject(new Error('idle readiness timeout '+JSON.stringify(busy())))},Math.max(0,end-performance.now()));
+        requestAnimationFrame(function(){Promise.resolve().then(function(){clearTimeout(timer);resolve()})});
+      });
+    }
+  }
+  try{
+    armPoll=function(){};clearTimeout(pollTimer);pollTimer=null;
+    // phone-a.js clears Shade will-change at transitionend or its 400ms fallback.
+    // Wait for those earlier actions and already tracked polls, not for the assertion to pass.
+    await settle();
+    fetchState=async function(){var state=await savedFetch();inputs.push({key:stateKey(state),state:JSON.parse(JSON.stringify(state)),online:navigator.onLine});return state};
+    await pollTick();await settle();
+    var baseline=inputs[inputs.length-1];inputs=[];
+    if(!baseline)throw new Error('warm-up poll did not read state');
+    var startCalls=tracked.calls;
+    mo=new MutationObserver(function(list){records.push.apply(records,list.map(describe))});
+    mo.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+    await pollTick();await pollTick();await pollTick();
+    records.push.apply(records,mo.takeRecords().map(describe));mo.disconnect();
+    if(tracked.calls-startCalls!==3||inputs.length!==3)out.push('idle measured poll count '+(tracked.calls-startCalls)+' / state reads '+inputs.length);
+    inputs.forEach(function(input,i){if(input.key!==baseline.key){var keys=Array.from(new Set(Object.keys(baseline.state).concat(Object.keys(input.state))));var changed=keys.filter(function(k){return JSON.stringify(baseline.state[k])!==JSON.stringify(input.state[k])});if(input.online!==baseline.online)changed.push('navigator.onLine');out.push('idle input key changed at poll '+(i+1)+': '+(changed.join(',')||'serialized key order'))}});
+    if(records.length)out.push('three polls of an unchanged state wrote '+records.length+' DOM records; targets '+JSON.stringify(records.slice(0,12)));
+  }catch(error){out.push('idle precondition failed: '+error.message)}
+  finally{
+    if(mo)mo.disconnect();fetchState=savedFetch;armPoll=savedArm;
+    clearTimeout(pollTimer);savedArm(pollMs);
+  }
+  return out;
+})()
+"""
+
+
+class IdlePollFixtures(unittest.TestCase):
+    def test_instrumentation_has_one_entry_and_preserves_original_poller(self):
+        raw = page(demo=True)
+        altered = instrument_idle_polls(raw)
+        self.assertEqual(altered.replace("\n" + POLL_TRACKER, "", 1), raw)
+        poller = (Path(__file__).resolve().parents[1] / 'src/opos/web_static/js-8.js').read_text()
+        body = poller[poller.index('async function pollTick()'):poller.index('\narmPoll(pollMs);')]
+        self.assertEqual(altered.count(body), 1)
+        for invalid in (raw.replace(POLL_ENTRY, ''), raw + POLL_ENTRY):
+            with self.assertRaises(ValueError):
+                instrument_idle_polls(invalid)
+
+    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    def test_actual_poll_and_shade_lifecycle_positive_and_negative_fixtures(self):
+        root = Path(__file__).resolve().parents[1]
+        poller = (root / 'src/opos/web_static/js-8.js').read_text()
+        poller = poller[poller.index('let pollMs='):poller.index('fetchState().then')]
+        shade = (root / 'src/opos/web_static/phone-a.js').read_text()
+        start = shade.index('try{(function(){')
+        shade = shade[start:shade.index('})()}catch(e){}', start) + len('})()}catch(e){}')]
+        payload = {'poller': instrument_idle_polls(poller), 'shade': shade, 'idle': IDLE_POLL_CHECK}
+        result = subprocess.run([shutil.which('node'), str(root / 'tests/polish_idle_test.js')], input=json.dumps(payload), text=True, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('actual poller and Shade fixtures passed', result.stdout)
+
+
 CHECK = r"""
 CHECKS.polish = async function() {
   await load('home',720,1280,false);
@@ -156,18 +249,7 @@ CHECKS.polish = async function() {
     if(document.querySelectorAll('.helper-actions button').length!==3)out.push('changed helper: actions '+document.querySelectorAll('.helper-actions button').length);
     return out;
   })()`));
-  out.push(...await ev(`(async function(){
-    // a11y-cost-05 (a): a poll whose state is what was last drawn writes nothing (about 60 DOM records per poll before).
-    // The live timer is stopped so a late tick cannot write during the count.
-    var out=[],rec=0,mo=new MutationObserver(function(l){rec+=l.length});
-    var savedArm=armPoll;armPoll=function(){};clearTimeout(pollTimer);
-    mo.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
-    await pollTick();mo.takeRecords();rec=0;
-    await pollTick();await pollTick();await pollTick();
-    rec+=mo.takeRecords().length;mo.disconnect();armPoll=savedArm;
-    if(rec)out.push('three polls of an unchanged state wrote '+rec+' DOM records');
-    return out;
-  })()`));
+  out.push(...await ev(`__IDLE_POLL_CHECK__`));
   await sleep(350);
   if(!await ev(`(function(){var r=document.getElementById('sheet').getBoundingClientRect();return r.top===0&&r.left===0&&r.right>=innerWidth&&r.bottom>=innerHeight})()`))out.push('shade does not cover viewport');
   await ev('oposUI.lock()');
@@ -179,10 +261,19 @@ CHECKS.polish = async function() {
 """
 
 
+CHECK = CHECK.replace('__IDLE_POLL_CHECK__', IDLE_POLL_CHECK)
+
+
 class PolishBrowser(unittest.TestCase):
     skip_reason = None
     mode = 'port'
-    setUpClass = classmethod(acceptance.TestUxrAcceptance.setUpClass.__func__)
+    @classmethod
+    def setUpClass(cls):
+        acceptance.TestUxrAcceptance.setUpClass.__func__(cls)
+        if cls.skip_reason:
+            return
+        html = Path(cls.tmp) / 'page.html'
+        html.write_text(instrument_idle_polls(html.read_text()), encoding='utf-8')
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
     tearDown = acceptance.TestUxrAcceptance.tearDown

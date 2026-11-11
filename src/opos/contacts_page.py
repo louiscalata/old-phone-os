@@ -21,11 +21,15 @@ _DEMO = (
 _CSS = """
 #find,#cname,#cnum,#cnote{width:100%;min-height:48px;margin:8px 0;padding:8px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
 #rows button{text-align:left}
+#letters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+#letters button{margin:0;min-height:48px;min-width:48px}
+#rows .letter-head{font:.875rem/1.3 'Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;text-transform:uppercase;letter-spacing:.04em;border-top:1px solid var(--fg);padding:8px 0}
 """
 
 _LIST = """
 <h1>Contacts</h1>
 <label>Search <input id="find" type="search" autocomplete="off"></label>
+<div id="letters" aria-label="Letters"></div>
 <p id="practice" class="note" hidden>Practice contacts. These are examples.</p>
 <p id="skipped" class="note" hidden></p>
 <ul id="rows"></ul>
@@ -37,8 +41,8 @@ _THUMB = """
 <p id="nums"></p>
 <p id="note-line"></p>
 <div>
-<button id="call" type="button">Call</button>
-<button id="text" type="button">Text</button>
+<a id="call" class="btn" href="#">Call</a>
+<a id="text" class="btn" href="#">Text</a>
 <button id="edit" type="button">Edit</button>
 </div>
 <p id="call-line" role="status"></p>
@@ -65,16 +69,25 @@ function G(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 var T=document.querySelector('meta[name=opos-token]').content, people=[], sel=null, label='Mobile';
 function api(b){return fetch('/api/contacts',{method:b?'POST':'GET',headers:Object.assign({'X-OPOS-Token':T},b?{'Content-Type':'application/json'}:{}),body:b?JSON.stringify(b):undefined}).then(function(r){return r.json()})}
+function letterOf(name){var c=(name||'').charAt(0).toUpperCase();return (c>='A'&&c<='Z')?c:'#'}
+function letterKey(letter){return letter==='#'?'other':letter}
+function practiceUrl(which, number){return '/?practice='+which+'&n='+encodeURIComponent(number||'')}
 function paint(s){if(!s||s.error)return;people=s.people||[];G('practice').hidden=!s.practice;G('skipped').hidden=!s.skipped;G('skipped').textContent=s.skipped?('Skipped '+s.skipped+' fields.'):'';
-var q=(G('find').value||'').toLowerCase(), rows=G('rows');rows.textContent='';
-people.filter(function(p){return !q||(p.name+' '+(p.numbers||[]).map(function(n){return n.number}).join(' ')).toLowerCase().indexOf(q)>=0}).forEach(function(p){
+var q=(G('find').value||'').toLowerCase(), rows=G('rows'), letters=G('letters');rows.textContent='';letters.textContent='';
+var shown=people.filter(function(p){return !q||(p.name+' '+(p.numbers||[]).map(function(n){return n.number}).join(' ')).toLowerCase().indexOf(q)>=0});
+shown.sort(function(a,b){var x=letterOf(a.name),y=letterOf(b.name);if(x!==y)return x<y?-1:1;x=(a.name||'').toLowerCase();y=(b.name||'').toLowerCase();return x<y?-1:x>y?1:0});
+var prev='';
+shown.forEach(function(p){
+var letter=letterOf(p.name);
+if(letter!==prev){prev=letter;var head=el('li','letter-head',letter);head.id='letter-'+letterKey(letter);rows.appendChild(head);
+var jump=el('button',null,letter);jump.type='button';jump.setAttribute('aria-label','Jump to '+letter);jump.onclick=function(){var h=G('letter-'+letterKey(letter));if(!h)return;var n=h.nextElementSibling,b=n&&n.querySelector('button');if(b&&b.focus){try{b.focus({preventScroll:true})}catch(e){b.focus()}}if(h.scrollIntoView){try{h.scrollIntoView({block:'start'})}catch(e){h.scrollIntoView()}}};letters.appendChild(jump)}
 var li=document.createElement('li'),b=el('button',null,p.name+(p.favorite?' · Favorite':''));b.type='button';b.onclick=function(){select(p)};li.appendChild(b);rows.appendChild(li)});
 if(sel){var cur=people.filter(function(p){return p.id===sel.id})[0];if(cur)select(cur)}}
-function select(p){sel=p;G('form').hidden=true;G('view').hidden=false;G('who').textContent=p.name;G('nums').textContent=(p.numbers||[]).map(function(n){return n.label+' '+n.number}).join(', ');G('note-line').textContent=p.note||'';G('call-line').textContent='';G('del').hidden=!!p.demo}
+function select(p){sel=p;G('form').hidden=true;G('view').hidden=false;G('who').textContent=p.name;G('nums').textContent=(p.numbers||[]).map(function(n){return n.label+' '+n.number}).join(', ');G('note-line').textContent=p.note||'';var num=(p.numbers&&p.numbers[0]&&p.numbers[0].number)||'';G('call').setAttribute('href',practiceUrl('phone',num));G('text').setAttribute('href',practiceUrl('messages',num));G('del').hidden=!!p.demo}
 function setFlag(id,on,word){G(id).setAttribute('aria-pressed',on?'true':'false');G(id).textContent=word+(on?'On':'Off')}
 G('find').oninput=function(){api().then(paint)};
-G('call').onclick=function(){if(!sel)return;G('call-line').textContent='Practice call. No real call is made.'};
-G('text').onclick=function(){if(!sel)return;G('call-line').textContent='Practice message. Nothing was sent.'};
+function stay(id){G(id).addEventListener('click',function(e){if((G(id).getAttribute('href')||'#')==='#')e.preventDefault()})}
+stay('call');stay('text');
 G('edit').onclick=function(){if(!sel||sel.demo)return;G('form').hidden=false;G('view').hidden=true;G('cname').value=sel.name;G('cnum').value=(sel.numbers[0]||{}).number||'';label=(sel.numbers[0]||{}).label||'Mobile';setFlag('fav',!!sel.favorite,'Favorite: ');setFlag('ice',!!sel.ice,'In case of emergency: ');G('cnote').value=sel.note||'';G('del').hidden=false;G('del').dataset.sure='';G('del').textContent='Delete'};
 G('fresh').onclick=function(){sel=null;G('form').hidden=false;G('view').hidden=true;G('cname').value='';G('cnum').value='';label='Mobile';setFlag('fav',false,'Favorite: ');setFlag('ice',false,'In case of emergency: ');G('cnote').value='';G('del').hidden=true};
 G('fav').onclick=function(){setFlag('fav',G('fav').getAttribute('aria-pressed')!=='true','Favorite: ')};

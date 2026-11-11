@@ -38,6 +38,7 @@ src/opos/evaleol.py
 src/opos/evaluate.py
 src/opos/firstrun.py
 src/opos/firstrun_page.py
+src/opos/fonts.py
 src/opos/goalsim.py
 src/opos/governor.py
 src/opos/home.py
@@ -109,6 +110,13 @@ src/opos/web_static/css-1.css
 src/opos/web_static/css-2.css
 src/opos/web_static/css-3.css
 src/opos/web_static/css-4.css
+src/opos/web_static/fonts.css
+src/opos/web_static/fonts/INTERTIGHT-OFL.txt
+src/opos/web_static/fonts/NEWSREADER-OFL.txt
+src/opos/web_static/fonts/inter-tight-400-latin.woff2
+src/opos/web_static/fonts/inter-tight-700-latin.woff2
+src/opos/web_static/fonts/newsreader-400-latin.woff2
+src/opos/web_static/fonts/newsreader-700-latin.woff2
 src/opos/web_static/jaryo-layout.css
 src/opos/web_static/jaryo-layout.js
 src/opos/web_static/jaryo.css

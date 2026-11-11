@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import osk
+from opos import fonts, osk
 from tests import webclient
 
 # tests/webclient.py passes skip_host to HTTPConnection.request, which newer Pythons no longer take; the other web tests
@@ -119,7 +119,7 @@ class OskServerTest(unittest.TestCase):
                 status, headers, body = self.get(run)
                 nonce, page = self.expected_page(run, headers)
                 self.assertEqual(status, 200)
-                self.assertEqual(body, page.encode("utf-8"), "byte-identical page, OPOS_OSK=%r" % value)
+                self.assertEqual(body, fonts.inject(page.encode("utf-8"), nonce), "page plus the font sheet, OPOS_OSK=%r" % value)
                 self.assertNotIn(b"/osk.", body)
                 for p in ("/osk.js", "/osk.css", "/osk.js?x=1"):
                     s, h, b = self.get(run, p)
@@ -135,8 +135,9 @@ class OskServerTest(unittest.TestCase):
             tags = osk.tags(nonce, {"OPOS_OSK": "1"})
             self.assertEqual(status, 200)
             self.assertEqual(headers["content-type"], "text/html; charset=utf-8")
-            self.assertEqual(body.decode("utf-8"), page[:page.rindex("</body>")] + tags + "</body></html>")
-            self.assertEqual(body.decode("utf-8").replace(tags, ""), page, "removing the tags gives the unchanged page")
+            base = fonts.inject(page.encode("utf-8"), nonce).decode("utf-8")
+            self.assertEqual(body.decode("utf-8"), base[:base.rindex("</body>")] + tags + "</body></html>")
+            self.assertEqual(body.decode("utf-8").replace(tags, ""), base, "removing the keyboard tags leaves the page and the font sheet")
             self.assertEqual(int(headers["content-length"]), len(body))
             self.assertIn(f"script-src 'nonce-{nonce}'", headers["content-security-policy"])
             self.assertIn(f"style-src 'nonce-{nonce}'", headers["content-security-policy"])
@@ -147,7 +148,7 @@ class OskServerTest(unittest.TestCase):
         with env_without(OPOS_OSK="1"), mock.patch.object(webclient.web, "osk", None), webclient.Running(token=TOKEN) as run:
             status, headers, body = self.get(run)
             nonce, page = self.expected_page(run, headers)
-            self.assertEqual((status, body), (200, page.encode("utf-8")))
+            self.assertEqual((status, body), (200, fonts.inject(page.encode("utf-8"), nonce)))
             for p in ("/osk.js", "/osk.css"):
                 self.assertEqual(self.get(run, p)[0], 404, p)
             self.assertEqual(self.get(run, "/favicon.ico")[0], 200)

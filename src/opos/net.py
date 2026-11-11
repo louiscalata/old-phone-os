@@ -5,9 +5,9 @@ Status reads NetworkManager (nmcli), ModemManager (mmcli), rfkill, BlueZ (blueto
 injectable runner with a timeout: a missing tool, a failure or a timeout reads as "unavailable", never as an
 exception. Wi-Fi control (scan, join, forget, disconnect, on/off) goes through NetworkManager as the unprivileged
 user the server runs as. `nmcli general permissions` is read first, and a refusal by polkit is reported in plain
-words instead of failing. A Wi-Fi password travels only on nmcli's standard input (`nmcli --ask`, documented to
-prompt for the missing password), never in an argument, so it is not in the process list. It is not kept, not
-logged and not put in any state; NetworkManager itself stores the profile. Nothing here is part of /api/state, so
+words instead of failing. A Wi-Fi password travels in a temporary mode 0600 file (or on terminal input when
+OPOS_NET_TTY=1), never in an argument. The temporary file is removed after the attempt. The password is not
+logged or put in OPOS state; NetworkManager itself stores the profile. Nothing here is part of /api/state, so
 no network name reaches the helper. Calls and texts are still simulated, and every status says so.
 
     python3 -m opos.net [status|scan|probe]     what OPOS sees (probe: the raw tool output, to refine the parsers)
@@ -19,8 +19,10 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import threading
 import time
+import uuid
 from typing import NamedTuple
 
 from opos.hw.battery import read_radios
@@ -215,6 +217,27 @@ def check_ssid(ssid):
     return None
 
 
+def _secret_file(password):
+    """A mode 0600 file nmcli can read as `passwd-file`. The caller deletes it."""
+    fd, path = tempfile.mkstemp(prefix="opos-wifi-")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = None  # the file object now owns the descriptor, including on write failure
+            handle.write("802-11-wireless-security.psk:" + password + "\n")
+    except BaseException:
+        try:
+            if fd is not None:
+                os.close(fd)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        raise
+    return path
+
+
 def check_password(pw):
     """None if usable as a Wi-Fi password (8 to 63 plain characters, or 64 hex digits), else why not."""
     if not isinstance(pw, str) or not pw:
@@ -341,13 +364,21 @@ class Net:
         r = q.call(["rfkill", "list"])
         if not r.ok:
             return None
-        rows, cur = [], None
+        rows, cur, skip = [], None, False
         for line in r.out.splitlines():
             m = re.match(r"\s*\d+:\s*([^:]+):\s*(.+?)\s*$", line)
             if m:
+                # The vendor bt_power row stays soft-blocked while hci0 is up. It is not the
+                # adapter, and nothing here writes rfkill, so it must not make Bluetooth look off.
+                skip = m.group(1).lower() == "bt_power"
+                if skip:
+                    cur = None
+                    continue
                 kind = {"wireless lan": "wlan", "bluetooth": "bluetooth", "wireless wan": "wwan"}.get(m.group(2).lower(), m.group(2).lower())
                 cur = {"name": m.group(1), "type": kind, "soft": False, "hard": False}
                 rows.append(cur)
+                continue
+            if skip:
                 continue
             m = re.match(r"\s*(soft|hard) blocked:\s*(yes|no)", line, re.I)
             if m and cur is not None:
@@ -425,11 +456,27 @@ class Net:
         bt = self._bluetooth(q, rf, radios)
         s = {"ok": True, "wifi": wifi, "bluetooth": bt, "modem": modem, "sim": sim,
              "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf, bt, radios, modem), "usb": self._usb(ips, radios),
+             "clock": self._net_clock(q, gs),
              "control": self._control(q, gs, perms), "simulated": SIMULATED, "notes": []}
         if self._wall() < 1.6e9:
             s["notes"].append("The phone's clock is not set yet, so secure websites and updates may fail until it is.")
         s["tools_missing"] = sorted(q.missing)
         return s
+
+    def _net_clock(self, q, gs):
+        """Report explicit synchronization state; an unsynchronized clock is not proof of active syncing."""
+        if not gs or gs.get("connectivity") != "full":
+            return {"state": "offline", "summary": "Clock: no network time yet"}
+        try:
+            r = self.runner(["timedatectl", "show", "-p", "NTPSynchronized"], 3, None)
+        except Exception:
+            r = Run(126)
+        text = (r.out or "").replace(" ", "").strip().lower()
+        if r.ok and text == "ntpsynchronized=yes":
+            return {"state": "set", "summary": "Clock: set from the network"}
+        if r.ok and text == "ntpsynchronized=no":
+            return {"state": "unsynchronized", "summary": "Clock: not synced"}
+        return {"state": "unknown", "summary": "Clock: network time could not be checked"}
 
     def _wifi(self, q, gs, devs, ips, radios):
         w = {"present": True if "wifi" in radios["radios_present"] else None, "enabled": None, "state": "unavailable", "device": None,
@@ -769,9 +816,25 @@ class Net:
         ifn = ["ifname", dev] if dev else []
         wait = ["--colors", "no", "--wait", str(JOIN_WAIT_S)]
         if password:
-            # nmcli always makes a NEW profile for this. The old entries stay until the new one is up: a failed join (the network
+            # nmcli makes a new profile for this. The old entries stay until the new one is up: a failed join (the network
             # went away, no address, a timeout) must not cost the owner a password that was right.
-            r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
+            # The password is not an argument. OPOS_NET_TTY=1 still types it on a terminal; otherwise it is a mode 0600 file
+            # passed to `connection up ... passwd-file`, and that file is removed before this returns.
+            if self.env.get("OPOS_NET_TTY") == "1":
+                r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
+            else:
+                # Profile names are not unique; activation must select the new profile, not an old same-name one.
+                new_uuid = str(uuid.uuid4())
+                secret = _secret_file(password)
+                try:
+                    added = q.call(["nmcli", "connection", "add", "type", "wifi", "con-name", ssid, "ssid", ssid,
+                                    "connection.uuid", new_uuid, "wifi-sec.key-mgmt", "wpa-psk"] + ifn + (["wifi.hidden", "yes"] if hidden else []))
+                    r = added if not added.ok else q.call(["nmcli"] + wait + ["connection", "up", "uuid", new_uuid, "passwd-file", secret], JOIN_WAIT_S + JOIN_EXTRA_S)
+                finally:
+                    try:
+                        os.remove(secret)
+                    except OSError:
+                        pass
         elif saved:
             r = q.call(["nmcli"] + wait + ["connection", "up", "uuid", saved[0]["uuid"]] + ifn, JOIN_WAIT_S + JOIN_EXTRA_S)
         else:

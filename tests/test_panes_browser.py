@@ -72,6 +72,95 @@ def clean_env(config_dir, **extra):
     return env
 
 
+def assert_home_layout(case, hand, home, tiles, where):
+    """The Home grid fills its pane; its real touch targets remain inset and outside the hinge."""
+    case.assertIn(hand, ("right", "left"), where)
+    left, right = (717, 1392) if hand == "right" else (0, 675)
+    case.assertIsNotNone(home, where)
+    case.assertEqual((home["l"], home["r"]), (left, right), where)
+    case.assertTrue(tiles, (where, "no visible Home tiles"))
+    case.assertTrue({"phone", "messages", "helper", "settings", "allapps"}.issubset(
+        {tile["id"] for tile in tiles}), (where, "missing Home tiles", tiles))
+    case.assertAlmostEqual(min(tile["l"] for tile in tiles), left + 12, delta=0.5, msg=where)
+    case.assertAlmostEqual(max(tile["r"] for tile in tiles), right - 12, delta=0.5, msg=where)
+    for tile in tiles:
+        detail = (where, tile)
+        case.assertGreaterEqual(tile["l"], left + 11.5, detail)
+        case.assertLessEqual(tile["r"], right - 11.5, detail)
+        case.assertFalse(tile["r"] > 675.5 and tile["l"] < 716.5, detail)
+        case.assertGreaterEqual(tile["w"], 47.5, detail)
+        case.assertGreaterEqual(tile["h"], 47.5, detail)
+
+
+class HomeLayoutAssertions(unittest.TestCase):
+    """Browser-free negative fixtures exercise the same assertions used by the native receipts."""
+
+    @staticmethod
+    def fixture(hand):
+        left, right = (717, 1392) if hand == "right" else (0, 675)
+        tiles = [{"id": name, "l": left + 12 + (index % 2) * 331.5,
+                  "r": left + 331.5 + (index % 2) * 331.5, "w": 319.5, "h": 48}
+                 for index, name in enumerate(("phone", "messages", "helper", "settings"))]
+        tiles.append({"id": "allapps", "l": left + 12, "r": right - 12, "w": 651, "h": 48})
+        return {"l": left, "r": right}, tiles
+
+    @unittest.skipUnless(NODE, "no node")
+    def test_driver_measures_actual_visible_buttons_without_rounding(self):
+        # Evaluate only the driver's measurement expression in a VM; never import/launch the browser driver.
+        source = DRIVER.read_text(encoding="utf-8")
+        expression = source.split("const HOME_TILES = `", 1)[1].split("`;", 1)[0]
+        self.assertEqual(source.count("${HOME_TILES}"), 2, "state and motion receipts use the same measurement")
+        script = r"""
+const assert=require('assert'),vm=require('vm');
+function button(id,box,style={display:'block',visibility:'visible'},rects=1){return {
+ id,dataset:{open:'phone'},getBoundingClientRect:()=>box,getClientRects:()=>Array(rects),style};}
+const box={left:729.25,right:1048.75,width:319.5,height:48.25};
+const buttons=[button('',box),button('allapps',{left:729,right:1380,width:651,height:48}),
+ button('hidden',box,{display:'none',visibility:'visible'}),
+ button('invisible',box,{display:'block',visibility:'hidden'}),
+ button('empty',{left:0,right:0,width:0,height:0}),button('no-rects',box,undefined,0)];
+const context={document:{querySelectorAll(selector){assert.equal(selector,'#home button');return buttons}},
+ getComputedStyle:e=>e.style};
+const result=JSON.parse(JSON.stringify(vm.runInNewContext(process.argv[1],context)));
+assert.deepStrictEqual(result,[{id:'phone',l:729.25,r:1048.75,w:319.5,h:48.25},
+ {id:'allapps',l:729,r:1380,w:651,h:48}]);
+box.left=710;box.width=338.75;
+assert.equal(vm.runInNewContext(process.argv[1],context)[0].l,710,'actual hinge intrusion must reach assertions');
+console.log('Home tile measurement assertions passed');
+"""
+        result = subprocess.run([NODE, "-e", script, expression], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Home tile measurement assertions passed", result.stdout)
+
+    def test_full_container_and_inset_tiles_in_both_hands(self):
+        for hand in ("right", "left"):
+            home, tiles = self.fixture(hand)
+            assert_home_layout(self, hand, home, tiles, hand)
+
+    def test_bad_container_inset_hinge_target_and_missing_tiles_fail(self):
+        for hand in ("right", "left"):
+            for defect in ("container", "inset", "hinge", "width", "height", "missing", "empty"):
+                with self.subTest(hand=hand, defect=defect):
+                    home, tiles = self.fixture(hand)
+                    if defect == "container":
+                        home["l"] += 12  # the former container assertion must not pass
+                    elif defect == "inset":
+                        for tile in tiles:
+                            tile["l"] += 2
+                    elif defect == "hinge":
+                        tiles[0].update(l=670, r=730)
+                    elif defect == "width":
+                        tiles[0]["w"] = 47
+                    elif defect == "height":
+                        tiles[0]["h"] = 47
+                    elif defect == "missing":
+                        tiles.pop()
+                    else:
+                        tiles.clear()
+                    with self.assertRaises(AssertionError):
+                        assert_home_layout(self, hand, home, tiles, (hand, defect))
+
+
 class PanesBrowser(unittest.TestCase):
     r = None
 
@@ -201,7 +290,7 @@ class PanesBrowser(unittest.TestCase):
                 self.assertTrue(at["status"] and all(self.thumb(hand, {"l": a, "r": b}) for a, b in at["status"]), (k, at["status"]))
                 self.assertEqual(at["masthead"]["l"], 0 if hand == "right" else 717, k)
             if name == "home":
-                self.assertEqual(at["home"]["l"], 729 if hand == "right" else 12, k)
+                assert_home_layout(self, hand, at["home"], at["homeTiles"], k)
             if name == "allapps":
                 self.assertTrue(self.thumb(hand, at["appsList"]) and self.thumb(hand, at["appsClose"]), k)
             if name == "phone":
@@ -363,7 +452,8 @@ class PanesBrowser(unittest.TestCase):
                 self.assertTrue(self.thumb(hand, {"l": row["st"]["backL"], "r": row["st"]["backR"]}), (hand, row))
                 self.assertEqual((row["st"]["anims"], row["home"]["anims"]), (0, 0), (hand, row))
                 self.assertEqual(row["home"]["app"], "home", (hand, row))
-                self.assertEqual(row["home"]["homeL"], 729 if hand == "right" else 12, (hand, row))
+                assert_home_layout(self, hand, {"l": row["home"]["homeL"], "r": row["home"]["homeR"]},
+                                   row["home"]["tiles"], (hand, row))
                 self.assertEqual(row["home"]["focus"], row["app"], (hand, row))
 
     def test_no_console_error_and_no_csp_violation_anywhere(self):

@@ -44,7 +44,13 @@ class TestWebStaticLoader(unittest.TestCase):
             return
         for p in sorted(base.iterdir()):
             if p.is_file() and p.name not in SEPARATE_DOCUMENT:
-                self.assertIn(p.read_text(encoding="utf-8"), body)
+                text = p.read_text(encoding="utf-8")
+                if p.name == "fonts.css":
+                    # Only this exact sheet is served separately; every other main-page asset stays inlined.
+                    self.assertNotIn(text, body)
+                    self.assertNotIn('href="/fonts.css"', body, "the nonce-authorized font link is added when served")
+                else:
+                    self.assertIn(text, body, p.name)
 
     def test_markers_resolve(self):
         src = inspect.getsource(opos.web)

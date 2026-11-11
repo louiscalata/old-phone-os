@@ -25,13 +25,14 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from opos import firstrun, osk, web  # noqa: E402
+from opos import firstrun, fonts, osk, web  # noqa: E402
 from tests.test_selftest import Fake, SERVER_ENV  # noqa: E402
+from tests.test_uxp30_budget import WAVE_GATE  # noqa: E402
 
 ORIG_PAGE = web.page  # before any run of the first-run hook
 DUO = ROOT / "packaging/duo-os"
 PAGE_CAP = 100 * 1024  # tests/test_uxp30_budget.py measures page(); the Duo OS adds links and two tags on top, by injection
-DUO_ALLOWANCE = 650  # bytes the three tracks may inject into the Duo OS home page (measured: about 590)
+DUO_ALLOWANCE = 650  # bytes the three tracks may inject above the font-aware baseline (measured: 618)
 ALL_ON = {"OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"}
 
 
@@ -124,7 +125,7 @@ class TogetherInOneServer(unittest.TestCase):
         with duo_server() as (port, cfg):
             st, h, home = get(port, "/")
             token = re.search(rb'name="opos-token" content="([^"]+)"', home).group(1).decode()
-            self.assertEqual(home, ORIG_PAGE(token, nonce_of(h)).encode(), "byte-identical home page with nothing set")
+            self.assertEqual(home, fonts.inject(ORIG_PAGE(token, nonce_of(h)).encode(), nonce_of(h)), "home page plus the font sheet")
             self.assertEqual(get(port, "/", {"Accept": "text/html"})[0], 200, "no first run")
             for path in ("/firstrun", "/timezone", "/osk.js", "/osk.css", "/api/firstrun"):
                 self.assertEqual(get(port, path)[0], 404, path)
@@ -147,10 +148,21 @@ class TogetherInOneServer(unittest.TestCase):
         with duo_server(**ALL_ON) as (port, cfg):
             st, h, home = get(port, "/")
             token = re.search(rb'name="opos-token" content="([^"]+)"', home).group(1).decode()
+            nonce = nonce_of(h)
             with mock.patch.dict(os.environ, clean_env(), clear=True):  # page() itself adds the Network link when OPOS_NETWORK=1
-                plain = len(ORIG_PAGE(token, nonce_of(h)).encode())
-            extra = len(home) - plain
-            self.assertLessEqual(plain, PAGE_CAP, "web.page() itself stays within the 100 KiB cap")
+                raw_page = ORIG_PAGE(token, nonce).encode()
+            # The font link is served even with all three switches off; it is baseline, not a track injection.
+            baseline = fonts.inject(raw_page, nonce)
+            extra = len(home) - len(baseline)
+            font_tag = ('<link rel="stylesheet" href="/fonts.css" nonce="%s">' % nonce).encode()
+            self.assertEqual(baseline, raw_page.replace(b"</head>", font_tag + b"</head>", 1))
+            self.assertEqual(re.findall(rb'<link\b[^>]*href="/fonts\.css"[^>]*>', home), [font_tag])
+            self.assertIn("style-src 'nonce-%s'" % nonce, h["content-security-policy"])
+            font_status, font_headers, font_css = get(port, "/fonts.css")
+            self.assertEqual((font_status, font_headers.get("content-type")), (200, "text/css; charset=utf-8"))
+            self.assertEqual(font_css, (web._STATIC / "fonts.css").read_bytes())
+            self.assertLessEqual(len(raw_page), PAGE_CAP, "web.page() itself stays within the 100 KiB cap")
+            self.assertLessEqual(len(home), WAVE_GATE, "the served Duo page keeps the unchanged wave gate")
             self.assertLessEqual(extra, DUO_ALLOWANCE, "the links and tags the three tracks inject: %d bytes, so the Duo OS home page is %d" % (extra, len(home)))
             self.assertGreater(extra, 300, "all three injected something")
 

@@ -96,6 +96,23 @@ class TestGuardMeta(unittest.TestCase):
             self.assertTrue(check.meta_only_errors(path, '<a href="' + url + '/other">Elsewhere</a>'))
         self.assertTrue(check.meta_only_errors(path, 'claude'))
 
+    def test_reviewed_font_notices_are_exact_non_runtime_text(self):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        for name in ('INTERTIGHT-OFL.txt', 'NEWSREADER-OFL.txt'):
+            path = 'src/opos/web_static/fonts/' + name
+            text = (root / path).read_text(encoding='utf-8')
+            with self.subTest(name=name):
+                self.assertEqual(check.meta_only_errors(path, text), [])
+                # Text changes and executable additions require a fresh review.
+                self.assertTrue(check.meta_only_errors(path, text + 'changed'))
+                self.assertTrue(check.meta_only_errors(path, text + '\nfetch("https://github.com/x")'))
+                self.assertTrue(check.meta_only_errors(path, text + '\n<script src="https://scripts.sil.org/x"></script>'))
+                self.assertTrue(check.meta_only_errors(path, text + '\nclaude'))
+                # The same URLs never gain a general host or runtime-code exception.
+                self.assertTrue(check.meta_only_errors('src/app.py', text))
+                self.assertTrue(check.meta_only_errors(path, 'fetch("https://github.com/x")'))
+                self.assertTrue(check.meta_only_errors('src/opos/web_static/fonts/OTHER-OFL.txt', text))
+
     def test_repo_files_clean(self):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         if not os.path.exists(os.path.join(root, '.git')):

@@ -20,6 +20,12 @@ main page is at its size budget. It reads, never raising when a tool is missing 
 | Mobile data | NetworkManager's `gsm` connection. The port switches it off while Wi-Fi is connected, and the page says so |
 | Airplane mode | every radio blocked in `rfkill`, or switched off in NetworkManager or (when `rfkill` does not list it) off in `bluetoothctl`. A radio whose state was not read keeps the answer at "unknown"; it is never counted as blocked. With NetworkManager not answering and no modem row in `rfkill`, the modem is read through ModemManager: registered, connected, searching or enabled means it is on, and a modem that is there but unread, or in any other state, is such a radio (the summary names "mobile data") |
 | USB network | `ip -br addr`: `usb0`, `rndis0`, `ncm0` and the like, and their address |
+| Clock | With full network connectivity, `timedatectl show -p NTPSynchronized`: explicit `yes` reports set, explicit `no` reports not synced, and a missing, failed or unreadable reply stays unknown |
+
+`NTPSynchronized=no` does not show whether a synchronization service is running.
+The [systemd property reference](https://raw.githubusercontent.com/systemd/systemd/main/man/org.freedesktop.timedate1.xml)
+distinguishes the kernel's synchronization flag from whether a network time service is enabled.
+OPOS reads that flag; it does not start a service or change the clock.
 
 Calls and texts are **still simulated**: `src/opos/mm_modem.py` is not wired in yet. The page says so under the status, and every
 status carries the sentence, so the modem line is the real radio's state, not a working phone line.
@@ -34,10 +40,10 @@ NetworkManager as the unprivileged user the server runs as (`droidian`). Nothing
 - **Permission is checked first.** `nmcli general permissions` is read; if NetworkManager would refuse (`no`) or ask an administrator
   (`auth`), the page says so in plain words and does not try. Scanning, joining, forgetting and switching Wi-Fi each need their own
   permissions (`wifi.scan`; `network-control` and `settings.modify.system`; `settings.modify.system`; `enable-disable-wifi`).
-- **Passwords.** A password goes to `nmcli --ask device wifi connect` on standard input, one line, so it is never in the process list.
-  nmcli's documented behaviour is that `--ask` prompts for a password that was not given; that it reads the prompt from a pipe is
-  from nmcli's documentation and common use, not from a run on the phone. If the live check shows it does not, `OPOS_NET_TTY=1` types
-  the password into a pseudo terminal instead. The password is not kept, logged or returned by OPOS: NetworkManager stores the
+- **Passwords.** A password is written to a mode 0600 file and passed as `nmcli connection up ... passwd-file`, then the file is deleted. It is never an argument. `OPOS_NET_TTY=1` opts into `nmcli --ask` on a pseudo terminal instead. Neither path has been verified on the phone.
+  The non-terminal path assigns the new profile a UUID and activates that exact UUID, so an older profile with the same name
+  cannot be selected by name. [nmcli documents UUID selection](https://networkmanager.dev/docs/api/latest/nmcli.html) for identifying
+  profiles unambiguously. The password is not kept, logged or returned by OPOS: NetworkManager stores the
   profile (so it is on the phone, in NetworkManager's connection file) and "Forget" deletes it. It is not part of `/api/state`, so
   the helper never sees it, and no network name, saved or visible, is part of the state the helper reads. A password for a saved
   network replaces the saved entry only after the new one is up: a failed join (a wrong password, no address, the network gone) keeps
