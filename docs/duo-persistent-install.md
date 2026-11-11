@@ -38,7 +38,8 @@ written; the install chain (`deploy/duo-opos-boot.ps1`) is untouched and keeps w
 1. USB data must work: every command below needs fastboot and adb over USB. The owner confirmed USB data works on November 11, 2026; check it in G0.
 2. G4 and later need the OPOS rootfs on userdata. That is the install chain's job, it erases Android's data, and it is
    a separate decision of the owner. G0 through G3b do not touch userdata and do not need the rootfs.
-3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`), battery 30 percent or more,
+3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`; `misc-brake.img` is listed under G0 only for
+   reference and is not used by these gates), battery 30 percent or more,
    the phone on a good cable.
 
 ## What is known, and what the experiment settles
@@ -112,7 +113,8 @@ start. Every future phone result is **NOT_RUN** until recorded.
 ## Initramfs root telnet shell — OPEN DECISION
 
 The PC session, 2026-11-11, observed that when the rootfs cannot be mounted, the kernel stops in the Halium initramfs
-with an unauthenticated root telnet shell on the USB link. It lives in `boot.img`'s initramfs; the image hardening
+with an unauthenticated root telnet shell on the USB link (telnet, port 23, on the USB RNDIS gadget; the
+address is kept in the owner's PC notes, not here). It lives in `boot.img`'s initramfs; the image hardening
 removed the rootfs gadget script's telnet shell but does not remove this one. Any failed start of a persistent install
 therefore leaves a root shell on the cable. It is also a usable recovery console (BusyBox 1.22.1 includes `dd`,
 `blockdev`, `sha256sum` and `e2fsck`).
