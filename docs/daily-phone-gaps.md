@@ -7,7 +7,7 @@ What main already has, set against a short list of everyday phone jobs. Read fro
 
 ## Already on main
 
-The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc`. The demo and the postmarketOS build do not set `OPOS_APPS`. Phone, Messages, and Lock are part of the main page, not that list.
+The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls`. The demo and the postmarketOS build do not set `OPOS_APPS`. Phone, Messages, and Lock are part of the main page, not that list.
 
 | Piece | What the source does |
 |---|---|
@@ -28,7 +28,7 @@ A gap fits the ethos when it is a plain local tool, keeps its own data on the ph
 | Gap | Fits | New package or service | This round |
 |---|---|---|---|
 | Messages and SMS through oFono | Yes. Calls and messages are the essential work. | Yes. oFono is not the dialer. The image already has ModemManager, and the adapter is not connected. Using either one is a service change. | Listed only. |
-| Call log | Yes. A local list of calls the dialer already placed. | No. | Build. Highest value of the gaps that need nothing new. |
+| Call log | Yes. A local list of calls recorded at the modem boundary. | No. | Implemented at `/calls`, enabled by `OPOS_APPS=calls`. Up to 200 local entries, incoming/outgoing/missed, contact name at start, connected duration, Practice/Real labels, callback through Phone, confirmed clear, and API missed count. Current modem is simulated. Every on-device check is NOT_RUN. |
 | Flashlight | A pocket light fits. | The LED is a kernel path, not a package in this tree, and writing it is not approved. A white screen would need no package and is a poor stand-in. | Listed only. |
 | Timer and stopwatch | Already in Clock. Not a gap. | No. | Do not add a second one. |
 | Battery readout | Already on the phone. Not a gap. | No. | None. |

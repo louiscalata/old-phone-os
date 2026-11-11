@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import argparse
 import time
+import uuid
+
+from opos.call_events import CallEvent, notify
 
 
 def render(tick):
@@ -8,12 +11,39 @@ def render(tick):
 
 
 class ScreenModem:
-    def __init__(self):
+    def __init__(self, call_observer=None):
         self.events = []
+        self.call_observer = call_observer
+        self._call = None
+        self._connected = None
+    def _emit(self, state, duration=None):
+        ident, number, direction = self._call
+        notify(self.call_observer, CallEvent(ident, state, number, direction, time.time(), True,
+                                          duration, self._connected is not None))
+    def _start(self, number, direction):
+        if self._call is not None:
+            raise RuntimeError("already in a call")
+        self._call = (uuid.uuid4().hex, number, direction)
+        self._connected = None
+        self._emit("started")
     def dial(self, number):
+        self._start(number, "outgoing")
         self.events.append(("dial", number))
+        self.answer_call()  # The simulated modem connects immediately; no radio is used.
+    def receive_call(self, number):
+        """Simulate ringing for local tests; this is outside the Modem protocol."""
+        self._start(number, "incoming")
+    def answer_call(self):
+        if self._call is not None and self._connected is None:
+            self._connected = time.monotonic()
+            self._emit("connected")
     def hang_up(self):
         self.events.append(("hang_up",))
+        if self._call is not None:
+            duration = 0 if self._connected is None else max(0, time.monotonic() - self._connected)
+            self._emit("ended", duration)
+            self._call = None
+            self._connected = None
     def send_sms(self, number, text):
         self.events.append(("sms", number, text))
 

@@ -277,11 +277,11 @@ class PageTests(unittest.TestCase):
                 storemod.Store(folder).write_json("contacts.json", {"people": []})
         self.assertIn("Sample", html)
 
-    def test_image_drop_in_names_no_app_yet(self):
+    def test_image_drop_in_names_the_enabled_apps(self):
         conf = (ROOT / "packaging/duo-os/opos-apps.conf").read_text(encoding="utf-8")
         active = [line for line in conf.splitlines() if line.strip() and not line.strip().startswith("#")]
         self.assertIn("[Service]", active)
-        self.assertIn("Environment=OPOS_APPS=clock,contacts,notes,calc", active)
+        self.assertIn("Environment=OPOS_APPS=clock,contacts,notes,calc,calls", active)
         script = (ROOT / "packaging/duo-os/build-image.sh").read_text(encoding="utf-8")
         self.assertIn("20-opos-apps.conf", script)
         self.assertIn("docs/apps.md", (ROOT / "ROADMAP.md").read_text(encoding="utf-8"))
