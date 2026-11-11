@@ -173,7 +173,7 @@ def snapshot():
             "days": list(row.get("days") or []), "label": row.get("label") or "",
             "enabled": bool(row.get("enabled")), "once": bool(row.get("once")),
         })
-        if row.get("ringing") and ringing is None:
+        if alarms.occurrence(row) is alarms.Occurrence.RINGING and ringing is None:
             ringing = {"id": row["id"], "label": row.get("label") or "", "text": "Alarm %02d:%02d" % (row["hour"], row["minute"])}
     timer = None
     if saved.timer and isinstance(saved.timer.get("fires_at"), str):
