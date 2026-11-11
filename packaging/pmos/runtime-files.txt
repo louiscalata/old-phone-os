@@ -46,6 +46,7 @@ src/opos/hw/battery.py
 src/opos/hw/detect.py
 src/opos/hw/live_battery.py
 src/opos/hw/store.py
+src/opos/inbox.py
 src/opos/lockpin.py
 src/opos/mm_modem.py
 src/opos/monitor.py
@@ -55,6 +56,7 @@ src/opos/net.py
 src/opos/net_page.py
 src/opos/notes_page.py
 src/opos/notices.py
+src/opos/notices_page.py
 src/opos/osk.py
 src/opos/osk_static/osk.css
 src/opos/osk_static/osk.js
