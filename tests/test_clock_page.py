@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime
 from unittest import mock
 
 from opos import apps, apps_page, clock_page, web
@@ -141,6 +142,91 @@ console.log('ok');
             os.environ.pop("OPOS_CLOCK_OK", None)
             with mock.patch("opos.web.clock_ok", side_effect=RuntimeError("boom")):
                 self.assertFalse(clock_page.clock_known())
+
+
+class ClockSnapshot(unittest.TestCase):
+    """Exercise the API consumer directly, without a server or sound thread."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.enterContext(mock.patch.dict(os.environ, {
+            "OPOS_STATE_DIR": tmp.name, "OPOS_CLOCK_ZONE": "UTC",
+            "OPOS_CLOCK_OK": "1", "OPOS_CLOCK_TEST": "1",
+        }))
+        clock_page.reset()
+        self.addCleanup(clock_page.reset)
+        self.send("tick", now="2026-11-16T06:00:00+00:00")
+
+    def send(self, action, **data):
+        code, snap = clock_page.post(dict(data, action=action))
+        self.assertEqual(code, 200, snap)
+        return snap
+
+    def test_one_shot_snapshot_ring_next_tick_snooze_stop_and_reload(self):
+        snap = self.send("add", hour=7, minute=0, label="Kitchen")
+        row = snap["alarms"][0]
+        ident = row["id"]
+        self.assertEqual(row, {"id": ident, "hour": 7, "minute": 0, "days": [], "label": "Kitchen", "enabled": True, "once": True})
+        self.assertEqual(snap, {
+            "ok": True, "clock_ok": True, "now": "2026-11-16T06:00:00+00:00", "alarms": [row],
+            "ringing": None, "timer": None, "notices": [], "recovered": "",
+            "next": {"id": ident, "text": "Alarm 07:00", "label": "Kitchen", "at": "2026-11-16T07:00:00+00:00"},
+        })
+        snap = self.send("tick", now=FIRE)
+        ringing = {"id": ident, "label": "Kitchen", "text": "Alarm 07:00"}
+        self.assertEqual(snap["ringing"], ringing)
+        self.assertTrue(snap["alarms"][0]["enabled"])
+        self.assertEqual(snap["next"]["at"], "2026-11-17T07:00:00+00:00")
+        snap = self.send("tick", now="2026-11-16T07:01:00+00:00")
+        self.assertEqual(snap["ringing"], ringing)
+        self.assertFalse(snap["alarms"][0]["enabled"])
+        self.assertIsNone(snap["next"])
+        snap = self.send("snooze")
+        self.assertIsNone(snap["ringing"])
+        self.assertTrue(snap["alarms"][0]["enabled"])
+        self.assertEqual(snap["next"]["at"], "2026-11-16T07:11:00+00:00")
+        clock_page.reset()
+        with mock.patch.object(clock_page, "current_now", return_value=datetime.fromisoformat(snap["now"])):
+            self.assertEqual(clock_page.snapshot(), snap)
+        self.send("tick", now="2026-11-16T07:11:00+00:00")
+        snap = self.send("stop", id=ident)
+        self.assertIsNone(snap["ringing"])
+        self.assertFalse(snap["alarms"][0]["enabled"])
+        self.assertIsNone(snap["next"])
+
+    def test_unknown_clock_snapshot_and_missed_restart(self):
+        self.send("add", hour=7, minute=0)
+        before = clock_page.book().last_seen
+        with mock.patch.dict(os.environ, {"OPOS_CLOCK_OK": "0"}):
+            snap = self.send("tick", now="2026-11-16T07:11:00+00:00")
+        self.assertFalse(snap["clock_ok"])
+        self.assertIsNone(snap["next"])
+        self.assertIsNone(snap["ringing"])
+        self.assertEqual(snap["notices"], [])
+        self.assertEqual(clock_page.book().last_seen, before)
+        snap = self.send("tick", now="2026-11-16T07:11:00+00:00")
+        self.assertIsNone(snap["ringing"])
+        self.assertFalse(snap["alarms"][0]["enabled"])
+        self.assertEqual(snap["notices"], ["Missed alarm 07:00"])
+
+    def test_toggle_off_removes_upcoming_snooze_and_does_not_ring_later(self):
+        ident = self.send("add", hour=7, minute=0)["alarms"][0]["id"]
+        self.send("tick", now=FIRE)
+        self.send("snooze", id=ident)
+        snap = self.send("toggle", id=ident, enabled=False)
+        self.assertIsNone(snap["next"])
+        self.assertIsNone(snap["ringing"])
+        snap = self.send("tick", now=SNOOZE)
+        self.assertIsNone(snap["ringing"])
+        self.assertIsNone(snap["next"])
+        self.assertFalse(snap["alarms"][0]["enabled"])
+
+    def test_snooze_of_an_alarm_that_never_rang_is_a_bad_request(self):
+        before = self.send("add", hour=7, minute=0)
+        code, result = clock_page.post({"action": "snooze", "id": before["alarms"][0]["id"]})
+        self.assertEqual((code, result), (400, {"error": "id"}))
+        self.assertEqual(clock_page.snapshot(), before)
 
 
 if __name__ == "__main__":

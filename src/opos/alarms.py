@@ -9,6 +9,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum, auto
 from zoneinfo import ZoneInfo
 
 from opos.store import Store
@@ -28,6 +29,30 @@ class Event:
     id: str
     at: datetime
     text: str
+
+
+class Occurrence(Enum):
+    IDLE = auto()
+    ARMED = auto()
+    SNOOZED = auto()
+    RINGING = auto()
+    MISSED = auto()
+    COMPLETED = auto()
+
+
+def occurrence(row):
+    """Derive the resting state, including a disabled one-shot still ringing.
+
+    MISSED and COMPLETED are transition outcomes. The unchanged saved fields
+    retain no terminal history; those outcomes settle to IDLE or ARMED.
+    """
+    if row.get("ringing"):
+        return Occurrence.RINGING
+    if not row.get("enabled"):
+        return Occurrence.IDLE
+    if isinstance(row.get("snooze_at"), str):
+        return Occurrence.SNOOZED
+    return Occurrence.ARMED
 
 
 def _label(value):
@@ -167,15 +192,15 @@ class Book:
             if len(self.alarms) >= MAX_ALARMS:
                 raise ValueError("full")
             hour, minute = _clock(hour, minute)
-            row = {
-                "id": uuid.uuid4().hex[:8],
+            row = {"id": uuid.uuid4().hex[:8]}
+            self._transition(row, "edit", changes={
                 "hour": hour,
                 "minute": minute,
                 "days": list(_days(days)),
                 "label": _label(label),
                 "enabled": True,
                 "once": not _days(days),
-            }
+            })
             self.alarms.append(row)
             if now is not None and self.last_seen is None:
                 self.last_seen = _iso(_aware(now))
@@ -187,14 +212,13 @@ class Book:
             row = self._row(alarm_id)
             hour, minute = _clock(hour, minute)
             picked = _days(days)
-            row.update({"hour": hour, "minute": minute, "days": list(picked), "label": _label(label), "once": not picked})
+            self._transition(row, "edit", changes={"hour": hour, "minute": minute, "days": list(picked), "label": _label(label), "once": not picked})
             self._save()
             return dict(row)
 
     def delete(self, alarm_id):
         with self._lock:
-            self._row(alarm_id)
-            self.alarms = [row for row in self.alarms if row["id"] != alarm_id]
+            self._transition(self._row(alarm_id), "delete")
             self._save()
 
     def toggle(self, alarm_id, enabled):
@@ -202,7 +226,7 @@ class Book:
             row = self._row(alarm_id)
             if not isinstance(enabled, bool):
                 raise ValueError("enabled")
-            row["enabled"] = enabled
+            self._transition(row, "toggle", enabled=enabled)
             self._save()
             return dict(row)
 
@@ -229,10 +253,7 @@ class Book:
             row = self._ringing(now, alarm_id)
             if row is None:
                 raise ValueError("id")
-            row.pop("done", None)
-            row.pop("ringing", None)
-            row["enabled"] = True
-            row["snooze_at"] = _iso(now + SNOOZE)
+            self._transition(row, "snooze", now=now)
             self.last_seen = _iso(now)
             self._save()
             return dict(row)
@@ -246,10 +267,7 @@ class Book:
                 row = self._row(alarm_id)
             if row is None:
                 raise ValueError("id")
-            row.pop("snooze_at", None)
-            row.pop("ringing", None)
-            if row.get("once"):
-                row["enabled"] = False
+            self._transition(row, "stop")
             self.last_seen = _iso(now)
             self._save()
             return dict(row)
@@ -268,7 +286,7 @@ class Book:
             events = []
             events.extend(self._timer_events(start, now))
             for row in list(self.alarms):
-                event = self._alarm_event(row, start, now)
+                event = self._transition(row, "tick", start=start, now=now)
                 if event is not None:
                     events.append(event)
             self.last_seen = _iso(now)
@@ -308,11 +326,11 @@ class Book:
         raise ValueError("id")
 
     def _ringing(self, now, alarm_id):
-        """An alarm Stop or Snooze can act on. An id selects that alarm. With no id, one that is due."""
+        """Select an alarm; the transition separately checks snooze eligibility."""
         if alarm_id is not None:
             return self._row(alarm_id)
         for row in self.alarms:
-            if row.get("ringing"):
+            if occurrence(row) is Occurrence.RINGING:
                 return row
         for row in self.alarms:
             snooze = row.get("snooze_at")
@@ -328,45 +346,75 @@ class Book:
                 return row
         return None
 
-    def _finish_once(self, row, missed):
-        if not row.get("once"):
+    def _transition(self, row, event, *, now=None, start=None, enabled=None, changes=None):
+        """The only writer of alarm occurrence fields. Terminal states are transient."""
+        state = occurrence(row)
+        if event == "edit":
+            row.update(changes)
             return
-        if missed:
-            row["enabled"] = False
-            row.pop("done", None)
+        if event == "delete":
+            self.alarms = [item for item in self.alarms if item["id"] != row["id"]]
             return
-        row["done"] = True
-
-    def _alarm_event(self, row, start, now):
-        if row.get("done") and not row.get("snooze_at"):
-            row["enabled"] = False
-            row.pop("done", None)
-            return None
-        snooze = row.get("snooze_at")
-        if isinstance(snooze, str):
-            when = _parse(snooze, self.zone)
-            if start < when <= now:
+        if event == "toggle":
+            row["enabled"] = enabled
+            if not enabled:
                 row.pop("snooze_at", None)
-                text = "Alarm " + _hhmm(row["hour"], row["minute"])
-                late = now - when > GRACE
-                self._finish_once(row, late)
-                if late:
-                    row.pop("ringing", None)
-                    return Event("missed", "alarm", row["id"], when, "Missed alarm " + _hhmm(row["hour"], row["minute"]))
-                row["ringing"] = True
-                return Event("ring", "alarm", row["id"], when, text)
-        if not row.get("enabled"):
-            return None
-        when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), start, now)
-        if when is None:
-            return None
-        late = now - when > GRACE
-        self._finish_once(row, late)
-        if late:
+            return
+        if event == "snooze":
+            if state is not Occurrence.RINGING:
+                raise ValueError("id")
+            state = Occurrence.SNOOZED
+        elif event == "stop":
+            state = Occurrence.COMPLETED
+        elif event == "tick":
+            # A one-shot keeps its ring through the tick that turns it off.
+            if row.get("done") and not row.get("snooze_at"):
+                row["enabled"] = False
+                row.pop("done", None)
+                return
+            if state is Occurrence.IDLE:
+                return
+            when = None
+            snooze = row.get("snooze_at")
+            if isinstance(snooze, str):
+                due = _parse(snooze, self.zone)
+                if start < due <= now:
+                    when = due
+                    row.pop("snooze_at", None)
+            if when is None:
+                if not row.get("enabled"):
+                    return
+                when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), start, now)
+            if when is None:
+                return
+            state = Occurrence.MISSED if now - when > GRACE else Occurrence.RINGING
+        else:
+            raise ValueError("event")
+
+        if state is Occurrence.SNOOZED:
+            row.pop("done", None)
             row.pop("ringing", None)
-            return Event("missed", "alarm", row["id"], when, "Missed alarm " + _hhmm(row["hour"], row["minute"]))
-        row["ringing"] = True
-        return Event("ring", "alarm", row["id"], when, "Alarm " + _hhmm(row["hour"], row["minute"]))
+            row["enabled"] = True
+            row["snooze_at"] = _iso(now + SNOOZE)
+        elif state is Occurrence.COMPLETED:
+            row.pop("snooze_at", None)
+            row.pop("ringing", None)
+            if row.get("once"):
+                row["enabled"] = False
+        else:
+            missed = state is Occurrence.MISSED
+            if row.get("once"):
+                if missed:
+                    row["enabled"] = False
+                    row.pop("done", None)
+                else:
+                    row["done"] = True
+            if missed:
+                row.pop("ringing", None)
+            else:
+                row["ringing"] = True
+            return Event("missed" if missed else "ring", "alarm", row["id"], when,
+                         ("Missed alarm " if missed else "Alarm ") + _hhmm(row["hour"], row["minute"]))
 
     def _timer_events(self, start, now):
         if not self.timer:
