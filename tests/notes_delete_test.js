@@ -67,3 +67,20 @@ test('deletion also waits for an already in-flight successful save', async()=>{
   w.take('delete').resolve({ok:true,notes:[]});await settle();
   assert.equal(w.context.cur,null);assert.equal(w.nodes.body.value,'');assert.equal(w.nodes.body.disabled,false);
 });
+test('a delayed open cannot replace a draft while its save is pending', async()=>{
+  const w=await world();await w.open('aaaaaaaa','A');
+  w.context.open('bbbbbbbb');const opening=w.take('open');w.type('B draft');
+  opening.resolve({notes:[{id:'bbbbbbbb',title:'B original'}],id:'bbbbbbbb',text:'B original'});await settle();
+  assert.equal(w.context.cur,'bbbbbbbb');assert.equal(w.nodes.body.value,'B draft');
+  await w.tick();assert.deepEqual(w.take('save').body,{action:'save',id:'bbbbbbbb',text:'B draft'});
+});
+test('a delayed open cannot replace a draft after its save completes', async()=>{
+  const w=await world();await w.open('aaaaaaaa','A');
+  w.context.open('bbbbbbbb');const opening=w.take('open');w.type('B draft');await w.tick();
+  const save=w.take('save');assert.deepEqual(save.body,{action:'save',id:'bbbbbbbb',text:'B draft'});
+  save.resolve({notes:[{id:'bbbbbbbb',title:'B draft'}],id:'bbbbbbbb',saved:'Saved fixture'});await settle();
+  assert.equal(w.context.pending.bbbbbbbb,undefined);assert.equal(w.context.writing.bbbbbbbb,undefined);
+  opening.resolve({notes:[{id:'bbbbbbbb',title:'B original'}],id:'bbbbbbbb',text:'B original'});await settle();
+  assert.equal(w.context.cur,'bbbbbbbb');assert.equal(w.nodes.body.value,'B draft');
+  assert.equal(w.nodes.saved.textContent,'Saved fixture');assert.equal(w.requests.length,0);
+});

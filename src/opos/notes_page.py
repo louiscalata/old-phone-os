@@ -28,12 +28,19 @@ function G(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 var T=document.querySelector('meta[name=opos-token]').content, notes=[], cur=null;
 // Each draft and write belongs to its note, even after the selection changes.
-var pending={}, writing={}, deleting={};
+var pending={}, writing={}, deleting={}, editGeneration={}, openRequest=0;
 function api(b){return fetch('/api/notes',{method:b?'POST':'GET',headers:Object.assign({'X-OPOS-Token':T},b?{'Content-Type':'application/json'}:{}),body:b?JSON.stringify(b):undefined}).then(function(r){return r.json().then(function(s){if(!r.ok||!s||s.error)throw new Error(s&&s.error?s.error:'The note could not be updated.');return s})})}
 function failed(e){G('saved').textContent=e&&e.message?e.message:'The note could not be updated.'}
 function armDelete(){var d=G('del');d.hidden=!cur;d.disabled=!!deleting[cur];G('body').disabled=!!deleting[cur];if(!cur)return;d.dataset.sure='';d.textContent='Delete'}
 function paint(s){if(!s||s.error){G('saved').textContent=s&&s.error?s.error:'';return}notes=s.notes||[];var rows=G('rows');rows.textContent='';notes.forEach(function(n){var li=document.createElement('li'),b=el('button',null,n.title||'Empty note');b.type='button';b.onclick=function(){open(n.id)};li.appendChild(b);rows.appendChild(li)});G('del').hidden=!cur;if(s.saved)G('saved').textContent=s.saved;if(s.text!=null&&cur)G('body').value=s.text}
-function open(id){cur=id;armDelete();api({action:'open',id:id}).then(function(s){if(cur===id)paint(s)}).catch(function(e){if(cur===id)failed(e)})}
+function open(id){
+  var request=++openRequest,generation=editGeneration[id]||0;
+  cur=id;armDelete();
+  api({action:'open',id:id}).then(function(s){
+    // An older open must not replace an edit, even after that edit has finished saving.
+    if(cur===id&&openRequest===request&&(editGeneration[id]||0)===generation)paint(s);
+  }).catch(function(e){if(cur===id&&openRequest===request)failed(e)});
+}
 function save(id,text){
   var before=writing[id]||Promise.resolve();
   var job=before.catch(function(){}).then(function(){return api({action:'save',id:id,text:text})});
@@ -63,6 +70,7 @@ G('del').onclick=function(){
 G('body').oninput=function(){
   if(!cur||deleting[cur])return;
   var id=cur,text=G('body').value;
+  editGeneration[id]=(editGeneration[id]||0)+1;
   if(pending[id])clearTimeout(pending[id].timer);
   pending[id]={text:text,timer:setTimeout(function(){delete pending[id];save(id,text)},400)};
 };
