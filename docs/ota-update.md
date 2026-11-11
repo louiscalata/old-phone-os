@@ -26,6 +26,14 @@ from its own baked-in revision again.
 
 ## Trust model
 
+Full rootfs image releases use the same Ed25519 SSHSIG format, `opos-update`
+namespace and `opos-release` principal. `tools/opos-image-release.py` signs a
+checksum list covering the image, its embedded identity manifest and release
+notes, then verifies it with the owner's public allowed-signers file. This
+release folder is not an OTA bundle and cannot be applied by the root updater.
+The baked identity remains an image-build record across application updates;
+see [duo-os-identity.md](duo-os-identity.md) for image-drift checks and owner steps.
+
 - Bundles are signed with an Ed25519 key through `ssh-keygen -Y sign` (namespace `opos-update`); verification uses
   `ssh-keygen -Y verify` against `/etc/opos/update/allowed_signers` (root-owned, baked into the image). No Python
   dependency, and the same tool signs on the PC. Allowed-signers line: `opos-release ssh-ed25519 AAAA...`.

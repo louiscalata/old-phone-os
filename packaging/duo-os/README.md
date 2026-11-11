@@ -160,12 +160,19 @@ app.
 
 ## Build and check
 
-On a Linux builder with `zstd`, `e2fsprogs` and `qemu-user-static`:
+The image identity and release-folder procedure are in
+[docs/duo-os-identity.md](../../docs/duo-os-identity.md). The version comes from
+`pyproject.toml` at the source ref. `SOURCE_DATE_EPOCH` defaults to that ref's
+commit timestamp; an explicit value must be valid nonnegative Unix seconds. No
+builder wall-clock time is used in the identity manifest. These identity changes
+have not been built into a real image or checked on a phone (**NOT_RUN**).
+
+On a Linux builder with Python 3.11+, `zstd`, `e2fsprogs` and `qemu-user-static`:
 
 ```sh
 cd <release folder> && sha256sum -c SHA256SUMS
 zstd -d --long=27 rootfs.img.zst -o base-rootfs.img        # must hash to the manifest's 9299b2c0…
-sudo sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD
+sudo env SOURCE_DATE_EPOCH=<release-unix-seconds> sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD
 sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 ```
 

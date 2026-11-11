@@ -53,6 +53,7 @@ check cannot run yet (the diagnostics dump is only written 90 seconds after boot
 
 | Check | What it reads | FAIL when | WARN or SKIP |
 |---|---|---|---|
+| `identity.image` | `/etc/os-release`, preserved `/usr/lib/os-release.base`, `/etc/opos/image.json` and every listed file/link hash | missing or inconsistent identity, ID other than `opos`, missing base file, or any missing/changed listed file | Image identity checks are **NOT_RUN** on the phone for this change. OTA/configuration/base-package changes can produce image drift; see [duo-os-identity.md](duo-os-identity.md). |
 | `svc.lxc-android`, `svc.hwcomposer`, `svc.opos-server`, `svc.opos` | `systemctl show` of `lxc@android`, `android-service@hwcomposer`, `opos-server`, `opos` | not active (an `activating` restart loop counts) | |
 | `svc.phosh-off`, `svc.item-off` | the same for `phosh` and `item`, which must not run next to OPOS | active | WARN if failed |
 | `svc.fallback` | whether `opos-fallback.service` ran this boot | | WARN if it did: OPOS failed once and phosh was started (a kiosk that gave up on Chromium shows as exit status 75 of `opos.service` and `chromium exited ... giving up` in `journalctl -t opos-kiosk`; `sudo opos-switch opos` brings OPOS back) |

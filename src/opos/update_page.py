@@ -11,7 +11,7 @@ import json
 from html import escape
 from pathlib import Path
 
-from opos import secure, update_client
+from opos import image_identity, secure, update_client
 
 _STATIC = Path(__file__).with_name("web_static")
 _BACK = "Asks the updater to return to the earlier version. The OPOS server restarts."
@@ -103,6 +103,17 @@ def _e(v):
     return escape("" if v is None else str(v), quote=True)
 
 
+def about(root="/"):
+    facts = image_identity.facts(root)
+    if facts is None:
+        return '<section aria-labelledby="u-h-about"><h2 id="u-h-about">About</h2><p>OPOS image identity is unavailable on this install.</p></section>'
+    return ('<section aria-labelledby="u-h-about"><h2 id="u-h-about">About</h2>'
+            '<p>Old Phone OS {version}, based on {base}</p>'
+            '<dl><dt>Image revision</dt><dd>{revision}</dd><dt>Kernel release</dt><dd>{kernel}</dd></dl>'
+            '<p>The image identity describes the baked image. Running application updates are listed below.</p></section>').format(
+                **{k: _e(v) for k, v in facts.items()})
+
+
 def page(token="", nonce="", snap=None):
     """The page for one snapshot (UpdateClient.snapshot()). Every value is escaped; nothing is fetched."""
     s = snap or {}
@@ -138,6 +149,7 @@ def page(token="", nonce="", snap=None):
 {_CSS}</style></head><body><main>
 <p><a id="u-back" href="/">Back to the phone</a></p>
 <h1 class="jaryo-head">Software updates</h1>
+{about()}
 <div id="u-stale" role="alert" hidden><p>This page is out of date.</p><p><button type="button" id="u-reload">Reload this page</button></p></div>
 <p id="u-na" role="status"{"" if not avail else " hidden"}>Updates are not available on this install.</p>
 <div id="u-live"{"" if avail else " hidden"}>

@@ -14,6 +14,7 @@ import opos.setup.config
 import opos.setup.device
 import opos.setup.server
 from opos.setup.services import ServiceError, checkout_root
+from opos.version import project_version
 RAM_BOOT_WARNING = (
     "warning: Surface Duo detected. If this kernel was RAM-booted from a PC with fastboot boot, do not run reboot or systemctl reboot: the phone would start the stock kernel and be stranded.\n"
     "To restart safely run reboot bootloader, then re-arm the misc brake and RAM-boot once from the PC. See docs/duo-usb-install.md, section \"Rebooting safely / recovering\"."
@@ -38,7 +39,7 @@ def reboot_warning(root: str = "/") -> str | None:
 def _build_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
     p = argparse.ArgumentParser(prog="opos")
-    p.add_argument("--version", action="version", version="opos 0.1.0")
+    p.add_argument("--version", action="version", version="opos " + project_version())
     subs = p.add_subparsers(dest="cmd")
     r = subs.add_parser("run")
     r.add_argument("--reconfigure", action="store_true")
