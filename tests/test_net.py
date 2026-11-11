@@ -2,7 +2,7 @@
 """Network status and Wi-Fi control (opos.net, opos.net_page) against fake nmcli/mmcli/rfkill/ip/bluetoothctl scripts.
 
 The fakes are shell scripts on a private PATH, so the real runner, its timeouts and the way a password is handed
-to nmcli (standard input, never an argument) are exercised for real. What these cannot show: how the phone's own
+to nmcli (a private file, or opted-in terminal input, never a password argument) are exercised for real. What these cannot show: how the phone's own
 NetworkManager, ModemManager and polkit behave; that needs the live recipe on the device.
 """
 import http.client
@@ -653,16 +653,34 @@ class Status(unittest.TestCase):
         self.assertTrue(s["ok"])
         self.assertEqual(s["wifi"]["state"], "unavailable")
 
-    def test_clock_syncs_only_after_full_connectivity(self):
+    def test_clock_reports_explicit_sync_state_only_after_full_connectivity(self):
         f = Fake(self)
         tool = f.bin / "timedatectl"
         tool.write_text("#!/bin/sh\necho NTPSynchronized=no\n", encoding="utf-8")
         tool.chmod(0o755)
-        self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: syncing")
+        self.assertEqual(f.net().status(True)["clock"],
+                         {"state": "unsynchronized", "summary": "Clock: not synced"})
         tool.write_text("#!/bin/sh\necho NTPSynchronized=yes\n", encoding="utf-8")
         self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: set from the network")
         f.put("general_status", "running:connected:none:enabled:enabled:enabled:enabled\n")
         self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: no network time yet")
+
+    def test_clock_query_failure_or_unknown_reply_does_not_claim_syncing(self):
+        for reply in (net.Run(1, out="NTPSynchronized=yes"), net.Run(0),
+                      net.Run(0, out="unexpected response"),
+                      net.Run(0, out="NTPSynchronized=maybe"),
+                      net.Run(0, out="NTPSynchronized=yes\nNTPSynchronized=no")):
+            with self.subTest(reply=reply):
+                n = net.Net(runner=lambda *args, result=reply: result,
+                            root="/nonexistent", env={})
+                clock = n._net_clock(None, {"connectivity": "full"})
+                self.assertEqual(clock["state"], "unknown")
+                self.assertIn("could not be checked", clock["summary"])
+
+        def unavailable(*args):
+            raise OSError("fixture tool failure")
+        n = net.Net(runner=unavailable, root="/nonexistent", env={})
+        self.assertEqual(n._net_clock(None, {"connectivity": "full"})["state"], "unknown")
 
     def test_clock_note_and_cache(self):
         f = Fake(self)
@@ -771,7 +789,7 @@ class Join(unittest.TestCase):
         self.f = Fake(self)
         self.f.put("psk", PW)
 
-    def test_wpa_join_sends_the_password_on_stdin_only(self):
+    def test_wpa_join_uses_a_private_password_file_not_arguments(self):
         r = self.f.net().join("Neighbor 5G", PW)
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["message"], "Connected to Neighbor 5G. The password is kept by the phone's network service, not by OPOS.")

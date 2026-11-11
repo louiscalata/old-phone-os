@@ -451,19 +451,19 @@ class Net:
         return s
 
     def _net_clock(self, q, gs):
-        """Network time. 'syncing' only while NetworkManager reports full connectivity and NTP is not done."""
+        """Report explicit synchronization state; an unsynchronized clock is not proof of active syncing."""
         if not gs or gs.get("connectivity") != "full":
             return {"state": "offline", "summary": "Clock: no network time yet"}
         try:
             r = self.runner(["timedatectl", "show", "-p", "NTPSynchronized"], 3, None)
         except Exception:
             r = Run(126)
-        text = (r.out or "").replace(" ", "").lower()
-        if r.ok and "ntpsynchronized=yes" in text:
+        text = (r.out or "").replace(" ", "").strip().lower()
+        if r.ok and text == "ntpsynchronized=yes":
             return {"state": "set", "summary": "Clock: set from the network"}
-        if r.missing:
-            return {"state": "unknown", "summary": "Clock: syncing could not be checked"}
-        return {"state": "syncing", "summary": "Clock: syncing"}
+        if r.ok and text == "ntpsynchronized=no":
+            return {"state": "unsynchronized", "summary": "Clock: not synced"}
+        return {"state": "unknown", "summary": "Clock: network time could not be checked"}
 
     def _wifi(self, q, gs, devs, ips, radios):
         w = {"present": True if "wifi" in radios["radios_present"] else None, "enabled": None, "state": "unavailable", "device": None,

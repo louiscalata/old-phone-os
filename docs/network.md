@@ -20,6 +20,12 @@ main page is at its size budget. It reads, never raising when a tool is missing 
 | Mobile data | NetworkManager's `gsm` connection. The port switches it off while Wi-Fi is connected, and the page says so |
 | Airplane mode | every radio blocked in `rfkill`, or switched off in NetworkManager or (when `rfkill` does not list it) off in `bluetoothctl`. A radio whose state was not read keeps the answer at "unknown"; it is never counted as blocked. With NetworkManager not answering and no modem row in `rfkill`, the modem is read through ModemManager: registered, connected, searching or enabled means it is on, and a modem that is there but unread, or in any other state, is such a radio (the summary names "mobile data") |
 | USB network | `ip -br addr`: `usb0`, `rndis0`, `ncm0` and the like, and their address |
+| Clock | With full network connectivity, `timedatectl show -p NTPSynchronized`: explicit `yes` reports set, explicit `no` reports not synced, and a missing, failed or unreadable reply stays unknown |
+
+`NTPSynchronized=no` does not show whether a synchronization service is running.
+The [systemd property reference](https://raw.githubusercontent.com/systemd/systemd/main/man/org.freedesktop.timedate1.xml)
+distinguishes the kernel's synchronization flag from whether a network time service is enabled.
+OPOS reads that flag; it does not start a service or change the clock.
 
 Calls and texts are **still simulated**: `src/opos/mm_modem.py` is not wired in yet. The page says so under the status, and every
 status carries the sentence, so the modem line is the real radio's state, not a working phone line.
