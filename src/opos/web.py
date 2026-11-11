@@ -58,6 +58,7 @@ except ImportError:
     osk = None
 from opos import net_page  # track: network
 from opos import apps_page  # everyday apps: /apps and /api/<app>; the page is unchanged unless OPOS_APPS names one
+from opos import calllog
 from opos import lockpin  # optional PIN. Off unless OPOS_LOCK=1, so the demo is unchanged.
 try:  # track monitor: the Inference page is optional; a runtime shipped without src/opos/monitor.py serves what it always served
     from opos import monitor, monitor_web
@@ -470,19 +471,25 @@ class Phone:
             self.status = "error: already in a call"
             return
         try:
-            self._call_with = self.book.name_for(self.essentials.call(number))
+            norm = self.essentials.call(number)
+            who = self.book.name_for(norm)
+            self._call_with = who
             self._in_call = True
             self.status = "in call"
+            calllog.note_start(norm, "" if who == norm else who, practice.simulated(self.essentials))
         except ValueError:
             self.status = "error: number not valid"
         except RuntimeError:
             self.status = "error: already in a call"
     def hang_up(self):
         self.status_app = "phone"
+        was = self._in_call
         try:
             self.essentials.end_call()
             self._in_call = False
             self.status = "call ended"
+            if was:
+                calllog.note_end()
         except RuntimeError:
             self.status = "error: not in a call"
         except ValueError:
