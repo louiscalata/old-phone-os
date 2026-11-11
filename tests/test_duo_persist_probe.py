@@ -15,6 +15,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from tests import stock_build_guard
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy" / "duo-persist-probe.ps1"
 BOOT_SCRIPT = ROOT / "deploy" / "duo-opos-boot.ps1"
@@ -1329,9 +1331,8 @@ class PersistRunbook(unittest.TestCase):
                 self.assertIn(phrase, ten)
         self.assertNotIn("AT&T", ten)
         self.assertNotIn("names firmware", ten)
-        for banned in ("2022.902.48", "2022.815.527", "planning dossier"):
-            with self.subTest(banned=banned):
-                self.assertNotIn(banned, self.doc)
+        self.assertNotIn("planning dossier", self.doc)
+        self.assertEqual(stock_build_guard.hits(self.doc), [])
         self.assertEqual(rows["10"][2], "REPORTED")
         self.assertIn("undated page", ten)
         self.assertIn("Troubleshooting advice (REPORTED, undated)", flat(self.gates["G5"]))

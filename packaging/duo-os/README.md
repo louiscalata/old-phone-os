@@ -444,8 +444,8 @@ boots.
 
 ## Restore to Android
 
-Nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed, so the stock Android
-(2022.902.48) is still installed and is what the phone starts when the OS image is not RAM-booted.
+Nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed, so the stock Android 12 build
+is still installed and is what the phone starts when the OS image is not RAM-booted.
 
 1. Power cycle the phone (Power held about 20 seconds). Android starts from the untouched boot partition. The
    port's notes expect it not to accept the OS image's userdata and to set itself up from scratch, which leaves
@@ -457,10 +457,10 @@ Nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed, 
    being installed; when you are restoring Android, the reset is the intended step. If `misc` holds a wipe
    request that the bootloader keeps rejecting boots against, zero the first 2 KB of `misc` from a RAM-booted
    TWRP.
-3. For a full stock reflash there is the extracted set for 2022.902.48 (all 25 partitions,
-   `surface/duo/duo:12/2022.902.48`, AT&T product config included), checked against the OTA payload's own
-   hashes: flash it from fastboot, logical partitions through fastbootd, then wipe. No restore from it is
-   recorded in this repository, and the OTA's publisher hash was not independently confirmed.
+3. For a full stock reflash there is the extracted set for the stock Android 12 build (all 25 partitions),
+   checked against the OTA payload's own hashes: flash it from fastboot, logical partitions through fastbootd,
+   then wipe. No restore from it is recorded in this repository, and the OTA's publisher hash was not
+   independently confirmed.
 4. A partition backup of this phone from October 31, 2026 also exists on the owner's PC.
 
 The Android route that keeps Android and flashes nothing is in [docs/duo-android.md](../../docs/duo-android.md).

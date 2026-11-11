@@ -209,7 +209,7 @@ public static class FakeDuoTool
         if (c == "id") { Out("uid=0(root) gid=0(root) groups=0(root) context=u:r:recovery:s0\n"); return 0; }
         if (c == "cat /proc/cmdline")
         {
-            Out("console=ttyMSM0 androidboot.hardware=surfaceduo androidboot.slot_suffix=" + (E("FAKE_SLOT_B") == "1" ? "_b" : "_a") + " androidboot.bootloader=2022.815.527\n");
+            Out("console=ttyMSM0 androidboot.hardware=surfaceduo androidboot.slot_suffix=" + (E("FAKE_SLOT_B") == "1" ? "_b" : "_a") + " androidboot.bootloader=FAKE-BOOTLOADER\n");
             return 0;
         }
         if (c.StartsWith("ls -l /dev/block/platform"))
