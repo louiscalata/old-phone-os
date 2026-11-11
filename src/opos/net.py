@@ -351,13 +351,21 @@ class Net:
         r = q.call(["rfkill", "list"])
         if not r.ok:
             return None
-        rows, cur = [], None
+        rows, cur, skip = [], None, False
         for line in r.out.splitlines():
             m = re.match(r"\s*\d+:\s*([^:]+):\s*(.+?)\s*$", line)
             if m:
+                # The vendor bt_power row stays soft-blocked while hci0 is up. It is not the
+                # adapter, and nothing here writes rfkill, so it must not make Bluetooth look off.
+                skip = m.group(1).lower() == "bt_power"
+                if skip:
+                    cur = None
+                    continue
                 kind = {"wireless lan": "wlan", "bluetooth": "bluetooth", "wireless wan": "wwan"}.get(m.group(2).lower(), m.group(2).lower())
                 cur = {"name": m.group(1), "type": kind, "soft": False, "hard": False}
                 rows.append(cur)
+                continue
+            if skip:
                 continue
             m = re.match(r"\s*(soft|hard) blocked:\s*(yes|no)", line, re.I)
             if m and cur is not None:

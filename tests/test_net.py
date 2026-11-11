@@ -551,6 +551,14 @@ class Status(unittest.TestCase):
             shutil.rmtree(f.root / p)
         self.assertEqual(f.net().status(True)["bluetooth"]["state"], "unavailable")
 
+    def test_vendor_bt_power_does_not_turn_hci_off(self):
+        f = Fake(self)
+        f.put("rfkill_out", RFKILL + "2: bt_power: Bluetooth\n\tSoft blocked: yes\n\tHard blocked: no\n")
+        s = f.net().status(True)
+        self.assertEqual(s["bluetooth"]["state"], "on")
+        self.assertNotIn("blocked", s["airplane"]["summary"])
+        self.assertNotIn("bt_power", f.calls())
+
     def test_modem_and_sim_cases(self):
         f = Fake(self)
         f.put("mmcli_out", "error: couldn't find modem\n")
