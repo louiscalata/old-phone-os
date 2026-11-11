@@ -4,14 +4,29 @@
 'use strict';
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const SRC = fs.readFileSync(process.argv[2], 'utf8').replace('@MODES@', '1');
-function world({store = {}, path = '/', ff = null, throwing = false, writeThrows = false, theme = true, loading = false} = {}) {
+function world({store = {}, path = '/', ff = null, throwing = false, writeThrows = false, theme = true, loading = false, home = false} = {}) {
   const listeners = {}, attrs = {}, ds = {}; if (ff) ds.ff = ff;
   const observers = [];
   const ls = throwing ? {getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }} :
     {getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { if (writeThrows) throw new Error('quota'); store[k] = String(v); }, removeItem: k => { delete store[k]; }};
   const els = {};
-  function el(tag) { const e = {tag, id: '', type: '', textContent: '', onclick: null, parent: null, after: null,
-    insertAdjacentElement(where, n) { assert.strictEqual(where, 'afterend'); n.parent = e.parent; e.after = n; return n; }}; return e; }
+  function el(tag) { const children = [];
+    const e = {tag, type: '', textContent: '', onclick: null, parent: null, after: null,
+      attributes: {}, dataset: {}, _listeners: {}, children,
+      get firstChild() { return children[0] || null; },
+      get id() { return this._id || ''; },
+      set id(v) { this._id = v; els[v] = e; },
+      setAttribute(n, v) { this.attributes[n] = String(v); },
+      getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : (n.indexOf('data-')===0 && this.dataset[n.slice(5)]!=null ? this.dataset[n.slice(5)] : null); },
+      insertAdjacentElement(where, n) { assert.strictEqual(where, 'afterend'); n.parent = e.parent; e.after = n; return n; },
+      insertBefore(n, ref) { n.parent = e; if (!ref) children.unshift(n); else { const i = children.indexOf(ref); if (i < 0) children.unshift(n); else children.splice(i, 0, n); } return n; },
+      appendChild(n) { n.parent = e; children.push(n); return n; },
+      remove() { if (this._id) delete els[this._id]; if (this.parent && this.parent.children) { const i = this.parent.children.indexOf(this); if (i >= 0) this.parent.children.splice(i, 1); } this.parent = null; },
+      addEventListener(t, f) { (this._listeners[t] = this._listeners[t] || []).push(f); },
+      querySelector(sel) { if (sel === 'button') return children.find(c => /^button$/i.test(c.tag)) || null; return null; },
+      contains(n) { if (n === e) return true; return children.some(c => c === n || (c.contains && c.contains(n))); },
+      closest(sel) { let n = e; while (n) { if (sel === 'button' && n.tag && /^button$/i.test(n.tag)) return n; n = n.parent; } return null; }
+    }; return e; }
   const html = {dataset: new Proxy(ds, {deleteProperty(t, k) { delete t[k]; if (k === 'ff') observers.forEach(o => o.cb()); return true; }, set(t, k, v) { t[k] = v; if (k === 'ff') observers.forEach(o => o.cb()); return true; }})};
   const doc = {readyState: loading ? 'loading' : 'complete', documentElement: html,
     getElementById: i => els[i] || null, createElement: el,
@@ -22,9 +37,18 @@ function world({store = {}, path = '/', ff = null, throwing = false, writeThrows
     MutationObserver: class { constructor(cb) { this.cb = cb; } observe() { observers.push(this); } }});
   // make createElement register by id when the script assigns one and inserts it
   const origCreate = doc.createElement; doc.createElement = t => { const e = origCreate(t); Object.defineProperty(e, 'id', {get() { return this._id || ''; }, set(v) { this._id = v; els[v] = e; }}); return e; };
+  if (home) {
+    const phone = el('div'); phone.id = 'phone';
+    const hm = el('div'); hm.id = 'home';
+    phone.appendChild(hm);
+    [['phone','Phone'],['messages','Messages'],['helper','Helper'],['settings','Settings'],['allapps','All apps']].forEach(function(row){
+      const b = el('button'); b.setAttribute('data-open', row[0]); b.dataset.open = row[0]; b.textContent = row[1]; hm.appendChild(b);
+    });
+  }
   vm.runInContext(SRC, ctx);
   const fire = (k, ev) => (listeners[k] || []).forEach(f => f(ev));
-  return {html, ds, els, store, fire, doc};
+  const fireEl = (node, type, target) => (node._listeners[type] || []).forEach(f => f({target: target || node}));
+  return {html, ds, els, store, fire, fireEl, doc};
 }
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 // 1. default: Right, no key written until the owner taps
@@ -80,4 +104,19 @@ for (const p of ['/monitor', '/update', '/osk.js']) { w = world({path: p, ff: 'f
 w = world({path: '/network', theme: false}); ok(!w.els['jaryo-hand'], 'no button without the Display section');
 // 9. mount once
 w = world(); w.fire('doc:DOMContentLoaded'); ok(Object.keys(w.els).filter(k => k === 'jaryo-hand').length === 1, 'one button');
+// 10. span detail is filled again after leaving two-pane mode and coming back, and a later tile selection writes to the live node
+w = world({path: '/', ff: 'foldable', home: true});
+ok(w.ds.panes === 'two', 'home + foldable starts two-pane');
+ok(w.els['pane-detail'] && /Phone/.test(w.els['pane-detail'].textContent), 'detail names the first tile');
+const firstDetail = w.els['pane-detail'];
+delete w.html.dataset.ff;
+ok(w.ds.panes === undefined, 'leaving foldable drops two-pane');
+ok(!w.els['pane-detail'], 'pane-detail is removed on one pane');
+w.html.dataset.ff = 'foldable';
+ok(w.ds.panes === 'two', 'foldable returning restores two-pane');
+ok(w.els['pane-detail'] && w.els['pane-detail'] !== firstDetail, 'a new pane-detail node is created');
+ok(/Phone/.test(w.els['pane-detail'].textContent), 're-entry fills the new node, not a blank');
+const msgs = w.els.home.children.find(c => c.dataset && c.dataset.open === 'messages');
+w.fireEl(w.els.home, 'focusin', msgs);
+ok(/Messages/.test(w.els['pane-detail'].textContent) && /Practice messages/.test(w.els['pane-detail'].textContent), 'later tile selection updates the live node');
 console.log('panes_dom_test: ' + n + ' assertions passed');
