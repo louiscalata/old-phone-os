@@ -131,6 +131,16 @@ def _save(people):
     _store().write_json("contacts.json", {"people": people})
 
 
+def name_for(number, practice=False):
+    """A saved name at call start; example contacts apply only to practice calls."""
+    people, _ = _load()
+    for row in people or (_DEMO if practice else ()):
+        if any(item.get("number") == number for item in row.get("numbers") or [] if isinstance(item, dict)):
+            name = row.get("name")
+            return name[:80] if isinstance(name, str) else ""
+    return ""
+
+
 def _public(row):
     return {
         "id": row.get("id") or "", "name": row.get("name") or "", "numbers": list(row.get("numbers") or []),

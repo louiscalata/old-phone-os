@@ -25,6 +25,9 @@ src/opos/battery.py
 src/opos/benchmark_model.py
 src/opos/budget.py
 src/opos/calc_page.py
+src/opos/call_events.py
+src/opos/calllog.py
+src/opos/calls_page.py
 src/opos/clock_page.py
 src/opos/clockcheck.py
 src/opos/contacts.py

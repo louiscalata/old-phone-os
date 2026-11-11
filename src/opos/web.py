@@ -48,6 +48,7 @@ from opos.essentials import Essentials, normalize_number, normalize_sender
 from opos.runtime import Runtime
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
+from opos import calllog
 from opos.dashboard import ROUGH, Dashboard, _format_goal_12h
 from opos.router import HOT_C
 from opos import notices, practice, secure, tokenfile, update_client, update_page
@@ -216,7 +217,7 @@ class Phone:
     def __init__(self, visible=False, live_battery=None):
         self.visible = bool(visible)
         self.runtime = Runtime(visible=self.visible)
-        self.modem = ScreenModem()
+        self.modem = ScreenModem(call_observer=calllog.record)
         self.essentials = Essentials(self.modem)
         self.book = Book(DEMO_CONTACTS)
         # live_battery: a LiveBattery reading the phone's own battery and wall clock in place of the demo's noon simulation.
