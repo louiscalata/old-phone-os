@@ -16,22 +16,26 @@ DRIVER = Path(__file__).resolve().parent / "apps_cdp.js"
 FLOW = r"""
 const out=[];
 var stage=0;
+var rowsBefore=document.querySelectorAll('#rows button').length;
 document.getElementById('fresh').click();
 return new Promise(function(resolve){
 var n=0,t=setInterval(function(){
 n++;
 var box=document.getElementById('body');
-var saved=box&&document.getElementById('saved').textContent.indexOf('Saved')>=0;
+var rows=document.querySelectorAll('#rows button');
+var saved=box&&document.getElementById('saved').textContent.indexOf('Saved')>=0&&rows[0]&&rows[0].textContent==='Hello note';
 var del=document.getElementById('del');
 if(stage===0){
-  if(!document.querySelector('#rows button')&&n<120)return;
-  if(!box){resolve(['text missing']);return;}
+  if(!box||rows.length<=rowsBefore||rows[0].textContent!=='Empty note'||box.value!==''){
+    if(n<120)return;
+    clearInterval(t);resolve(['new note not ready']);return;
+  }
   box.value='Hello note';box.dispatchEvent(new Event('input'));
   stage=1;n=0;return;
 }
 if(stage===1){
   if(!saved&&n<120)return;
-  if(!box||box.value!=='Hello note'){resolve(['text missing']);return;}
+  if(!box||box.value!=='Hello note'){clearInterval(t);resolve(['text missing']);return;}
   if(!saved)out.push('not saved');
   var rect=box.getBoundingClientRect();
   if(rect.height<48)out.push('field '+Math.round(rect.height));
@@ -40,7 +44,7 @@ if(stage===1){
     if(mid>=675&&mid<=717)out.push('field on hinge');
   }
   if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
-  if(!del||del.hidden){out.push('delete hidden');resolve(out);return;}
+  if(!del||del.hidden){out.push('delete hidden');clearInterval(t);resolve(out);return;}
   del.click();
   if((del.textContent||'').indexOf('Delete this note?')<0)out.push('confirm '+(del.textContent||''));
   del.click();
