@@ -26,15 +26,47 @@ _THUMB = """
 _SCRIPT = r"""
 function G(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
-var T=document.querySelector('meta[name=opos-token]').content, notes=[], cur=null, timer=null;
-function api(b){return fetch('/api/notes',{method:b?'POST':'GET',headers:Object.assign({'X-OPOS-Token':T},b?{'Content-Type':'application/json'}:{}),body:b?JSON.stringify(b):undefined}).then(function(r){return r.json()})}
-function armDelete(){var d=G('del');d.hidden=!cur;if(!cur)return;d.dataset.sure='';d.textContent='Delete'}
+var T=document.querySelector('meta[name=opos-token]').content, notes=[], cur=null;
+// Each draft and write belongs to its note, even after the selection changes.
+var pending={}, writing={}, deleting={};
+function api(b){return fetch('/api/notes',{method:b?'POST':'GET',headers:Object.assign({'X-OPOS-Token':T},b?{'Content-Type':'application/json'}:{}),body:b?JSON.stringify(b):undefined}).then(function(r){return r.json().then(function(s){if(!r.ok||!s||s.error)throw new Error(s&&s.error?s.error:'The note could not be updated.');return s})})}
+function failed(e){G('saved').textContent=e&&e.message?e.message:'The note could not be updated.'}
+function armDelete(){var d=G('del');d.hidden=!cur;d.disabled=!!deleting[cur];G('body').disabled=!!deleting[cur];if(!cur)return;d.dataset.sure='';d.textContent='Delete'}
 function paint(s){if(!s||s.error){G('saved').textContent=s&&s.error?s.error:'';return}notes=s.notes||[];var rows=G('rows');rows.textContent='';notes.forEach(function(n){var li=document.createElement('li'),b=el('button',null,n.title||'Empty note');b.type='button';b.onclick=function(){open(n.id)};li.appendChild(b);rows.appendChild(li)});G('del').hidden=!cur;if(s.saved)G('saved').textContent=s.saved;if(s.text!=null&&cur)G('body').value=s.text}
-function open(id){cur=id;armDelete();api({action:'open',id:id}).then(paint)}
-G('fresh').onclick=function(){api({action:'add'}).then(function(s){cur=s.id;G('body').value='';armDelete();paint(s)})};
-G('del').onclick=function(){if(!cur)return;var d=G('del');if(d.dataset.sure!=='1'){d.dataset.sure='1';d.textContent='Delete this note?';return}api({action:'delete',id:cur}).then(function(s){cur=null;G('body').value='';armDelete();paint(s)})};
-G('body').oninput=function(){if(!cur)return;clearTimeout(timer);timer=setTimeout(function(){api({action:'save',id:cur,text:G('body').value}).then(paint)},400)};
-api().then(function(s){paint(s);if(notes[0])open(notes[0].id)});
+function open(id){cur=id;armDelete();api({action:'open',id:id}).then(function(s){if(cur===id)paint(s)}).catch(function(e){if(cur===id)failed(e)})}
+function save(id,text){
+  var before=writing[id]||Promise.resolve();
+  var job=before.catch(function(){}).then(function(){return api({action:'save',id:id,text:text})});
+  writing[id]=job;
+  job.then(function(s){if(writing[id]===job)delete writing[id];if(cur===id)paint(s)},function(e){if(writing[id]===job)delete writing[id];if(cur===id)failed(e)});
+  return job;
+}
+function flush(id){
+  var p=pending[id];
+  if(p){clearTimeout(p.timer);delete pending[id];return save(id,p.text)}
+  return writing[id]||Promise.resolve();
+}
+G('fresh').onclick=function(){api({action:'add'}).then(function(s){cur=s.id;G('body').value='';armDelete();paint(s)}).catch(failed)};
+G('del').onclick=function(){
+  if(!cur||deleting[cur])return;
+  var d=G('del');
+  if(d.dataset.sure!=='1'){d.dataset.sure='1';d.textContent='Delete this note?';return}
+  var id=cur;deleting[id]=true;armDelete();
+  // A save already queued for this note must finish before its deletion.
+  flush(id).then(function(){return api({action:'delete',id:id})}).then(function(s){
+    if(cur===id){cur=null;G('body').value='';armDelete()}
+    paint(s);
+  }).catch(failed).then(function(){
+    delete deleting[id];if(cur===id||!cur)armDelete();
+  });
+};
+G('body').oninput=function(){
+  if(!cur||deleting[cur])return;
+  var id=cur,text=G('body').value;
+  if(pending[id])clearTimeout(pending[id].timer);
+  pending[id]={text:text,timer:setTimeout(function(){delete pending[id];save(id,text)},400)};
+};
+api().then(function(s){paint(s);if(notes[0])open(notes[0].id)}).catch(failed);
 """
 
 
@@ -125,8 +157,10 @@ def post(data):
             ident = data.get("id")
             if ident not in {row["id"] for row in rows}:
                 raise ValueError("id")
-            _write_index([row for row in rows if row["id"] != ident])
+            # Keep the row retryable if unlink fails. A missing file is already
+            # deleted, so a later retry can also finish a failed index write.
             _remove_file(ident)
+            _write_index([row for row in rows if row["id"] != ident])
             return 200, snapshot()
     except ValueError as exc:
         code = str(exc)

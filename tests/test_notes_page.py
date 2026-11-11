@@ -2,8 +2,12 @@
 """Notes: create, save unicode, refuse a note over 64 KB, and read it back from the file."""
 import json
 import os
+from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from opos import notes_page
 from opos.home import is_quiet
@@ -67,6 +71,70 @@ class Notes(unittest.TestCase):
             code, raw = post(server, "/api/notes", {"action": "delete", "id": "../secret"}, token)
             self.assertEqual(code, 400)
             self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "note-%s.txt" % other)))
+
+
+class NotesDeleteFailures(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.env = mock.patch.dict(os.environ, {"OPOS_STATE_DIR": self.tmp.name})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        notes_page.reset()
+        self.addCleanup(notes_page.reset)
+        _, note = notes_page.post({"action": "add"})
+        self.ident = note["id"]
+        notes_page.post({"action": "save", "id": self.ident, "text": "Keep this text"})
+        self.path = Path(self.tmp.name) / ("note-%s.txt" % self.ident)
+
+    def test_unlink_error_keeps_note_available_and_retryable(self):
+        with mock.patch.object(Path, "unlink", side_effect=PermissionError("denied")):
+            with self.assertRaises(PermissionError):
+                notes_page.post({"action": "delete", "id": self.ident})
+        self.assertEqual(notes_page.snapshot()["notes"][0]["id"], self.ident)
+        self.assertEqual(notes_page.post({"action": "open", "id": self.ident})[1]["text"], "Keep this text")
+        self.assertEqual(notes_page.post({"action": "delete", "id": self.ident})[0], 200)
+        self.assertFalse(self.path.exists())
+
+    def test_index_write_error_is_not_success_and_can_be_reconciled(self):
+        with mock.patch.object(notes_page, "_write_index", side_effect=OSError("disk error")):
+            with self.assertRaises(OSError):
+                notes_page.post({"action": "delete", "id": self.ident})
+        self.assertEqual(notes_page.snapshot()["notes"][0]["id"], self.ident)
+        # A missing file is already deleted; retry must still remove the index row.
+        self.assertEqual(notes_page.post({"action": "delete", "id": self.ident})[0], 200)
+        self.assertEqual(notes_page.snapshot()["notes"], [])
+        self.assertFalse(self.path.exists())
+
+    def test_missing_file_delete_reconciles_index(self):
+        self.path.unlink()
+        self.assertEqual(notes_page.post({"action": "delete", "id": self.ident})[0], 200)
+        self.assertEqual(notes_page.snapshot()["notes"], [])
+
+    def test_successful_delete_preserves_other_note_and_refuses_unknown_id(self):
+        _, other = notes_page.post({"action": "add"})
+        status, body = notes_page.post({"action": "delete", "id": self.ident})
+        self.assertEqual(status, 200)
+        self.assertEqual([row["id"] for row in body["notes"]], [other["id"]])
+        self.assertFalse(self.path.exists())
+        for ident in (self.ident, "../secret"):
+            self.assertEqual(notes_page.post({"action": "delete", "id": ident}), (400, {"error": "id"}))
+        self.assertTrue((Path(self.tmp.name) / ("note-%s.txt" % other["id"])).is_file())
+
+    def test_save_read_and_size_cap_survive_delete_changes(self):
+        payload = {"action": "save", "id": self.ident, "text": "Café\nsecond"}
+        self.assertEqual(notes_page.post(payload)[0], 200)
+        notes_page.reset()
+        self.assertEqual(notes_page.post({"action": "open", "id": self.ident})[1]["text"], payload["text"])
+        self.assertEqual(notes_page.post(dict(payload, text="x" * (64 * 1024 + 1))), (400, {"error": "size"}))
+
+    def test_actual_script_deferred_delete_and_save_ordering(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        result = subprocess.run([node, "--test", str(Path(__file__).with_name("notes_delete_test.js"))],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
