@@ -10,7 +10,7 @@
 #
 # Run it twice, in this order. It never changes the phone's mode: you put the phone in the right place first.
 #   -Phase bootloader  the phone is in the bootloader menu (fastboot). G0 preflight as the install chain does it
-#                      (product surfaceduo, current-slot a, unlocked yes, battery 20 percent or more), then the
+#                      (product surfaceduo, current-slot a, unlocked yes, battery 30 percent or more), then the
 #                      getvar probes of G2, saved in full.
 #   -Phase twrp        the phone runs the pinned TWRP image that the runbook RAM-booted, and adb says "recovery". G0
 #                      identity checks, the inventory, a backup of boot_a, boot_b, vbmeta_a, vbmeta_b, dtbo_a, dtbo_b and
@@ -46,7 +46,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $ByName = '/dev/block/platform/soc/1d84000.ufshc/by-name'
-$MinBattery = 20
+$MinBattery = 30
 # What the October 31 backup and the partition table of this unit say. A different value means this is not the phone
 # the runbook was written for: the script stops. Size is the byte size of the partition.
 $Parts = @(
