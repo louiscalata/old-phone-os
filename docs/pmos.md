@@ -41,6 +41,28 @@ There are two source assets: `opos-runtime-source-20261102.tar.gz` contains the 
 
 The packaged recipe names a release archive and its measured runtime checksum. Its URL works only after that exact archive is published; until then, use local staging. Do not point the recipe at a different commit or archive, and do not guess a checksum for an archive that has not been published.
 
+Ordinary runtime changes update `packaging/pmos/runtime-files.txt` when files are added or removed;
+they do not refresh the release archive checksum. CI checks that this inventory matches every
+editable runtime file and that building the current archive twice produces identical bytes.
+Local staging measures its own archive as described above.
+
+When publishing a new runtime tarball, choose a new immutable archive name and release URL in
+`packaging/pmos/opos/APKBUILD`. Build it with `make-runtime-source.py` using the recipe's
+`_source_root` and the chosen name, then measure that exact file:
+
+```sh
+python3 packaging/pmos/make-runtime-source.py --output /tmp/opos-runtime-source-YYYYMMDD.tar.gz
+python3 packaging/pmos/update-runtime-checksum.py /tmp/opos-runtime-source-YYYYMMDD.tar.gz
+python3 packaging/pmos/update-runtime-checksum.py --check /tmp/opos-runtime-source-YYYYMMDD.tar.gz
+```
+
+Replace `YYYYMMDD` with the chosen release date. The checksum helper requires the filename to
+match `_source_archive` and changes only its SHA-512 entry; auxiliary checksums stay intact.
+After publishing, download the asset to a separate directory with the same filename and run
+the helper with `--check` on that download before committing the recipe. Release CI can run
+the same command; a missing file or checksum mismatch fails without rewriting the recipe.
+The committed checksum describes those release bytes, even when the editable tree advances.
+
 ## Try it in QEMU
 
 ```sh
