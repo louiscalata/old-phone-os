@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Old Phone OS (OPOS)
 
-OPOS is a phone operating system for the Microsoft Surface Duo 1. It runs a Linux image built on the community Droidian port for the Duo, with OPOS as the only interface across both screens. It keeps calls and messages on and pauses less essential work toward a time the owner chooses. It is for people who rely on an older phone, whatever their age or budget.
+Old Phone OS (OPOS) is a phone interface for the Microsoft Surface Duo 1. It is the only interface, across both screens, of a Linux image built on the community Droidian port for the Duo. Droidian supplies the kernel, the drivers and the system services; OPOS supplies everything the owner sees and the battery rules. It is designed to keep calls and messages available and to pause less essential work toward a time the owner chooses. It is for people who rely on an older phone, whatever their age or budget.
 
-OPOS is a work in progress.
+OPOS is a work in progress and is not yet a complete phone operating system. The image starts only when booted from a PC, calls and texts are simulated, and nothing below has been measured for speed, battery life or stability. Do not rely on it to call for help.
 
 ## Surface Duo status
 
