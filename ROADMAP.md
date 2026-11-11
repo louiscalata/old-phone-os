@@ -104,8 +104,12 @@ review candidate uses thumb-pane tiles and separate detail; the later #80
 newspaper proposal is preserved separately, pending the final Home decision.
 Exact rendered-page snapshots were regenerated. The served page with all switches
 on measures 101,868 bytes against the unchanged 102,000-byte gate. Focused local
-checks ran 245 tests: 243 passed and two Linux-specific fixture checks failed on
-Mac. Those failures are not passes or skips. Final browser and hosted Python
+checks ran 255 tests: 253 passed and two Linux-specific fixture checks failed on
+Mac, with no skips. Those failures are not passes or skips. Eight actual-script
+Notes cases passed, including deletion/save ordering and edits made before a late
+open response; storage error and retry tests also passed. The candidate activates
+new Wi-Fi profiles by UUID, cleans private files on creation failures, and keeps
+one Contacts jump target per letter bucket. Final browser and hosted Python
 matrix checks remain pending for the reviewed combined source. All on-device
 checks above remain NOT_RUN.
 
