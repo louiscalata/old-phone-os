@@ -11,10 +11,12 @@ from opos.firstrun_page import CSS as BASE_CSS
 
 EXTRA_CSS = """
 #gap{display:none}
+body{padding:16px}
 #app-list,#rows{list-style:none;margin:0;padding:0}
-#app-list a,#rows button,#rows a{display:flex;align-items:center;min-height:48px;width:100%;color:inherit;text-decoration:underline;background:var(--bg);text-align:left}
-.card{margin:4px 0 12px}
+#app-list a,#rows button,#rows a,button,.nav .btn{display:flex;align-items:center;box-sizing:border-box;min-height:48px;width:100%;margin:8px 0;padding:8px 16px;color:inherit;text-decoration:none;background:var(--bg);text-align:left;border:1px solid var(--fg);border-radius:0}
+button.main,.nav .btn.main{border-width:3px;font-weight:700}
 .nav .btn,button.main{min-height:56px}
+.card{margin:4px 0 12px}
 p,li,h1,h2,a,button{overflow-wrap:anywhere}
 button{white-space:normal}
 main{max-width:1392px;margin:0 auto;transition:opacity .2s cubic-bezier(0,0,.2,1)}
