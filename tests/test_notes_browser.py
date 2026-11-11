@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Headless notes: type, see Saved, leave, and find the text again."""
+"""Headless notes: type, see Saved, confirm delete, and find the note gone."""
 import json
 import os
 import shutil
@@ -15,25 +15,41 @@ from tests import test_uxr_acceptance as acceptance
 DRIVER = Path(__file__).resolve().parent / "apps_cdp.js"
 FLOW = r"""
 const out=[];
-var typed=false;
+var stage=0;
 document.getElementById('fresh').click();
 return new Promise(function(resolve){
 var n=0,t=setInterval(function(){
 n++;
 var box=document.getElementById('body');
 var saved=box&&document.getElementById('saved').textContent.indexOf('Saved')>=0;
-if(!typed&&document.querySelector('#rows button')){typed=true;box.value='Hello note';box.dispatchEvent(new Event('input'));}
-if(!saved&&n<120)return;
-clearInterval(t);
-if(!box||box.value!=='Hello note'){resolve(['text missing']);return;}
-if(!saved)out.push('not saved');
-var rect=box.getBoundingClientRect();
-if(rect.height<48)out.push('field '+Math.round(rect.height));
-if(window.innerWidth>=1200){
-  var mid=rect.left+rect.width/2;
-  if(mid>=675&&mid<=717)out.push('field on hinge');
+var del=document.getElementById('del');
+if(stage===0){
+  if(!document.querySelector('#rows button')&&n<120)return;
+  if(!box){resolve(['text missing']);return;}
+  box.value='Hello note';box.dispatchEvent(new Event('input'));
+  stage=1;n=0;return;
 }
-if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
+if(stage===1){
+  if(!saved&&n<120)return;
+  if(!box||box.value!=='Hello note'){resolve(['text missing']);return;}
+  if(!saved)out.push('not saved');
+  var rect=box.getBoundingClientRect();
+  if(rect.height<48)out.push('field '+Math.round(rect.height));
+  if(window.innerWidth>=1200){
+    var mid=rect.left+rect.width/2;
+    if(mid>=675&&mid<=717)out.push('field on hinge');
+  }
+  if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
+  if(!del||del.hidden){out.push('delete hidden');resolve(out);return;}
+  del.click();
+  if((del.textContent||'').indexOf('Delete this note?')<0)out.push('confirm '+(del.textContent||''));
+  del.click();
+  stage=2;n=0;return;
+}
+if(document.querySelector('#rows button')&&n<40)return;
+clearInterval(t);
+if(document.querySelector('#rows button'))out.push('note still listed');
+if(box&&box.value)out.push('text left');
 resolve(out);
 },100);
 });
