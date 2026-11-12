@@ -240,6 +240,14 @@ printf '%s\n' '# On-screen keyboard. OPOS_OSK=1 (the default when this line is a
 chmod 0644 "$r/etc/default/opos-osk"
 # --- end track osk --------------------------------------------------------------------------------------------------------
 
+# --- wifi compat: BEGIN
+install -d "$r/etc/NetworkManager/conf.d"
+rm -f "$r/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf"
+printf '%s\n' '[connection]' 'wifi-sec.pmf=1' > "$r/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf"
+chown 0:0 "$r/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf"
+chmod 0644 "$r/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf"
+# --- wifi compat: END
+
 # --- track: network (Wi-Fi and radio status): Settings > Network and /network may join Wi-Fi through NetworkManager ---
 # The drop-in turns control on (without it the page only reads). The polkit rule is left out unless
 # OPOS_NET_POLKIT=1 (docs/network.md).

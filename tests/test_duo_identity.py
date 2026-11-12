@@ -23,6 +23,8 @@ from tests.duo_identity_fixture import add_identity, REVISION
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging/duo-os"
+WIFI_COMPAT = "etc/NetworkManager/conf.d/90-opos-wifi-compat.conf"
+WIFI_COMPAT_BYTES = b"[connection]\nwifi-sec.pmf=1\n"
 
 
 def block(name, label):
@@ -241,6 +243,97 @@ class BuildIdentity(unittest.TestCase):
         self.assertNotIn("etc/passwd", files)
         self.assertEqual(len(m["files"]), len(files))
         identity.verify(self.root)
+
+    def test_unchanged_wifi_compat_file_is_still_in_the_image_inventory(self):
+        self.put(WIFI_COMPAT, WIFI_COMPAT_BYTES).chmod(0o644)
+        m = json.loads(self.build())
+        record = next(f for f in m["files"] if f["path"] == WIFI_COMPAT)
+        self.assertEqual(record["sha256"], hashlib.sha256(WIFI_COMPAT_BYTES).hexdigest())
+        self.put(WIFI_COMPAT, WIFI_COMPAT_BYTES + b"wifi.cloned-mac-address=permanent\n")
+        with self.assertRaises(ValueError):
+            identity.verify(self.root)
+
+    def wifi_build(self, release):
+        # Only ownership is simulated: CI is unprivileged. The actual block must
+        # request root:root; file type, mode, content and replacement are real.
+        chown = 'chown() { [ "$#" = 2 ] && [ "$1" = 0:0 ] && [ "$2" = "$r/' + WIFI_COMPAT + '" ]; }\n'
+        p = self.shell(chown + block("build-image.sh", "wifi compat"), dict(self.env, OPOS_RELEASE=release))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def wifi_verify(self, owner="0:0"):
+        # Supply GNU stat's output portably, retaining the file's real mode.
+        stat = ('stat() { [ "$1" = -c ] && [ "$2" = "%u:%g %a" ] || return 2; '
+                + shlex.quote(sys.executable) + ' -I -B -c '
+                + shlex.quote('import os, stat, sys; s = os.stat(sys.argv[1]); print(sys.argv[2], format(stat.S_IMODE(s.st_mode), "o"))')
+                + ' "$3" ' + shlex.quote(owner) + '; }\n')
+        check = 'fail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
+        return self.shell(stat + check + block("verify-image.sh", "wifi compat") + '\nexit $fail\n')
+
+    def test_wifi_compat_build_writes_exact_bytes_in_dev_and_release_and_keeps_the_base_scan_setting(self):
+        scan = self.put("etc/NetworkManager/conf.d/99-wifi-disable-random-mac.conf", b"[device]\nwifi.scan-rand-mac-address=no\n")
+        scan.chmod(0o600)
+        for release in ("0", "1"):
+            with self.subTest(release=release):
+                conf = self.put(WIFI_COMPAT, b"stale setting\n")
+                conf.chmod(0o600)
+                self.wifi_build(release)
+                self.assertFalse(conf.is_symlink())
+                self.assertEqual(conf.read_bytes(), WIFI_COMPAT_BYTES)
+                self.assertEqual(conf.stat().st_mode & 0o7777, 0o644)
+                self.assertEqual(scan.read_bytes(), b"[device]\nwifi.scan-rand-mac-address=no\n")
+                self.assertEqual(scan.stat().st_mode & 0o7777, 0o600)
+                p = self.wifi_verify()
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                self.assertEqual(p.stdout.count("PASS Wi-Fi compatibility:"), 1)
+                self.assertNotIn("FAIL", p.stdout)
+
+    def test_wifi_compat_build_replaces_an_inherited_link_without_changing_its_target(self):
+        target = self.put("etc/NetworkManager/base.conf", b"base setting\n")
+        conf = target.parent / "conf.d/90-opos-wifi-compat.conf"
+        conf.parent.mkdir()
+        conf.symlink_to(target)
+        self.wifi_build("0")
+        self.assertFalse(conf.is_symlink())
+        self.assertEqual(conf.read_bytes(), WIFI_COMPAT_BYTES)
+        self.assertEqual(target.read_bytes(), b"base setting\n")
+
+    def test_wifi_compat_verification_rejects_a_missing_file(self):
+        p = self.wifi_verify()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
+
+    def test_wifi_compat_verification_rejects_wrong_mode_or_owner(self):
+        conf = self.put(WIFI_COMPAT, WIFI_COMPAT_BYTES)
+        for mode, owner in ((0o600, "0:0"), (0o664, "0:0"), (0o4644, "0:0"), (0o644, "1000:0"), (0o644, "0:1000")):
+            with self.subTest(mode=oct(mode), owner=owner):
+                conf.chmod(mode)
+                p = self.wifi_verify(owner)
+                self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+                self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
+
+    def test_wifi_compat_verification_rejects_any_changed_bytes(self):
+        for data in (WIFI_COMPAT_BYTES + b"wifi.cloned-mac-address=permanent\n", WIFI_COMPAT_BYTES + b"\n",
+                     WIFI_COMPAT_BYTES.rstrip(b"\n"), WIFI_COMPAT_BYTES.replace(b"pmf=1", b"pmf=2"), b""):
+            with self.subTest(data=data):
+                self.put(WIFI_COMPAT, data).chmod(0o644)
+                p = self.wifi_verify()
+                self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+                self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
+
+    def test_wifi_compat_verification_rejects_a_link_or_directory(self):
+        target = self.put("etc/NetworkManager/base.conf", WIFI_COMPAT_BYTES)
+        target.chmod(0o644)
+        conf = target.parent / "conf.d/90-opos-wifi-compat.conf"
+        conf.parent.mkdir()
+        conf.symlink_to(target)
+        p = self.wifi_verify()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
+        conf.unlink()
+        conf.mkdir()
+        p = self.wifi_verify()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
 
     def test_optional_switches_and_config_are_baked_without_builder_paths(self):
         self.env.update(OPOS_DEV_SSH_PUBKEY="/not-recorded/login.pub", OPOS_DEV_USB_SHELL="1", OPOS_NET_POLKIT="1")
