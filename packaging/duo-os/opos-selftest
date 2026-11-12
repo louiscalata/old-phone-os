@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import re
+import runpy
 import socket
 import subprocess
 import sys
@@ -1083,14 +1084,37 @@ def check_dev(c):
         c.emit("PASS", "dev.time-drop", "no clock-setting file drop")
 
 
-CHECKS = (check_services, check_phoc, check_composer, check_output, check_backlight, check_kiosk, check_server, check_battery,
+def check_identity(c):
+    # An isolated installed helper, independent of the running application tree.
+    # --only identity performs no network or system-service probes.
+    if c.only and not any("identity".startswith(o) or o.startswith("identity") for o in c.only):
+        return
+    if (not any(c.exists(p) for p in ("/usr/libexec/opos/image_identity.py", "/etc/opos/image.json", "/usr/bin/opos-version"))
+            and not re.search(r"(?m)^ID=[\"']?opos[\"']?\s*$", c.rd("/etc/os-release") or "")):
+        c.emit("SKIP", "identity.image", "legacy image does not advertise image identity")
+        return
+    try:
+        helper = runpy.run_path(c.p("/usr/libexec/opos/image_identity.py"), run_name="opos_identity")
+        unreadable = []
+        m = helper["verify"](c.root, unreadable=unreadable)
+        if unreadable:
+            c.emit("WARN", "identity.image", "incomplete coverage: %d/%d file hashes checked; permission denied: %s" %
+                   (len(m["files"]) - len(unreadable), len(m["files"]), ", ".join(unreadable)))
+        else:
+            c.emit("PASS", "identity.image", "ID=opos; base os-release kept; %d file hashes; %s %s" %
+                   (len(m["files"]), m["version"], m["build_id"]))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        c.emit("FAIL", "identity.image", str(exc))
+
+
+CHECKS = (check_identity, check_services, check_phoc, check_composer, check_output, check_backlight, check_kiosk, check_server, check_battery,
           check_clock, check_logs, check_resources, check_usb, check_ssh, check_network, check_ota, check_osk, check_netpage, check_firstrun, check_dev)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="opos-selftest", formatter_class=argparse.RawDescriptionHelpFormatter,
                                  description="Read-only acceptance checks of the running OPOS OS.\nOne PASS/FAIL/WARN/SKIP line per check; exit 1 when any is FAIL.\nChanges nothing on the phone (the server does its usual work to answer /api/state, and ssh logins are logged).")
-    ap.add_argument("--only", action="append", metavar="PREFIX", help="print only checks whose id starts with PREFIX (svc, phoc, gfx, kiosk, server, battery, clock, log, res, net, ssh, ota, osk, firstrun, dev); repeatable")
+    ap.add_argument("--only", action="append", metavar="PREFIX", help="print only checks whose id starts with PREFIX (identity, svc, phoc, gfx, kiosk, server, battery, clock, log, res, net, ssh, ota, osk, firstrun, dev); repeatable")
     ap.add_argument("--root", default="/", help="test seam: the directory standing in for / when reading /proc, /sys, /etc, /var, /opt")
     ap.add_argument("--bin", action="append", metavar="DIR", help="test seam: find systemctl, journalctl, wlr-randr and the other helpers only in these directories")
     ap.add_argument("--url", default=DEFAULT_URL, help="the OPOS server (default %(default)s)")
@@ -1101,6 +1125,8 @@ def main(argv=None):
     rev = (c.rd("/opt/opos/REVISION") or "").strip()
     print("# opos-selftest %d  %s  host=%s  uptime=%s  opos=%s  read-only" % (VERSION, fmt_t(c.time()), socket.gethostname(), "%ds" % up if up is not None else "?", rev[:12] or "?"), flush=True)
     for fn in CHECKS:
+        if a.only and all(o.startswith("identity") for o in a.only) and fn is not check_identity:
+            continue
         try:
             fn(c)
         except Refused as e:

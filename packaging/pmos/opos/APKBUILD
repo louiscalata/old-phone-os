@@ -27,6 +27,11 @@ package() {
 	_sp=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
 	mkdir -p "$pkgdir$_sp"
 	cp -r "$builddir/src/opos" "$pkgdir$_sp"
+	# Let stdlib importlib.metadata read the package's version without a second
+	# Python version literal (the source version is in pyproject.toml).
+	mkdir -p "$pkgdir$_sp/opos-$pkgver.dist-info"
+	printf 'Metadata-Version: 2.1\nName: opos\nVersion: %s\n' "$pkgver" \
+		> "$pkgdir$_sp/opos-$pkgver.dist-info/METADATA"
 	find "$pkgdir$_sp/opos" -name __pycache__ -exec rm -rf {} +
 	install -Dm755 "$srcdir/opos-kiosk" "$pkgdir/usr/bin/opos-kiosk"
 	install -Dm755 "$srcdir/opos-server.initd" "$pkgdir/etc/init.d/opos-server"
