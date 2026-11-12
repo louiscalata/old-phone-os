@@ -133,7 +133,7 @@ class BuildIdentity(unittest.TestCase):
         for key in ("OPOS_OSK", "OPOS_NETWORK", "OPOS_FIRSTRUN", "OPOS_MONITOR", "OPOS_PANES"):
             self.assertEqual(m["switches"][key], "1")
         self.assertEqual(m["switches"]["OPOS_SPAN"], "675,42")
-        self.assertEqual(m["switches"]["OPOS_APPS"], "clock,contacts,notes,calc")
+        self.assertEqual(m["switches"]["OPOS_APPS"], "clock,contacts,notes,calc,calls")
         self.assertEqual(m["switches"]["OPOS_DEV_SSH_PUBKEY"], "0")
         self.assertEqual(m["switches"]["OPOS_UPDATE_URL"], "")
 
