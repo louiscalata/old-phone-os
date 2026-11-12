@@ -64,6 +64,7 @@ try:  # track monitor: the Inference page is optional; a runtime shipped without
     from opos import monitor, monitor_web
 except ImportError:
     monitor = monitor_web = None
+from opos.clock_health import clock_status
 from opos import statusbar  # track: status (the status bar's note, the call line on Home)
 from opos import fonts  # Newsreader and Inter Tight, served as files; not part of page()
 
@@ -205,14 +206,17 @@ def _contact(c):
 def _local_clock_s():
     t = time.localtime()
     return t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec
-CLOCK_MIN_YEAR = 2026  # an earlier year is a clock nobody set: the Duo boots at 1970
 CLOCK_GUESS = "/run/opos/clock-floor"  # the OS image's opos-clock writes it when it raised an unset clock to its floor
 CLOCK_SYNCED = "/run/systemd/timesync/synchronized"  # systemd-timesyncd touches it once it has network time
-def clock_ok(now=None, guess=CLOCK_GUESS, synced=CLOCK_SYNCED):
-    """False while the wall clock is a guess: before 2026, or only raised to the image's floor and not set since."""
-    if time.gmtime(time.time() if now is None else now).tm_year < CLOCK_MIN_YEAR:
-        return False
-    return not os.path.exists(guess) or os.path.exists(synced)
+def clock_ok(now=None, guess=CLOCK_GUESS, synced=CLOCK_SYNCED, floor="/opt/opos/CLOCK_FLOOR"):
+    """False at or below the image floor, or while a boot-time guess has no network time."""
+    try:
+        with open(floor, "rb") as f:
+            floor_value = f.read(1024).decode("utf-8", "replace")
+    except OSError:
+        floor_value = ""
+    return clock_status(time.time() if now is None else now, os.path.exists(guess), os.path.exists(synced), floor_value) == "ok"
+
 class Phone:
     def __init__(self, visible=False, live_battery=None):
         self.visible = bool(visible)

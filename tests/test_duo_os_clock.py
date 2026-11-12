@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The OPOS OS clock: opos-clock against a fake root and a fake date, and the clock blocks of the image scripts."""
+import contextlib
+import io
 import os
 import re
 import shutil
@@ -9,6 +11,9 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from opos.web import clock_ok
 
 PKG = Path(__file__).resolve().parents[1] / "packaging" / "duo-os"
 SH = shutil.which("sh")
@@ -95,6 +100,16 @@ class OposClockTests(unittest.TestCase):
         if mtime is not None:
             os.utime(p, (mtime, mtime))
 
+    def assert_readers(self, ok):
+        from tests.test_selftest import ST
+        self.assertEqual(clock_ok(self.clock(), self.path("run/opos/clock-floor"),
+                                  self.path("run/systemd/timesync/synchronized"), self.path("opt/opos/CLOCK_FLOOR")), ok)
+        ctx = ST.Ctx(root=str(self.root), now=self.clock())
+        with mock.patch.object(ST, "timezone", return_value=("UTC", "")), \
+                mock.patch.object(ST, "droid_home", return_value=""), contextlib.redirect_stdout(io.StringIO()):
+            ST.check_clock(ctx)
+        self.assertEqual(next(row[0] for row in ctx.rows if row[1] == "clock.year"), "PASS" if ok else "WARN")
+
     # floor
 
     def test_an_unset_clock_is_raised_to_the_floor_and_marked_a_guess(self):
@@ -104,6 +119,9 @@ class OposClockTests(unittest.TestCase):
         self.assertEqual(self.sets(), [FLOOR])
         self.assertTrue(self.guess())
         self.assertIn("raised to it", out)
+        self.assert_readers(False)
+        self.now(FLOOR + 60)
+        self.assert_readers(False)
 
     def test_a_clock_that_cannot_be_set_leaves_no_guess_marker_and_fails(self):
         rc, out = self.run_clock("floor", FAKE_FAIL_SET="1")
@@ -173,6 +191,7 @@ class OposClockTests(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertTrue(self.guess(), out)
         self.assertEqual(self.sets(), [])
+        self.assert_readers(False)
         shutil.rmtree(self.root / "run")
         self.touch("run/systemd/timesync/synchronized")
         self.run_clock("floor")
@@ -196,6 +215,77 @@ class OposClockTests(unittest.TestCase):
         self.touch("run/systemd/timesync/synchronized")
         self.run_clock("stop")
         self.assertFalse(self.keep())
+
+    def test_synchronization_after_floor_is_trusted_without_deleting_the_guess(self):
+        self.assertEqual(self.run_clock("floor")[0], 0)
+        self.now(FLOOR + 60)
+        self.assert_readers(False)
+        self.touch("run/systemd/timesync/synchronized")
+        self.assert_readers(True)
+        self.assertTrue(self.guess(), "readers need no marker cleanup")
+
+    def test_synchronization_before_floor_prevents_a_write_even_below_a_cached_floor(self):
+        self.touch("var/lib/systemd/timesync/clock", FLOOR + 3600)
+        self.touch("run/systemd/timesync/synchronized")
+        for value in (FLOOR - 1, FLOOR, FLOOR + 60, FLOOR + 3600):
+            with self.subTest(now=value):
+                self.touch("var/lib/opos/clock-guess")
+                self.now(value)
+                rc, out = self.run_clock("floor")
+                self.assertEqual(rc, 0, out)
+                self.assertEqual(self.clock(), value)
+                self.assertEqual(self.sets(), [])
+                self.assertFalse(self.guess())
+                self.assertFalse(self.keep())
+                self.assert_readers(value > FLOOR)
+
+    def test_network_correction_below_the_cached_floor_is_trusted(self):
+        self.touch("var/lib/systemd/timesync/clock", FLOOR + 3600)
+        self.assertEqual(self.run_clock("floor")[0], 0)
+        self.assertEqual(self.clock(), FLOOR + 3600)
+        self.now(FLOOR + 60)
+        self.touch("run/systemd/timesync/synchronized")
+        self.assert_readers(True)
+        self.assertTrue(self.guess())
+
+    def test_synchronization_does_not_excuse_a_clock_at_or_below_the_image_floor(self):
+        self.touch("run/systemd/timesync/synchronized")
+        for guess in (False, True):
+            if guess:
+                self.touch("run/opos/clock-floor")
+            for value in (FLOOR - 1, FLOOR, FLOOR + 1):
+                with self.subTest(guess=guess, now=value):
+                    self.now(value)
+                    self.assert_readers(value > FLOOR)
+
+    def test_set_after_sync_keeps_its_original_behavior(self):
+        self.assertEqual(self.run_clock("floor")[0], 0)
+        self.assertEqual(self.run_clock("stop")[0], 0)
+        self.assertTrue(self.keep())
+        self.touch("run/systemd/timesync/synchronized")
+        f = self.drop(str(FLOOR + 120))
+        rc, out = self.run_clock("set", str(f))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.clock(), FLOOR + 120)
+        self.assertFalse(f.exists())
+        self.assertFalse(self.guess())
+        self.assertFalse(self.keep())
+        self.assertTrue(self.path("run/systemd/timesync/synchronized").exists())
+        self.assert_readers(True)
+
+    def test_shutdown_after_sync_does_not_save_a_guess(self):
+        self.assertEqual(self.run_clock("floor")[0], 0)
+        self.touch("run/systemd/timesync/synchronized")
+        for value in (FLOOR, FLOOR + 60):
+            for keep in (False, True):
+                with self.subTest(now=value, keep=keep):
+                    if keep:
+                        self.touch("var/lib/opos/clock-guess")
+                    self.now(value)
+                    rc, out = self.run_clock("stop")
+                    self.assertEqual(rc, 0, out)
+                    self.assertFalse(self.keep())
+                    self.assertTrue(self.guess())
 
     def test_usage(self):
         for args in ((), ("bogus",)):

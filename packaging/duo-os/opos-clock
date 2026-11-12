@@ -20,6 +20,7 @@ SYNCED=$R/run/systemd/timesync/synchronized
 say() { printf 'opos-clock: %s\n' "$*"; }
 num() { case ${1:-} in '' | *[!0-9]*) return 1 ;; esac; [ "${#1}" -le 12 ]; }
 setclock() { date -u -s "@$1" > /dev/null; }
+is_guess() { [ -e "$GUESS" ] && [ ! -e "$SYNCED" ]; }
 
 floor_value() {
     f=$MIN
@@ -41,6 +42,11 @@ evidence() {
 }
 
 do_floor() {
+    if [ -e "$SYNCED" ]; then
+        rm -f "$KEEP"
+        say "network time is synchronized: left alone"
+        return 0
+    fi
     floor=$(floor_value)
     # The last clock systemd-timesyncd saved is a better floor, when it is a believable step past the build.
     s=$(stat -c %Y "$R/var/lib/systemd/timesync/clock" 2> /dev/null)
@@ -65,7 +71,7 @@ do_floor() {
 do_stop() {
     if [ -e "$SYNCED" ]; then
         rm -f "$KEEP"
-    elif [ -e "$GUESS" ]; then
+    elif is_guess; then
         mkdir -p "$R/var/lib/opos" && : > "$KEEP"
     fi
 }
