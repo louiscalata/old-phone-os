@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Bind the container debug port to loopback, drop new inbound packets on wlan0,
-# and close a passwordless USB root shell unless OPOS_DEV_USB_SHELL=1.
+# and close every passwordless USB root shell.
 # Usage: sh close-exposure.sh ROOT
 # ROOT is a rootfs directory (the image mount at build time, or / on the phone).
 set -eu
@@ -95,9 +95,6 @@ close_unit() {
     find "$root/etc/systemd/system" -path '*.wants/*' -name "$base" -exec rm -f {} +
 }
 
-dev_shell=0
-[ "${OPOS_DEV_USB_SHELL:-0}" = 1 ] && dev_shell=1
-
 for file in \
     "$root"/etc/systemd/system/*telnet* \
     "$root"/lib/systemd/system/*telnet* \
@@ -106,13 +103,11 @@ for file in \
 do
     [ -f "$file" ] || continue
     is_root_shell "$file" || continue
-    if [ "$dev_shell" -eq 0 ]; then
-        close_unit "$file"
-    fi
+    close_unit "$file"
 done
 
 inetd=$root/etc/inetd.conf
-if [ -f "$inetd" ] && [ "$dev_shell" -eq 0 ]; then
+if [ -f "$inetd" ]; then
     tmp=$(mktemp)
     awk '
         /^[[:space:]]*#/ { print; next }
@@ -123,9 +118,5 @@ if [ -f "$inetd" ] && [ "$dev_shell" -eq 0 ]; then
     rm -f "$tmp"
 fi
 
-if [ "$dev_shell" -eq 1 ]; then
-    printf '%s\n' 'enabled=1' 'gate=dev' > "$root/etc/opos/usb-shell.conf"
-else
-    printf '%s\n' 'enabled=0' > "$root/etc/opos/usb-shell.conf"
-fi
+printf '%s\n' 'enabled=0' > "$root/etc/opos/usb-shell.conf"
 chmod 0644 "$root/etc/opos/usb-shell.conf"

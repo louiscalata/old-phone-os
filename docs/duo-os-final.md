@@ -49,7 +49,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_OSK_HINGE` | unset (42) | CSS pixels between the two halves of a split keyboard when the page does not say; `0` never splits |
 | `OPOS_NETWORK` | `1` (drop-in `opos-network.conf`) | the Settings link to `/network` and the actions that change things; without it the page only reads |
 | `OPOS_NET_TTY` | unset | `1` hands the Wi-Fi password to `nmcli` through a pseudo-terminal, if a pipe is not accepted on the phone |
-| `OPOS_NET_POLKIT` | unset (a build input; the rule is not installed) | `1` at build time installs the polkit rule that lets `opos-server.service`, running as `droidian`, use the four NetworkManager actions |
+| `OPOS_NET_POLKIT` | unset (a build input; the rule is not installed) | `1` at build time installs the polkit rule that lets `opos-server.service`, running as `droidian`, use the four NetworkManager actions (any value but `1`, `0`, empty or unset stops the build; `verify-image.sh` checks the rule, and with `OPOS_NET_POLKIT` in its environment requires or forbids it). Without it joining Wi-Fi is refused on this image |
 | `OPOS_FIRSTRUN` | `1` (`opos-server.service`) | the first-run setup, `/timezone`, and applying the saved zone at start |
 | `OPOS_MONITOR` | `1` (`opos-server.service`) | the Inference page: the Settings link to `/monitor`, and the routes `/monitor` and `/api/monitor`; `/monitor` and `/api/monitor` answer 404 without it |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | unset (optional `/etc/opos/monitor.env`; the image ships only `monitor.env.example`) | where the Inference page looks for an AGIW monitor on a computer you own (loopback or private network; unset: no monitor is fetched), and the `Host` header to send it; see the Inference page section of the image README |
@@ -58,8 +58,13 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_CONFIG_DIR` | unset (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_SPAN` | `675,42` (`opos-server.service`) | pane and hinge widths in CSS pixels for the window that covers both panels, so the page lays out for two screens; `off` disables it; the same as `--span`. Not yet measured on the phone |
 | `OPOS_PANES` | `1` (`opos-server.service`; it paints only while `OPOS_SPAN` is on) | the black and white pane surfaces and the Hand setting on the window that covers both panels (`/panes.css`, `/panes.js`, [jaryo-panes.md](jaryo-panes.md)); `1,pure` is the strict `#000`/`#fff` pair, `invert` swaps the colors for the left hand without mirroring; unset or `off`: no panes assets or tags and `page()` is unchanged (the Network, first-run and time zone pages carry the Jaryo conformance fixes either way). Not yet seen on the phone |
+| `OPOS_RELEASE` | `0` (build and verification input) | `1` refuses development inputs, requires a pinned community base without previous OPOS identity or release layout, records release mode, and requires verification before publication |
+| `OPOS_VERIFY_IMAGE` | `0` (dev build input) | `1` verifies a dev staging image before publication; release builds always verify |
+| `OPOS_NO_SSH`, `OPOS_ALLOW_NO_SSH` | `0` (build input; the latter is a compatibility alias) | `1` explicitly chooses no SSH access: no authorized keys, SSH services and sockets disabled and masked; otherwise an owner recovery key is required |
+| `OPOS_DEV_SPAN` | unset; a build input of `build-image.sh`, dev images only | `1`, with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): writes the drop-in `opos-server.service.d/30-opos-dev-span.conf`, which sets `OPOS_SPAN=675,42` recording the dev choice separately from the normal service span; no dev drop-in without it. `opos-selftest` WARNs `dev.span`. Not yet seen on the phone |
+| `OPOS_DEV_SUDO` | unset; a build input of `build-image.sh`, dev images only | `1`, with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone, before the output is touched): writes `/etc/sudoers.d/90-opos-dev` (0440 root:root, exactly `droidian ALL=(ALL) NOPASSWD:ALL`, checked with `visudo -cf` where the builder has it), so the dev login user is root and the checkpoint can be fixed over ssh; no file without it. An image built this way must never be carried or shared: everything that runs as `droidian` is root on it. `opos-selftest` WARNs `dev.sudo`. Not yet seen on the phone |
 | `OPOS_KIOSK_DEBUG_PORT` | unset; a dev image writes it into `/etc/default/opos-kiosk` | the kiosk Chromium's DevTools port on `127.0.0.1`; `opos-kiosk` reads it from that file alone, never from a unit or the caller's environment |
-| `OPOS_DEV_USB_SHELL` | unset (off) | `1` at build time keeps a passwordless USB telnet root shell for a dev image and writes `enabled=1` in `/etc/opos/usb-shell.conf`; the default closes that shell. Not checked on a phone |
+| `OPOS_DEV_USB_SHELL` | ignored | Root telnet shells are always closed; `/etc/opos/usb-shell.conf` records `enabled=0`. Phone checks remain **NOT_RUN** |
 | `OPOS_KIOSK_DEFAULTS` | unset (`/etc/default/opos-kiosk`) | which file `opos-kiosk` reads the DevTools port from; a hook for tests |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | unset | only for `opos-osk` (the opt-in Wayland keyboard): the binary, seconds to wait for phoc's socket (120), and `0` to leave gsettings alone |
 | `OPOS_BATTERY`, `OPOS_ON_PHONE` | `live`, `1` | the sysfs battery source and the phone-only behaviour |
@@ -67,6 +72,20 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_BRIGHTNESS_DIR` | `/run/user/32011` | directory where the brightness unit writes `sfduo-brightness` for the lid helper |
 | `OPOS_UPDATE_SIGNERS` | unset (a build input) | a file of public keys (`ssh-ed25519 ...`) that `build-image.sh` installs as the image's only trust for over-the-air updates; without it the image accepts no update |
 | `OPOS_UPDATE_URL` | unset (a build input) | `https://host/folder/latest.json`, written to `/etc/opos/update.json` so the Updates page may look there, only when asked; without it the phone fetches nothing |
+
+## Removed on purpose
+
+Two doors the port leaves open, closed by `build-image.sh` in every image with no switch (the `usb hardening` block, checked by `verify-image.sh`; details in the
+image README under "Removed on purpose: the USB root shell and the password login"):
+
+- the root telnet shell on the USB link: the port's `sfduo-usb-gadget.sh` ended by starting busybox `telnetd` with `/bin/bash` as its login program, so anything on
+  the cable had a root shell with no login. The line is now a comment.
+- the sshd password login for the USB subnet: the port's `10-item-password-usb-only.conf` let a password in for every client whose source address was in that
+  /24, on any interface, Wi-Fi included once joined. The drop-in is key-only now, so ssh takes a key from every address and `opos-selftest` `ssh.auth` says
+  `key-only everywhere`. Every accessible image requires `OPOS_OWNER_SSH_PUBKEY`; `OPOS_NO_SSH=1` (or the compatibility alias `OPOS_ALLOW_NO_SSH=1`) explicitly disables and masks SSH services and sockets. A dev image may add `OPOS_DEV_SSH_PUBKEY` and, if built with `OPOS_DEV_SUDO=1`, root through sudo.
+
+The separate exposure hardening binds the container debug port to loopback, drops new inbound packets on `wlan0`, and closes other root telnet units
+unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot preserve a root shell. Not yet seen on the phone.
 
 ## What is still simulated
 
@@ -116,13 +135,13 @@ For whoever holds the phone. Read-only unless a step says otherwise; replace `<p
 addresses and passwords appear in some of it.
 
 1. **Build and verify** (builder, root): `sudo sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD`, with
-   `OPOS_DEV_SSH_PUBKEY=<file.pub>` for a dev image you can ssh into (and `OPOS_NET_POLKIT=1` only if step 5 shows NetworkManager
+   `OPOS_DEV_SSH_PUBKEY=<file.pub>` for a dev image you can ssh into (add `OPOS_DEV_SPAN=1` to record a dev-span drop-in as well as the normal service span; `OPOS_DEV_SUDO=1` to give `droidian` passwordless sudo, for an image that is never carried or shared; and `OPOS_NET_POLKIT=1` only if step 5 shows NetworkManager
    refusing); then `sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img`. Expect `VERIFY: PASS` and, among the lines,
    "the keyboard, the Network page and the first run answer together in one server from the image".
 2. **Boot** from the PC as before, wait five minutes (the boot dump is due 90 s after multi-user.target).
 3. **The suite, from the PC:** `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key> -OutDir <folder>`; on the phone,
    `/usr/sbin/opos-selftest ; echo rc=$?`. Expect no FAIL. Expected WARNs on a first boot of a dev image: `battery.temp`, `clock.year`
-   (1970, or the image's floor until network time or a set time), `clock.timezone` (UTC), `dev.*`, possibly `svc.system`. Expected WARN: `ota.updater` on an image built without `OPOS_UPDATE_SIGNERS` (no update is accepted). Expected SKIP: `clock.kiosk-tz` until a zone is chosen; `kiosk.restarts` reports the exits `opos-kiosk` logged this boot.
+   (1970, or the image's floor until network time or a set time), `clock.timezone` (UTC), `dev.*` (`dev.ssh-key`, `dev.devtools`, `dev.time-drop`, `dev.span` with `OPOS_DEV_SPAN=1`, and `dev.sudo` on an image built with `OPOS_DEV_SUDO=1`), possibly `svc.system`. Expected WARN: `ota.updater` on an image built without `OPOS_UPDATE_SIGNERS` (no update is accepted). Expected SKIP: `clock.kiosk-tz` until a zone is chosen; `kiosk.restarts` reports the exits `opos-kiosk` logged this boot.
    Expected PASS: `osk.keyboard`, `net.page`, `net.permissions` (WARN means NetworkManager will refuse; see step 5),
    `firstrun.flag`, `firstrun.routes` (it says first run PENDING). Any FAIL or surprise in a format is a finding: send the report.
    `page.png` exists only if the kiosk has a DevTools port, which comes from another branch.
@@ -130,7 +149,7 @@ addresses and passwords appear in some of it.
    `systemctl show --property=LoadState,ActiveState,SubState,Result opos.service`; `pgrep -af phoc` and `pgrep -af 'composer@2.4'`
    (phoc has `-E /usr/libexec/opos/opos-kiosk` and no `-S`); `tr '\0' '\n' < /proc/$(pgrep -f -- --kiosk | head -1)/environ | grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR)='`;
    `XDG_RUNTIME_DIR=/run/user/32011 WAYLAND_DISPLAY=wayland-0 wlr-randr` (HWCOMPOSER-1, Enabled: yes, 2784x1800 px, Scale 2);
-   `cat /sys/class/backlight/panel*-backlight/bl_power /sys/class/backlight/panel*-backlight/actual_brightness`;
+   `cat /sys/class/backlight/panel*-backlight/bl_power /sys/class/backlight/panel*-backlight/brightness /sys/class/drm/card0-DSI-*/dpms` (`bl_power` 0, a level above 0, `On` twice; `actual_brightness` reads 0 on this kernel while the panels are lit, so `gfx.backlight` does not use it);
    `for s in /sys/class/power_supply/*; do echo $s $(cat $s/type) $(cat $s/capacity 2>&1) $(cat $s/status 2>&1) $(cat $s/temp 2>&1); done`;
    `timedatectl show -p Timezone -p NTPSynchronized`; `nmcli -t -f DEVICE,TYPE,STATE device`; `ip -4 -o addr show dev usb0`;
    `ls /var/log/journal/*/`; `head -3 /var/log/opos-boot-diag.txt`.

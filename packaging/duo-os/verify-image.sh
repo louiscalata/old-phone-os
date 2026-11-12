@@ -9,6 +9,15 @@ set -u
 img=$1
 identity_checker=$(cd "$(dirname "$0")/../.." && pwd)/src/opos/image_identity.py
 case $img in /*) ;; *) img=$PWD/$img ;; esac
+here=$(cd "$(dirname "$0")" && pwd)
+# --- expect: CHECK BEGIN (OPOS_DEV_SPAN, OPOS_DEV_SUDO and OPOS_NET_POLKIT, as build-image.sh took them)
+# Optional. A file in the image cannot say whether the build meant to put it there, so the build knobs that add a file may be given here too, with the
+# value the build had: 1 then requires the file and 0 requires its absence. Unset (the default) reads the image as it is: a file that is there must be
+# exactly what the build would have written, and nothing is required. Anything else is refused before the image is touched.
+case ${OPOS_DEV_SPAN:-} in '' | 0 | 1) ;; *) echo "verify-image.sh: OPOS_DEV_SPAN must be 1, 0 or unset" >&2; exit 2 ;; esac
+case ${OPOS_DEV_SUDO:-} in '' | 0 | 1) ;; *) echo "verify-image.sh: OPOS_DEV_SUDO must be 1, 0 or unset" >&2; exit 2 ;; esac
+case ${OPOS_NET_POLKIT:-} in '' | 0 | 1) ;; *) echo "verify-image.sh: OPOS_NET_POLKIT must be 1, 0 or unset" >&2; exit 2 ;; esac
+# --- expect: CHECK END
 q=$(command -v qemu-aarch64-static) || { echo "needs qemu-aarch64-static" >&2; exit 2; }
 # This script is root. Everything it runs (the image's python3 under qemu-user, this builder's python3) starts in, and
 # keeps its HOME and every scratch file in, ONE private directory that only root can enter: mktemp -d makes it
@@ -23,9 +32,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/opos-verify.XXXXXX") || { echo "verify-image.s
 pids='' mnt=''
 # up PID: succeeds while PID runs (a child that has exited and not been waited for is a zombie: not running)
 up() { up_s=$(ps -o stat= -p "$1" 2>/dev/null) && case $up_s in Z* | '') false ;; esac; }
-cleanup() {
-    trap '' INT TERM HUP
-    cd /
+stop_children() {
     for p in $pids; do kill "$p" 2>/dev/null; done
     n=0
     while [ "$n" -lt 50 ]; do
@@ -36,11 +43,31 @@ cleanup() {
         n=$((n + 1))
     done
     for p in $pids; do kill -9 "$p" 2>/dev/null; done
-    if [ -n "$mnt" ]; then
-        mountpoint -q "$mnt" 2>/dev/null && umount "$mnt" 2>/dev/null
-        rmdir "$mnt" 2>/dev/null
+    for p in $pids; do wait "$p" 2>/dev/null || true; done
+    pids=''
+}
+unmount_image() {
+    if ! umount "$mnt"; then
+        echo "verify-image.sh: mount point still attached: $mnt; retaining backing file $img" >&2
+        return 1
     fi
-    rm -rf "$work"
+    if mountpoint -q "$mnt"; then
+        echo "verify-image.sh: mount point still attached: $mnt; retaining backing file $img" >&2
+        return 1
+    fi
+}
+cleanup() {
+    status=$?
+    trap - EXIT
+    trap '' INT TERM HUP
+    cd / || exit 1
+    stop_children
+    if [ -n "$mnt" ]; then
+        if mountpoint -q "$mnt"; then unmount_image || status=1; fi
+        if ! mountpoint -q "$mnt"; then rmdir "$mnt" 2>/dev/null || status=1; fi
+    fi
+    rm -rf "$work" || status=1
+    exit "$status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -64,6 +91,10 @@ r=$mnt
 identity_ok() { python3 -I -B "$identity_checker" check --root "$r"; }
 check "OPOS identity and every image manifest file hash, with the upstream os-release preserved" "identity_ok"
 # --- identity: END
+# --- build mode: BEGIN
+check "image records its build mode (release verification requires release)" "python3 -I -B \"$here/image-policy.py\" build-mode \"$r\" \"${OPOS_RELEASE:-0}\""
+if [ "${OPOS_RELEASE:-0}" = 1 ] && [ "$fail" -ne 0 ]; then exit 1; fi
+# --- build mode: END
 w=$r/etc/systemd/system
 check "opos.service in graphical.target" "[ -L $w/graphical.target.wants/opos.service ]"
 check "opos-server.service in multi-user.target" "[ -L $w/multi-user.target.wants/opos-server.service ]"
@@ -88,11 +119,10 @@ check "a Chromium DevTools port exists only together with a dev ssh key" "[ ! -e
 check "the kiosk debug port is loopback only" "grep -q -- '--remote-debugging-address=127.0.0.1' $k && ! grep -q '0.0.0.0' $k"
 check "the container debug port is bound to loopback" "grep -qx 'listen=127.0.0.1' $r/etc/opos/debug-port.conf && ! grep -q '0.0.0.0' $r/etc/opos/debug-port.conf"
 check "new inbound packets on wlan0 are dropped" "grep -q 'iifname \"wlan0\" ct state established,related accept' $r/etc/opos/wlan0-inbound.nft && grep -q 'iifname \"wlan0\" drop' $r/etc/opos/wlan0-inbound.nft"
-check "a passwordless USB root shell is closed unless the dev gate is on" "grep -qx 'enabled=0' $r/etc/opos/usb-shell.conf || { grep -qx 'enabled=1' $r/etc/opos/usb-shell.conf && grep -qx 'gate=dev' $r/etc/opos/usb-shell.conf; }"
-if [ -f "$r/home/droidian/.ssh/authorized_keys" ]; then
-    echo "NOTE: DEV image: droidian has $(wc -l < "$r/home/droidian/.ssh/authorized_keys") authorized ssh key(s)"
-else
-    echo "NOTE: no ssh key in this image (nothing new can log in)"
+check "a passwordless USB root shell is closed" "grep -qx 'enabled=0' $r/etc/opos/usb-shell.conf"
+check "owner SSH recovery key, permissions and startup wiring (or explicit no-SSH choice)" "python3 -I -B \"$here/image-policy.py\" recovery \"$r\""
+if [ "${OPOS_RELEASE:-0}" = 1 ]; then
+    check "release image contains no development state" "python3 -I -B \"$here/image-policy.py\" release \"$r\""
 fi
 if [ -e "$r/etc/default/opos-kiosk" ]; then
     echo "NOTE: DEV image: the kiosk Chromium serves DevTools on 127.0.0.1 ($(grep -v '^#' "$r/etc/default/opos-kiosk" | tr '\n' ' '))"
@@ -103,7 +133,35 @@ check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -
 # --- track: network (Wi-Fi and radio status) ---
 check "the server may manage the phone's network (OPOS_NETWORK=1 drop-in)" "grep -q '^Environment=OPOS_NETWORK=1' $w/opos-server.service.d/20-opos-network.conf"
 check "the Network page and its logic are in the image" "[ -f $r/opt/opos/src/opos/net.py ] && [ -f $r/opt/opos/src/opos/net_page.py ]"
-if [ -f "$r/etc/polkit-1/rules.d/50-opos-network.rules" ]; then echo "NOTE: polkit rule installed: opos-server.service as droidian may use the four NetworkManager actions"; else echo "NOTE: no polkit rule from OPOS (the base's own rules decide whether the Network page may join Wi-Fi)"; fi
+# --- polkit: BEGIN (OPOS_NET_POLKIT in build-image.sh; docs/network.md)
+# The opt-in rule that lets droidian do the four NetworkManager actions the Network page needs. Present: the very bytes of packaging/duo-os/50-opos-network.rules
+# (the file the build copies), a plain root-owned 0644 file, in a rules.d that polkitd (which reads rules as its own user) can enter. With OPOS_NET_POLKIT=1 in
+# this script's environment the rule is required, with 0 it must be absent; unset, only what is there is checked.
+pkd=$r/etc/polkit-1/rules.d
+pkf=$pkd/50-opos-network.rules
+polkit_rule_ok() {
+    [ -f "$pkf" ] && [ ! -L "$pkf" ] && [ "$(stat -c %a "$pkf")" = 644 ] && [ "$(stat -c %u:%g "$pkf")" = 0:0 ] && cmp -s "$pkf" "$here/50-opos-network.rules"
+}
+polkit_dir_ok() {
+    [ -d "$pkd" ] && [ ! -L "$pkd" ] || return 1
+    pk_m=$(stat -c %a "$pkd") pk_g=$(stat -c %g "$pkd") pk_id=$(awk -F: '$1=="polkitd"{print $3}' "$r/etc/group")
+    pk_t=${pk_m%?}
+    case ${pk_m#"$pk_t"} in 5 | 7) return 0 ;; esac  # everyone may enter
+    case ${pk_t#"${pk_t%?}"} in 5 | 7) [ -n "$pk_id" ] && [ "$pk_g" = "$pk_id" ] && return 0 ;; esac  # polkitd's group may
+    return 1
+}
+if [ -e "$pkf" ] || [ -L "$pkf" ]; then
+    check "polkit: 50-opos-network.rules is a plain root-owned 0644 file with the very bytes of packaging/duo-os/50-opos-network.rules" "polkit_rule_ok"
+    check "polkit: /etc/polkit-1/rules.d can be entered by polkitd (its group or everyone), so the rule is read" "polkit_dir_ok"
+    echo "NOTE: polkit rule installed: opos-server.service as droidian may use the four NetworkManager actions"
+else
+    echo "NOTE: no polkit rule from OPOS (the base's own rules decide whether the Network page may join Wi-Fi)"
+fi
+case ${OPOS_NET_POLKIT:-} in
+    1) check "OPOS_NET_POLKIT=1: the polkit rule is in the image" "[ -e $pkf ] || [ -L $pkf ]" ;;
+    0) check "OPOS_NET_POLKIT=0: no polkit rule from OPOS is in the image" "[ ! -e $pkf ] && [ ! -L $pkf ]" ;;
+esac
+# --- polkit: END
 # --- end track: network ---
 check "OPOS revision recorded" "[ -s $r/opt/opos/REVISION ]"
 echo "OPOS revision: $(cat $r/opt/opos/REVISION 2>/dev/null)"
@@ -165,12 +223,63 @@ check "opos-clock has no Before= on sysinit, the time targets or the network (th
 check "network time still takes over: systemd-timesyncd enabled, not masked" "[ -L $w/sysinit.target.wants/systemd-timesyncd.service ] && [ \"\$(readlink $w/systemd-timesyncd.service)\" != /dev/null ]"
 chome=$(awk -F: '$1=="droidian"{print $6}' "$r/etc/passwd"); drop=$(sed -n 's/^PathChanged=//p' "$w/opos-clock-set.path" 2>/dev/null)
 check "the time-file drop is filled in for the droidian home, with one file name in both units" "[ -n '$chome' ] && [ '$drop' = '$chome/opos-set-time' ] && grep -q '^ExecStart=/usr/libexec/opos/opos-clock set $drop\$' $w/opos-clock-set.service && ! grep -q @DROP@ $w/opos-clock-set.path $w/opos-clock-set.service"
-if [ -f "$r$chome/.ssh/authorized_keys" ]; then
+# Older images and the standalone clock build block predate the build-mode marker:
+# their SSH key is the developer key. New images also carry an owner recovery key,
+# so only their developer-only kiosk drop-in enables the time-file drop.
+if [ -f "$r$chome/.ssh/authorized_keys" ] && { [ ! -e "$r/etc/opos/build-mode" ] || [ -e "$r/etc/default/opos-kiosk" ]; }; then
     check "DEV image: the time-file drop is enabled" "[ -L $w/multi-user.target.wants/opos-clock-set.path ]"
+elif [ -f "$r$chome/.ssh/authorized_keys" ]; then
+    check "no developer key: the time-file drop is not enabled" "[ ! -L $w/multi-user.target.wants/opos-clock-set.path ]"
 else
     check "no ssh key: the time-file drop is not enabled" "[ ! -L $w/multi-user.target.wants/opos-clock-set.path ]"
 fi
 # --- clock: END
+# --- dev sudo: BEGIN (OPOS_DEV_SUDO in build-image.sh; packaging/duo-os/README.md, "Dev options: passwordless sudo")
+# The sudoers file a DEV image gets from OPOS_DEV_SUDO=1. Present: a plain root-owned 0440 file holding exactly one line, 'droidian ALL=(ALL) NOPASSWD:ALL',
+# in an image that has the dev ssh key (the build refuses the knob without it), and no other sudoers file grants NOPASSWD. Absent: nothing in /etc/sudoers
+# or /etc/sudoers.d grants NOPASSWD. With OPOS_DEV_SUDO set in this script's own environment (to what the build took), the image is held to it both ways.
+dsf=$r/etc/sudoers.d/90-opos-dev
+check "sudo: no authentication-disabling Defaults or unsupported included policy" "python3 -I -B \"$here/image-policy.py\" sudo \"$r\""
+nopasswd_lines() { grep -hsE '^[[:space:]]*[^#[:space:]].*NOPASSWD' "$r/etc/sudoers" "$r"/etc/sudoers.d/* 2>/dev/null; }
+dev_sudo_ok() {
+    [ -f "$dsf" ] && [ ! -L "$dsf" ] && [ "$(stat -c %a "$dsf")" = 440 ] && [ "$(stat -c %u:%g "$dsf")" = 0:0 ] || return 1
+    [ -s "$r$chome/.ssh/authorized_keys" ] && python3 -I -B "$here/image-policy.py" key "$r$chome/.ssh/authorized_keys" || return 1
+    printf '%s\n' 'droidian ALL=(ALL) NOPASSWD:ALL' | cmp -s - "$dsf"
+}
+dev_sudo_only() { [ "$(nopasswd_lines)" = 'droidian ALL=(ALL) NOPASSWD:ALL' ]; }
+if [ -e "$dsf" ] || [ -L "$dsf" ]; then
+    check "DEV sudo: /etc/sudoers.d/90-opos-dev is a plain root-owned 0440 file holding exactly 'droidian ALL=(ALL) NOPASSWD:ALL', and the dev ssh key is in the image" "dev_sudo_ok"
+    check "DEV sudo: no other line in /etc/sudoers or /etc/sudoers.d grants NOPASSWD" "dev_sudo_only"
+    if command -v visudo >/dev/null 2>&1; then
+        check "DEV sudo: visudo accepts the file" "visudo -cf $dsf >/dev/null 2>&1"
+    else
+        echo "NOTE: no visudo on this builder: the sudoers line was not parsed (its text is compared byte for byte instead)"
+    fi
+    echo "NOTE: DEV image: droidian has passwordless sudo (/etc/sudoers.d/90-opos-dev); this image must never be carried or shared"
+else
+    check "no dev sudo: nothing in /etc/sudoers or /etc/sudoers.d grants NOPASSWD" "! nopasswd_lines | grep -q ."
+    echo "NOTE: no passwordless sudo in this image (droidian is in the sudo group and has to type a password)"
+fi
+case ${OPOS_DEV_SUDO:-} in
+    1) check "OPOS_DEV_SUDO=1: the dev sudoers file is in the image" "[ -e $dsf ] || [ -L $dsf ]" ;;
+    0) check "OPOS_DEV_SUDO=0: no dev sudoers file is in the image" "[ ! -e $dsf ] && [ ! -L $dsf ]" ;;
+esac
+# --- dev sudo: END
+# --- usb hardening: BEGIN (build-image.sh, "usb hardening"; packaging/duo-os/README.md, "Removed on purpose: the USB root shell and the password login")
+# Every image, dev or not: the port's USB gadget script starts no telnet shell (busybox telnetd with /bin/bash as its login program: a root shell with no
+# authentication on the USB link), no other script or unit of the image does, and sshd takes no password from anyone (the port's Match block for the USB link's
+# subnet, which let a password in from any interface, is gone). The host sshd -T parses the image configuration with Include paths confined to the image. A package upgrade of the port that puts either
+# file back is a FAIL.
+ugs=$r/usr/local/sbin/sfduo-usb-gadget.sh
+telnet_lines() { grep -v '^[[:space:]]*#' "$ugs" | grep telnetd; }
+telnet_elsewhere() { grep -rIlE '^[[:space:]]*(telnetd|[^#[:space:]].*telnetd)' "$r/usr/local" "$r/etc" "$r/usr/lib/systemd" "$r/lib/systemd" 2>/dev/null; }
+gadget_ok() { [ -f "$ugs" ] && [ ! -L "$ugs" ] && [ -x "$ugs" ] && [ "$(stat -c %u:%g "$ugs")" = 0:0 ] && sh -n "$ugs" && ! telnet_lines | grep -q . && [ "$(tail -n 1 "$ugs")" = 'exit 0' ]; }
+sshd_key_only() { python3 -I -B "$here/image-policy.py" ssh "$r"; }
+check "USB: the gadget script starts no telnet shell (no non-comment line with telnetd), is an executable root-owned script that parses, and still ends with exit 0" "gadget_ok"
+check "USB: no other script, config or unit under /usr/local, /etc or the systemd directories starts telnetd" "! telnet_elsewhere | grep -q ."
+check "ssh: key-only everywhere: no PasswordAuthentication, KbdInteractiveAuthentication or ChallengeResponseAuthentication yes in sshd_config or its drop-ins (a Match block with one would be a password path from the USB link's subnet), and the first two are set to no" "sshd_key_only"
+echo "NOTE: ssh takes keys only; the port's root telnet shell on the USB link and its USB-subnet password login are removed from this image (the separate exposure checks cover the debug port)"
+# --- usb hardening: END
 # --- track osk: the on-screen keyboard (packaging/duo-os/OSK.md) ---
 o=$r/opt/opos/src/opos
 check "the in-page on-screen keyboard is in the image (osk.py, osk.js, osk.css)" "[ -s $o/osk.py ] && [ -s $o/osk_static/osk.js ] && [ -s $o/osk_static/osk.css ]"
@@ -188,7 +297,9 @@ check "the Inference page is in the image (monitor.py, monitor_web.py and its do
 check "/etc/opos is owned by root:root, mode 0755, and holds only the commented example: no monitor.env, no setting that is on, nothing secret" "[ -d $r/etc/opos ] && [ \"\$(stat -c %a $r/etc/opos)\" = 755 ] && [ \"\$(stat -c %u:%g $r/etc/opos)\" = 0:0 ] && [ -f $r/etc/opos/monitor.env.example ] && [ ! -e $r/etc/opos/monitor.env ] && ! grep -v '^[[:space:]]*#' $r/etc/opos/monitor.env.example | grep -q '[^[:space:]]'"
 check "the example names the reverse-tunnel setting (OPOS_AGIW_URL on the Duo's loopback, OPOS_AGIW_HOST for the monitor's Host)" "grep -qx '#OPOS_AGIW_URL=http://127.0.0.1:18767' $r/etc/opos/monitor.env.example && grep -qx '#OPOS_AGIW_HOST=127.0.0.1:8767' $r/etc/opos/monitor.env.example"
 # --- end track: monitor ---
-umount "$mnt"
+# umount "$mnt": boundary between offline checks and the qemu smoke tests.
+# The helper performs the unmount and also confirms that the image is detached.
+unmount_image || exit 1
 
 # Server smoke test: qemu-user with the read-only image as its sysroot (-L), so the image's own
 # aarch64 python3 loads its own standard library and runs /opt/opos from the image.
@@ -241,6 +352,7 @@ stop_server() {
         n=$((n + 1))
     done
     kill -9 "$1" 2>/dev/null
+    wait "$1" 2>/dev/null || true
     keep=''
     for p in $pids; do [ "$p" = "$1" ] || keep="$keep $p"; done
     pids=$keep
@@ -349,6 +461,44 @@ print('pane assets: panes.css', len(css[0]), 'bytes, panes.js', len(js[0]), 'byt
 check "the image's python3 serves the pane surfaces' files and builds their geometry from the span" "grep -q 'pane assets' \"\$work/opos-verify-panes.txt\""
 tail -n 1 "$work/opos-verify-panes.txt"
 # <<< track panes
+# --- dev span: BEGIN (OPOS_DEV_SPAN in build-image.sh; packaging/duo-os/README.md, "Spanning both panels")
+# opos-server.service already enables the two-screen span. A DEV image (one that holds the dev ssh key) may also record it in the drop-in
+# 30-opos-dev-span.conf, which must be exactly [Service] and Environment=OPOS_SPAN=675,42 and the only drop-in setting OPOS_SPAN.
+# With the drop-in present, the image's own python3 builds the page for its value. OPOS_DEV_SPAN here only checks the build choice; it writes nothing.
+dsd=$w/opos-server.service.d/30-opos-dev-span.conf
+span_settings() { grep -hs '^[[:space:]]*Environment=.*OPOS_SPAN' "$w"/opos-server.service.d/*.conf; }
+dev_span_ok() {
+    [ -f "$dsd" ] && [ ! -L "$dsd" ] && [ "$(stat -c %a "$dsd")" = 644 ] && [ "$(stat -c %u:%g "$dsd")" = 0:0 ] || return 1
+    [ -s "$r$chome/.ssh/authorized_keys" ] && python3 -I -B "$here/image-policy.py" key "$r$chome/.ssh/authorized_keys" || return 1
+    [ "$(grep -v '^[[:space:]]*#' "$dsd")" = "$(printf '[Service]\nEnvironment=OPOS_SPAN=675,42')" ] || return 1
+    [ "$(span_settings)" = 'Environment=OPOS_SPAN=675,42' ]
+}
+check "opos-server.service keeps the main span setting (OPOS_SPAN=675,42)" "[ \"\$(grep '^[[:space:]]*Environment=.*OPOS_SPAN' $w/opos-server.service)\" = 'Environment=OPOS_SPAN=675,42' ]"
+if [ -e "$dsd" ] || [ -L "$dsd" ]; then
+    check "DEV span: the drop-in is a plain root-owned 0644 file with only [Service] and Environment=OPOS_SPAN=675,42, no other drop-in sets the span, and the dev ssh key is in the image" "dev_span_ok"
+    dsv=$(sed -n 's/^Environment=OPOS_SPAN=//p' "$dsd" 2>/dev/null)
+    py -c "
+import sys
+from opos import span, web
+s = span.parse(sys.argv[1])
+assert s is not None and (s.pane, s.hinge) == (675, 42) and span.gate(s) == 1055, 'the drop-in does not describe 675 + 42 + 675'
+h = web.page('t' * 43, 'n' * 22, span=s)
+assert '(min-width:1055px)' in h and '(horizontal-viewport-segments:2)' not in h, 'the gate was not applied'
+assert ':root{--pane:675px;--hinge:42px}' in h, 'the geometry was not applied'
+assert 'span 675 + 42 + 675.' in h and 'CSS px at ' in h, 'the Settings window readout is missing'
+print('dev span page: gate 1055 px, --pane 675px, --hinge 42px, Settings readout, built by the image python3 from', repr(sys.argv[1]))" "$dsv" > "$work/opos-verify-devspan.txt" 2>&1
+    check "DEV span: the image's python3 builds the two-screen page (gate, geometry, Settings readout) for the drop-in's value" "grep -q '^dev span page' \"\$work/opos-verify-devspan.txt\""
+    tail -n 1 "$work/opos-verify-devspan.txt"
+    echo "NOTE: DEV image: opos-server runs with OPOS_SPAN=675,42 (drop-in 30-opos-dev-span.conf)"
+else
+    check "no dev span: no drop-in sets OPOS_SPAN" "! span_settings | grep -q ."
+    echo "NOTE: no dev span in this image (the service file's normal span setting is kept)"
+fi
+case ${OPOS_DEV_SPAN:-} in
+    1) check "OPOS_DEV_SPAN=1: the dev span drop-in is in the image" "[ -e $dsd ] || [ -L $dsd ]" ;;
+    0) check "OPOS_DEV_SPAN=0: no dev span drop-in is in the image" "[ ! -e $dsd ] && [ ! -L $dsd ]" ;;
+esac
+# --- dev span: END
 [ -z "$smoke_pid" ] || stop_server "$smoke_pid"
 head -5 "$work/opos-verify.log"
 # --- track integrate: BEGIN (the keyboard, the Network page and the first run in one server; docs/duo-os-final.md)
@@ -458,6 +608,12 @@ tail -n 2 "$monitor_out"
 # --- qa: BEGIN (opos-selftest; docs/duo-acceptance.md)
 check "opos-selftest is installed with its /usr/sbin wrapper, and the image's own python3 can start it" "[ -x $mnt/usr/libexec/opos/opos-selftest ] && [ -x $mnt/usr/sbin/opos-selftest ] && sh -n $mnt/usr/sbin/opos-selftest && grep -q '^exec /usr/libexec/opos/opos-selftest' $mnt/usr/sbin/opos-selftest && py $mnt/usr/libexec/opos/opos-selftest --help | grep -q 'Changes nothing'"
 # --- qa: END
-umount "$mnt"; rmdir "$mnt"
+stop_children
+if unmount_image; then
+    rmdir "$mnt" || fail=1
+    mnt=''
+else
+    fail=1
+fi
 [ $fail -eq 0 ] && echo "VERIFY: PASS (offline; not a boot or display test)" || echo "VERIFY: FAIL"
 exit $fail

@@ -61,6 +61,19 @@ The rule returns yes only when `subject.user` is `droidian` and `subject.system_
 Polkit that does not report `subject.system_unit` is not granted. The actions also let that service connect or disconnect any connection and add, change or delete system connections (mobile data and
 VPNs included). Whether a running phone actually grants them is **NOT_RUN**.
 
+**Why the Duo OS image needs it.** On the first checkpoint image (November 8, 2026) joining Wi-Fi was refused. Read in the base
+(`item-duo1-20261025-port0.22.1`): polkitd 128-1, which reads `/etc/polkit-1/rules.d` and `/usr/share/polkit-1/rules.d` and runs
+rules in duktape (`polkitd` links `libduktape.so.207`, not mozjs), and network-manager 1.56.1, whose policy file `org.freedesktop.NetworkManager.policy` has the four actions the
+rule names. For a process with no login session, which is what the OPOS server is, the policy's answer is "ask an administrator" for
+`network-control` and `wifi.scan`, "ask an administrator" for `settings.modify.system` and "no" for `enable-disable-wifi`; the base's
+own `org.freedesktop.NetworkManager.rules` lets only a local, active session of the `sudo` or `netdev` group change system
+connections, and `droidian` has no password to answer with. The rule is plain ES5 (one `polkit.addRule`, `subject.user ==
+"droidian"`, `polkit.Result.YES`) and `tests/test_duo_polkit.py` pins its four ids against that policy and against `src/opos/net.py`,
+and runs its JavaScript under node where there is one. Not run under polkitd itself on the builder. Any other value than `1`, `0` or
+empty for `OPOS_NET_POLKIT` stops the build before it starts (a typo such as `yes` used to build an image without the rule and say
+nothing), and `verify-image.sh` fails an image whose rule is not the very bytes of the packaged file, or that polkitd could not read, and with
+`OPOS_NET_POLKIT=1` or `0` in its environment requires or forbids the file.
+
 **Who can change Wi-Fi.** The page token is served on `GET /network` like the home page, so any local user or process on the phone
 can read it and change Wi-Fi as `droidian`: the accepted posture is a single-user phone, where every local process is the owner's.
 The polkit rule is wider than Wi-Fi: it also lets the server activate, modify and delete every NetworkManager connection,

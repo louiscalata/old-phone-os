@@ -54,6 +54,11 @@ def css_text(span=None, env=None):
         for old, new in spanmod.rewrites(span):
             text = text.replace(old, new)
         text = spanmod.variables(span) + text
+    if Path("/etc/sudoers.d/90-opos-dev").exists():
+        text += ('\nbody::after{content:"DEV: passwordless sudo for droidian";'
+                 'position:fixed;top:0;left:0;right:0;z-index:2147483647;'
+                 'background:#000;color:#fff;text-align:center;font: bold 16px sans-serif;'
+                 'padding:8px;pointer-events:none}')
     return text
 
 

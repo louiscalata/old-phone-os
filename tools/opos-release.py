@@ -694,7 +694,7 @@ opos-release-key.pub (public). Give the public half to the image build and to `v
   %s ssh-ed25519 AAAA...
 
 Print that line from a .pub file:  opos-release.py keygen-help --pub opos-release-key.pub
-Image build:  sudo env OPOS_UPDATE_SIGNERS=<allowed_signers file> sh packaging/duo-os/build-image.sh <base.img> <out.img> HEAD
+Image build:  sudo env OPOS_RELEASE=1 OPOS_DEV_SSH_PUBKEY= OPOS_DEV_USB_SHELL=0 OPOS_DEV_SPAN=0 OPOS_DEV_SUDO=0 OPOS_OWNER_SSH_PUBKEY=owner.pub OPOS_UPDATE_SIGNERS=<allowed_signers file> sh packaging/duo-os/build-image.sh <base.img> <out.img> HEAD
 Release:      opos-release.py build --serial N --version X.Y.Z --key <private key> --out dist
 Details: docs/ota-release-howto.md"""
 

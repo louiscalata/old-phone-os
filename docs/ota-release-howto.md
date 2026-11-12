@@ -51,16 +51,24 @@ Per the design, the image build installs `/etc/opos/update/allowed_signers` only
 `OPOS_UPDATE_SIGNERS=<file>`; an image built without it accepts no update at all.
 
 ```sh
-sudo env OPOS_UPDATE_SIGNERS=allowed_signers sh packaging/duo-os/build-image.sh <base-rootfs.img> <out.img> HEAD
+sudo env OPOS_RELEASE=1 OPOS_DEV_SSH_PUBKEY= OPOS_DEV_USB_SHELL=0 OPOS_DEV_SPAN=0 OPOS_DEV_SUDO=0 OPOS_OWNER_SSH_PUBKEY=owner.pub OPOS_UPDATE_SIGNERS=allowed_signers sh packaging/duo-os/build-image.sh <base-rootfs.img> <out.img> HEAD
 ```
 
 Add `OPOS_UPDATE_URL=https://<host>/<folder>/latest.json` to the same command to write the phone's update source
 (`/etc/opos/update.json`, checks only when asked) into the image. Without it the phone fetches nothing, which is all the USB
-push below needs.
+push below needs. Keep every `OPOS_DEV_*` override and `OPOS_RELEASE=1` in the release command. Every build first copies the base into one
+exclusively created file in a private 0700 staging directory next to OUT. Release builds check that file's SHA-256 against
+`packaging/duo-os/release-bases.sha256` beside the builder, then inspect that same file and refuse an OPOS image even if its hash is listed.
+The list has no environment or argument override; fixture tests use a fixture checkout. The seeded community-base hash is reported by the owner's
+PC and has not yet been verified on this machine; do not admit a modified image. The builder refuses active inherited dev inputs, keeps the existing
+policy checks, and runs `verify-image.sh` on the staged release image. Only a successful build is published by an atomic rename that refuses an existing
+OUT; failures remove staging and leave OUT untouched. `/etc/opos/build-mode` records `release` or `dev`; release verification refuses dev or unmarked images.
+Dev builds accept unpinned or reused bases, always record `dev`, and report verification as `NOT_RUN` unless `OPOS_VERIFY_IMAGE=1` is requested.
+The normal service span is independent of the dev-span drop-in. The OTA release builder and updater reject both that drop-in and `/etc/sudoers.d/90-opos-dev`.
 
-For the USB push below, build the same image with `OPOS_DEV_SSH_PUBKEY=<login key>.pub` as well. That is the key you log in
-to the phone with; it is a different key from the release key and the two must never be swapped. The signers file is baked
+The required `OPOS_OWNER_SSH_PUBKEY=owner.pub` is the recovery and USB-push login key. It enables no DevTools or dev privileges; it is a different key from the release key and the two must never be swapped. The signers file is baked
 into the image and cannot be changed over the air.
+The builder and verifier require an effective `AuthorizedKeysFile` that uses the installed recovery key and safe, traversable home-directory paths. `OPOS_NO_SSH=1` instead chooses no SSH access at all: it removes the login keys, disables and masks SSH services and sockets, and prevents USB-push recovery. The older `OPOS_ALLOW_NO_SSH=1` spelling has the same meaning; neither can be combined with a key.
 
 ## Cut a release
 

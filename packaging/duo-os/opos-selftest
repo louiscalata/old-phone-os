@@ -19,6 +19,7 @@ import json
 import os
 import re
 import runpy
+import shlex
 import socket
 import subprocess
 import sys
@@ -365,6 +366,7 @@ def check_output(c):
         c.emit("WARN", "gfx.output", "wlr-randr could not query %s in %s (exit %s): %s" % (wl, xdg, r.rc, r.err.strip()[:120] or "no message"))
         return
     outs = parse_wlr_randr(r.out)
+    c.cache["outputs"] = outs  # check_backlight reads them as its second opinion when the kernel shows no DSI connectors
     if not outs:
         c.emit("FAIL", "gfx.output", "wlr-randr lists no output")
         return
@@ -378,27 +380,72 @@ def check_output(c):
         c.emit("PASS", "gfx.output", "%s (WAYLAND_DISPLAY=%s)" % (desc, wl))
 
 
+def to_int(s):
+    try:
+        return int(str(s).strip())
+    except ValueError:
+        return None
+
+
+def display_pipeline(c):
+    """What the display pipeline itself says about the panels, as (source, [(name, state)]) with state "on", "off" or "?": the DSI connectors the kernel
+    lists in /sys/class/drm (a connector with no panel behind it is not counted), else the outputs wlr-randr listed for gfx.output. None when neither shows any."""
+    conns = []
+    for n in c.ls("/sys/class/drm") or []:
+        m = re.fullmatch(r"card\d+-(DSI-\d+)", n)
+        if not m:
+            continue
+        d = "/sys/class/drm/" + n
+        status, enabled, dpms = ((c.rd(d + "/" + f) or "").strip().lower() for f in ("status", "enabled", "dpms"))
+        if status != "connected":
+            continue
+        if enabled == "disabled" or dpms in ("off", "standby", "suspend"):
+            conns.append((m.group(1), "off"))
+        elif enabled == "enabled" and dpms == "on":
+            conns.append((m.group(1), "on"))
+        else:
+            conns.append((m.group(1), "?"))
+    if conns:
+        return "DRM", conns
+    outs = c.cache.get("outputs")
+    if outs:
+        return "wlr-randr", [(o["name"], "on" if o["enabled"] else "off" if o["enabled"] is False else "?") for o in outs]
+    return None
+
+
 def check_backlight(c):
-    names = c.ls("/sys/class/backlight")
+    """Are the panels lit? On the Duo's vendor kernel actual_brightness reads 0 on both panels while the owner sees them lit, so it is NOT the evidence: the
+    requested level (brightness) is, with bl_power and what the display pipeline says (DSI connectors enabled and dpms On, else the compositor's output). A
+    panel is dark when its level is requested as 0 (and the kernel does not report any light), or when the pipeline says an output is off. A level the kernel
+    does report above 0 is believed. Every number is still printed."""
     rows = []
-    for n in names or []:
+    for n in c.ls("/sys/class/backlight") or []:
         d = "/sys/class/backlight/" + n
         bp = (c.rd(d + "/bl_power") or "").strip()
         if not bp:
             continue
-        lv = (c.rd(d + "/actual_brightness") or c.rd(d + "/brightness") or "?").strip()
-        rows.append((n, bp, lv, (c.rd(d + "/max_brightness") or "?").strip()))
+        req = (c.rd(d + "/brightness") or "?").strip()
+        act = (c.rd(d + "/actual_brightness") or "?").strip()
+        rows.append((n, bp, req, (c.rd(d + "/max_brightness") or "?").strip(), act))
     panels = [r for r in rows if r[0].startswith("panel")] or rows
     if not panels:
         c.emit("FAIL", "gfx.backlight", "no backlight with a bl_power file in /sys/class/backlight")
         return
-    desc = "; ".join("%s bl_power=%s brightness=%s/%s" % r for r in panels)
+    desc = "; ".join("%s bl_power=%s brightness=%s/%s actual=%s" % r for r in panels)
+    pipe = display_pipeline(c)
+    if pipe:
+        desc += "; %s: %s" % (pipe[0], ", ".join("%s %s" % x for x in pipe[1]))
+    if any((to_int(r[2]) or 0) > 0 and to_int(r[4]) == 0 for r in panels):
+        desc += " (actual 0 not trusted)"
     off = [r for r in panels if r[1] != "0"]
-    dark = [r for r in panels if r[1] == "0" and r[2] == "0"]
+    dark = [r for r in panels if r[1] == "0" and to_int(r[2]) == 0 and not (to_int(r[4]) or 0) > 0]
+    pipe_off = [x for x in pipe[1] if x[1] == "off"] if pipe else []
     if off:
         c.emit("FAIL", "gfx.backlight", "panel off (bl_power 4 = off): " + desc)
     elif dark:
-        c.emit("WARN", "gfx.backlight", "power on but brightness 0: " + desc)
+        c.emit("WARN", "gfx.backlight", "power on but requested brightness 0: " + desc)
+    elif pipe_off:
+        c.emit("WARN", "gfx.backlight", "backlight requested but the display pipeline has %s off: %s" % (", ".join(x[0] for x in pipe_off), desc))
     elif len(panels) < 2:
         c.emit("WARN", "gfx.backlight", "one panel only: " + desc)
     else:
@@ -730,8 +777,11 @@ def sshd_settings(c):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            parts = re.split(r"[\s=]+", line, maxsplit=1)
-            k, v = parts[0].lower(), (parts[1].strip().strip("\"") if len(parts) > 1 else "")
+            words = shlex.split(re.sub(r"^(\s*[^\s=]+)\s*=\s*", r"\1 ", line), comments=True)
+            if not words:
+                continue
+            parts = re.split(r"[\s=]+", words[0], maxsplit=1) + words[1:]
+            k, v = parts[0].lower(), " ".join(p for p in parts[1:] if p != "=")
             if k == "match":
                 cur = {"cond": v, "set": {}}
                 matches.append(cur)
@@ -779,8 +829,7 @@ def check_ssh(c):
     root = g.get("permitrootlogin", "prohibit-password")
     empty = g.get("permitemptypasswords", "no")
     pub = g.get("pubkeyauthentication", "yes")
-    allowed = [m for m in matches if m["set"].get("passwordauthentication") == "yes" or m["set"].get("kbdinteractiveauthentication") == "yes"]
-    odd = [m["cond"] for m in allowed if private_net(m["cond"]) is None]
+    allowed = [m for m in matches if m["set"].get("passwordauthentication") == "yes" or m["set"].get("kbdinteractiveauthentication") == "yes" or m["set"].get("challengeresponseauthentication") == "yes"]
     ev = "PasswordAuthentication %s, KbdInteractiveAuthentication %s, PermitRootLogin %s, Pubkey %s%s" % (pw, kbd, root, pub, "; passwords allowed only for: " + ", ".join(m["cond"] for m in allowed) if allowed else "")
     bad = []
     if pw != "no":
@@ -793,12 +842,12 @@ def check_ssh(c):
         bad.append("PermitRootLogin yes")
     if pub == "no":
         bad.append("PubkeyAuthentication no: nothing could log in")
+    if allowed:
+        bad.append("password-enabled Match blocks: " + ", ".join(m["cond"] for m in allowed))
     if bad:
         c.emit("FAIL", "ssh.auth", "; ".join(bad) + ". " + ev)
-    elif odd:
-        c.emit("WARN", "ssh.auth", "password logins are also allowed for a non-private match (%s). %s" % (", ".join(odd), ev))
     else:
-        c.emit("PASS", "ssh.auth", "key-only except as listed. " + ev)
+        c.emit("PASS", "ssh.auth", "key-only everywhere. " + ev)
 
 
 def check_network(c):
@@ -1052,10 +1101,17 @@ def check_firstrun(c):
 
 
 def check_dev(c):
+    mode = c.rd("/etc/opos/build-mode")
+    if mode == "release\n" and not os.path.islink(c.p("/etc/opos/build-mode")):
+        c.emit("PASS", "dev.build-mode", "image build mode is release")
+    elif mode == "dev\n" and not os.path.islink(c.p("/etc/opos/build-mode")):
+        c.emit("WARN", "dev.build-mode", "DEV image: build mode is dev")
+    else:
+        c.emit("WARN", "dev.build-mode", "image build mode is missing, linked or invalid; release status is unknown")
     pw = droid_home(c)
     keys = [ln for ln in (c.rd(pw + "/.ssh/authorized_keys") or "").splitlines() if ln.strip() and not ln.lstrip().startswith("#")] if pw else []
     if keys:
-        c.emit("WARN", "dev.ssh-key", "DEV image: %d authorized ssh key(s) for droidian; an image meant to be carried has none" % len(keys))
+        c.emit("PASS", "dev.ssh-key", "%d authorized ssh key(s) for droidian (owner recovery or development)" % len(keys))
     else:
         c.emit("PASS", "dev.ssh-key", "no authorized ssh key for droidian: nothing new can log in")
     dbg = [a for p in browser_procs(c) for a in p["argv"] if a.startswith("--remote-debugging-port")]
@@ -1068,6 +1124,15 @@ def check_dev(c):
         c.emit("WARN", "dev.time-drop", "DEV image: opos-clock-set.path sets the clock from a file in droidian's home")
     else:
         c.emit("PASS", "dev.time-drop", "no clock-setting file drop")
+    if c.exists("/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"):
+        c.emit("WARN", "dev.span", "DEV image: OPOS_DEV_SPAN drop-in records the two-screen span")
+    else:
+        c.emit("PASS", "dev.span", "no OPOS dev-span drop-in (the service's normal span setting is independent)")
+    # build-image.sh writes this one file with OPOS_DEV_SUDO=1 (dev images only); it is the whole of that knob, and nothing else is read or run here
+    if c.exists("/etc/sudoers.d/90-opos-dev"):
+        c.emit("WARN", "dev.sudo", "DEV image: droidian has passwordless sudo; an image meant to be carried has none")
+    else:
+        c.emit("PASS", "dev.sudo", "no OPOS passwordless-sudo file for droidian")
 
 
 def check_identity(c):

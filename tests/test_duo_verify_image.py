@@ -53,7 +53,7 @@ class StaticPins(unittest.TestCase):
         self.assertIn("umask 077", TEXT)
         self.assertIn("""[ "$(stat -c '%u %a' "$work")" = "0 700" ]""", TEXT)
         self.assertIn("trap cleanup EXIT", TEXT)
-        self.assertIn('    rm -rf "$work"\n}', TEXT, "the cleanup removes the private directory")
+        self.assertIn('    rm -rf "$work" || status=1\n    exit "$status"\n}', TEXT, "cleanup failure propagates after removing the private directory")
         self.assertIn('cd "$work" || exit 2', TEXT)
         # all of it before the first mount and before anything runs from the image
         self.assertLess(TEXT.index('cd "$work"'), TEXT.index("mount -o ro"))
@@ -98,7 +98,10 @@ class StaticPins(unittest.TestCase):
     def test_every_way_out_runs_the_same_cleanup(self):
         for line in ("trap cleanup EXIT", "trap 'exit 130' INT", "trap 'exit 143' TERM", "trap 'exit 129' HUP"):
             self.assertIn(line, TEXT)
-        cleanup = TEXT[TEXT.index("cleanup() {"):TEXT.index("trap cleanup EXIT")]
+        cleanup = TEXT[TEXT.index("stop_children() {"):TEXT.index("trap cleanup EXIT")]
+        self.assertIn("    stop_children\n", cleanup)
+        self.assertIn("unmount_image || status=1", cleanup)
+        self.assertIn('    exit "$status"', cleanup)
         for part in ("kill \"$p\"", "kill -9 \"$p\"", "umount \"$mnt\"", "rmdir \"$mnt\"", 'rm -rf "$work"', "trap '' INT TERM HUP"):
             self.assertIn(part, cleanup)
 
