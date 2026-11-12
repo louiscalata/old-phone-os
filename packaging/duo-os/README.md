@@ -30,8 +30,8 @@ but `src/opos/mm_modem.py` is not wired in. The raw logs from that day are not p
 ## What is in the image
 
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
-0.22.1, kernel `4.14-190-microsoft-surfaceduo`), reported by the owner's PC as matching its manifest
-(`rootfs.img` SHA-256 `9299b2c0…e312`), not yet verified on this machine. That base keeps what mainline Linux cannot yet do on this phone: the
+0.22.1, kernel `4.14-190-microsoft-surfaceduo`), whose hash the owner's PC recomputed on 2026-11-12 from the file its build uses
+(`rootfs.img` SHA-256 `9299b2c0…e312`, equal to the publisher's saved, unsigned manifest; the publisher's release page was offline that day, so there is no independent comparison and no second copy). That base keeps what mainline Linux cannot yet do on this phone: the
 vendor kernel and the Halium layer drive both panels, touch, GPU, Wi-Fi, audio and the modem. Mainline's
 `sm8150-microsoft-surface-duo.dts` covers storage, USB, buttons, the two bq27742 fuel gauges and the modem but no
 display, so a mainline-only OPOS would boot to a dark screen.

@@ -59,8 +59,8 @@ Add `OPOS_UPDATE_URL=https://<host>/<folder>/latest.json` to the same command to
 push below needs. Keep every `OPOS_DEV_*` override and `OPOS_RELEASE=1` in the release command. Every build first copies the base into one
 exclusively created file in a private 0700 staging directory next to OUT. Release builds check that file's SHA-256 against
 `packaging/duo-os/release-bases.sha256` beside the builder, then inspect that same file and refuse an OPOS image even if its hash is listed.
-The list has no environment or argument override; fixture tests use a fixture checkout. The seeded community-base hash is reported by the owner's
-PC and has not yet been verified on this machine; do not admit a modified image. The builder refuses active inherited dev inputs, keeps the existing
+The list has no environment or argument override; fixture tests use a fixture checkout. The seeded community-base hash was recomputed on the owner's
+PC on 2026-11-12 and equals the publisher's saved, unsigned manifest (the release is no longer online); do not admit a modified image. The builder refuses active inherited dev inputs, keeps the existing
 policy checks, and runs `verify-image.sh` on the staged release image. Only a successful build is published by an atomic rename that refuses an existing
 OUT; failures remove staging and leave OUT untouched. `/etc/opos/build-mode` records `release` or `dev`; release verification refuses dev or unmarked images.
 Dev builds accept unpinned or reused bases, always record `dev`, and report verification as `NOT_RUN` unless `OPOS_VERIFY_IMAGE=1` is requested.

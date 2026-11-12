@@ -110,7 +110,7 @@ the `boot_a` backup restore; G4 writes OPOS to `boot_a`; G5 tests a menu start; 
 that start. G6 is a further menu-start observation, not a powered-off start. None of these settles *why* fastboot refused or proves recovery after a failed
 start. Every future phone result is **NOT_RUN** until recorded.
 
-## Initramfs root telnet shell — OPEN DECISION
+## Initramfs root telnet shell — DECIDED
 
 The PC session, 2026-11-11, observed that when the rootfs cannot be mounted, the kernel stops in the Halium initramfs
 with an unauthenticated root telnet shell on the USB link (telnet, port 23, on the USB RNDIS gadget; the
@@ -119,8 +119,12 @@ removed the rootfs gadget script's telnet shell but does not remove this one. An
 therefore leaves a root shell on the cable. It is also a usable recovery console (BusyBox 1.22.1 includes `dd`,
 `blockdev`, `sha256sum` and `e2fsck`).
 
-**OPEN DECISION: settle before the persistent write.** Keep the recovery console and accept exposure to anyone with
-the cable, or rebuild the initramfs without it and lose that console. This plan does not choose between them.
+**DECIDED 2026-11-11: keep it through the gates, remove it afterwards.** The owner left the choice to Claude on the
+Mac, which took the PC session's recommendation. The console stays through G1 to G5b, where a failed start is most
+likely and it is the only root access; exposure in that time is the cable on the owner's desk. Afterwards the initramfs
+is rebuilt without the `telnetd` line in `scripts/panic/telnet`, the rebuilt `boot.img` earns its own RAM-boot, and it
+replaces the image in `boot_a` with a second write. The rebuild, its start and that write are **NOT_RUN**; every pin of
+the current `boot.img` hash changes with it.
 
 ## Ground rules
 

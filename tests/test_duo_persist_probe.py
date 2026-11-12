@@ -1252,7 +1252,7 @@ class PersistRunbook(unittest.TestCase):
                        "metadata encryption is an **INFERENCE**", "`ro.crypto.*`", "metadata partition were not read",
                        "`sde16` through `sde39` with major 259", "may assume major 8",
                        "only for `userdata`", "helper's `readlink` check remains the gate",
-                       "unauthenticated root telnet shell", "**OPEN DECISION: settle before the persistent write.**",
+                       "unauthenticated root telnet shell", "**DECIDED 2026-11-11: keep it through the gates, remove it afterwards.**",
                        "followed the Boot Select handling successfully", "pinned hash unchanged"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, doc)
