@@ -8,6 +8,11 @@ suite came after that. Everything in "What is not known" is open until someone r
 
 ## What it is
 
+The image identity implementation is documented in [duo-os-identity.md](duo-os-identity.md):
+Old Phone OS, derived from Droidian, with the upstream identity preserved, a
+hashed installed-file manifest, `opos-version` and About on the update page.
+A real image build and every phone check for this change remain **NOT_RUN**.
+
 A Linux OS whose only interface is OPOS, on a Surface Duo 1. The community Droidian/Halium port supplies the kernel and the vendor
 layer (panels, touch, GPU, Wi-Fi, audio, modem). `phoc` (wlroots, hwcomposer backend, **not** in shell mode) runs one Chromium
 kiosk on the OPOS server (`python3 -m opos.web --live-battery`, user `droidian`, from `/opt/opos/src`). The window spans both

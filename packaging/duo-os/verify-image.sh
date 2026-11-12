@@ -7,6 +7,7 @@ set -u
 [ "$(id -u)" -eq 0 ] || { echo "verify-image.sh: run as root" >&2; exit 2; }
 [ $# -ge 1 ] || { echo "usage: sudo sh verify-image.sh OUT.img" >&2; exit 2; }
 img=$1
+identity_checker=$(cd "$(dirname "$0")/../.." && pwd)/src/opos/image_identity.py
 case $img in /*) ;; *) img=$PWD/$img ;; esac
 q=$(command -v qemu-aarch64-static) || { echo "needs qemu-aarch64-static" >&2; exit 2; }
 # This script is root. Everything it runs (the image's python3 under qemu-user, this builder's python3) starts in, and
@@ -58,6 +59,11 @@ fail=0
 check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 mount -o ro,loop,noload "$img" "$mnt" || exit 1
 r=$mnt
+# --- identity: BEGIN (also exercised against a scratch rootfs, without root)
+# shellcheck disable=SC2329 # Called by check() through eval.
+identity_ok() { python3 -I -B "$identity_checker" check --root "$r"; }
+check "OPOS identity and every image manifest file hash, with the upstream os-release preserved" "identity_ok"
+# --- identity: END
 w=$r/etc/systemd/system
 check "opos.service in graphical.target" "[ -L $w/graphical.target.wants/opos.service ]"
 check "opos-server.service in multi-user.target" "[ -L $w/multi-user.target.wants/opos-server.service ]"

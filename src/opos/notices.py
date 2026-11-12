@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+from opos.version import project_version
 
 # Owner's words, exact. Never paraphrase (docs/jaryo.md section 11).
 DISCLAIMER = (
@@ -25,8 +26,8 @@ INSTALL_SCOPE = (
     "within the existing OS."
 )
 
-# Same value as pkgver in packaging/pmos/opos/APKBUILD (a test keeps them equal).
-VERSION = "0.1.0"
+# pyproject.toml owns the version; packages copy it into their generated metadata.
+VERSION = project_version()
 
 UNPUBLISHED_BUILD = "unpublished"
 _BUILD_RE = re.compile(r"[0-9a-f]{7,40}")

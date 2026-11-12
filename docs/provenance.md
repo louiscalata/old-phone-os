@@ -24,6 +24,12 @@ The snapshot preserves existing copyright and license notices, editable applicat
 
 ## Validation scope
 
+The working-copy distribution identity, image-manifest checker, About section
+and full-image release tooling were written by Codex. Their tests use simulated
+root filesystems and external-tool stand-ins. No model service was invoked by
+the tooling or tests. A real image build, owner-key signing and phone execution
+remain **NOT_RUN**; this records no hardware result or published release.
+
 Accepted private-baseline checks and public-export checks are separate records. The private baseline had desktop UI and actual desktop Glimmer evidence, package-state validation, and an actual postmarketOS QEMU kiosk with a QA-only Pixman renderer after default GLES2/GBM failure. Native model inference and physical phone/modem behavior were not established by those checks.
 
 Corrections to the public tree, including notices, packaging and request dispatch, need their own affected checks and canonical test discovery. Release manifests record the actual source archive, package and public snapshot identities once measured. No future public commit or archive hash is fabricated in this document.
