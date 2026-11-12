@@ -523,6 +523,14 @@ install -m 0644 "$here/opos-brightness.service" "$r/etc/systemd/system/opos-brig
 ln -sfn /etc/systemd/system/opos-brightness.service \
     "$r/etc/systemd/system/multi-user.target.wants/opos-brightness.service"
 
+# --- power key: BEGIN (direct bl_power only; no composer or output-power calls)
+install -d "$r/usr/libexec/opos" "$r/etc/systemd/system/opos.service.wants"
+install -m 0755 "$here/opos-unblank" "$r/usr/libexec/opos/opos-unblank"
+install -m 0644 "$here/opos-powerkey.service" "$r/etc/systemd/system/opos-powerkey.service"
+ln -sfn /etc/systemd/system/opos-powerkey.service \
+    "$r/etc/systemd/system/opos.service.wants/opos-powerkey.service"
+# --- power key: END
+
 # --- identity finish: BEGIN (after all OPOS installs and base edits)
 python3 -I -B "$src/tools/opos-image-identity.py" finish --root "$r" --state "$identity_state"
 # --- identity finish: END

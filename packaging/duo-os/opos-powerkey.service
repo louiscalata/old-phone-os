@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Toggle both Duo panels on a short power press
+BindsTo=opos.service
+PartOf=opos.service
+After=opos.service
+# Keep recovery available without start-limit exhaustion. RestartSec=3 spaces
+# attempts by at least 3 s, avoiding a tight crash loop that could hurt the phone.
+StartLimitIntervalSec=0
+
+[Service]
+User=root
+Environment=PYTHONPATH=/opt/opos/src
+ExecStartPre=-/usr/libexec/opos/opos-unblank
+ExecStart=/usr/bin/python3 -m opos.powerkey
+ExecStopPost=-/usr/libexec/opos/opos-unblank
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+# Keep /sys writable (the backlight class entries point into /sys/devices).
+ProtectSystem=full
+
+[Install]
+WantedBy=opos.service

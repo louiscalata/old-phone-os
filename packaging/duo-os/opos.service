@@ -22,6 +22,7 @@ StartLimitIntervalSec=60
 StartLimitBurst=3
 
 [Service]
+ExecStartPre=-+/usr/libexec/opos/opos-unblank
 Environment=LANG=C.UTF-8
 Environment=XDG_SESSION_TYPE=wayland
 Environment=WLR_BACKENDS=hwcomposer,libinput

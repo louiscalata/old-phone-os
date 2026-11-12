@@ -111,6 +111,21 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual((self.root / "etc/hostname").read_text(), "opos\n")
         self.assertIn("Old Phone OS " + project_version(), (self.root / "etc/issue").read_text())
 
+    def test_unchanged_powerkey_files_are_still_in_the_image_inventory(self):
+        paths = ("usr/libexec/opos/opos-unblank", "etc/systemd/system/opos-powerkey.service",
+                 "etc/systemd/system/opos.service.wants/opos-powerkey.service",
+                 "opt/opos-releases/0-" + REVISION[:12] + "/src/opos/powerkey.py")
+        self.put(paths[0], (DUO / "opos-unblank").read_bytes()).chmod(0o755)
+        self.put(paths[1], (DUO / "opos-powerkey.service").read_bytes())
+        link = self.put(paths[2], b"")
+        link.unlink()
+        link.symlink_to("/etc/systemd/system/opos-powerkey.service")
+        self.put(paths[3], (ROOT / "src/opos/powerkey.py").read_bytes())
+        self.prepare()  # These files already existed before the build changed anything.
+        self.installs()
+        manifest = json.loads(self.finish())
+        self.assertTrue(set(paths) <= {entry["path"] for entry in manifest["files"]})
+
     def test_exact_inputs_give_identical_manifest_bytes_on_repeated_finish(self):
         first = self.build()
         os.utime(self.root / "etc/issue", (1, 1))

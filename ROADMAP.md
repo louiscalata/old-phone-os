@@ -39,6 +39,11 @@ and what comes next. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- November 12 power-key design: blank is a lease checked by a one-second select loop, with fresh panel reads,
+  light on uncertainty and continued recovery for missing or unwritable nodes, including at startup. Restarts have
+  no count limit and a three-second delay. Production-controller fake-tree tests are local work; phone behavior,
+  native systemd lifecycle and image execution remain **NOT_RUN**. See [POWER.md](packaging/duo-os/POWER.md) for
+  current results and limits.
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). Only the Surface Duo routes, started with
   `--live-battery`, read the phone's real battery (`LiveBattery`). Calls and texts are simulated on every

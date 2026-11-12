@@ -1,0 +1,51 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Root prestart/stop helper. Units ignore its exit status, but journal failures.
+light_panel() {
+    attempt=1
+    rejected=0
+    while [ "$attempt" -le 3 ]; do
+        rejected=0
+        if [ ! -e "$node" ]; then
+            echo "opos-unblank: absent $node (attempt $attempt/3)" >&2
+        elif (printf '0\n' > "$node") 2>/dev/null; then
+            return 0
+        else
+            rejected=1
+            echo "opos-unblank: write failed: $node (attempt $attempt/3)" >&2
+        fi
+        attempt=$((attempt + 1))
+        if [ "$attempt" -le 3 ]; then sleep 0.1; fi
+    done
+    return "$rejected"
+}
+
+light_both() {
+    failed=0
+    for panel in panel0-backlight panel1-backlight; do
+        node="${OPOS_SYS_ROOT:-}/sys/class/backlight/$panel/bl_power"
+        light_panel || failed=1
+    done
+    return "$failed"
+}
+
+result=0
+light_both || result=1
+# The lid daemon also writes these attributes. Read each once, then re-apply
+# the target to both if a concurrent writer changed either (or a read failed).
+reconcile=0
+for panel in panel0-backlight panel1-backlight; do
+    node="${OPOS_SYS_ROOT:-}/sys/class/backlight/$panel/bl_power"
+    if [ -e "$node" ]; then
+        if value=$(cat "$node" 2>/dev/null); then
+            [ "$value" = 0 ] || reconcile=1
+        else
+            echo "opos-unblank: read failed: $node; retrying light" >&2
+            reconcile=1
+        fi
+    fi
+done
+if [ "$reconcile" -eq 1 ]; then
+    if light_both; then result=0; else result=1; fi
+fi
+exit "$result"
