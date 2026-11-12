@@ -132,8 +132,9 @@ def shell_active() -> bool:
         return False
 
 
-def journal(message):
-    print(f"opos-powerkey: {message}", file=sys.stderr, flush=True)
+def journal(status):
+    """Write a power-key operational status to the service journal."""
+    print("opos-powerkey:", status, file=sys.stderr, flush=True)
 
 
 class PowerKey:

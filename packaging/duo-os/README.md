@@ -54,7 +54,9 @@ and when the daemon stops. Fallback waits for the key daemon's stop and final un
 available. Fold and volume-key behavior are unchanged.
 **Not run on a phone (NOT_RUN). It is not known whether touch still reports with the panels blanked**; invisible taps
 may still reach the page. The real input, panel-write interleavings, restart/fallback ordering and hardening need
-phone checks. See [POWER.md](POWER.md) for the design, build/verification limits and remaining risks.
+phone checks. The build installs the helper and unit and creates their directories and enablement link;
+`verify-image.sh` requires the installed `/opt/opos/src/opos/powerkey.py` module. There is no separate build-time
+source-module guard. See [POWER.md](POWER.md) for the design, build/verification limits and remaining risks.
 
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
 0.22.1, kernel `4.14-190-microsoft-surfaceduo`), whose hash the owner's PC recomputed on 2026-11-12 from the file its build uses

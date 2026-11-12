@@ -524,13 +524,9 @@ ln -sfn /etc/systemd/system/opos-brightness.service \
     "$r/etc/systemd/system/multi-user.target.wants/opos-brightness.service"
 
 # --- power key: BEGIN (direct bl_power only; no composer or output-power calls)
-[ -f "$r/opt/opos/src/opos/powerkey.py" ] || {
-    echo "build-image.sh: selected source lacks installed opos/powerkey.py; refusing to install opos-powerkey.service" >&2
-    exit 1
-}
+install -d "$r/usr/libexec/opos" "$r/etc/systemd/system/opos.service.wants"
 install -m 0755 "$here/opos-unblank" "$r/usr/libexec/opos/opos-unblank"
 install -m 0644 "$here/opos-powerkey.service" "$r/etc/systemd/system/opos-powerkey.service"
-install -d "$r/etc/systemd/system/opos.service.wants"
 ln -sfn /etc/systemd/system/opos-powerkey.service \
     "$r/etc/systemd/system/opos.service.wants/opos-powerkey.service"
 # --- power key: END

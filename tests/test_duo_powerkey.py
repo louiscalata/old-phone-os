@@ -914,8 +914,6 @@ class Packaging(FakeTree):
         return re.search(r"^# --- power key: BEGIN[^\n]*\n(.*?)^# --- power key: END", text, re.M | re.S).group(1)
 
     def install(self):
-        for directory in ("usr/libexec/opos", "etc/systemd/system"):
-            (self.root / directory).mkdir(parents=True)
         self.put("opt/opos/src/opos/powerkey.py", (ROOT / "src/opos/powerkey.py").read_text())
         result = subprocess.run(["sh", "-eu", "-c", 'here=$1; r=$2\n' + self.block("build-image.sh"),
                                  "powerkey-test", str(DUO), str(self.root)], stdin=subprocess.DEVNULL,
@@ -1013,45 +1011,6 @@ class Packaging(FakeTree):
         path = self.root / "etc/systemd/system/opos-powerkey.service"
         path.write_text(path.read_text().replace("Restart=always\n", ""))
         self.assertNotEqual(self.verify().returncode, 0)
-
-    def test_build_guard_checks_the_actual_archive_install_tree(self):
-        build = (DUO / "build-image.sh").read_text()
-        archive = next(line for line in build.splitlines() if line.startswith('g archive "$ref" src '))
-        for has_module in (False, True):
-            with self.subTest(has_module=has_module):
-                # A Git tree suffices for archive: no fixture commit or working-tree copy.
-                source = self.root / ("with-module" if has_module else "without-module")
-                source.mkdir()
-                for name in ("LICENSE", "THIRD_PARTY.md", "pyproject.toml", "src/opos/example.py"):
-                    path = source / name
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text("fixture\n")
-                if has_module:
-                    (source / "src/opos/powerkey.py").write_text("# module fixture\n")
-
-                def git(*args):
-                    result = subprocess.run(["git", "-C", str(source), *args], stdin=subprocess.DEVNULL,
-                                            capture_output=True, text=True, timeout=10)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    return result.stdout.strip()
-
-                git("init", "--quiet")
-                git("add", ".")
-                ref = git("write-tree")
-                installed = self.root / ("installed-with" if has_module else "installed-without")
-                (installed / "opt/opos").mkdir(parents=True)
-                (installed / "usr/libexec/opos").mkdir(parents=True)
-                (installed / "etc/systemd/system").mkdir(parents=True)
-                prelude = 'set -eu; src=$1; r=$2; here=$3; ref=$4\ng() { git -C "$src" "$@"; }\n'
-                result = subprocess.run(["sh", "-c", prelude + archive + "\n" + self.block("build-image.sh"),
-                                         "archive-guard-test", str(source), str(installed), str(DUO), ref],
-                                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
-                if has_module:
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                else:
-                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn("lacks installed opos/powerkey.py", result.stderr)
-                self.assertEqual((installed / "etc/systemd/system/opos-powerkey.service").exists(), has_module)
 
 
 if __name__ == "__main__":

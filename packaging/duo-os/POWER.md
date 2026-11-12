@@ -73,12 +73,12 @@ writes do not lock the page; invisible taps may still act. Panel wake behavior, 
 are unverified.
 
 Review round 2 finding 5 (verification depth, drop-ins and `GIT_REF` versus the working tree) is explicitly out of
-scope for this design change. The retained build guard refuses to install the power-key unit unless the installed
-`/opt/opos/src/opos/powerkey.py` exists. Runtime still comes from `GIT_REF`, while packaging comes from the working
-tree. The verifier checks effective prestart and stop commands in the shipped unit files, including later resets;
-it does not analyze drop-ins or prove that an existing module has the intended behavior. Expected-revision/hash
-binding and behavioral verification of installed image artifacts remain unresolved. No image build, image
-verification, native systemd lifecycle or phone execution was run for this round (**NOT_RUN**).
+scope for this design change. The image verifier requires the installed `/opt/opos/src/opos/powerkey.py`;
+the build installs the power-key unit without a separate source-module guard. Runtime still comes from `GIT_REF`,
+while packaging comes from the working tree. The verifier checks effective prestart and stop commands in the shipped
+unit files, including later resets; it does not analyze drop-ins or prove that an existing module has the intended
+behavior. Expected-revision/hash binding and behavioral verification of installed image artifacts remain unresolved.
+No image build, image verification, native systemd lifecycle or phone execution was run for this round (**NOT_RUN**).
 
 The remaining review below is historical (November 7). It was read from the port's files and sources (the unit and config snapshots of the OPOS image, the
 port's `build.sh` and READMEs, the phoc and phosh trees). **None of it was observed on a phone running OPOS**, and the
