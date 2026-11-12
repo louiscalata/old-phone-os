@@ -25,7 +25,8 @@ const context = {
   render: async () => {renders++;},
 };
 vm.createContext(context);
-const base = fs.readFileSync(process.argv[3], 'utf8');
+// Read the actual opt-in page, including the production callback injection.
+const base = fs.readFileSync(0, 'utf8');
 vm.runInContext(base.slice(base.indexOf('function barPaint()'), base.indexOf('async function api(')), context);
 vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), context);
 (async () => {

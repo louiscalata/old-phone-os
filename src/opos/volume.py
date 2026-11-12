@@ -51,10 +51,17 @@ def snapshot():
 
 
 def inject_bytes(body, nonce):
+    """Keep the base page frozen; opt in to the live simulated-volume painter."""
     if not enabled():
         return body
     if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", nonce) is None:
         raise ValueError("bad nonce")
+    # The base page captures barPaint before volume.js wraps it. Only this
+    # consumer needs those callbacks to dispatch through the current painter.
+    body = body.replace(b"e.addEventListener('input',barPaint)",
+                        b"e.addEventListener('input',()=>barPaint())")
+    body = body.replace(b"new MutationObserver(barPaint)",
+                        b"new MutationObserver(()=>barPaint())")
     tag = f'<script src="/volume.js" nonce="{nonce}" defer></script>'.encode()
     return body.replace(b"</body>", tag + b"</body>")
 

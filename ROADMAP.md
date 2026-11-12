@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Status as of November 12, 2026: where Old Phone OS Interface stands
+Status as of November 7, 2026: where Old Phone OS Interface stands
 and what comes next. Plans are intentions, not promises.
+Dated updates below record later source work and its verification limits.
 
 ## Working today
 

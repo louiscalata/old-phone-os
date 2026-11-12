@@ -140,10 +140,11 @@ class Script(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             self.skipTest("Node unavailable; browser was not requested")
+        with mock.patch.dict(os.environ, {"OPOS_VOLUME_KEYS": "1"}):
+            body = volume.inject_bytes(web.page().encode(), "n")
         result = subprocess.run([node, str(ROOT / "tests/volume_ui_test.js"),
-                                 str(ROOT / "src/opos/web_static/volume.js"),
-                                 str(ROOT / "src/opos/web_static/js-3.js")],
-                                capture_output=True, text=True, timeout=10)
+                                 str(ROOT / "src/opos/web_static/volume.js")],
+                                input=body.decode(), capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
