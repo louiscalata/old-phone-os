@@ -28,6 +28,7 @@ src/opos/calc_page.py
 src/opos/call_events.py
 src/opos/calllog.py
 src/opos/calls_page.py
+src/opos/clock_health.py
 src/opos/clock_page.py
 src/opos/clockcheck.py
 src/opos/contacts.py
