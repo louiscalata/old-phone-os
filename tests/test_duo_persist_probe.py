@@ -8,12 +8,14 @@ import base64
 import functools
 import hashlib
 import json
+import ntpath
 import os
 import re
 import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy" / "duo-persist-probe.ps1"
@@ -350,12 +352,26 @@ def windows_powershell():
     return powershells().get(5)
 
 
+def powershell_env(exe, environ=None, platform=None):
+    """Use each Windows interpreter's built-in modules, independent of the parent's PSModulePath."""
+    if (os.name if platform is None else platform) != "nt":
+        return None  # Preserve ordinary inheritance on macOS and Linux.
+    env = dict(os.environ if environ is None else environ)
+    system_root = env.get("SystemRoot", r"C:\Windows")
+    system_modules = ntpath.join(system_root, "System32", "WindowsPowerShell", "v1.0", "Modules")
+    interpreter_modules = ntpath.join(ntpath.dirname(exe), "Modules")
+    env["PSModulePath"] = ";".join((interpreter_modules, system_modules))
+    return env
+
+
 def run_powershell(program, timeout=600, stdin=None, exe=None):
     """Run a PowerShell program (the script text is on its stdin); its stdout is one JSON document."""
     program = "$ProgressPreference = 'SilentlyContinue'\n" + program
     encoded = base64.b64encode(program.encode("utf-16-le")).decode("ascii")
-    done = subprocess.run([exe or powershell(), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-                          input=SCRIPT.read_bytes() if stdin is None else stdin, capture_output=True, timeout=timeout)
+    exe = exe or powershell()
+    done = subprocess.run([exe, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                          input=SCRIPT.read_bytes() if stdin is None else stdin, capture_output=True, timeout=timeout,
+                          env=powershell_env(exe))
     out = done.stdout.decode("utf-8", "replace")
     if done.returncode != 0 or not out.strip():
         raise AssertionError("powershell exit %s\nstdout: %s\nstderr: %s" % (
@@ -605,7 +621,47 @@ def stdin_with(*extra):
 
 
 def fake_run(runs, exe=None):
-    return run_powershell(FAKE_RUN, timeout=1500, exe=exe, stdin=stdin_with(FAKE_CS.read_bytes(), json.dumps(runs).encode("ascii")))
+    return run_powershell(FAKE_RUN, timeout=1500, exe=exe or windows_powershell(),
+                          stdin=stdin_with(FAKE_CS.read_bytes(), json.dumps(runs).encode("ascii")))
+
+
+class PowerShellHarnessTests(unittest.TestCase):
+    def test_windows_powershell_selects_version_five_even_when_seven_is_first(self):
+        windows_powershell.cache_clear()
+        try:
+            with mock.patch(__name__ + ".powershells", return_value={7: "pwsh7", 5: "ps5"}):
+                self.assertEqual(windows_powershell(), "ps5")
+        finally:
+            windows_powershell.cache_clear()
+
+    def test_fake_run_uses_the_same_windows_interpreter_as_the_skip_guard(self):
+        with mock.patch(__name__ + ".windows_powershell", return_value="windows-ps5"), \
+             mock.patch(__name__ + ".run_powershell", return_value={}) as run:
+            fake_run([])
+            self.assertEqual(run.call_args.kwargs["exe"], "windows-ps5")
+            fake_run([], exe="explicit-ps5")
+            self.assertEqual(run.call_args.kwargs["exe"], "explicit-ps5")
+
+    def test_windows_child_module_path_replaces_parent_and_keeps_other_environment(self):
+        parent = {"SystemRoot": r"C:\Windows", "PSModulePath": r"C:\pwsh7-only", "OTHER": "kept"}
+        exe = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        env = powershell_env(exe, parent, "nt")
+        self.assertEqual(env["PSModulePath"], r"C:\Windows\System32\WindowsPowerShell\v1.0\Modules;C:\Windows\System32\WindowsPowerShell\v1.0\Modules")
+        self.assertEqual(env["OTHER"], "kept")
+        self.assertEqual(parent["PSModulePath"], r"C:\pwsh7-only")
+        env7 = powershell_env(r"C:\Program Files\PowerShell\7\pwsh.exe", parent, "nt")
+        self.assertIn(r"C:\Program Files\PowerShell\7\Modules", env7["PSModulePath"])
+        self.assertIn(r"C:\Windows\System32\WindowsPowerShell\v1.0\Modules", env7["PSModulePath"])
+        self.assertIsNone(powershell_env(exe, parent, "posix"))
+
+    def test_run_powershell_passes_selected_executable_and_clean_environment_to_child(self):
+        completed = subprocess.CompletedProcess([], 0, b'{"ok": true}', b'')
+        with mock.patch(__name__ + ".powershell_env", return_value={"PSModulePath": "clean"}) as env, \
+             mock.patch(__name__ + ".subprocess.run", return_value=completed) as run:
+            self.assertEqual(run_powershell("ignored", stdin=b"input", exe="ps5"), {"ok": True})
+            env.assert_called_once_with("ps5")
+            self.assertEqual(run.call_args.args[0][0], "ps5")
+            self.assertEqual(run.call_args.kwargs["env"], {"PSModulePath": "clean"})
 
 
 def content_sha(idx, blocks):
@@ -767,11 +823,11 @@ foreach ($serial in ($extra | ConvertFrom-Json)) {
             case("recovery where fastboot is needed", "serial", "SER1\trecovery\n", "", Value="fastboot"),
             case("product ok", "match", "product: surfaceduo\nFinished. Total time: 0.1s", Pattern=r"\bproduct:\s*surfaceduo\b", Message="not a Surface Duo 1"),
             case("product other", "match", "product: other\nFinished.", Pattern=r"\bproduct:\s*surfaceduo\b", Message="not a Surface Duo 1"),
-            case("battery 20", "minint", "battery-level: 20\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=20, Message="low"),
-            case("battery 19", "minint", "battery-level: 19\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=20, Message="low"),
-            case("battery 100", "minint", "battery-level: 100\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=20, Message="low"),
-            case("battery 9", "minint", "battery-level: 9\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=20, Message="low"),
-            case("battery unreadable", "minint", "battery-level: FAILED", Pattern=r"battery-level:\s*(\d+)", Value=20, Message="low"),
+            case("battery 30", "minint", "battery-level: 30\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=30, Message="low"),
+            case("battery 29", "minint", "battery-level: 29\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=30, Message="low"),
+            case("battery 100", "minint", "battery-level: 100\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=30, Message="low"),
+            case("battery 9", "minint", "battery-level: 9\nFinished.", Pattern=r"battery-level:\s*(\d+)", Value=30, Message="low"),
+            case("battery unreadable", "minint", "battery-level: FAILED", Pattern=r"battery-level:\s*(\d+)", Value=30, Message="low"),
             case("link ok", "equals", "/dev/block/sde26", Value="/dev/block/sde26", Message="wrong link"),
             case("link other", "equals", "/dev/block/sde99", Value="/dev/block/sde26", Message="wrong link"),
             case("slot a", "cmdline", "x androidboot.slot_suffix=_a y"),
@@ -784,16 +840,18 @@ foreach ($serial in ($extra | ConvertFrom-Json)) {
             case("boot_b mounted", "unmounted", "rootfs / rootfs rw 0 0\n/dev/block/sde26 /mnt ext4 rw 0 0\n"),
             case("LUN mounted", "unmounted", "/dev/block/sde /mnt ext4 rw 0 0\n"),
             case("by-name mounted", "unmounted", "/dev/block/platform/soc/1d84000.ufshc/by-name/misc /mnt ext4 rw 0 0\n"),
-            case("battery ok", "battery", "80"), case("battery low in TWRP", "battery", "12"), case("battery unreadable in TWRP", "battery", "cat: not found"),
+            case("battery ok", "battery", "80"), case("battery 30 in TWRP", "battery", "30"),
+            case("battery 29 in TWRP", "battery", "29"), case("battery low in TWRP", "battery", "12"),
+            case("battery unreadable in TWRP", "battery", "cat: not found"),
             case("sha ok", "sha", "a" * 64 + "  /dev/block/sde9"), case("sha missing", "sha", "sha256sum: not found"),
             case("info never fails", "info", "anything at all"),
         ]
         got = run_powershell(CHECKS, stdin=stdin_with(json.dumps(cases).encode("ascii")))
         by = {r["label"]: r for r in as_list(got["results"])}
         self.assertEqual(len(by), len(cases))
-        ok = ["one device in recovery", "daemon noise is ignored", "two devices with a serial", "fastboot device", "product ok", "battery 20",
+        ok = ["one device in recovery", "daemon noise is ignored", "two devices with a serial", "fastboot device", "product ok", "battery 30",
               "battery 100", "link ok", "slot a", "no slot word", "all names", "no dtbo", "nothing mounted", "battery ok",
-              "battery unreadable in TWRP", "sha ok", "info never fails"]
+              "battery 30 in TWRP", "battery unreadable in TWRP", "sha ok", "info never fails"]
         for label in ok:
             with self.subTest(passes=label):
                 self.assertIsNone(by[label]["message"])
@@ -851,8 +909,8 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             {"label": "other product", "phase": "bootloader", "out": "dir", "env": {"FAKE_PRODUCT": "other"}},
             {"label": "slot b in the bootloader", "phase": "bootloader", "out": "dir", "env": {"FAKE_SLOT": "b"}},
             {"label": "locked", "phase": "bootloader", "out": "dir", "env": {"FAKE_UNLOCKED": "no"}},
-            {"label": "battery 19", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "19"}},
-            {"label": "battery 20", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "20"}},
+            {"label": "battery 29", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "29"}},
+            {"label": "battery 30", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "30"}},
             {"label": "dry twrp head", "phase": "twrp", "dry": True, "nopath": True, "out": "dir", "image": True, "pullwith": "head"},
             {"label": "twrp ok with head pulls", "phase": "twrp", "out": "dir", "image": True, "pullwith": "head"},
             {"label": "head short read", "phase": "twrp", "out": "dir", "pullwith": "head", "env": {"FAKE_SHORT": "sde9"}},
@@ -1032,7 +1090,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             "other product": ("b01", "not a Surface Duo 1"),
             "slot b in the bootloader": ("b02", "the current slot is not a"),
             "locked": ("b03", "the bootloader is not unlocked"),
-            "battery 19": ("b04", "battery is below 20 percent"),
+            "battery 29": ("b04", "battery is below 30 percent"),
             "head short read": ("k-boot_a-pull", "short or long read"),
             "hang in the bootloader": ("b04", "timed out: fastboot -s <serial> getvar battery-level did not finish within 3 seconds"),
             "hang on the first command": ("t00", "timed out: adb devices did not finish within 3 seconds"),
@@ -1112,15 +1170,15 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
                 self.assertEqual(as_list(run["calls"]), [])
                 self.assertFalse(run["out_exists"])
 
-    def test_a_wrong_mode_is_refused_with_one_call_and_a_battery_of_exactly_twenty_passes(self):
+    def test_a_wrong_mode_is_refused_with_one_call_and_a_battery_of_exactly_thirty_passes(self):
         for label in self.present(("not in recovery", "two devices")):
             self.assertEqual(as_list(self.run_of(label)["calls"]), ["adb devices"], label)
-        if "battery 19" in self.runs:
-            self.assertEqual(as_list(self.run_of("battery 19")["calls"])[-1], "fastboot -s <serial> getvar battery-level")
-            self.assertEqual(self.probe("battery 19")["status"], "stopped")
-        if "battery 20" in self.runs:
-            self.assertIsNone(self.run_of("battery 20")["threw"])
-            self.assertEqual(self.probe("battery 20")["status"], "complete")
+        if "battery 29" in self.runs:
+            self.assertEqual(as_list(self.run_of("battery 29")["calls"])[-1], "fastboot -s <serial> getvar battery-level")
+            self.assertEqual(self.probe("battery 29")["status"], "stopped")
+        if "battery 30" in self.runs:
+            self.assertIsNone(self.run_of("battery 30")["threw"])
+            self.assertEqual(self.probe("battery 30")["status"], "complete")
 
 
 @unittest.skipUnless(powershells(), "needs pwsh or powershell")
@@ -1187,6 +1245,31 @@ class PersistRunbook(unittest.TestCase):
     def setUp(self):
         self.doc = runbook()
         self.gates = gate_sections(self.doc)
+
+    def test_pc_session_findings_keep_their_limits(self):
+        doc = flat(self.doc)
+        for phrase in ("The November 7 report describes a reformat", "no wipe occurred in that observation",
+                       "metadata encryption is an **INFERENCE**", "`ro.crypto.*`", "metadata partition were not read",
+                       "`sde16` through `sde39` with major 259", "may assume major 8",
+                       "only for `userdata`", "helper's `readlink` check remains the gate",
+                       "unauthenticated root telnet shell", "**OPEN DECISION: settle before the persistent write.**",
+                       "followed the Boot Select handling successfully", "pinned hash unchanged"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, doc)
+        for gate in ("G5", "G6"):
+            section = flat(self.gates[gate])
+            for phrase in ("`sudo reboot bootloader` from OPOS is **NOT_RUN**", "**FAILED**",
+                           "`adb reboot bootloader`", "hold Power about 20 seconds until dark",
+                           "Volume-down plus Power through the logo and orange warning"):
+                with self.subTest(gate=gate, phrase=phrase):
+                    self.assertIn(phrase, section)
+
+    def test_battery_threshold_and_brake_image_are_consistent(self):
+        self.assertIn("$MinBattery = 30", code())
+        self.assertNotRegex(self.doc, r"(?i)battery (?:at least )?20 percent")
+        self.assertIn("battery 30 percent or more", self.doc)
+        setup = self.doc[self.doc.index("Setup used by the commands"):self.doc.index("## G1.")]
+        self.assertNotIn('"$images\\misc-brake.img"', setup)
 
     def test_file_form_and_status(self):
         self.assertTrue(self.doc.startswith("<!-- SPDX-License-Identifier: GPL-3.0-or-later -->\n# "))

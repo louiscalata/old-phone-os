@@ -11,8 +11,9 @@ which can start Android and destroy the OPOS install. A powered-off start remain
 
 Today the OPOS OS on the Surface Duo 1 keeps its root filesystem in the phone's storage (`/data/rootfs.img` inside the
 ext4 userdata) but its **kernel is pushed from a Windows PC at every start** (`fastboot boot boot.img`, a RAM-boot).
-A power cycle can start stock Android. Read-only observations from the PC session on November 11, 2026 record that any
-stock Android boot on OPOS userdata applies metadata encryption in place, making the OPOS rootfs unreadable to Linux.
+A power cycle can start stock Android. The PC session, 2026-11-11, observed the OPOS rootfs become unreadable to Linux
+after Android booted on OPOS userdata. In-place metadata encryption is an **INFERENCE**, not a measured mechanism;
+the evidence and unexamined sources are described below.
 Returning to Android this way destroys the OPOS install; it is not a harmless exit. The misc brake was intended to stop
 that, but its protection is unproven. The owner wants OPOS "installed like a regular Android OS": the kernel image in the phone's own
 storage, so the power button starts OPOS with no PC, and, later, kernel updates over the air.
@@ -37,7 +38,8 @@ written; the install chain (`deploy/duo-opos-boot.ps1`) is untouched and keeps w
 1. USB data must work: every command below needs fastboot and adb over USB. The owner confirmed USB data works on November 11, 2026; check it in G0.
 2. G4 and later need the OPOS rootfs on userdata. That is the install chain's job, it erases Android's data, and it is
    a separate decision of the owner. G0 through G3b do not touch userdata and do not need the rootfs.
-3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`, `misc-brake.img`), battery 20 percent or more,
+3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`; `misc-brake.img` is listed under G0 only for
+   reference and is not used by these gates), battery 30 percent or more,
    the phone on a good cable.
 
 ## What is known, and what the experiment settles
@@ -63,7 +65,7 @@ files while this runbook was written.
 | 11 | The port's own rule is to write the kernel to the slots only after it has started Linux on that phone, which the November 7 RAM-boot did. So the port does not forbid slot writes in general. The standing rule "never flash boot, vbmeta, dtbo or recovery" is the owner's, and G3 asks to relax it for one partition. | REPORTED, re-checked | The header of the port's `release-add-boot.sh`. |
 | 12 | The OPOS kernel image fits: 33,972,224 bytes in a 100,663,296-byte partition, header version 2 like the stock images, no AVB footer, unsigned. | MEASURED | SHA-256 `abec1fe9ce4cbb7a9296c3abd4fd7b4acc1283842e86f2bfe0879a7e84fae552`, re-checked on this PC. |
 | 13 | The bootloader continued to start a Magisk-patched `boot_a` whose AVB hash does not match its `vbmeta`, in the unlocked ("orange") state. So no vbmeta change is needed while the phone stays unlocked; **never relock**. | REPORTED (parse of the backup), not re-checked | Planning research. |
-| 14 | Stock Android on a userdata it does not recognize writes a wipe request to `misc` and reboots to recovery, which offers a factory reset. The exact sequence on this phone was not re-measured. | REPORTED | AOSP recovery source; the October 31 factory reset; the port's "BCB poison" note. |
+| 14 | The November 7 report describes a reformat. On November 9–11 Android instead booted on the OPOS ext4 userdata, completed setup (`user_setup_complete=1`, 266 packages), kept `/data/rootfs.img` visible (221 GB), and mounted `/data` from `/dev/block/dm-42`; no wipe occurred in that observation. | REPORTED | The PC session, 2026-11-11; these outcomes do not establish what every Android start will do. |
 | 15 | No rescue route is known to this project for a damaged bootloader chain. The one page found is a volunteer's answer on Microsoft's Q&A (question 2026-03-29, answer 2026-03-30). It says the Snapdragon 855 has an EDL mode, that the device-specific Firehose programmer is not publicly released, that Microsoft has a paid out-of-warranty repair, and that some XDA users report partial success. None of that is a route the owner has. | REPORTED (one volunteer answer, partial reports) | https://learn.microsoft.com/en-us/answers/questions/5842635/how-to-fix-hard-brick-surface-duo. "No step touches the bootloader chain" is this project's rule, not something the page states. |
 | 16 | Current content of `boot_a`, `boot_b` and `misc`, the read-only flags of the boot LUN, and whether a write from TWRP is accepted. | UNKNOWN | G1 to G3 find out. |
 | 17 | What the bootloader does with the misc brake on a plain power-on. It has no literal `bootonce-bootloader` string; on October 31 a reboot with the brake armed reached stock recovery, not fastboot. | UNKNOWN (the November 7 chain worked with the brake armed, but only for RAM-boots) | Friction log item 33; planning research. |
@@ -81,8 +83,12 @@ fastboot error on the boot LUN and used TWRP `dd`; two reports describe a damage
 the boot-slot `dd` hash read on this phone. The mechanism behind the fastboot failure remains unknown.
 
 **Read-only observations from the PC session, November 11, 2026.** In the RAM-booted Halium initramfs,
-`/dev/disk/by-partlabel` mapped `boot_a` to `sde9` and `boot_b` to `sde26`, each 100,663,296 bytes; there was no
-`/dev/block/by-name` there. BusyBox 1.22.1 supplied `blockdev`, `dd`, `sha256sum` and `readlink`. This is a second
+`/dev/disk/by-partlabel` confirmed `boot_a` as `sde9`, `boot_b` as `sde26` (each 100,663,296 bytes), `vbmeta_a`
+as `sde14`, `vbmeta_b` as `sde31`, `dtbo_a` as `sde15`, `dtbo_b` as `sde32`, `misc` as `sda5`, and `userdata`
+as `sda6`. The PC session, 2026-11-11, recorded `sde16` through `sde39` with major 259 in `/proc/partitions`; nothing
+may assume major 8. There was no `/dev/block/by-name` in the initramfs. The platform path
+`/dev/block/platform/soc/1d84000.ufshc/by-name` is proven in TWRP only for `userdata`; for `boot_a` and `boot_b`
+it is **NOT_RUN**. The helper's `readlink` check remains the gate for those links. BusyBox 1.22.1 supplied `blockdev`, `dd`, `sha256sum` and `readlink`. This is a second
 Linux-side environment besides TWRP, an untested alternative only: every `dd` or hash of an `sde` node in either
 environment is **NOT_RUN**. Tool presence and the mapping do not establish that a boot-slot write works.
 
@@ -94,13 +100,27 @@ On `fastboot boot` the bootloader appended further arguments; the PC record give
 `verifiedbootstate=orange`, `slot_suffix=_a`, `dtbo_idx=4`, `dtb_idx=0`, `force_normal_boot=1` and
 `product.hardware.sku=att`, followed by an ellipsis. These reproduce the record's abbreviated names, not a complete
 transcription of the appended part. What it appends on a plain start from the slot
-remains unknown. The same session observed Android's in-place metadata encryption of OPOS userdata, leaving the rootfs
-unreadable to Linux.
+remains unknown. The PC session, 2026-11-11, observed `/data` on `dm-42` in Android and neither ext4 nor f2fs magic
+on `sda6` to the port kernel (mount returned "Invalid argument"), leaving the OPOS rootfs unreadable to Linux.
+In-place metadata encryption is an **INFERENCE** from those observations; Android's fstab, `ro.crypto.*` and the
+metadata partition were not read.
 
 **What the experiment settles.** G1 and G2 inventory and probe; G3 tests an identity write to `boot_b`; G3b rehearses
 the `boot_a` backup restore; G4 writes OPOS to `boot_a`; G5 tests a menu start; G5b tests one TWRP RAM-boot exit after
 that start. G6 is a further menu-start observation, not a powered-off start. None of these settles *why* fastboot refused or proves recovery after a failed
 start. Every future phone result is **NOT_RUN** until recorded.
+
+## Initramfs root telnet shell — OPEN DECISION
+
+The PC session, 2026-11-11, observed that when the rootfs cannot be mounted, the kernel stops in the Halium initramfs
+with an unauthenticated root telnet shell on the USB link (telnet, port 23, on the USB RNDIS gadget; the
+address is kept in the owner's PC notes, not here). It lives in `boot.img`'s initramfs; the image hardening
+removed the rootfs gadget script's telnet shell but does not remove this one. Any failed start of a persistent install
+therefore leaves a root shell on the cable. It is also a usable recovery console (BusyBox 1.22.1 includes `dd`,
+`blockdev`, `sha256sum` and `e2fsck`).
+
+**OPEN DECISION: settle before the persistent write.** Keep the recovery console and accept exposure to anyone with
+the cable, or rebuild the initramfs without it and lose that console. This plan does not choose between them.
 
 ## Ground rules
 
@@ -109,8 +129,11 @@ start. Every future phone result is **NOT_RUN** until recorded.
   fsc. There is no rescue.
 - Never run `flashing lock`, `flashing unlock` or any `oem` command. Never write `vbmeta`, `dtbo` or `super`.
 - Never fastboot flash or erase boot, vbmeta or dtbo. Never write `misc` in these gates; never routinely set active slot b.
-- Never run `reboot` or `systemctl reboot` on a RAM-booted OPOS; use `reboot bootloader`
-  ([docs/duo-usb-install.md](duo-usb-install.md)).
+- Never run `reboot` or `systemctl reboot` on a RAM-booted OPOS. `sudo reboot bootloader` from running OPOS is
+  **NOT_RUN**; `reboot bootloader` **FAILED** from the initramfs BusyBox shell (the PC session, 2026-11-11).
+  `adb reboot bootloader` is proven from Android and TWRP (the PC session, 2026-11-11). To return from OPOS or the
+  initramfs, use the physical fallback: hold Power about 20 seconds until dark, then hold Volume-down plus Power
+  through the logo and orange warning to Boot Select.
 - One RAM-boot of the OPOS kernel per attempt, never retried; a crashed kernel can leave a slot rejecting more
   ([packaging/duo-os/README.md](../packaging/duo-os/README.md)).
 - Stop at the first surprise. A surprise is any output that does not have the shape given under "Expected", any hash that
@@ -124,7 +147,7 @@ Setup used by the commands below. Replace the placeholders; nothing in this repo
 
 ```powershell
 $repo   = '<this repository>'                                   # holds deploy\duo-persist-probe.ps1
-$images = '<folder with boot.img, surfaceduo1-twrp.img, misc-brake.img>'
+$images = '<folder with boot.img, surfaceduo1-twrp.img>'
 $probe  = '<a private folder outside every git repository>'
 $serial = '<the Duo''s serial as fastboot devices prints it>'
 ```
@@ -133,13 +156,15 @@ $serial = '<the Duo''s serial as fastboot devices prints it>'
 
 **Precondition.** The prerequisites above; the phone in the bootloader menu (Boot Select) on a cable that carries data. To
 get there from off: hold Volume-down, add Power, release Power when the screen changes, keep Volume-down until the menu
-shows ([Button steps](duo-usb-install.md)). Do not pick Start, Recovery Mode or Factory data reset.
+shows ([Button steps](duo-usb-install.md)). Do not pick Start, Recovery Mode or Factory data reset. The PC session,
+2026-11-11, followed the Boot Select handling successfully: hold Power about 20 seconds until dark, then hold
+Volume-down plus Power through the logo and orange warning; the script's wait-for-fastboot found the phone.
 
 **Commands (PC, PowerShell).**
 
 ```powershell
-# 1. The three pinned images must hash to the values deploy\duo-opos-boot.ps1 pins.
-Get-FileHash -Algorithm SHA256 "$images\boot.img", "$images\surfaceduo1-twrp.img", "$images\misc-brake.img" | Select-Object Hash, Path
+# 1. The two images must hash to the values deploy\duo-opos-boot.ps1 pins.
+Get-FileHash -Algorithm SHA256 "$images\boot.img", "$images\surfaceduo1-twrp.img" | Select-Object Hash, Path
 # 2. See every command the probe will run, without touching anything (no tool is looked up).
 powershell -ExecutionPolicy Bypass -File "$repo\deploy\duo-persist-probe.ps1" -Phase bootloader -DryRun
 powershell -ExecutionPolicy Bypass -File "$repo\deploy\duo-persist-probe.ps1" -Phase twrp -DryRun -BootImage "$images\boot.img"
@@ -149,10 +174,10 @@ powershell -ExecutionPolicy Bypass -File "$repo\deploy\duo-persist-probe.ps1" -P
 
 Pinned hashes: `boot.img` `abec1fe9ce4cbb7a9296c3abd4fd7b4acc1283842e86f2bfe0879a7e84fae552`; `surfaceduo1-twrp.img`
 `457d8d2397b83eeffb843090da17d7959bcef7ed08658591938b3cda27b8132f`; `misc-brake.img`
-`892627cb4356d1d16c37bf243d700b5c9a0ab672d263de9ccd640c86b5cd6a5a`.
+`892627cb4356d1d16c37bf243d700b5c9a0ab672d263de9ccd640c86b5cd6a5a`. The PC session, 2026-11-11: `misc-brake.img` is 2048 bytes, ASCII `bootonce-bootloader` followed by zeros, reproducible with the pinned hash unchanged; the amended plan does not use it in its gates.
 
 **Expected.** Step 3 prints one line per step, each `ok` (the `b00` to `b04` steps are the preflight: product surfaceduo,
-current slot a, unlocked yes, battery 20 percent or more), ends with `Done. Nothing was written to the phone.` and leaves
+current slot a, unlocked yes, battery 30 percent or more), ends with `Done. Nothing was written to the phone.` and leaves
 `<date>-<time>-bootloader\` in `$probe` with `report.md`, `probe.json` and `raw\`. Fastboot getvar answers are text on
 stderr that the script reads.
 
@@ -302,7 +327,7 @@ owner declines or any precondition is missing. No phone command is run at this g
 ## G3. Identity write of inactive boot_b [OWNER SAYS GO]
 
 **Precondition.** G2b acceptance is recorded; the owner has said "go G3". G1 and G2 passed, both backup copies were
-checked, `boot_b` matches the known stock backup, and TWRP is running with battery at least 20 percent. This relaxes
+checked, `boot_b` matches the known stock backup, and TWRP is running with battery at least 30 percent. This relaxes
 the standing boot-write rule only for this identity write and its rollback. It does not select slot b or put OPOS there.
 
 **Commands (PC, PowerShell).** Define these helpers in the same window. They contain the only partition-writing `dd`:
@@ -478,7 +503,7 @@ rollback describes the guarded backup restore; cold verify it. A restore rehears
 ## G4. Write OPOS to boot_a in place [OWNER SAYS GO]
 
 **Precondition.** G3 and G3b passed including cold reads; the owner has said "go G4". The OPOS rootfs is already on
-userdata under a separately authorized installation, battery is at least 20 percent, and TWRP is running. `boot_b`
+userdata under a separately authorized installation, battery is at least 30 percent, and TWRP is running. `boot_b`
 remains stock. Slot a remains active; never routinely `set_active b` and never put OPOS into both slots.
 
 **Commands (PC, PowerShell).** First prepare a padded copy on the PC. The full image is the pinned `boot.img`. An
@@ -567,7 +592,10 @@ Success requires OPOS visible on the screens **and** the PC finding its USB netw
 Do not choose factory reset while either slot holds OPOS. Do not use plain software `reboot` from persistent OPOS until
 a power cycle has been observed and separately approved; from RAM-booted OPOS never use plain `reboot`.
 
-After a successful start, use `reboot bootloader` to reach Boot Select, run the G0 bootloader probe into a new folder,
+After a successful start, `sudo reboot bootloader` from OPOS is **NOT_RUN**; `reboot bootloader` **FAILED** in the
+initramfs BusyBox shell (the PC session, 2026-11-11). `adb reboot bootloader` is proven from Android and TWRP only
+(the PC session, 2026-11-11). Use the physical fallback: hold Power about 20 seconds until dark, then hold Volume-down
+plus Power through the logo and orange warning to Boot Select. Run the G0 bootloader probe into a new folder,
 and compare `current-slot`, `slot-successful`, `slot-unbootable` and `slot-retry-count` for both slots against the G0
 baseline. Stop on missing, failed or unexpected values, including a changed or decreasing retry count; do not use
 `set_active` to repair them. Do not leave the phone unattended until any discrepancy and countdown behavior are understood.
@@ -600,7 +628,10 @@ rollback.
 **Precondition.** G5b passed, results were recorded and the owner has said "go G6". No `misc` writes are included.
 **Commands:** return to Boot Select from TWRP and select Start once. Record cable state and apply G5's orange-screen,
 unexpected cable-triggered start, screen-plus-USB/SSH success criteria, timeout and physical failure response. After
-success, return via `reboot bootloader`, run the G0 bootloader probe into another new folder, and compare `current-slot`,
+success, `sudo reboot bootloader` from OPOS is **NOT_RUN** and `reboot bootloader` **FAILED** from the initramfs
+BusyBox shell (the PC session, 2026-11-11); `adb reboot bootloader` is proven from Android and TWRP (the PC session,
+2026-11-11). Use the physical fallback: hold Power about 20 seconds until dark, then hold Volume-down plus Power through
+the logo and orange warning to Boot Select. Run the G0 bootloader probe into another new folder, and compare `current-slot`,
 `slot-successful`, `slot-unbootable` and `slot-retry-count` for both slots against G0. **Expected:** OPOS starts and
 the values match G0. **What it proves:** only this observed menu start and counter comparison. **Decision table:** stop
 on missing or unexpected results; prohibit unattended use until discrepancies and countdown behavior are understood.
@@ -618,12 +649,14 @@ approval; until then OTA stays app-level only.
 
 ## Return to Android
 
-Read-only observations from the PC session on November 11, 2026 record that any stock Android boot on OPOS userdata
-applies metadata encryption in place and makes the OPOS rootfs unreadable to Linux. A power cycle that reaches Android
+The PC session, 2026-11-11, observed that booting Android on OPOS userdata made the OPOS rootfs unreadable to Linux.
+The proposed metadata encryption in place is an **INFERENCE** from `/data` on `dm-42` and the absence of ext4 or f2fs
+magic on `sda6` to the port kernel (mount returned "Invalid argument"); Android's fstab, `ro.crypto.*` and the
+metadata partition were not read. A power cycle that reaches Android
 destroys the OPOS install; returning to Android is not a harmless exit and requires a separately informed decision.
 
-The only return to stock Android performed on this phone was a factory reset from stock recovery on November 7, 2026.
-It was possible because the OPOS installs had left boot, super and firmware untouched (PC research dated November 8,
+A return to stock Android used a factory reset from stock recovery on November 7, 2026. It was possible because the
+OPOS installs had left boot, super and firmware untouched (PC research dated November 8,
 2026). No partition restore from the backup or stock payload has ever been done or rehearsed. In particular, a `dd`
 restore of `boot_a` from the backup has **NOT_RUN**. The G3b restore rehearsal must pass before the persistent OPOS write
 in G4. A G1 backup may contain the patched image: identify a suitable stock backup before claiming a return to Android.
