@@ -98,6 +98,26 @@ if [ "${OPOS_RELEASE:-0}" = 1 ] && [ "$fail" -ne 0 ]; then exit 1; fi
 w=$r/etc/systemd/system
 check "opos.service in graphical.target" "[ -L $w/graphical.target.wants/opos.service ]"
 check "opos-server.service in multi-user.target" "[ -L $w/multi-user.target.wants/opos-server.service ]"
+# --- power key: BEGIN
+# ExecStartPre/ExecStopPost are lists: an empty assignment discards earlier ones.
+# Only the shipped [Service] section is considered here (no drop-in analysis).
+# shellcheck disable=SC2329 # Called by check() through eval.
+powerkey_commands() {
+    awk -v key="$2" '
+        { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, "") }
+        /^\[/ { service = ($0 == "[Service]") }
+        service && $0 ~ "^" key "[[:space:]]*=" {
+            value = $0
+            sub(/^[^=]*=[[:space:]]*/, "", value)
+            if (value == "") commands = ""
+            else commands = commands value "\n"
+        }
+        END { printf "%s", commands }
+    ' "$1"
+}
+check "power key: root service is installed and enabled with the panel module" "[ -f $r/opt/opos/src/opos/powerkey.py ] && [ -f $w/opos-powerkey.service ] && [ \"\$(readlink $w/opos.service.wants/opos-powerkey.service)\" = /etc/systemd/system/opos-powerkey.service ] && grep -qx 'User=root' $w/opos-powerkey.service && grep -qx 'Environment=PYTHONPATH=/opt/opos/src' $w/opos-powerkey.service && grep -qx 'ExecStart=/usr/bin/python3 -m opos.powerkey' $w/opos-powerkey.service && grep -qx 'Restart=always' $w/opos-powerkey.service"
+check "power key: effective starts unblank first, and stopping OPOS releases the key and panels before fallback" "[ -x $r/usr/libexec/opos/opos-unblank ] && sh -n $r/usr/libexec/opos/opos-unblank && [ \"\$(powerkey_commands $w/opos.service ExecStartPre | head -n 1)\" = '-+/usr/libexec/opos/opos-unblank' ] && [ \"\$(powerkey_commands $w/opos-fallback.service ExecStartPre)\" = '-/usr/libexec/opos/opos-unblank' ] && [ \"\$(powerkey_commands $w/opos-powerkey.service ExecStartPre)\" = '-/usr/libexec/opos/opos-unblank' ] && [ \"\$(powerkey_commands $w/opos-powerkey.service ExecStopPost)\" = '-/usr/libexec/opos/opos-unblank' ] && grep -qx 'BindsTo=opos.service' $w/opos-powerkey.service && grep -qx 'PartOf=opos.service' $w/opos-powerkey.service && grep -qx 'After=opos.service' $w/opos-powerkey.service && grep -qx 'After=opos-powerkey.service' $w/opos-fallback.service"
+# --- power key: END
 check "phosh not started at boot" "[ ! -e $w/graphical.target.wants/phosh.service ]"
 check "phosh kept as fallback" "[ -f $r/lib/systemd/system/phosh.service ]"
 check "the shell session runs phoc with the kiosk as its only client" "grep -q 'ExecStart=.*/usr/libexec/opos/opos-session' $w/opos.service && [ -x $r/usr/libexec/opos/opos-session ] && [ -x $r/usr/libexec/opos/opos-kiosk ] && grep -q -- '-E /usr/libexec/opos/opos-kiosk' $r/usr/libexec/opos/opos-session"

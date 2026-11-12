@@ -851,7 +851,8 @@ class ImageScriptsTest(unittest.TestCase):
     def test_power_note_exists_and_the_readme_points_to_it(self):
         power = (DUO / "POWER.md").read_text()
         self.assertTrue(power.startswith("<!-- SPDX-License-Identifier: GPL-3.0-or-later -->"))
-        self.assertIn("nothing in this note is implemented", power)
+        self.assertIn("short-press power-key blank/light is implemented", power)
+        self.assertIn("not run on a phone (NOT_RUN)", power)
         self.assertIn("[POWER.md](POWER.md)", (DUO / "README.md").read_text())
 
     def test_the_unit_keeps_the_settings_the_fallback_depends_on(self):

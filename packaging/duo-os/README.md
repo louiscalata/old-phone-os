@@ -29,6 +29,33 @@ but `src/opos/mm_modem.py` is not wired in. The raw logs from that day are not p
 
 ## What is in the image
 
+The root `opos-powerkey.service` finds `qpnp_pon` by its exact name on every reopen; event numbers may change
+between boots. Only KEY_POWER (116) is handled; KEY_VOLUMEDOWN (114) on the same device and every other key code are
+ignored. A clean short power press uses fresh `bl_power` readings to choose blank or light, without changing
+brightness or calling the composer. Blank is a lease: the select loop checks both panels every second while blanked
+or recovering. A blank needs both panels lit, no recovery pending, and a successful
+`systemctl is-active --quiet opos.service` probe, bounded by 0.5 seconds. Its single blank pass is read back;
+uncertainty chooses light and never another blank pass. While blanked, inactive shell, mixed state or a failed read
+chooses light on the next tick. An unfold that lights both panels is accepted as current state. A clean later short
+press can blank them again. Unit-active is weaker than compositor-ready; see the timing limits in POWER.md.
+Repeats are ignored. Duplicate presses and pending presses older than 1.5 seconds light and cancel that held
+sequence until release. A real long hold never toggles and causes at most one expiry recovery, rather than a light
+attempt every tick. Startup, stop, input loss, clock-ioctl failure and `SYN_DROPPED` also attempt lighting.
+Failed or unconfirmed lighting keeps one-second retries pending until both expected panels are present and lit,
+including a node that appears after all prestart helpers have finished. Recovery state changes are logged once.
+With both panels lit and nothing pending, select waits indefinitely for input. Reads are nonblocking, including
+partial event records; lighting never consults the shell probe.
+
+Each pass of the shared `opos-unblank` helper tries each panel up to three times, logs absent nodes and present write failures, and
+exits nonzero if a present panel still rejects its write. Its unit commands use `-` so that a failure is visible in
+the journal but cannot prevent a shell from starting. It runs before OPOS, its fallback and the key daemon start,
+and when the daemon stops. Fallback waits for the key daemon's stop and final unblank. The root key unit uses
+`NoNewPrivileges=yes`, `ProtectHome=yes`, `PrivateTmp=yes` and `ProtectSystem=full`; backlight sysfs writes stay
+available. Fold and volume-key behavior are unchanged.
+**Not run on a phone (NOT_RUN). It is not known whether touch still reports with the panels blanked**; invisible taps
+may still reach the page. The real input, panel-write interleavings, restart/fallback ordering and hardening need
+phone checks. See [POWER.md](POWER.md) for the design, build/verification limits and remaining risks.
+
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
 0.22.1, kernel `4.14-190-microsoft-surfaceduo`), whose hash the owner's PC recomputed on 2026-11-12 from the file its build uses
 (`rootfs.img` SHA-256 `9299b2c0…e312`, equal to the publisher's saved, unsigned manifest; the publisher's release page was offline that day, so there is no independent comparison and no second copy). That base keeps what mainline Linux cannot yet do on this phone: the
