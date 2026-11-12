@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import runpy
 import signal
@@ -833,7 +834,7 @@ class VerifierUnmount(unittest.TestCase):
         code = self.lifecycle('sleep 30 &\npids=$!\necho "OWNED_PID=$pids" >&2\nexit 0')
         p = self.run_verifier(code)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        pid = p.stderr.split("OWNED_PID=", 1)[1].splitlines()[0]
+        pid = re.match(r"\d+", p.stderr.split("OWNED_PID=", 1)[1]).group()  # the job's own trace can interleave here
         self.assertIn("+ wait " + pid, p.stderr)
         self.assertLess(p.stderr.index("+ wait " + pid), p.stderr.index('+ umount '))
         self.assert_clean()
@@ -845,7 +846,7 @@ class VerifierUnmount(unittest.TestCase):
                               'echo "OWNED_PID=$pids" >&2\nstop_server "$pids"\nfail=0')
         p = self.run_verifier(code)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        pid = p.stderr.split("OWNED_PID=", 1)[1].splitlines()[0]
+        pid = re.match(r"\d+", p.stderr.split("OWNED_PID=", 1)[1]).group()  # the job's own trace can interleave here
         self.assertIn("+ wait " + pid, p.stderr)
         self.assertIn("VERIFY: PASS", p.stdout)
         self.assert_clean()
