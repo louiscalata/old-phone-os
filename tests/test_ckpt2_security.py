@@ -128,6 +128,16 @@ class Findings(unittest.TestCase):
         self.assertIn('content:"DEV: passwordless sudo for droidian"', css)
         self.assertIn("position:fixed", css)
         self.assertIn("z-index:2147483647", css)
+
+        def closed(p):  # what Path.exists does before Python 3.14 when /etc/sudoers.d is 0750 and the server is not root
+            if str(p) == "/etc/sudoers.d/90-opos-dev":
+                raise PermissionError(13, "Permission denied", str(p))
+            return original(p)
+        with mock.patch.object(Path, "exists", closed):
+            plain = panes.css_text(env={"OPOS_PANES": "1"})
+            self.assertIsNotNone(panes.asset("/panes.css", env={"OPOS_PANES": "1"}))
+        self.assertNotIn("passwordless sudo", plain)
+        self.assertEqual(css[:len(plain)], plain)
         self.assertEqual(before, panes.inject("<head></head><body>phone</body>", "n1", {"OPOS_PANES": "1"}))
 
     def test_8_only_dev_expectation_covers_every_emitted_id(self):

@@ -91,8 +91,15 @@ def ssh(root, recovery_key=None):
         # Preserve Include/Match scope; only the paths change to private host-side copies.
         for output, lines in configs:
             output.write_text("\n".join(lines) + "\n")
+        # sshd -T refuses to run with no host key, and a build machine need not have any (and the image's own are not
+        # readable here): a throwaway key, made in the private work directory and gone with it, stands in.
+        hostkey = Path(work) / "throwaway_host_key"
+        p = subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(hostkey)],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+        require(p.returncode == 0, "could not make a throwaway host key for sshd -T: " + p.stderr.strip())
         for addr in ("127.0.0.1", "203.0.113.9", "::1"):
-            p = subprocess.run([exe, "-T", "-f", str(main), "-C", "user=droidian,host=localhost,addr=" + addr],
+            p = subprocess.run([exe, "-T", "-f", str(main), "-h", str(hostkey), "-C", "user=droidian,host=localhost,addr=" + addr],
+                               stdin=subprocess.DEVNULL,
                                capture_output=True, text=True, timeout=15)
             require(p.returncode == 0, "sshd -T rejected image configuration: " + p.stderr.strip())
             effective = dict((line.split(None, 1)[0].lower(), line.split(None, 1)[1]) for line in p.stdout.splitlines() if " " in line)

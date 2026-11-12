@@ -157,7 +157,12 @@ class StaticPins(unittest.TestCase):
         updater = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = updater
         self.addCleanup(sys.modules.pop, spec.name, None)
-        loader.exec_module(updater)
+        # no __pycache__ beside the updater: tests.test_duo_updater reads every entry of that folder as a file
+        keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            loader.exec_module(updater)
+        finally:
+            sys.dont_write_bytecode = keep
         with mock.patch.dict(os.environ, OPOS_DEV_SUDO="1", OPOS_DEV_SPAN="1", OPOS_DEV_SSH_PUBKEY="/dev/null"):
             for path in (FILE, "etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"):
                 with self.subTest(path=path):
