@@ -196,6 +196,7 @@ class Fake:
         (self.tmp / (name + ".out")).write_text(text)
 
     def build(self):
+        self.put("etc/opos/build-mode", "release\n")
         for u in ("lxc@android.service", "android-service@hwcomposer.service", "opos-server.service", "opos.service", "NetworkManager.service", "sfduo-usb.service"):
             self.unit(u)
         for u in ("phosh.service", "item.service"):
@@ -231,7 +232,7 @@ class Fake:
         self.put("opt/opos/REVISION", "0123456789abcdef0123456789abcdef01234567\n")
         self.put("etc/passwd", "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\n")
         self.put("etc/ssh/sshd_config", SSHD)
-        self.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", SSHD_DROPIN)
+        self.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\n")
         self.put("etc/ssh/sshd_config.d/10-sfduo.conf", "PermitRootLogin prohibit-password\n")
         self.put("usr/libexec/opos/opos-kiosk", KIOSK)
 
@@ -461,7 +462,7 @@ class HealthyPhone(SelftestCase):
                     "phoc.process", "phoc.no-shell-mode", "gfx.composer", "gfx.output", "gfx.backlight", "kiosk.chromium", "kiosk.gpu",
                     "server.http", "server.state", "server.token-gate", "battery.sysfs", "battery.api-match", "battery.temp",
                     "clock.year", "clock.timezone", "log.journal", "log.diag", "log.opos-errors", "res.disk", "res.mem",
-                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.ssh-key", "dev.devtools", "dev.time-drop",
+                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.build-mode", "dev.ssh-key", "dev.devtools", "dev.time-drop", "dev.span", "dev.sudo",
                     "osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes"):
             self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
 
@@ -486,7 +487,7 @@ class HealthyPhone(SelftestCase):
         self.assertIn("bq27742-0 80% Discharging; bq27742-1 84% Discharging", r.ev("battery.sysfs"))
         self.assertIn("usb0 %s" % USB_ADDR, r.ev("net.usb"))
         self.assertIn("password", r.ev("ssh.auth").lower())
-        self.assertIn(USB_NET, r.ev("ssh.auth"))
+        self.assertIn("key-only everywhere", r.ev("ssh.auth"))
         self.assertIn("Europe/Paris", r.ev("clock.timezone"))
         self.assertIn("wlan0 connected", r.ev("net.wifi"))
 
@@ -969,9 +970,10 @@ class Network(SelftestCase):
 
 
 class Ssh(SelftestCase):
-    def test_password_login_only_from_the_usb_subnet_passes(self):
+    def test_password_login_from_the_usb_subnet_fails(self):
+        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", SSHD_DROPIN)
         r = self.run_st()
-        self.assertEqual(r.status("ssh.auth"), "PASS")
+        self.assertEqual(r.status("ssh.auth"), "FAIL")
         self.assertIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
 
     def test_an_unset_password_authentication_is_the_openssh_default_and_fails(self):
@@ -995,16 +997,16 @@ class Ssh(SelftestCase):
     def test_a_password_exception_for_the_whole_internet_warns(self):
         self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch all\n  PasswordAuthentication yes\n")
         r = self.run_st()
-        self.assertEqual(r.status("ssh.auth"), "WARN")
-        self.assertIn("non-private", r.ev("ssh.auth"))
+        self.assertEqual(r.status("ssh.auth"), "FAIL")
+        self.assertIn("password-enabled Match blocks", r.ev("ssh.auth"))
         self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address 8.8.8.0/24\n  PasswordAuthentication yes\n")
-        self.assertEqual(self.run_st().status("ssh.auth"), "WARN")
+        self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
 
     def test_a_list_of_addresses_is_private_only_when_every_entry_is(self):
         a, b, w = "10." + "0.1.0/24", "192." + "168.7.0/24", "8.8.8.0/24"  # written in parts so the repository holds no private address
-        for cond, want in ((a + ",0.0.0.0/0", "WARN"), ("0.0.0.0/0," + a, "WARN"), (a + "," + w, "WARN"), (w + "," + a, "WARN"),
-                           (a + "," + b, "PASS"), (a + ",!10." + "0.1.9", "PASS"), (a + ",not-an-address", "WARN"), ("10." + "0.0.0/8", "WARN"),
-                           ("!10." + "0.1.9", "WARN")):
+        for cond, want in ((a + ",0.0.0.0/0", "FAIL"), ("0.0.0.0/0," + a, "FAIL"), (a + "," + w, "FAIL"), (w + "," + a, "FAIL"),
+                           (a + "," + b, "FAIL"), (a + ",!10." + "0.1.9", "FAIL"), (a + ",not-an-address", "FAIL"), ("10." + "0.0.0/8", "FAIL"),
+                           ("!10." + "0.1.9", "FAIL")):
             with self.subTest(cond):
                 self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
                            "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s\n  PasswordAuthentication yes\n" % cond)
@@ -1019,15 +1021,15 @@ class Ssh(SelftestCase):
         self.f.put("etc/ssh/sshd_config", SSHD + "Match User droidian\n    Include /etc/ssh/extra-pw.conf\n")
         self.f.put("etc/ssh/extra-pw.conf", "PasswordAuthentication yes\n")
         r = self.run_st()
-        self.assertEqual(r.status("ssh.auth"), "WARN", r.ev("ssh.auth"))
+        self.assertEqual(r.status("ssh.auth"), "FAIL", r.ev("ssh.auth"))
         self.assertIn("User droidian", r.ev("ssh.auth"))
-        self.assertIn("non-private", r.ev("ssh.auth"))
+        self.assertIn("password-enabled Match blocks", r.ev("ssh.auth"))
 
     def test_the_same_include_from_a_private_address_block_is_fine_and_named(self):
         self.f.put("etc/ssh/sshd_config", SSHD + "Match Address %s\n    Include extra-pw.conf\n" % USB_NET)
         self.f.put("etc/ssh/extra-pw.conf", "PasswordAuthentication yes\n")
         r = self.run_st()
-        self.assertEqual(r.status("ssh.auth"), "PASS", r.ev("ssh.auth"))
+        self.assertEqual(r.status("ssh.auth"), "FAIL", r.ev("ssh.auth"))
         self.assertIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
 
     def test_an_include_in_a_match_block_of_a_dropin_and_a_glob(self):
@@ -1036,7 +1038,7 @@ class Ssh(SelftestCase):
         self.f.put("etc/ssh/extra.d/a.conf", "# nothing\n")
         self.f.put("etc/ssh/extra.d/b.conf", "KbdInteractiveAuthentication yes\n")
         r = self.run_st()
-        self.assertEqual(r.status("ssh.auth"), "WARN", r.ev("ssh.auth"))
+        self.assertEqual(r.status("ssh.auth"), "FAIL", r.ev("ssh.auth"))
         self.assertIn("User droidian", r.ev("ssh.auth"))
 
     def test_a_match_line_in_an_included_file_ends_with_that_file(self):
@@ -1044,7 +1046,7 @@ class Ssh(SelftestCase):
         self.f.put("etc/ssh/sshd_config", SSHD + "Match User droidian\n    Include /etc/ssh/inc.conf\n    PasswordAuthentication yes\n")
         self.f.put("etc/ssh/inc.conf", "Match Address %s\n    PermitEmptyPasswords no\n" % USB_NET)
         r = self.run_st()
-        self.assertEqual(r.status("ssh.auth"), "WARN", r.ev("ssh.auth"))
+        self.assertEqual(r.status("ssh.auth"), "FAIL", r.ev("ssh.auth"))
         self.assertIn("User droidian", r.ev("ssh.auth"), "the later yes belongs to Match User, not to the Address block of the included file")
         self.assertNotIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
 
@@ -1058,7 +1060,7 @@ class Ssh(SelftestCase):
         a = "10." + "0.1.0/24"
         self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
                    "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s,8.8.8.0/24\n  PasswordAuthentication yes\n" % a)
-        self.assertEqual(self.run_st().status("ssh.auth"), "WARN")
+        self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
 
 
 class Updater(SelftestCase):
@@ -1339,10 +1341,10 @@ class FirstRun(PieceCase):
 
 
 class DevMarkers(SelftestCase):
-    def test_an_authorized_key_warns(self):
+    def test_an_authorized_recovery_key_is_reported(self):
         self.f.put("phone-home/.ssh/authorized_keys", "ssh-ed25519 AAAA dev@pc\n")
         r = self.run_st()
-        self.assertEqual(r.status("dev.ssh-key"), "WARN")
+        self.assertEqual(r.status("dev.ssh-key"), "PASS")
         self.assertIn("1 authorized ssh key", r.ev("dev.ssh-key"))
         self.assertEqual(r.rc, 0, "a dev image is a warning, not a failure")
 
@@ -1426,6 +1428,10 @@ class ReadOnlyByConstruction(unittest.TestCase):
         src = SELFTEST.read_text(encoding="utf-8")
         self.assertEqual(re.findall(r'method="([A-Z]+)"', src), ["GET"])
         self.assertEqual(len(re.findall(r"subprocess\.run\(", src)), 1)
+        # The one place the word may stand is the dev.sudo marker, which only looks for the file OPOS_DEV_SUDO=1 writes and says so in words; any other
+        # sudo (a command, an argument, a string that reaches run()) still fails here, and the allow-list refuses it at run time (the test above).
+        for marker in ("dev.sudo", "/etc/sudoers.d/90-opos-dev", "has passwordless sudo", "passwordless-sudo"):
+            src = src.replace(marker, "")
         self.assertIsNone(re.search(r"\b(POST|PUT|DELETE|PATCH)\b|sudo|shell=True", src))
 
     def test_the_environment_is_read_only_for_PATH(self):

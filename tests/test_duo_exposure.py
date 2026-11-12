@@ -62,11 +62,11 @@ class CloseExposure(unittest.TestCase):
         self.assertEqual(mode, 0o755)
         self.assertTrue((self.root / "etc/systemd/system/multi-user.target.wants/opos-debug-port.service").is_symlink())
 
-    def test_dev_gate_keeps_the_shell(self):
+    def test_inherited_dev_gate_cannot_keep_the_shell(self):
         self.run_script(OPOS_DEV_USB_SHELL="1")
-        self.assertEqual((self.root / "etc/opos/usb-shell.conf").read_text(encoding="utf-8"), "enabled=1\ngate=dev\n")
-        self.assertTrue(os.path.lexists(self.root / "etc/systemd/system/multi-user.target.wants/telnet.service"))
-        self.assertIn("telnetd -l /bin/sh", (self.root / "etc/inetd.conf").read_text(encoding="utf-8"))
+        self.assertEqual((self.root / "etc/opos/usb-shell.conf").read_text(encoding="utf-8"), "enabled=0\n")
+        self.assertFalse(os.path.lexists(self.root / "etc/systemd/system/multi-user.target.wants/telnet.service"))
+        self.assertTrue((self.root / "etc/inetd.conf").read_text(encoding="utf-8").startswith("# opos-closed "))
 
     def test_a_second_run_stays_on_loopback(self):
         self.run_script()

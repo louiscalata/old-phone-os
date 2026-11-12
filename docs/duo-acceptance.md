@@ -61,7 +61,7 @@ check cannot run yet (the diagnostics dump is only written 90 seconds after boot
 | `phoc.process`, `phoc.no-shell-mode` | `/proc/<pid>/cmdline` of phoc | no phoc, two phoc, or `-S`/`--shell` in its command line (a black shield over both panels) | |
 | `gfx.composer` | a `*composer*` binary among the processes | none | |
 | `gfx.output` | `wlr-randr` with the XDG_RUNTIME_DIR and WAYLAND_DISPLAY the kiosk Chromium itself uses | no output, or none enabled | WARN: not 2784x1800 at scale 2, or the compositor cannot be queried; SKIP: `wlr-randr` missing |
-| `gfx.backlight` | `bl_power`, brightness of `panel*-backlight` | a panel's `bl_power` is not 0 | WARN: brightness 0, or fewer than two panels |
+| `gfx.backlight` | `bl_power` and the requested `brightness` of `panel*-backlight`, and the display pipeline: the DSI connectors in `/sys/class/drm` (connected, enabled, dpms On), or the output `wlr-randr` listed when the kernel lists none. `actual_brightness` is printed but not trusted: on the Duo's kernel it reads 0 on both panels while they are lit (seen November 8, 2026: requested 90 and 200, actual 0, both connectors on) | a panel's `bl_power` is not 0 | WARN: the requested `brightness` is 0 (and `actual_brightness` shows no light), a DSI connector or the output is off while a level is requested, or fewer than two panels |
 | `kiosk.chromium`, `kiosk.gpu` | Chromium processes: one with `--kiosk`, and a `--type=gpu-process` | no kiosk Chromium, or no GPU process | WARN: `--disable-gpu` (the kiosk's fallback after repeated exits) |
 | `kiosk.restarts` | the journal lines of the kiosk script | | WARN: Chromium exited this boot; SKIP: this kiosk script does not log |
 | `server.http`, `server.state`, `server.token-gate` | the real server on loopback: the page and its token, `/api/state` with the token (battery, charging, `temp_c`, `battery_source`), `/api/state` without it | no answer, no token, a field missing or of the wrong type, a source other than `sysfs`, or the state open without the token | WARN: battery health not measured from sysfs |
@@ -71,13 +71,14 @@ check cannot run yet (the diagnostics dump is only written 90 seconds after boot
 | `log.journal`, `log.diag`, `log.opos-errors` | the persistent journal, `/var/log/opos-boot-diag.txt`, error-level lines of the OPOS units this boot | journal not persistent, no dump after 300 seconds of uptime | WARN: error lines, with counts; SKIP: the dump is not due yet |
 | `res.disk`, `res.mem` | free space on `/`, `MemAvailable` | under 64 MiB of disk, under 150 MiB of memory | WARN: under 512 MiB, under 500 MiB |
 | `net.usb` | `sfduo-usb.service` if the image has it, `usb0` or `rndis0` with an IPv4 address | gadget service installed but not active, no interface while the service is installed, or no address | WARN: no interface and no gadget service (the phone may be reached over Wi-Fi) |
-| `ssh.auth` | `sshd_config` and its drop-ins, as configured (not probed: `sshd -T` needs root) | global password or keyboard-interactive login on, empty passwords, root login `yes`, public keys off | WARN: password logins allowed for a non-private network (an `Include` inside a `Match` block counts as part of that block, as in OpenSSH) |
+| `ssh.auth` | `sshd_config` and its included files, as configured | password or keyboard-interactive login enabled globally or in any Match block, including private USB subnets; empty passwords, root login `yes`, public keys off | PASS reads `key-only everywhere`; a restored USB-subnet password exception is FAIL |
 | `net.manager`, `net.wifi` | `NetworkManager.service`, `nmcli device` | NetworkManager installed but not active | WARN: no Wi-Fi device, or it is unavailable; SKIP: not installed |
 | `net.page`, `net.permissions` | with `OPOS_NETWORK=1`: `GET /network`, Settings linking to it, the keyboard loaded on it (when the web keyboard is on), and `nmcli general permissions` for the four actions joining Wi-Fi needs | the image ships the page (`src/opos/net_page.py`) but the server runs without `OPOS_NETWORK=1`; the page does not answer; Settings has no link; no keyboard on the page | WARN: a permission is not `yes`, or `OPOS_NETWORK` has a value other than 1; SKIP: the image has no Network page and it is not on |
 | `ota.updater` | only if `/var/lib/opos-update` exists: the release link, `status.json`, the trusted signers, `opos-update.path` | the path unit is not active | WARN: the last update failed or rolled back, one is in progress, or no signer is installed; SKIP: no updater |
 | `osk.keyboard` | with `OPOS_OSK` on: the page loads `/osk.js` and the server serves it (mode `1`/`web`), or the port's keyboard process runs (`stevia`) | the image ships the keyboard (`src/opos/osk.py`) but the server runs without `OPOS_OSK`; the web keyboard is on but not served | WARN: switched off in an image that has one, a unit edited but not restarted, or no keyboard process; SKIP: the image has none |
 | `firstrun.flag`, `firstrun.routes` | `OPOS_FIRSTRUN=1` in the server's environment; `GET /firstrun`, `GET /timezone`, `/api/firstrun` with and without the token, `/api/timezone` (it must answer 200 with the zone list in the shape the setup page reads), Settings linking to `/timezone`, whether the first run is still pending, the saved zone against the zone the server uses | the image ships the first run (`src/opos/firstrun.py`) but the server runs without `OPOS_FIRSTRUN=1`; a route does not answer (`/api/timezone` included, even when everything else does) or the token gate is open | WARN: the server has not applied the saved zone; SKIP: the image has no first run |
-| `dev.ssh-key`, `dev.devtools`, `dev.time-drop` | an authorized ssh key for droidian, a Chromium DevTools port, the clock-setting file drop | | WARN each: this is a dev image |
+| `dev.build-mode` | `/etc/opos/build-mode`: release or dev | missing or invalid marker | dev WARNs; release PASSes |
+| `dev.ssh-key`, `dev.devtools`, `dev.time-drop`, `dev.span`, `dev.sudo` | an authorized ssh key for droidian, a Chromium DevTools port, the clock-setting file drop, a dev-span drop-in, passwordless sudo for droidian (`/etc/sudoers.d/90-opos-dev`, only its presence; nothing is run) | | `dev.ssh-key` reports owner or developer keys as PASS; the other dev features WARN; `dev.sudo` means an image that must never be carried or shared |
 
 `OPOS_OSK` and `OPOS_NETWORK` are read from the running server's own environment, so a unit file edited without a restart shows up as
 a WARN rather than as a pass.
@@ -124,7 +125,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 ### 3. Hinge column clear
 
 - How: open several screens (lock, home, Settings, a conversation). Look at the strip over the hinge (42 CSS px, 84 device px). Note
-  whether the image runs with the two-screen span setting (`OPOS_SPAN`) or without it; the `pc.viewport` line of the report gives
+  whether the image runs with the two-screen span setting (`OPOS_SPAN`; main enables it in the service, and `OPOS_DEV_SPAN=1` also records a dev drop-in) or without it; the `pc.viewport` line of the report gives
   the window's size.
 - Expected: no text, button or status item sits under the hinge or is cut by it. With the span setting on, the two halves look
   like two screens with an empty gap. With it off, the page may cross the hinge: record where.
@@ -141,7 +142,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 
 - How: with the screens lit, fold the phone shut for ten seconds and open it again. If you can ssh in meanwhile (over Wi-Fi, or
   over the cable if its data lines work), read `cat /sys/class/backlight/panel0-backlight/bl_power /sys/class/backlight/panel1-backlight/bl_power`
-  while it is folded (4 is off, 0 is lit), and `actual_brightness` of both after opening.
+  while it is folded (4 is off, 0 is lit), and `brightness` of both after opening (`actual_brightness` reads 0 on this kernel even when lit).
 - Expected: both panels go dark while folded and light when opened, at the brightness they had (not full), the page as you left it.
   Known gap: the port's phosh does that blanking and the OPOS image does not replace it yet (a design exists, nothing is
   implemented), so panels that stay lit while folded are the likely result today; record the `bl_power` values and keep it as a

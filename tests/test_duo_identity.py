@@ -46,6 +46,7 @@ class BuildIdentity(unittest.TestCase):
         self.put("etc/passwd", b"droidian:x:32011:32011::/srv/droidian:/bin/sh\n")
         (self.root / "etc/os-release").symlink_to("/usr/lib/os-release")
         self.put("usr/local/sbin/sfduo-composer-watchdog", b"#!/bin/sh\ntrue\n")
+        self.put("usr/local/sbin/sfduo-usb-gadget.sh", b"#!/bin/sh\ntrue\n")
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_") and k != "SOURCE_DATE_EPOCH"}
         self.env["SOURCE_DATE_EPOCH"] = "1794093790"
 
@@ -56,7 +57,7 @@ class BuildIdentity(unittest.TestCase):
         return p
 
     def shell(self, script, env=None):
-        assignments = {"r": self.root, "src": ROOT, "base": self.base, "identity_state": self.state, "ref": "fixture"}
+        assignments = {"r": self.root, "src": ROOT, "image": self.base, "base_sha": hashlib.sha256(self.base.read_bytes()).hexdigest(), "identity_state": self.state, "ref": "fixture"}
         prelude = "set -eu\n" + "\n".join(k + "=" + shlex.quote(str(v)) for k, v in assignments.items()) + "\n"
         prelude += ('g() { case "$1" in show) cat "$src/pyproject.toml" ;; rev-parse) echo ' + REVISION +
                     ' ;; log) [ "$*" = "log -1 --no-show-signature --format=%ct fixture" ] || exit 9; echo 1794000000 ;; *) exit 9 ;; esac; }\n')
@@ -79,6 +80,7 @@ class BuildIdentity(unittest.TestCase):
         p.unlink()
         p.symlink_to("/etc/systemd/system/opos-server.service")
         self.put("etc/opos/update/allowed_signers", b"")
+        self.put("etc/opos/build-mode", b"release\n")
 
     def finish(self):
         p = self.shell(block("build-image.sh", "identity finish"))
@@ -122,6 +124,7 @@ class BuildIdentity(unittest.TestCase):
         self.put("etc/passwd", b"droidian:x:32011:32011::/srv/droidian:/bin/sh\n")
         (self.root / "etc/os-release").symlink_to("/usr/lib/os-release")
         self.put("usr/local/sbin/sfduo-composer-watchdog", b"#!/bin/sh\ntrue\n")
+        self.put("usr/local/sbin/sfduo-usb-gadget.sh", b"#!/bin/sh\ntrue\n")
         self.assertEqual(first, self.build())
 
     def test_base_hash_time_and_effective_switches_are_recorded(self):
@@ -136,6 +139,32 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(m["switches"]["OPOS_APPS"], "clock,contacts,notes,calc,calls")
         self.assertEqual(m["switches"]["OPOS_DEV_SSH_PUBKEY"], "0")
         self.assertEqual(m["switches"]["OPOS_UPDATE_URL"], "")
+
+    def test_build_mode_is_hashed_deterministically_and_tampering_fails(self):
+        first = self.build()
+        m = json.loads(first)
+        marker = next(f for f in m["files"] if f["path"] == "etc/opos/build-mode")
+        self.assertEqual(marker["sha256"], hashlib.sha256(b"release\n").hexdigest())
+        self.assertEqual(self.finish(), first)
+        self.put("etc/opos/build-mode", b"dev\n")
+        with self.assertRaises(ValueError):
+            identity.verify(self.root)
+
+    def test_missing_gadget_fails_finish_like_missing_watchdog(self):
+        self.prepare()
+        self.installs()
+        for name in ("sfduo-composer-watchdog", "sfduo-usb-gadget.sh"):
+            with self.subTest(name=name):
+                path = self.root / "usr/local/sbin" / name
+                data = path.read_bytes()
+                path.unlink()
+                try:
+                    p = self.shell(block("build-image.sh", "identity finish"))
+                    self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
+                    self.assertIn(name, p.stderr)
+                    self.assertFalse((self.root / "etc/opos/image.json").exists())
+                finally:
+                    path.write_bytes(data)
 
     def test_omitted_epoch_build_uses_selected_ref_commit_time(self):
         self.env.pop("SOURCE_DATE_EPOCH")

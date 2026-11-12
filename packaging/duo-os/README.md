@@ -30,8 +30,8 @@ but `src/opos/mm_modem.py` is not wired in. The raw logs from that day are not p
 ## What is in the image
 
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
-0.22.1, kernel `4.14-190-microsoft-surfaceduo`), checked against its manifest
-(`rootfs.img` SHA-256 `9299b2c0…e312`). That base keeps what mainline Linux cannot yet do on this phone: the
+0.22.1, kernel `4.14-190-microsoft-surfaceduo`), reported by the owner's PC as matching its manifest
+(`rootfs.img` SHA-256 `9299b2c0…e312`), not yet verified on this machine. That base keeps what mainline Linux cannot yet do on this phone: the
 vendor kernel and the Halium layer drive both panels, touch, GPU, Wi-Fi, audio and the modem. Mainline's
 `sm8150-microsoft-surface-duo.dts` covers storage, USB, buttons, the two bq27742 fuel gauges and the modem but no
 display, so a mainline-only OPOS would boot to a dark screen.
@@ -103,12 +103,14 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 | `OPOS_OSK_HINGE` | not set (42) | CSS px between the keyboard's halves when the page does not say |
 | `OPOS_NETWORK` | drop-in `opos-server.service.d/20-opos-network.conf` | the Settings link to `/network` and the actions that change Wi-Fi |
 | `OPOS_NET_TTY` | not set | `1`: hand the Wi-Fi password to `nmcli` through a pseudo-terminal |
-| `OPOS_NET_POLKIT` | build input | `1`: install `50-opos-network.rules` |
+| `OPOS_NET_POLKIT` | build input | `1`: install `50-opos-network.rules`; unset, empty or `0`: not installed; anything else stops the build |
 | `OPOS_FIRSTRUN` | `opos-server.service` (`1`) | first-run setup, `/timezone`, the saved zone |
 | `OPOS_KIOSK_RESTART` | not set | `0`: do not restart Chromium after a zone change |
 | `OPOS_CONFIG_DIR` | not set (`~/.config/opos`) | where the config, first-run flag and saved zone live; the server and `opos-kiosk` both read it |
 | `OPOS_PANES` | `opos-server.service` (`1`) | the black thumb pane, the white list pane and the Hand setting on the spanned window (`src/opos/panes.py`, [docs/jaryo-panes.md](../../docs/jaryo-panes.md)); paints only while `OPOS_SPAN` is on; `1,pure` strict `#000`/`#fff`, `invert` color swap without the mirror, unset none |
 | `OPOS_SPAN` | `opos-server.service` (`675,42`), or `--span` | pane and hinge widths in CSS px, so the page lays out for the window that covers both panels (see Spanning both panels); `off` disables. Not yet measured on the phone |
+| `OPOS_DEV_SPAN` | build input, dev images only | `1`, together with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): the image gets the drop-in `opos-server.service.d/30-opos-dev-span.conf`, which sets `OPOS_SPAN=675,42` for a checkpoint that is to be looked at on the phone; unset: no drop-in (see Spanning both panels) |
+| `OPOS_DEV_SUDO` | build input, dev images only | `1`, together with `OPOS_DEV_SSH_PUBKEY` (the build refuses it alone): the image gets `/etc/sudoers.d/90-opos-dev` (0440 root:root, exactly `droidian ALL=(ALL) NOPASSWD:ALL`), so the dev login user is root; such an image must never be carried or shared; unset: no file (see Dev options: passwordless sudo) |
 | `OPOS_MONITOR` | `opos-server.service` (`1`) | the Settings link to `/monitor` and the routes `/monitor` and `/api/monitor` (see Inference page) |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | optional `/etc/opos/monitor.env`, absent from the image | where the Inference page looks for an AGIW monitor, and the `Host` header to send it (`OPOS_LOCAL_URL` is the Helper's, see Inference page) |
 | `OPOS_OSK_BIN`, `OPOS_OSK_WAIT`, `OPOS_OSK_GSETTINGS` | not set | only `opos-osk` (the opt-in Wayland keyboard) reads them: the binary, seconds to wait for phoc's socket, `0` to leave gsettings alone |
@@ -155,7 +157,12 @@ on one panel (675 px) keeps the phone layout. A Device type chosen in Settings i
 "Auto looks like: two screens" while the window spans both panels, and whatever the window's width it adds the window's
 size, the output scale and the span it was given ("Window 1392 x 900 CSS px at 1x, span 675 + 42 + 675."), again after
 every resize, so the numbers can be checked on the phone. Unset, the served page is byte-for-byte what it was. The
-service file sets `OPOS_SPAN=675,42`. A window under 1055 CSS px keeps the single-screen layout. Not yet measured on the phone. Not handled: a rotated window (the hinge would run across it), a phone folded with one panel dark, and two things that
+service file sets `OPOS_SPAN=675,42`. A window under 1055 CSS px keeps the single-screen layout. Not yet measured on the phone.
+A **dev checkpoint image** can also record the span in a separate drop-in: `OPOS_DEV_SPAN=1` together with `OPOS_DEV_SSH_PUBKEY` makes
+`build-image.sh` write `/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf` (`[Service]`, `Environment=OPOS_SPAN=675,42`).
+`verify-image.sh` checks the drop-in and builds the page for its value with the image's own python3. `OPOS_DEV_SPAN` without the dev key
+stops the build before the output is touched, and an image built without it has no dev drop-in. Removing the drop-in restores the service
+file's setting, which already enables the span. Not handled: a rotated window (the hinge would run across it), a phone folded with one panel dark, and two things that
 still cross the hinge: the thin battery bar along the top edge and, while it plays, the zoom from a tile to its
 app.
 
@@ -167,6 +174,8 @@ The image identity and release-folder procedure are in
 commit timestamp; an explicit value must be valid nonnegative Unix seconds. No
 builder wall-clock time is used in the identity manifest. These identity changes
 have not been built into a real image or checked on a phone (**NOT_RUN**).
+
+`build-image.sh` runs as root on a build machine its owner controls; it does not defend against another local user who can write to the output directory while it runs. It resolves OUT's parent once, refuses it unless owned by root or the invoking user (`SUDO_UID` when present) with no group or other write permission, and refuses any ancestor through `/` that is writable by others without the sticky bit. Staging stays inside that parent. Within this threat model, these checks close staging-path replacement; the owner must keep the directory under their control throughout the build.
 
 On a Linux builder with Python 3.11+, `zstd`, `e2fsprogs` and `qemu-user-static`:
 
@@ -183,7 +192,8 @@ qemu-user, starts a second one with the keyboard, the Network page and the first
 more, with the Inference page off (its two routes answer 404) and on (they answer 200).
 All four servers listen on loopback ports it picks, and a port that already answers is a FAIL, so a stale or hostile listener
 cannot stand in for the image's server; they get none of the caller's `OPOS_` variables, and are stopped by their own pid,
-at the end or on INT, TERM or HUP.
+at the end or on INT, TERM or HUP, and waited for before unmounting. Unmount failure is verification failure, never PASS;
+the verifier reports the attached mount point and backing file, which must be retained for recovery.
 It is not a boot, display or battery test.
 `tests/test_duo_kiosk.py` runs the kiosk script under `sh` with a fake `chromium` (locks, back-off, the no-GPU retry, the
 give-up), `opos-session` with a stub phoc, and with `OPOS_TEST_SYSTEMD=1` as root the whole give-up chain on real systemd.
@@ -204,7 +214,9 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
 
 - **Network.** Settings > Network opens `/network`: radio status, and scan, join, forget, disconnect and Wi-Fi on or off through
   NetworkManager as `droidian`. The `opos-network.conf` drop-in sets `OPOS_NETWORK=1`; the polkit rule is installed only when
-  building with `OPOS_NET_POLKIT=1`, and it grants only `opos-server.service` running as `droidian`. See [docs/network.md](../../docs/network.md).
+  building with `OPOS_NET_POLKIT=1`, and it grants only `opos-server.service` running as `droidian` (any other value but `0`, empty or unset stops the build, so a typo cannot build an image without it; `verify-image.sh`
+  checks the rule). Without it the phone cannot join Wi-Fi: NetworkManager asks polkit for `wifi.scan`, `network-control` and `settings.modify.system`, and
+  `droidian` has no session to answer an administrator prompt. See [docs/network.md](../../docs/network.md).
 - **First run and time zone.** A fresh phone opens a skippable setup; Settings > Date and time changes the zone later. The
   server applies the zone; the kiosk exports it to Chromium on every start. See [docs/duo-firstrun.md](../../docs/duo-firstrun.md).
 - **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key>` from
@@ -309,7 +321,8 @@ What the image does now:
   year before 2026 as unset, so a 1970 boot is never drawn as a time).
 
 Set the time from the PC, dev images only (built with `OPOS_DEV_SSH_PUBKEY`; the units are in every image, enabled
-only in those). The `droidian` user has no passwordless sudo and none is added. Instead a root path unit watches
+only in those). The `droidian` user has no passwordless sudo and none is added by default (the dev-only `OPOS_DEV_SUDO=1` adds it, see
+[Dev options: passwordless sudo](#dev-options-passwordless-sudo)). Instead a root path unit watches
 `~/opos-set-time`; it takes Unix seconds only, between the floor and 20 years past it, refuses symlinks and
 anything else, deletes the file and sets the clock. From a Unix shell:
 
@@ -362,22 +375,91 @@ less guarded route.
 
 ## Dev options: an ssh key
 
-`OPOS_DEV_SSH_PUBKEY=<file.pub> sh packaging/duo-os/build-image.sh …` appends that public key to
-`~/.ssh/authorized_keys` of the `droidian` user in the image (the directory is made 0700, the file 0600) and prints a
-`DEV IMAGE` line; `verify-image.sh` notes how many keys the image holds. It grants **a shell as `droidian` to
-whoever holds the matching private key**, over the USB network and over any other network where the phone's
-sshd can be reached (the port's sshd is not limited to the USB link; keys are accepted from any address,
-passwords only from the port's own USB subnet, 172.16.42.x). It is meant for reading logs and testing live;
-leave it unset for an image that will be carried. With the variable unset the image adds no login of its own,
-but the port's password rule stays as it is.
+Every build requires `OPOS_OWNER_SSH_PUBKEY=<owner.pub>`, independently of dev options. The builder validates each public key, replaces inherited
+`~/.ssh/authorized_keys` with the supplied owner key and optional developer key, repairs the home directory to 0755, and installs `.ssh` at 0700 and
+`authorized_keys` at 0600 with droidian ownership. The builder and verifier check the path through the home directory, the installed sshd and enabled
+`ssh.service`, including an effective `AuthorizedKeysFile` that uses this key and traversable paths through the home directory. No package or service is added. The explicit `OPOS_NO_SSH=1` choice means no SSH access at all: it removes the
+login keys, disables and masks SSH services and sockets, and records `/etc/opos/no-ssh`; it cannot be combined with a key. The older `OPOS_ALLOW_NO_SSH=1` spelling has the same meaning.
 
-Remove it from a running phone with `rm ~/.ssh/authorized_keys` as `droidian` (this deletes every key in the
-file, not only the one the build added) or by deleting that one line. Rebuilding without the variable gives an
-image without it. The key lives in userdata until the next format.
+Every build copies BASE into one exclusively created file in a private 0700 staging directory next to OUT and hashes that staged file.
+`OPOS_RELEASE=1` checks that hash against `packaging/duo-os/release-bases.sha256` beside the builder and inspects the staged file for
+`/etc/opos/image.json` or the OPOS release layout, refusing either even if the hash is listed. The list cannot be replaced by an environment
+variable or argument; tests put a fixture list in a fixture checkout. The seeded community-base hash is reported, not locally verified.
+The builder modifies only the staged image, and a release must pass `verify-image.sh` on that same image before an atomic rename publishes OUT.
+Existing OUT paths, including symlinks and hard links, and directories the builder cannot write are refused. The builder checks that no loop attachment remains before publishing;
+failures remove staging only when its backing file is detached, otherwise they report and retain that file and exit nonzero.
+Checksum reporting happens before publication. The exclusive rename is the commit point: INT, TERM and HUP are ignored during publication and cleanup,
+and a successful rename returns success even if removing the empty staging directory fails. No fallible reporting follows the rename.
+An uncatchable termination can leave OUT after that commit point without a successful process exit.
+Every image records `release` or `dev` in `/etc/opos/build-mode`; `opos-selftest` reports the mode, and release verification refuses dev or unmarked images.
+Dev builds still accept unpinned or reused bases and always record `dev`, even without optional dev features. They print verification `NOT_RUN`
+unless `OPOS_VERIFY_IMAGE=1` is set. The existing policy checks remain as defence in depth.
+
+`OPOS_DEV_SSH_PUBKEY=<file.pub>` adds a separate developer key and enables the clock drop and Chromium DevTools on loopback. Leave it unset for a
+carried or release image; release mode rejects every nonempty value, including `0`. The owner recovery key alone enables none of those dev features. Keys grant a shell as droidian over every network where sshd
+can be reached; SSH accepts no passwords. Removing a key from `~/.ssh/authorized_keys` revokes it. Rebuilding replaces the inherited key list.
 
 ## Debug port and USB shell
 
-The image build binds the container debug port to `127.0.0.1` and installs a filter that drops new inbound packets on `wlan0`. A passwordless USB root shell (telnetd started as a shell) is closed. `OPOS_DEV_USB_SHELL=1` at build time keeps that shell and records `enabled=1` in `/etc/opos/usb-shell.conf`. The kiosk DevTools port, when a dev image opens one, is `127.0.0.1` only. None of this has been checked on a phone (**NOT_RUN**).
+The image build binds the container debug port to `127.0.0.1` and installs a filter that drops new inbound packets on `wlan0`. A passwordless USB root shell (telnetd started as a shell) is closed. The legacy `OPOS_DEV_USB_SHELL` input cannot preserve a root shell; `/etc/opos/usb-shell.conf` always records `enabled=0`. The kiosk DevTools port, when a dev image opens one, is `127.0.0.1` only. None of this has been checked on a phone (**NOT_RUN**).
+
+Both `OPOS_DEV_SPAN` and `OPOS_DEV_SUDO` default to off (unset, empty or `0`). Only `build-image.sh` writes their files, with an explicit `1` and a dev
+ssh key at image build time. Runtime environment variables do not enable them. Rebuilding without the knobs removes their files even from an older dev
+base. The files themselves record the choices; `opos-selftest` reports `dev.span` and `dev.sudo`, and `verify-image.sh` checks their contents, modes and
+owners. Give the verifier the build's `OPOS_DEV_SPAN=0/1` and `OPOS_DEV_SUDO=0/1` to require absence or presence as well.
+Release image builds leave both knobs unset or `0`. The OTA release builder and updater reject both the dev-span drop-in and the sudoers path; neither
+knob is read by that release path.
+
+## Dev options: passwordless sudo
+
+The ordinary Duo interface displays a fixed `DEV: passwordless sudo for droidian` warning whenever `/etc/sudoers.d/90-opos-dev` is installed. The warning comes from the served pane stylesheet; HTML page bytes stay unchanged. Phone rendering remains **NOT_RUN**.
+
+`OPOS_DEV_SUDO=1 OPOS_DEV_SSH_PUBKEY=<file.pub> sh packaging/duo-os/build-image.sh …` gives the dev login user, `droidian`, sudo without a password. In the
+base, `droidian` is in the `sudo` group but sudo asks for a password that nobody has, and the root login is refused, so a developer who can ssh in cannot
+install a file, restart a service or read a root-only log. The build writes `/etc/sudoers.d/90-opos-dev`, mode 0440, owner root:root, holding exactly the one line
+
+```
+droidian ALL=(ALL) NOPASSWD:ALL
+```
+
+checks it with `visudo -cf` when the builder has `visudo` (the build stops if `visudo` rejects it), and prints `DEV: passwordless sudo for droidian`. The knob works
+only together with `OPOS_DEV_SSH_PUBKEY`: `OPOS_DEV_SUDO=1` without it, or any value other than `1`, `0`, empty or unset, stops the build before the output is touched
+(exit 2), exactly as `OPOS_DEV_SPAN` does. Without the variable no file is written, and a file left by an earlier dev image in the base is removed.
+
+**An image built with `OPOS_DEV_SUDO=1` must never be carried or shared.** Everything that runs as `droidian` is root on it: the OPOS server, the kiosk Chromium
+and every ssh session, so the dev ssh key becomes a root key, and the over-the-air design ([docs/ota-update.md](../../docs/ota-update.md)), which assumes an
+unprivileged `droidian`, protects nothing there. The acceptance suite warns (`dev.sudo`, with the other `dev.*` warnings) and `verify-image.sh` prints a `NOTE`.
+
+`verify-image.sh` checks the file when it is there (a plain 0440 root:root file with exactly that line, in an image that has the dev ssh key, `visudo -cf` accepts
+it, and no other sudoers line grants `NOPASSWD`) and that no sudoers line grants `NOPASSWD` when it is not. The image cannot say whether the build meant to
+write the file, so give the verifier the variable the build had to hold the image to it both ways: `OPOS_DEV_SUDO=1` requires the file and `OPOS_DEV_SUDO=0`
+requires its absence (unset requires nothing; under `sudo`, `sudo env OPOS_DEV_SUDO=1 OPOS_NET_POLKIT=1 sh packaging/duo-os/verify-image.sh …`; `OPOS_NET_POLKIT`
+is held the same way: `1` requires the polkit rule, `0` requires its absence, and a rule that is there must be the very bytes of `50-opos-network.rules`).
+
+Remove it from a running phone with `sudo rm /etc/sudoers.d/90-opos-dev`; the next sudo asks for a password again. Check it from the PC with
+`ssh droidian@<phone> sudo -n true`.
+
+## Removed on purpose: the USB root shell and the password login
+
+Two doors that the community port leaves open need no key, and `build-image.sh` closes both in **every image** (no knob; the block is `usb hardening`):
+
+- **A root shell on the USB cable.** The port's `/usr/local/sbin/sfduo-usb-gadget.sh`, which `sfduo-usb.service` runs at every boot, ends by starting
+  busybox `telnetd` with `/bin/bash` as its login program on the USB link's address (port 23): a root shell with no login for anything on the cable.
+  The build replaces that one line with a comment saying so. The rest of the script (the RNDIS gadget, the static address, the trailing `exit 0`)
+  and the file's mode and owner stay as the port has them; the script is rewritten in place, and the build stops if the result does not parse.
+- **A password from the whole USB subnet.** The port's `/etc/ssh/sshd_config.d/10-item-password-usb-only.conf` turned `PasswordAuthentication` off and
+  then on again in a `Match Address` block for the USB link's /24 (`droidian` has a password, a four-digit PIN). sshd matches the client's *source
+  address*, not the interface, so any client with an address in that /24 could try the PIN on any interface, Wi-Fi included once one is joined. The build rewrites that
+  drop-in (same name, mode and owner) to say only `PasswordAuthentication no` and `KbdInteractiveAuthentication no`. sshd takes keys only, from every address.
+
+ssh with a key (`OPOS_DEV_SSH_PUBKEY`, and `OPOS_DEV_SUDO` for root, see above) replaces both. `verify-image.sh` fails an image whose gadget script has a
+non-comment `telnetd` line, whose other scripts, configs or units start `telnetd`, or whose sshd files set `PasswordAuthentication`,
+`KbdInteractiveAuthentication` or `ChallengeResponseAuthentication` to `yes` anywhere (a `Match` block that takes no password is fine); a package upgrade of the
+port that puts either file back is therefore reported. On the phone `opos-selftest` `ssh.auth` reads `key-only everywhere` for the result, and
+`ss -ltn` as `droidian` must list nothing on port 23. The builder and verifier also run the host `sshd -T` on private copies of the image configuration, with Include paths confined to the image. This parses effective settings without starting a listener. Phone checks remain **NOT_RUN**.
+
+**Separate exposure hardening.** The build still runs `close-exposure.sh`: it binds the container debug port to loopback, drops new inbound packets
+on `wlan0`, and closes other root telnet units unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot keep a shell. These are source and fixture checks; the phone checks remain **NOT_RUN**.
 
 ## Boot evidence: persistent journal and opos-diag
 

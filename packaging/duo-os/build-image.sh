@@ -15,6 +15,93 @@ base=$1 out=$2 ref=${3:-HEAD}
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "$here/../.." && pwd)
 g() { git -c safe.directory="$src" -C "$src" "$@"; }
+build_mode=dev
+if [ "${OPOS_RELEASE:-0}" = 1 ]; then
+    python3 -I -B "$here/image-policy.py" release-inputs unused || exit 2
+    build_mode=release
+fi
+case ${OPOS_VERIFY_IMAGE:-0} in 0 | 1) ;; *) echo "OPOS_VERIFY_IMAGE must be 0 or 1" >&2; exit 2 ;; esac
+# --- dev span: CHECK BEGIN (OPOS_DEV_SPAN; the block that acts on it is "dev span: BEGIN" below)
+# Refused before OUT is touched, so a wrong call leaves no half-built image behind: OPOS_DEV_SPAN is 1, or unset/empty/0, and 1 is a dev-image
+# option that only works together with OPOS_DEV_SSH_PUBKEY.
+case ${OPOS_DEV_SPAN:-} in '' | 0 | 1) ;; *) echo "build-image.sh: OPOS_DEV_SPAN must be 1 (or unset)" >&2; exit 2 ;; esac
+if [ "${OPOS_DEV_SPAN:-}" = 1 ] && [ -z "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    echo "build-image.sh: OPOS_DEV_SPAN=1 is a dev-image option: it needs OPOS_DEV_SSH_PUBKEY=<file.pub> as well" >&2
+    exit 2
+fi
+# --- dev span: CHECK END
+# --- dev sudo: CHECK BEGIN (OPOS_DEV_SUDO; the block that acts on it is "dev sudo: BEGIN" below)
+# Refused before OUT is touched, exactly as OPOS_DEV_SPAN is: OPOS_DEV_SUDO is 1, or unset/empty/0, and 1 is a dev-image option that only works together
+# with OPOS_DEV_SSH_PUBKEY. An image with passwordless root for the login user is never an image to carry, so it is not offered without the dev key.
+case ${OPOS_DEV_SUDO:-} in '' | 0 | 1) ;; *) echo "build-image.sh: OPOS_DEV_SUDO must be 1 (or unset)" >&2; exit 2 ;; esac
+if [ "${OPOS_DEV_SUDO:-}" = 1 ] && [ -z "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    echo "build-image.sh: OPOS_DEV_SUDO=1 is a dev-image option: it needs OPOS_DEV_SSH_PUBKEY=<file.pub> as well" >&2
+    exit 2
+fi
+# --- dev sudo: CHECK END
+# --- polkit: CHECK BEGIN (OPOS_NET_POLKIT; the block that acts on it is in "track: network" below)
+# The rule is installed only for a 1, so a typo (yes, true, 2) used to build an image WITHOUT it and say nothing, and without the rule the phone cannot join
+# Wi-Fi. Refused before OUT is touched: unset, empty, 0 or 1.
+case ${OPOS_NET_POLKIT:-} in '' | 0 | 1) ;; *) echo "build-image.sh: OPOS_NET_POLKIT must be 1 (or unset)" >&2; exit 2 ;; esac
+# --- polkit: CHECK END
+# Owner recovery is independent of every development feature. Refuse bad inputs before copying.
+# Keep the old spelling as an alias; either choice now means SSH is disabled and masked.
+OPOS_NO_SSH=${OPOS_NO_SSH:-${OPOS_ALLOW_NO_SSH:-0}}
+case ${OPOS_ALLOW_NO_SSH:-0}:$OPOS_NO_SSH:${OPOS_RELEASE:-0} in
+    0:0:0 | 0:0:1 | 0:1:0 | 0:1:1 | 1:1:0 | 1:1:1) ;;
+    *) echo "OPOS_NO_SSH, OPOS_ALLOW_NO_SSH and OPOS_RELEASE must be 0 or 1, with no conflicting choices" >&2; exit 2 ;;
+esac
+if [ "$OPOS_NO_SSH" = 1 ]; then
+    [ -z "${OPOS_OWNER_SSH_PUBKEY:-}${OPOS_DEV_SSH_PUBKEY:-}" ] || { echo "OPOS_NO_SSH conflicts with SSH keys" >&2; exit 2; }
+else
+    [ -n "${OPOS_OWNER_SSH_PUBKEY:-}" ] || { echo "OPOS_OWNER_SSH_PUBKEY=<owner.pub> is required (or OPOS_NO_SSH=1 for no SSH access at all)" >&2; exit 2; }
+    python3 -I -B "$here/image-policy.py" key "$OPOS_OWNER_SSH_PUBKEY" || exit 2
+fi
+if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    python3 -I -B "$here/image-policy.py" key "$OPOS_DEV_SSH_PUBKEY" || exit 2
+fi
+# Resolve the parent once; the private image and OUT must share a filesystem.
+out_dir=$(python3 -I -B "$here/image-policy.py" output-parent "$out") || exit 2
+out=$out_dir/$(basename "$out")
+python3 -I -B "$here/image-policy.py" check-output "$out" || exit 2
+stage='' mnt='' image=''
+image_detached() {
+    attached=$(losetup -j "$image") || { echo "build-image.sh: cannot check loop attachments; retaining $image" >&2; return 1; }
+    if [ -n "$attached" ]; then
+        printf 'build-image.sh: backing file still attached; retaining %s\n%s\n' "$image" "$attached" >&2
+        return 1
+    fi
+}
+cleanup() {
+    status=$?
+    trap - EXIT
+    trap '' INT TERM HUP
+    keep=0
+    if [ -n "$mnt" ]; then
+        if mountpoint -q "$mnt"; then
+            if ! umount "$mnt"; then
+                echo "build-image.sh: mount point still attached: $mnt; retaining backing file $image" >&2
+                keep=1 status=1
+            fi
+        fi
+        if mountpoint -q "$mnt"; then
+            echo "build-image.sh: mount point still attached: $mnt; retaining backing file $image" >&2
+            keep=1 status=1
+        else
+            rmdir "$mnt" 2>/dev/null || true
+        fi
+    fi
+    if [ -n "$stage" ]; then
+        if [ -f "$image" ] && ! image_detached; then keep=1 status=1; fi
+        if [ "$keep" = 0 ]; then rm -rf "$stage" || true; fi
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 # --- identity epoch: BEGIN (scratch-root tests; no mount in this block)
 # An omitted release time comes from the selected ref, never the wall clock.
 if [ "${SOURCE_DATE_EPOCH+x}" != x ]; then
@@ -24,17 +111,31 @@ fi
 case $SOURCE_DATE_EPOCH in '' | *[!0-9]*) echo "SOURCE_DATE_EPOCH must be nonnegative Unix seconds" >&2; exit 2 ;; esac
 export SOURCE_DATE_EPOCH
 # --- identity epoch: END
-[ "$(readlink -f "$base")" != "$(readlink -f "$out")" ] || { echo "OUT must differ from BASE" >&2; exit 2; }
-mnt=$(mktemp -d)
-identity_work=$(mktemp -d)
-identity_state=$identity_work/state
-cleanup() { umount "$mnt" 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; rm -f "$identity_state" "$identity_state.metadata"; rmdir "$identity_work" 2>/dev/null || true; }
-trap cleanup EXIT
 
-echo "copying $base -> $out"
-cp --sparse=always "$base" "$out"
-e2fsck -fy "$out" >/dev/null 2>&1 || true
-mount -o loop "$out" "$mnt"
+stage=$(mktemp -d "$out_dir/.opos-build.XXXXXX")
+chmod 0700 "$stage"
+image=$stage/rootfs.img
+identity_state=$stage/identity-state
+# Exclusive creation inside the private directory; cp retains sparse image holes.
+(set -C; : > "$image")
+echo "copying $base -> private staging image"
+cp --sparse=always "$base" "$image"
+if [ "${OPOS_RELEASE:-0}" = 1 ]; then
+    base_sha=$(python3 -I -B "$here/image-policy.py" release-base "$image") || exit 2
+else
+    base_sha=$(python3 -I -B "$here/image-policy.py" image-sha256 "$image")
+fi
+echo "staged base SHA-256: $base_sha"
+# The mount point stays outside staging, so cleanup never walks a mounted image.
+mnt=$(mktemp -d)
+if [ "${OPOS_RELEASE:-0}" = 1 ]; then
+    mount -o ro,loop,noload "$image" "$mnt"
+    python3 -I -B "$here/image-policy.py" release-base-layout "$mnt"
+    umount "$mnt"
+fi
+
+e2fsck -fy "$image" >/dev/null 2>&1 || true
+mount -o loop "$image" "$mnt"
 r=$mnt
 [ -f "$r/usr/bin/phosh-session" ] && [ -x "$r/usr/bin/chromium" ] && [ -x "$r/usr/bin/python3" ] \
     || { echo "base rootfs lacks phosh-session, chromium or python3" >&2; exit 1; }
@@ -42,7 +143,7 @@ r=$mnt
 # --- identity prepare: BEGIN (scratch-root tests; no mount in this block)
 g show "$ref:pyproject.toml" > "$identity_state.metadata"
 python3 -I -B "$src/tools/opos-image-identity.py" prepare --root "$r" --state "$identity_state" \
-    --base "$base" --metadata "$identity_state.metadata" --revision "$(g rev-parse "$ref")"
+    --base "$image" --base-sha256 "$base_sha" --metadata "$identity_state.metadata" --revision "$(g rev-parse "$ref")"
 # --- identity prepare: END
 echo "installing OPOS $(g rev-parse --short "$ref") into /opt/opos"
 rm -rf "$r/opt/opos"
@@ -117,6 +218,7 @@ for u in opos-clock-set.path opos-clock-set.service; do
     sed "s|@DROP@|$clock_home/opos-set-time|g" "$here/$u" > "$r/etc/systemd/system/$u"
     chmod 0644 "$r/etc/systemd/system/$u"
 done
+rm -f "$r/etc/systemd/system/multi-user.target.wants/opos-clock-set.path"
 if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
     ln -sf /etc/systemd/system/opos-clock-set.path "$r/etc/systemd/system/multi-user.target.wants/opos-clock-set.path"
     echo "DEV IMAGE: Unix seconds dropped in ~/opos-set-time over ssh set the clock (opos-clock-set.path)"
@@ -144,9 +246,12 @@ chmod 0644 "$r/etc/default/opos-osk"
 install -d "$r/etc/systemd/system/opos-server.service.d"
 install -m 0644 "$here/opos-network.conf" "$r/etc/systemd/system/opos-server.service.d/20-opos-network.conf"
 if [ "${OPOS_NET_POLKIT:-0}" = 1 ]; then
-    install -d "$r/etc/polkit-1/rules.d"
+    # not `install -d` on a directory that is there: it would set the mode to 0755, and the base's rules.d is 0750 root:polkitd on purpose
+    [ -d "$r/etc/polkit-1/rules.d" ] || install -d -m 0755 "$r/etc/polkit-1/rules.d"
     install -m 0644 "$here/50-opos-network.rules" "$r/etc/polkit-1/rules.d/50-opos-network.rules"
     echo "NETWORK: polkit rule installed: opos-server.service as droidian may use the four NetworkManager actions"
+else
+    rm -f "$r/etc/polkit-1/rules.d/50-opos-network.rules"  # one left by an earlier OPOS image used as the BASE goes too
 fi
 ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/20-opos-network.conf $(ls etc/polkit-1/rules.d/50-opos-network.rules 2>/dev/null) )
 # --- end track: network ---
@@ -160,6 +265,10 @@ install -m 0644 "$here/opos-apps.conf" "$r/etc/systemd/system/opos-server.servic
 # nothing secret: only the directory and a commented example, so the page fetches nothing but the phone's own 127.0.0.1 model-port
 # check until the owner adds a file.
 install -d -m 0755 "$r/etc/opos"
+# Always replace inherited mode, including a plain dev build with no dev knobs.
+rm -f "$r/etc/opos/build-mode"
+printf '%s\n' "$build_mode" > "$r/etc/opos/build-mode"
+chmod 0644 "$r/etc/opos/build-mode"
 cat > "$r/etc/opos/monitor.env.example" <<'EOF'
 # Optional settings for the Inference page (Settings > Inference). None is needed: without /etc/opos/monitor.env the page checks
 # this phone's own 127.0.0.1 model port and fetches nothing else.
@@ -176,23 +285,43 @@ chmod 0644 "$r/etc/opos/monitor.env.example"
 # --- end track: monitor ---
 
 # The Duo server user is droidian. The postmarketOS modem rule names user opos and is not installed here.
-install -d "$r/etc/polkit-1/rules.d"
+[ -d "$r/etc/polkit-1/rules.d" ] || install -d -m 0755 "$r/etc/polkit-1/rules.d"
 install -m 0644 "$here/50-opos-modem.rules" "$r/etc/polkit-1/rules.d/50-opos-modem.rules"
 
-# DEV ONLY. OPOS_DEV_SSH_PUBKEY=<file.pub> lets the computer that holds the matching private key log in as
-# droidian over the USB network (the base's sshd already refuses passwords there; keys work). Leave it unset
-# for an image that is meant to be carried: without it nothing new can log in.
-if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+# --- recovery: BEGIN
+# OPOS_OWNER_SSH_PUBKEY provides recovery without enabling any development feature.
+python3 -I -B "$here/image-policy.py" recovery-paths "$r"
+if [ "${OPOS_NO_SSH:-${OPOS_ALLOW_NO_SSH:-0}}" != 1 ]; then
     uid=$(awk -F: '$1=="droidian"{print $3}' "$r/etc/passwd")
     gid=$(awk -F: '$1=="droidian"{print $4}' "$r/etc/passwd")
     home=$(awk -F: '$1=="droidian"{print $6}' "$r/etc/passwd")
     [ -n "$uid" ] && [ -n "$home" ] || { echo "base rootfs has no droidian user" >&2; exit 1; }
-    [ -d "$r$home" ] || install -d -m 0755 -o "$uid" -g "$gid" "$r$home"
+    case $home in /*) ;; *) echo "invalid droidian home" >&2; exit 1 ;; esac
+    case $home in *..*) echo "invalid droidian home" >&2; exit 1 ;; esac
+    for p in "$r$home" "$r$home/.ssh" "$r$home/.ssh/authorized_keys"; do
+        [ ! -L "$p" ] || { echo "linked SSH recovery path" >&2; exit 1; }
+    done
+    install -d -m 0755 -o "$uid" -g "$gid" "$r$home"
     install -d -m 0700 -o "$uid" -g "$gid" "$r$home/.ssh"
-    cat "$OPOS_DEV_SSH_PUBKEY" >> "$r$home/.ssh/authorized_keys"
+    cat "$OPOS_OWNER_SSH_PUBKEY" > "$r$home/.ssh/authorized_keys"
+    if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+        printf '\n' >> "$r$home/.ssh/authorized_keys"
+        cat "$OPOS_DEV_SSH_PUBKEY" >> "$r$home/.ssh/authorized_keys"
+    fi
     chown "$uid:$gid" "$r$home/.ssh/authorized_keys"
     chmod 0600 "$r$home/.ssh/authorized_keys"
-    echo "DEV IMAGE: droidian accepts the ssh key '$(cut -d' ' -f3- "$OPOS_DEV_SSH_PUBKEY")' (remove with: rm ~/.ssh/authorized_keys)"
+    rm -f "$r/etc/opos/no-ssh"
+else
+    home=$(awk -F: '$1=="droidian"{print $6}' "$r/etc/passwd")
+    [ -n "$home" ] || { echo "base rootfs has no droidian user" >&2; exit 1; }
+    rm -f "$r$home/.ssh/authorized_keys"
+    python3 -I -B "$here/image-policy.py" disable-ssh "$r"
+    echo "NO SSH ACCESS: SSH services and sockets are disabled and masked"
+fi
+python3 -I -B "$here/image-policy.py" recovery "$r"
+# --- recovery: END
+# DEV ONLY. A separate developer key enables the clock drop and loopback DevTools.
+if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
     # The same developer can then reach the kiosk Chromium's DevTools on the phone's loopback, for page
     # screenshots: ssh -L 9222:127.0.0.1:9222 droidian@<phone>, then curl http://127.0.0.1:9222/json
     printf '%s\n' '# DEV IMAGE: opos-kiosk starts Chromium with DevTools on 127.0.0.1 at this port. Delete the file to turn it off.' \
@@ -202,6 +331,98 @@ if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
 else
     rm -f "$r/etc/default/opos-kiosk"
 fi
+
+# --- dev span: BEGIN (OPOS_DEV_SPAN; packaging/duo-os/README.md, "Spanning both panels")
+# DEV ONLY, and only together with OPOS_DEV_SSH_PUBKEY (the check at the top refuses the other cases). The service already sets OPOS_SPAN=675,42;
+# this optional drop-in records the dev build choice separately and uses that same geometry. The unit file itself is not edited.
+# A BASE that is an earlier dev-span image loses the drop-in unless the variable is set again. Removing the drop-in restores the unit's setting.
+rm -f "$r/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"
+if [ "${OPOS_DEV_SPAN:-}" = 1 ] && [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    install -d -m 0755 "$r/etc/systemd/system/opos-server.service.d"
+    printf '%s\n' '# DEV IMAGE (OPOS_DEV_SPAN=1): the two-screen span, for the window that covers both panels (675 + 42 + 675 CSS px).' \
+        '# Delete this file, then daemon-reload and restart opos-server, to restore the service file setting (which also enables the span).' \
+        '[Service]' 'Environment=OPOS_SPAN=675,42' > "$r/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"
+    chmod 0644 "$r/etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf"
+    ( cd "$r" && sha256sum etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf )
+    echo "DEV IMAGE: opos-server runs with OPOS_SPAN=675,42 (drop-in 30-opos-dev-span.conf; remove it to restore the service file setting)"
+fi
+# --- dev span: END
+
+# --- dev sudo: BEGIN (OPOS_DEV_SUDO; packaging/duo-os/README.md, "Dev options: passwordless sudo")
+# DEV ONLY, and only together with OPOS_DEV_SSH_PUBKEY (the check at the top refuses the other cases). In the base, droidian is in the sudo group but
+# sudo asks for a password that nobody has, and root cannot log in, so a developer who can ssh in cannot become root to install a file, restart a
+# service or read a root-only log. OPOS_DEV_SUDO=1 writes one sudoers file, /etc/sudoers.d/90-opos-dev, 0440 root:root, holding exactly the
+# line below. It is validated with visudo -cf when the builder has visudo, before it goes into the image. EVERYTHING that runs as droidian (the
+# OPOS server, the kiosk Chromium, any ssh session) is then root: an image built this way must never be carried, lent or shared, and the
+# over-the-air design (which assumes an unprivileged droidian) does not protect it. A BASE that is an earlier dev-sudo image loses the file unless the
+# variable is set again. On a running phone: sudo rm /etc/sudoers.d/90-opos-dev.
+rm -f "$r/etc/sudoers.d/90-opos-dev"
+python3 -I -B "$here/image-policy.py" sudo "$r"
+if [ "${OPOS_DEV_SUDO:-}" = 1 ] && [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then
+    awk -F: '$1=="droidian"{f=1} END{exit !f}' "$r/etc/passwd" || { echo "base rootfs has no droidian user" >&2; exit 1; }
+    sudo_tmp=$(mktemp)
+    printf '%s\n' 'droidian ALL=(ALL) NOPASSWD:ALL' > "$sudo_tmp"
+    chmod 0440 "$sudo_tmp"
+    if command -v visudo >/dev/null 2>&1 && ! visudo -cf "$sudo_tmp" >/dev/null; then
+        rm -f "$sudo_tmp"
+        echo "build-image.sh: visudo rejects the dev sudoers line" >&2
+        exit 1
+    fi
+    install -d -m 0755 "$r/etc/sudoers.d"
+    install -m 0440 "$sudo_tmp" "$r/etc/sudoers.d/90-opos-dev"
+    rm -f "$sudo_tmp"
+    ( cd "$r" && sha256sum etc/sudoers.d/90-opos-dev )
+    echo "DEV: passwordless sudo for droidian (/etc/sudoers.d/90-opos-dev, 0440 root:root); this image must never be carried or shared"
+fi
+# --- dev sudo: END
+
+# --- usb hardening: BEGIN (always, no knob; packaging/duo-os/README.md, "Removed on purpose: the USB root shell and the password login")
+# Two ways into the base that need no key, both removed from every image:
+#  1. The port's USB gadget script (sfduo-usb-gadget.sh, run at every boot by sfduo-usb.service) ends by starting busybox telnetd with /bin/bash as its login program
+#     on the USB link's address: a root shell with no authentication for anyone on the cable. Its one line is replaced by a comment; everything else in the script,
+#     the trailing exit 0 and the file's mode and owner stay (the script is rewritten in place, not replaced).
+#  2. The port's sshd drop-in 10-item-password-usb-only.conf lets a password in (droidian has one, a four-digit PIN) for every client whose source address is in the
+#     USB link's /24, on ANY interface: Wi-Fi too, once one is joined. The drop-in becomes key-only. A Match block cannot be overridden from another file (its
+#     keywords override the global section), so the port's file itself is rewritten, under its own name and with its own mode and owner.
+# ssh with a key (OPOS_DEV_SSH_PUBKEY, and OPOS_DEV_SUDO for root) replaces both. The exposure block below separately binds adbd's debug port to loopback
+# and closes other root telnet units; keep that hardening too.
+ug=$r/usr/local/sbin/sfduo-usb-gadget.sh
+[ -f "$ug" ] && [ ! -L "$ug" ] && [ -x "$ug" ] || { echo "base rootfs has no executable sfduo-usb-gadget.sh (the port's USB gadget script)" >&2; exit 1; }
+ug_lines=$(wc -l < "$ug")
+ug_tmp=$(mktemp)
+awk '/^[ \t]*#/ { print; next } /telnetd/ { print "# OPOS: the root telnet shell that was started here, with no login, was removed by the OPOS image build (build-image.sh); ssh with a key is the way in."; next } { print }' "$ug" > "$ug_tmp"
+if cmp -s "$ug_tmp" "$ug"; then
+    echo "sfduo-usb-gadget.sh starts no telnet shell; leaving it as it is"
+else
+    cat "$ug_tmp" > "$ug"
+    echo "USB: the root telnet shell in sfduo-usb-gadget.sh was removed (no login was asked on the USB link)"
+fi
+rm -f "$ug_tmp"
+if grep -v '^[[:space:]]*#' "$ug" | grep -q telnetd || ! sh -n "$ug" || [ "$(wc -l < "$ug")" -ne "$ug_lines" ]; then
+    echo "the sfduo-usb-gadget.sh edit did not take" >&2; exit 1
+fi
+sd=$r/etc/ssh/sshd_config.d
+sf=$sd/10-item-password-usb-only.conf
+if [ -e "$sf" ] || [ -L "$sf" ]; then
+    [ -f "$sf" ] && [ ! -L "$sf" ] || { echo "base rootfs: $sf is not a plain file" >&2; exit 1; }
+else
+    install -d -m 0755 "$sd"
+    install -m 0644 /dev/null "$sf"
+fi
+sf_tmp=$(mktemp)
+printf '%s\n' '# OPOS image: ssh logs in with a key only, from every address. The port'"'"'s version of this file let a password in (a Match Address block with' \
+    '# PasswordAuthentication yes) for any client whose source address is in the USB link'"'"'s /24, on any interface, Wi-Fi included once one is joined; the' \
+    '# block was removed on purpose by build-image.sh. Recovery uses OPOS_OWNER_SSH_PUBKEY. A package upgrade of the port may put the original back;' \
+    '# verify-image.sh reports that.' \
+    'PasswordAuthentication no' 'KbdInteractiveAuthentication no' > "$sf_tmp"
+cat "$sf_tmp" > "$sf"
+rm -f "$sf_tmp"
+if ! python3 -I -B "$here/image-policy.py" ssh "$r"; then
+    echo "base rootfs: another sshd setting turns a password login on; the OPOS key-only edit is not enough" >&2; exit 1
+fi
+( cd "$r" && sha256sum usr/local/sbin/sfduo-usb-gadget.sh etc/ssh/sshd_config.d/10-item-password-usb-only.conf )
+echo "USB: ssh is key-only (the password login for the USB link's subnet was removed from 10-item-password-usb-only.conf)"
+# --- usb hardening: END
 
 # ---- BEGIN OPOS OTA updates (self-contained; needs $r and $here; docs/ota-update.md) ----------------------------
 # Release layout (/opt/opos -> /opt/opos-releases/0-<rev12>), the update state and inbox directories, the trust
@@ -282,9 +503,12 @@ done
 # ---- END OPOS OTA updates ----------------------------------------------------------------------------------------
 
 # --- track: exposure: container debug port on loopback, no passwordless USB root shell ---
-# OPOS_DEV_USB_SHELL=1 keeps a telnet root shell for a dev image. The default closes it.
-sh "$here/close-exposure.sh" "$r"
+# No inherited development setting may preserve a root telnet shell.
+OPOS_DEV_USB_SHELL=0 sh "$here/close-exposure.sh" "$r"
 # --- end track: exposure ---
+if [ "${OPOS_RELEASE:-0}" = 1 ]; then
+    python3 -I -B "$here/image-policy.py" release "$r"
+fi
 
 # Both panels, one backlight value. Not a phone-page change.
 install -m 0644 "$here/opos-brightness.service" "$r/etc/systemd/system/opos-brightness.service"
@@ -300,9 +524,24 @@ set -- opt/opos/REVISION usr/libexec/opos usr/sbin/opos-switch usr/local/sbin/sf
 if [ -e "$r/etc/default/opos-kiosk" ]; then set -- "$@" etc/default/opos-kiosk; fi
 ( cd "$r" && find "$@" etc/systemd/system/opos*.service etc/systemd/system/opos*.path -type f -exec sha256sum {} + )
 umount "$mnt"
-trap - EXIT
 rmdir "$mnt"
+mnt=''
 rm -f "$identity_state" "$identity_state.metadata"
-rmdir "$identity_work"
-e2fsck -fn "$out" >/dev/null && echo "fsck clean"
-sha256sum "$out"
+e2fsck -fn "$image" >/dev/null
+echo "fsck clean"
+if [ "${OPOS_RELEASE:-0}" = 1 ] || [ "${OPOS_VERIFY_IMAGE:-0}" = 1 ]; then
+    if ! sh "$here/verify-image.sh" "$image"; then
+        echo "build-image.sh: image verification failed; cleanup will retain any attached backing file" >&2
+        exit 1
+    fi
+else
+    echo "DEV IMAGE: verify-image.sh was NOT_RUN (set OPOS_VERIFY_IMAGE=1 to run it)"
+fi
+image_detached || exit 1
+final_sha=$(python3 -I -B "$here/image-policy.py" image-sha256 "$image")
+echo "publishing image (exclusive rename follows):"
+printf '%s  %s\n' "$final_sha" "$out"
+# Publication is the commit point. Reporting has succeeded; handled signals are
+# ignored through the rename and cleanup, whose status preserves this command's.
+trap '' INT TERM HUP
+python3 -I -B "$here/image-policy.py" publish "$image" "$out"

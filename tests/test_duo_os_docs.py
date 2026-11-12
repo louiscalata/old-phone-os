@@ -130,18 +130,19 @@ class TestDuoOsReadme(unittest.TestCase):
         self.assertIn("OPOS_DEV_SSH_PUBKEY", build)
         self.assertIn("OPOS_DEV_SSH_PUBKEY=<file.pub>", dev)
         self.assertIn(".ssh/authorized_keys", build)
-        self.assertIn("`~/.ssh/authorized_keys` of the `droidian` user", dev)
+        self.assertIn("`~/.ssh/authorized_keys`", dev)
+        self.assertIn("OPOS_OWNER_SSH_PUBKEY=<owner.pub>", dev)
         self.assertIn("install -d -m 0700", build)
         self.assertIn("chmod 0600", build)
         self.assertIn("0700", dev)
         self.assertIn("0600", dev)
         self.assertIn("DEV IMAGE", build)
-        self.assertIn("`DEV IMAGE` line", dev)
-        self.assertIn("rm ~/.ssh/authorized_keys", build)
-        self.assertIn("rm ~/.ssh/authorized_keys", dev)
+        self.assertIn("owner recovery key alone enables none of those dev features", dev)
+        self.assertIn("# --- recovery: BEGIN", build)
+        self.assertIn("OPOS_NO_SSH=1", dev)
         self.assertIn("DEV image", verify)
-        for phrase in ("a shell as `droidian`", "whoever holds the matching private key",
-                       "leave it unset for an image that will be carried", "deletes every key in the file"):
+        for phrase in ("a shell as droidian", "Removing a key", "revokes it",
+                       "Leave it unset for a carried or release image"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, dev)
 

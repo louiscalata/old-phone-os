@@ -60,6 +60,8 @@ def prepare(a):
     epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
     if not re.fullmatch(r"[0-9]+", epoch) or not 0 <= int(epoch) <= 253402300799:
         raise ValueError("SOURCE_DATE_EPOCH must be supplied as nonnegative Unix seconds")
+    if a.base_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", a.base_sha256):
+        raise ValueError("invalid staged base SHA-256")
     meta = tomllib.loads(Path(a.metadata).read_text(encoding="utf-8"))["project"]
     version, home = meta["version"], meta["urls"]["Source"]
     if not identity.VERSION.fullmatch(version) or not identity.REV.fullmatch(a.revision):
@@ -78,7 +80,7 @@ def prepare(a):
     before = watched(a.root)
     data = {"format": 1, "version": version, "revision": a.revision, "build_id": a.revision[:12],
             "home_url": home, "source_date_epoch": int(epoch),
-            "base": {"sha256": identity.hash_file(a.base), "os_release": fields}}
+            "base": {"sha256": a.base_sha256 or identity.hash_file(a.base), "os_release": fields}}
     Path(a.state).write_bytes(identity.canonical({"manifest": data, "before": before, "previous": previous}))
     write(a.root, "usr/lib/os-release.base", original)
     values = {"NAME": "Old Phone OS", "ID": "opos", "ID_LIKE": identity.ancestry(fields),
@@ -149,6 +151,7 @@ def finish(a):
             names.add(name)
     names.update(identity.REQUIRED)
     names.add("usr/local/sbin/sfduo-composer-watchdog")
+    names.add("usr/local/sbin/sfduo-usb-gadget.sh")
     names.discard("etc/opos/image.json")  # a manifest cannot hash itself
     m = state["manifest"]
     m["switches"] = baked_switches(a.root)
@@ -167,6 +170,8 @@ def main(argv=None):
         p.add_argument("--state", required=True)
         if command == "prepare":
             p.add_argument("--base", required=True)
+            # The builder hashes its private copy before fsck or mounting changes it.
+            p.add_argument("--base-sha256")
             p.add_argument("--metadata", required=True)
             p.add_argument("--revision", required=True)
     a = ap.parse_args(argv)
