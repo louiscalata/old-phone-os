@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Read Duo volume keys into explicitly simulated OPOS volume
+BindsTo=opos.service
+PartOf=opos.service
+After=opos.service
+StartLimitIntervalSec=0
+
+[Service]
+User=root
+Environment=PYTHONPATH=/opt/opos/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+RuntimeDirectory=opos-volume
+RuntimeDirectoryMode=0755
+ExecStart=/usr/bin/python3 -m opos.volumekey
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/run/opos-volume
+
+[Install]
+WantedBy=opos.service

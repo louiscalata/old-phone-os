@@ -531,6 +531,13 @@ ln -sfn /etc/systemd/system/opos-powerkey.service \
     "$r/etc/systemd/system/opos.service.wants/opos-powerkey.service"
 # --- power key: END
 
+# --- volume keys: BEGIN (simulated state only; no audio route)
+install -d "$r/etc/systemd/system/opos.service.wants"
+install -m 0644 "$here/opos-volumekey.service" "$r/etc/systemd/system/opos-volumekey.service"
+ln -sfn /etc/systemd/system/opos-volumekey.service \
+    "$r/etc/systemd/system/opos.service.wants/opos-volumekey.service"
+# --- volume keys: END
+
 # --- identity finish: BEGIN (after all OPOS installs and base edits)
 python3 -I -B "$src/tools/opos-image-identity.py" finish --root "$r" --state "$identity_state"
 # --- identity finish: END

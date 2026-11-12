@@ -30,8 +30,8 @@ but `src/opos/mm_modem.py` is not wired in. The raw logs from that day are not p
 ## What is in the image
 
 The root `opos-powerkey.service` finds `qpnp_pon` by its exact name on every reopen; event numbers may change
-between boots. Only KEY_POWER (116) is handled; KEY_VOLUMEDOWN (114) on the same device and every other key code are
-ignored. A clean short power press uses fresh `bl_power` readings to choose blank or light, without changing
+between boots. That power reader handles only KEY_POWER (116); it ignores KEY_VOLUMEDOWN (114) and every other
+key code. A clean short power press uses fresh `bl_power` readings to choose blank or light, without changing
 brightness or calling the composer. Blank is a lease: the select loop checks both panels every second while blanked
 or recovering. A blank needs both panels lit, no recovery pending, and a successful
 `systemctl is-active --quiet opos.service` probe, bounded by 0.5 seconds. Its single blank pass is read back;
@@ -51,7 +51,9 @@ exits nonzero if a present panel still rejects its write. Its unit commands use 
 the journal but cannot prevent a shell from starting. It runs before OPOS, its fallback and the key daemon start,
 and when the daemon stops. Fallback waits for the key daemon's stop and final unblank. The root key unit uses
 `NoNewPrivileges=yes`, `ProtectHome=yes`, `PrivateTmp=yes` and `ProtectSystem=full`; backlight sysfs writes stay
-available. Fold and volume-key behavior are unchanged.
+available. Fold behavior is unchanged. The separate `opos-volumekey.service` reads 114 from `qpnp_pon` and 115
+from `gpio-keys`, and shows a read-only simulated volume in Settings and the top bar. There is no connected
+media/ringer mixer: sound is unchanged. See [VOLUME.md](VOLUME.md). Its phone and audio checks remain **NOT_RUN**.
 **Not run on a phone (NOT_RUN). It is not known whether touch still reports with the panels blanked**; invisible taps
 may still reach the page. The real input, panel-write interleavings, restart/fallback ordering and hardening need
 phone checks. The build installs the helper and unit and creates their directories and enablement link;

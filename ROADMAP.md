@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Status as of November 7, 2026: where Old Phone OS Interface stands
+Status as of November 12, 2026: where Old Phone OS Interface stands
 and what comes next. Plans are intentions, not promises.
 
 ## Working today
@@ -39,6 +39,22 @@ and what comes next. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- November 12 volume-key consumer: reads 114 on `qpnp_pon` and 115 on `gpio-keys`
+  independently and reports a bounded simulated volume in Settings and the top bar.
+  No connected media/ringer mixer exists; sound is unchanged. The restartable root
+  service publishes read-only runtime state for the web server. Fake-input and local
+  integration tests do not establish phone behavior. Image build/verification,
+  native systemd lifecycle, browser, phone and audible checks remain **NOT_RUN**.
+  See [VOLUME.md](packaging/duo-os/VOLUME.md) for behavior and limits.
+  Local verification on macOS with Python 3.15.2 and Node 24.22.2: 188 focused
+  reader/web/UI regression tests passed (exit 0), plus 21 packaging tests (exit 0).
+  The served page with volume and all existing switches is 101,895 bytes against
+  the unchanged 102,000-byte gate. A broader image-verifier run still has two
+  GNU `stat -c` fixture failures on macOS, reproduced with the unchanged baseline
+  verifier prelude; five Linux-only checks were skipped. Shell syntax and
+  `git diff --check` passed (exit 0). ShellCheck exits 1 with the same findings as
+  baseline (one in the build script, 25 in the verifier). This is not a full-suite
+  or CI Python 3.11/3.13 pass.
 - November 12 power-key design: blank is a lease checked by a one-second select loop, with fresh panel reads,
   light on uncertainty and continued recovery for missing or unwritable nodes, including at startup. Restarts have
   no count limit and a three-second delay. Production-controller fake-tree tests are local work; phone behavior,
