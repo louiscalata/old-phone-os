@@ -7,6 +7,7 @@
 #   powershell -File deploy\duo-persist-probe.ps1 -Phase bootloader [-Serial <serial>] [-OutDir <folder>] [-TimeoutSec <n>] [-DryRun]
 #   powershell -File deploy\duo-persist-probe.ps1 -Phase twrp [-Serial <serial>] [-OutDir <folder>] [-BootImage <file>]
 #                                                  [-PullWith dd|head] [-TimeoutSec <n>] [-DryRun]
+#   Pulls default to head, verified on November 12, 2026. The selectable dd form is known not to work on this TWRP.
 #
 # Run it twice, in this order. It never changes the phone's mode: you put the phone in the right place first.
 #   -Phase bootloader  the phone is in the bootloader menu (fastboot). G0 preflight as the install chain does it
@@ -39,7 +40,7 @@ param(
     [string]$Serial = '',
     [string]$OutDir = '',
     [string]$BootImage = '',
-    [ValidateSet('dd', 'head')][string]$PullWith = 'dd',
+    [ValidateSet('dd', 'head')][string]$PullWith = 'head',
     [ValidateRange(2, 3600)][int]$TimeoutSec = 180,
     [switch]$DryRun
 )
@@ -95,7 +96,8 @@ $PhoneRules = @(
 )
 # The two ways to copy a block device to this PC through adb exec-out, both reads. The pinned TWRP's dd is a BSD-style
 # binary: it takes if=, bs= and count= (and skip=) as plain decimal numbers and has no status= and no conv=. The head
-# form is the one the October 9 backup tool used; -PullWith head selects it if the dd form returns the wrong size.
+# form is the default, verified on November 12. With exec-out this TWRP's dd receives 2>/dev/null as an operand and
+# returns error text instead of partition bytes. -PullWith dd remains selectable; both allow-list rules stay bounded.
 $DdPullRule = '^dd if=' + $AnyDev + ' bs=[0-9]{1,8}(?: skip=[0-9]{1,8})?(?: count=[0-9]{1,8})? 2>/dev/null\z'
 $HeadPullRule = '^head -c [0-9]{1,9} ' + $AnyDev + '\z'
 $PullRules = @($DdPullRule, $HeadPullRule)
@@ -127,8 +129,8 @@ function Stop-Hung($Process, [string]$Tool, [string]$Line, [int]$Seconds) {
 }
 
 # The one place a process is started. $Line has passed the allow-list, so it holds no quote, no space inside a word and
-# no shell syntax except the 2>/dev/null of the dd read; adb sends it to the phone's shell as it is. Output is read as
-# bytes, so a backup is not changed by text handling, and hashed while it streams.
+# no shell syntax except the 2>/dev/null of the selectable dd read (this TWRP passes it as an operand, not a redirect).
+# Output is read as bytes, so a backup is not changed by text handling, and hashed while it streams.
 function Invoke-Allowed([string]$Tool, [string]$Line, [string]$ToFile = '', [switch]$HashOnly) {
     if (-not (Test-Allowed $Tool $Line)) { throw "refused: not on the allow-list: $Tool $Line" }
     if (-not $script:Exe.ContainsKey($Tool)) { throw "refused: $Tool was not looked up for this phase" }
@@ -199,13 +201,13 @@ function New-Step([string]$Id, [string]$Gate, [string]$Tool, [string]$Line, [str
     [pscustomobject]$s
 }
 
-# The adb exec-out line that copies a block device to stdout: dd (the default) or head (the form of the October 9 backup tool).
+# The adb exec-out line that copies a block device to stdout: head by default, or the selectable dd form.
 function Get-PullLine([string]$Way, [string]$Dev, [long]$Bytes) {
     if ($Way -ceq 'head') { return 'exec-out head -c ' + $Bytes + ' ' + $Dev }
     return 'exec-out dd if=' + $Dev + ' bs=4096 count=' + [long]($Bytes / 4096) + ' 2>/dev/null'
 }
 
-function Build-Plan([string]$Phase, [bool]$WithCandidate, [string]$PullWith = 'dd') {
+function Build-Plan([string]$Phase, [bool]$WithCandidate, [string]$PullWith = 'head') {
     $plan = New-Object System.Collections.ArrayList
     if ($Phase -eq 'bootloader') {
         [void]$plan.Add((New-Step 'b00' 'G0' 'fastboot' 'devices' 'serial' $true @{ Value = 'fastboot' }))
@@ -256,8 +258,7 @@ function Build-Plan([string]$Phase, [bool]$WithCandidate, [string]$PullWith = 'd
     [void]$plan.Add((New-Step 'p-sysro-lun' 'G2' 'adb' 'shell cat /sys/class/block/sde/ro' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-enforce' 'G2' 'adb' 'shell getenforce' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-sgdisk' 'G2' 'adb' 'shell sgdisk -p /dev/block/sde' 'info' $false $null))
-    [void]$plan.Add((New-Step 'p-sgdisk-boot-a' 'G2' 'adb' 'shell sgdisk -i 9 /dev/block/sde' 'info' $false $null))
-    [void]$plan.Add((New-Step 'p-sgdisk-boot-b' 'G2' 'adb' 'shell sgdisk -i 26 /dev/block/sde' 'info' $false $null))
+    # sgdisk -i is unavailable in the pinned TWRP (invalid option -- i); omit those two info reads.
     [void]$plan.Add((New-Step 'p-df-tmp' 'G2' 'adb' 'shell df /tmp' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-partitions' 'G2' 'adb' 'shell cat /proc/partitions' 'info' $false $null))
     [void]$plan.Add((New-Step 'p-version' 'G2' 'adb' 'shell cat /proc/version' 'info' $false $null))
@@ -572,7 +573,8 @@ function Build-Report([string]$Status, [string]$StopId, [string]$Reason) {
             }
         }
         [void]$L.Add('')
-        [void]$L.Add('The partition table dump (`sgdisk -p`, and `-i 9`, `-i 26` for the slot attribute bits of boot_a and boot_b) and the dmesg are in raw/. The df line shows the room in the phone''s /tmp for the 96 MiB image that G3 pushes. A probe marked unavailable is not a failure: the tool may simply not be in this TWRP.')
+        [void]$L.Add('The partition table dump (`sgdisk -p`) and the dmesg are in raw/. The two `sgdisk -i` info reads are omitted: this TWRP reports invalid option -- i, so no decoded slot attribute baseline is available. The df line shows the room in the phone''s /tmp for the 96 MiB image that G3 pushes. A probe marked unavailable is not a failure: the tool may simply not be in this TWRP.')
+        [void]$L.Add('Pulls use head by default. The selectable -PullWith dd form is known not to work on this TWRP: dd receives 2>/dev/null as an operand and returns error text. A short read with the default head form requires investigation; do not switch to dd as a retry.')
         [void]$L.Add('')
         if ($script:Results.ContainsKey('t08')) {
             $c = $script:Results['t08'].Candidate

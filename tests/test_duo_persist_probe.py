@@ -209,6 +209,18 @@ class PersistProbeScriptText(unittest.TestCase):
         self.assertEqual(len(re.findall(r"\bcatch\b", body)), 1)
         self.assertIn("foreach ($s in $plan) { Invoke-Step $s }", body)
 
+    def test_head_is_the_default_and_unsupported_sgdisk_info_reads_are_omitted(self):
+        body = code()
+        self.assertIn("[ValidateSet('dd', 'head')][string]$PullWith = 'head'", body)
+        plan = function_text("Build-Plan")
+        self.assertIn("[string]$PullWith = 'head'", plan)
+        self.assertIn("'shell sgdisk -p /dev/block/sde'", plan)
+        self.assertNotIn("shell sgdisk -i", plan)
+        self.assertIn("$PSBoundParameters.ContainsKey('PullWith') -and $Phase -ne 'twrp'", body)
+        report = function_text("Build-Report")
+        self.assertIn("The two `sgdisk -i` info reads are omitted", report)
+        self.assertIn("do not switch to dd as a retry", report)
+
     def test_a_hung_command_is_killed_after_the_time_limit_and_the_run_stops(self):
         body = code()
         wrapper = function_text("Invoke-Allowed")
@@ -485,14 +497,14 @@ ALLOW = HEAD + r"""
 $corpus = $extra | ConvertFrom-Json
 $verdicts = @($corpus | ForEach-Object { [pscustomobject]@{ tool = [string]$_.tool; line = [string]$_.line; allowed = [bool](Test-Allowed ([string]$_.tool) ([string]$_.line)) } })
 $plans = [ordered]@{}
-foreach ($ph in 'twrp', 'bootloader', 'twrp-head') {
-    $plan = @($(if ($ph -eq 'twrp-head') { Build-Plan 'twrp' $true 'head' } else { Build-Plan $ph ($ph -eq 'twrp') }))
+foreach ($ph in 'twrp', 'bootloader', 'twrp-dd') {
+    $plan = @($(if ($ph -eq 'twrp-dd') { Build-Plan 'twrp' $true 'dd' } else { Build-Plan $ph ($ph -eq 'twrp') }))
     $plans[$ph] = @($plan | ForEach-Object {
         [pscustomobject]@{ id = [string]$_.Id; gate = [string]$_.Gate; tool = [string]$_.Tool; line = [string]$_.Line; mode = [string]$_.Mode
                            out = [string]$_.Out; required = [bool]$_.Required; allowed = $(if ($_.Tool -eq 'pc') { $true } else { [bool](Test-Allowed $_.Tool $_.Line) }) }
     })
 }
-[pscustomobject]@{ verdicts = $verdicts; twrp = $plans['twrp']; bootloader = $plans['bootloader']; twrp_head = $plans['twrp-head'] } | ConvertTo-Json -Compress -Depth 5
+[pscustomobject]@{ verdicts = $verdicts; twrp = $plans['twrp']; bootloader = $plans['bootloader']; twrp_dd = $plans['twrp-dd'] } | ConvertTo-Json -Compress -Depth 5
 """
 
 # Confirm-Step on made-up answers: each case is {kind, text, ...step fields}; the result is the message or null.
@@ -759,7 +771,7 @@ foreach ($serial in ($extra | ConvertFrom-Json)) {
 
     def test_every_planned_command_is_allowed_and_names_only_the_listed_partitions(self):
         got = run_powershell(ALLOW, stdin=stdin_with(b"[]"))
-        for phase in ("twrp", "bootloader", "twrp_head"):
+        for phase in ("twrp", "bootloader", "twrp_dd"):
             plan = as_list(got[phase])
             with self.subTest(phase=phase):
                 self.assertGreater(len(plan), 10)
@@ -777,30 +789,31 @@ foreach ($serial in ($extra | ConvertFrom-Json)) {
             with self.subTest(part=name):
                 pull = pulls["k-%s-pull" % name]
                 self.assertEqual(pull["out"], name + ".img")
-                self.assertEqual(pull["line"], "exec-out dd if=/dev/block/%s bs=4096 count=%d 2>/dev/null" % (node, size // 4096))
+                self.assertEqual(pull["line"], "exec-out head -c %d /dev/block/%s" % (size, node))
                 again = next(s for s in twrp if s["id"] == "k-%s-again" % name)
                 self.assertEqual((again["mode"], again["line"]), ("hash", pull["line"]))
                 self.assertEqual(next(s for s in twrp if s["id"] == "i-%s-size" % name)["line"], "shell blockdev --getsize64 /dev/block/" + node)
                 self.assertEqual(next(s for s in twrp if s["id"] == "k-%s-sha" % name)["line"], "shell sha256sum /dev/block/" + node)
-        self.assertEqual(pulls["k-gpt-pull"]["line"], "exec-out dd if=/dev/block/sde bs=4096 count=256 2>/dev/null")
-        # -PullWith head: the same plan with the form the October 9 backup tool used, and no dd left in it.
-        twrp_head = as_list(got["twrp_head"])
-        self.assertEqual([s["id"] for s in twrp_head], [s["id"] for s in twrp])
-        head_pulls = {s["id"]: s for s in twrp_head if s["mode"] == "file"}
+        self.assertEqual(pulls["k-gpt-pull"]["line"], "exec-out head -c 1048576 /dev/block/sde")
+        self.assertFalse([s for s in twrp if "dd if=" in s["line"] or "sgdisk -i" in s["line"]])
+        # Explicit -PullWith dd keeps the same plan and the original bounded dd lines.
+        twrp_dd = as_list(got["twrp_dd"])
+        self.assertEqual([s["id"] for s in twrp_dd], [s["id"] for s in twrp])
+        dd_pulls = {s["id"]: s for s in twrp_dd if s["mode"] == "file"}
         for name, node, size in PARTS:
-            with self.subTest(head_part=name):
-                self.assertEqual(head_pulls["k-%s-pull" % name]["line"], "exec-out head -c %d /dev/block/%s" % (size, node))
-                self.assertEqual(next(s for s in twrp_head if s["id"] == "k-%s-again" % name)["line"], head_pulls["k-%s-pull" % name]["line"])
-        self.assertEqual(head_pulls["k-gpt-pull"]["line"], "exec-out head -c 1048576 /dev/block/sde")
-        self.assertFalse([s for s in twrp_head if "dd if=" in s["line"]])
+            with self.subTest(dd_part=name):
+                self.assertEqual(dd_pulls["k-%s-pull" % name]["line"], "exec-out dd if=/dev/block/%s bs=4096 count=%d 2>/dev/null" % (node, size // 4096))
+                self.assertEqual(next(s for s in twrp_dd if s["id"] == "k-%s-again" % name)["line"], dd_pulls["k-%s-pull" % name]["line"])
+        self.assertEqual(dd_pulls["k-gpt-pull"]["line"], "exec-out dd if=/dev/block/sde bs=4096 count=256 2>/dev/null")
+        self.assertFalse([s for s in twrp_dd if "exec-out head" in s["line"]])
         # The df probe is there (the room for the 96 MiB push in G3); bootctl and getprop are not probed at all.
         self.assertEqual(next(s for s in twrp if s["id"] == "p-df-tmp")["line"], "shell df /tmp")
-        self.assertFalse([s for s in twrp + twrp_head if "bootctl" in s["line"] or "getprop" in s["line"]])
+        self.assertFalse([s for s in twrp + twrp_dd if "bootctl" in s["line"] or "getprop" in s["line"]])
         # Nothing in the plan names a partition outside the list.
         for s in twrp:
             for node in re.findall(r"/dev/block/(sd[a-z]\d*)", s["line"]):
                 self.assertIn(node, {n for _, n, _ in PARTS} | {"sde"}, s["line"])
-        for s in twrp + twrp_head + as_list(got["bootloader"]):
+        for s in twrp + twrp_dd + as_list(got["bootloader"]):
             self.assertIsNone(re.search(FORBIDDEN_IN_A_COMMAND, s["line"]), s["line"])
         self.assertEqual([s["line"] for s in as_list(got["bootloader"])][:5],
                          ["devices", "getvar product", "getvar current-slot", "getvar unlocked", "getvar battery-level"])
@@ -911,15 +924,16 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             {"label": "locked", "phase": "bootloader", "out": "dir", "env": {"FAKE_UNLOCKED": "no"}},
             {"label": "battery 29", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "29"}},
             {"label": "battery 30", "phase": "bootloader", "out": "dir", "env": {"FAKE_BATTERY": "30"}},
-            {"label": "dry twrp head", "phase": "twrp", "dry": True, "nopath": True, "out": "dir", "image": True, "pullwith": "head"},
-            {"label": "twrp ok with head pulls", "phase": "twrp", "out": "dir", "image": True, "pullwith": "head"},
-            {"label": "head short read", "phase": "twrp", "out": "dir", "pullwith": "head", "env": {"FAKE_SHORT": "sde9"}},
+            {"label": "dry twrp dd", "phase": "twrp", "dry": True, "nopath": True, "out": "dir", "image": True, "pullwith": "dd"},
+            {"label": "twrp ok with dd pulls", "phase": "twrp", "out": "dir", "image": True, "pullwith": "dd"},
+            {"label": "dd short read", "phase": "twrp", "out": "dir", "pullwith": "dd", "env": {"FAKE_SHORT": "sde9"}},
             {"label": "head pull on the wrong phase", "phase": "bootloader", "pullwith": "head", "out": "dir"},
+            {"label": "dd pull on the wrong phase", "phase": "bootloader", "pullwith": "dd", "out": "dir"},
             {"label": "serial with a trailing newline", "phase": "twrp", "serial": "SER1\n", "out": "dir"},
             {"label": "hang in the bootloader", "phase": "bootloader", "out": "dir", "timeout": 3,
              "env": {"FAKE_HANG": "getvar battery-level"}},
             {"label": "hang on the first command", "phase": "twrp", "out": "dir", "timeout": 3, "env": {"FAKE_HANG": "devices"}},
-            {"label": "hang during a pull", "phase": "twrp", "out": "dir", "timeout": 3,
+            {"label": "hang during a pull", "phase": "twrp", "out": "dir", "timeout": 3, "pullwith": "dd",
              "env": {"FAKE_HANG": "exec-out dd if=/dev/block/sde9 bs=4096 count=24576 2>/dev/null"}},
         ]
         runs = [r for r in runs if not only or r["label"] in only]
@@ -999,6 +1013,9 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
     def test_a_full_twrp_run_backs_up_byte_exact_and_writes_the_reports(self):
         run = self.run_of("twrp ok")
         self.assertIsNone(run["threw"])
+        calls = as_list(run["calls"])
+        self.assertIn("adb -s <serial> exec-out head -c 100663296 /dev/block/sde9", calls)
+        self.assertFalse([c for c in calls if "exec-out dd" in c or "sgdisk -i" in c])
         self.assertIn("Done. Nothing was written to the phone.", run["said"])
         folder = self.folder("twrp ok")
         self.assertRegex(folder["name"], r"^\d{8}-\d{6}-twrp$")
@@ -1041,8 +1058,8 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
         probe = self.probe(label)
         self.assertEqual(probe["status"], "complete")
         steps = self.steps(label)
-        for sid in ("p-sgdisk", "p-sgdisk-boot-a"):
-            self.assertEqual(steps[sid]["status"], "unavailable", sid)
+        self.assertEqual(steps["p-sgdisk"]["status"], "unavailable")
+        self.assertFalse([sid for sid in steps if sid.startswith("p-sgdisk-boot-")])
         # bootctl is not in the pinned TWRP: it is not asked for at all, so it cannot show up as "unavailable" either.
         self.assertFalse([sid for sid in steps if "bootctl" in sid or "getprop" in sid])
         self.assertEqual(steps["p-df-tmp"]["status"], "ok")
@@ -1091,7 +1108,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             "slot b in the bootloader": ("b02", "the current slot is not a"),
             "locked": ("b03", "the bootloader is not unlocked"),
             "battery 29": ("b04", "battery is below 30 percent"),
-            "head short read": ("k-boot_a-pull", "short or long read"),
+            "dd short read": ("k-boot_a-pull", "short or long read"),
             "hang in the bootloader": ("b04", "timed out: fastboot -s <serial> getvar battery-level did not finish within 3 seconds"),
             "hang on the first command": ("t00", "timed out: adb devices did not finish within 3 seconds"),
             "hang during a pull": ("k-boot_a-pull", "timed out: adb -s <serial> exec-out dd if=/dev/block/sde9"),
@@ -1136,31 +1153,32 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
             folder = self.folder("hang during a pull")
             self.assertNotIn("boot_a.img", folder["sums"] or "")
 
-    def test_pull_with_head_backs_up_the_same_bytes_as_the_dd_pull(self):
-        if "twrp ok with head pulls" not in self.runs:
+    def test_explicit_dd_backs_up_the_same_bytes_as_the_default_head_pull(self):
+        if "twrp ok with dd pulls" not in self.runs:
             self.skipTest("scenario was not run")
-        run = self.run_of("twrp ok with head pulls")
+        run = self.run_of("twrp ok with dd pulls")
         self.assertIsNone(run["threw"])
         self.assertIn("Done. Nothing was written to the phone.", run["said"])
         calls = as_list(run["calls"])
-        self.assertFalse([c for c in calls if "exec-out dd" in c])
+        self.assertFalse([c for c in calls if "exec-out head" in c])
         for name, node, size in PARTS:
-            self.assertEqual(calls.count("adb -s <serial> exec-out head -c %d /dev/block/%s" % (size, node)), 2, name)
-        self.assertEqual(calls.count("adb -s <serial> exec-out head -c 1048576 /dev/block/sde"), 2)
-        folder = self.folder("twrp ok with head pulls")
+            self.assertEqual(calls.count("adb -s <serial> exec-out dd if=/dev/block/%s bs=4096 count=%d 2>/dev/null" % (node, size // 4096)), 2, name)
+        self.assertEqual(calls.count("adb -s <serial> exec-out dd if=/dev/block/sde bs=4096 count=256 2>/dev/null"), 2)
+        folder = self.folder("twrp ok with dd pulls")
         sums = dict(line.split("  ", 1)[::-1] for line in folder["sums"].strip().splitlines())
         for idx, (name, node, size) in enumerate(PARTS):
             self.assertEqual(sums[name + ".img"], content_sha(idx, size // 4096), name)
         self.assertEqual(sums["sde-table-head.bin"], content_sha(100, 256))
         if "twrp ok" in self.runs:
             self.assertEqual(sums, dict(line.split("  ", 1)[::-1] for line in self.folder("twrp ok")["sums"].strip().splitlines()))
-        if "dry twrp head" in self.runs:
-            planned = [c for _, _, c in dry_lines(self.run_of("dry twrp head")["said"]) if not c.startswith("(PC only)")]
+        if "dry twrp dd" in self.runs:
+            planned = [c for _, _, c in dry_lines(self.run_of("dry twrp dd")["said"]) if not c.startswith("(PC only)")]
             self.assertEqual(calls, planned)
-            self.assertFalse([c for c in planned if "exec-out dd" in c])
+            self.assertFalse([c for c in planned if "exec-out head" in c])
 
     def test_pull_with_belongs_to_the_twrp_phase_and_a_serial_with_a_newline_is_refused_up_front(self):
         for label, message in (("head pull on the wrong phase", "-PullWith belongs to -Phase twrp"),
+                               ("dd pull on the wrong phase", "-PullWith belongs to -Phase twrp"),
                                ("serial with a trailing newline", "-Serial may hold letters, digits and . _ : - only")):
             if label not in self.runs:
                 continue
@@ -1275,7 +1293,7 @@ class PersistRunbook(unittest.TestCase):
         self.assertTrue(self.doc.startswith("<!-- SPDX-License-Identifier: GPL-3.0-or-later -->\n# "))
         self.assertNotIn("\r", self.doc)
         head = flat(self.doc[:self.doc.index("## The goal")])
-        for phrase in ("a plan; none of it has been run on a phone", "tested against fake tools and file checks only",
+        for phrase in ("G0, G1, G2 and G3 RUN 2026-11-12", "not independently re-verified on the Mac", "fake tools and file checks only",
                        "Nothing here authorizes a write to the phone", "G2b requires the owner's explicit acceptance",
                        "G3, G3b, G4, G5, G5b and G6 each require the owner's separate word", "first menu-start check",
                        "destroy the OPOS install", "powered-off start remains **NOT_RUN**"):
@@ -1286,6 +1304,30 @@ class PersistRunbook(unittest.TestCase):
         for gate, title in {"G3": "Identity write", "G3b": "backup restore", "G4": "boot_a in place",
                             "G5b": "TWRP exit"}.items():
             self.assertIn(title, self.gates[gate].splitlines()[0])
+
+    def test_november_12_results_and_debugfs_trap_keep_their_evidence_limits(self):
+        self.assertIn("G3b, G4 and later remain **NOT_RUN**", flat(self.doc))
+        for gate in ("G0", "G1", "G2"):
+            self.assertIn("**RUN 2026-11-12 (reported phone measurements).**", self.gates[gate])
+        for phrase in ("`product: surfaceduo`", "`secure: yes`", "`has-slot:boot: yes`",
+                       "plain name answered rather than erroring", "a 7, b 7", "successful a yes, b yes", "unbootable a no, b no"):
+            self.assertIn(phrase, flat(self.gates["G0"]))
+        g1 = flat(self.gates["G1"])
+        for phrase in ("`/data` was never mounted", "32 bytes, expected 100663296", "dd: unknown operand 2>/dev/null",
+                       "`head` is now the default", "October 31 Magisk-patched image, not stock Android",
+                       "adbc284164e2cec6b5d63512c382d3c5e144dffe9870f700828c8f363dd48179"):
+            self.assertIn(phrase, g1)
+        for digest in re.findall(r"^    '([0-9a-f]{64})' =", text(), re.M)[1:]:
+            self.assertIn(digest, g1)
+        for phrase in ("whole `sde` LUN", "`Permissive`", "2,828,552 1K-blocks available", "invalid option -- i",
+                       "do not prove that a write will be accepted"):
+            self.assertIn(phrase, flat(self.gates["G2"]))
+        for gate in ("G3b", "G4"):
+            self.assertIn("October 31 Magisk-patched image", flat(self.gates[gate]))
+        for doc in (self.doc, (ROOT / "packaging/duo-os/README.md").read_text(encoding="utf-8")):
+            for phrase in ("No debugfs reads", "`/sys/kernel/debug/gpio`", "timing only", "not proven by a mount",
+                           "very likely gone"):
+                self.assertIn(phrase, flat(doc))
 
     def test_only_the_writing_gates_need_the_owners_word_and_say_so(self):
         marked = {g for g, body in self.gates.items() if "[OWNER SAYS GO]" in body.splitlines()[0]}
@@ -1379,7 +1421,7 @@ class PersistRunbook(unittest.TestCase):
         for phrase in ("no firmware version and no carrier", "not a statement on the page", "REPORTED"):
             self.assertIn(phrase, " ".join(rows["10"]))
         self.assertIn("REPORTED; NOT_RUN", rows["19"][2])
-        self.assertIn("NOT_RUN", rows["20"][2])
+        self.assertIn("identity write RUN; different-payload writes NOT_RUN", rows["20"][2])
         pc = self.doc[self.doc.index("**PC research, November 8, 2026."):self.doc.index("**What the experiment settles.")]
         for label in ("**VERIFIED**", "**REPORTED**", "**NOT_RUN**"):
             self.assertIn(label, pc)

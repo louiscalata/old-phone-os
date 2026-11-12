@@ -122,7 +122,7 @@ its units; a missing one is a FAIL in `opos-selftest` when the image carries the
 Every boot of this image is a RAM-boot from a PC: `fastboot boot boot.img`. Nothing is installed to the phone's
 boot partitions, on purpose.
 
-A gated, read-only-first experiment to find out whether the kernel can live in the phone's own storage is planned in [docs/duo-persistent-install.md](../../docs/duo-persistent-install.md); it has not been run.
+A gated, read-only-first experiment to find out whether the kernel can live in the phone's own storage is recorded in [docs/duo-persistent-install.md](../../docs/duo-persistent-install.md); G0–G3 and G2b acceptance were reported run on November 12, 2026 by the PC session with the owner present (not re-verified on the Mac). G3's identity-write command returned with matching warm and cold hashes; identical bytes cannot show a silently ignored write. The persistent-kernel start has not been run; G3b, G4 and later remain NOT_RUN.
 
 - The image is RAM-booted from a PC; the phone's installed system is left unchanged. No tool here writes
   the boot image or changes the active slot. Making the image start without the PC would need a different,
@@ -135,6 +135,10 @@ A gated, read-only-first experiment to find out whether the kernel can live in t
   a reboot from an initramfs with the flag armed reached stock recovery, not fastboot.
 - **One RAM-boot, never retried.** A kernel that crashed can leave the slot rejecting further RAM-boots with
   `Device Error`. If the boot fails, stop.
+- **No debugfs reads on the RAM-booted OPOS kernel (4.14).** On November 12, a root read of
+  `/sys/kernel/debug/gpio` was reported as the last command before the phone reset and left OPOS. Cause is inferred
+  from timing only. Afterwards userdata no longer showed ext4 magic (not proven by a mount), so the OPOS install is
+  very likely gone. This PC-session report was not re-verified on the Mac; do not repeat it as a read-only probe.
 - **Never run `reboot` or `systemctl reboot` on the RAM-booted phone**: it would start the stock kernel on a
   phone holding a foreign rootfs. Use `reboot bootloader`, re-arm the brake, and RAM-boot once from the PC
   ([docs/duo-usb-install.md](../../docs/duo-usb-install.md), "Rebooting safely / recovering").
@@ -212,7 +216,7 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
 
 ## Network, first run and acceptance
 
-Both dev and release images write `/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf` with `[connection]` and `wifi-sec.pmf=1`: NetworkManager 1.56.1 uses `1` to disable protected management frames (PMF) for every Wi-Fi connection on this phone. This is a security trade-off: management frames are unprotected. In the PC session's phone A/B test on November 12, 2026, a WPA2-PSK connection worked with PMF disabled alone or together with `wifi.cloned-mac-address=permanent`; the cloned-MAC setting alone and neither setting failed. That evidence covers one access point and one run per variant; the image adds only the PMF setting and leaves the base's scan-randomization drop-in alone. Phone check of a freshly built image: **NOT_RUN**.
+Both dev and release images write `/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf` with `[connection]` and `wifi-sec.pmf=1`: NetworkManager 1.56.1 uses `1` to disable protected management frames (PMF) for every Wi-Fi connection on this phone. This is a security trade-off: management frames are unprotected. In the PC session's phone A/B test on November 12, 2026, a WPA2-PSK connection worked with PMF disabled alone or together with `wifi.cloned-mac-address=permanent`; the cloned-MAC setting alone and neither setting failed. That A/B evidence covers one access point and one run per variant. Also on 2026-11-12, the phone joined on a fresh install with the pmf-only file (`wifi-sec.pmf=1`) and reconnected by itself after a reboot, on the same access point: the second and third pmf-only data points. The file was placed by the installer chain's existing step or by hand; this was not a freshly built image. These PC-session results are relayed, not re-verified on the Mac. The image adds only the PMF setting and leaves the base's scan-randomization drop-in alone. Phone check of a freshly built image: **NOT_RUN**.
 
 - **Network.** Settings > Network opens `/network`: radio status, and scan, join, forget, disconnect and Wi-Fi on or off through
   NetworkManager as `droidian`. The `opos-network.conf` drop-in sets `OPOS_NETWORK=1`; the polkit rule is installed only when
