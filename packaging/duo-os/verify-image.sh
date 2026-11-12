@@ -130,6 +130,10 @@ else
     echo "NOTE: no DevTools port in this image"
 fi
 check "phoc has its -E/--exec startup command" "strings $r/usr/bin/phoc | grep -q 'Command (session) that will be ran at startup'"
+# --- wifi compat: BEGIN
+nmf=$r/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf
+check "Wi-Fi compatibility: PMF disabled in a plain root-owned 0644 file with exactly the expected bytes" "[ -f \"$nmf\" ] && [ ! -L \"$nmf\" ] && [ \"\$(stat -c '%u:%g %a' \"$nmf\")\" = '0:0 644' ] && printf '%s\n' '[connection]' 'wifi-sec.pmf=1' | cmp -s - \"$nmf\""
+# --- wifi compat: END
 # --- track: network (Wi-Fi and radio status) ---
 check "the server may manage the phone's network (OPOS_NETWORK=1 drop-in)" "grep -q '^Environment=OPOS_NETWORK=1' $w/opos-server.service.d/20-opos-network.conf"
 check "the Network page and its logic are in the image" "[ -f $r/opt/opos/src/opos/net.py ] && [ -f $r/opt/opos/src/opos/net_page.py ]"

@@ -212,6 +212,8 @@ browser only, not yet on the phone. [OSK.md](OSK.md) has the evidence for the ch
 
 ## Network, first run and acceptance
 
+Both dev and release images write `/etc/NetworkManager/conf.d/90-opos-wifi-compat.conf` with `[connection]` and `wifi-sec.pmf=1`: NetworkManager 1.56.1 uses `1` to disable protected management frames (PMF) for every Wi-Fi connection on this phone. This is a security trade-off: management frames are unprotected. In the PC session's phone A/B test on November 12, 2026, a WPA2-PSK connection worked with PMF disabled alone or together with `wifi.cloned-mac-address=permanent`; the cloned-MAC setting alone and neither setting failed. That evidence covers one access point and one run per variant; the image adds only the PMF setting and leaves the base's scan-randomization drop-in alone. Phone check of a freshly built image: **NOT_RUN**.
+
 - **Network.** Settings > Network opens `/network`: radio status, and scan, join, forget, disconnect and Wi-Fi on or off through
   NetworkManager as `droidian`. The `opos-network.conf` drop-in sets `OPOS_NETWORK=1`; the polkit rule is installed only when
   building with `OPOS_NET_POLKIT=1`, and it grants only `opos-server.service` running as `droidian` (any other value but `0`, empty or unset stops the build, so a typo cannot build an image without it; `verify-image.sh`

@@ -147,7 +147,8 @@ def finish(a):
                 any(part.startswith("opos") for part in name.split("/")[3:]) and name.startswith("etc/systemd/system/") or
                 name.startswith("etc/default/opos") or
                 name.startswith("etc/polkit-1/rules.d/50-opos-") or
-                name == "etc/systemd/journald.conf.d/50-opos-persistent.conf"):
+                name in ("etc/systemd/journald.conf.d/50-opos-persistent.conf",
+                         "etc/NetworkManager/conf.d/90-opos-wifi-compat.conf")):
             names.add(name)
     names.update(identity.REQUIRED)
     names.add("usr/local/sbin/sfduo-composer-watchdog")
