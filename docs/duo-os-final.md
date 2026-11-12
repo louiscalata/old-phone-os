@@ -52,6 +52,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_NET_POLKIT` | unset (a build input; the rule is not installed) | `1` at build time installs the polkit rule that lets `opos-server.service`, running as `droidian`, use the four NetworkManager actions (any value but `1`, `0`, empty or unset stops the build; `verify-image.sh` checks the rule, and with `OPOS_NET_POLKIT` in its environment requires or forbids it). Without it joining Wi-Fi is refused on this image |
 | `OPOS_FIRSTRUN` | `1` (`opos-server.service`) | the first-run setup, `/timezone`, and applying the saved zone at start |
 | `OPOS_MONITOR` | `1` (`opos-server.service`) | the Inference page: the Settings link to `/monitor`, and the routes `/monitor` and `/api/monitor`; `/monitor` and `/api/monitor` answer 404 without it |
+| `OPOS_VOLUME_KEYS` | `1` (`opos-server.service`) | the authenticated state API reports simulated volume from the key reader; `/volume.js` makes the Settings volume read-only and labels it and the top-bar meter simulated. Unset: no script or API field, and the existing practice slider and page bytes stay unchanged. No media, ringer, call or alarm volume changes; see [VOLUME.md](../packaging/duo-os/VOLUME.md) |
 | `OPOS_AGIW_URL`, `OPOS_AGIW_HOST` | unset (optional `/etc/opos/monitor.env`; the image ships only `monitor.env.example`) | where the Inference page looks for an AGIW monitor on a computer you own (loopback or private network; unset: no monitor is fetched), and the `Host` header to send it; see the Inference page section of the image README |
 | `OPOS_LOCAL_URL` | unset (the image does not set it and `monitor.env.example` does not list it) | the Helper's setting, not an Inference page setting: the page's check of the phone's own model server follows it only if you already set it for the Helper, and setting it changes the Helper too (it stops checking `/models` for a known model and drops its alternates); see the Inference page section of the image README |
 | `OPOS_KIOSK_RESTART` | unset (on) | `0` stops the server restarting Chromium after a zone change |
@@ -89,6 +90,7 @@ unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot preserve a root shel
 
 ## What is still simulated
 
+- **Volume keys report simulated state only.** The reader publishes a bounded percentage for Settings and the top bar; no audio mixer is connected and sound is unchanged. Missing or invalid state is shown as unavailable. Image build and verification, native systemd lifecycle, browser, phone and audible checks for this consumer remain **NOT_RUN**; local fake-input, HTTP and Node VM checks do not establish them.
 - **Calls and texts are simulated.** The base has ModemManager (through ofono2mm) and `mmcli` can read the modem and SIM, so the
   Network page shows the real radio's state, but `src/opos/mm_modem.py` is not wired to the phone page. Nothing is dialled, sent
   or received; the page says so.

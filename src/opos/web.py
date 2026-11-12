@@ -20,6 +20,7 @@ import opos.assist as assist
 from opos.advisor import GlimmerAdvisor
 import opos.setup.config as setup_config
 from opos.setup import prefs
+from opos import volume
 
 
 class _Server(ThreadingHTTPServer):
@@ -327,6 +328,8 @@ class Phone:
         out["notice_app"] = "phone" if self._in_call and not self.status.startswith("error:") else self.status_app
         # Only the active, known in-memory modem is identified as simulated.
         out["simulation"] = {"modem": practice.simulated(self.essentials)}
+        if volume.enabled():
+            out["volume_keys"] = volume.snapshot()
         if self.live:
             out["battery_source"] = {"source": self.sim.source, "health_source": self.sim.health_source}
         out["prefs"] = self._preferences()
@@ -826,6 +829,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if fonts.serve(self, path):
             return
+        if volume.serve(self, path):
+            return
         if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
             return
         if path == "/network":  # track: network
@@ -854,6 +859,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = monitor_web.link_bytes(body)  # track monitor: the Settings link to /monitor while OPOS_MONITOR=1, else the same bytes
             if path == "/":
                 body = apps_page.inject_bytes(body, nonce)  # More apps, only when OPOS_APPS names an app; otherwise the same bytes
+                body = volume.inject_bytes(body, nonce)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":

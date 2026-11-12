@@ -14,6 +14,8 @@ EnvironmentFile=-/etc/default/opos-osk
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=OPOS_BATTERY=live
 Environment=OPOS_ON_PHONE=1
+# Physical keys report a simulated volume; no media/ringer mixer is connected.
+Environment=OPOS_VOLUME_KEYS=1
 # Two-screen span. The kiosk window covers both panels and the hinge, and Chromium on Linux cannot
 # report where the hinge is, so the server says. The value is PANE,HINGE in CSS px. The Duo's 2784x1800
 # output is two 1350 px panels and an 84 px hinge (the port's display-panel file) and phoc.ini sets

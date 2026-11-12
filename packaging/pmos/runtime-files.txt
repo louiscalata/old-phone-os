@@ -108,6 +108,8 @@ src/opos/update_client.py
 src/opos/update_page.py
 src/opos/vcard.py
 src/opos/version.py
+src/opos/volume.py
+src/opos/volumekey.py
 src/opos/web.py
 src/opos/web_static/body-1.html
 src/opos/web_static/body-2.html
@@ -146,3 +148,4 @@ src/opos/web_static/phone-a.js
 src/opos/web_static/phone-b.css
 src/opos/web_static/phone-b.html
 src/opos/web_static/phone-b.js
+src/opos/web_static/volume.js

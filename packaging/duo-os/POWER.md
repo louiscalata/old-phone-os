@@ -13,7 +13,8 @@ chooses light and cancels that held sequence until release. A real long hold nev
 one recovery light attempt, rather than lighting again on every tick. On every reopen the daemon finds the input device by the exact sysfs name
 `qpnp_pon`, never an event number. That device also reports KEY_VOLUMEDOWN (114); only KEY_POWER (116) is handled,
 and every other key code is ignored. Evdev timestamps use `CLOCK_MONOTONIC` so wall-clock corrections cannot stretch
-debounce or shorten a long hold. Fold/lid, volume-key behavior, idle, suspend and logind policy are unchanged.
+debounce or shorten a long hold. Fold/lid, idle, suspend and logind policy are unchanged. A separate
+[volume-key reader](VOLUME.md) now reports simulated volume; it does not change this power reader or sound.
 
 Blank is a lease that the daemon must keep justifying. Its main loop uses `select()` and nonblocking reads with a
 retained partial-event buffer. It rereads both panels on every loop tick; a remembered target never establishes
