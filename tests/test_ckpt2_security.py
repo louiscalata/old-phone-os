@@ -335,8 +335,11 @@ class PageBytes(unittest.TestCase):
             self.addCleanup(time.tzset)
             bodies = [web.page("t" * 43, "n" * 22).encode(),
                       web.page("t" * 43, "n" * 22, span=web.parse_span("675,42")).encode(), home({}), home(switches)]
-        expected = [(100696, "1592ee9cdc8ec87fdc27d723ff8b65aa667363e75f331f65102e2f2082c395db"),
-                    (100739, "eddba922a9e66c97aa33ae34bb2d88b7de9cfa2d9f3802e266ab14379d62621b"),
-                    (100768, "41f98e6e49a6ae0842529146c43e0a90e4d753c4abacfaa8d3e36d086a51f076"),
-                    (101812, "dfc7b34f4a7040f60ea4b2955049177a329e4fa43380f7d2905e672f623b1665")]
+        # Re-recorded for corrected component, simulation and hosted-demo privacy notices.
+        # Under these same fixtures, only those three notice blocks differ from the prior copy.
+        # Re-recorded again when the privacy notice went back to naming the Inference page (22 bytes longer each).
+        expected = [(100754, "66d1a59b5cf0daa15d316e07cf19c62b8db7692cf67ec0571215d817997ecdba"),
+                    (100797, "ba98da626d192742379c8bbbc1b12c190fdf884ed43c145cbea4a613322b2edc"),
+                    (100826, "843f5a36985decc89e9e673ed05709e01dbcf21cca48970aacc0de25bf47b179"),
+                    (101870, "afb2a2812d91c92bc1f8e2d237f4200f1bce52005c9e096d036963dc2b577a89")]
         self.assertEqual([(len(body), hashlib.sha256(body).hexdigest()) for body in bodies], expected)

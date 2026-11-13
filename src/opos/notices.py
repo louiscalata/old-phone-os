@@ -91,7 +91,7 @@ PRIVACY = (
     "Old Phone OS Interface sends no telemetry or analytics.",
     "The phone and setup pages are loopback-only; the public demo server listens on the network.",
     "By default the Helper uses its built-in rules and programs on this phone only.",
-    "Local phone and setup code sends nothing off the phone unless you opt in to Wikipedia search, a Helper or Inference route to your computer on a private network, paid cloud use with your key, or coding tool installation.",
+    "Local phone and setup code sends nothing off the phone unless you opt in to Wikipedia search, pointing the Helper or the Inference page at a computer you own on your private network, paid cloud use with your key, or coding tool installation.",
     "Hosted demo: entered numbers, messages and questions go to its server. Use fictional information.",
     "System software, including postmarketOS and Chromium, may use the network independently of OPOS.",
 )

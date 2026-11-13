@@ -30,7 +30,7 @@ Start with:
 
 This was a hackathon project. The desktop demo, the public demo and the rest of this README describe the earlier prototype, Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is kept as a reference. The battery rules and the helper it introduced are the base of the Duo OS. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
 
-## Try the desktop simulation
+## Quickstart: desktop simulation
 
 Requires **Python 3.11+ and a web browser**. No package installation, account or model download is needed. Open a terminal in the extracted folder containing this README, then run:
 
