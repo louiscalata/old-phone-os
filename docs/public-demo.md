@@ -8,9 +8,10 @@ route dispatcher, model setup or startup. `opos.web` and `secure.check_bind`
 continue to reject non-loopback binds. The public server also skips the standard
 HTTP server's reverse-DNS startup lookup.
 
-Hackathon prototype. This public demo simulates the battery, calls and messages;
+Hackathon prototype. This public demo simulates the battery, tasks, calls and messages;
 it is not a phone operating system and has not run on a physical phone.
-The public demo is live at https://opos-demo-production.up.railway.app.
+The public demo is hosted at https://opos-demo-production.up.railway.app.
+The public demo sends entered numbers, messages and questions to its hosted server. Use fictional information. It makes no real calls and uses no AI model.
 Muse Glimmer is off there; Why, Plan and Ask use deterministic battery rules.
 
 ## Run locally
@@ -26,8 +27,8 @@ Open `http://localhost:8080/?demo=1` (it starts unlocked). Use exactly the host 
 `http://127.0.0.1:8080/` returns 421 because only that host is accepted. If port 8080 is taken, change both
 numbers, for example `OPOS_PUBLIC_HOSTS=localhost:8787 PORT=8787`. The server prints the URL to open. Change the battery
 slider, then open the top battery bar. At the initial 60%, Undo on maps turns
-the soft-paused task back on; low-battery and heat floors still protect calls
-and messages. Why, Plan and Ask answer from the current rules and explicitly
+the soft-paused simulated task back on; low-battery and heat floors still keep simulated calls
+and messages allowed. Why, Plan and Ask answer from the current rules and explicitly
 identify the public mode.
 Settings such as theme are browser preferences, never host preference files.
 
@@ -55,8 +56,13 @@ OPOS_TRUST_PROXY=1
 
 Railway supplies `PORT`; the public process binds `0.0.0.0:$PORT` (8080 when
 omitted locally). The host allowlist above uses the live demo domain.
-Use one replica/process, no persistent volume, and no model credentials. All
-state is process-local and disappears on restart or replacement.
+Use one replica/process, no persistent volume, and no model credentials. Leave
+`OPOS_APPS` unset. Simulation sessions are process-local, but the current public
+entry point retains the shared call-log observer. If `OPOS_APPS` includes `calls`
+and the state directory is writable, simulated calls can write numbers and call
+events to `calls.json` in that directory. That log is shared across visitors
+and is not cleared by session expiry or a process restart. The deployed
+environment and whether any such file exists have not been verified.
 
 `OPOS_PUBLIC_HOSTS` is mandatory, with up to 32 exact authorities, including a
 port if the browser sends one. There are no wildcard, suffix, implicit localhost

@@ -1,15 +1,15 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Old Phone OS (OPOS)
 
-Old Phone OS (OPOS) is a phone interface for the Microsoft Surface Duo 1. It is the only interface, across both screens, of a Linux image built on the community Droidian port for the Duo. Droidian supplies the kernel, the drivers and the system services; OPOS supplies everything the owner sees and the battery rules. It is designed to keep calls and messages available and to pause less essential work toward a time the owner chooses. It is for people who rely on an older phone, whatever their age or budget.
+Old Phone OS (OPOS) is an experimental dual-screen web interface for the Microsoft Surface Duo 1, built on the community Droidian Linux port. It shows which simulated tasks its battery rules would pause toward a time the owner chooses.
 
-OPOS is a work in progress and is not yet a complete phone operating system. The image starts only when booted from a PC, calls and texts are simulated, and nothing below has been measured for speed, battery life or stability. Do not rely on it to call for help.
+Tasks, calls and texts are simulated, and the Linux image requires a PC to start. Battery life and long-term stability have not been measured. Installing the Duo image replaces Android's data. A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata). Do not rely on OPOS to call for help.
 
 ## Surface Duo status
 
 | Area | State |
 |---|---|
-| First run on the phone | November 7, 2026: the OPOS-only image ran on one Surface Duo 1, RAM-booted from a PC: the kernel is started from the PC each time and the phone's boot partition is not changed, so a power cycle returns it to Android. |
+| First run on the phone | November 7, 2026: the OPOS image ran on one Surface Duo 1, RAM-booted from a PC. A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata). |
 | Duo OS image, checkpoint 1 | Pull request #10 says this image was accepted on the device on November 8, 2026 for touch, the Hand setting, the on-screen keyboard and Settings. The files in this repository record the November 7 RAM-boot. They do not record that November 8 session on their own, and they do not record a flashed boot partition. |
 | Duo OS image, checkpoint 2 | Pull request #10 says a later image was built and that its install and selftest were not checked independently. |
 | Calls and texts on the Duo | Still simulated. The ModemManager adapter is not wired in. |
@@ -30,7 +30,7 @@ Start with:
 
 This was a hackathon project. The desktop demo, the public demo and the rest of this README describe the earlier prototype, Louis Calata's solo entry in the Meta Global AI Developer Hackathon with Cerebral Valley (November 2026). It is kept as a reference. The battery rules and the helper it introduced are the base of the Duo OS. [Watch the demo video](https://youtu.be/ZiFa_5aUD_Y). Meta model developers: see the [field report](docs/meta-model-field-report.md).
 
-## Quickstart — under five minutes
+## Try the desktop simulation
 
 Requires **Python 3.11+ and a web browser**. No package installation, account or model download is needed. Open a terminal in the extracted folder containing this README, then run:
 
@@ -39,6 +39,8 @@ PYTHONPATH=src python3 -m opos.web --port 8765
 ```
 
 Open **http://127.0.0.1:8765/?demo=1** for the unlocked simulator controls. **Leave this terminal running; Ctrl-C to stop.** Or [open the public demo](https://opos-demo-production.up.railway.app), which answers from battery rules with Glimmer off.
+
+The public demo sends entered numbers, messages and questions to its hosted server. Use fictional information. It makes no real calls and uses no AI model.
 
 In this demo the battery, calls and messages are simulated; the Surface Duo routes that read a real battery are described under [Limits](#limits), and on-phone Muse inference is untested. The noon panel's estimate is a snapshot: a separate recorded rules-only noon-to-16:00 run, with no model or owner overrides, displayed **0% at 16:00; goal not met (`goal_met=false`)**.
 
@@ -75,7 +77,7 @@ You keep an older phone whose worn battery usually dies by mid-afternoon. With O
 
 Scenario written by Meta Muse Spark 1.3 via Gumloop, reproduced verbatim; it is not a measured phone result.
 
-OPOS is a prototype phone interface for people who keep an older phone as its battery wears out. It pauses less essential work such as email, maps and photos backup **toward a time the owner chooses**, while calls and messages stay allowed. Optional open-weight Meta Muse Glimmer 30B runs on the owner's computer, explains decisions when asked, and may pause extra tasks. It never re-enables anything the rules paused or touches calls, messages or alarms; the rules work without it. The postmarketOS kiosk runs the same simulation: it does not yet read the phone's real battery or use its modem.
+OPOS demonstrates battery rules for an older phone. It pauses less essential work in a task simulation, such as email, maps and photos backup, **toward a time the owner chooses**, while simulated calls and messages stay allowed. Optional open-weight Meta Muse Glimmer 30B runs on the owner's computer, explains decisions when asked, and may pause extra simulated tasks. It never re-enables anything the rules paused or changes the simulated calls, messages or alarms; the rules work without it. The postmarketOS kiosk runs the same simulation: it does not yet read the phone's real battery or use its modem.
 
 <p>
   <img src="docs/assets/screen-lock.png" width="240" alt="Desktop simulation lock screen at 12:00 with 60% battery, a worn-battery notice saying 2 tasks paused for 4 PM, and Unlock and Call buttons.">
@@ -123,7 +125,12 @@ The screenshots use the first chronological run; both runs of each action and ap
 ## Try it online
 
 [Open the public simulation](https://opos-demo-production.up.railway.app) —
-simulation-only demo with no model; state resets after 15 minutes idle.
+simulation-only demo with no model; sessions expire after 15 minutes idle.
+The public demo sends entered numbers, messages and questions to its hosted server.
+Use fictional information. It makes no real calls and uses no AI model.
+If the server inherits `OPOS_APPS=calls` and has a writable state directory,
+simulated call records may persist in a shared `calls.json` file; session expiry
+does not clear that file. See [the storage limitation](docs/public-demo.md).
 The browser demo gives each visitor a temporary phone with
 simulated battery, calls and messages. It is not a phone operating system and
 has not run on a physical phone. All public helper answers come from the rules;
@@ -137,15 +144,13 @@ for the separate Railway entry point, isolation and local run command.
 
 Battery state drives a rule decision, then an advisory plan and explanation. Model text cannot enable a task the rule router deferred.
 
-Hard floors come first and nothing the owner does overrides them: calls, messages and alarms are always allowed (the desktop demo simulates calls and messages only); at 45 C or more only essential tasks run, charging or not; on battery, with less than 15% of the charge usable (the battery rules' CRITICAL mode), only essentials run; below a small reserve kept for calls (at least 0.7% charge) only essentials run, even while charging; and the worn-battery reserve, which engages only when battery health is below 50%, may pause other tasks, even the app in use, to keep charge for calls.
+The rules below decide simulated task status; they do not stop other applications or provide phone service. Hard floors come first and nothing the owner does overrides them: calls, messages and alarms are always allowed in the task simulation; at 45 C or more only essential tasks run, charging or not; on battery, with less than 15% of the charge usable (the battery rules' CRITICAL mode), only essentials run; below a small reserve kept for calls (at least 0.7% charge) only essentials run, even while charging; and the worn-battery reserve, which engages only when battery health is below 50%, may pause other tasks, even the app in use, to keep charge for calls.
 
 Within those floors the router decides what the battery can afford. While charging, other tasks may run. With a daily goal, the energy budget is cumulative: non-essential tasks are funded in a fixed order (useful before optional, then lower cost first, then by name) and each funded task's cost is subtracted before the next is checked. Without a goal, optional tasks need an effective charge of 80 or more and useful tasks need enough charge for 4 hours. Effective charge = level x battery health. The governor intersects the router's choice with its own rule floor, so model advice can only pause more.
 
 Goal-saving pauses, the router's affordability pauses (even when the router reports CRITICAL) and pauses Glimmer adds are soft: the owner's Undo, or using the app in the foreground, may override them. An Undo lasts until the mode changes; a task held by a hard floor shows that floor as its reason and Undo has no effect on it. The mode shown (NORMAL, SAVER or CRITICAL) comes from the router and the battery rules; what runs is decided by the final allowed and paused lists, and each pause shows its reason. The home screen, battery panel, lock screen, helper facts and simulated drain all use the same final decision. See [docs/design-safety-floor.md](docs/design-safety-floor.md).
 
 Agentic loop with visible helper: observe battery state -> decide with router -> plan (Plan proposes an order and does not run the steps itself) -> act -> explain -> undo. Helper text never changes what the phone does; Glimmer's background advisor can pause extra non-essential tasks, never fewer than the router.
-
-Glimmer may only pause additional non-essential tasks. It cannot allow anything the router deferred and cannot touch calls, messages or alarms.
 
 ## Meta AI in OPOS
 
@@ -239,7 +244,7 @@ The desktop demo is simulation only, and so is the postmarketOS kiosk: both use 
 
 The [Windows installer remains untested at runtime](ROADMAP.md#simulated-or-not-yet-verified); that path is documented separately.
 
-**Surface Duo: one phone, one day (November 7, 2026).** [OPOS as the whole OS](packaging/duo-os/README.md) ran on the owner's Duo, RAM-booted from a PC with no Android, and the owner confirmed on the screens that it was working; logs from the phone showed the real battery read from sysfs. [OPOS on stock Android](docs/duo-android.md) ran through Termux with the real battery, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens per second. Nothing here measures speed, battery life or stability over time. Calls and texts are still simulated on both routes. The OS image is RAM-boot only, so a power cycle returns the phone to Android and wipes it. Pull request #10 says checkpoint 1 was accepted on November 8, 2026 for touch, Hand, the on-screen keyboard and Settings. That sentence is not a second session written down in these files, and it is not a flashed boot. The older [Droidian USB notes](docs/duo-usb-install.md) are historical.
+**Surface Duo: one phone, one day (November 7, 2026).** [OPOS as the whole OS](packaging/duo-os/README.md) ran on the owner's Duo, RAM-booted from a PC with no Android, and the owner confirmed on the screens that it was working; logs from the phone showed the real battery read from sysfs. [OPOS on stock Android](docs/duo-android.md) ran through Termux with the real battery, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens per second. Nothing here measures speed, battery life or stability over time. Tasks, calls and texts are simulated on both routes. The image requires a PC to start. A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata). Pull request #10 says checkpoint 1 was accepted on November 8, 2026 for touch, Hand, the on-screen keyboard and Settings. That sentence is not a second session written down in these files, and it is not a flashed boot. The older [Droidian USB notes](docs/duo-usb-install.md) are historical.
 
 ## Documentation
 

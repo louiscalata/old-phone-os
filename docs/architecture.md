@@ -82,9 +82,10 @@ is usable. The Helper app disables Send; the simulator's Ask button instead retu
 explanation without calling a model. The public demo answers from rules at every charge level.
 Model explanations and the Plan order never execute actions.
 
-`web.Phone` uses `DrainSim` and `ScreenModem`; the hardware reader and the ModemManager adapter are
-not wired into this web runtime. The postmarketOS kiosk's `opos-server` service runs this same server, so the
-kiosk is simulated in the same way.
+The desktop demo and postmarketOS kiosk use `DrainSim`. The Surface Duo routes use `LiveBattery` when
+started with `--live-battery` or `OPOS_BATTERY=live`. Every route still uses `ScreenModem`; the
+ModemManager adapter is not connected. Tasks, calls and texts are simulated: policy decisions describe
+which tasks would pause, without controlling external apps.
 
 `web.Phone` computes one final decision per tick, which the home screen, battery panel, lock-screen story,
 helper facts and simulated drain all read; [design-safety-floor.md](design-safety-floor.md) describes the

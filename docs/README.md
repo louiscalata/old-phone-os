@@ -4,7 +4,7 @@
 Old Phone OS Interface is a prototype. The desktop demo simulates the battery, calls and texts; recorded QEMU
 results and model experiments have their own limits. The postmarketOS kiosk uses the same simulated battery
 and modem as the desktop demo. The Surface Duo routes read the phone's real battery and ran on one owner's
-phone on November 7, 2026, with calls and texts still simulated and no speed, battery-life or stability
+phone on November 7, 2026. Tasks, calls and texts remain simulated and no speed, battery-life or stability
 measurements. Documents marked **historical** preserve earlier work and are not current instructions or
 evidence about the current source.
 

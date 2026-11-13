@@ -26,7 +26,7 @@ Describe the change
 Explain its scope and checks.
 
 Provenance: <id>
-Co-Authored-By: Name <email@example.com>
+Co-Authored-By: Name <co-author-email>
 ```
 
 Every commit needs its own truthful row, or must be folded into an aggregate commit whose truthful row covers everything squashed. Never borrow an ID.

@@ -55,7 +55,7 @@ SOURCE_URL = "github.com/louiscalata/old-phone-os"
 
 # From packaging/pmos/*/APKBUILD depends=; requirements.txt lists no packages.
 THIRD_PARTY = (
-    "postmarketOS, the base system the packages are built for",
+    "Packages the postmarketOS build depends on:",
     "Linux kernel (GPL-2.0)",
     "Python 3 standard library (PSF License); no other Python packages are used",
     "Chromium (BSD-3-Clause and others), shows the phone screen",
@@ -64,7 +64,8 @@ THIRD_PARTY = (
     "NetworkManager (GPL-2.0-or-later)",
     "polkit (LGPL-2.0-or-later) and D-Bus (AFL-2.1 or GPL-2.0-or-later)",
     "OpenRC (BSD-2-Clause) and psmisc (GPL-2.0-or-later)",
-    "Each of these keeps its own license and copyright; they are installed from the postmarketOS package repositories, not changed by Old Phone OS Interface.",
+    "These postmarketOS repository packages retain their licenses and copyrights.",
+    "The Duo image uses Droidian, phoc and systemd. This is not a complete component or license inventory for redistributing it.",
 )
 
 AFFILIATION = (
@@ -81,7 +82,7 @@ RISKS = (
     "Unlocking the bootloader or replacing the operating system may void your warranty.",
     "Unlocking the bootloader usually erases all data on the phone.",
     "A failed or interrupted install can leave the phone unable to start (bricked).",
-    "Emergency calling is not guaranteed. Keep another way to call for help.",
+    "Tasks, calls and texts are simulated. OPOS cannot place an emergency call; keep another way to call for help.",
 )
 
 RESTORE_STOCK = "[restore guide: unpublished]"
@@ -90,8 +91,9 @@ PRIVACY = (
     "Old Phone OS Interface sends no telemetry or analytics.",
     "The phone and setup pages are loopback-only; the public demo server listens on the network.",
     "By default the Helper uses its built-in rules and programs on this phone only.",
-    "Old Phone OS Interface's own code sends nothing off the phone unless you opt in: ticking Search Wikipedia for a question, pointing the Helper or the Inference page at a computer you own on your private network, turning on the paid cloud option with your own key, or choosing coding tools to install during setup.",
-    "postmarketOS, Chromium and other system software may use the network on their own; that is outside Old Phone OS Interface's control.",
+    "Local phone and setup code sends nothing off the phone unless you opt in to Wikipedia search, a Helper or Inference route to your computer on a private network, paid cloud use with your key, or coding tool installation.",
+    "Hosted demo: entered numbers, messages and questions go to its server. Use fictional information.",
+    "System software, including postmarketOS and Chromium, may use the network independently of OPOS.",
 )
 
 CONTACT = "See the project repository for support."

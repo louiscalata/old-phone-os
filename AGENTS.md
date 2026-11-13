@@ -5,13 +5,13 @@ Notes for coding agents working in this repository.
 
 ## Overview
 
-Old Phone OS (OPOS) is a phone interface for people who keep an older phone as its battery wears out. It keeps calls, messages and alarms available and pauses less essential work toward a time the owner chooses. The rules decide. A model may only pause more. It cannot turn paused work back on, and it cannot touch calls, messages or alarms.
+Old Phone OS (OPOS) is an experimental web interface that shows which simulated tasks its battery rules would pause toward a time the owner chooses. Tasks, calls and texts are simulated; the rules do not stop other applications or provide phone service. A model may only pause more simulated tasks. It cannot turn paused tasks back on or change the simulated calls, messages or alarms.
 
 Say what was run and what was not. Simulated battery, calls and texts stay labelled as simulated. A check that needs the physical phone stays **NOT_RUN** until that phone run is recorded.
 
 ## What OPOS is
 
-The Surface Duo OPOS, under `packaging/duo-os/`, is the real OPOS. It is a Linux image on the community Droidian port, with OPOS as the only interface. It has been RAM-booted on one phone. It has not been flashed. Calls and texts on that image are still simulated.
+The Surface Duo OPOS, under `packaging/duo-os/`, is the real OPOS. It is a Linux image on the community Droidian port, with OPOS as the only interface. It has been RAM-booted on one phone. It has not been flashed. Tasks, calls and texts on that image are still simulated.
 
 The desktop demo, the public demo and the Meta hackathon material are an earlier prototype. The README labels that prototype with this sentence: "This was a hackathon project."
 

@@ -2,16 +2,17 @@
 <header class="public-masthead">
   <div class="public-edition"><span>Jaryo / A little more life</span><span>Meta Global AI Developer Hackathon · 2026</span></div>
   <h1>Old Phone OS Interface</h1>
-  <p class="public-deck">A quieter phone interface that pauses less essential work to keep calls and messages going.</p>
+  <p class="public-deck">An experimental phone interface that shows which simulated tasks its battery rules would pause.</p>
   <div class="public-byline"><span>Interactive edition · Simulation only</span><nav aria-label="Project links"><a href="https://github.com/louiscalata/old-phone-os">View source ↗</a><a href="https://fortheloveof.studio/code/old-phone-os/">Read the story ↗</a></nav></div>
 </header>
 <section class="public-guide" aria-label="About this demo">
-  <p class="public-disclaimer">Hackathon prototype. This public demo simulates the battery, calls and messages; it is not a phone operating system and has not run on a physical phone.</p>
+  <p class="public-disclaimer">Hackathon prototype. This public demo simulates the battery, tasks, calls and messages; it is not a phone operating system and has not run on a physical phone.</p>
+  <p class="public-disclaimer">The public demo sends entered numbers, messages and questions to its hosted server. Use fictional information. It makes no real calls and uses no AI model.</p>
   <ol class="public-steps">
     <li><span>01</span><div><a href="/?demo=1#try-phone">Open ?demo=1 controls</a><small>Starts unlocked at noon: 60% charge × 60% health is about 36% usable. Open the top battery bar for the 4 PM goal and time-left estimate.</small></div></li>
-    <li><span>02</span><div>Undo a soft pause first<small>At 60%, click Undo beside maps in battery details. Maps resumes and the estimate gets shorter. Close the panel before changing the battery.</small></div></li>
-    <li><span>03</span><div>Try the low-battery floor<small>Set Battery to 20%. Non-essential tasks pause. Enter “Why are maps paused?” and Ask (Show helper if hidden): battery rules explain the pauses while calls and messages stay allowed.</small></div></li>
-    <li><span>04</span><div>Try charging and heat<small>Tick Charging: tasks can resume. Set Temp to 45°C: only essentials run, even charging. Restore Temp to 30°C; at 0% Battery, the call reserve still pauses other tasks.</small></div></li>
+    <li><span>02</span><div>Undo a soft pause first<small>At 60%, click Undo beside maps in battery details. The simulated maps task resumes and the estimate gets shorter. Close the panel before changing the battery.</small></div></li>
+    <li><span>03</span><div>Try the low-battery floor<small>Set Battery to 20%. Simulated non-essential tasks pause. Enter “Why are maps paused?” and Ask (Show helper if hidden): battery rules explain the pauses while simulated calls and messages stay allowed.</small></div></li>
+    <li><span>04</span><div>Try charging and heat<small>Tick Charging: simulated tasks can resume. Set Temp to 45°C: only simulated essentials remain allowed, even charging. Restore Temp to 30°C; at 0% Battery, the call reserve still pauses other tasks.</small></div></li>
     <li><span>05</span><div>See the saving steps and Why?<small>Restore Battery to 60% and untick Charging. Plan proposes dim screen, short screen timeout, then batch sync; it does not run them. Why? explains the pauses from battery rules. Muse Glimmer is off here.</small></div></li>
   </ol>
   <p id="public-session" role="status" aria-live="polite">Your own temporary phone. Resets after 15 minutes away or when the demo is busy.</p>

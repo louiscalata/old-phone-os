@@ -1,12 +1,14 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # OPOS OS for the Surface Duo
 
-An OPOS phone with no Android system: the Surface Duo boots a Linux rootfs whose only interface is OPOS.
+An experimental Surface Duo interface on a Droidian Linux rootfs, displayed in a Chromium kiosk.
+Tasks, calls and texts are simulated; the battery rules show which less essential tasks would pause.
+The image requires a PC to start. Do not rely on it for emergency calls.
 
 Status, November 7, 2026: **ran on the owner's Surface Duo 1, RAM-booted from a PC; the owner looked at the
 screens and said "it's working".** One phone, one day, one person watching. It is not an installed system: it
-lives on userdata and starts only from a RAM-boot (see below). A power cycle can return the phone to Android, destroying
-the OPOS install: read-only observations from the PC session on November 11, 2026 record that any stock Android boot on
+lives on userdata and starts only from a RAM-boot (see below). A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata).
+Read-only observations from the PC session on November 11, 2026 record that any stock Android boot on
 OPOS userdata applies metadata encryption in place, leaving the OPOS rootfs unreadable to Linux.
 The pieces added since (keyboard, Network page, first run and time zone, acceptance suite) are built and tested off the phone only.
 [docs/duo-os-final.md](../../docs/duo-os-final.md) says what the OS does now, what is still simulated, what is not known, and

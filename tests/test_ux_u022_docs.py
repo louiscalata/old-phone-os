@@ -7,7 +7,7 @@ class TestUxU022Docs(unittest.TestCase):
     def test_readme_demo_steps_open_sheet(self):
         root = pathlib.Path(__file__).resolve().parent.parent
         text = (root / "README.md").read_text(encoding="utf-8")
-        quickstart = text.split("## Quickstart", 1)[1].split("## Try the battery features", 1)[0]
+        quickstart = text.split("## Try the desktop simulation", 1)[1].split("## Try the battery features", 1)[0]
         for phrase in ("Python 3.11+", "PYTHONPATH=src python3 -m opos.web --port 8765",
                        "http://127.0.0.1:8765/?demo=1", "Leave this terminal running; Ctrl-C to stop"):
             self.assertIn(phrase, quickstart)

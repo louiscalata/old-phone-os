@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opos"
 version = "0.1.0"
-description = "Old Phone OS Interface: a prototype phone interface that pauses less essential work so the battery can last until a time the owner chooses"
+description = "Experimental Surface Duo 1 web interface with simulated battery-rule tasks, calls and texts"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"

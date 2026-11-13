@@ -433,7 +433,7 @@ class PublicBoundary(unittest.TestCase):
     def test_landing_keeps_page_budget_and_required_content(self):
         self.assertLessEqual(len(web.page().encode()), 102400)
         page = public.landing('a' * 43, 'b' * 43, demo=True)
-        self.assertIn('Hackathon prototype. This public demo simulates the battery, calls and messages;', page)
+        self.assertIn('Hackathon prototype. This public demo simulates the battery, tasks, calls and messages;', page)
         self.assertIn('has not run on a physical phone.', page)
         self.assertIn('https://github.com/louiscalata/old-phone-os', page)
         self.assertIn('https://fortheloveof.studio/code/old-phone-os/', page)

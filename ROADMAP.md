@@ -8,7 +8,8 @@ Dated updates below record later source work and its verification limits.
 ## Working today
 
 - Battery governor: Normal, Saver and Critical modes from battery level, battery health,
-  temperature and a daily goal; calls and messages stay on in every mode.
+  temperature and a daily goal; simulated calls and messages stay allowed in every mode.
+  Task pauses are simulated; the rules do not stop other applications.
 - Helper with Meta Muse Glimmer 30B on your own computer: supports Why?, Plan and Ask using plain
   facts about the phone. In the final November 3 desktop capture, all four Ask and all four Why?
   requests returned Muse Glimmer within 115 s, with no fallback. Ask took 51.699/53.077 s in dark
@@ -28,12 +29,12 @@ Dated updates below record later source work and its verification limits.
   packaged tinydm renderer hook. See [docs/pmos.md](docs/pmos.md) for that run and its limits; an
   image built from other source needs its own boot check. An earlier run that set the renderer by
   hand is historical.
-- Surface Duo with OPOS as the whole OS ([packaging/duo-os](packaging/duo-os/README.md)): on November 7,
+- Surface Duo with OPOS as the web interface on Droidian ([packaging/duo-os](packaging/duo-os/README.md)): on November 7,
   2026 an image built from this repository's source (the revision is recorded on the image) ran on the owner's Duo, RAM-booted from a PC with no Android, and the
   owner confirmed on the screens that it was working. Logs read from the phone showed phoc on the
   hwcomposer backend (GLES on the Adreno 640) and OPOS reading the real battery from sysfs. One phone, one
-  session, with the owner watching: it is RAM-boot only, so a power cycle returns the phone to Android and
-  wipes the image.
+  session, with the owner watching: the kernel must be RAM-booted from a PC each time.
+  A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata).
 - Surface Duo on stock Android ([docs/duo-android.md](docs/duo-android.md)): the same server runs under
   Termux with the real battery from Termux:API, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens/s
   on the phone, on November 7, 2026, in one session.
@@ -81,7 +82,10 @@ Dated updates below record later source work and its verification limits.
 
 The public demo is live at [opos-demo-production.up.railway.app](https://opos-demo-production.up.railway.app).
 The separate `opos.public_demo` entry point wraps the existing phone page in a
-Jaryo landing and isolates each visitor in bounded, expiring memory. Muse Glimmer
+Jaryo landing and stores each visitor session in bounded, expiring memory. If
+`OPOS_APPS=calls` is inherited and the state directory is writable, simulated
+call records may persist in a shared `calls.json`; session expiry does not clear
+that file. The deployed environment has not been checked here. Muse Glimmer
 and every other model route are off there: public helpers use only battery rules.
 Setup and host operations are unreachable. Railway configuration and
 [operating notes](docs/public-demo.md) are included in this tree. This is a browser

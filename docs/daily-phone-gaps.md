@@ -23,7 +23,7 @@ The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,no
 
 ## Gaps
 
-A gap fits the ethos when it is a plain local tool, keeps its own data on the phone, and does not add an account. Calls, messages, and alarms stay available. Anything that needs a new Debian package or a new service is listed here and is not built.
+A gap fits the ethos when it is a plain local tool, keeps its own data on the phone, and does not add an account. The policy preserves simulated calls, messages and alarms; this does not establish working phone service. Anything that needs a new Debian package or a new service is listed here and is not built.
 
 | Gap | Fits | New package or service | This round |
 |---|---|---|---|
