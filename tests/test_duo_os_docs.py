@@ -43,8 +43,8 @@ class TestDuoOsReadme(unittest.TestCase):
         head = flat(self.text[:self.text.index("## What was seen")])
         for phrase in ("Status, November 7, 2026", "ran on the owner's Surface Duo 1, RAM-booted from a PC",
                        '"it\'s working"', "One phone, one day, one person watching",
-                       "A power cycle can return the phone to Android, destroying the OPOS install",
-                       "read-only observations from the PC session on November 11, 2026",
+                       "A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata).",
+                       "Read-only observations from the PC session on November 11, 2026",
                        "metadata encryption in place", "unreadable to Linux"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, head)
@@ -228,7 +228,7 @@ class TestDuoStatusDocs(unittest.TestCase):
         roadmap = flat(read("ROADMAP.md"))
         working = roadmap[roadmap.index("## Working today"):roadmap.index("## Simulated or not yet verified")]
         simulated = roadmap[roadmap.index("## Simulated or not yet verified"):roadmap.index("## Public browser demo")]
-        for phrase in ("Surface Duo with OPOS as the whole OS", "RAM-booted from a PC with no Android",
+        for phrase in ("Surface Duo with OPOS as the web interface on Droidian", "RAM-booted from a PC with no Android",
                        "the owner confirmed on the screens that it was working", "hwcomposer backend",
                        "real battery from sysfs", "One phone, one session", "17.7-18.4 generated tokens/s"):
             with self.subTest(phrase=phrase):
@@ -250,7 +250,7 @@ class TestDuoStatusDocs(unittest.TestCase):
         readme = read("README.md")
         limits = flat(readme[readme.index("## Limits"):readme.index("## Documentation")])
         for phrase in ("(packaging/duo-os/README.md)", "(docs/duo-android.md)", "(docs/duo-usb-install.md)",
-                       "one phone, one day", "Calls and texts are still simulated", "RAM-boot only",
+                       "one phone, one day", "Tasks, calls and texts are simulated", "requires a PC to start",
                        "Nothing here measures speed, battery life or stability over time", "are historical"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, limits)

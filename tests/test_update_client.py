@@ -1631,8 +1631,10 @@ class MainPageIsUntouched(Env):
     # Re-recorded again when the status bar learned LOW, the status note, and the unset-clock rule.
     # Re-recorded for the combined thumb-pane/detail layout and separate font assets.
     # Re-recorded for phone-page freshness: error snapshots count as misses, with compact response and freshness handling.
-    MAIN_SHA256 = "ab5ffc0f188bcdb73aa48236db6ac3f8394b02ad800b471ac95ba0cd58dd8248"
-    DEMO_SHA256 = "a254d15c26f860638c00dbad674246d583b89e93d43e9766e47be81df16340f5"
+    # Re-recorded for the public accuracy and hosted-demo privacy notices; page behavior is unchanged.
+    # Re-recorded when the privacy notice went back to naming the Inference page; page behavior is unchanged.
+    MAIN_SHA256 = "425b813003a3cb82ad1a1006e3423d58029f27df73739332444673c598224eef"
+    DEMO_SHA256 = "c1d37877a0c4f0b6538771400842a5a0f751dcdd5bf770cf9a98ec7342893f18"
     LINK = '<a id=upd href=/update>Updates</a>'
 
     def test_recorded_digests(self):

@@ -47,8 +47,7 @@ RESERVE_IN_TABLE = ("The router figures in the table come from the full runtime,
                     "end-of-life profiles, where battery health can be below 50%, they include the "
                     "worn-battery reserve's task pauses.")
 ROUTER_BEFORE = "(the router's runs include the task pauses both times)"
-DESCRIPTION = ("Old Phone OS Interface: a prototype phone interface that pauses less essential work "
-               "so the battery can last until a time the owner chooses")
+DESCRIPTION = ("Experimental Surface Duo 1 web interface with simulated battery-rule tasks, calls and texts")
 
 
 def read(name):

@@ -13,7 +13,7 @@ Old Phone OS, derived from Droidian, with the upstream identity preserved, a
 hashed installed-file manifest, `opos-version` and About on the update page.
 A real image build and every phone check for this change remain **NOT_RUN**.
 
-A Linux OS whose only interface is OPOS, on a Surface Duo 1. The community Droidian/Halium port supplies the kernel and the vendor
+An experimental OPOS interface on a Droidian Linux rootfs for the Surface Duo 1. Tasks, calls and texts are simulated. The community Droidian/Halium port supplies the kernel and the vendor
 layer (panels, touch, GPU, Wi-Fi, audio, modem). `phoc` (wlroots, hwcomposer backend, **not** in shell mode) runs one Chromium
 kiosk on the OPOS server (`python3 -m opos.web --live-battery`, user `droidian`, from `/opt/opos/src`). The window spans both
 panels: 2784 x 1800 device pixels at scale 2, which is 1392 x 900 CSS pixels with a 42 CSS pixel hinge. Touch only.
