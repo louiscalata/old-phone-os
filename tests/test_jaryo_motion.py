@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
-import json, shutil, subprocess, tempfile, unittest
+import json, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
+
+from tests import portable
 
 SRC = 'src/opos/web_static/jaryo.js'
 
@@ -158,6 +160,10 @@ class TestJaryoMotion(unittest.TestCase):
         from tests.test_uxr_acceptance import find_chrome
 
         chrome, node = find_chrome(), shutil.which('node')
+        # Linux (CI) must have a browser: there a missing one fails. A developer machine without one (or one that opts
+        # out with OPOS_TEST_CHROME pointing at a missing path) skips instead.
+        if chrome is None and not portable.LINUX:
+            self.skipTest('no headless Chromium on this %s host (required on Linux)' % sys.platform)
         self.assertIsNotNone(chrome, 'installed Chromium required for motion acceptance')
         self.assertIsNotNone(node, 'installed Node required for motion acceptance')
         with tempfile.TemporaryDirectory(prefix='jaryo-motion-page-') as folder:

@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import portable
 from tests import test_selftest as TS
 from tests.test_duo_dev_sudo import TEST_KEY
 
@@ -218,6 +219,7 @@ class VerifyBlock(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "OPOS_DEV_SPAN"}
         if expect is not None:
             env["OPOS_DEV_SPAN"] = expect
+        env["PATH"] = portable.with_gnu_tools(env.get("PATH", "/usr/bin:/bin"), self.tmp / "gnu", ("stat",))  # Linux: unchanged
         return subprocess.run([SH, str(script)], env=env, capture_output=True, text=True, timeout=120)
 
     def assert_clean(self, p):

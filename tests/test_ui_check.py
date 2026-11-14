@@ -20,6 +20,12 @@ chrome_candidates = [
     shutil.which("google-chrome"),
     shutil.which("chromium"),
 ]
+# OPOS_TEST_CHROME is the one browser the other headless tests use; when it is set
+# (CI sets it to its wrapper, a developer machine can point it at a missing path to
+# opt out of browsers), it wins over the fallback guesses below.
+_pinned = os.environ.get("OPOS_TEST_CHROME")
+if _pinned:
+    chrome_candidates = [_pinned]
 has_chrome = any(p and os.access(p, os.X_OK) for p in chrome_candidates)
 chrome = next((p for p in chrome_candidates if p and os.access(p, os.X_OK)), None)
 

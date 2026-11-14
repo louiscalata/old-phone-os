@@ -81,6 +81,11 @@ UUID_NEW = "99999999-0000-4000-8000-000000000001"
 
 NMCLI = r"""#!/bin/sh
 D='@D@'
+# The argv the kernel holds for this process, which is what another user could read: /proc where there is one (Linux, the
+# phone, CI), ps elsewhere (a Mac running the suite). Octal mode bits with GNU stat, else with BSD stat. The BSD fallback
+# only runs after GNU stat -c has already failed (a missing file); GNU stat then fails too and prints nothing, as before.
+real_argv() { if [ -r /proc/$$/cmdline ]; then tr '\0' ' ' < /proc/$$/cmdline; else ps -ww -o args= -p $$; fi; }
+mode_bits() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 echo "$@" >> "$D/calls.log"
 PWFILE=
 kept=
@@ -122,9 +127,9 @@ case "$1 $2" in
   "connection add") printf '%s\n' "$*" > "$D/cmdline.log"; echo "$6" > "$D/created_ssid"; echo "Connection '$6' (@UNEW@) successfully added.";;
   "connection up")
     if [ -n "$PWFILE" ]; then
-      tr '\0' ' ' < /proc/$$/cmdline >> "$D/cmdline.log"
+      real_argv >> "$D/cmdline.log"
       echo "$PWFILE" > "$D/pwfile"
-      stat -c %a "$PWFILE" > "$D/pwmode" 2>/dev/null || true
+      mode_bits "$PWFILE" > "$D/pwmode" 2>/dev/null || true
       cp "$PWFILE" "$D/seen-key"
       [ -f "$D/join_denied" ] && { echo "Error: Failed to add/activate new connection: Not authorized to control networking." >&2; exit 1; }
       [ -f "$D/join_hang" ] && exec sleep 30
@@ -149,7 +154,7 @@ case "$1 $2" in
       list) cat "$D/wifi_list";;
       rescan) if [ -f "$D/rescan_err" ]; then cat "$D/rescan_err" >&2; exit 1; fi; touch "$D/rescanned";;
       connect)
-        tr '\0' ' ' < /proc/$$/cmdline > "$D/cmdline.log"
+        real_argv > "$D/cmdline.log"
         [ -f "$D/join_denied" ] && { echo "Error: Failed to add/activate new connection: Not authorized to control networking." >&2; exit 1; }
         [ -f "$D/join_hang" ] && exec sleep 30
         if [ -f "$D/psk" ]; then
@@ -235,7 +240,8 @@ class Fake:
         self.bin.mkdir()
         self.tools = self.dir / "tools"  # only what the fake scripts call, so a real nmcli or ip can never be reached
         self.tools.mkdir()
-        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout", "rm", "cp", "stat"):
+        # ps is for real_argv off Linux (no /proc); on Linux /proc is read first and the ps link is never used.
+        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout", "rm", "cp", "stat", "ps"):
             if shutil.which(tool):
                 (self.tools / tool).symlink_to(shutil.which(tool))
         self.root = self.dir / "root"
@@ -1432,14 +1438,14 @@ class Cli(unittest.TestCase):
         f = Fake(self)
         f.put("psk", PW)
         env = dict(os.environ, PYTHONPATH=str(ROOT / "src"), PATH=f"{f.bin}:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE="1")
-        p = subprocess.run(["python3", "-m", "opos.net", "probe"], capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run([sys.executable, "-m", "opos.net", "probe"], capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("$ nmcli -t -f RUNNING", p.stdout)
         self.assertIn("rc=0", p.stdout)
-        p = subprocess.run(["python3", "-m", "opos.net", "status"], capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run([sys.executable, "-m", "opos.net", "status"], capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(json.loads(p.stdout)["wifi"]["ssid"], "HomeNet")
-        p = subprocess.run(["python3", "-m", "opos.net", "join", "Neighbor 5G"], input="Wrong password\n", capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run([sys.executable, "-m", "opos.net", "join", "Neighbor 5G"], input="Wrong password\n", capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(p.returncode, 1)
         self.assertNotIn("Wrong password", p.stdout + p.stderr)
 
