@@ -97,7 +97,7 @@ const STATE = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 const LIB = eval(/const LIB = (`[\s\S]*?`);/.exec(fs.readFileSync(uxrFile, 'utf8'))[1]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'uxp22-'));
-const child = spawn(chrome, ['--headless', '--no-sandbox', '--disable-gpu', ...(process.platform === 'darwin' ? ['--single-process'] : []), '--remote-debugging-pipe',
+const child = spawn(chrome, ['--headless', '--use-mock-keychain', '--password-store=basic', '--no-sandbox', '--disable-gpu', ...(process.platform === 'darwin' ? ['--single-process'] : []), '--remote-debugging-pipe',
   '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check', 'about:blank'], {detached: true, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe']});
 // Own the process group so Linux's Chrome children cannot outlive cleanup.
 async function closeBrowser() {

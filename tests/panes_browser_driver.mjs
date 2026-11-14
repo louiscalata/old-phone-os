@@ -13,7 +13,7 @@ const [CHROME, BASE, PORT, PROFILE, OUTFILE, ONLY] = process.argv.slice(2);
 const want = k => (ONLY ? ONLY.split(',').includes(k) : k !== 'ready');
 const P1 = 675, P2 = 717;
 const headless = /headless[_-]shell/.test(CHROME) ? '--headless' : '--headless=new';
-const flags = [headless, '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=' + PORT,
+const flags = [headless, '--use-mock-keychain', '--password-store=basic', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=' + PORT,
   '--user-data-dir=' + PROFILE, ...(process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : []), 'about:blank'];
 let proc, ws, seq = 0;
 const pending = new Map(), listeners = [];
