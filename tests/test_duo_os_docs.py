@@ -177,7 +177,8 @@ class TestDuoOsReadme(unittest.TestCase):
 
     def test_discovery_needs_the_adapter_to_hold_the_phones_network(self):
         issues = flat(section(self.text, "## Known issues"))
-        for phrase in ("only if the PC's USB adapter holds an address in the phone's /24", "169.254.x.x",
+        for phrase in ("<phone-usb-address>", "<pc-usb-address>", "#usb-link-addresses",
+                       "only if the PC's USB adapter holds an address in the phone's /24", "self-assigned link-local address",
                        "no lease", "the sweep covers the wrong network", "times out after the kernel boot",
                        "Do not run the script again to retry", "a second kernel boot", "no attach-only mode",
                        "ssh to it by hand"):
