@@ -436,13 +436,19 @@ not run on a phone.
 
 `deploy/duo-rootfs-install.sh` prints a dry run unless both `--yes --erase-userdata`
 are supplied. Before formatting, it requires readable, non-empty images, computable
-SHA-256 hashes, exactly one fastboot device and the expected Surface Duo 1 product.
+SHA-256 hashes, exactly one fastboot device, the expected Surface Duo 1 product and
+an `unlocked: yes` answer from `fastboot getvar unlocked`.
 Optional `--twrp-sha256`, `--boot-sha256` and `--rootfs-sha256` values must match.
-It selects the checked device for every fastboot and adb command and rehashes the
-TWRP and boot images directly before each RAM-boot. Missing or failed checks refuse. See the [shell install contract](../../docs/duo-usb-install.md#rootfs-install-through-twrp).
-It still omits the misc brake, slot/unlock/battery checks, raw ext4 validation and
-network search, so it remains the less guarded route. Phone validation of these
-changes is **NOT_RUN**.
+It selects the checked device for every fastboot and adb command. It RAM-boots
+private copies of the TWRP and boot images made when they are checked, rehashes
+all three images and both copies directly before the erase, rehashes each copy
+directly before its RAM-boot and the rootfs image directly before the push, and
+requires the same product again after the return to the bootloader. Missing or
+failed checks refuse. See the [shell install contract](../../docs/duo-usb-install.md#rootfs-install-through-twrp).
+The battery is a manual step: the script prints a reminder and does not read it.
+It still omits the misc brake, slot and battery checks, raw ext4 validation and
+network search, so it remains the less guarded route. These checks are tested with
+stand-ins for fastboot and adb only; a run on the phone is **NOT_RUN**.
 
 ## USB-link addresses
 
