@@ -54,14 +54,43 @@ unavailable checks refuse. Obtain expected hashes from a trusted image source.
 The script also requires exactly one fastboot device and a successful, unambiguous
 `product: surfaceduo` response, then selects that device for every fastboot and
 adb command. A missing, failed or different product response refuses before erasure.
+It also asks that device for `fastboot getvar unlocked` and refuses before erasure
+unless the answer is exactly one `unlocked: yes`; a failed, missing or ambiguous
+answer refuses too. Whether the Duo's bootloader answers this query in that form
+is **NOT_RUN** on the phone; any other answer refuses with nothing erased.
 
-This remains the less guarded route: it does not arm the misc brake, enforce slot,
-unlock or battery checks, or validate raw ext4 image contents. These added refusals
-do not replace the guarded `deploy/duo-opos-boot.ps1` workflow. Phone validation
-of the corrected shell script remains **NOT_RUN**.
+The battery is a manual step: check that it is at least 20 percent before running
+with `--yes`. The script prints that reminder and does not read the battery.
+
+With `--yes --erase-userdata` the script copies the TWRP and boot images once, when
+they are checked, into a private folder (made by `mktemp -d` under `TMPDIR`, mode
+0700, copies mode 0400), requires each copy to have the hash that passed the check,
+and RAM-boots those copies, not the named files. It removes the copies and the
+folder when it exits. The rootfs image is not copied, because of its size.
+Directly before `fastboot format:ext4 userdata` it rehashes the three named files
+and the two copies and refuses, with nothing erased, if any of them changed after
+it was checked.
+After the erase a change to the named TWRP or boot file no longer matters, since
+the copies are what is booted. The script still rehashes the TWRP copy directly
+before it RAM-boots TWRP, and the boot copy twice: with the phone still in TWRP,
+and directly before the final RAM-boot. It rehashes the rootfs image directly
+before the push and refuses, without pushing, if it changed.
 During execution it compares the SHA-256 hash of `/data/rootfs.img` against the hash that passed the image check, and its byte size against the local image, and stops with `verify failed` if either differs.
-Directly before it RAM-boots TWRP, after userdata is erased, it rehashes the TWRP image and refuses if that file changed after it was checked.
-It then rehashes the boot image and refuses, with the phone still in TWRP, if that file changed after it was checked, and rehashes it once more directly before the final RAM-boot.
+After the return to the bootloader it asks the same device for its product again
+and refuses, without the final RAM-boot, unless it is the product checked before
+the erase.
+
+What these checks do not close: a refusal after the erase leaves the phone with
+erased userdata and no system on it (the bootloader and fastboot still answer).
+A process running as the same user can still change a private copy, or the rootfs
+image, in the short time between a rehash and the command that reads the file; a
+rootfs changed during the push is caught afterwards by `verify failed`.
+
+This remains the less guarded route: it does not arm the misc brake, check the
+slot or the battery, or validate raw ext4 image contents. These added refusals
+do not replace the guarded `deploy/duo-opos-boot.ps1` workflow. The checks are
+tested with stand-ins for fastboot and adb only; a run of this script on the phone
+remains **NOT_RUN**.
 Step 1 erases everything on userdata.
 1. Format userdata with fastboot format:ext4 userdata to erase it.
 2. RAM-boot TWRP with fastboot boot, then mount userdata at /data.
