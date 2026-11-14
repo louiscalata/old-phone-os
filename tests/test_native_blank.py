@@ -540,14 +540,101 @@ class Safety(unittest.TestCase):
         self.assertLessEqual(clk.t, 30 + 0.2 + 1e-9)
 
 
+    def write_only(self, t, panel="panel0-backlight"):
+        """Make the panel's brightness writable but not readable (mode 0200), as a sysfs file whose read fails; skip where
+        the test runs with the rights to read it anyway (root)."""
+        p = t.brightness(panel)
+        p.chmod(0o200)
+        self.addCleanup(p.chmod, 0o644)
+        try:
+            p.read_text(encoding="ascii")
+        except OSError:
+            return p
+        self.skipTest("this user can read a mode 0200 file")
+
+    def test_with_no_saved_file_an_unreadable_dark_panel_is_written_and_stays_listed(self):
+        """Residual 9 (round 7): with no saved file, a panel at 0 that cannot be read was listed as failed but never written,
+        so it stayed dark through every retry (the verifier saw 3 restores and 0 writes). Now a panel whose brightness file
+        is there but cannot be read is written its default, capped by its readable max_brightness, and stays listed in
+        `failed` until a read confirms it lit, so the retries keep going and the panel is never left dark."""
+        t = Tree(self, (0, 140))
+        (t.root / "sys/class/backlight/panel0-backlight/max_brightness").write_text("60\n", encoding="ascii")
+        p = self.write_only(t)
+        for _ in range(3):
+            t.blanker.restore()
+            self.assertEqual(t.blanker.failed, ["panel0-backlight: unreadable"], "still listed: not confirmed lit")
+            self.assertTrue(t.blanker.pending(), "so the shell and the CLI keep trying")
+        p.chmod(0o644)
+        self.assertEqual(t.values(), (60, 140), "written its default, capped by its own max_brightness: lit, never 0")
+        self.assertFalse(t.blanker.restore(), "readable and lit now: nothing to write")
+        self.assertEqual((t.blanker.failed, t.blanker.pending()), ([], False))
+
+    def test_with_no_saved_file_an_unreadable_panel_without_a_brightness_file_is_never_written(self):
+        """The new write is only to a brightness file that is there: nothing is ever created under /sys."""
+        t = Tree(self, (0, 0))
+        t.brightness("panel0-backlight").unlink()
+        t.blanker.restore()
+        self.assertFalse(t.brightness("panel0-backlight").exists(), "nothing is created")
+        self.assertEqual(t.blanker.failed, ["panel0-backlight: unreadable"])
+        self.assertEqual(t.values(), (None, 200))
+
+    def test_the_cli_lights_an_unreadable_dark_panel_with_no_saved_file(self):
+        """The verifier's case through `--restore`: it writes the panel (lit) and still exits 1, since it could not confirm."""
+        import contextlib
+        import io
+        t = Tree(self, (0, 0))
+        p = self.write_only(t)
+        make = lambda: blank.Blanker(root=str(t.root), run_dir=str(t.run), say=lambda _l: None)  # noqa: E731
+        clk = Clock()
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(blank.main(["--restore"], make=make, sleep=clk.sleep, clock=clk.now), 1)
+        p.chmod(0o644)
+        self.assertEqual(t.values(), blank.DEFAULTS, "lit, although it could not be read")
+
+    def test_a_refused_blank_reports_mode_0_and_an_accepted_one_its_mode(self):
+        """Residual 2: a PowerSaveMode of 1 to 3 that is refused (the lid reads open) leaves the screens lit, so the mode
+        reported is 0, not the refused request. Every request still reaches blank() or restore(), so nothing that lights
+        a screen is skipped; the reported value only says whether this request was a blank, and no decision reads it."""
+        t = Tree(self, (90, 200))
+        lid_open = [True]
+        t.blanker.may_blank = lambda: not lid_open[0]
+        for mode in (1, 2, 3):
+            with self.subTest(refused=mode):
+                self.assertEqual(t.blanker.set_mode(mode), 0)
+                self.assertEqual((t.blanker.mode, t.values()), (0, (90, 200)), "refused: lit, and it says 0")
+        lid_open[0] = False
+        self.assertEqual(t.blanker.set_mode(3), 3)
+        self.assertEqual((t.blanker.mode, t.values()), (3, (0, 0)), "accepted: dark, and it says 3")
+        self.assertEqual(t.blanker.set_mode(3), 3, "a re-asserted 3 on dark screens is still dark")
+        lid_open[0] = True
+        self.assertEqual(t.blanker.set_mode(3), 0, "a refused 3 while the saved file is there")
+        self.assertEqual(t.values(), (0, 0), "a refused blank writes nothing: the lit-again path is restore, not set_mode(3)")
+        self.assertEqual(t.blanker.set_mode(0), 0)
+        self.assertEqual((t.blanker.mode, t.values()), (0, (90, 200)), "0 still restores")
+        t.blanker.run_dir = str(t.run / "missing")
+        lid_open[0] = False
+        self.assertEqual(t.blanker.set_mode(3), 0, "a blank refused for an unsafe runtime folder: lit, says 0")
+        self.assertEqual(t.values(), (90, 200))
+        self.assertEqual(t.blanker.set_mode(7), 0, "an ignored value changes nothing and says the mode in force")
+
+
 class Blanked:
-    """A blanker that only records modes."""
+    """A blanker that only records modes; every mode takes effect."""
 
     def __init__(self):
         self.modes = []
 
     def set_mode(self, mode):
         self.modes.append(mode)
+        return mode
+
+
+class Refusing(Blanked):
+    """A blanker whose lid reads open: every blank is refused, so the mode in force stays 0."""
+
+    def set_mode(self, mode):
+        self.modes.append(mode)
+        return 0
 
 
 class PowerSave(unittest.TestCase):
@@ -561,6 +648,39 @@ class PowerSave(unittest.TestCase):
         self.assertTrue(s.set("PowerSaveMode", 0))
         self.assertEqual(b.modes, [3, 3, 0], "but a repeat still reaches the blanker")
         self.assertEqual(s.properties_changed_args(), (displayconfig.IFACE, {"PowerSaveMode": 0}, []))
+
+    def test_a_refused_request_is_not_stored_as_the_value(self):
+        """Residual 2: while the lid reads open a 3 is refused; the property reads 0 (the screens are lit), no change is
+        reported, and the request still reached the blanker."""
+        b = Refusing()
+        s = displayconfig.PowerSaveState(b)
+        self.assertFalse(s.set("PowerSaveMode", 3), "refused: the value did not change")
+        self.assertEqual((s.get("PowerSaveMode"), b.modes), (0, [3]))
+        self.assertFalse(s.set("PowerSaveMode", 0))
+        self.assertEqual(b.modes, [3, 0], "a 0 reaches the blanker even when the value already reads 0")
+
+    def test_a_blanker_that_does_not_say_the_mode_keeps_the_request(self):
+        class Silent(Blanked):
+            def set_mode(self, mode):
+                self.modes.append(mode)
+        s = displayconfig.PowerSaveState(Silent())
+        self.assertTrue(s.set("PowerSaveMode", 3))
+        self.assertEqual(s.get("PowerSaveMode"), 3, "never None: the property always has an int")
+
+    def test_the_value_follows_a_real_blanker_and_the_screens_match_it(self):
+        """With a real Blanker in a fake tree: a refused 3 reads 0 with the panels lit, an accepted 3 reads 3 with them
+        dark, and a 0 reads 0 with them lit again."""
+        t = Tree(self, (90, 200))
+        lid_open = [True]
+        t.blanker.may_blank = lambda: not lid_open[0]
+        s = displayconfig.PowerSaveState(t.blanker)
+        self.assertFalse(s.set("PowerSaveMode", 3))
+        self.assertEqual((s.get("PowerSaveMode"), t.values()), (0, (90, 200)))
+        lid_open[0] = False
+        self.assertTrue(s.set("PowerSaveMode", 3))
+        self.assertEqual((s.get("PowerSaveMode"), t.values()), (3, (0, 0)))
+        self.assertTrue(s.set("PowerSaveMode", 0))
+        self.assertEqual((s.get("PowerSaveMode"), t.values()), (0, (90, 200)))
 
     def test_a_wrong_name_or_type_is_refused(self):
         b = Blanked()
@@ -655,6 +775,19 @@ class StandInGi(unittest.TestCase):
         lost(None, name)
         lost(None, name)
         self.assertEqual(len(said), 1, "losing the name is said once")
+
+    def test_a_refused_set_answers_true_reads_0_and_signals_nothing(self):
+        """Residual 2 on the bus: the daemon's call still succeeds (it is not an error to ask), Get reads 0, and no
+        PropertiesChanged says 3."""
+        self.gi()
+        b = Refusing()
+        displayconfig.own(b, lambda _l: None)
+        (_bus, name, _flags, acquired, _got, _lost), = self.owned
+        conn = Conn()
+        acquired(conn, name)
+        (path, _iface, _method, get, set_), = conn.objects
+        self.assertIs(set_(conn, ":1.5", path, name, "PowerSaveMode", Variant("i", 3)), True)
+        self.assertEqual((get(conn, ":1.5", path, name, "PowerSaveMode").value, conn.signals, b.modes), (0, [], [3]))
 
     def test_a_blanker_that_raises_is_said_once_and_answers_false(self):
         self.gi()
