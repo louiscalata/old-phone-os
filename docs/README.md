@@ -4,8 +4,9 @@
 Old Phone OS Interface is a prototype. The desktop demo simulates the battery, calls and texts; recorded QEMU
 results and model experiments have their own limits. The postmarketOS kiosk uses the same simulated battery
 and modem as the desktop demo. The Surface Duo routes read the phone's real battery and ran on one owner's
-phone on November 7, 2026. Tasks, calls and texts remain simulated and no speed, battery-life or stability
-measurements. Documents marked **historical** preserve earlier work and are not current instructions or
+phone on November 7, 2026. Tasks, calls and texts remain simulated. One Android/Termux Llama 3.2 1B
+inference measurement is recorded; Droidian inference speed, battery life and long-term stability remain
+unmeasured. Documents marked **historical** preserve earlier work and are not current instructions or
 evidence about the current source.
 
 ## Use OPOS
@@ -30,7 +31,7 @@ evidence about the current source.
 - [OPOS on postmarketOS](pmos.md): package inputs, local-source staging, QEMU development and validation limits.
 - [Easy setup on postmarketOS](pmos-easy-setup.md): what the setup scripts do and how to turn the kiosk off.
 <!-- track: integrate -->
-- [The Duo OS as it stands](duo-os-final.md): what the Surface Duo OS does now, the switches, what is still simulated or not known (calls and texts, battery life, stability, RAM-boot only), and the live checks in order; none of it measured on a phone yet.
+- [The Duo OS as it stands](duo-os-final.md): what the Surface Duo OS does now, the switches, what is still simulated or not known (calls and texts, battery life, stability, RAM-boot only), and the live checks still required; source checks do not establish device acceptance.
 <!-- end track: integrate -->
 <!-- track: qa -->
 - [Duo OS acceptance](duo-acceptance.md): the automated suite (`opos-selftest` on the phone, `deploy/duo-acceptance.ps1` from the PC) and the owner's eyes-on-the-glass checklist; written and tested against fakes, not yet run on a phone.
@@ -39,7 +40,7 @@ evidence about the current source.
 - [Over-the-air updates](ota-update.md): the contract for signed, rollback-safe updates of the OPOS app and its own files on the Duo OS image, and what was built to it; implemented and tested on Linux with stand-ins for systemd, runuser and the browser, not tested on the phone.
 - [Releasing over-the-air updates](ota-release-howto.md): the owner's how-to for the release key, `tools/opos-release.py` (build, verify, index), hosting, the USB push script, key rotation and recovery; tested on a PC with throw-away keys against the real updater code; none of it has run on a phone.
 - [OPOS OS for the Surface Duo](../packaging/duo-os/README.md): OPOS as the only interface of a Linux image, RAM-booted on the owner's Duo on November 7, 2026 (it worked, per the owner); what was and was not observed, the RAM-boot-only rule and the misc brake, the dev ssh key, boot logs, known issues and restoring Android. Installed by `deploy/duo-opos-boot.ps1`.
-- [Persistent kernel on the Duo](duo-persistent-install.md): a gated runbook for the first device session that tests whether the OPOS kernel can live in the phone's own storage so the power button starts OPOS; read-only probes and backups first, every write needs the owner's word; a plan, not run, with `deploy/duo-persist-probe.ps1` tested against stand-in tools only.
+- [Persistent kernel on the Duo](duo-persistent-install.md): a gated runbook for the first device session that tests whether the OPOS kernel can live in the phone's own storage so the power button starts OPOS; read-only probes and backups first, every write needs the owner's word. Preliminary gates G0–G3 were reported run on November 12; a powered-off start remains NOT_RUN. The relayed device results were not independently re-verified on the Mac; `deploy/duo-persist-probe.ps1` has separate stand-in tests.
 <!-- track: network -->
 - [Network on the Duo OS](network.md): Wi-Fi and radio status, joining Wi-Fi through NetworkManager as an unprivileged user, and what is still simulated; tested against fake tools only, not on the phone.
 - [VoLTE](duo-volte.md): the IMS package and registration checks, which have not been run.
@@ -77,5 +78,5 @@ evidence about the current source.
 - [Provenance](provenance.md): public source attribution and what the unpublished development records do and do not cover.
 - [Repository checks](../guard/RULES.md): what the optional static guard examines and what it cannot certify.
 - [Web page maintenance notes](web-implementation-notes.md): CSS comments and headers moved out of the page to keep it under its size budget.
-- [UI byte ledger](ui-byte-ledger.md): what the page weighs now (`page()` and the served page with every switch on), where the bytes are, the 102,000-byte wave gate and how to measure it again.
+- [UI byte ledger](ui-byte-ledger.md): revision-scoped page measurements (`page()` and the served page with feature switches), the 102,000-byte wave gate and how to measure it again.
 - [Daily phone gaps](daily-phone-gaps.md): what main already has, and which everyday jobs are still missing. Service and package work is listed only. On-device checks are NOT_RUN.

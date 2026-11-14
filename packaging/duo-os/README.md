@@ -216,12 +216,28 @@ have not been built into a real image or checked on a phone (**NOT_RUN**).
 
 On a Linux builder with Python 3.11+, `zstd`, `e2fsprogs` and `qemu-user-static`:
 
+Verify and decompress the base in its release folder:
+
 ```sh
-cd <release folder> && sha256sum -c SHA256SUMS
+cd "/absolute/path/to/release-folder"
+sha256sum -c SHA256SUMS
 zstd -d --long=27 rootfs.img.zst -o base-rootfs.img        # must hash to the manifest's 9299b2c0…
-sudo env SOURCE_DATE_EPOCH=<release-unix-seconds> sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD
-sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img
 ```
+
+Run from the OPOS checkout after replacing the quoted placeholders with absolute paths:
+
+```sh
+sudo env SOURCE_DATE_EPOCH=<release-unix-seconds> \
+  OPOS_OWNER_SSH_PUBKEY="/absolute/path/to/owner.pub" \
+  sh packaging/duo-os/build-image.sh \
+  "/absolute/path/to/base-rootfs.img" \
+  "/absolute/path/to/new-opos-os-rootfs.img" HEAD
+
+sudo sh packaging/duo-os/verify-image.sh \
+  "/absolute/path/to/new-opos-os-rootfs.img"
+```
+
+A developer key is optional and does not replace the required owner recovery key. The output image must not already exist.
 
 `verify-image.sh` checks the unit wiring, that phoc is not started in shell mode, phoc's `-E` startup command and
 the journal settings, runs the OPOS server from the image with the image's own aarch64 python3 under
@@ -574,8 +590,9 @@ boots.
 
 ## Restore to Android
 
-Nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed, so the stock Android
-(2022.902.48) is still installed and is what the phone starts when the OS image is not RAM-booted.
+In the November 7 RAM-boot session, nothing was written to boot, vbmeta, dtbo or recovery, and no slot was changed.
+Stock Android remained installed and could start when the OS image was not RAM-booted. Later installation experiments
+are recorded separately in the persistent-install runbook linked under RAM-boot only, and the misc brake, above.
 Read-only observations from the PC session on November 11, 2026 record that any stock Android boot on OPOS userdata
 applies metadata encryption in place and makes the OPOS rootfs unreadable to Linux. Returning to Android this way
 destroys the OPOS install; it is not a harmless exit.
@@ -591,9 +608,9 @@ the separate persistent-install plan describes the unproven restore dependencies
    being installed; when you are restoring Android, the reset is the intended step. If `misc` holds a wipe
    request that the bootloader keeps rejecting boots against, zero the first 2 KB of `misc` from a RAM-booted
    TWRP.
-3. For a full stock reflash there is the extracted set for 2022.902.48 (all 25 partitions,
-   `surface/duo/duo:12/2022.902.48`, AT&T product config included), checked against the OTA payload's own
-   hashes: flash it from fastboot, logical partitions through fastbootd, then wipe. No restore from it is
+3. For a full stock reflash, the private recovery inventory records an extracted set for 2022.902.48
+   (all 25 partitions, `surface/duo/duo:12/2022.902.48`), checked against the OTA payload's own hashes. Confirm that the set matches the device before using it:
+   flash it from fastboot, logical partitions through fastbootd, then wipe. No restore from it is
    recorded in this repository, and the OTA's publisher hash was not independently confirmed.
 4. A partition backup of this phone from October 31, 2026 also exists on the owner's PC.
 

@@ -169,7 +169,7 @@ class TestDuoOsReadme(unittest.TestCase):
                        "Calls and texts are simulated", "have not been exercised on the phone"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, issues)
-        for phrase in ("Nothing was written to boot, vbmeta, dtbo or recovery", "no slot was changed",
+        for phrase in ("nothing was written to boot, vbmeta, dtbo or recovery", "no slot was changed",
                        "factory reset", "zero the first 2 KB of `misc`", "all 25 partitions",
                        "No restore from it is recorded in this repository", "October 31, 2026"):
             with self.subTest(phrase=phrase):
@@ -233,12 +233,12 @@ class TestDuoStatusDocs(unittest.TestCase):
                        "real battery from sysfs", "One phone, one session", "17.7-18.4 generated tokens/s"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, working)
-        for phrase in ("no measurement of speed, battery life or stability", "It cannot be installed permanently",
-                       "every start is a RAM-boot from a PC", "have not been run on the phone",
+        for phrase in ("no measurement of inference speed, battery life or long-term stability", "startup has not been achieved",
+                       "every start still needs a PC", "have not been run on the phone",
                        "nothing was timed on the Duo OS image", "The postmarketOS kiosk has not been tested on a physical phone"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, simulated)
-        self.assertIn("Status as of November 7, 2026", roadmap)
+        self.assertIn("Documentation reconciled on November 13, 2026", roadmap)
 
     def test_index_readme_limits_and_changelog_point_at_the_duo_docs(self):
         index = read("docs/README.md")
@@ -250,8 +250,8 @@ class TestDuoStatusDocs(unittest.TestCase):
         readme = read("README.md")
         limits = flat(readme[readme.index("## Limits"):readme.index("## Documentation")])
         for phrase in ("(packaging/duo-os/README.md)", "(docs/duo-android.md)", "(docs/duo-usb-install.md)",
-                       "one phone, one day", "Tasks, calls and texts are simulated", "requires a PC to start",
-                       "Nothing here measures speed, battery life or stability over time", "are historical"):
+                       "limited observations on one phone", "Tasks, calls and texts are simulated", "requires a PC to start",
+                       "do not establish permanent installation, measured battery life or long-term stability", "are historical"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, limits)
         self.assertNotIn("Surface Duo work is paused", readme)
