@@ -333,13 +333,19 @@ class KioskExport(unittest.TestCase):
         env = {"PATH": os.environ["PATH"], "HOME": home}
         r = subprocess.run(["sh", "-c", self.block + '\nprintf "%s" "${TZ-unset}"'], capture_output=True, text=True, env=env, timeout=20)
         self.assertEqual("Asia/Tokyo", r.stdout)
-        self.assertEqual(Path(home, ".config", "opos", "timezone"), tzmod.setting_path({"HOME": home, "OPOS_CONFIG_DIR": ""}))
+        # The kiosk runs on the phone, so the server it must agree with is the Linux one, also when the suite runs elsewhere.
+        # Only the config_dir that timezone.setting_path calls is pinned to Linux; sys.platform stays the real one.
+        linux_dir = tzmod.config_dir
+        on_linux = mock.patch.object(tzmod, "config_dir", lambda env=None: linux_dir(env, platform="linux"))
+        with on_linux:
+            self.assertEqual(Path(home, ".config", "opos", "timezone"), tzmod.setting_path({"HOME": home, "OPOS_CONFIG_DIR": ""}))
         env["XDG_CONFIG_HOME"] = os.path.join(self.d, "x")
         os.makedirs(os.path.join(self.d, "x", "opos"))
         Path(self.d, "x", "opos", "timezone").write_text("Europe/Paris\n")
         r = subprocess.run(["sh", "-c", self.block + '\nprintf "%s" "${TZ-unset}"'], capture_output=True, text=True, env=env, timeout=20)
         self.assertEqual("Europe/Paris", r.stdout)
-        self.assertEqual(Path(self.d, "x", "opos", "timezone"), tzmod.setting_path({"HOME": home, "XDG_CONFIG_HOME": env["XDG_CONFIG_HOME"]}))
+        with on_linux:
+            self.assertEqual(Path(self.d, "x", "opos", "timezone"), tzmod.setting_path({"HOME": home, "XDG_CONFIG_HOME": env["XDG_CONFIG_HOME"]}))
 
     def test_the_kiosk_script_is_still_valid_shell_and_reads_the_zone_before_each_start(self):
         r = subprocess.run(["sh", "-n", str(KIOSK)], capture_output=True, text=True)

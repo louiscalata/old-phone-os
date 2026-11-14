@@ -17,6 +17,8 @@ import time
 import unittest
 from pathlib import Path
 
+from tests import portable
+
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging" / "duo-os"
 KIOSK = DUO / "opos-kiosk"
@@ -761,13 +763,15 @@ class ImageScriptsTest(unittest.TestCase):
         """The edit block run `times` times in a row on one copy of the script: [(result, text, mode)] per run."""
         block = self.build_block("wd=$r/usr/local/sbin/sfduo-composer-watchdog", "edit did not take\" >&2; exit 1\nfi\n")
         out = []
-        with tempfile.TemporaryDirectory() as r:
+        with tempfile.TemporaryDirectory() as r, tempfile.TemporaryDirectory() as tools:
             wd = Path(r) / "usr" / "local" / "sbin" / "sfduo-composer-watchdog"
             wd.parent.mkdir(parents=True)
             wd.write_text(script)
             wd.chmod(0o755)
             for _ in range(times):
-                res = subprocess.run(["sh", "-eu", "-c", block], env={"r": r, "PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+                # The block uses GNU `sed -i`, as on the Linux builder; off Linux a shim gives BSD sed the empty suffix.
+                path = portable.with_gnu_sed("/usr/bin:/bin", tools)
+                res = subprocess.run(["sh", "-eu", "-c", block], env={"r": r, "PATH": path}, capture_output=True, text=True)
                 out.append((res, wd.read_text(), oct(wd.stat().st_mode & 0o777)))
         return out
 
