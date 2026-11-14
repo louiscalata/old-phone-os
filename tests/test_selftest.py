@@ -677,6 +677,37 @@ class Kiosk(SelftestCase):
         self.assertEqual(r.status("kiosk.chromium"), "FAIL")
         self.assertEqual(r.status("kiosk.gpu"), "SKIP")
 
+    def test_the_native_shell_as_the_interface_needs_no_chromium(self):
+        for pid in (200, 201, 202):
+            self.f.kill(pid)
+        self.f.proc(210, ["/usr/bin/python3", "-m", "opos.native.shell"], "python3")
+        r = self.run_st()
+        self.assertEqual((r.status("kiosk.native"), r.status("kiosk.chromium"), r.status("kiosk.gpu")), ("PASS", "SKIP", "SKIP"))
+        self.assertIn("pid 210", r.ev("kiosk.native"))
+        self.assertEqual(r.status("kiosk.native-restarts"), "PASS")
+
+    def test_the_native_shell_ends_are_counted_from_the_launchers_log(self):
+        for pid in (200, 201, 202):
+            self.f.kill(pid)
+        self.f.proc(210, ["/usr/bin/python3", "-m", "opos.native.shell"], "python3")
+        self.f.journal("opos-native", "the shell ended with status 1 after 4s (quick ends in a row: 1); starting it again in 2s\n")
+        r = self.run_st()
+        self.assertEqual(r.status("kiosk.native-restarts"), "WARN")
+        self.assertIn("ended 1 time", r.ev("kiosk.native-restarts"))
+
+    def test_the_shell_and_a_kiosk_chromium_together_are_two_interfaces(self):
+        self.f.proc(210, ["/usr/bin/python3", "-m", "opos.native.shell"], "python3")
+        r = self.run_st()
+        self.assertEqual(r.status("kiosk.native"), "FAIL")
+        self.assertIn("never a second interface", r.ev("kiosk.native"))
+
+    def test_neither_the_shell_nor_chromium_still_fails(self):
+        for pid in (200, 201, 202):
+            self.f.kill(pid)
+        r = self.run_st()
+        self.assertEqual(r.status("kiosk.chromium"), "FAIL")
+        self.assertIsNone(r.status("kiosk.native"))
+
     def test_a_browser_without_kiosk_is_not_the_kiosk(self):
         self.f.proc(200, ["/usr/lib/chromium/chromium", "https://example.invalid/"], "chromium")
         r = self.run_st()

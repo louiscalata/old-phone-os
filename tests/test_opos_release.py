@@ -338,6 +338,12 @@ class BuildTest(ReleaseCase):
         self.assertEqual(sha((ROOT / "src" / "opos" / "web.py").read_bytes()), next(f["sha256"] for f in manifest["files"] if f["path"] == "opt/opos/src/opos/web.py"))
         self.assertEqual(self.verify_cmd(bundle)[0], 0)
 
+    def test_the_native_launcher_is_a_known_overlay_that_lands_executable(self):
+        self.assertEqual(rel.OVERLAY_DEST["opos-native"], "usr/libexec/opos/opos-native")
+        self.assertEqual(rel.classify("usr/libexec/opos/opos-native"), "overlay")
+        self.assertEqual(rel.overlay_mode(rel.OVERLAY_DEST["opos-native"]), 0o755)
+        self.assertEqual(rel.parse_overlay("opos-native")[0:2], ("opos-native", "usr/libexec/opos/opos-native"))
+
     def test_a_relative_key_path_works(self):
         here = os.getcwd()
         os.chdir(self.key.parent)

@@ -48,7 +48,19 @@ exit "$1"
     "logger": '#!/bin/sh\necho "$*" >> "$T/logger.log"\nrc=0\n[ -r "$T/logger_rc" ] && read -r rc < "$T/logger_rc"\nexit "$rc"\n',
     "pgrep": '#!/bin/sh\n[ -e "$T/busy" ]\n',
     "pkill": '#!/bin/sh\necho "$*" >> "$T/pkill.log"\nrc=0\n[ -r "$T/pkill_rc" ] && read -r rc < "$T/pkill_rc"\nexit "$rc"\n',
+    # The kiosk's two python3 callers: the restore before the first start (logged in $T/restore.log with how many
+    # Chromium starts came before it, exit status from $T/restore_rc) and the wait for the server (counted by py_fails).
     "python3": r"""#!/bin/sh
+if [ "$1" = -m ] && [ "${4-}" = --for ]; then
+    echo "$3 $4 $5 ${PYTHONPATH-unset}" >> "$T/later.log"
+    exit 0
+fi
+if [ "$1" = -m ]; then
+    printf '%s %s %s\n' "$3" "${PYTHONPATH-unset}" "$(grep -c '^RUN' "$T/chromium.log" 2>/dev/null || echo 0)" >> "$T/restore.log"
+    rc=0
+    [ -r "$T/restore_rc" ] && read -r rc < "$T/restore_rc"
+    exit "$rc"
+fi
 f=0
 [ -r "$T/py_fails" ] && read -r f < "$T/py_fails"
 [ "$f" -gt 0 ] || exit 0
@@ -89,7 +101,8 @@ class KioskScriptTest(unittest.TestCase):
     def run_kiosk(self, plan, env=None, defaults=None, returncode=-signal.SIGTERM):
         (self.t / "plan").write_text("".join("%s %s\n" % p for p in plan))
         e = {"PATH": "%s:/usr/bin:/bin" % self.bin, "T": str(self.t), "HOME": str(self.home), "XDG_RUNTIME_DIR": str(self.run_dir),
-             "OPOS_KIOSK_DEFAULTS": str(defaults or self.t / "no-such-defaults")}
+             "OPOS_KIOSK_DEFAULTS": str(defaults or self.t / "no-such-defaults"),
+             "OPOS_NATIVE": ""}  # no native launcher: these tests are about the browser kiosk, also on a phone that has one
         e.update(env or {})
         r = subprocess.run(["sh", str(KIOSK)], env=e, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, returncode, r.stderr)  # by default: ended by the fake chromium, as planned
@@ -414,9 +427,11 @@ class KioskScriptTest(unittest.TestCase):
         self.assertTrue(any("does not answer after 120 tries" in m for m in self.logged()))
 
     def numbered_python3(self, fail_calls=()):
-        """A python3 that counts its calls in $T/py_calls and fails the numbered ones: the kiosk's wait for the server is its only caller."""
+        """A python3 that counts its calls in $T/py_calls and fails the numbered ones. The wait for the server is the only
+        caller counted: the one restore before the first start (python3 -m opos.native.blank) is logged apart."""
         p = self.bin / "python3"
-        p.write_text('#!/bin/sh\nc=0\n[ -r "$T/py_calls" ] && read -r c < "$T/py_calls"\nc=$((c + 1))\necho "$c" > "$T/py_calls"\n'
+        p.write_text('#!/bin/sh\n[ "$1" = -m ] && { echo "$*" >> "$T/restore.log"; exit 0; }\n'
+                     'c=0\n[ -r "$T/py_calls" ] && read -r c < "$T/py_calls"\nc=$((c + 1))\necho "$c" > "$T/py_calls"\n'
                      'for x in $(cat "$T/py_fail_calls" 2>/dev/null); do [ "$x" = "$c" ] && exit 1; done\nexit 0\n')
         (self.t / "py_fail_calls").write_text(" ".join(str(c) for c in fail_calls) + "\n")
 
@@ -444,6 +459,59 @@ class KioskScriptTest(unittest.TestCase):
         self.assertTrue(self.marker.exists())
         self.assertEqual(len(self.runs()), 6)
         self.assertEqual(self.py_calls(), 6, "one wait per start and none once the marker is written")
+        self.assertEqual((self.t / "restore.log").read_text().splitlines(), ["-m opos.native.blank --restore"],
+                         "and one restore, before the first start only")
+
+    def restores(self):
+        try:
+            return (self.t / "restore.log").read_text().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def test_the_screens_are_lit_once_before_the_first_chromium_start(self):
+        # native-off (or no launcher) means opos-native never ran, so nothing else lights panels a killed shell left dark
+        self.run_kiosk([(0, 100), (1, 2)])
+        self.assertEqual(self.restores(), ["--restore /opt/opos/src 0"], "from the installed release, before any Chromium")
+        self.assertEqual(len(self.runs()), 2)
+
+    def test_a_failing_restore_never_stops_chromium(self):
+        (self.t / "restore_rc").write_text("1\n")
+        self.run_kiosk([(0, 100)])
+        self.assertEqual((len(self.restores()), len(self.runs())), (1, 1))
+
+    def test_no_second_restore_after_the_launcher_did_it(self):
+        self.run_kiosk([(0, 100)], env={"OPOS_NATIVE_TRIED": "1"})
+        self.assertEqual((self.restores(), len(self.runs())), ([], 1))
+        time.sleep(0.3)
+        self.assertEqual(self.later(), [], "it lit them: nothing left to try")
+
+    def later(self, wait_s=0.0):
+        """The background restores started (python3 -m opos.native.blank --restore --for N), waiting up to wait_s for one."""
+        end = time.monotonic() + wait_s
+        while True:
+            try:
+                lines = (self.t / "later.log").read_text().splitlines()
+            except FileNotFoundError:
+                lines = []
+            if lines or time.monotonic() >= end:
+                return lines
+            time.sleep(0.05)
+
+    def test_a_restore_that_gave_up_is_tried_again_in_the_background(self):
+        """R4: the quick restore gave up (here, or in the launcher, which says so with OPOS_NATIVE_RESTORE_FAILED). The
+        kiosk keeps trying in the background, bounded to 2 minutes at a low rate (blank.main does the waiting), and
+        Chromium starts at once, not after it."""
+        self.run_kiosk([(0, 100)], env={"OPOS_NATIVE_TRIED": "1", "OPOS_NATIVE_RESTORE_FAILED": "1"})
+        self.assertEqual((self.restores(), len(self.runs())), ([], 1))
+        self.assertEqual(self.later(3), ["--restore --for 120 /opt/opos/src"])
+        (self.t / "later.log").unlink()
+        (self.t / "count").unlink()
+        (self.t / "restore_rc").write_text("1\n")
+        self.run_kiosk([(0, 100)])
+        self.assertEqual((len(self.restores()), len(self.runs())), (1, 2))
+        self.assertEqual(self.later(3), ["--restore --for 120 /opt/opos/src"], "its own restore gave up: the same")
+        kiosk = KIOSK.read_text(encoding="utf-8")
+        self.assertIn("--restore --for 120 </dev/null >/dev/null &", kiosk, "in the background, never in Chromium's way")
 
     def test_a_failing_logger_falls_back_to_stderr(self):
         (self.t / "logger_rc").write_text("1\n")

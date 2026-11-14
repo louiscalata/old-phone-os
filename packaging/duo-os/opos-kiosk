@@ -16,6 +16,31 @@
 # shellcheck disable=SC1090,SC1091
 # dash ends the script when `.` cannot open its file, whatever follows it, so the file is tested first.
 if [ -r /etc/profile.d/zz-droidian.sh ]; then . /etc/profile.d/zz-droidian.sh; fi
+# >>> track native: where the native shell's launcher is installed and not switched off, it takes over this process
+# (still phoc's one client) and keeps the native shell on the screen. It comes back here, with OPOS_NATIVE_TRIED set,
+# only when the shell cannot be the interface (see opos-native); then this script is the browser kiosk as before.
+# /etc/opos/native-off = always the browser. OPOS_NATIVE names the launcher; empty means there is none (the tests).
+native=${OPOS_NATIVE-/usr/libexec/opos/opos-native}
+if [ -n "$native" ] && [ -x "$native" ] && [ ! -e "${OPOS_NATIVE_OFF:-/etc/opos/native-off}" ] && [ -z "${OPOS_NATIVE_TRIED:-}" ]; then
+    exec "$native"
+fi
+# <<< track native
+# >>> track lid: the native shell darkens both screens while the lid is closed. A shell killed outright (or a
+# session that ended while they were dark) leaves them dark, and with native-off the launcher, which lights them before
+# it hands over, never runs. Light them here, from the values the shell saved, before the browser (which never blanks)
+# starts. Skipped when the launcher has just done it (OPOS_NATIVE_TRIED, the switch above). It only writes the two
+# panels' brightness, tries for up to 5 s while a panel refuses (it says why on stderr), and a failure never stops
+# the browser. When that restore gave up, here or in the launcher (OPOS_NATIVE_RESTORE_FAILED), it is tried again in
+# the background, at most once every 10 s and for 2 minutes at most, so the browser is never delayed by it.
+lid_later=${OPOS_NATIVE_RESTORE_FAILED:-}
+unset OPOS_NATIVE_RESTORE_FAILED
+if [ -z "${OPOS_NATIVE_TRIED:-}" ]; then
+    PYTHONPATH=${OPOS_NATIVE_SRC:-/opt/opos/src} python3 -m opos.native.blank --restore || lid_later=1
+fi
+if [ -n "$lid_later" ]; then
+    PYTHONPATH=${OPOS_NATIVE_SRC:-/opt/opos/src} python3 -m opos.native.blank --restore --for 120 </dev/null >/dev/null &
+fi
+# <<< track lid
 # Dev images only: build-image.sh writes this file when OPOS_DEV_SSH_PUBKEY is set (OPOS_KIOSK_DEBUG_PORT=9222).
 # Tried in a subshell first, so a typo in it cannot end the phone's only interface. The port is unset before
 # the file is read: only the file can open it, never an Environment= line in a unit or the caller's environment.

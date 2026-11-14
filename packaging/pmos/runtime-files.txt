@@ -57,6 +57,15 @@ src/opos/mm_modem.py
 src/opos/monitor.py
 src/opos/monitor_web.py
 src/opos/muse.py
+src/opos/native/__init__.py
+src/opos/native/blank.py
+src/opos/native/displayconfig.py
+src/opos/native/layout.py
+src/opos/native/logic.py
+src/opos/native/posture.py
+src/opos/native/screens.py
+src/opos/native/shell.py
+src/opos/native/ui.py
 src/opos/net.py
 src/opos/net_page.py
 src/opos/notes_page.py
