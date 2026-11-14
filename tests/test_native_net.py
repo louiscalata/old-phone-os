@@ -1639,7 +1639,7 @@ class ShellParts(unittest.TestCase):
         def page(name):
             return types.SimpleNamespace(enter=lambda: events.append(("enter", name, win.page)),
                                          leave=lambda: events.append(("leave", name, win.page)), tick=lambda: None)
-        win = types.SimpleNamespace(page="settings", hand="right", warming=False, wanted=None,
+        win = types.SimpleNamespace(page="settings", hand="right", warming=False, wanted=None, held=False,
                                     pages={n: page(n) for n in ("settings", "network", "home", "lock")},
                                     strip=types.SimpleNamespace(set_opacity=lambda v: None),
                                     set_shade=lambda v: None, show_page=lambda *a: None)
@@ -1660,7 +1660,7 @@ class ShellParts(unittest.TestCase):
         pages = {"network": types.SimpleNamespace(enter=lambda: None, leave=broken, tick=lambda: None),
                  "lock": types.SimpleNamespace(enter=lambda: events.append("enter lock"), leave=lambda: None,
                                                tick=lambda: events.append("tick lock"))}
-        win = types.SimpleNamespace(page="network", hand="right", warming=False, wanted=None, pages=pages, drag=None,
+        win = types.SimpleNamespace(page="network", hand="right", warming=False, wanted=None, held=False, pages=pages, drag=None,
                                     strip=types.SimpleNamespace(set_opacity=lambda v: None), set_shade=lambda v: None,
                                     show_page=lambda name, how: events.append("show " + name), blank_if_closed=lambda: None)
         win.go = lambda n: self.shell.Shell.go(win, n)
@@ -1685,7 +1685,7 @@ class ShellParts(unittest.TestCase):
             return Answer(b'{"ok": true, "message": "Wi-Fi is on."}')
         core = self.shell.Core(base="http://opos.invalid")
         core.token = "fake-token"
-        with mock.patch.object(self.shell.urllib.request, "urlopen", urlopen):
+        with mock.patch.object(core, "opener", types.SimpleNamespace(open=urlopen)):    # the core's own opener: no proxy
             got = core.net("net_wifi", {"mode": "on"}, 35)
             core.post("call", number="+1 555 0100")
         self.assertEqual(got, {"ok": True, "message": "Wi-Fi is on."})
@@ -1794,7 +1794,7 @@ class Docs(unittest.TestCase):
         used = set()
         for path in NATIVE.glob("*.py"):
             used |= set(re.findall(r"\bOPOS_[A-Z_]+\b", path.read_text(encoding="utf-8")))
-        self.assertIn("OPOS_LOCAL_URL", used)
+        self.assertIn("OPOS_SERVER_URL", used)
         self.assertEqual(sorted(u for u in used if u not in doc), [])
 
     def test_the_roadmap_keeps_the_device_checks_not_run(self):
