@@ -44,6 +44,13 @@ their original scope. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- November 13 native Network screen ([NATIVE.md](packaging/duo-os/NATIVE.md#the-network-screen)): Settings in the
+  native shell opens Wi-Fi and the radios through the server's existing `net_*` actions. This build has not been run
+  on the phone. The owner's November 13 check on the Duo (real GTK, only the status and scan requests sent) was of the
+  PC session's patch 0013, which this port changes: two-tap prompts, a greyed-out Wi-Fi switch while its state is
+  unknown, `leave()` on a page change, a fresh status read after a change and per-action waits. Opening the screen, a
+  real join, forget, disconnect, Wi-Fi off and on, a hidden network and the two-tap prompts remain **NOT_RUN** on the
+  phone for this build; local stand-in toolkit tests do not establish them.
 - November 13 installer refusal changes: the Duo shell installer requires
   `--yes --erase-userdata`, readable non-empty images, computable SHA-256 hashes,
   matching optional image hashes and one device reporting the expected product

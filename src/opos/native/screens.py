@@ -7,9 +7,11 @@ change the owner asks for shows only when the server has confirmed it: a typed m
 stays where it is until then, and a refusal is shown in the server's words.
 Clock, Contacts, Notes and Call log use the server's own app endpoints (GET and POST /api/<app>), so the native
 screens and the old interface show the same alarms, people, notes and calls. The calculator needs no server.
+Network (opened from Settings) uses the server's net_* actions, the same ones the browser's /network page uses.
 """
 from __future__ import annotations
 
+import functools
 import json
 import threading
 import time
@@ -22,7 +24,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from opos import apps, notices  # noqa: E402
-from opos.native import logic  # noqa: E402
+from opos.native import logic, netlogic  # noqa: E402
 from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, vbox  # noqa: E402
 
 MISSING = "%s is not part of the OPOS installed on this phone yet. It arrives with the next update."
@@ -50,6 +52,7 @@ class Page:
     """One screen. build() returns (reading pane, thumb pane); show() gets every state the server sends."""
 
     name, title, api = "", "", None
+    tile = True         # False: the page has no tile on Home and is opened from another page
 
     def __init__(self, shell):
         self.shell, self.data = shell, None
@@ -71,6 +74,9 @@ class Page:
         """Ask this screen's app for its newest state (the apps' own pages, not the main state)."""
         if self.api:
             self.call()
+
+    def leave(self):
+        """Shell.go calls this on the page being left, before the next page's enter()."""
 
     def tick(self):
         pass
@@ -836,8 +842,8 @@ class Settings(Page):
                        label("Down from the top edge: battery. Up from the bottom edge: Home. Up on the lock screen: unlock.", "mid", "dim"),
                        label("About", "big"),
                        label(notices.as_text(), "mid", "dim"))
-        act = column(bottom=(self.hand, button("Use the old interface", self.shell.leave),
-                             bar(self.home())))
+        act = column(bottom=(self.hand, button("Network", lambda: self.shell.go("network")),
+                             button("Use the old interface", self.shell.leave), bar(self.home())))
         self.paint_hand()
         return read, act
 
@@ -847,10 +853,539 @@ class Settings(Page):
     def preview(self, snap):
         b = snap.get("battery") or {}
         return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), \
-            [("Buttons on the %s" % self.shell.hand, "Tap to switch", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"))]
+            [("Buttons on the %s" % self.shell.hand, "Tap to switch", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right")),
+             ("Network", "Wi-Fi and radios", lambda: self.shell.go("network"))]
 
 
-PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Calls, Settings)
+def owners_tap(fn):
+    """Marks a handler as the owner's own tap: whatever it changes on a button is what the owner asked for, so it starts
+    no hold and ends one (Network.shown). Every other change to what a button says (a newer read, an answer) starts one."""
+    @functools.wraps(fn)
+    def tap(self, *args):
+        outer, self.by_owner = self.by_owner, True
+        try:
+            return fn(self, *args)
+        finally:
+            self.by_owner = outer
+    return tap
+
+
+class Network(Page):
+    """Wi-Fi and the radios, through the server's net_* actions (opos.net does every change). No Home tile: Settings
+    opens it.
+
+    Nothing is asked while the page is not the one showing. On entering: the radios once, then one scan; while it shows,
+    the radios again every POLL_MS (never a rescan). Nothing changes the Wi-Fi unless the owner taps for it: Forget,
+    Disconnect and Turn Wi-Fi off take two taps, as deleting does elsewhere, and Wi-Fi is never switched while its state
+    is not known. Each drawn radios read or list finds the chosen row again by name (rechoose); a Forget or Disconnect
+    prompt is dropped when that row changes or the connected network does, and Disconnect (which names no network to
+    the core) is sent only while the radios say the prompt's network is the connected one. A tap on the main button or
+    the Wi-Fi button acts only on what the owner has seen it say for at least HOLD_S: whenever what one of them says or
+    does changes for any reason other than the owner's own tap (a newer radios read, a newer list, a change's answer),
+    a tap on it in the next HOLD_S seconds sends nothing and says the button changed (netlogic.CHANGED). So an armed or
+    unarmed Disconnect that turns into Join, or Turn Wi-Fi off that turns into Turn Wi-Fi on, never acts on a tap meant
+    for what it said before. The Wi-Fi button is held as well when it appears by itself (the pane goes back to idle
+    because a newer list dropped the chosen row, or a change's answer closed the choice). The rows follow the same rule:
+    when a newer list puts another network in a place, or changes what a tap on a place would offer, a tap on a row in
+    the next HOLD_S seconds chooses nothing and says the list changed (netlogic.LIST_CHANGED). The owner's own taps start
+    no hold, so a prompt they armed is confirmed by the very next tap and a row they chose is joined at once. The radios
+    and the scan each keep their own order (logic.Sequence): an older answer never replaces a newer one. Every answer
+    from the core to a change (confirmed, failed, or with no answer in time on either side: it may still be going on)
+    sets a floor (set_floor): every answer to a request sent before it is refused, the radios read drawn before it is
+    treated as unknown until a read sent after it is drawn (so Disconnect and the Wi-Fi button do nothing until then),
+    then both are read again. Only a refusal before anything ran (an HTTP 4xx such as 429, netlogic.NOT_SENT) sets
+    none. Each visit has a number (leave() starts the
+    next); a radios read or a list from an earlier visit is not drawn and starts nothing, and leaving forgets the radios
+    read and the list drawn in the visit (the network may change while the page is not showing), so each visit starts
+    at the floor until its own first reads are drawn. A change's answer from an
+    earlier visit says its outcome, sets the same floor in the same cases, frees the page and, while it shows, reads
+    the radios again (the list too, when this visit's scan was put off), and leaves this visit's choice and typing as
+    they are. A typed password lives only in self.secret (netlogic.Secret), is shown as bullets, is sent once in the
+    join, and is emptied before the join is handed to the sending thread, on every answer to a change sent in this
+    visit, on Cancel, on choosing another row, when the chosen row goes or needs no password, and when the page is left;
+    while the page is busy, password keys are not kept and the page says so (netlogic.KEYS_WAIT). The page stays busy
+    until a change's answer comes, even across visits, so nothing can be typed in a later visit before an earlier
+    visit's answer. The sending thread drops its copy once the request has gone. Nothing here prints, logs or saves it.
+    """
+    name, title, tile = "network", "Network", False
+    POLL_MS = 10000
+    TITLES = {"name": "Name", "password": "Password"}
+    # how long the shell waits for each action: the core may take up to about 95 s for a join (opos.net JOIN_WAIT_S and
+    # its own budget), 35 s for a forget; a read is quicker
+    WAIT = {"net_status": 20, "net_scan": 30, "net_join": 100, "net_forget": 45, "net_wifi": 35}
+    CHANGES = ("net_join", "net_forget", "net_wifi")
+    HOLD_S = 1.5    # after a button changes by itself (not by the owner's tap), taps on it are ignored this long
+
+    def build(self):
+        self.scan_data, self.status_data, self.chosen, self.other = None, None, None, False
+        self.busy, self.polling, self.timer, self.open_net, self.field = False, None, None, False, "name"
+        self.visit, self.scan_owed = 0, False   # which visit this is (leave() starts a new one); a scan put off by busy
+        self.held = {}                      # button -> until when a tap on it is ignored (hold())
+        self.seen, self.by_owner = {}, False    # what each button last said (shown()); inside an owners_tap handler
+        self.radios, self.found = logic.Sequence(), logic.Sequence()    # the order of the status and of the scan answers
+        self.sure = logic.Confirm()         # Forget, Disconnect and Turn Wi-Fi off ask twice
+        self.secret, self.ssid_entry = netlogic.Secret(), logic.Entry(limit=32)
+        self.lines, self.nets = label("Reading the radios...", "mid"), vbox(spacing=0)
+        read = reading(label("Network", "head"), self.lines, self.note, self.nets)
+        self.pick, self.why = label("", "big"), label("", "mid", "dim")
+        self.typed = label(" ", "typed")
+        self.boxes = {f: button("", lambda f=f: self.focus(f), "row") for f in self.TITLES}
+        self.secured = button("Has a password", lambda: self.set_open(False), "chip")
+        self.unsecured = button("Open network", lambda: self.set_open(True), "chip")
+        self.kinds = hbox(self.secured, self.unsecured, spacing=8)
+        self.keys = Keys(self.key)
+        self.wifi = button("Wi-Fi: not read yet", self.toggle_wifi)
+        self.idle = vbox(self.wifi, button("Other network", self.other_network))
+        self.forget_b, self.cancel_b = button("Forget", self.forget, "chip"), button("Cancel", self.cancel, "chip")
+        self.chips = hbox(self.forget_b, self.cancel_b, spacing=8)
+        self.main = button("Scan again", self.main_action, "main")
+        act = column(self.pick, self.why, bottom=(self.idle, self.boxes["name"], self.boxes["password"], self.kinds,
+                                                  self.typed, self.keys, self.chips, bar(self.home(), self.main)))
+        self.paint_act()
+        return read, act
+
+    # --- what shows ---------------------------------------------------------------------------------------------
+    def visible(self):
+        return self.shell.page == self.name
+
+    def mode(self):
+        return "other" if self.other else netlogic.choice(self.chosen)
+
+    def ssid(self):
+        return (self.chosen or {}).get("ssid")
+
+    def paint_act(self):
+        m, row = self.mode(), self.chosen or {}
+        self.pick.set_label("Other network" if m == "other" else row.get("ssid") or "")
+        self.pick.set_visible(m != "idle")
+        why = (netlogic.why_not(row) if m == "unsupported" else netlogic.OPEN_NOTE if m == "open" else
+               "Saved on this phone, not in range now." if row.get("visible") is False else "")
+        self.why.set_label(why)
+        self.why.set_visible(bool(why))
+        self.idle.set_visible(m == "idle")
+        for w in (self.boxes["name"], self.boxes["password"], self.kinds):
+            w.set_visible(m == "other")
+        self.typed.set_visible(m == "password")
+        self.keys.set_visible(m in ("password", "other"))
+        self.chips.set_visible(m != "idle")
+        self.forget_b.set_visible(m in ("known", "connected") and bool(row.get("known") or row.get("active")))
+        self.forget_b.set_label("Forget this network?" if self.sure.armed == ("forget", self.ssid()) else "Forget")
+        main = {"idle": "Scan again", "connected": "Disconnect"}.get(m, "Join")
+        if m == "connected" and self.sure.armed == ("disconnect", self.ssid()):
+            main = "Disconnect now?"
+        self.main.set_label(main)
+        self.shown("main", (main, m, self.ssid()))
+        self.main.set_visible(m != "unsupported")
+        self.main.set_sensitive(not self.busy)
+        self.paint_wifi()
+        self.paint_typed()
+
+    def paint_wifi(self):
+        on = netlogic.wifi_on(self.status_data)
+        says = ("Wi-Fi: not known yet" if on is None else "Turn Wi-Fi on" if on is False else
+                "Turn Wi-Fi off now?" if self.sure.armed == ("wifi-off",) else "Turn Wi-Fi off")
+        self.wifi.set_label(says)
+        self.shown("wifi", (says, self.mode() == "idle"))     # what it says, and whether it is there at all
+        self.wifi.set_sensitive(on is not None and not self.busy)
+
+    def paint_typed(self):
+        shown = netlogic.mask(self.secret)
+        self.typed.set_label(shown or " ")
+        words = {"name": self.ssid_entry.text, "password": "not needed" if self.open_net else shown}
+        for f, b in self.boxes.items():
+            b.set_label("%s%s: %s" % ("> " if f == self.field else "", self.TITLES[f], words[f]))
+        (self.unsecured.add_css_class if self.open_net else self.unsecured.remove_css_class)("on")
+        (self.secured.remove_css_class if self.open_net else self.secured.add_css_class)("on")
+
+    def paint_list(self):
+        found = netlogic.rows(self.scan_data)
+        fill(self.nets, [(r["ssid"], netlogic.detail(r), lambda r=r: self.select(r)) for r in found] or
+             [("No networks found", "Tap to scan again", self.scan_row)])
+        # which network is in each place and what a tap there would offer: a newer list that changes either holds row taps
+        self.shown("rows", tuple((r["ssid"], netlogic.choice(r), r["visible"]) for r in found))
+
+    # --- choosing and typing ------------------------------------------------------------------------------------
+    @owners_tap
+    def select(self, row):
+        if self.holding("rows", netlogic.LIST_CHANGED):
+            return      # the list changed under the finger: the tap was meant for what was in its place before
+        self.secret.clear()
+        self.sure.keep_only(None)
+        self.other, self.chosen = False, row
+        self.keys.numbers(False)
+        self.say("")
+        self.paint_act()
+
+    @owners_tap
+    def scan_row(self):
+        """The only row of an empty list: scan again."""
+        if not self.holding("rows", netlogic.LIST_CHANGED):
+            self.scan(True)
+
+    @owners_tap
+    def other_network(self):
+        self.secret.clear()
+        self.sure.keep_only(None)
+        self.ssid_entry.text, self.open_net, self.other, self.chosen = "", False, True, None
+        self.focus("name")
+        self.paint_act()
+
+    @owners_tap
+    def set_open(self, open_net):
+        self.open_net = bool(open_net)
+        if self.open_net:
+            self.secret.clear()
+        self.focus("name" if self.open_net else self.field)
+
+    @owners_tap
+    def focus(self, field):
+        self.field = "name" if self.open_net else field
+        self.keys.numbers(False)
+        self.paint_typed()
+
+    @owners_tap
+    def key(self, ch):
+        m = self.mode()
+        if m == "other" and self.field == "name":
+            if ch == "\n":
+                self.focus("password")
+            elif self.ssid_entry.key(ch):
+                self.paint_typed()
+        elif m in ("other", "password"):
+            if ch == "\n":
+                self.join()
+            elif self.busy:
+                self.say(netlogic.KEYS_WAIT)    # while a request waits, password keys are not kept, and it says so
+            elif self.secret.key(ch):
+                self.paint_typed()
+
+    @owners_tap
+    def cancel(self):
+        """Close the choice. Nothing is sent; the typed password is dropped."""
+        self.secret.clear()
+        self.sure.keep_only(None)
+        self.ssid_entry.text, self.other, self.chosen, self.open_net = "", False, None, False
+        self.paint_act()
+
+    # --- asking the core ----------------------------------------------------------------------------------------
+    def send(self, action, fields, then):
+        """One net_* action on its own thread; then(reply) runs on the window's thread. `fields` is emptied once the
+        request has gone, and any text in the reply that holds what was typed is hidden (netlogic.scrub)."""
+        core, wait, change = self.shell.core, self.WAIT.get(action, 20), action in self.CHANGES
+
+        def work():
+            typed = fields.get("password")
+            try:
+                got = core.net(action, fields, wait)
+            except urllib.error.HTTPError as err:
+                got = netlogic.refusal(err.code)    # a 4xx: refused before anything ran (netlogic.NOT_SENT)
+            except Exception as err:        # never shown or logged as it is: it may quote the request
+                got = netlogic.failed(err, change)
+            finally:
+                fields.clear()
+            got = netlogic.scrub(got, typed)
+            typed = None
+            GLib.idle_add(self.answer, then, got)
+        try:
+            threading.Thread(target=work, daemon=True).start()
+        except Exception as err:            # no thread: nothing was sent; the answer is a plain failure, given now
+            fields.clear()
+            self.answer(then, dict(netlogic.failed(err, False), **{netlogic.NOT_SENT: True}))
+
+    @staticmethod
+    def answer(then, got):
+        then(got if isinstance(got, dict) else {"ok": False})
+        return False
+
+    def now(self):
+        return time.monotonic()
+
+    def shown(self, which, what):
+        """Button `which` now says and does `what` (its label, and for the main button the pane and the network it acts
+        on). A change the owner's own tap made is theirs, and ends any hold; any other change starts one (hold())."""
+        if self.seen.get(which, what) != what:
+            if self.by_owner:
+                self.held.pop(which, None)
+            else:
+                self.hold(which)
+        self.seen[which] = what
+
+    def hold(self, which):
+        """Button `which` changed by itself, so a tap on it in the next HOLD_S seconds was meant for what it said before:
+        it sends nothing and only says the button changed."""
+        self.held[which] = self.now() + self.HOLD_S
+
+    def holding(self, which, why=netlogic.CHANGED):
+        if self.now() < self.held.get(which, float("-inf")):
+            self.say(why)
+            return True
+        return False
+
+    @owners_tap
+    def main_action(self):
+        if self.holding("main"):
+            return
+        m = self.mode()
+        if m == "idle":
+            self.scan(True)
+        elif m == "connected":
+            if not self.sure.tap(("disconnect", self.ssid())):
+                self.paint_act()
+                return
+            # The core's disconnect names no network: it drops whatever is connected. So it is sent only while the
+            # latest radios read says the network this prompt asked about is the one connected.
+            known, now = netlogic.connected_to(self.status_data)
+            if not known or now != self.ssid():
+                self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
+                self.paint_act()
+                return
+            self.act_on("net_wifi", {"mode": "disconnect"}, "Disconnecting...")
+        elif m != "unsupported":
+            self.join()
+
+    def join(self):
+        if self.busy:
+            return
+        m = self.mode()
+        if m == "other":
+            if not self.ssid_entry.text:
+                self.say(netlogic.NEED_NAME)
+                return
+            need = netlogic.needs_password({"secure": not self.open_net}, typed_hidden=True)
+            fields = {"ssid": self.ssid_entry.text, "hidden": True}
+        elif m in ("password", "known", "open"):
+            need = netlogic.needs_password(self.chosen)
+            fields = {"ssid": self.chosen["ssid"]}
+        else:
+            return
+        if need and not len(self.secret):
+            self.say(netlogic.NEED_PW)
+            return
+        if need:
+            fields["password"] = self.secret.reveal()
+        self.busy = True
+        self.secret.clear()     # handed to the sending thread below: from here on this page holds no typed password
+        self.say("Joining...")
+        self.paint_act()
+        self.send("net_join", fields, self.reply_to(self.done))
+
+    def reply_to(self, then):
+        """then(got, visit): the visit is the one the request was sent in, so a reply can tell it is from an earlier one."""
+        visit = self.visit
+        return lambda got: then(got, visit)
+
+    def stale(self, visit):
+        return visit is not None and visit != self.visit
+
+    def free(self):
+        """The page is no longer busy. A scan this visit put off because it was busy runs now."""
+        self.busy = False
+        if self.scan_owed and self.visible():
+            self.scan_owed = False
+            self.scan(True)
+            return True
+        return False
+
+    def done(self, got, visit=None):
+        """The answer to a join, a forget or a Wi-Fi change. Every answer except a refusal before anything ran
+        (netlogic.nothing_ran) sets the floor (set_floor): every older read still on its way is refused, and the radios
+        read drawn before it is no longer trusted until a newer one is drawn. Whatever the answer, the radios and the list
+        are read again (a failed join may still have changed them).
+        For a change sent in this visit, the typed password is emptied whatever the answer. An answer to a change sent
+        in an earlier visit says its outcome, sets the same floor in the same cases, frees the page (which runs a scan this
+        visit put off) and, while it shows, reads the radios again; it leaves this visit's choice and typed password as they are."""
+        ok, text = netlogic.friendly(got)
+        # Any answer from the core to a change may follow a change of the radios: a confirmed one, one with no answer in
+        # time on either side (NetworkManager keeps going after nmcli stops waiting), a failed join that dropped the old
+        # network. Only a refusal before anything ran (netlogic.NOT_SENT: an HTTP 4xx, or nothing sent) leaves them as
+        # they were, so only that sets no floor.
+        floor = not netlogic.nothing_ran(got)
+        self.sure.keep_only(None)
+        self.say(text)
+        if self.stale(visit):
+            if floor:
+                self.set_floor()
+            self.paint_act()
+            self.free()
+            if self.visible():
+                self.status(fresh=True)
+            return False
+        self.secret.clear()
+        if ok:
+            self.ssid_entry.text, self.other, self.chosen, self.open_net = "", False, None, False
+        if floor:
+            self.set_floor()
+        self.paint_act()
+        rescanned = self.free()
+        if self.visible():
+            self.status(fresh=True)
+            if not rescanned:
+                self.scan(False, quiet=True)
+        return False
+
+    def set_floor(self):
+        """After a change: every read sent before now is refused when it comes, and the radios read drawn before now is no
+        longer trusted. Until a read sent after this is drawn, the Wi-Fi state and the connected network are unknown, so
+        the Wi-Fi button cannot switch and Disconnect sends nothing (connected_to(None) is unknown); the list stays drawn
+        so the owner can see it, and each row is checked again when the newer reads come."""
+        for seq in (self.radios, self.found):
+            seq.accept(seq.issue(), floor=True)
+        self.status_data = None
+        self.lines.set_label(netlogic.REREAD)
+
+    @owners_tap
+    def forget(self):
+        ssid = self.ssid()
+        if not ssid:
+            return
+        if self.sure.tap(("forget", ssid)):
+            self.act_on("net_forget", {"ssid": ssid}, "Forgetting...")
+        else:
+            self.paint_act()
+
+    @owners_tap
+    def toggle_wifi(self):
+        if self.holding("wifi"):
+            return
+        on = netlogic.wifi_on(self.status_data)
+        if on is None:
+            self.say(netlogic.WIFI_UNKNOWN)     # never switch a radio whose state is not known
+        elif on is False:
+            self.act_on("net_wifi", {"mode": "on"}, "Turning Wi-Fi on...")
+        elif self.sure.tap(("wifi-off",)):
+            self.act_on("net_wifi", {"mode": "off"}, "Turning Wi-Fi off...")
+        else:
+            self.paint_act()
+
+    def act_on(self, action, fields, doing):
+        if self.busy:
+            return
+        self.busy = True
+        self.say(doing)
+        self.paint_act()
+        self.send(action, fields, self.reply_to(self.done))
+
+    def status(self, fresh=False, then_scan=False):
+        n = self.radios.issue()
+        self.polling = n
+        self.send("net_status", {"fresh": True} if fresh else {},
+                  self.reply_to(lambda got, visit: self.statused(n, got, then_scan, visit)))
+
+    def disarm_row(self):
+        """Drop a Forget or Disconnect prompt: what it asked about is no longer what it was."""
+        if self.sure.armed and self.sure.armed[0] in ("forget", "disconnect"):
+            self.sure.keep_only(None)
+
+    def rechoose(self, row):
+        """The chosen row is now `row` (a newer reading of the same network, or None when it is gone). A prompt about
+        it is dropped if anything about its state changed, and a typed password if the pane no longer asks for one."""
+        old = self.chosen
+        keys = ("active", "known", "visible", "supported", "secure")
+        if row is None or any(row.get(k) != old.get(k) for k in keys):
+            self.disarm_row()
+        self.chosen = row
+        if self.mode() != "password":
+            self.secret.clear()
+
+    def statused(self, n, got, then_scan=False, visit=None):
+        if self.polling == n:
+            self.polling = None
+        if self.stale(visit):
+            return False        # read for an earlier visit: this visit reads the radios itself
+        if self.radios.accept(n):
+            before = netlogic.connected_to(self.status_data)
+            self.status_data = got
+            self.lines.set_label("\n".join(netlogic.status_lines(got)) or "The radios could not be read.")
+            if self.sure.armed == ("wifi-off",) and netlogic.wifi_on(got) is not True:
+                self.sure.keep_only(None)
+            known, now = netlogic.connected_to(got)
+            if (known, now) != before:
+                self.disarm_row()
+            if known and self.chosen and not self.other and bool(self.chosen.get("active")) != (now == self.ssid()):
+                self.rechoose(dict(self.chosen, active=now == self.ssid()))
+            self.paint_act()
+        if then_scan and self.visible():
+            if self.busy:
+                self.scan_owed = True       # run when the page is free (free())
+            else:
+                self.scan(True)
+        return False
+
+    def scan(self, rescan, quiet=False):
+        if not quiet:
+            if self.busy:
+                return
+            self.busy = True
+            self.say("Scanning..." if rescan else "")
+            self.paint_act()
+        n = self.found.issue()
+        self.send("net_scan", {"rescan": bool(rescan)}, self.reply_to(lambda got, visit: self.scanned(n, got, quiet, visit)))
+
+    def scanned(self, n, got, quiet=False, visit=None):
+        if self.stale(visit):
+            if not quiet:
+                self.paint_act()
+                self.free()     # the list of an earlier visit is not drawn; this visit scans for itself
+            return False
+        if not quiet:
+            self.busy = False
+        fresh = self.found.accept(n)
+        if fresh and isinstance(got.get("networks"), list):
+            self.scan_data = got
+            self.paint_list()
+            if self.chosen and not self.other:
+                self.rechoose(next((r for r in netlogic.rows(got) if r["ssid"] == self.ssid()), None))
+            if not quiet:
+                self.say(got.get("message") if isinstance(got.get("message"), str) else "")
+        elif not quiet and not isinstance(got.get("networks"), list):
+            self.say(netlogic.friendly(got)[1])
+        self.paint_act()
+        if not quiet:
+            self.free()
+        return False
+
+    # --- coming and going ---------------------------------------------------------------------------------------
+    def enter(self):
+        if not self.visible():
+            return
+        self.status(then_scan=True)
+        if self.timer is None:
+            self.timer = GLib.timeout_add(self.POLL_MS, self.poll)
+
+    def poll(self):
+        if not self.visible():
+            self.timer = None
+            return False
+        if self.polling is None:
+            self.status()
+        return True
+
+    @owners_tap
+    def list_row(self):
+        """The only row while this visit's first list has not come: it chooses nothing."""
+        self.say(netlogic.LIST_WAIT)
+
+    def leave(self):
+        """Every reply still on its way now belongs to an earlier visit (see done, statused and scanned). What this visit
+        read is forgotten as well: while the page is not showing, the phone can move to another network or the Wi-Fi be
+        switched (the browser's /network page, NetworkManager roaming). So the next visit starts at the floor: the radios
+        are unknown (Disconnect and the Wi-Fi button do nothing) until its own first radios read is drawn, and the list
+        has one row that chooses nothing until its own first list is drawn (that list starts a row hold, as any newer
+        list that changes a place does)."""
+        self.visit += 1
+        self.scan_owed = False
+        if self.timer is not None:
+            GLib.source_remove(self.timer)
+            self.timer = None
+        self.polling = None
+        self.status_data, self.scan_data = None, None
+        self.lines.set_label(netlogic.REREAD)
+        fill(self.nets, [(netlogic.LIST_REREAD, "", self.list_row)])
+        self.shown("rows", ("reading",))
+        self.cancel()
+
+
+PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Calls, Settings, Network)
 
 
 def enabled_pages(env=None):
