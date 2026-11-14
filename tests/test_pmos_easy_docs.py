@@ -14,8 +14,17 @@ class TestEasyDocs(unittest.TestCase):
         self.assertIn(warning, script)  # the doc quotes what the script prints
         self.assertIn("## Reboot warning\n\n> " + warning + "\n\n", self.text)
         self.assertIn("`confirm-reboot.sh` prints the warning above.", self.text)
-        self.assertIn("do not implement or verify a multi-reboot setup sequence", self.text)
-        self.assertIn("Do not unplug the phone during setup.", self.text)
+        self.assertIn("not implement or verify a multi-reboot setup sequence", self.text)
+        self.assertIn("Do not unplug the phone\nduring setup.", self.text)
+    def test_checks_and_flash_refusal_are_documented(self):
+        script = (Path(__file__).resolve().parents[1] / "packaging/pmos/easy/easy-install.sh").read_text()
+        self.assertNotIn("confirm-reboot", script)  # the doc says no typed confirmation is asked
+        for text in ('refuses with\n`refusing to flash` and exit status 1', 'asks for no typed confirmation',
+                     '`--yes` is no longer accepted', 'readable, non-empty file',
+                     'issues no erase or flash command', 'exit status 2', 'NOT_RUN'):
+            self.assertIn(text, self.text)
+        self.assertNotIn('fastboot flash', self.text)
+        self.assertNotIn('system partition', self.text)
     def test_undo_kiosk(self):
         self.assertIn("## Undo the kiosk\n\nRun `opos-kiosk-off` as root.", self.text)
         self.assertIn("If a previous session was recorded, it restores that session after a reboot.", self.text)

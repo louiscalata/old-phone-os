@@ -425,9 +425,15 @@ Use `<pc-usb-address>` for the PC adapter and `<phone-usb-address>` for the phon
 changes its network discovery and options and has been parsed and had its probe exercised against loopback,
 not run on a phone.
 
-`deploy/duo-rootfs-install.sh` (any host with fastboot and adb; a dry run unless `--yes`) does the formatting,
-push, verification and one kernel boot too, but not the brake, the preflight or the network search: it is the
-less guarded route.
+`deploy/duo-rootfs-install.sh` prints a dry run unless both `--yes --erase-userdata`
+are supplied. Before formatting, it requires readable, non-empty images, computable
+SHA-256 hashes, exactly one fastboot device and the expected Surface Duo 1 product.
+Optional `--twrp-sha256`, `--boot-sha256` and `--rootfs-sha256` values must match.
+It selects the checked device for every fastboot and adb command and rehashes the
+TWRP and boot images directly before each RAM-boot. Missing or failed checks refuse. See the [shell install contract](../../docs/duo-usb-install.md#rootfs-install-through-twrp).
+It still omits the misc brake, slot/unlock/battery checks, raw ext4 validation and
+network search, so it remains the less guarded route. Phone validation of these
+changes is **NOT_RUN**.
 
 ## USB-link addresses
 

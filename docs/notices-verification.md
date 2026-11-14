@@ -25,7 +25,7 @@
 
 - SOURCE_URL is the plainly displayed project address `github.com/louiscalata/old-phone-os`, consistent with the prospective public repository in README. Displaying this text makes no network request. The release owner must verify the actual published destination and corresponding-source archive before distributing binaries.
 - CONTACT refers readers to the project repository without inventing an email, issue-channel configuration or promised support service.
-- RESTORE_STOCK remains unpublished because no verified stock-restore procedure is supplied. [The historical Duo notes](duo-usb-install.md) contain rootfs, recovery and sparse-image flashing instructions, and `packaging/pmos/easy/easy-install.sh --flash` calls `pmbootstrap flasher flash_rootfs`; those paths remain unverified for this corrected source and are not a verified stock-restore procedure.
+- RESTORE_STOCK remains unpublished because no verified stock-restore procedure is supplied. [The historical Duo notes](duo-usb-install.md) contain rootfs, recovery and sparse-image flashing instructions, and `packaging/pmos/easy/easy-install.sh --flash` checks the image and then refuses without issuing an erase or flash command; those paths remain unverified for this corrected source and are not a verified stock-restore procedure.
 - VERSION remains synchronized with `packaging/pmos/opos/APKBUILD`; a missing generated build identity is honestly shown as unpublished. Each release should record its actual source and package identities.
 - THIRD_PARTY follows platform dependencies. `THIRD_PARTY.md` separately links model terms; no weights or inference server are bundled. A full system image needs its own exact package/license/source inventory.
 

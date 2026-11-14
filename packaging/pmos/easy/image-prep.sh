@@ -4,11 +4,16 @@ set -eu
 if [ "${1:-}" != "--check" ]; then
   exit 2
 fi
-if [ "$#" -lt 2 ] || [ ! -f "$2" ]; then
+if [ "$#" -ne 2 ] || [ ! -f "$2" ]; then
   printf 'no such image\n' >&2
   exit 2
 fi
-h="$(od -An -tx1 -N4 "$2" | tr -d ' \t\r\n')"
+if [ ! -r "$2" ] || [ ! -s "$2" ]; then
+  printf 'image must be readable and non-empty\n' >&2
+  exit 2
+fi
+header=$(od -An -tx1 -N4 "$2") || { printf 'cannot read image\n' >&2; exit 2; }
+h=$(printf '%s' "$header" | tr -d ' \t\r\n')
 if [ "$h" = "3aff26ed" ]; then
   printf 'format: sparse\n'
 else

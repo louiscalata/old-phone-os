@@ -44,6 +44,17 @@ their original scope. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- November 13 installer refusal changes: the Duo shell installer requires
+  `--yes --erase-userdata`, readable non-empty images, computable SHA-256 hashes,
+  matching optional image hashes and one device reporting the expected product
+  before formatting. All device commands select that checked device, the pushed
+  rootfs is compared with the hash that passed the check, TWRP is rehashed before
+  its RAM-boot, and the boot image is rehashed in TWRP and again directly before
+  the single final RAM-boot. The pmOS helper says up front that it does not flash,
+  asks for no typed confirmation, and `--flash` refuses after its image check
+  instead of running a flasher. Local stub tests cover refusal before writes;
+  phone installation remains **NOT_RUN**. The Duo shell route still omits
+  the misc brake and the full guarded installer preflight.
 - November 12 volume-key consumer: reads 114 on `qpnp_pon` and 115 on `gpio-keys`
   independently and reports a bounded simulated volume in Settings and the top bar.
   No connected media/ringer mixer exists; sound is unchanged. The restartable root
