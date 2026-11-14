@@ -51,6 +51,12 @@ their original scope. Plans are intentions, not promises.
   unknown, `leave()` on a page change, a fresh status read after a change and per-action waits. Opening the screen, a
   real join, forget, disconnect, Wi-Fi off and on, a hidden network and the two-tap prompts remain **NOT_RUN** on the
   phone for this build; local stand-in toolkit tests do not establish them.
+- November 14 image folder: the PC session reported on November 12 that Windows Storage Sense deleted the
+  phone boot and recovery images kept in a temp folder (not re-verified on the Mac). The install docs now say
+  to keep the images in a profile folder such as `%USERPROFILE%\opos-duo-images` and to verify SHA-256 before
+  use, and `deploy/duo-opos-boot.ps1` names an `-ImageDir` or `-LogDir` under a temp folder before it touches
+  the phone; it warns and still runs. Text tests and a PowerShell test of the folder check (skipped where no
+  PowerShell is installed) are local work; the script on a Windows PC and on the phone is **NOT_RUN**.
 - November 13 installer refusal changes: the Duo shell installer requires
   `--yes --erase-userdata`, readable non-empty images, computable SHA-256 hashes,
   matching optional image hashes and one device reporting the expected product
