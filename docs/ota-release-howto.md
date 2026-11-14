@@ -228,8 +228,9 @@ What to do:
    `/etc/systemd/system`, `/etc/default`, `/etc/opos`) too: the updater now removes them itself before a restore, but an image
    built before that change can have a half-written one holding the very room the restore needs. If the cause is systemd (a
    rate limit, a bus error), wait a minute.
-2. Let the updater do the job: `systemctl start opos-update.service` (with an empty inbox it only recovers) or reboot
-   (`opos-update-boot.service` recovers before the server and the session start). It is done when `status` has no
+2. Let the updater do the job: `systemctl start opos-update.service` (with an empty inbox it only recovers); a new
+   RAM-boot from the PC also recovers (`opos-update-boot.service` runs before the server and the session start).
+   Do not restart or power-cycle the phone itself. It is done when `status` has no
    `INTERRUPTED` line and `status.json` says `rolled-back` (an apply: `interrupted; the previous release was restored`; its
    serial is now in `failed`). Do not use `opos-updater rollback` for this: it recovers first and, if that works, then goes back
    one release more.

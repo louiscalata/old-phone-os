@@ -11,6 +11,7 @@ from datetime import datetime
 from unittest import mock
 
 from opos import apps, apps_page, clock_page, web
+from opos.alarms import Event
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible
 from tests.test_panes_pages import TOKENS, css_hexes, style_of
@@ -35,7 +36,7 @@ class ClockPage(unittest.TestCase):
 
     def test_the_page_says_what_is_real_and_uses_only_the_token_colours(self):
         html = clock_page.render("tok", "nonce")
-        self.assertIn("Clock not set: alarms will not ring until the time is known", html)
+        self.assertIn("Clock not set: alarms will not show until the time is known", html)
         self.assertIn(">Stop<", html)
         self.assertIn(">Snooze 10 min<", html)
         self.assertIn(">Bedside<", html)
@@ -44,7 +45,18 @@ class ClockPage(unittest.TestCase):
         self.assertNotIn('type="time"', html)
         self.assertEqual(set(), css_hexes(style_of(html)) - TOKENS)
         self.assertTrue(is_quiet(visible(html)))
-        self.assertIn("Works offline: yes. Sends data: no. Uses: speaker, vibration. Real or practice: real.", apps.by_id("clock").card())
+        self.assertIn("Works offline: yes. Sends data: no. Uses: screen only (no sound yet). Real or practice: real.", apps.by_id("clock").card())
+
+    def test_production_alarm_without_a_player_discloses_screen_only_behavior(self):
+        event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
+        with self.assertRaisesRegex(RuntimeError, "no player"):
+            clock_page._play([event])
+        html = clock_page.render("tok", "nonce")
+        notice = '<p class="note">Alarms show on screen only. No sound or vibration is played yet.</p>'
+        self.assertIn(notice, html)
+        card = apps.by_id("clock").card()
+        self.assertIn("Uses: screen only (no sound yet).", card)
+        self.assertIn("Real or practice: real.", card)
 
     def test_ring_snooze_stop_and_a_clock_that_is_not_set(self):
         with running(self.env) as server:

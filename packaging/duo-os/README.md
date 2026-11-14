@@ -336,6 +336,7 @@ both); none of it was measured on the phone.
   cannot undo that, because it has to stop before `timekeeper` stores. To let the seed try again, on the phone, with the
   owner's own password: `sudo sh -c 'echo -1 > /data/time/timekeep'`. A clean shutdown stores the clock again, so as read
   the next boot has to follow a power-off that skips the store (hold the power key), not a Reboot.
+  On a RAM-boot-only phone that power-off can start Android and destroy the OPOS install, so do not try it there.
   So the first device check records the `ats_1` line before any shutdown:
   `journalctl -b -u opos-clock | grep 'evidence: persist'` ("present, N bytes" or "absent").
 - `systemd-timesyncd` is the only network time service in the base (no chrony), enabled and unmasked. It needs a

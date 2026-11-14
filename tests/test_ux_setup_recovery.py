@@ -53,7 +53,7 @@ class TestSetupRecovery(unittest.TestCase):
         self.assertLess(a, b)
         self.assertLess(b, c)
     def test_failed_help_element_hidden_with_guidance(self):
-        s = "Your choices are kept. Tap Try again. If it still fails, restart the device and run opos again."
+        s = "Your choices are kept. Tap Try again. If it still fails, run opos again."
         self.assertEqual(self.ids.counts.get("failed-help", 0), 1)
         rec = self.ids.infos["failed-help"][0]
         self.assertIn("hidden", rec["attrs"])
@@ -74,7 +74,7 @@ class TestSetupRecovery(unittest.TestCase):
         self.assertEqual(self.html.count('q("#failed-help").hidden=false'), 1)
     def test_no_unsafe_markup(self):
         a = "Your saved settings could not be read, so the recommended settings are shown. Check each step, then tap Apply."
-        b = "Your choices are kept. Tap Try again. If it still fails, restart the device and run opos again."
+        b = "Your choices are kept. Tap Try again. If it still fails, run opos again."
         self.assertIn(a, self.html)
         self.assertIn(b, self.html)
         self.assertNotIn("innerHTML", self.html)

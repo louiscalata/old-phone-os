@@ -172,7 +172,7 @@ try {
         $pathState = if ($word.Count -ge 1) { $word[0] } else { "unknown" }
         $hint = "the updater may still be working, read status.json again"
         if ($pathState -ne "active" -and $pathState -ne "unknown") {
-            $hint = "the update path unit is $pathState, so nothing started the updater and the bundle waits in the inbox; restart the phone, or as root: systemctl reset-failed opos-update.path opos-update.service; systemctl restart opos-update.path"
+            $hint = "the update path unit is $pathState, so nothing started the updater and the bundle waits in the inbox; keep the phone on; starting the updater again needs root on the phone, which only a development image gives the login user; there, over ssh from the PC, run as root on the phone: systemctl reset-failed opos-update.path opos-update.service; systemctl restart opos-update.path"
         }
         $others = if ($lastOther) { "; the updater's last word, which does not name serial $serial, was: $lastOther" } else { "" }
         Fail "no settled status within $TimeoutS s for serial $serial (last: $last)$others; update units (path, service): $($word -join ', '); $hint" 2
