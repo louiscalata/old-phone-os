@@ -407,7 +407,11 @@ clock, and the `timekeep` trap and its recovery above.
 This erases Android and everything it stored on the phone. Back up first; a restore set exists (below). Needs
 the bootloader unlocked, the battery at 20 % or more, the phone in Boot Select (fastboot), `fastboot.exe` and
 `adb.exe` on PATH. The image folder holds `boot.img` and `surfaceduo1-twrp.img` from the port release,
-`misc-brake.img` (the port's `tools/make-misc-brake.sh` makes it) and `opos-os-rootfs.img`:
+`misc-brake.img` (the port's `tools/make-misc-brake.sh` makes it) and `opos-os-rootfs.img`.
+Keep the phone images in a normal folder in your user profile, for example `%USERPROFILE%\opos-duo-images`, never
+under a temp folder: Windows Storage Sense deletes old files there, and the PC session reported on November 12, 2026
+that it had deleted the boot and recovery images once. Verify the SHA-256 of each file against the pinned hashes before
+every use. The script names an `-ImageDir` or `-LogDir` under a temp folder in its first lines (it still runs):
 
 ```powershell
 powershell -File deploy\duo-opos-boot.ps1 -ImageDir <folder> -RootfsSha256 <sha256 of opos-os-rootfs.img>

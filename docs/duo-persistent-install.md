@@ -46,6 +46,10 @@ written; the install chain (`deploy/duo-opos-boot.ps1`) is untouched and keeps w
 3. The pinned images in one folder (`boot.img`, `surfaceduo1-twrp.img`; `misc-brake.img` is listed under G0 only for
    reference and is not used by these gates), battery 30 percent or more,
    the phone on a good cable.
+   Keep the phone images in a normal folder in your user profile, for example `$env:USERPROFILE\opos-duo-images`,
+   never under a temp folder: Windows Storage Sense deletes old files there, and the PC session reported on
+   November 12, 2026 that it had deleted the boot and recovery images once. Verify the SHA-256 of each file against
+   the pinned hashes before every use. The same goes for the probe folder, which holds the partition backups.
 
 ## What is known, and what the experiment settles
 
@@ -165,8 +169,8 @@ Setup used by the commands below. Replace the placeholders; nothing in this repo
 
 ```powershell
 $repo   = '<this repository>'                                   # holds deploy\duo-persist-probe.ps1
-$images = '<folder with boot.img, surfaceduo1-twrp.img>'
-$probe  = '<a private folder outside every git repository>'
+$images = '<folder with boot.img, surfaceduo1-twrp.img>'      # e.g. $env:USERPROFILE\opos-duo-images, never a temp folder
+$probe  = '<a private folder outside every git repository>'   # in your profile too, never a temp folder
 $serial = '<the Duo''s serial as fastboot devices prints it>'
 ```
 

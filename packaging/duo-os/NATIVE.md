@@ -197,7 +197,12 @@ watcher ignores the lid events from that point in the read and reads the switch 
 or the first `EVIOCGSW` read when the watcher starts fails, the lid counts as unknown, the watcher ends and the screens
 are lit. A blank that finds the saved file already there (a crash between
 saving and writing, or a panel that came back on with the lid closed) writes 0 again and keeps the saved values. A
-restore is capped only at each panel's own `max_brightness`. Not verified on a phone: no lid close, blank or restore on the Duo is recorded here (NOT_RUN), and the
+restore is capped only at each panel's own `max_brightness`. With no saved file, a panel whose `brightness` file is there
+but cannot be read is written its default (capped by its readable `max_brightness`), since it may be dark, and stays listed
+as failed until a read shows it lit. A `PowerSaveMode` of 1 to 3 that the shell refuses (the lid reads open) is not kept:
+the property reads 0, because the screens stay lit; every value still reaches the blank or the restore. After the shell
+restores on its own (the lid opened), the property keeps the last accepted value until the daemon sends 0, and a lid
+watcher that stops is not started again (the screens are lit and the lid is unknown until the shell restarts). Not verified on a phone: no lid close, blank or restore on the Duo is recorded here (NOT_RUN), and the
 current drawn with the lid closed has not been measured.
 
 ## Assistants are deferred
