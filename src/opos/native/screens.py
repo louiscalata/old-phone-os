@@ -878,8 +878,13 @@ class Network(Page):
     the radios again every POLL_MS (never a rescan). Nothing changes the Wi-Fi unless the owner taps for it: Forget,
     Disconnect and Turn Wi-Fi off take two taps, as deleting does elsewhere, and Wi-Fi is never switched while its state
     is not known. Each drawn radios read or list finds the chosen row again by name (rechoose); a Forget or Disconnect
-    prompt is dropped when that row changes or the connected network does, and Disconnect (which names no network to
-    the core) is sent only while the radios say the prompt's network is the connected one. A tap on the main button or
+    prompt is dropped when that row changes or the connected network does. Disconnect names no network to the core, so
+    its confirming tap sends nothing by itself: if the radios read drawn names the prompt's network as the connected
+    one, the radios are read again (skipping the core's cache), the page is busy meanwhile, and the disconnect is sent
+    only when that read, asked after the tap, still names it (checked()); the screen names the network it checked. A
+    read that names another network or none, a choice closed or changed by the owner meanwhile (drop_check()), or the
+    page being left sends nothing. What is left is the moment between the core's read and its disconnect: the core's
+    action would have to name the network to close that. A tap on the main button or
     the Wi-Fi button acts only on what the owner has seen it say for at least HOLD_S: whenever what one of them says or
     does changes for any reason other than the owner's own tap (a newer radios read, a newer list, a change's answer),
     a tap on it in the next HOLD_S seconds sends nothing and says the button changed (netlogic.CHANGED). So an armed or
@@ -889,7 +894,11 @@ class Network(Page):
     when a newer list puts another network in a place, or changes what a tap on a place would offer, a tap on a row in
     the next HOLD_S seconds chooses nothing and says the list changed (netlogic.LIST_CHANGED). The owner's own taps start
     no hold, so a prompt they armed is confirmed by the very next tap and a row they chose is joined at once. The radios
-    and the scan each keep their own order (logic.Sequence): an older answer never replaces a newer one. Every answer
+    and the scan each keep their own order (logic.Sequence): an older answer never replaces a newer one. Their request
+    numbers come from one count (ask()), so between a radios read and a list it is known which was asked later: whether
+    the chosen row is the connected one follows the later-asked of the two drawn (current()), so a list asked before
+    the radios read drawn cannot put "connected" back or take it away, nor a radios read asked before the list drawn,
+    whichever answer arrives last. Every answer
     from the core to a change (confirmed, failed, or with no answer in time on either side: it may still be going on)
     sets a floor (set_floor): every answer to a request sent before it is refused, the radios read drawn before it is
     treated as unknown until a read sent after it is drawn (so Disconnect and the Wi-Fi button do nothing until then),
@@ -900,8 +909,10 @@ class Network(Page):
     at the floor until its own first reads are drawn. A change's answer from an
     earlier visit says its outcome, sets the same floor in the same cases, frees the page and, while it shows, reads
     the radios again (the list too, when this visit's scan was put off), and leaves this visit's choice and typing as
-    they are. A typed password lives only in self.secret (netlogic.Secret), is shown as bullets, is sent once in the
-    join, and is emptied before the join is handed to the sending thread, on every answer to a change sent in this
+    they are. A typed password lives only in self.secret (netlogic.Secret), is shown as bullets, and belongs to the one
+    network name its keys were typed for: any edit of a hidden network's name empties it and says so
+    (netlogic.NAME_CHANGED), and a join sends it only with that same name (Secret.is_for), else nothing is sent and it
+    is asked for again. It is sent once in the join, and is emptied before the join is handed to the sending thread, on every answer to a change sent in this
     visit, on Cancel, on choosing another row, when the chosen row goes or needs no password, and when the page is left;
     while the page is busy, password keys are not kept and the page says so (netlogic.KEYS_WAIT). The page stays busy
     until a change's answer comes, even across visits, so nothing can be typed in a later visit before an earlier
@@ -925,6 +936,8 @@ class Network(Page):
         self.radios, self.found = logic.Sequence(), logic.Sequence()    # the order of the status and of the scan answers
         self.sure = logic.Confirm()         # Forget, Disconnect and Turn Wi-Fi off ask twice
         self.secret, self.ssid_entry = netlogic.Secret(), logic.Entry(limit=32)
+        self.status_n, self.scan_n = 0, 0   # the request numbers (ask()) of the radios read and of the list now drawn
+        self.checking = None                # (network, request number) while a confirming Disconnect tap's read waits
         self.lines, self.nets = label("Reading the radios...", "mid"), vbox(spacing=0)
         read = reading(label("Network", "head"), self.lines, self.note, self.nets)
         self.pick, self.why = label("", "big"), label("", "mid", "dim")
@@ -1009,9 +1022,10 @@ class Network(Page):
     def select(self, row):
         if self.holding("rows", netlogic.LIST_CHANGED):
             return      # the list changed under the finger: the tap was meant for what was in its place before
+        self.drop_check()
         self.secret.clear()
         self.sure.keep_only(None)
-        self.other, self.chosen = False, row
+        self.other, self.chosen = False, self.current(row)
         self.keys.numbers(False)
         self.say("")
         self.paint_act()
@@ -1024,6 +1038,7 @@ class Network(Page):
 
     @owners_tap
     def other_network(self):
+        self.drop_check()
         self.secret.clear()
         self.sure.keep_only(None)
         self.ssid_entry.text, self.open_net, self.other, self.chosen = "", False, True, None
@@ -1050,18 +1065,30 @@ class Network(Page):
             if ch == "\n":
                 self.focus("password")
             elif self.ssid_entry.key(ch):
-                self.paint_typed()
+                if len(self.secret):
+                    self.say(netlogic.NAME_CHANGED)     # it was typed for the name as it was before this key
+                self.untype()
         elif m in ("other", "password"):
             if ch == "\n":
                 self.join()
             elif self.busy:
                 self.say(netlogic.KEYS_WAIT)    # while a request waits, password keys are not kept, and it says so
-            elif self.secret.key(ch):
+            elif self.secret.key(ch, self.typing_for()):
                 self.paint_typed()
+
+    def typing_for(self):
+        """The network name a password key typed now is for: the name typed for a hidden network, else the chosen row's."""
+        return self.ssid_entry.text if self.mode() == "other" else self.ssid()
+
+    def untype(self):
+        """Empty what was typed as a password, and show it empty."""
+        self.secret.clear()
+        self.paint_typed()
 
     @owners_tap
     def cancel(self):
         """Close the choice. Nothing is sent; the typed password is dropped."""
+        self.drop_check()
         self.secret.clear()
         self.sure.keep_only(None)
         self.ssid_entry.text, self.other, self.chosen, self.open_net = "", False, None, False
@@ -1132,14 +1159,23 @@ class Network(Page):
             if not self.sure.tap(("disconnect", self.ssid())):
                 self.paint_act()
                 return
-            # The core's disconnect names no network: it drops whatever is connected. So it is sent only while the
-            # latest radios read says the network this prompt asked about is the one connected.
+            # The core's disconnect names no network: it drops whatever is connected. So this tap sends nothing yet.
+            # If the radios read drawn already names another network (or none is known), it stops here. Otherwise the
+            # radios are read again, and the disconnect is sent only when that read, asked after this tap, still names
+            # the network the prompt asked about (checked()): the read drawn may be up to POLL_MS old, and the phone may
+            # have moved to another network between the two taps.
             known, now = netlogic.connected_to(self.status_data)
             if not known or now != self.ssid():
                 self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
                 self.paint_act()
                 return
-            self.act_on("net_wifi", {"mode": "disconnect"}, "Disconnecting...")
+            if self.busy:
+                self.paint_act()
+                return
+            self.busy = True
+            self.say(netlogic.checking(self.ssid()))
+            self.paint_act()
+            self.status(fresh=True, check=self.ssid())
         elif m != "unsupported":
             self.join()
 
@@ -1158,7 +1194,8 @@ class Network(Page):
             fields = {"ssid": self.chosen["ssid"]}
         else:
             return
-        if need and not len(self.secret):
+        if need and not self.secret.is_for(fields["ssid"]):
+            self.untype()       # none typed, or typed for another name than the one this join would send: not sent
             self.say(netlogic.NEED_PW)
             return
         if need:
@@ -1229,8 +1266,8 @@ class Network(Page):
         the Wi-Fi button cannot switch and Disconnect sends nothing (connected_to(None) is unknown); the list stays drawn
         so the owner can see it, and each row is checked again when the newer reads come."""
         for seq in (self.radios, self.found):
-            seq.accept(seq.issue(), floor=True)
-        self.status_data = None
+            seq.accept(self.ask(seq), floor=True)
+        self.status_data, self.status_n = None, 0
         self.lines.set_label(netlogic.REREAD)
 
     @owners_tap
@@ -1265,11 +1302,53 @@ class Network(Page):
         self.paint_act()
         self.send(action, fields, self.reply_to(self.done))
 
-    def status(self, fresh=False, then_scan=False):
-        n = self.radios.issue()
+    def ask(self, seq):
+        """The number of the next request in `seq` (the radios reads or the lists). The two share one count, so of a
+        radios read and a list it is known which was asked later, whichever answer comes first."""
+        seq.issued = max(self.radios.issued, self.found.issued)
+        return seq.issue()
+
+    def current(self, row):
+        """`row` as the radios read drawn says it is, when that read was asked after the list drawn and says which
+        network is connected: connected or not follows the one asked later. Otherwise `row` itself."""
+        known, now = netlogic.connected_to(self.status_data)
+        if row is None or not known or self.status_n <= self.scan_n or bool(row.get("active")) == (now == row.get("ssid")):
+            return row
+        return dict(row, active=now == row.get("ssid"))
+
+    def status(self, fresh=False, then_scan=False, check=None):
+        """Read the radios. `check` is the network a confirming Disconnect tap asked about: this read decides it."""
+        n = self.ask(self.radios)
         self.polling = n
+        if check:
+            self.checking = (check, n)
         self.send("net_status", {"fresh": True} if fresh else {},
                   self.reply_to(lambda got, visit: self.statused(n, got, then_scan, visit)))
+
+    def drop_check(self):
+        """The choice is closed or changed by the owner while a confirming Disconnect tap's read waits: that tap's
+        confirmation ends with it, so the read, when it comes, sends nothing."""
+        if self.checking:
+            self.checking = None
+            self.say("")
+            self.free()
+
+    def checked(self, ssid, drawn):
+        """The radios read a confirming Disconnect tap asked for has come (`drawn`: it was the newest and is the one now
+        drawn). The disconnect is sent only if that read says `ssid` is the connected network, and the page still shows
+        that network as the chosen, connected one. Whatever else it says, nothing is sent and the screen says why."""
+        self.checking = None
+        known, now = netlogic.connected_to(self.status_data) if drawn else (False, None)
+        if known and now == ssid:
+            if self.visible() and not self.other and self.ssid() == ssid and self.mode() == "connected":
+                self.say(netlogic.disconnecting(ssid))
+                self.send("net_wifi", {"mode": "disconnect"}, self.reply_to(self.done))     # the page stays busy
+                return
+            self.say(netlogic.DISCONNECT_CLOSED)
+        else:
+            self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
+        self.paint_act()
+        self.free()
 
     def disarm_row(self):
         """Drop a Forget or Disconnect prompt: what it asked about is no longer what it was."""
@@ -1292,18 +1371,23 @@ class Network(Page):
             self.polling = None
         if self.stale(visit):
             return False        # read for an earlier visit: this visit reads the radios itself
-        if self.radios.accept(n):
+        drawn = self.radios.accept(n)
+        if drawn:
             before = netlogic.connected_to(self.status_data)
-            self.status_data = got
+            self.status_data, self.status_n = got, n
             self.lines.set_label("\n".join(netlogic.status_lines(got)) or "The radios could not be read.")
             if self.sure.armed == ("wifi-off",) and netlogic.wifi_on(got) is not True:
                 self.sure.keep_only(None)
             known, now = netlogic.connected_to(got)
             if (known, now) != before:
                 self.disarm_row()
-            if known and self.chosen and not self.other and bool(self.chosen.get("active")) != (now == self.ssid()):
-                self.rechoose(dict(self.chosen, active=now == self.ssid()))
+            if self.chosen and not self.other:
+                row = self.current(self.chosen)     # only when this read was asked after the list drawn
+                if row is not self.chosen:
+                    self.rechoose(row)
             self.paint_act()
+        if self.checking and self.checking[1] == n:
+            self.checked(self.checking[0], drawn)
         if then_scan and self.visible():
             if self.busy:
                 self.scan_owed = True       # run when the page is free (free())
@@ -1318,7 +1402,7 @@ class Network(Page):
             self.busy = True
             self.say("Scanning..." if rescan else "")
             self.paint_act()
-        n = self.found.issue()
+        n = self.ask(self.found)
         self.send("net_scan", {"rescan": bool(rescan)}, self.reply_to(lambda got, visit: self.scanned(n, got, quiet, visit)))
 
     def scanned(self, n, got, quiet=False, visit=None):
@@ -1331,10 +1415,11 @@ class Network(Page):
             self.busy = False
         fresh = self.found.accept(n)
         if fresh and isinstance(got.get("networks"), list):
-            self.scan_data = got
+            self.scan_data, self.scan_n = got, n
             self.paint_list()
             if self.chosen and not self.other:
-                self.rechoose(next((r for r in netlogic.rows(got) if r["ssid"] == self.ssid()), None))
+                # found again by name; connected or not as the radios read drawn says, when that was asked after this list
+                self.rechoose(self.current(next((r for r in netlogic.rows(got) if r["ssid"] == self.ssid()), None)))
             if not quiet:
                 self.say(got.get("message") if isinstance(got.get("message"), str) else "")
         elif not quiet and not isinstance(got.get("networks"), list):
@@ -1378,7 +1463,7 @@ class Network(Page):
             GLib.source_remove(self.timer)
             self.timer = None
         self.polling = None
-        self.status_data, self.scan_data = None, None
+        self.status_data, self.scan_data, self.status_n, self.scan_n = None, None, 0, 0
         self.lines.set_label(netlogic.REREAD)
         fill(self.nets, [(netlogic.LIST_REREAD, "", self.list_row)])
         self.shown("rows", ("reading",))

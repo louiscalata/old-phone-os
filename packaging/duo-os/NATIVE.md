@@ -87,9 +87,17 @@ elsewhere the server refuses them and the screen shows its sentence.
   now?"); choosing another row, Cancel or leaving the screen disarms them. Every newer radios read or list that is
   drawn finds the chosen row again by name and takes its new state, or closes the choice when the row is gone; a Forget
   or Disconnect prompt is dropped when that row's state changed or when the radios name another connected network.
-  The server's disconnect names no network (it drops whatever is connected), so the second Disconnect tap sends it only
-  while the latest radios read says the network on the prompt is the one connected; otherwise it sends nothing and says
-  why. While the Wi-Fi state is not known the switch is greyed out and sends nothing. Turn Wi-Fi on takes one tap.
+  The server's disconnect names no network (it drops whatever is connected), and the radios read on screen can be up
+  to 10 s old, so the second Disconnect tap sends nothing by itself. If the read on screen names another network, or
+  none is known, it stops there and says why. Otherwise the screen reads the radios again (skipping the server's
+  few-second cache), says "Checking that <network> is still the connected network...", and stays busy; it sends the
+  disconnect only when that read, asked after the tap, still names the network on the prompt, and then says
+  "Disconnecting from <network>...". If the phone moved to another network between the two taps, or the read does not
+  say which network is connected, nothing is sent and the screen says why. Cancel, choosing a row, Other network or
+  leaving the screen while that read is waiting ends the confirmation, so the read then sends nothing. What remains
+  is the moment between the server's read and its disconnect; closing that needs the server's action to name the
+  network, which this change does not do. While the Wi-Fi state is not known the switch is greyed out and sends
+  nothing. Turn Wi-Fi on takes one tap.
 - The main button and the Wi-Fi button act only on what the owner has seen them say. What one of them says or does
   can change for a reason other than the owner's own tap (a newer radios read, a newer list, or a change's answer),
   for example when an armed or unarmed Disconnect turns into Join, or Turn Wi-Fi off into Turn Wi-Fi on. For 1.5 s
@@ -113,7 +121,13 @@ elsewhere the server refuses them and the screen shows its sentence.
   in the same cases, frees the screen and, while the screen shows, reads the radios again. It does not
   touch the choice or the typed password of the visit now showing. A scan that opening the screen had to put off while
   an earlier request was still waiting runs once the screen is free, so the list is read again too.
-- The radios and the scan each keep their own order: an older answer never replaces a newer one. Every answer the
+- The radios and the scan each keep their own order: an older answer never replaces a newer one. Their requests are
+  numbered from one count, so between a radios read and a list the screen knows which was asked later. Whether the
+  chosen row is the connected one follows the later-asked of the two on screen: a list asked before the radios read on
+  screen does not turn Disconnect back into Join (or Join into Disconnect), and neither does a radios read asked
+  before the list on screen, whichever answer arrives last. A row tapped in a list older than the radios read is
+  opened as that read says it is. The order is the order of asking; the server may still answer two requests sent
+  close together in the other order, and the next read corrects that. Every answer the
   server gives to a change sets a floor: a confirmed change, one with no answer in time on either side (the screen's
   own wait, or the server's "The network service did not answer in time. Try again.": NetworkManager may still be
   going on), and a failed one (a failed join may already have dropped the old network). Only a refusal before anything
@@ -125,7 +139,11 @@ elsewhere the server refuses them and the screen shows its sentence.
 - A join waits up to 100 s for the server, which may take about 95 s; a change with no answer in time is not called
   failed: the screen says the change may still be going on and reads the radios again.
 - The password is typed on the on-screen keyboard into `netlogic.Secret`, which prints and formats as
-  `<password hidden>` and cannot be pickled or copied. It is shown as bullets, sent once in the join request to the
+  `<password hidden>` and cannot be pickled or copied. It belongs to the one network name its keys were typed for.
+  For a hidden network, any edit of the name (a key added or deleted) empties the password, and the screen says "The
+  name changed, so the password typed for the old name was cleared. Type the password again." A join sends a password
+  only with the name it was typed for; if the two differ, nothing is sent and the password is asked for again. It is
+  shown as bullets, sent once in the join request to the
   server on loopback, and emptied before the request is handed to the sending thread, on every answer to a change sent
   in the same visit (success, error or no answer in time), on Cancel, on choosing another row, when a newer list drops
   the chosen row or no longer asks for a password, and when the screen is left (the lid closing leaves it too). While a change or a
@@ -144,8 +162,11 @@ under real GTK, with only `net_status` and `net_scan` sent: that build showed th
 choice, and the poll stopped after leaving the screen. This port changes what was checked (two taps for Forget,
 Disconnect and Turn Wi-Fi off, a greyed-out Wi-Fi switch while its state is unknown, `leave()` on every page change, a
 fresh status read after a change, and per-action waits), so that check does not carry over. **NOT_RUN** on the phone for
-this build: opening the screen with real radios, a real join (typed or saved), a hidden network, forget, disconnect, Wi-Fi
-off and on, the two-tap prompts, the long-wait sentence, and the keyboard layout for a long password. Several can end the
+this build: opening the screen with real radios, a real join (typed or saved), a hidden network, editing a hidden
+network's name after typing its password, forget, disconnect (with its read before sending, and a roam between the two
+taps), Wi-Fi off and on, the two-tap prompts, the long-wait sentence, and the keyboard layout for a long password. The
+password-per-name rule, the shared order of radios reads and lists, and the read before a disconnect were tested only
+on the stand-in toolkit with an invented network (`tests/test_native_net.py`, `tests/test_native_net_fuzz.py`). Several can end the
 phone's own connection, so the owner runs them.
 
 ## The lid

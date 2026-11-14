@@ -196,6 +196,23 @@ class TheTypedPassword(unittest.TestCase):
         s.clear()
         self.assertEqual((len(s), s.reveal(), bool(s)), (0, "", False))
 
+    def test_it_belongs_to_the_one_name_its_keys_were_typed_for(self):
+        s = Secret()
+        for ch in "abc":
+            self.assertTrue(s.key(ch, "Cafe-Test"))
+        self.assertEqual((s.is_for("Cafe-Test"), s.is_for("Park-Test"), s.is_for(None), s.is_for("")), (True, False, False, False))
+        self.assertTrue(s.key("d", "Park-Test"), "a key for another name starts the password again")
+        self.assertEqual((s.reveal(), s.is_for("Park-Test"), s.is_for("Cafe-Test")), ("d", True, False))
+        self.assertTrue(s.key(None, "Cafe-Test"), "deleting for another name empties it")
+        self.assertEqual((len(s), s.is_for("Cafe-Test"), s.is_for("Park-Test")), (0, False, False))
+        s.key("e", "Park-Test")
+        s.clear()
+        self.assertFalse(s.is_for("Park-Test"), "an emptied password belongs to no name")
+        self.assertFalse(s.key("\n", "Park-Test") or s.is_for("Park-Test"))
+        typed = self.typed()
+        self.assertFalse(typed.is_for(None), "keys typed for no name are for no network")
+        self.assertNotIn("Park-Test", repr(s) + str(s))
+
     def test_a_reply_that_quotes_it_is_hidden(self):
         got = netlogic.scrub({"ok": False, "error": "nmcli said %s was wrong" % PW, "message": "kept", "n": 3}, PW)
         self.assertEqual(got, {"ok": False, "error": netlogic.HIDDEN, "message": "kept", "n": 3})
@@ -348,16 +365,16 @@ class NetworkPage(unittest.TestCase):
         return [p for p in self.core.posts if p[0] in ("net_join", "net_forget", "net_wifi")]
 
     def status_on(self, enabled=True):
-        self.page.statused(self.page.radios.issue(), {"ok": True, "wifi": {"enabled": enabled, "summary": "Wi-Fi: fake"}})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": True, "wifi": {"enabled": enabled, "summary": "Wi-Fi: fake"}})
 
     def status_connected(self, ssid):
         """A status reply that says the Wi-Fi is connected to ssid (None: on, not connected)."""
         w = ({"enabled": True, "state": "connected", "ssid": ssid, "summary": "Wi-Fi: connected to %s" % ssid} if ssid else
              {"enabled": True, "state": "disconnected", "summary": "Wi-Fi: on, not connected"})
-        self.page.statused(self.page.radios.issue(), {"ok": True, "wifi": w})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": True, "wifi": w})
 
     def scan_shows(self, *nets):
-        self.page.scanned(self.page.found.issue(), {"ok": True, "networks": list(nets), "saved": []}, quiet=True)
+        self.page.scanned(self.page.ask(self.page.found), {"ok": True, "networks": list(nets), "saved": []}, quiet=True)
 
     def assert_nothing_holds_the_password(self):
         for name, value in vars(self.page).items():
@@ -533,10 +550,10 @@ class NetworkPage(unittest.TestCase):
         self.assertFalse(self.page.busy)
 
     def test_a_status_that_fails_leaves_wifi_unknown_and_unswitchable(self):
-        self.page.statused(self.page.radios.issue(), {"ok": False, "error": "OPOS could not read the network state."})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": False, "error": "OPOS could not read the network state."})
         self.assertEqual(self.page.lines.get_label(), "OPOS could not read the network state.")
         self.assertFalse(self.page.wifi.sensitive)
-        self.page.statused(self.page.radios.issue(), {"ok": False})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": False})
         self.assertEqual(self.page.lines.get_label(), "The radios could not be read.")
 
     # --- forget, disconnect and Wi-Fi off: two taps each ------------------------------------------------------------
@@ -563,7 +580,7 @@ class NetworkPage(unittest.TestCase):
         self.page.main_action()
         self.assertEqual(self.threads, [], "Cancel disarmed it")
         self.page.main_action()
-        self.shell.page = "home"
+        self.core.answers["net_status"] = self.HOME     # the read the confirming tap asks for: still Home-Test
         self.run_threads()
         self.assertEqual(self.changes(), [("net_wifi", {"mode": "disconnect"})])
 
@@ -598,7 +615,7 @@ class NetworkPage(unittest.TestCase):
         for _ in range(3):
             self.page.toggle_wifi()
         self.assertEqual((self.threads, self.said[-1]), ([], netlogic.WIFI_UNKNOWN))
-        self.page.statused(self.page.radios.issue(), {"ok": True, "wifi": {"enabled": None, "summary": "Wi-Fi: unknown"}})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": True, "wifi": {"enabled": None, "summary": "Wi-Fi: unknown"}})
         self.page.toggle_wifi()
         self.page.toggle_wifi()
         self.assertEqual((self.threads, self.changes()), ([], []))
@@ -880,13 +897,13 @@ class NetworkPage(unittest.TestCase):
 
     # --- the Wi-Fi button and the rows hold too ---------------------------------------------------------------------
     def test_the_wifi_button_that_appears_by_itself_holds_the_first_tap(self):
-        self.page.statused(self.page.radios.issue(), {"ok": True, "wifi": {"enabled": False, "state": "off", "summary": "Wi-Fi: off"}})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": True, "wifi": {"enabled": False, "state": "off", "summary": "Wi-Fi: off"}})
         self.scan_shows()
-        self.page.scanned(self.page.found.issue(), {"ok": True, "networks": [], "saved": ["Cabin-Test"]}, quiet=True)
+        self.page.scanned(self.page.ask(self.page.found), {"ok": True, "networks": [], "saved": ["Cabin-Test"]}, quiet=True)
         self.look()
         self.page.nets.rowset.click(0)              # a saved network not in range: the Wi-Fi button is hidden
         self.assertFalse(self.page.idle.visible)
-        self.page.scanned(self.page.found.issue(), {"ok": True, "networks": [], "saved": []}, quiet=True)
+        self.page.scanned(self.page.ask(self.page.found), {"ok": True, "networks": [], "saved": []}, quiet=True)
         self.assertEqual((self.page.idle.visible, self.page.wifi.get_label()), (True, "Turn Wi-Fi on"))
         self.page.toggle_wifi()                     # a tap meant for what was there before
         self.assertEqual((self.threads, self.said[-1]), ([], netlogic.CHANGED))
@@ -1056,7 +1073,7 @@ class NetworkPage(unittest.TestCase):
         self.status_connected(None)
         self.look()
         self.assertEqual(self.page.wifi.get_label(), "Turn Wi-Fi off")
-        self.page.statused(self.page.radios.issue(), {"ok": True, "wifi": {"enabled": False, "summary": "Wi-Fi: off"}})
+        self.page.statused(self.page.ask(self.page.radios), {"ok": True, "wifi": {"enabled": False, "summary": "Wi-Fi: off"}})
         self.assertEqual(self.page.wifi.get_label(), "Turn Wi-Fi on")
         self.page.toggle_wifi()                     # the tap meant to arm Turn Wi-Fi off
         self.assertEqual((self.threads, self.said[-1]), ([], netlogic.CHANGED))
@@ -1096,7 +1113,9 @@ class NetworkPage(unittest.TestCase):
         self.page.main_action()                     # arms at once
         self.assertEqual((self.threads, self.page.main.get_label()), ([], "Disconnect now?"))
         self.page.main_action()                     # and the confirm right after it is not held either
-        self.assertEqual(len(self.threads), 1)
+        self.assertEqual(len(self.threads), 1)      # the read the confirming tap asks for
+        self.core.answers["net_status"] = self.HOME
+        self.run_one(0)
         self.shell.page = "home"
         self.run_threads()
         self.assertEqual(self.changes(), [("net_wifi", {"mode": "disconnect"})])
@@ -1266,7 +1285,7 @@ class NetworkPage(unittest.TestCase):
         self.chosen(net("Park-Test"))
         self.type_in("x")                           # the page is still busy with the earlier join
         self.assertEqual((len(self.page.secret), self.said[-1]), (0, netlogic.KEYS_WAIT))
-        self.page.secret.key("y")                   # whatever this visit's buffer holds when the answer comes
+        self.page.secret.key("y", "Park-Test")      # whatever this visit's buffer holds when the answer comes
         self.run_one(0)                             # the earlier visit's join answers
         self.assertEqual((self.page.ssid(), len(self.page.secret)), ("Park-Test", 1), "this visit's typing is kept")
         self.type_in("z")
@@ -1381,6 +1400,206 @@ class NetworkPage(unittest.TestCase):
         self.page.toggle_wifi()
         self.page.scan(True)
         self.assertFalse(self.page.busy, "every action can be tried again")
+
+    # --- a typed password belongs to the one network name it was typed for ------------------------------------------
+    def hidden_typed(self, name="Home-T"):
+        """Other network: a name, then a password typed for that name."""
+        self.page.other_network()
+        self.type_in(name + "\n")
+        self.type_in(PW)
+        self.assertEqual(len(self.page.secret), len(PW))
+
+    def test_editing_a_hidden_networks_name_drops_the_typed_password(self):
+        for edit in ("est", [None], ["x", None]):
+            with self.subTest(edit=edit):
+                self.setUp()
+                self.hidden_typed()
+                self.page.focus("name")
+                for ch in edit:
+                    self.page.key(ch)
+                self.assertEqual(len(self.page.secret), 0, "the password was typed for the name before the edit")
+                self.assertIn(netlogic.NAME_CHANGED, self.said)
+                self.assertTrue(self.page.boxes["password"].get_label().endswith(": "), "and its box shows nothing typed")
+                self.page.main_action()
+                self.assertEqual((self.threads, self.core.posts, self.said[-1]), ([], [], netlogic.NEED_PW))
+                self.assert_nothing_holds_the_password()
+
+    def test_a_name_edit_with_no_password_typed_says_nothing(self):
+        self.page.other_network()
+        self.type_in("Home-T")
+        self.page.key(None)
+        self.assertNotIn(getattr(netlogic, "NAME_CHANGED", None), self.said)
+
+    def test_a_password_typed_again_after_the_edit_goes_with_the_edited_name(self):
+        self.hidden_typed()
+        self.page.focus("name")
+        self.type_in("est\n")
+        self.type_in(PW)
+        self.page.key("\n")
+        self.run_one(0)
+        self.assertEqual(self.core.posts, [("net_join", {"ssid": "Home-Test", "hidden": True, "password": PW})])
+        self.assert_nothing_holds_the_password()
+
+    def test_a_hidden_name_that_changes_without_a_key_sends_no_password(self):
+        """The last guard: the join sends the password only with the name its keys were typed for."""
+        self.hidden_typed()
+        self.page.ssid_entry.text = "Office-Test"
+        self.page.main_action()
+        self.assertEqual((self.threads, self.core.posts), ([], []))
+        self.assertEqual((len(self.page.secret), self.said[-1]), (0, netlogic.NEED_PW))
+
+    def test_a_chosen_row_that_changes_without_a_tap_sends_no_password(self):
+        self.chosen(net("Cafe-Test"))
+        self.type_in(PW)
+        self.page.chosen = netlogic.rows({"networks": [net("Park-Test")]})[0]
+        self.page.main_action()
+        self.assertEqual((self.threads, self.core.posts), ([], []))
+        self.assertEqual((len(self.page.secret), self.said[-1]), (0, netlogic.NEED_PW))
+
+    # --- the radios reads and the lists share one order: the one asked later wins -----------------------------------
+    HOME_LIST = {"ok": True, "networks": [net("Home-Test", active=True, known=True), net("Cafe-Test", known=True)], "saved": []}
+    CAFE_LIST = {"ok": True, "networks": [net("Home-Test", known=True), net("Cafe-Test", active=True, known=True)], "saved": []}
+
+    def cafe_chosen_while_home_is_connected(self):
+        self.status_connected("Home-Test")
+        self.scan_shows(net("Home-Test", active=True, known=True), net("Cafe-Test", known=True))
+        self.page.nets.rowset.click(1)
+        self.assertEqual((self.page.ssid(), self.page.mode()), ("Cafe-Test", "known"))
+
+    def test_an_older_list_does_not_undo_a_newer_radios_read(self):
+        self.cafe_chosen_while_home_is_connected()
+        self.page.scan(False, quiet=True)           # asked first: answered while Home-Test was still connected
+        self.page.status()                          # asked second: answered after the phone moved to Cafe-Test
+        self.core.answers.update(net_scan=self.HOME_LIST, net_status=self.CAFE)
+        self.run_one(1)
+        self.assertEqual((self.page.mode(), self.page.main.get_label()), ("connected", "Disconnect"))
+        self.run_one(0)                             # the older list is delivered last
+        self.assertEqual((self.page.ssid(), self.page.mode(), self.page.main.get_label()),
+                         ("Cafe-Test", "connected", "Disconnect"))
+        self.look()
+        self.page.main_action()
+        self.assertEqual((self.threads, self.page.main.get_label()), ([], "Disconnect now?"), "no join of the connected network")
+
+    def test_an_older_radios_read_does_not_undo_a_newer_list(self):
+        self.cafe_chosen_while_home_is_connected()
+        self.page.status()                          # asked first: answered while Home-Test was still connected
+        self.page.scan(False, quiet=True)           # asked second: answered after the phone moved to Cafe-Test
+        self.core.answers.update(net_status=self.HOME, net_scan=self.CAFE_LIST)
+        self.run_one(1)
+        self.assertEqual(self.page.mode(), "connected")
+        self.run_one(0)                             # the older radios read is delivered last
+        self.assertEqual((self.page.ssid(), self.page.mode(), self.page.main.get_label()),
+                         ("Cafe-Test", "connected", "Disconnect"))
+        self.look()
+        self.page.main_action()
+        self.page.main_action()                     # the radios read drawn still names Home-Test: nothing is dropped
+        self.assertEqual((self.threads, self.changes(), self.said[-1]), ([], [], netlogic.DISCONNECT_MOVED))
+
+    def test_a_row_chosen_from_an_older_list_follows_the_newer_radios_read(self):
+        self.scan_shows(net("Home-Test", active=True, known=True), net("Cafe-Test", known=True))
+        self.status_connected("Cafe-Test")          # asked after that list
+        self.look()
+        self.page.nets.rowset.click(1)
+        self.assertEqual((self.page.ssid(), self.page.mode(), self.page.main.get_label()),
+                         ("Cafe-Test", "connected", "Disconnect"))
+        self.page.nets.rowset.click(0)
+        self.assertEqual((self.page.ssid(), self.page.mode(), self.page.main.get_label()), ("Home-Test", "known", "Join"))
+
+    # --- the confirming Disconnect tap reads the radios again before anything is sent -------------------------------
+    def confirmed_on_home(self):
+        self.armed_on_home()
+        self.page.main_action()                     # "Disconnect now?": the confirming tap
+
+    def test_the_confirming_disconnect_tap_reads_the_radios_again_and_names_the_network(self):
+        self.confirmed_on_home()
+        self.core.answers["net_status"] = self.HOME
+        self.run_one(0)
+        self.assertEqual(self.core.posts, [("net_status", {"fresh": True})], "a read first, skipping the core's cache")
+        self.assertEqual(self.said[-2:], [netlogic.checking("Home-Test"), netlogic.disconnecting("Home-Test")])
+        self.assertIn("Home-Test", self.said[-1])
+        self.assertTrue(self.page.busy)
+        self.run_threads()
+        self.assertEqual(self.changes(), [("net_wifi", {"mode": "disconnect"})])
+        self.assertFalse(self.page.busy)
+
+    def test_a_roam_between_the_two_disconnect_taps_disconnects_nothing(self):
+        self.confirmed_on_home()
+        self.core.answers["net_status"] = self.CAFE     # the phone moved after the read the prompt was armed on
+        self.run_threads()
+        self.assertEqual(self.changes(), [], "Cafe-Test is never dropped")
+        self.assertEqual(self.said[-1], netlogic.DISCONNECT_MOVED)
+        self.assertEqual((self.page.busy, self.page.mode(), self.page.main.get_label()), (False, "known", "Join"))
+        self.assertEqual(self.page.main_action() or self.threads, [], "and the Join it turned into is held")
+
+    def test_a_reread_that_does_not_name_the_connected_network_disconnects_nothing(self):
+        for answer in ({"ok": False}, TimeoutError("timed out"), {"ok": True, "wifi": {"enabled": True, "state": "connecting"}},
+                       {"ok": True, "wifi": {"enabled": True, "state": "connected"}}):
+            with self.subTest(answer=answer):
+                self.setUp()
+                self.confirmed_on_home()
+                self.core.answers["net_status"] = answer
+                self.run_threads()
+                self.assertEqual(self.changes(), [])
+                self.assertEqual((self.said[-1], self.page.busy), (netlogic.DISCONNECT_UNKNOWN, False))
+
+    def test_closing_the_choice_while_the_reread_waits_disconnects_nothing(self):
+        def away():
+            self.shell.page = "home"
+            self.page.leave()
+        for close in (lambda: self.page.cancel(), lambda: self.page.nets.rowset.click(1), lambda: self.page.other_network(), away):
+            with self.subTest(close=close):
+                self.setUp()
+                self.confirmed_on_home()
+                close()
+                self.assertFalse(self.page.busy)
+                if self.shell.page == "network":
+                    self.page.nets.rowset.click(0)  # even with the same row chosen again before the read comes
+                self.core.answers["net_status"] = self.HOME
+                self.run_threads()
+                self.assertEqual(self.changes(), [], "that tap's confirmation ended when the choice was closed")
+
+    def test_a_list_that_changes_the_chosen_row_while_the_reread_waits_disconnects_nothing(self):
+        for newer in ([net("Cafe-Test", known=True)],                                       # the row is gone
+                      [net("Home-Test", known=True), net("Cafe-Test", active=True, known=True)]):   # no longer connected
+            with self.subTest(newer=[n["ssid"] for n in newer]):
+                self.setUp()
+                self.confirmed_on_home()
+                self.scan_shows(*newer)             # a list asked after the confirming tap's read, delivered before it
+                self.core.answers["net_status"] = self.HOME
+                self.run_threads()
+                self.assertEqual(self.changes(), [], "the page no longer shows Home-Test as the chosen, connected network")
+                self.assertEqual((self.said[-1], self.page.busy), (netlogic.DISCONNECT_CLOSED, False))
+
+    def test_taps_while_the_reread_waits_send_nothing_more(self):
+        self.confirmed_on_home()
+        self.page.main_action()
+        self.page.main_action()
+        self.page.toggle_wifi()
+        self.page.forget()
+        self.page.forget()
+        self.assertEqual(len(self.threads), 1)
+        self.core.answers["net_status"] = self.HOME
+        self.run_threads()
+        self.assertEqual(self.changes(), [("net_wifi", {"mode": "disconnect"})])
+
+    def test_a_reread_answered_while_the_page_is_not_showing_disconnects_nothing(self):
+        self.confirmed_on_home()
+        self.shell.page = "home"
+        self.core.answers["net_status"] = self.HOME
+        self.run_threads()
+        self.assertEqual((self.changes(), self.page.busy), ([], False))
+
+    def test_a_reread_that_cannot_be_sent_frees_the_page(self):
+        class Refuses:
+            def __init__(s, target, daemon=None):
+                pass
+
+            def start(s):
+                raise RuntimeError("can't start new thread")
+        self.armed_on_home()
+        self.screens.threading = types.SimpleNamespace(Thread=Refuses)
+        self.page.main_action()
+        self.assertEqual((self.page.busy, self.core.posts, self.said[-1]), (False, [], netlogic.DISCONNECT_UNKNOWN))
 
 
 class ShellParts(unittest.TestCase):
@@ -1564,7 +1783,8 @@ class Docs(unittest.TestCase):
     def test_native_md_quotes_the_fixed_sentences_and_the_hold(self):
         section = " ".join((ROOT / "packaging" / "duo-os" / "NATIVE.md").read_text(encoding="utf-8").split())
         for sentence in (netlogic.KEYS_WAIT, netlogic.CHANGED, netlogic.LIST_CHANGED, netlogic.REREAD,
-                         netlogic.LIST_REREAD, netlogic.LIST_WAIT):
+                         netlogic.LIST_REREAD, netlogic.LIST_WAIT, netlogic.NAME_CHANGED,
+                         netlogic.checking("<network>"), netlogic.disconnecting("<network>")):
             self.assertIn('"%s"' % sentence, section)
         hold = re.search(r"^    HOLD_S = ([0-9.]+)", (NATIVE / "screens.py").read_text(encoding="utf-8"), re.M).group(1)
         self.assertIn("For %s s after that" % hold, section)
