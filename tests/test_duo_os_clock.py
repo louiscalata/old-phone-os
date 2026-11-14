@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from opos.web import clock_ok
+from tests import portable
 
 PKG = Path(__file__).resolve().parents[1] / "packaging" / "duo-os"
 SH = shutil.which("sh")
@@ -80,7 +81,24 @@ class OposClockTests(unittest.TestCase):
         return dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT=wait,
                     PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"], **extra_env)
 
+    def needs_gnu_tools(self, *args):
+        """Skip, off Linux only, a run whose answer depends on GNU tools this host lacks.
+
+        `set` reads the file with GNU dd (iflag=nofollow,nonblock); BSD dd has no iflag, reads nothing, and every file is
+        refused, so a refusal there would pass for the wrong reason. `floor` reads timesyncd's saved clock with GNU
+        `stat -c %Y`. On Linux (CI, the phone) this never skips.
+        """
+        if args and args[0] == "set":
+            ok, why = portable.needs_gnu("dd")
+            if not ok:
+                self.skipTest(why)
+        if args and args[0] == "floor" and self.path("var/lib/systemd/timesync/clock").exists():
+            ok, why = portable.needs_gnu("stat")
+            if not ok:
+                self.skipTest(why)
+
     def run_clock(self, *args, wait="0", **extra_env):
+        self.needs_gnu_tools(*args)
         p = subprocess.run([SH, str(PKG / "opos-clock"), *args], env=self.clock_env(wait, **extra_env), capture_output=True, text=True, timeout=30)
         return p.returncode, p.stdout + p.stderr
 
@@ -372,6 +390,7 @@ class OposClockTests(unittest.TestCase):
         f = self.drop("")
         env = dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT="5",
                    PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"])
+        self.needs_gnu_tools("set")
         p = subprocess.Popen([SH, str(PKG / "opos-clock"), "set", str(f)], env=env, stdout=subprocess.PIPE, text=True)
         time.sleep(0.3)
         f.write_text("%d\n" % (FLOOR + 7))
@@ -412,6 +431,7 @@ class OposClockTests(unittest.TestCase):
     def test_a_fifo_swapped_in_after_the_checks_does_not_hold_the_script(self):
         self.swap_readers()
         f = self.drop("%d\n" % (FLOOR + 1))
+        self.needs_gnu_tools("set")
         p = subprocess.Popen([SH, str(PKG / "opos-clock"), "set", str(f)], env=self.clock_env(FAKE_SWAP=str(f), FAKE_FIFO="1"),
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         try:

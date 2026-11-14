@@ -17,6 +17,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import portable
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 PKG = ROOT / "packaging" / "duo-os"
@@ -55,7 +57,8 @@ def tool_dir(parent, names, fakes=None):
     d = Path(parent)
     d.mkdir(exist_ok=True)
     for n in names:
-        w = shutil.which(n)
+        # stat: the GNU-compatible one (on Linux exactly shutil.which; on a BSD-stat host, a shim answering `stat -c`)
+        w = portable.gnu_tool(n, d.parent / "gnu") if n == "stat" else shutil.which(n)
         if w is None:
             raise unittest.SkipTest("needs " + n)
         if not (d / n).exists():
@@ -432,6 +435,7 @@ class VerifyBlock(unittest.TestCase):
             env["OPOS_DEV_SUDO"] = expect
         if path is not None:
             env["PATH"] = path
+        env["PATH"] = portable.with_gnu_tools(env.get("PATH", "/usr/bin:/bin"), self.tmp / "gnu", ("stat",))  # Linux: unchanged
         return subprocess.run([SH, str(script)], env=env, capture_output=True, text=True, timeout=120)
 
     def assert_clean(self, p):

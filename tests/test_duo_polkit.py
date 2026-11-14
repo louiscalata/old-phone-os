@@ -20,6 +20,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import portable
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 PKG = ROOT / "packaging" / "duo-os"
@@ -255,6 +257,7 @@ class VerifyBlock(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "OPOS_NET_POLKIT"}
         if expect is not None:
             env["OPOS_NET_POLKIT"] = expect
+        env["PATH"] = portable.with_gnu_tools(env.get("PATH", "/usr/bin:/bin"), self.tmp / "gnu", ("stat",))  # Linux: unchanged
         return subprocess.run([SH, str(script)], env=env, capture_output=True, text=True, timeout=60)
 
     def assert_clean(self, p):

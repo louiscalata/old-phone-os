@@ -25,6 +25,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from tests import portable
+
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging" / "duo-os"
 SCRIPT = DUO / "verify-image.sh"
@@ -134,6 +136,9 @@ class PrivateDirectory(unittest.TestCase):
         if os.geteuid() != 0:  # the script insists on root: pretend, and report the owner of the private directory as root
             self.fake("id", "echo 0")
             real = subprocess.run(["sh", "-c", "command -v stat"], capture_output=True, text=True).stdout.strip()
+            shim = portable.gnu_stat_path(self.t / "gnu")  # None on Linux; off Linux, GNU `stat -c` answers over BSD stat
+            if shim:
+                real = str(Path(shim) / "stat")
             self.fake("stat", 'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"' % (real, os.geteuid()))
 
     def fake(self, name, body):
@@ -426,6 +431,9 @@ class WholeScriptServers(unittest.TestCase):
         if os.geteuid() != 0:  # the script insists on root: pretend, and report the owner of the private directory as root
             self.fake("id", "echo 0")
             real = subprocess.run(["sh", "-c", "command -v stat"], capture_output=True, text=True).stdout.strip()
+            shim = portable.gnu_stat_path(self.t / "gnu")  # None on Linux; off Linux, GNU `stat -c` answers over BSD stat
+            if shim:
+                real = str(Path(shim) / "stat")
             self.fake("stat", 'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"' % (real, os.geteuid()))
         self.addCleanup(self.reap)
 
