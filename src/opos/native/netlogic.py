@@ -22,6 +22,9 @@ NEED_NAME = "Type the network's name first."
 DISCONNECT_MOVED = "The phone is now connected to another network, so nothing was disconnected. Check the list, then try again."
 DISCONNECT_UNKNOWN = ("Which network is connected is not known right now, so nothing was disconnected. Wait until the "
                       "radios have been read, then try again.")
+DISCONNECT_CLOSED = ("The choice changed while the radios were read again, so nothing was disconnected. Choose the "
+                     "network, then try again.")
+NAME_CHANGED = "The name changed, so the password typed for the old name was cleared. Type the password again."
 KEYS_WAIT = "Keys are not kept while OPOS is busy. Type the password once it answers."
 CHANGED = "This button just changed. Check what it says now, then tap again."
 LIST_CHANGED = "The list just changed. Check it, then tap the network again."
@@ -145,21 +148,34 @@ def mask(text):
 
 class Secret:
     """A password being typed. reveal() is the only way to read it; printing, formatting or logging it shows HIDDEN, and it
-    cannot be copied, pickled or compared. It is never written anywhere by this class."""
+    cannot be copied, pickled or compared. It is never written anywhere by this class.
 
-    __slots__ = ("__text",)
+    It belongs to one network name: each key says which name it is typed for, a key for another name first empties what
+    was typed for the earlier one, and is_for(name) is True only for the name every key it holds was typed for. So what
+    was typed for one name can never be sent with another."""
+
+    __slots__ = ("__text", "__name")
 
     def __init__(self):
-        self.__text = ""
+        self.__text, self.__name = "", None
 
-    def key(self, ch):
-        """One key from the keyboard: a character, or None to delete. Return is not part of a password. True if changed."""
+    def key(self, ch, name=None):
+        """One key from the keyboard, typed for the network `name`: a character, or None to delete. Return is not part of
+        a password. Keys typed for an earlier, different name are emptied first. True if changed."""
+        other = bool(self.__text) and name != self.__name
+        if other:
+            self.__text = ""
+        self.__name = name
         if ch is None:
-            return self.delete()
+            return self.delete() or other
         if not isinstance(ch, str) or not ch or "\n" in ch or len(self.__text) + len(ch) > LIMIT:
-            return False
+            return other
         self.__text += ch
         return True
+
+    def is_for(self, name):
+        """True when something is typed and every key of it was typed for the network `name`."""
+        return bool(self.__text) and isinstance(name, str) and bool(name) and name == self.__name
 
     def delete(self):
         if not self.__text:
@@ -168,7 +184,7 @@ class Secret:
         return True
 
     def clear(self):
-        self.__text = ""
+        self.__text, self.__name = "", None
 
     def reveal(self):
         return self.__text
@@ -242,6 +258,16 @@ def connected_to(status):
     if w.get("state") == "connected" and isinstance(ssid, str) and ssid:
         return True, ssid
     return False, None
+
+
+def checking(ssid):
+    """What the screen says while the read asked by the confirming Disconnect tap is waiting. It names the network."""
+    return "Checking that %s is still the connected network..." % ssid
+
+
+def disconnecting(ssid):
+    """What the screen says once that read named the same network and the disconnect has been sent."""
+    return "Disconnecting from %s..." % ssid
 
 
 def friendly(result):
