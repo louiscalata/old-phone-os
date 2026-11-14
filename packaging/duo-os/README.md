@@ -258,7 +258,7 @@ Both dev and release images write `/etc/NetworkManager/conf.d/90-opos-wifi-compa
   `droidian` has no session to answer an administrator prompt. See [docs/network.md](../../docs/network.md).
 - **First run and time zone.** A fresh phone opens a skippable setup; Settings > Date and time changes the zone later. The
   server applies the zone; the kiosk exports it to Chromium on every start. See [docs/duo-firstrun.md](../../docs/duo-firstrun.md).
-- **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key>` from
+- **Acceptance.** `/usr/sbin/opos-selftest` on the phone, `pwsh -File deploy\duo-acceptance.ps1 -Host <phone-usb-address> -Key <key>` from
   the PC, then the owner's checklist. See [docs/duo-acceptance.md](../../docs/duo-acceptance.md).
 
 ## Inference page
@@ -285,7 +285,7 @@ over plain http the answer is not authenticated. The tunnel, from the computer t
 the dev ssh key:
 
 ```sh
-ssh -N -R 127.0.0.1:18767:127.0.0.1:8767 droidian@<phone>   # the phone's 127.0.0.1:18767 is now the computer's monitor
+ssh -N -R 127.0.0.1:18767:127.0.0.1:8767 droidian@<phone-usb-address>   # the phone's 127.0.0.1:18767 is now the computer's monitor
 # on the phone, once:
 sudo cp /etc/opos/monitor.env.example /etc/opos/monitor.env   # then remove the # from the OPOS_AGIW_URL and OPOS_AGIW_HOST lines
 sudo systemctl restart opos-server                            # and tap Settings > Inference
@@ -302,7 +302,7 @@ that has one without the key). The kiosk then starts Chromium with `--remote-deb
 (DevTools `Page.captureScreenshot`):
 
 ```sh
-ssh -L 9222:127.0.0.1:9222 droidian@<phone>
+ssh -L 9222:127.0.0.1:9222 droidian@<phone-usb-address>
 curl -s http://127.0.0.1:9222/json        # lists the OPOS page and its webSocketDebuggerUrl
 ```
 
@@ -404,14 +404,39 @@ of the script. If Windows refuses to run the script under its default execution 
 
 The phone sets no default gateway and is not in the PC's neighbour table until something contacts it, so the
 script derives the /24 from the address of the PC's RNDIS adapter and probes TCP port 22 across it, trying host
-82 first (`-PreferHost`; on November 7 the phone was host 82 and the PC's adapter host 147 of a 10.15.19.x
-network). `-PhoneIp` skips the search. The scratch version of this script ran the chain on November 7; this version
+82 first (`-PreferHost`, the script's configurable default). `-PhoneIp <phone-usb-address>` skips the search.
+Use `<pc-usb-address>` for the PC adapter and `<phone-usb-address>` for the phone; see [USB-link addresses](#usb-link-addresses). The scratch version of this script ran the chain on November 7; this version
 changes its network discovery and options and has been parsed and had its probe exercised against loopback,
 not run on a phone.
 
 `deploy/duo-rootfs-install.sh` (any host with fastboot and adb; a dry run unless `--yes`) does the formatting,
 push, verification and one kernel boot too, but not the brake, the preflight or the network search: it is the
 less guarded route.
+
+## USB-link addresses
+
+`<pc-usb-address>` and `<phone-usb-address>` are placeholders, not fixed addresses. On Windows, read the
+RNDIS adapter's current IPv4 address with `Get-NetIPAddress -AddressFamily IPv4`. The completed install's private log
+records the phone candidate after `phone answers on TCP 22 at`; do not rerun the installer just to discover an address.
+If a local console is already available on the phone, `ip -4 -o addr show dev usb0` reads its USB address
+(use `ip -4 -o addr show` if the interface name differs). Keep the results private and substitute the observed values
+in the examples. A self-assigned link-local address on the PC does not establish a lease from the phone.
+
+For the historical guide's IPv6 route, read the USB adapter's `InterfaceIndex` (`ifIndex`) from
+`Get-NetIPConfiguration -All`. Substitute that observed number for `<usb-interface-index>` before running this read-only query:
+
+```powershell
+Get-NetNeighbor -InterfaceIndex <usb-interface-index> -AddressFamily IPv6 |
+  Select-Object IPAddress, State, InterfaceIndex
+```
+
+The neighbor cache lists candidates on that interface, not proof of the phone's identity. Use the phone's observed
+link-local address as `<phone-usb-ipv6>` and append the USB adapter's current scope index:
+`<phone-usb-ipv6>%<usb-interface-index>`. If no phone entry can be identified, the address is still unknown.
+Recheck the index after unplugging the cable. Keep these addresses and discovery output private; no fixed address
+or interface number is assumed here. Microsoft documents
+[Get-NetIPConfiguration](https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-netipconfiguration) and
+[Get-NetNeighbor](https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-netneighbor).
 
 ## Dev options: an ssh key
 
@@ -477,7 +502,7 @@ requires its absence (unset requires nothing; under `sudo`, `sudo env OPOS_DEV_S
 is held the same way: `1` requires the polkit rule, `0` requires its absence, and a rule that is there must be the very bytes of `50-opos-network.rules`).
 
 Remove it from a running phone with `sudo rm /etc/sudoers.d/90-opos-dev`; the next sudo asks for a password again. Check it from the PC with
-`ssh droidian@<phone> sudo -n true`.
+`ssh droidian@<phone-usb-address> sudo -n true`.
 
 ## Removed on purpose: the USB root shell and the password login
 
@@ -523,9 +548,9 @@ mounting userdata and loop-mounting `/data/rootfs.img`; that has not been rehear
   [docs/duo-usb-install.md](../../docs/duo-usb-install.md), "Button steps").
 - Calls and texts are simulated (see above); the real modem is not used.
 - `opos-fallback` and `opos-switch` have not been exercised on the phone.
-- One address, one run: host 82 of a 10.15.19.x network is where the phone answered once, not a documented constant.
+- USB-link addresses can change. Use the current `<phone-usb-address>` and `<pc-usb-address>` from [USB-link addresses](#usb-link-addresses).
 - **The search finds the phone only if the PC's USB adapter holds an address in the phone's /24.** The script
-  takes the /24 from the RNDIS adapter's IPv4 address. If the adapter shows only a 169.254.x.x address, the PC
+  takes the /24 from the RNDIS adapter's IPv4 address. If the adapter shows only a self-assigned link-local address, the PC
   has no lease from the phone (seen on October 31, 2026): the sweep covers the wrong network and the script
   times out after the kernel boot. Do not run the script again to retry: that repeats the whole chain, including
   the userdata format and a second kernel boot, and it has no attach-only mode. Find the phone and ssh to it by
