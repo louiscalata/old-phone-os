@@ -47,13 +47,17 @@ class PowerSaveState:
         return name == cls.NAME and isinstance(value, int) and not isinstance(value, bool)
 
     def set(self, name, value):
-        """Take a new value; returns whether it changed. A repeat still reaches the blanker (a re-asserted 3 blanks
-        panels lit while the lid was closed, and blanking twice is harmless). Anything not accepted changes nothing."""
+        """Hand a new value to the blanker and keep the mode it says is in force; returns whether the kept value changed.
+        Every accepted value reaches the blanker, a repeat included (a re-asserted 3 blanks panels lit while the lid was
+        closed, and blanking twice is harmless; a 0 always restores). A refused blank (the lid reads open) keeps 0, so
+        readers never see 3 while the screens were left lit. Anything not accepted changes nothing."""
         if not self.accepts(name, value):
             return False
-        changed = self.values[name] != value
-        self.blanker.set_mode(value)
-        self.values[name] = value
+        now = self.blanker.set_mode(value)
+        if isinstance(now, bool) or not isinstance(now, int):
+            now = value     # a blanker that does not say: the request, as before
+        changed = self.values[name] != now
+        self.values[name] = now
         return changed
 
     def properties_changed_args(self):
