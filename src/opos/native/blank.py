@@ -17,8 +17,11 @@ The phone must never be left dark:
     says so, so the caller tries again (the shell keeps trying while the lid is not closed);
   - a blank that finds the saved file already there (a crash after saving, before writing; a panel that came back on
     while the lid stayed closed) writes 0 again to any panel that reads above 0, and never touches the saved values;
-  - a restore with no saved file still lights any panel that reads 0, with its default, and lists a panel it cannot
-    read (or that is missing) as failed, since it may be dark;
+  - a restore with no saved file still lights any panel that reads 0, with its default; a panel whose brightness file
+    is there but cannot be read is written its default too, since it may be dark, and stays listed as failed (as does a
+    missing panel) until a read confirms it lit, so the caller keeps trying;
+  - a PowerSaveMode of 1 to 3 that blank() refuses leaves the mode in force at 0 (set_mode returns it), so the
+    display service never reports dark for screens it left lit; every value still reaches blank() or restore();
   - the saved file lives only in a private runtime folder (absolute path, a real folder owned by this user, not writable
     by group or others) and is read without following a symlink; otherwise nothing is blanked at all;
   - the shell restores when the lid opens, when it starts with the lid not closed, when its lid signal is lost, when the
@@ -249,21 +252,37 @@ class Blanker:
                 if now == 0:
                     wrote = self._write(p, self.lit(p, d), failed) is True or wrote
                 elif now is None:   # it may be dark and cannot be checked: listed, so the CLI and the shell try again
-                    failed.append("%s: %s" % (p, "unreadable" if os.path.isdir(self.panel_dir(p)) else "missing"))
+                    if not os.path.isdir(self.panel_dir(p)):
+                        failed.append("%s: missing" % p)
+                        continue
+                    if os.path.isfile(self.brightness_path(p)):
+                        # Lit with its default (capped by a readable max_brightness): a panel that may be at 0 is never
+                        # left dark because it cannot be read. Never created when absent. Listed either way, until a
+                        # later read confirms it lit.
+                        wrote = self._write(p, self.lit(p, d), failed) is True or wrote
+                    if not any(f.startswith(p + ":") for f in failed):
+                        failed.append("%s: unreadable" % p)
         self.failed = failed
         if failed:
             self.say("cannot restore " + "; ".join(failed))
         return wrote
 
     def set_mode(self, mode):
-        """A PowerSaveMode from the display service: 0 restores, 1 to 3 blank, anything else is ignored."""
+        """A PowerSaveMode from the display service: 0 restores, 1 to 3 blank, anything else is ignored. Returns the
+        mode now in force, which is also kept in self.mode: a 1 to 3 counts only when blank() made it a deliberate blank
+        (`blanks` moved); a refused one (the lid reads open, an unsafe runtime folder, a save that failed) leaves the
+        screens lit and the mode 0. Every accepted value still reaches restore() or blank(); the mode is only reported,
+        and no blank or restore depends on it."""
         if isinstance(mode, bool) or not isinstance(mode, int) or mode not in (0, 1, 2, 3):
-            return
-        self.mode = mode
+            return self.mode
         if mode == 0:
+            self.mode = 0
             (self.on_restore or self.restore)()
         else:
+            before = self.blanks
             self.blank()
+            self.mode = mode if self.blanks != before else 0
+        return self.mode
 
 
 def main(argv=None, make=None, sleep=time.sleep, wait_s=CLI_WAIT_S, clock=time.monotonic):
