@@ -121,7 +121,7 @@ a{color:#e6e2d9}
 <p id="done" hidden>All set. <a id="open-link" href="#">Open Old Phone OS Interface</a></p>
 <p id="done-norun" hidden></p>
 <p id="failed" hidden></p>
-<p id="failed-help" hidden class="muted">Your choices are kept. Tap Try again. If it still fails, restart the device and run opos again.</p>
+<p id="failed-help" hidden class="muted">Your choices are kept. Tap Try again. If it still fails, run opos again.</p>
 <button type="button" id="retry" hidden>Try again</button>
 <div class="row"><button type="button" data-back>Back</button><span></span></div>
 </section>
