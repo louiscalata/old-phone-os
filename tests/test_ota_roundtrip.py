@@ -690,7 +690,7 @@ class RoundTrip(WorldCase):
         w.release(1, scope="boot")
         self.assertEqual(w.fetch_and_apply(1), 0, w.logs)
         self.assertEqual(w.status()["phase"], "done")
-        self.assertIn("next boot", w.status()["message"])
+        self.assertIn("applies the next time OPOS is started from the PC", w.status()["message"])
         self.assertEqual(w.state()["pending_boot"]["serial"], 1)
         self.assertEqual(os.readlink(w.opt_link), "opos-releases/" + rel_name(0))
         self.assertEqual([c for c in w.calls() if "restart" in c], [], "a staged update restarts nothing")

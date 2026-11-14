@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Roadmap
 
-Status as of November 7, 2026: where Old Phone OS Interface stands
-and what comes next. Plans are intentions, not promises.
-Dated updates below record later source work and its verification limits.
+Documentation reconciled on November 13, 2026 against source revision
+`2c84394ccd8909ad8eb32f991e671059b4521295`. Dated observations below retain
+their original scope. Plans are intentions, not promises.
 
 ## Working today
 
@@ -19,7 +19,7 @@ Dated updates below record later source work and its verification limits.
   non-essential tasks, never fewer.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
-- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes and Calculator. App data stays in local files. Alarms do not ring while the clock is unknown. Sound on a real phone is not verified.
+- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes and Calculator. App data stays in local files. Alarms wait while the clock is unknown. Alarms show on screen only; sound and vibration are not played yet.
 - Camera: research only ([docs/camera-spike.md](docs/camera-spike.md)). No still has been captured. No camera code.
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
   (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. The kiosk runs the
@@ -35,6 +35,9 @@ Dated updates below record later source work and its verification limits.
   hwcomposer backend (GLES on the Adreno 640) and OPOS reading the real battery from sysfs. One phone, one
   session, with the owner watching: the kernel must be RAM-booted from a PC each time.
   A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata).
+  Preliminary installation gates G0–G3
+  were reported run on November 12; a persistent-kernel start and later gates remain
+  **NOT_RUN** ([installation record](docs/duo-persistent-install.md)).
 - Surface Duo on stock Android ([docs/duo-android.md](docs/duo-android.md)): the same server runs under
   Termux with the real battery from Termux:API, and Llama 3.2 1B was timed at 17.7-18.4 generated tokens/s
   on the phone, on November 7, 2026, in one session.
@@ -81,17 +84,18 @@ Dated updates below record later source work and its verification limits.
 - The postmarketOS kiosk has not been tested on a physical phone. Earlier Surface Duo installs ran an
   older snapshot on Droidian; those notes are historical (see
   [docs/duo-usb-install.md](docs/duo-usb-install.md)).
-- The Duo OS image has no measurement of speed, battery life or stability, and was seen on one phone in one
-  session. It cannot be installed permanently: the bootloader refuses flashes of the boot partition, so every
-  start is a RAM-boot from a PC. Its failure path (a failed OPOS shell falling back to phosh) and shell
-  switching have not been run on the phone.
+- The Duo OS image has no measurement of inference speed, battery life or long-term stability.
+  The repository records limited observations on one phone, including relayed November 12
+  installation experiments that were not independently re-verified on the Mac. Permanent
+  startup has not been achieved; every start still needs a PC. Failure fallback from the
+  OPOS browser session to phosh and session switching have not been run on the phone.
 - On-phone model inference: Llama 3.2 1B was timed on the Duo under Android (see above); Llama 3.2 3B has no
   phone-speed measurement, and nothing was timed on the Duo OS image.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
 
 ## Public browser demo
 
-The public demo is live at [opos-demo-production.up.railway.app](https://opos-demo-production.up.railway.app).
+The public demo entry link is [opos-demo-production.up.railway.app](https://opos-demo-production.up.railway.app).
 The separate `opos.public_demo` entry point wraps the existing phone page in a
 Jaryo landing and stores each visitor session in bounded, expiring memory. If
 `OPOS_APPS=calls` is inherited and the state directory is writable, simulated
@@ -134,21 +138,24 @@ passed the Python 3.11/3.13 matrix: each version discovered 4,880 tests with
 43 explicit skips and zero failures. This does not establish a pass for later
 source changes or for the skipped checks.
 
-The combined runtime candidate for #100, #15, #16, #24, #94, #47, #75, #74,
-#78, #76 and the font commits from #79 is under review. It retains release-bound
-recipe checksums and dynamic runtime inventory checks from #101. The reversible
-review candidate uses thumb-pane tiles and separate detail; the later #80
-newspaper proposal is preserved separately, pending the final Home decision.
-Exact rendered-page snapshots were regenerated. The served page with all switches
-on measures 101,868 bytes against the unchanged 102,000-byte gate. Focused local
-checks ran 255 tests: 253 passed and two Linux-specific fixture checks failed on
-Mac, with no skips. Those failures are not passes or skips. Eight actual-script
-Notes cases passed, including deletion/save ordering and edits made before a late
-open response; storage error and retry tests also passed. The candidate activates
-new Wi-Fi profiles by UUID, cleans private files on creation failures, and keeps
-one Contacts jump target per letter bucket. Final browser and hosted Python
-matrix checks remain pending for the reviewed combined source. All on-device
-checks above remain NOT_RUN.
+The combined runtime work was merged through [PR #104](https://github.com/louiscalata/old-phone-os/pull/104).
+The [tests workflow](https://github.com/louiscalata/old-phone-os/actions/runs/43296984042)
+passed for `f2cd1c9fc64be9d9f5108544633be18b038f4964` on November 12, 2026.
+That workflow runs unittest discovery on Ubuntu with Python 3.11 and 3.13; it does
+not run the optional repository guard. Its result is separate from local macOS checks.
+Earlier local candidate results are historical. This CI result does not establish
+phone behavior or a browser pass for these documentation edits; the device checks
+above remain **NOT_RUN**.
+
+### Historical local candidate checks — November 10, 2026
+
+Before the merge through PR #104, the combined runtime candidate reported 255
+focused local tests: 253 passed and two Linux-specific fixture checks failed on
+Mac, with no skips. Eight actual-script Notes cases passed. Its served page with
+all switches measured 101,868 bytes against the 102,000-byte gate. These counts
+and the byte measurement describe that earlier candidate, not the current tree.
+
+### Remaining work
 
 1. **Battery life on a real phone.** Run a Duo route (the OS image or Android with Termux) through
    the same daily routine as the stock system and record battery life; no such measurement exists.

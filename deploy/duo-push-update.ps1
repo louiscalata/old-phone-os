@@ -5,10 +5,11 @@
 # (plus the scp transfer itself), and the copy lands under a .partial name that the inbox's path unit ignores until
 # the final mv, so a half-written file is never picked up.
 #
-#   powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Host <phone address> -Key <ssh login key>
+#   powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Host <phone-usb-address> -Key <ssh login key>
 #
 # -Key is the key that logs in to the phone's account (the image's development ssh key), NOT the release signing key.
-# -Host is the phone's address on the USB network (an IPv6 link-local address with its zone, such as fe80::1%8, works).
+# -Host is <phone-usb-address>; include the interface zone for IPv6 link-local connections.
+# Find the current value using packaging/duo-os/README.md, USB-link addresses.
 # Exit codes: 0 done, 1 rolled-back or failed, 2 timed out waiting, 3 could not deliver (bad argument, no route, no inbox).
 #
 # Which status is this bundle's? Only one that names it. The updater writes the bundle's serial (the one in its manifest, read
@@ -171,7 +172,7 @@ try {
         $pathState = if ($word.Count -ge 1) { $word[0] } else { "unknown" }
         $hint = "the updater may still be working, read status.json again"
         if ($pathState -ne "active" -and $pathState -ne "unknown") {
-            $hint = "the update path unit is $pathState, so nothing started the updater and the bundle waits in the inbox; restart the phone, or as root: systemctl reset-failed opos-update.path opos-update.service; systemctl restart opos-update.path"
+            $hint = "the update path unit is $pathState, so nothing started the updater and the bundle waits in the inbox; keep the phone on; starting the updater again needs root on the phone, which only a development image gives the login user; there, over ssh from the PC, run as root on the phone: systemctl reset-failed opos-update.path opos-update.service; systemctl restart opos-update.path"
         }
         $others = if ($lastOther) { "; the updater's last word, which does not name serial $serial, was: $lastOther" } else { "" }
         Fail "no settled status within $TimeoutS s for serial $serial (last: $last)$others; update units (path, service): $($word -join ', '); $hint" 2

@@ -107,4 +107,4 @@ server process and exported by the kiosk script, and that the pages work in a de
 test on the Duo has to: that Chromium on the phone reads `TZ` (the status-bar clock follows the chosen zone), that the Chromium
 restart brings the screen back on its own, that the page fits the two panels with nothing on the hinge, that touch works on
 every control, that the clock sentence appears and then goes away once the network sets the time, and that the saved zone
-survives a power cycle and a new RAM-boot.
+survives a new RAM-boot from the PC (never a power cycle: it can start Android and destroy the OPOS install).

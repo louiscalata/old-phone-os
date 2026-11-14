@@ -1671,7 +1671,15 @@ class PersistRunbook(unittest.TestCase):
         rows = [line for line in index.splitlines() if "duo-persistent-install.md" in line]
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0].startswith("- [Persistent kernel on the Duo](duo-persistent-install.md):"))
-        self.assertIn("a plan, not run", rows[0])
+        # The row's status must match what the runbook itself records: G0-G3 reported run on November 12, relayed and not
+        # re-verified on the Mac, and the powered-off start still NOT_RUN (the runbook's own phrasing, pinned on both sides).
+        self.assertIn("G0–G3 were reported run on November 12", rows[0])
+        self.assertIn("a powered-off start remains NOT_RUN", rows[0])
+        self.assertIn("not independently re-verified on the Mac", rows[0])
+        source = flat(self.doc)
+        self.assertIn("**G0, G1, G2 and G3 RUN 2026-11-12**", source)
+        self.assertIn("A powered-off start remains **NOT_RUN**", source)
+        self.assertIn("not independently re-verified on the Mac", source)
         readme = (ROOT / "packaging" / "duo-os" / "README.md").read_text(encoding="utf-8")
         lines = [line for line in readme.splitlines() if "duo-persistent-install.md" in line]
         self.assertEqual(len(lines), 1, "ONE line in the Duo OS README: it is edited elsewhere")

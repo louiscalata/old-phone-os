@@ -3,7 +3,7 @@
 
 ## Meta models in OPOS
 
-Mission: free AI for people who cannot buy it. The free AI route needs hardware the owner already has: a computer with an estimated 24 to 32 GB of memory for Muse Glimmer (the timed run used a 64 GB MacBook Pro), or a phone with enough free memory for the smaller Llama 3.2 models, whose phone speed is unmeasured. The default path costs $0 and needs no account, key or card. The paid path (Muse Spark Open through Baseten with OPOS_SPARK_OPEN=1 and the user's own key) is off by default and never needed; when enabled it is used only for Why and Plan when the battery estimate falls short of a daily goal, never for Ask or background routing.
+Mission: free AI for people who cannot buy it. The free AI route needs hardware the owner already has: a computer with an estimated 24 to 32 GB of memory for Muse Glimmer (the timed run used a 64 GB MacBook Pro), or a phone with enough free memory for the smaller Llama 3.2 models. One November 7 Android/Termux session on a Surface Duo recorded Llama 3.2 1B at 17.7–18.4 generated tokens per second ([record](duo-android.md)). Llama 3.2 3B and inference on the Droidian image remain unmeasured. The default path costs $0 and needs no account, key or card. The paid path (Muse Spark Open through Baseten with OPOS_SPARK_OPEN=1 and the user's own key) is off by default and never needed; when enabled it is used only for Why and Plan when the battery estimate falls short of a daily goal, never for Ask or background routing.
 
 The helper is opt-in and shows which engine answers. The default UI never names AI.
 
@@ -40,7 +40,7 @@ If nothing is reachable the helper says so and shows fallback text and any found
 
 What does not run on old phones: Muse Glimmer was tested on a computer; this project does not establish that it runs on an old phone. Llama 3.2 1B needs about 1.5 GB free and 3B needs about 4 GB free. Many old phones do not have this.
 
-What is unmeasured: no phone-speed number exists for Llama on any phone. The Llama tier is not yet measured on any phone.
+Measurement scope: One November 7 Android/Termux session on a Surface Duo recorded Llama 3.2 1B at 17.7–18.4 generated tokens per second ([record](duo-android.md)). Llama 3.2 3B and inference on the Droidian image remain unmeasured. Battery life and long-term stability remain unmeasured.
 
 ## What is not a model
 

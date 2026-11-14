@@ -24,7 +24,7 @@ Prefix choice:
 
 - `OPOS_TOOLS_PREFIX` if set and absolute, else
 - `/userdata/opos` if `/userdata` is a writable directory, else
-- `~/.local/share/opos` (e.g. `/home/u/.local/share/opos`)
+- `~/.local/share/opos` (relative to the current user's home directory)
 
 Each tool gets `<prefix>/opos-tools/<id>/home` as its `HOME` during install. The vendor binary lands at `<sandbox>/.local/bin/<binary>`. A wrapper is installed at `<prefix>/opos-tools/bin/<binary>` and a marked block in the shell profile adds that bin to `PATH`.
 

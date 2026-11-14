@@ -31,8 +31,8 @@ For the measured desktop response times, see the [README capture table](../READM
 
 ## Push a build with push-to-duo.sh
 
-From a checkout on the computer with the USB link, run `sh deploy/push-to-duo.sh --dry-run USER@fe80::1%8` to preview, then run the same command without `--dry-run`.
-The address, including the zone after `%`, is the phone's link-local address as seen from that computer, and the zone can change when the cable is replugged.
+From a checkout on the computer with the USB link, run `sh deploy/push-to-duo.sh --dry-run "<phone-user>@<phone-usb-address>"` to preview, then run the same command without `--dry-run`.
+Replace the named placeholders using [USB-link addresses](../packaging/duo-os/README.md#usb-link-addresses). For IPv6 link-local connections, include the interface zone after `%`; it can change when the cable is replugged.
 The script archives the git ref (HEAD by default), copies it to the phone, moves any existing `~/opos` to `~/opos.bak-<timestamp>`, unpacks the archive and runs `sh install.sh --no-launch --yes`.
 Afterwards it prints a PATH note and the output of `opos status`.
 `running: no` is expected until the service is started with `opos run --defaults`.
@@ -114,36 +114,21 @@ Run opos run --defaults once so the user service that serves the page starts at 
 
 ## Surface Duo USB link
 
-The phone chooses the USB subnet; inspect the PC adapter rather than assuming a range. The PC may receive only 169.254.x without a DHCP lease and mDNS or IPv4 sweeps may find nothing.
+The phone chooses the USB subnet; inspect the PC adapter rather than assuming a range. Without a DHCP lease, the PC may have only an automatic link-local address and mDNS or IPv4 sweeps may find nothing.
 
-On Windows identify the USB adapter and its ifIndex:
-```
-Get-NetIPConfiguration | Where-Object {$_.NetAdapter.Status -eq 'Up'}
-Get-NetNeighbor -AddressFamily IPv6 | Where-Object {$_.InterfaceIndex -eq $ifIndex}
-```
-The phone appears as a fe80:: neighbor on that interface. Note the InterfaceIndex used for link-local scope.
+Find the current phone address and the PC adapter's `ifIndex` using the canonical
+[USB-link addresses](../packaging/duo-os/README.md#usb-link-addresses) instructions
+(`Get-NetIPConfiguration` and `Get-NetNeighbor`). For IPv6 link-local connections,
+`<phone-usb-address>` below includes `%<interface-index>`, using the matching PC
+interface. Replace every placeholder before running a command.
 
 Connect with link-local IPv6:
+```sh
+ssh "<phone-user>@<phone-usb-address>"
+scp -P 22 file "<phone-user>@[<phone-usb-address>]:/path"
 ```
-ssh user@fe80::1%8
-scp -P 22 file user@[fe80::1%8]:/path
-```
-%8 selects the local interface; replace 8 with the ifIndex shown above.
 
-SSH config example:
-```
-Host duo
-    HostName fe80::1%%8
-    User user
-    Port 22
-```
-In an SSH config file %% becomes a literal % after expansion.
+In an SSH config file, `%%` becomes a literal `%` after expansion; double the
+percent sign before the interface index if you store the address there.
 
-ifIndex can change after replugging the USB cable, so re-run discovery.
-
-Discovery/connect checklist:
-- Confirm USB adapter is up with Get-NetIPConfiguration
-- Find phone fe80:: neighbor with Get-NetNeighbor filtered to that ifIndex
-- Use ssh and scp with [fe80::1%8] syntax and matching interface scope
-- Re-check ifIndex after replug
-
+The `ifIndex` can change after replugging the USB cable, so re-run discovery.

@@ -1301,7 +1301,7 @@ class Page(unittest.TestCase):
         staged = {"possible": True, "requested": False, "staged": 3}
         h = update_page.page("t" * 43, "n" * 22, self.snap(rollback=staged))
         self.assertEqual(h.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0],
-                         "Update 3 is staged and installs at the next restart. The button cancels it; what is installed stays as it is.")
+                         "Update 3 is staged and has not been applied. The button cancels it; what is installed stays as it is.")
         self.assertIn(">Cancel staged update</button>", h)
         self.assertNotIn('id="u-rb" disabled', h)
         self.assertIn(">Cancel requested</button>", update_page.page("t", "n", self.snap(rollback=dict(staged, requested=True))))
