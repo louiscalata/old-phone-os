@@ -6,6 +6,9 @@
 #
 #   powershell -File deploy\duo-opos-boot.ps1 -ImageDir <folder> -RootfsSha256 <sha256> [-Key <private key>] [-Yes]
 #
+# Keep <folder> in a normal folder in your user profile (e.g. %USERPROFILE%\opos-duo-images), never under a temp
+# folder: Windows Storage Sense deletes old files there and has deleted these images once. The script names an
+# -ImageDir or -LogDir under a temp folder before anything touches the phone; it does not refuse to run.
 # <folder> holds boot.img, surfaceduo1-twrp.img and misc-brake.img (the port release item-duo1-20261025-port0.22.1;
 # their SHA-256 are pinned below) and the OPOS rootfs (-Rootfs, default opos-os-rootfs.img) whose SHA-256 you give.
 # Without -Yes it checks those files, prints the steps and stops: it does not touch the phone.
@@ -221,6 +224,27 @@ function Release-Staged($handles, $files, [string]$dir) {
     if ($dir) { try { [System.IO.Directory]::Delete($dir) } catch { Log "could not delete ${dir}: $($_.Exception.Message)" } }
 }
 
+# The temp folder that $path is under, or $null. Windows Storage Sense deletes old files under the temp folders (the
+# PC session reported on November 12, 2026 that it had deleted the boot and recovery images kept there). A folder
+# counts as temp when it is under $env:TEMP, $env:TMP, the .NET temp path or %SystemRoot%\Temp, or when one of its
+# path segments is Temp or tmp: a TEMP written with 8.3 short names (a ~1 segment) still has that last segment.
+function Get-TempFolder([string]$path) {
+    $norm = { param($p) ([System.IO.Path]::GetFullPath($p) -replace '/', '\').TrimEnd('\') + '\' }
+    $full = & $norm $path
+    $roots = @($env:TEMP, $env:TMP, [System.IO.Path]::GetTempPath())
+    if ($env:SystemRoot) { $roots += Join-Path $env:SystemRoot 'Temp' }
+    foreach ($r in $roots) {
+        if (-not $r) { continue }
+        $root = & $norm $r
+        if ($root -match '^([A-Za-z]:)?\\$') { continue }   # a whole drive is never taken for a temp folder
+        if ($full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return $root.TrimEnd('\') }
+    }
+    foreach ($s in $full.Split('\')) {
+        if ($s -eq 'temp' -or $s -eq 'tmp') { return $s }
+    }
+    $null
+}
+
 # Hosts of $Hosts that accept a TCP connection on $Port within $TimeoutMs, in the order given. All probes
 # run at once (async connects), so a whole /24 costs one timeout, not 254.
 function Test-Tcp([string[]]$Hosts, [int]$Port, [int]$TimeoutMs) {
@@ -321,6 +345,12 @@ if (-not $LogDir) { $LogDir = Join-Path $ImageDir 'logs' }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $LogDir = (Resolve-Path -LiteralPath $LogDir).Path
 $log = Join-Path $LogDir 'boot-chain.log'
+# Named, not refused: this run hashes the images and holds its own copies open until it ends, so it is not at risk.
+# The originals (and a brake image kept for a by-hand restore) left in a temp folder are what Storage Sense deletes later.
+$tempImages = Get-TempFolder $ImageDir
+$tempLogs = Get-TempFolder $LogDir
+if ($tempImages) { Log "WARNING: -ImageDir $ImageDir is under the temp folder $tempImages. Windows Storage Sense deletes old files there and has deleted these images once. Keep them in a folder in your profile, e.g. %USERPROFILE%\opos-duo-images, and check their SHA-256 again before every use." }
+if ($tempLogs) { Log "WARNING: -LogDir $LogDir is under the temp folder $tempLogs. This run copies the images there, and a kept brake image is named from there. Windows Storage Sense deletes old files there: pass -LogDir with a folder in your profile, e.g. %USERPROFILE%\opos-duo-images\logs." }
 foreach ($t in @('fastboot.exe', 'adb.exe')) { if (-not (Get-Command $t -ErrorAction SilentlyContinue)) { throw "$t is not on PATH" } }
 if ($Key) {
     if (-not (Test-Path -LiteralPath $Key -PathType Leaf)) { throw "-Key $Key is not a file" }
