@@ -62,6 +62,7 @@ src/opos/native/blank.py
 src/opos/native/displayconfig.py
 src/opos/native/layout.py
 src/opos/native/logic.py
+src/opos/native/netlogic.py
 src/opos/native/posture.py
 src/opos/native/screens.py
 src/opos/native/shell.py

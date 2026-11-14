@@ -101,16 +101,21 @@ class Core:
                 return False
             raise
 
-    def _send(self, path, data):
+    def _send(self, path, data, timeout=10):
         if self.token is None:
             self.state()
         req = urllib.request.Request(self.base + path, data=json.dumps(data).encode(), method="POST", headers={
             "X-OPOS-Token": self.token, "Content-Type": "application/json", "Origin": self.base})
-        return json.load(urllib.request.urlopen(req, timeout=10))
+        return json.load(urllib.request.urlopen(req, timeout=timeout))
 
     def post(self, action, **fields):
         """One action for the server (call, hang_up, send, open). Returns the new state, as /api does."""
         return self._send("/api", dict(fields, action=action))
+
+    def net(self, action, fields, timeout):
+        """One of the server's net_* actions (the Network screen), waiting up to `timeout` seconds: a join can keep the
+        core busy far longer than the 10 s the other actions get. Returns the core's own reply, not the state."""
+        return self._send("/api", dict(fields, action=action), timeout)
 
     def app(self, name, data=None):
         """One of the server's apps (clock, contacts, notes, calls): its snapshot, or the result of one action."""
@@ -143,7 +148,7 @@ class Shell(Gtk.ApplicationWindow):
         self.restore_tries, self.restore_timer, self.restore_blanks = 0, None, 0
 
         classes = list(screens.enabled_pages())      # Clock, Contacts, Notes and Call log only when OPOS_APPS has them
-        self.apps = [(c.name, c.title) for c in classes if c.title]
+        self.apps = self.tiles(classes)     # Network has no tile: Settings opens it
         T = Gtk.StackTransitionType
         self.reads = Gtk.Stack(transition_type=T.SLIDE_LEFT_RIGHT if ANIMATE else T.NONE,
                                transition_duration=MOVE_MS if ANIMATE else 0, vexpand=True)
@@ -210,6 +215,11 @@ class Shell(Gtk.ApplicationWindow):
         GLib.timeout_add(1000, self.second)
         threading.Thread(target=self.poll, daemon=True).start()
 
+    @staticmethod
+    def tiles(classes):
+        """(name, title) of the pages with a tile on Home: those with a title, less any marked tile = False."""
+        return [(c.name, c.title) for c in classes if c.title and getattr(c, "tile", True)]
+
     def build_sheet(self):
         """The battery sheet: it covers both screens, so nothing under it shows through."""
         self.b_head, self.b_detail, self.b_events = label("", "head"), label("", "big"), label("", "dim")
@@ -242,7 +252,13 @@ class Shell(Gtk.ApplicationWindow):
             T = Gtk.StackTransitionType
             toward, back = (T.SLIDE_RIGHT, T.SLIDE_LEFT) if self.hand == "left" else (T.SLIDE_LEFT, T.SLIDE_RIGHT)
             how = T.SLIDE_UP if self.page == "lock" else T.SLIDE_DOWN if name == "lock" else back if name == "home" else toward
+        was, left = self.page, self.pages.get(self.page)
         self.page = name
+        if left is not None:
+            try:
+                left.leave()    # before the new page's enter(): a page that polls stops, and drops what was typed
+            except Exception as err:    # page code never blocks the change: the lid closing goes to "lock" this way
+                print("opos shell: leaving %s raised %s; carrying on" % (was, type(err).__name__), file=sys.stderr, flush=True)
         self.strip.set_opacity(0 if name == "lock" else 1)
         self.pages[name].enter()
         self.pages[name].tick()

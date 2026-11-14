@@ -360,12 +360,12 @@ class Screens(unittest.TestCase):
 
     def test_only_the_everyday_apps_opos_apps_names_get_pages(self):
         names = lambda env: [c.name for c in self.screens.enabled_pages(env)]  # noqa: E731
-        base = ["lock", "home", "phone", "messages", "calc", "settings"]
+        base = ["lock", "home", "phone", "messages", "calc", "settings", "network"]
         self.assertEqual(names({}), base, "absent: no everyday apps")
         self.assertEqual(names({"OPOS_APPS": ""}), base, "empty: none")
-        self.assertEqual(names({"OPOS_APPS": "notes,clock"}), ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings"])
+        self.assertEqual(names({"OPOS_APPS": "notes,clock"}), ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "network"])
         self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings"])
+                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"])
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
 
     # --- two taps to delete, as the browser asks --------------------------------------------------------------------
@@ -624,13 +624,16 @@ class Recorder:
     def __init__(self, name):
         self.name, self.shown, self.entered, self.lost_text, self.data = name, [], 0, None, None
         self.seq = logic.Sequence()
-        self.delivered = []
+        self.delivered, self.left = [], 0
 
     def show(self, snap):
         self.shown.append(snap)
 
     def enter(self):
         self.entered += 1
+
+    def leave(self):
+        self.left += 1
 
     def tick(self):
         pass
@@ -740,10 +743,12 @@ class ShellRules(unittest.TestCase):
         self.assertEqual((sh.page, sh.wanted, sh.pages["home"].entered), ("lock", "home", 0))
         sh.go("clock")      # an alarm rings while the cover is up: the newest request is the one kept
         self.assertEqual(sh.wanted, "clock")
+        self.assertEqual(sh.pages["lock"].left, 0, "nothing is left under the cover")
         sh.warming = False
         sh.show_page = lambda *a: None
         sh.go("clock")
         self.assertEqual(sh.page, "clock")
+        self.assertEqual((sh.pages["lock"].left, sh.pages["clock"].left), (1, 0), "the page left is told, once")
 
     def test_the_start_up_walk_ends_on_the_lock_page_then_makes_the_waiting_request(self):
         sh, shown = self.sh, []

@@ -11,8 +11,9 @@ handling and the frame pacing have not been run on the phone, and no image with 
 | File | Role |
 | --- | --- |
 | `src/opos/native/shell.py` | the window, the gestures and the polling of the OPOS server |
-| `src/opos/native/screens.py` | the screens: Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Call log, Settings |
+| `src/opos/native/screens.py` | the screens: Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Call log, Settings, Network |
 | `src/opos/native/logic.py` | what the screens decide for themselves, with no toolkit, so it is tested anywhere |
+| `src/opos/native/netlogic.py` | the same for the Network screen: its rows, sentences and replies, and the typed password |
 | `src/opos/native/layout.py`, `ui.py` | the hinge gap, swipe and drag rules; the few widgets and the stylesheet |
 | `src/opos/native/posture.py` | reads the lid switch, read-only; closed or open is all Linux can tell on this phone |
 | `src/opos/native/blank.py`, `displayconfig.py` | both screens dark while the lid is closed, and lit as before when it opens |
@@ -68,6 +69,84 @@ launcher reads the same `Environment=OPOS_APPS=` line from the server's drop-in 
   warns that alarms will not ring.
 - The shell tells the launcher it is ready only after its window is on screen, has drawn a frame and has finished
   warming up.
+
+## The Network screen
+
+Settings has a Network button (Home has no tile for it). The screen shows the radios in the server's own sentences
+(Wi-Fi, airplane mode, Bluetooth, mobile data) and the networks it can see, connected first, then by signal, then the
+saved ones not in range. It can scan again, join (a typed password, or none for a saved or open network), join a hidden
+network by name, forget, disconnect, and turn Wi-Fi on or off. It uses the server's existing actions, the same ones the
+browser's `/network` page uses: `net_status`, `net_scan`, `net_join`, `net_forget` and `net_wifi` (`src/opos/net.py` does
+every change; nothing on the server side changes). Changes work only where the server runs with `OPOS_NETWORK=1`;
+elsewhere the server refuses them and the screen shows its sentence.
+
+- Nothing is asked while the screen is not showing. On opening it reads the radios once, then scans once; while it shows
+  it reads the radios again every 10 s and never rescans on its own. Opening it, polling and choosing a row change
+  nothing.
+- Forget, Disconnect and Turn Wi-Fi off take two taps ("Forget this network?", "Disconnect now?", "Turn Wi-Fi off
+  now?"); choosing another row, Cancel or leaving the screen disarms them. Every newer radios read or list that is
+  drawn finds the chosen row again by name and takes its new state, or closes the choice when the row is gone; a Forget
+  or Disconnect prompt is dropped when that row's state changed or when the radios name another connected network.
+  The server's disconnect names no network (it drops whatever is connected), so the second Disconnect tap sends it only
+  while the latest radios read says the network on the prompt is the one connected; otherwise it sends nothing and says
+  why. While the Wi-Fi state is not known the switch is greyed out and sends nothing. Turn Wi-Fi on takes one tap.
+- The main button and the Wi-Fi button act only on what the owner has seen them say. What one of them says or does
+  can change for a reason other than the owner's own tap (a newer radios read, a newer list, or a change's answer),
+  for example when an armed or unarmed Disconnect turns into Join, or Turn Wi-Fi off into Turn Wi-Fi on. For 1.5 s
+  after that, a tap on it sends nothing and the screen says "This button just changed. Check what
+  it says now, then tap again." A tap after that acts as the button says. The Wi-Fi button is held the same way when it
+  appears by itself (a newer list drops the chosen row, or a change's answer closes the choice, and the screen goes back
+  to its idle buttons). The rows follow the same rule: when a newer list puts another network in a place, or changes
+  what a tap there would offer (for example from "needs a password" to "saved"), a tap on a row in the next 1.5 s
+  chooses nothing and the screen says "The list just changed. Check it, then tap the network again." A list that only
+  brings new signal strengths, in the same order, holds nothing. The owner's own taps start no hold, so the second tap
+  of a prompt they armed, or Join right after choosing a row, acts at once.
+- Each visit to the screen is numbered; leaving starts a new one. A radios read or a list sent for an earlier visit is
+  dropped and starts nothing. What a visit read is forgotten when the screen is left, because the phone can move to
+  another network or the Wi-Fi be switched while the screen is not showing (the browser's `/network` page, or
+  NetworkManager roaming). So the next visit starts at the floor described below: until its own first radios read is
+  drawn the screen says "Reading the radios again to show what the change did...", the Wi-Fi button says "Wi-Fi: not
+  known yet" and sends nothing, and a Disconnect prompt sends nothing. Until its own first list is drawn the list has
+  one row, "Reading the list again...", which chooses nothing and says "The list is being read again. Wait for it,
+  then tap a network."; the first list that replaces it holds row taps for 1.5 s like any newer list that changes a
+  place. A change's answer from an earlier visit says its outcome, sets the same floor as below
+  in the same cases, frees the screen and, while the screen shows, reads the radios again. It does not
+  touch the choice or the typed password of the visit now showing. A scan that opening the screen had to put off while
+  an earlier request was still waiting runs once the screen is free, so the list is read again too.
+- The radios and the scan each keep their own order: an older answer never replaces a newer one. Every answer the
+  server gives to a change sets a floor: a confirmed change, one with no answer in time on either side (the screen's
+  own wait, or the server's "The network service did not answer in time. Try again.": NetworkManager may still be
+  going on), and a failed one (a failed join may already have dropped the old network). Only a refusal before anything
+  ran (an HTTP 4xx such as 429, "too many tries") sets none. At the floor every read sent before it is refused when it
+  comes, and the radios read drawn before it is no longer trusted: until a read sent after the change is drawn the
+  screen says "Reading the radios again to show what the change did...", the Wi-Fi button says "Wi-Fi: not known yet"
+  and sends nothing, and a Disconnect prompt sends nothing (the screen says the connected network is not known right
+  now). The radios (skipping the server's few-second cache) and the list are read again after every answer.
+- A join waits up to 100 s for the server, which may take about 95 s; a change with no answer in time is not called
+  failed: the screen says the change may still be going on and reads the radios again.
+- The password is typed on the on-screen keyboard into `netlogic.Secret`, which prints and formats as
+  `<password hidden>` and cannot be pickled or copied. It is shown as bullets, sent once in the join request to the
+  server on loopback, and emptied before the request is handed to the sending thread, on every answer to a change sent
+  in the same visit (success, error or no answer in time), on Cancel, on choosing another row, when a newer list drops
+  the chosen row or no longer asks for a password, and when the screen is left (the lid closing leaves it too). While a change or a
+  shown scan (Scan again, or the one on opening) is waiting, password keys are not kept, and the screen says "Keys are
+  not kept while OPOS is busy. Type the password once it answers." The screen stays busy until a change's answer comes,
+  even after leaving and coming back, so nothing typed in a later visit can be waiting when an earlier visit's answer
+  arrives. If the sending thread cannot be started, nothing is sent: the screen frees itself and says
+  "That did not go through." The sending thread drops its copy once the request has gone, and hides any text of the
+  reply that would contain it. Nothing in the screen prints, logs or saves it; the
+  server hands it to NetworkManager (see [network.md](../../docs/network.md)), which keeps a joined network's password.
+  A Python string cannot be wiped from memory, so "emptied" means no reference is kept, not that the bytes are erased.
+- Company or school (802.1X) and WEP networks are listed and explained, and offer no Join.
+
+This build has not been run on the phone. On November 13, 2026 the owner checked the PC session's patch 0013 on the Duo
+under real GTK, with only `net_status` and `net_scan` sent: that build showed the real radios and scan, a row opened its
+choice, and the poll stopped after leaving the screen. This port changes what was checked (two taps for Forget,
+Disconnect and Turn Wi-Fi off, a greyed-out Wi-Fi switch while its state is unknown, `leave()` on every page change, a
+fresh status read after a change, and per-action waits), so that check does not carry over. **NOT_RUN** on the phone for
+this build: opening the screen with real radios, a real join (typed or saved), a hidden network, forget, disconnect, Wi-Fi
+off and on, the two-tap prompts, the long-wait sentence, and the keyboard layout for a long password. Several can end the
+phone's own connection, so the owner runs them.
 
 ## The lid
 

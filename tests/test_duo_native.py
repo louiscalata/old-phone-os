@@ -508,7 +508,7 @@ class ImageIntegration(unittest.TestCase):
         shutil.copy(DUO / "opos-server.service", self.r / "etc/systemd/system/opos-server.service")
         n = self.r / "opt/opos/src/opos/native"
         n.mkdir(parents=True)
-        for name in ("shell.py", "screens.py", "logic.py", "layout.py", "ui.py", "posture.py", "blank.py", "displayconfig.py"):
+        for name in ("shell.py", "screens.py", "logic.py", "netlogic.py", "layout.py", "ui.py", "posture.py", "blank.py", "displayconfig.py"):
             shutil.copy(SHELL.parent / name, n / name)
 
     def test_a_good_image_passes_every_native_check(self):
@@ -531,6 +531,11 @@ class ImageIntegration(unittest.TestCase):
         k = self.r / "usr/libexec/opos/opos-kiosk"
         k.write_text(k.read_text(encoding="utf-8").replace(">>> track native", ">>> track nothing"), encoding="utf-8")
         self.assertIn("FAIL the native shell launcher", self.verify_native().stdout)
+
+    def test_an_image_without_the_network_screens_rules_fails(self):
+        self.image()
+        (self.r / "opt/opos/src/opos/native/netlogic.py").unlink()     # screens.py imports it: the shell would not start
+        self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
 
     def test_the_assistants_screen_in_an_image_fails(self):
         self.image()
