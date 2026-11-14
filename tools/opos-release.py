@@ -42,6 +42,7 @@ APP_MUST_HAVE = APP + "src/opos/__init__.py"
 OVERLAY_DEST = {
     "opos-kiosk": "usr/libexec/opos/opos-kiosk",
     "opos-session": "usr/libexec/opos/opos-session",
+    "opos-native": "usr/libexec/opos/opos-native",
     "opos-diag": "usr/libexec/opos/opos-diag",
     "opos-switch": "usr/sbin/opos-switch",
     "opos.service": "etc/systemd/system/opos.service",

@@ -154,6 +154,19 @@ g rev-parse "$ref" > "$r/opt/opos/REVISION"
 install -d "$r/usr/libexec/opos"
 install -m 0755 "$here/opos-kiosk" "$r/usr/libexec/opos/opos-kiosk"
 install -m 0755 "$here/opos-session" "$r/usr/libexec/opos/opos-session"
+# --- native shell: BEGIN (packaging/duo-os/NATIVE.md)
+# The native shell's launcher. opos-kiosk hands its process to it when it is installed and /etc/opos/native-off does not exist;
+# it hands over to the browser kiosk whenever the shell cannot be the interface (no GTK 4, first-run setup unfinished, a PIN lock,
+# a shell that will not stay up). Nothing changes on a phone until it boots an image that has the file.
+install -m 0755 "$here/opos-native" "$r/usr/libexec/opos/opos-native"
+# The two-screen span, PANE,HINGE in logical px, for the shell: the same value opos-server.service sets for the browser interface
+# (verify-image.sh compares them). It is written here, for every image, and not in the dev span block below: that block is dev only
+# and test_duo_dev_span pins it to write exactly one drop-in. The launcher takes only a line of exactly this shape from the file.
+install -d -m 0755 "$r/etc/default"
+printf '%s\n' '# The two-screen span for the native shell (PANE,HINGE in logical px): the value opos-server.service sets.' \
+    'OPOS_SPAN=675,42' > "$r/etc/default/opos-native"
+chmod 0644 "$r/etc/default/opos-native"
+# --- native shell: END
 install -m 0755 "$here/opos-switch" "$r/usr/sbin/opos-switch"
 for u in opos-server.service opos.service opos-fallback.service; do
     install -m 0644 "$here/$u" "$r/etc/systemd/system/$u"

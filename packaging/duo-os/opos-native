@@ -1,0 +1,188 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# OPOS's native session client. opos-kiosk, phoc's -E command, hands this script its own process when it starts (its
+# "track native" lines), so opos-session and the unit are as they were. It keeps the native
+# shell (python3 -m opos.native.shell, GTK 4, drawn by the GPU) on the screen, and hands the session to the browser
+# kiosk, opos-kiosk, whenever the shell cannot be the interface. The browser is the fallback, never a second
+# interface: it is not started while the shell runs.
+#
+# The session goes to the browser (exec opos-kiosk, which has its own back-off and its own give-up to phosh) when:
+#   - GTK 4 or PyGObject cannot be loaded (nothing to try);
+#   - the owner chose "Use the old interface" in the shell's Settings (the shell exits 10);
+#   - the PIN lock is on (OPOS_LOCK=1 here, or the shell found the server enforcing it and exits 11): the shell has no
+#     PIN screen, so the browser interface must show the lock;
+#   - first-run setup is not finished (no firstrun.json in the owner's config folder): setup is a browser page, and the
+#     browser keeps the screen until the session next starts, which is after setup is done;
+#   - the shell ended 3 times in a row within 20 s of starting, or was ended here because it had not put its window
+#     up within 30 s (it is not going to start). The shell says its window is up by writing the file named in
+#     OPOS_NATIVE_READY; without that a shell that hangs before drawing would leave both panels black for ever;
+#   - the shell ended 6 times within 10 minutes, however long each run was (it starts but does not stay up).
+# Any other end of the shell is logged and the shell is started again after 2 s. An end by SIGTERM (status 143) is
+# someone asking the shell to start again (an update, a new time zone): it is not counted as a quick end. After every
+# end of the shell, clean (0) and SIGTERM (143) included, the screens are lit (opos.native.blank --restore) before that
+# pause.
+# Every end is logged:
+# journalctl -t opos-native
+# To go back to the browser for good: sudo touch /etc/opos/native-off. opos-kiosk then never starts this script. It takes
+# effect by itself the next time the session starts; no other step is needed. Remove the file to come back the same way.
+# shellcheck disable=SC1090,SC1091
+# dash ends the script when `.` cannot open its file, whatever follows it, so the file is tested first.
+if [ -r /etc/profile.d/zz-droidian.sh ]; then . /etc/profile.d/zz-droidian.sh; fi
+# The two-screen span (OPOS_SPAN=PANE,HINGE in logical px, 675,42 on the Surface Duo 1) comes from this file. Only a
+# line of exactly that shape is taken from it, and the file is never run, so nothing in it can end the phone's
+# interface. Without it the shell draws one window with no hinge gap.
+defaults=${OPOS_NATIVE_DEFAULTS:-/etc/default/opos-native}
+unset OPOS_SPAN
+if [ -r "$defaults" ]; then
+    span=$(sed -n 's/^OPOS_SPAN=\([0-9][0-9]*,[0-9][0-9]*\)$/\1/p' "$defaults" 2>/dev/null | sed -n '$p')
+    if [ -n "$span" ]; then OPOS_SPAN=$span; export OPOS_SPAN; fi
+fi
+# The everyday apps (Clock, Contacts, Notes, Call log) are switched on for the server by its drop-in; the shell shows
+# the same ones, so it reads the same line. Only a line of exactly that shape is taken, and the file is never run.
+# Absent or empty means no everyday apps, as on the server.
+apps_conf=${OPOS_NATIVE_APPS_CONF:-/etc/systemd/system/opos-server.service.d/20-opos-apps.conf}
+if [ -z "${OPOS_APPS+set}" ] && [ -r "$apps_conf" ]; then
+    apps=$(sed -n 's/^Environment=OPOS_APPS=\([a-z0-9,-]*\)$/\1/p' "$apps_conf" 2>/dev/null | sed -n '$p')
+    OPOS_APPS=$apps
+    export OPOS_APPS
+fi
+# As in opos-kiosk: a restarted client must never adopt a spent Wayland connection.
+unset WAYLAND_SOCKET
+browser=${OPOS_NATIVE_BROWSER:-/usr/libexec/opos/opos-kiosk}
+url=http://127.0.0.1:8765/
+quick=20 giveup=3 roll_n=6 roll_s=600 fails=0 recent=''
+# How long the shell has to put its window up; 0 = do not watch (the tests of everything else).
+start_s=${OPOS_NATIVE_START_S:-30}
+case $start_s in ''|*[!0-9]*) start_s=30 ;; esac
+OPOS_NATIVE_READY=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/opos-native-ready
+export OPOS_NATIVE_READY
+late=$OPOS_NATIVE_READY.late
+log() { logger -t opos-native "$*" 2>/dev/null || echo "opos-native: $*" >&2; }
+now() { date +%s 2>/dev/null || echo 0; }
+# to_browser WHY: the browser kiosk takes over this process, so phoc's client is still one process and opos-session's
+# give-up marker keeps working. If the kiosk cannot be started there is nothing left to show: exit 1 ends phoc's
+# client, and the unit restarts the session.
+to_browser() {
+    log "$1; the browser interface takes over"
+    # tested first: a shell that cannot exec its command ends there with 127 and never reaches the next line
+    # OPOS_NATIVE_TRIED tells opos-kiosk not to hand the process straight back to this script
+    OPOS_NATIVE_TRIED=1
+    export OPOS_NATIVE_TRIED
+    # The shell darkens both screens while the lid is closed and lights them when it ends, but a shell that was killed
+    # outright cannot: light them here, from the values it saved, before the browser (which never blanks) takes over.
+    # It only writes the two panels' brightness. While a panel refuses the write it tries again for up to 5 s, then
+    # exits non-zero; that is logged, and is never allowed to stop the handover. OPOS_NATIVE_RESTORE_FAILED tells
+    # opos-kiosk to keep trying in the background (at a low rate, for up to 2 minutes) while the browser starts.
+    unset OPOS_NATIVE_RESTORE_FAILED
+    if ! PYTHONPATH=${OPOS_NATIVE_SRC:-/opt/opos/src} python3 -m opos.native.blank --restore; then
+        log "could not light both screens before the browser takes over (opos.native.blank --restore failed)"
+        OPOS_NATIVE_RESTORE_FAILED=1
+        export OPOS_NATIVE_RESTORE_FAILED
+    fi
+    if [ -x "$browser" ]; then exec "$browser"; fi
+    log "cannot start $browser"
+    exit 1
+}
+wait_for_server() {
+    n=0
+    until python3 -c "import urllib.request; urllib.request.urlopen('$url', timeout=2)" 2>/dev/null; do
+        n=$((n + 1))
+        if [ "$n" -ge 120 ]; then
+            log "the OPOS server does not answer after ${n} tries; starting the shell anyway (it says so and keeps asking)"
+            break
+        fi
+        sleep 1
+    done
+}
+# note_exit TIME: keeps the times of the last $roll_n ends; succeeds when that many fit in $roll_s seconds. A clock that
+# went back (a negative span) never counts, as for a quick end.
+note_exit() {
+    set -- $recent "$1"
+    while [ "$#" -gt "$roll_n" ]; do shift; done
+    recent=$*
+    [ "$#" -ge "$roll_n" ] || return 1
+    first=$1
+    for last; do :; done
+    span=$((last - first))
+    [ "$span" -ge 0 ] && [ "$span" -le "$roll_s" ]
+}
+# The shell is part of the installed OPOS release; the server's unit uses the same path.
+PYTHONPATH=${OPOS_NATIVE_SRC:-/opt/opos/src}
+PYTHONDONTWRITEBYTECODE=1
+GDK_BACKEND=wayland
+export PYTHONPATH PYTHONDONTWRITEBYTECODE GDK_BACKEND
+# The shell has no PIN screen: with the lock on the browser interface must be the one that shows it.
+if [ "${OPOS_LOCK:-}" = 1 ]; then to_browser "the PIN lock is on and the native shell has no PIN screen"; fi
+# Setup (time zone, goal time) is a browser page. The flag file is the one the server writes when setup is done or
+# skipped (src/opos/firstrun.py), in the same folder as the time zone read below.
+firstrun=${OPOS_NATIVE_FIRSTRUN_FLAG:-${OPOS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opos}/firstrun.json}
+[ -f "$firstrun" ] || to_browser "first-run setup is not finished"
+python3 -c 'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk' 2>/dev/null \
+    || to_browser "GTK 4 or PyGObject cannot be loaded"
+while :; do
+    wait_for_server # before every start, and before t0 below so the wait is not counted as a quick end
+    # The owner's time zone, saved by src/opos/timezone.py, as in opos-kiosk: read again at every start.
+    z=; f=${OPOS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opos}/timezone
+    [ -f "$f" ] && IFS= read -r z < "$f"
+    case "$z" in ''|*[!A-Za-z0-9_+/-]*|[+-]*|/*|*//*|*..*) ;; *) [ "${#z}" -le 64 ] && export TZ="$z" ;; esac
+    rm -f "$OPOS_NATIVE_READY" "$late"
+    t0=$(now)
+    python3 -m opos.native.shell &
+    pid=$!
+    watch=
+    if [ "$start_s" -gt 0 ]; then
+        # The watcher: once a second, up to $start_s times. It stops as soon as the shell has said it is ready or has
+        # ended; otherwise it leaves the "late" file and ends the shell (TERM, three seconds, KILL).
+        (
+            i=0
+            while [ "$i" -lt "$start_s" ]; do
+                [ -e "$OPOS_NATIVE_READY" ] && exit 0
+                kill -0 "$pid" 2>/dev/null || exit 0
+                sleep 1
+                i=$((i + 1))
+            done
+            [ -e "$OPOS_NATIVE_READY" ] && exit 0
+            : > "$late"
+            kill -TERM "$pid" 2>/dev/null
+            sleep 3
+            kill -KILL "$pid" 2>/dev/null
+        ) &
+        watch=$!
+    fi
+    wait "$pid"
+    rc=$?
+    if [ -n "$watch" ]; then kill "$watch" 2>/dev/null; wait "$watch" 2>/dev/null; fi
+    t1=$(now)
+    ran=$((t1 - t0))
+    if [ "$rc" -eq 10 ]; then
+        to_browser "the owner chose the old interface"
+    fi
+    if [ "$rc" -eq 11 ]; then
+        to_browser "the server has a PIN lock and the native shell has no PIN screen"
+    fi
+    if [ -e "$late" ]; then
+        fails=$((fails + 1))
+        log "the shell had not put its window up after ${start_s}s and was ended"
+    elif [ "$rc" -eq 143 ]; then
+        : # asked to start again; neither a quick end nor a good run
+    elif [ "$ran" -ge 0 ] && [ "$ran" -lt "$quick" ]; then
+        fails=$((fails + 1))
+    else
+        fails=0
+    fi
+    if [ "$fails" -ge "$giveup" ]; then
+        to_browser "the shell ended $fails times in a row within ${quick}s (last status $rc)"
+    fi
+    if note_exit "$t1"; then
+        to_browser "the shell ended $roll_n times within ${roll_s}s, however long each ran (last status $rc, last run ${ran}s)"
+    fi
+    # After every end, light the screens now, before the pause and the wait for the server, not only at the next start
+    # (a handover above has done it already). A shell killed outright (KILL, a crash) while the lid was closed left them
+    # dark, and even a clean end (0) or a SIGTERM end (143) leaves them dark when the panels refused the shell's own
+    # restore. It is a no-op when nothing is dark. The next shell darkens them again within its BLANK_MS if the lid is
+    # closed.
+    python3 -m opos.native.blank --restore \
+        || log "could not light both screens after the shell ended with status $rc (opos.native.blank --restore failed)"
+    log "the shell ended with status $rc after ${ran}s (quick ends in a row: $fails); starting it again in 2s"
+    sleep 2
+done

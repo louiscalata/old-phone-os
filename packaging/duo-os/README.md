@@ -62,6 +62,10 @@ phone checks. The build installs the helper and unit and creates their directori
 `verify-image.sh` requires the installed `/opt/opos/src/opos/powerkey.py` module. There is no separate build-time
 source-module guard. See [POWER.md](POWER.md) for the design, build/verification limits and remaining risks.
 
+The image also carries an alternative interface, a native GTK 4 shell, with the browser kiosk as its fallback (the browser
+is used until first-run setup is finished and whenever a PIN lock is on). It has not been run on a phone. See
+[NATIVE.md](NATIVE.md).
+
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
 0.22.1, kernel `4.14-190-microsoft-surfaceduo`), whose hash the owner's PC recomputed on 2026-11-12 from the file its build uses
 (`rootfs.img` SHA-256 `9299b2c0…e312`, equal to the publisher's saved, unsigned manifest; the publisher's release page was offline that day, so there is no independent comparison and no second copy). That base keeps what mainline Linux cannot yet do on this phone: the

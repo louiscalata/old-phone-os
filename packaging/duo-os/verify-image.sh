@@ -135,6 +135,19 @@ check "journal is persistent, so a failed boot leaves evidence" "grep -q '^Stora
 check "boot diagnostics dump is enabled" "[ -L $w/multi-user.target.wants/opos-diag.service ] && [ -x $r/usr/libexec/opos/opos-diag ]"
 k=$r/usr/libexec/opos/opos-kiosk
 check "the kiosk and session scripts parse" "sh -n $k && sh -n $r/usr/libexec/opos/opos-session"
+# --- track native: the native shell's launcher (packaging/duo-os/NATIVE.md) ---
+nl=$r/usr/libexec/opos/opos-native
+check "the native shell launcher is installed, executable and parses, and the kiosk hands its process to it" "[ -x $nl ] && [ ! -L $nl ] && sh -n $nl && grep -q 'opos.native.shell' $nl && grep -q '>>> track native' $k && grep -qF '/usr/libexec/opos/opos-native' $k"
+check "the native shell is in the image (shell, screens, logic, layout, ui, posture, blank, displayconfig) and the assistants screen is not" "[ -s $r/opt/opos/src/opos/native/shell.py ] && [ -s $r/opt/opos/src/opos/native/screens.py ] && [ -s $r/opt/opos/src/opos/native/logic.py ] && [ -s $r/opt/opos/src/opos/native/layout.py ] && [ -s $r/opt/opos/src/opos/native/ui.py ] && [ -s $r/opt/opos/src/opos/native/posture.py ] && [ -s $r/opt/opos/src/opos/native/blank.py ] && [ -s $r/opt/opos/src/opos/native/displayconfig.py ] && [ ! -e $r/opt/opos/src/opos/native/assistants.py ]"
+check "the native shell's defaults file, where there is one, holds only the server's own two-screen span" "[ ! -e $r/etc/default/opos-native ] || { [ -f $r/etc/default/opos-native ] && [ ! -L $r/etc/default/opos-native ] && [ \"\$(grep -v '^#' $r/etc/default/opos-native)\" = \"OPOS_SPAN=\$(sed -n 's/^Environment=OPOS_SPAN=//p' $w/opos-server.service)\" ]; }"
+if find "$r/usr/lib" -name Gtk-4.0.typelib 2>/dev/null | grep -q . && find "$r/usr/lib" -path '*/gi/__init__.py' 2>/dev/null | grep -q .; then
+    echo "NOTE: GTK 4 and PyGObject are in the image: the native shell can start"
+else
+    echo "NOTE: GTK 4 or PyGObject is not in this image: the launcher falls back to the browser interface"
+fi
+if [ -e "$r/etc/opos/native-off" ]; then
+    echo "NOTE: /etc/opos/native-off is in this image: the browser stays the interface"
+fi
 check "pgrep and pkill are in the image (opos-session ends phoc by name, and the kiosk looks for a Chromium still on its profile)" "[ -x $r/usr/bin/pkill ] && [ -x $r/usr/bin/pgrep ]"
 check "the kiosk clears stale profile locks, drops WAYLAND_SOCKET, logs, backs off and can drop the GPU" "grep -q SingletonLock $k && grep -q 'unset WAYLAND_SOCKET' $k && grep -q 'logger -t opos-kiosk' $k && grep -q -- '--disable-gpu' $k && grep -q 'sleep \"\$delay\"' $k"
 check "the kiosk waits for the server before every start of the browser, not only the first: wait_for_server is called inside the loop, before the start time is taken and before chromium runs" "awk '/^while :; do/ { l = 1; next } l && /^[[:space:]]+wait_for_server([[:space:]]|\$)/ && !t && !c { f = 1 } l && /^[[:space:]]+t0=/ { t = 1 } l && /^[[:space:]]+chromium[[:space:]]/ { c = 1 } END { exit !f }' $k"
