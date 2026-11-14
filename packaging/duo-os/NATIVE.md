@@ -30,8 +30,8 @@ process, with `OPOS_NATIVE_TRIED` set, so it never hands back) when:
 
 - GTK 4 or PyGObject cannot be loaded;
 - first-run setup is not finished (no `firstrun.json` in the owner's config folder, the one the server writes);
-- the PIN lock is on (`OPOS_LOCK=1`, or the shell found the server enforcing it and ended with status 11): the shell has no
-  PIN screen;
+- the PIN lock is on (`OPOS_LOCK=1`, or the shell found the server enforcing it, or the server did not say whether it
+  has one 5 times in a row, and the shell ended with status 11): the shell has no PIN screen;
 - the owner chose "Use the old interface" in Settings (status 10);
 - the shell ended 3 times in a row within 20 s, or did not report a window within 30 s, or ended 6 times in 10 minutes.
 
@@ -40,6 +40,11 @@ process, with `OPOS_NATIVE_TRIED` set, so it never hands back) when:
 everyday apps (Clock, Contacts, Notes, Call log) get pages only when `OPOS_APPS` names them, as on the server: the
 launcher reads the same `Environment=OPOS_APPS=` line from the server's drop-in (`OPOS_NATIVE_APPS_CONF`, default
 `/etc/systemd/system/opos-server.service.d/20-opos-apps.conf`); absent or empty means none.
+
+The shell asks one server: the phone's own, at `http://127.0.0.1:8765`. `OPOS_SERVER_URL` may name another port on
+127.0.0.1 and nothing else; a value of any other shape is refused and said once in the log, and the phone's own server
+is asked. `OPOS_LOCAL_URL` (the Helper's model server) is not read. No proxy from the environment is used, and a
+redirect to another address is not followed, so the shell's token and the owner's actions stay on the phone.
 
 ## The rules the screens follow
 
@@ -54,7 +59,12 @@ launcher reads the same `Environment=OPOS_APPS=` line from the server's drop-in 
   sheet open or closed, Home or the page it was on. There is no easing, no coasting and no spring-back on a timer.
 - Deleting an alarm, a person or a note takes two taps ("Delete this alarm?", "Delete this person?", "Delete this
   note?"), as in the browser. Add alarm and Call are busy until the server's answer is on screen, so a second tap sends
-  nothing.
+  nothing. When the answer to a call or a hang-up does not come, the button stays busy until a state asked for after
+  that is drawn, so while the server cannot be reached it stays busy; the screen then no longer says it is asking. It
+  says "No answer about that call. OPOS is being asked whether it went out; Call comes back when it says." or "No
+  answer about hanging up. The call may still be up; OPOS is being asked, and the button comes back when it says." A
+  request that could not be sent at all (no thread could be started) is answered at once as not sent, so no button
+  waits for an answer that cannot come.
 - Phone says the emergency sentence of the shared risk notice ("OPOS cannot place an emergency call; keep another way
   to call for help.") whenever calls are real; Settings shows the shared notices, as the browser's About does.
 - A reply to a request changes the screen only if no newer reply has. When the reply to a change (a call, a hang-up, a
@@ -69,6 +79,14 @@ launcher reads the same `Environment=OPOS_APPS=` line from the server's drop-in 
   warns that alarms will not ring.
 - The shell tells the launcher it is ready only after its window is on screen, has drawn a frame and has finished
   warming up.
+- The shell has no PIN screen, so it draws a state only together with the server's answer "no PIN lock" (`/api/lock`
+  answers 404). The question is asked beside the first state, again while it has no answer, and again after the server
+  went away. The answer "yes" ends the shell for the browser. No answer (the check failed or timed out) is never read
+  as "no": the state is not drawn, the shell goes to its own lock page and stays there, and that page says "OPOS has
+  not said whether this phone has a PIN lock. Waiting for its answer." After 5 times in a row the shell ends with
+  status 11 and the browser shows whatever the server enforces. A lost connection is not counted: the last good state
+  stays, as before. The shell's own lock page is not a lock: it opens with a swipe, and only the server's PIN lock,
+  shown by the browser, keeps anyone out.
 
 ## The Network screen
 
@@ -201,9 +219,48 @@ restore is capped only at each panel's own `max_brightness`. With no saved file,
 but cannot be read is written its default (capped by its readable `max_brightness`), since it may be dark, and stays listed
 as failed until a read shows it lit. A `PowerSaveMode` of 1 to 3 that the shell refuses (the lid reads open) is not kept:
 the property reads 0, because the screens stay lit; every value still reaches the blank or the restore. After the shell
-restores on its own (the lid opened), the property keeps the last accepted value until the daemon sends 0, and a lid
-watcher that stops is not started again (the screens are lit and the lid is unknown until the shell restarts). Not verified on a phone: no lid close, blank or restore on the Duo is recorded here (NOT_RUN), and the
+restores on its own (the lid opened), the property keeps the last accepted value until the daemon sends 0. A lid
+watcher that stops (the switch is missing, cannot be read, or its thread cannot be started) is said once in the log;
+the screens are lit, the lid counts as unknown, and the switch is looked for again 5 s, 15 s and 30 s later, then every
+60 s, for as long as the shell runs. The new watcher's first report is the switch's state at that moment and is handled as any
+report: closed locks and darkens, open lights. Looking again darkens nothing by itself, and nothing a watcher says
+after it was lost is listened to.
+
+A lid switch that flaps (it is found, reports, and is lost again, over and over) is handled one loss at a time, with no
+limit and no memory of earlier losses. The screens are lit at each loss. Each report starts the waits over, so the next
+look is 5 s after each loss, and the log gets one line for each loss that follows a report (a switch that stays away
+is said once). A closed phone with a flapping switch therefore alternates: dark from each report of "closed" until the
+next loss, then lit for about 5 s or more, until the next watcher reports "closed". An open phone stays lit throughout. This
+is the safe side: the cost is a closed phone that lights up again and again and a log that grows by a line at each
+loss; no order of losses and reports leaves an open phone, or one whose lid is unknown, dark. The shell does not slow
+down or give up on a switch that keeps flapping. Not verified on a phone: no lid close, blank or restore on the Duo is recorded here (NOT_RUN), and the
 current drawn with the lid closed has not been measured.
+
+## Follow-ups of November 14
+
+Four changes, all checked on a computer with the stand-in toolkit only (`tests/test_native_followups.py`); **NOT_RUN**
+on the phone, like the rest of the shell: the server's address (`OPOS_SERVER_URL`, never `OPOS_LOCAL_URL`), what Phone
+says while an answer is missing, the hold on the lock page while the PIN lock question has no answer, and the lid
+watcher that is looked for again.
+
+Left for the owner, with no code here:
+
+- A PIN screen in the shell. The shell still has no PIN screen, and with the PIN lock on the browser is the interface.
+  What it should look like, how it should count wrong tries with the server, and what the lid closing should do to the
+  server's lock are the owner's to decide.
+- The server's lock is not set when the lid closes or when the shell goes to its own lock page; the shell has no part
+  in it while the lock is off, and is not running while it is on.
+- While the shell is held on its lock page an alarm that rings is not brought forward and cannot be stopped from the
+  shell (for at most 5 polls, then the browser has the screen); it comes forward once when the shell is free.
+- After a server restart that switched the PIN lock on, the shell learns of it at its next poll, up to 3 s later (5 s
+  more if that poll times out). A reply to an action sent in between is still drawn if the server gave one, which it
+  does only while its lock is open.
+- Whether the launcher should wait for the port `OPOS_SERVER_URL` names is not decided; it always waits for 8765.
+- A lid switch that flaps lights a closed phone at each loss and adds a log line at each loss (see "The lid"). Whether
+  the shell should wait longer, or stop looking, after many losses is not decided: either would leave the lid unknown
+  for longer, which is lit, never dark.
+- On the phone: a lid switch that disappears and comes back (the looks every 60 s cost one read of
+  `/sys/class/input` each; their effect on battery is not measured), and every sentence above on the glass.
 
 ## Assistants are deferred
 

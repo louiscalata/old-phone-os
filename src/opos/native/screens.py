@@ -111,7 +111,10 @@ class Page:
             except Exception as err:
                 got = {"error": str(err)[:60]}
             GLib.idle_add(self.deliver, n, got, done, data is not None)
-        threading.Thread(target=work, daemon=True).start()
+        try:
+            threading.Thread(target=work, daemon=True).start()
+        except RuntimeError:    # no thread could be started: nothing was sent. Answer, so no button waits for ever.
+            GLib.idle_add(self.deliver, n, {"error": "not sent"}, done, False)
         return n
 
     def deliver(self, n, data, done=None, wrote=False):
@@ -254,7 +257,9 @@ class Phone(Page):
 
     def call_or_hang(self):
         """One request at a time: a second tap would send a second call. The button stays busy until a state that
-        includes the request is drawn (logic.Pending), so a late or stale reply can never re-enable Call."""
+        includes the request is drawn (logic.Pending), so a late or stale reply can never re-enable Call. While the
+        server cannot be reached that state cannot come, so the button stays busy and the screen says the answer is
+        missing (logic.CALL_UNSURE, HANG_UP_UNSURE) rather than that it is still asking."""
         if self.pending.what:
             return
         if self.shell.snap.get("in_call"):
@@ -264,8 +269,8 @@ class Phone(Page):
         else:
             return
         self.pending.start(what)
-        sent = []
-        sent.append(self.shell.ask(what, done=lambda reply: self.answered(sent[0], reply), **fields))
+        sent = []       # the request's number; empty if the answer comes before ask() returns (it could not be sent)
+        sent.append(self.shell.ask(what, done=lambda reply: self.answered(sent[0] if sent else 0, reply), **fields))
         self.show(self.shell.snap)
 
     def answered(self, n, reply):
@@ -277,8 +282,8 @@ class Phone(Page):
         busy = self.pending.what
         lines = [x for x in (logic.call_words(snap), logic.refusal(snap)) if x]
         lines.append("Practice only: this phone cannot make real calls yet." if logic.simulated(snap) else EMERGENCY)
-        if busy:
-            lines.append("Asking the phone to %s." % ("call" if busy == "call" else "hang up"))
+        if busy:    # being asked, or its answer did not come: then nothing is being asked and the screen says so
+            lines.append(logic.pending_words(busy, self.pending.lost))
         self.status.set_label("\n".join(lines))
         self.status.set_visible(bool(lines))
         self.go_call.set_label({"call": "Calling", "hang_up": "Hanging up"}.get(busy) or ("Hang up" if snap.get("in_call") else "Call"))

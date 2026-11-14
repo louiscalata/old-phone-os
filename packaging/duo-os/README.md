@@ -63,7 +63,8 @@ phone checks. The build installs the helper and unit and creates their directori
 source-module guard. See [POWER.md](POWER.md) for the design, build/verification limits and remaining risks.
 
 The image also carries an alternative interface, a native GTK 4 shell, with the browser kiosk as its fallback (the browser
-is used until first-run setup is finished and whenever a PIN lock is on). It has not been run on a phone. See
+is used until first-run setup is finished, whenever a PIN lock is on, and when the server does not say whether it has
+one). It has not been run on a phone. See
 [NATIVE.md](NATIVE.md).
 
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
