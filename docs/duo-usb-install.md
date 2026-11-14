@@ -42,8 +42,26 @@ It never edits `~/.ssh/config`.
 Droidian root is the file rootfs.img inside the ext4 userdata filesystem mounted at /data.
 Never flash the image onto userdata; that produces Halium rootfs is empty.
 rootfs.img must be raw ext4; convert an Android sparse image to raw before proceeding.
-Run `sh deploy/duo-rootfs-install.sh TWRP_IMG DROIDIAN_BOOT_IMG ROOTFS_IMG` from the computer; without `--yes` it only prints the steps without executing them, and with `--yes` before the three image paths it executes them.
-During execution it compares the SHA-256 hash and byte size of `/data/rootfs.img` against the local image and stops with `verify failed` if either differs.
+Run `sh deploy/duo-rootfs-install.sh TWRP_IMG DROIDIAN_BOOT_IMG ROOTFS_IMG` to
+preview: without `--yes` it only prints the steps without executing them.
+Execution requires both `--yes --erase-userdata` before the three image paths;
+`--yes` alone refuses. The token explicitly acknowledges erasing all userdata.
+Before any format or boot, all three images must exist as readable, non-empty
+files and their SHA-256 hashes must be computable. Optional `--twrp-sha256 HASH`,
+`--boot-sha256 HASH` and `--rootfs-sha256 HASH` arguments compare the respective
+image against a supplied 64-digit SHA-256 value. Invalid hashes, mismatches and
+unavailable checks refuse. Obtain expected hashes from a trusted image source.
+The script also requires exactly one fastboot device and a successful, unambiguous
+`product: surfaceduo` response, then selects that device for every fastboot and
+adb command. A missing, failed or different product response refuses before erasure.
+
+This remains the less guarded route: it does not arm the misc brake, enforce slot,
+unlock or battery checks, or validate raw ext4 image contents. These added refusals
+do not replace the guarded `deploy/duo-opos-boot.ps1` workflow. Phone validation
+of the corrected shell script remains **NOT_RUN**.
+During execution it compares the SHA-256 hash of `/data/rootfs.img` against the hash that passed the image check, and its byte size against the local image, and stops with `verify failed` if either differs.
+Directly before it RAM-boots TWRP, after userdata is erased, it rehashes the TWRP image and refuses if that file changed after it was checked.
+It then rehashes the boot image and refuses, with the phone still in TWRP, if that file changed after it was checked, and rehashes it once more directly before the final RAM-boot.
 Step 1 erases everything on userdata.
 1. Format userdata with fastboot format:ext4 userdata to erase it.
 2. RAM-boot TWRP with fastboot boot, then mount userdata at /data.

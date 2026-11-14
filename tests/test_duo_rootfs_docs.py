@@ -41,6 +41,13 @@ class DuoRootfsDocsTest(unittest.TestCase):
         self.assertIn("--yes", section)
         self.assertNotIn("planned", section)
 
+    def test_refusals_and_remaining_limits_are_documented(self):
+        section = _section()
+        for text in ('--yes --erase-userdata', '--twrp-sha256', '--boot-sha256',
+                     '--rootfs-sha256', 'exactly one fastboot device',
+                     'product: surfaceduo', 'less guarded route', 'NOT_RUN'):
+            self.assertIn(text, section)
+
     def test_section_has_no_ipv4(self):
         section = _section().lower()
         self.assertTrue(section)
