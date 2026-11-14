@@ -3,7 +3,9 @@
 
 What main already has, set against a short list of everyday phone jobs. Read from the source. Nothing in this note was run on a Surface Duo. Every on-device check is **NOT_RUN**.
 
-`web.page()` on this tree is 99,973 bytes. With `OPOS_SPAN=675,42` it is 99,988 bytes. The home page from `tests.test_uxp30_budget.served_home_page` is 100,202 bytes with no switch, 101,249 bytes with every switch on, and 101,317 bytes when `OPOS_APPS=clock,contacts,notes,calc` is added to those switches. All of these are under the 102,000-byte gate. Later apps stay off that page.
+Page size depends on the source revision and enabled features. The November 12 development record in [ROADMAP.md](../ROADMAP.md) reports 101,895 bytes with volume and the existing switches enabled; this is a recorded local result, not a phone-performance measurement. Use [ui-byte-ledger.md](ui-byte-ledger.md) to measure the current checkout against the 102,000-byte gate.
+
+Historical figures recorded in `5905ea3a` on November 10: `web.page()` was 99,973 bytes, or 99,988 bytes with `OPOS_SPAN=675,42`. The served home page was 100,202 bytes with no switch, 101,249 bytes with the six switches, and 101,317 bytes with `OPOS_APPS=clock,contacts,notes,calc` added. These figures describe that revision only.
 
 ## Already on main
 

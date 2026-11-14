@@ -11,7 +11,7 @@ Say what was run and what was not. Simulated battery, calls and texts stay label
 
 ## What OPOS is
 
-The Surface Duo OPOS, under `packaging/duo-os/`, is the real OPOS. It is a Linux image on the community Droidian port, with OPOS as the only interface. It has been RAM-booted on one phone. It has not been flashed. Tasks, calls and texts on that image are still simulated.
+The Surface Duo OPOS, under `packaging/duo-os/`, is the real OPOS. It is a Linux image on the community Droidian port, with OPOS as the only interface. It has been RAM-booted on one phone. Preliminary installation gates G0–G3 were reported run on November 12, 2026; a persistent-kernel start remains NOT_RUN. Tasks, calls and texts on that image are still simulated.
 
 The desktop demo, the public demo and the Meta hackathon material are an earlier prototype. The README labels that prototype with this sentence: "This was a hackathon project."
 
