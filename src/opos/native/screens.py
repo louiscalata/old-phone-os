@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import functools
 import json
+import os
+import shutil
 import threading
 import time
 import urllib.error
@@ -1034,6 +1036,7 @@ class Settings(Page):
     name, title = "settings", "Settings"
 
     def build(self):
+        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")   # read on entering Settings, see enter()
         self.hand = button("", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"), "main")
         read = reading(label("Settings", "head"),
                        label("Hand", "big"),
@@ -1041,12 +1044,24 @@ class Settings(Page):
                              "You can also swipe sideways across the hinge: the buttons follow your finger.", "mid", "dim"),
                        label("Gestures", "big"),
                        label("Down from the top edge: battery. Up from the bottom edge: Home. Up on the lock screen: unlock.", "mid", "dim"),
+                       label("Storage", "big"),
+                       self.storage,
                        label("About", "big"),
                        label(notices.as_text(), "mid", "dim"))
         act = column(bottom=(self.hand, button("Network", lambda: self.shell.go("network")),
                              button("Use the old interface", self.shell.leave), bar(self.home())))
         self.paint_hand()
         return read, act
+
+    @staticmethod
+    def data_folder():
+        """Where the owner's files live: the home folder, or the root when there is no home."""
+        home = os.path.expanduser("~")
+        return home if os.path.isdir(home) else os.sep
+
+    def enter(self):
+        """The storage line is read once each time Settings is opened (one statvfs call), never in the background."""
+        self.storage.set_label(logic.read_storage(self.data_folder(), shutil.disk_usage))
 
     def paint_hand(self):
         self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
