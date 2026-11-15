@@ -54,6 +54,7 @@ evidence about the current source.
 - [OPOS on a stock-Android Surface Duo](duo-android.md): Termux deploy without flashing, real battery and health, two screens; ran on the owner's Duo on November 7, 2026, one session.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; the current Duo routes are the two above.
 - [On-device checklist](duo-on-device-checklist.md): every check that needs the physical phone. Each one is **NOT_RUN**.
+- [Duo device checks](duo-device-checks.md): the step-by-step runbook for the person at the phone, one check for each phone check the docs still mark NOT_RUN (native shell lid, Network screen, lock PIN, clock and alarms, everyday apps, the image folder check and the installer's first run), with markers on the steps that erase, reboot or change Wi-Fi, recovery paths and a results table. Nothing in it has been run.
 
 ## Security and privacy
 
