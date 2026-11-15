@@ -11,7 +11,8 @@ import opos.web
 
 # These belong to the separate /monitor document (assembled by web._monitor_serve, only where OPOS_MONITOR=1), not to the
 # main page, so web.page() never inlines them. tests/test_monitor_wiring.py and the drop-in's tests/test_monitor_page.py cover them.
-SEPARATE_DOCUMENT = {"monitor.html", "monitor.css", "monitor.js", "monitor-theme.js", "volume.js"}
+# pin.js is the PIN pad: its own file at /pin.js, served and tagged only while OPOS_LOCK=1 (tests/test_lockpin.py), never inlined.
+SEPARATE_DOCUMENT = {"monitor.html", "monitor.css", "monitor.js", "monitor-theme.js", "volume.js", "pin.js"}
 
 
 class TestWebStaticLoader(unittest.TestCase):

@@ -5,6 +5,7 @@ The schedule is opos.alarms. This module is the page and the /api/clock actions.
 A test may POST action "tick" only when OPOS_CLOCK_TEST=1.
 """
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -186,6 +187,24 @@ def snapshot():
     }
 
 
+_RING_TEXT = re.compile(r"Alarm \d\d:\d\d")
+
+
+def locked_snapshot():
+    """The Clock answer while the phone is locked: that an alarm is ringing and its time, so Stop and Snooze can be shown.
+
+    No alarm list, no labels, no timer and no notices.
+    """
+    full = snapshot()
+    ring = full.get("ringing")
+    text = ring.get("text") if isinstance(ring, dict) else None
+    return {
+        "ok": True, "clock_ok": full.get("clock_ok") is True, "now": full.get("now") if isinstance(full.get("now"), str) else "",
+        "alarms": [], "ringing": {"text": text} if isinstance(text, str) and _RING_TEXT.fullmatch(text) else None,
+        "timer": None, "notices": [], "recovered": "", "next": None,
+    }
+
+
 def _days(data):
     days = data.get("days") if data.get("days") is not None else []
     if not isinstance(days, list):
@@ -272,5 +291,5 @@ apps.register(apps.App(
     "clock", "Clock", "/clock",
     "Alarms, a timer, a stopwatch and a bedside clock.",
     "yes", "no", "screen only (no sound yet)", "real", "alarms", "ESSENTIAL", 0.1,
-    render, snapshot, post,
+    render, snapshot, post, locked_json=locked_snapshot,
 ))

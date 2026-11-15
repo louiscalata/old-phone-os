@@ -36,9 +36,13 @@ _PAUSE = {
 
 
 class App:
-    """One everyday app. render(token, nonce) returns HTML. get_json and post handle its API."""
+    """One everyday app. render(token, nonce) returns HTML. get_json and post handle its API.
 
-    def __init__(self, id, title, path, summary, offline, sends, uses, reality, task_name, priority, cost, render, get_json=None, post=None):
+    locked_json, when given, returns the few fields the app may still show while the phone is locked.
+    """
+
+    def __init__(self, id, title, path, summary, offline, sends, uses, reality, task_name, priority, cost, render, get_json=None, post=None,
+                 locked_json=None):
         if _ID.fullmatch(id) is None:
             raise ValueError("bad id")
         if priority not in ("ESSENTIAL", "USEFUL", "OPTIONAL"):
@@ -57,6 +61,7 @@ class App:
         self.render = render
         self.get_json = get_json
         self.post = post
+        self.locked_json = locked_json
 
     def card(self):
         return "Works offline: %s. Sends data: %s. Uses: %s. Real or practice: %s." % (self.offline, self.sends, self.uses, self.reality)

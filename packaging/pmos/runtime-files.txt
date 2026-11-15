@@ -158,4 +158,5 @@ src/opos/web_static/phone-a.js
 src/opos/web_static/phone-b.css
 src/opos/web_static/phone-b.html
 src/opos/web_static/phone-b.js
+src/opos/web_static/pin.js
 src/opos/web_static/volume.js

@@ -8,7 +8,7 @@ import secrets
 from html import escape
 from pathlib import Path
 
-from opos import appdoc, apps, secure
+from opos import appdoc, apps, lockpin, secure
 
 # One short tag. The script file holds the link and later home behaviour, so the main page stays under the gate.
 _INJECT = '<script nonce="{nonce}" src="/apps-home.js"></script>'
@@ -149,6 +149,32 @@ def _send_static(handler, body, content_type):
         handler.wfile.write(body)
 
 
+def locked_json(handler, app):
+    """What an app's API answers while the phone is locked: the locked /api/state body, never the app's data.
+
+    An app may add fields through its own locked_json. The lock's fields are written last, so an app cannot replace them.
+    """
+    body = {}
+    extra = getattr(app, "locked_json", None)
+    if extra is not None:
+        try:
+            made = extra()
+            if isinstance(made, dict):
+                body.update(made)
+        except Exception:
+            body = {}
+    snap = {}
+    phone = getattr(handler, "phone", None)
+    if phone is not None:
+        try:
+            with handler.lock:
+                snap = phone.state()
+        except Exception:
+            snap = {}
+    body.update(lockpin.redact(snap))
+    return body
+
+
 def serve_get(handler, path):
     """Answer an app GET. False means this path is not an app path."""
     if path == "/apps-home.js":
@@ -176,7 +202,13 @@ def serve_get(handler, path):
             if not secure.token_ok(handler.headers.get("X-OPOS-Token"), handler.token):
                 handler._deny(403, "forbidden", "token")
                 return True
-            _send_json(handler, api.get_json())
+            if lockpin.is_locked():
+                _send_json(handler, locked_json(handler, api))
+                return True
+            body = api.get_json()
+            if lockpin.is_locked():  # locked while the app was reading: the read is not sent
+                body = locked_json(handler, api)
+            _send_json(handler, body)
             return True
     except Exception:
         try:
@@ -205,4 +237,8 @@ def post(handler, path, data):
     if not isinstance(obj, dict) or not isinstance(status, int):
         handler._json({"error": "internal error"}, 500)
         return
+    if lockpin.is_locked():
+        # An alarm stop or snooze is allowed while locked; its answer must not carry the alarm list.
+        error = obj.get("error")
+        obj = locked_json(handler, app) if status == 200 else {"error": error if isinstance(error, str) else "bad request"}
     handler._json(obj, status)
