@@ -105,6 +105,28 @@ their original scope. Plans are intentions, not promises.
 - On-phone model inference: Llama 3.2 1B was timed on the Duo under Android (see above); Llama 3.2 3B has no
   phone-speed measurement, and nothing was timed on the Duo OS image.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
+- November 14 native shell lid blank fixes ([NATIVE.md](packaging/duo-os/NATIVE.md#the-lid)): with no saved
+  brightness file, a panel whose `brightness` file is there but cannot be read is written its default (capped by its
+  readable `max_brightness`) and stays listed as failed until a read shows it lit; an absent `brightness` file is never
+  created. A `PowerSaveMode` of 1 to 3 that the shell refuses (the lid reads open) reads 0, because the screens stay
+  lit. Local tests only; any lid close, blank or restore on the Duo remains **NOT_RUN**.
+- November 14 native shell follow-ups ([NATIVE.md](packaging/duo-os/NATIVE.md#follow-ups-of-november-14)): the shell
+  asks only `http://127.0.0.1:PORT` (`OPOS_SERVER_URL`; it no longer reads the Helper's `OPOS_LOCAL_URL`), draws no
+  state without the server's answer about its PIN lock, says when a call's answer is missing, and looks again for a
+  lid switch it lost. Checked with a stand-in toolkit only; all four remain **NOT_RUN** on the phone. The shell still
+  has no PIN screen.
+- November 14 PIN lock fixes (`OPOS_LOCK=1`, [docs/apps.md](docs/apps.md#while-the-phone-is-locked)): while the
+  phone is locked, every app read and every write that stays allowed answers with the locked `/api/state` body; the
+  Clock answer adds only whether an alarm is ringing and its time. The browser page has a PIN pad (`/pin.js`), and the
+  lock screen comes off only after the server has answered that the phone is unlocked. A Lock request that was lost or
+  refused is sent again before any status request or digits, the pad shrinks with narrow screens, and the wrong-PIN
+  wait stops at 8 hours from the 15th wrong try on. The lock screen's missed-call count comes from the Call log app.
+  The pad was run in node against a stand-in page; a browser and the phone are **NOT_RUN** (check D5 below: "The lock
+  PIN works on the glass."). The native shell has no PIN screen; with the lock on, the browser is the interface.
+- November 14 device-check runbook ([docs/duo-device-checks.md](docs/duo-device-checks.md)): one check, C01 to C32,
+  for each phone check the docs still mark NOT_RUN, each with its preconditions, steps, what to observe, pass or fail,
+  how to stop and undo, and what to record. Nothing in it has been run. As in the device table below, Date stays empty
+  and Result stays NOT_RUN until a phone run fills both.
 
 ## Public browser demo
 
