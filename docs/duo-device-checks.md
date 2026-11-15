@@ -12,7 +12,7 @@ stays NOT_RUN until someone runs that check on the phone and records the run wit
 
 The list comes only from the NOT_RUN statements in [NATIVE.md](../packaging/duo-os/NATIVE.md), [ROADMAP.md](../ROADMAP.md),
 [duo-os-final.md](duo-os-final.md), [duo-usb-install.md](duo-usb-install.md) and the bodies of the merged pull requests.
-Each check names its sources as `file:line` with a quoted phrase. The line numbers are as of source revision `5b5cd46`
+Each check names its sources as `file:line` with a quoted phrase. The line numbers are as of source revision `23c4c3c`
 and can drift; the quoted phrase is what `tests/test_duo_device_checks.py` looks for, and that test fails when a NOT_RUN
 statement in those four files has no check quoting it.
 
@@ -71,7 +71,7 @@ says otherwise), and the USB link up.
 ### C01. Image build and verification
 
 Sources: `docs/duo-os-final.md:14` "A real image build and every phone check for this change remain";
-`ROADMAP.md:76` "Image build/verification"; `ROADMAP.md:90` "image execution remain"; `docs/duo-os-final.md:96`
+`ROADMAP.md:76` "Image build/verification"; `ROADMAP.md:90` "image execution remain"; `docs/duo-os-final.md:97`
 "Image build and verification, native systemd lifecycle, browser, phone and audible checks for this consumer remain".
 
 **Preconditions.** A Linux builder with root, a loop mount and the base image; the owner's recovery public key; a
@@ -138,33 +138,47 @@ that include Wi-Fi addresses.
 
 ### C04. Native shell starts, answers taps and hands over to the browser
 
-Sources: PR #130 "the device checks stay NOT_RUN"; `ROADMAP.md:161` "the device checks above remain".
+Sources: PR #130 "the device checks stay NOT_RUN"; `ROADMAP.md:161` "the device checks above remain";
+`packaging/duo-os/NATIVE.md:242` "the server's address (`OPOS_SERVER_URL`, never `OPOS_LOCAL_URL`), what Phone says while
+an answer is missing, the hold on the lock page while the PIN lock question has no answer".
 
 **Preconditions.** First-run setup finished, `OPOS_LOCK` not set, `/etc/opos/native-off` absent.
 
 **Steps.**
 1. [READ-ONLY] On the phone: `pgrep -af 'opos.native.shell'; /usr/sbin/opos-selftest --only kiosk; echo rc=$?`.
 2. [READ-ONLY] On the phone: `journalctl -b -t opos-native --no-pager | tail -n 40` (if the tag differs, `journalctl -b --no-pager | grep -i 'opos-native' | tail -n 40`).
-3. On the glass: open Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Call log and Settings, and go back to Home from each.
-4. On the glass: drag the battery sheet up and down, and drag the bottom edge of an app page; lift the finger half way.
-5. [OWNER ONLY] On the glass: Settings, "Use the old interface". The browser kiosk takes over.
+3. [READ-ONLY] On the phone, the server the shell asks and what it said about it: `tr '\0' '\n' < /proc/$(pgrep -f 'opos.native.shell' | head -n 1)/environ | grep -E '^OPOS_(SERVER|LOCAL)_URL=' ; journalctl -b --no-pager | grep -E 'OPOS_SERVER_URL is not|did not say whether it has a PIN lock' | tail -n 10`.
+4. On the glass: open Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Call log and Settings, and go back to Home from each.
+5. On the glass: drag the battery sheet up and down, and drag the bottom edge of an app page; lift the finger half way.
+6. [OWNER ONLY] On the glass: Settings, "Use the old interface". The browser kiosk takes over.
 
 **Observe.** One window across both screens, nothing under the hinge; each tap answered in one frame, nothing sliding
 or fading; the sheet following the finger exactly and showing the final state when it lifts; the practice and
-emergency sentences on Phone; the launcher's log lines; after step 5, the browser home page.
+emergency sentences on Phone; the launcher's log lines; after step 3, either no `OPOS_SERVER_URL` line or one that
+names `http://127.0.0.1:` and a port, and no log line saying the value was refused or that the PIN lock question had
+no answer; the shell's own lock page never saying "OPOS has not said whether this phone has a PIN lock"; Phone never
+saying "No answer about that call" or "No answer about hanging up" while the server answers; after step 6, the
+browser home page.
 
 **Pass or fail.** Pass: `kiosk.native` names the native shell, every screen opens and returns, drags follow the finger
-1:1 and land complete, and step 5 hands over to the browser with both screens lit. Fail: a screen that does not open,
-a frame that shows a wrong or half state, a dark screen at any time, or a hand-over that does not come.
+1:1 and land complete, step 3 shows the phone's own server and no refused or unanswered line, and step 6 hands over to
+the browser with both screens lit. Fail: a screen that does not open, a frame that shows a wrong or half state, a dark
+screen at any time, an `OPOS_SERVER_URL` that names anything but `127.0.0.1`, a held lock page or a missing-answer
+sentence while the server answers, or a hand-over that does not come. The missing-answer sentences on Phone and the
+hold on the lock page appear only when the server stops answering; this page never stops it on purpose, so those two
+paths stay NOT_RUN by design unless they are seen; if seen, write down the sentence, and pass only when the screen
+comes back by itself once the server answers.
 
-**Stop and undo.** After step 5 the browser stays until the session starts again, or see
-[R2](#r2-the-native-shell-is-wrong-or-stuck). If a screen goes dark, use [R1](#r1-a-screen-is-dark).
+**Stop and undo.** After step 6 the browser stays until the session starts again, or see
+[R2](#r2-the-native-shell-is-wrong-or-stuck). If a screen goes dark, use [R1](#r1-a-screen-is-dark). If the shell stays
+on its lock page, it is not a lock: it ends for the browser after 5 unanswered questions; R2 if it does not.
 
-**Record.** Which screens passed, the launcher lines (no addresses), the result of step 5, and the interface that ran.
+**Record.** Which screens passed, the launcher lines (no addresses), whether step 3 printed an `OPOS_SERVER_URL` and any
+refused or unanswered line, any missing-answer sentence seen, the result of step 6, and the interface that ran.
 
 ### C05. Lid close blanks both screens and lid open restores them
 
-Sources: `packaging/duo-os/NATIVE.md:205` "no lid close, blank or restore on the Duo is recorded here"; PR #135 "any lid
+Sources: `packaging/duo-os/NATIVE.md:236` "no lid close, blank or restore on the Duo is recorded here"; PR #135 "any lid
 close, blank or restore on a Duo"; `ROADMAP.md:143` "Folded posture, and bedside on the real hinge."
 
 **Preconditions.** C04 passed; the native shell is the interface; the USB link is up and an ssh session is open; the
@@ -180,10 +194,12 @@ screens are lit.
 
 **Observe.** Before: both brightness values above 0 and no saved file. Closed: the shell locks, then about 350 ms later
 both panels read 0 and the saved file holds the earlier values. Open: both panels are lit again at exactly the earlier
-values.
+values. If a panel comes on by itself with the lid closed, look for an `opos shell: no lid signal` line in the journal:
+that is a lost lid signal, which lights the screens on purpose (see C06), not a failed blank.
 
 **Pass or fail.** Pass when every round blanks both panels with the lid closed and restores both to their exact earlier
-values on opening, and the lock screen shows after opening. Fail: a panel stays lit with the lid closed, a panel stays
+values on opening, and the lock screen shows after opening. Fail: a panel stays lit with the lid closed (other than
+just after a `no lid signal` line, which C06 judges), a panel stays
 dark after opening for more than 10 seconds, or a restored value differs.
 
 **Stop and undo.** Open the lid. If a panel stays dark after 10 seconds, use [R1](#r1-a-screen-is-dark) at once. Do not
@@ -192,35 +208,55 @@ leave the phone closed and unattended during this check.
 **Record.** For each round: the values before, closed and after (numbers only), and how long the restore took by eye.
 Bedside on the real hinge stays NOT_RUN: see C29.
 
-### C06. Restore retries and the power-save mode (observe only)
+### C06. Restore retries, the power-save mode, and a lost or flapping lid signal (observe only)
 
-Sources: `packaging/duo-os/NATIVE.md:205` "a lid watcher that stops is not started again"; PR #135 "any lid close, blank
-or restore on a Duo".
+Sources: `packaging/duo-os/NATIVE.md:244` "the lid watcher that is looked for again"; `packaging/duo-os/NATIVE.md:224`
+"the switch is looked for again 5 s, 15 s and 30 s later, then every 60 s"; `packaging/duo-os/NATIVE.md:229` "A lid
+switch that flaps"; `packaging/duo-os/NATIVE.md:262` "a lid switch that disappears and comes back"; PR #135 "any lid
+close, blank or restore on a Duo".
 
-**Preconditions.** C05 passed. This check only watches what happens; it never makes a panel fail on purpose, because
-that needs root writes to sysfs and could leave a screen dark.
+**Preconditions.** C05 passed. This check only watches what happens; it never makes a panel fail on purpose, and it
+never makes the lid switch go away on purpose (no driver unbind, no module removal, no writes under `/sys`), because
+both need root writes and could leave a screen dark. A second ssh session over the USB link is open for step 1.
 
 **Steps.**
-1. [READ-ONLY] On the phone, with the lid open: `gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.freedesktop.DBus.Properties.Get org.gnome.Mutter.DisplayConfig PowerSaveMode`.
-2. Close the lid for 10 seconds, then run the step 1 command again with the lid closed.
-3. Open the lid, wait 10 seconds and run the step 1 command again.
-4. [READ-ONLY] On the phone: `journalctl -b --no-pager | grep -iE 'opos-native|blank|restore|lid' | tail -n 60`.
+1. [READ-ONLY] In the second ssh session, before anything else, and left running to the end of the check: `journalctl -b -f --no-pager | grep --line-buffered -E 'opos shell: no lid signal|opos lid:'`.
+2. [READ-ONLY] On the phone, with the lid open: `gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.freedesktop.DBus.Properties.Get org.gnome.Mutter.DisplayConfig PowerSaveMode`.
+3. Close the lid for 10 seconds, then run the step 2 command again with the lid closed.
+4. Open the lid, wait 10 seconds and run the step 2 command again.
+5. [READ-ONLY] On the phone: `journalctl -b --no-pager | grep -iE 'opos-native|opos shell|blank|restore|lid' | tail -n 60`.
+6. [READ-ONLY] Only if step 1 printed a `no lid signal` line: with the lid open, read both panels at once and every 5 s for 1 minute: `for i in $(seq 1 12); do date +%T; cat /sys/class/backlight/panel*-backlight/brightness; sleep 5; done`.
 
 **Observe.** The mode in force at each point (0 lit; 1 to 3 dark), and any journal line naming a failed panel, a retry,
-a lost lid signal or a refused blank.
+a lost lid signal or a refused blank. For a lost lid signal: the time of each `no lid signal` line, whether the lid was
+open or closed then, and the panel values after it. The shell lights the screens at each loss, says one line for each
+loss that follows a report (a switch that stays away is said once), and looks for the switch again 5 s after each loss.
+A closed phone whose switch flaps alternates: dark from each report of "closed" until the next loss, then lit for about
+5 s or more. An open phone stays lit throughout. A loss never darkens anything.
 
 **Pass or fail.** Pass when the mode reads 0 with the lid open and the screens lit, the value with the lid closed matches
 what the screens show, and the journal shows no failed restore. If the journal shows a failed panel, pass only when a
-later line shows it lit within the retries (1 s, 2 s, 4 s, then every 5 s). Fail: a mode that disagrees with the
-screens, or a failed restore with no later success. The induced-failure retry paths stay NOT_RUN by design.
+later line shows it lit within the retries (1 s, 2 s, 4 s, then every 5 s). If a `no lid signal` line appears, pass only
+when every panel read with the lid open (step 6) is above 0, both panels are lit within 10 s of each loss, and a
+closed lid that lit at a loss goes dark again only after the switch reported "closed". A closed phone that lights up
+at each loss, and a log that grows by a line at each loss, are the safe side the source describes, not a fail; write
+them down. Fail: a mode that disagrees with the screens, a failed restore with no later success, a panel read at 0 with
+the lid open or after a loss, or a phone left dark with the lid open while lines keep coming. With no `no lid signal`
+line in the whole check, the lost and flapping paths were not seen: record them NOT_RUN. The induced-failure retry
+paths and an induced lid loss stay NOT_RUN by design.
 
-**Stop and undo.** Open the lid; for a dark screen, [R1](#r1-a-screen-is-dark).
+**Stop and undo.** Open the lid and keep it open: an open phone stays lit, whatever the switch does. For a dark screen,
+[R1](#r1-a-screen-is-dark) at once. If `no lid signal` lines keep coming (a flapping switch), stop the check with the
+lid open, never leave the phone closed and unattended, and if the owner wants the shell out of the way,
+[R2](#r2-the-native-shell-is-wrong-or-stuck) makes the browser the interface. End step 1 with Ctrl-C.
 
-**Record.** The three mode values, and the journal lines about blank and restore with times (no addresses).
+**Record.** The three mode values, the journal lines about blank, restore and the lid signal with times (no addresses),
+the number of `no lid signal` lines, whether the lid was open or closed at each, and the panel values from step 6. The
+battery cost of the 60 s looks is not measured here (C07 does not separate it); it stays NOT_RUN.
 
 ### C07. Current drawn with the lid closed, and drain with the panels blanked
 
-Sources: `packaging/duo-os/NATIVE.md:205` "the current drawn with the lid closed has not been measured"; PR #135 "the
+Sources: `packaging/duo-os/NATIVE.md:236` "the current drawn with the lid closed has not been measured"; PR #135 "the
 current drawn with the lid closed"; `ROADMAP.md:140` "Battery drain with the panels soft-blanked."
 
 **Preconditions.** C05 passed. Battery between 50 and 90 percent. The USB cable must be out for the measurement,
@@ -272,7 +308,7 @@ touch while dark did; that behaviour is not known yet.
 
 ### C09. Volume keys change only the simulated volume
 
-Sources: `ROADMAP.md:76` "native systemd lifecycle, browser, phone and audible checks remain"; `docs/duo-os-final.md:96`
+Sources: `ROADMAP.md:76` "native systemd lifecycle, browser, phone and audible checks remain"; `docs/duo-os-final.md:97`
 "Volume keys report simulated state only."
 
 **Preconditions.** The image from C01 is running; [VOLUME.md](../packaging/duo-os/VOLUME.md) read.
@@ -303,7 +339,7 @@ test network the owner may lose for a minute, and a second test network for C16.
 
 ### C10. Opening the Network screen with real radios
 
-Sources: `packaging/duo-os/NATIVE.md:164` "opening the screen with real radios"; `ROADMAP.md:52` "Opening the screen, a
+Sources: `packaging/duo-os/NATIVE.md:183` "opening the screen with real radios"; `ROADMAP.md:52` "Opening the screen, a
 real join, forget, disconnect, Wi-Fi off and on, a hidden network and the two-tap prompts remain"; PR #132 "opening
 the screen with real radios".
 
@@ -327,7 +363,7 @@ leaving change no radio. Fail: a sentence that disagrees with the status read, a
 
 ### C11. Join with a typed password, wrong first, then right
 
-Sources: `packaging/duo-os/NATIVE.md:164` "a real join (typed or saved)"; PR #132 "a real join (typed or saved)".
+Sources: `packaging/duo-os/NATIVE.md:183` "a real join (typed or saved)"; PR #132 "a real join (typed or saved)".
 
 **Preconditions.** C10 passed. The test network is in range and not saved; its password is known to the owner only.
 
@@ -351,7 +387,7 @@ the password. Fail: the password appears anywhere in the process list or on scre
 
 ### C12. Join a saved network without a password
 
-Sources: `packaging/duo-os/NATIVE.md:164` "a real join (typed or saved)".
+Sources: `packaging/duo-os/NATIVE.md:183` "a real join (typed or saved)".
 
 **Preconditions.** C11 passed, so the test network is saved; the phone is on another network or none.
 
@@ -370,7 +406,7 @@ answer within 100 seconds.
 
 ### C13. A long password on the on-screen keyboard
 
-Sources: `packaging/duo-os/NATIVE.md:164` "the keyboard layout for a long password"; PR #132 "the keyboard for a long
+Sources: `packaging/duo-os/NATIVE.md:185` "the keyboard layout for a long password"; PR #132 "the keyboard for a long
 password".
 
 **Preconditions.** A test network whose password is long (40 characters or more, with capitals, digits and symbols).
@@ -391,7 +427,7 @@ character, or a field hidden.
 
 ### C14. A hidden network, and editing its name after typing the password
 
-Sources: `packaging/duo-os/NATIVE.md:164` "a hidden network, editing a hidden network's name after typing its
+Sources: `packaging/duo-os/NATIVE.md:183` "a hidden network, editing a hidden network's name after typing its
 password"; PR #136 "Editing a hidden network's name after typing its password".
 
 **Preconditions.** A test network set to hide its name, whose name and password the owner knows.
@@ -414,7 +450,7 @@ succeeds. Fail: the password survives the edit, or the join is sent with a passw
 
 ### C15. Forget a network, with its two taps
 
-Sources: `packaging/duo-os/NATIVE.md:164` "forget, disconnect (with its read before sending, and a roam between the two
+Sources: `packaging/duo-os/NATIVE.md:184` "forget, disconnect (with its read before sending, and a roam between the two
 taps)"; PR #132 "forget".
 
 **Preconditions.** The test network is saved.
@@ -436,7 +472,7 @@ single tap forgets, or a disarmed prompt forgets.
 
 ### C16. Disconnect, with the read before sending, and a roam between the taps
 
-Sources: `packaging/duo-os/NATIVE.md:164` "forget, disconnect (with its read before sending, and a roam between the two
+Sources: `packaging/duo-os/NATIVE.md:184` "forget, disconnect (with its read before sending, and a roam between the two
 taps)"; PR #136 "a real disconnect with its read, a roam between the two taps".
 
 **Preconditions.** Two saved test networks in range (A and B); the phone is on A.
@@ -460,7 +496,7 @@ sent without the fresh read, or B dropped in step 4.
 
 ### C17. Turn Wi-Fi off with two taps, and on with one
 
-Sources: `packaging/duo-os/NATIVE.md:164` "Wi-Fi off and on, the two-tap prompts"; PR #132 "Wi-Fi off and on, the
+Sources: `packaging/duo-os/NATIVE.md:185` "Wi-Fi off and on, the two-tap prompts"; PR #132 "Wi-Fi off and on, the
 two-tap prompts added here".
 
 **Preconditions.** Wi-Fi on. The USB cable in (Wi-Fi off does not touch `usb0`).
@@ -484,7 +520,7 @@ button that acts while its state is not known, or a screen that disagrees with `
 
 ### C18. The 1.5-second holds, and the long-wait sentence
 
-Sources: `packaging/duo-os/NATIVE.md:164` "the long-wait sentence"; PR #132 "the long-wait sentence".
+Sources: `packaging/duo-os/NATIVE.md:185` "the long-wait sentence"; PR #132 "the long-wait sentence".
 
 **Preconditions.** C10 to C17 passed. A test hotspot the owner can switch on and off from its own phone.
 
@@ -853,6 +889,10 @@ Use these when a check goes wrong. The aim is that the phone is never left dark 
 4. A `bl_power` of 4 is the power-key blank. Press the power key briefly once; or, if the image has sudo (a dev image), `sudo /usr/libexec/opos/opos-unblank`, which writes `bl_power` 0 to both panels. Do not press the power key for a lid blank: it would add a power-key blank on top.
 5. If both screens are still dark: R5.
 
+If the journal shows `opos shell: no lid signal` again and again (a flapping lid switch), keep the lid open: the shell
+lights the screens at each loss and an open phone stays lit. If the lines do not stop, R2 makes the browser the
+interface. Never make the switch go away on purpose.
+
 ### R2. The native shell is wrong or stuck
 
 1. On the glass, if it answers: Settings, "Use the old interface".
@@ -914,7 +954,7 @@ This copy stays NOT_RUN.
 | C03 | USB root shell closed, ssh key-only, debug port on loopback | | NOT_RUN | | | |
 | C04 | Native shell starts, answers taps and hands over | | NOT_RUN | | | |
 | C05 | Lid close blanks and lid open restores | | NOT_RUN | | | |
-| C06 | Restore retries and the power-save mode | | NOT_RUN | | | |
+| C06 | Restore retries, power-save mode, a lost or flapping lid signal | | NOT_RUN | | | |
 | C07 | Current with the lid closed, drain blanked | | NOT_RUN | | | |
 | C08 | Power key blanks and lights | | NOT_RUN | | | |
 | C09 | Volume keys change only the simulated volume | | NOT_RUN | | | |
