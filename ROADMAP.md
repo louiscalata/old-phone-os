@@ -19,7 +19,7 @@ their original scope. Plans are intentions, not promises.
   non-essential tasks, never fewer.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
-- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes and Calculator. App data stays in local files. Alarms wait while the clock is unknown. Alarms show on screen only; sound and vibration are not played yet.
+- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes, Calculator, Call log and Converter (`clock,contacts,notes,calc,calls,convert` in `packaging/duo-os/opos-apps.conf`). App data stays in local files. Alarms wait while the clock is unknown. An alarm ring shows on screen and plays six short beeps through `paplay`, ending within 24 seconds; Stop ends them. The image recipes do not add `paplay`; without it the alarm shows on screen only. Hearing the tone on a phone is NOT_RUN. Vibration stays off.
 - Camera: research only ([docs/camera-spike.md](docs/camera-spike.md)). No still has been captured. No camera code.
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
   (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. The kiosk runs the
