@@ -3,8 +3,19 @@
 
 On the Surface Duo 1 running Droidian the kernel shows one posture signal: a switch input device named exactly
 "Surface Duo Lid" (SW_LID), whose node /dev/input/eventN the user may read through the android_input group. The
-"Surface Duo Lid Wakeup" device next to it is a key device, not the lid. No hinge angle or accelerometer reaches Linux,
-so book, tent and the other folded postures cannot be told apart yet: posture() says only "closed" or "open".
+"Surface Duo Lid Wakeup" device next to it is a key device, not the lid. No hinge angle reaches Linux as an input device:
+it comes from the phone's sensor service (hinge.py). With an angle posture() tells book, flat, tent and back apart;
+without one (the service is not running) it says only "closed" or "open".
+
+What the device dossier records about the hardware (stock Android 12L read on 2026-10-31, read-only; Notion "Surface Duo
+Dossier for OPOS", section 04): the hinge turns 360 degrees and has no angle encoder. A sensor core (SLPI) computes the
+angle from an accelerometer, gyroscope and magnetometer in each half, and two hall switches mark "closed" and "fully
+folded back"; Android reports the result as hinge-angle sensor type 36, 0 to 360 degrees, sent on change. The two panels
+are 1350 x 1800 pixels each with an 84-pixel hinge column between them (2784 x 1800), which is the 42 px gap of
+OPOS_SPAN=675,42 at scale 2. Android's own folding state has only two values, HALF_OPENED and FLAT (folding_state()).
+Two things in the dossier are still hypotheses: how the angle is measured, and that a hall switch is the lid input. The
+lid switch here does work; the angle was read on one phone on 2026-11-14 (peer-measured by the PC session, not
+reproduced from the Mac) and followed a fold from 0 to about 180.
 
 The device is only ever opened read-only and non-blocking; it is never grabbed and nothing is ever written to it.
 """
@@ -103,13 +114,68 @@ def lid_state(fd):
     return bool(buf[SW_LID // 8] & (1 << (SW_LID % 8)))
 
 
-def posture(lid_closed, angle=None):
-    """The posture name: "closed" when the lid is closed, otherwise "open".
+PANEL_WIDTH_PX, PANEL_HEIGHT_PX, HINGE_COLUMN_PX = 1350, 1800, 84      # from the dossier, section 05
+HINGE_RANGE = (0, 360)      # degrees the hinge angle sensor reports (Android sensor type 36)
+# Hinge angle in degrees, as the phone's sensor service reports it: 0 closed, about 180 flat, 360 folded back on itself.
+# Each zone is held until the angle leaves it by HYST degrees, so a hand that wobbles on a border never flickers.
+ZONES = (("closed", 0, 15), ("book", 15, 170), ("flat", 170, 190), ("tent", 190, 345), ("back", 345, 361))
+HYST = 6
 
-    angle is where a hinge-angle reading would come in to tell "open" apart further (book, tent, flat) without callers
-    changing. It is ignored for now: this phone exposes no hinge-angle or accelerometer device to Linux, so there is
-    no measured angle to decide with, and guessed thresholds would be wrong."""
-    return "closed" if lid_closed else "open"
+
+def classify(angle, previous=None):
+    """The posture a hinge angle means: closed, book (the two screens like an open book), flat, tent (folded the other
+    way, standing on its edges) or back (one screen behind the other). previous, a name this returned, is kept while the
+    angle is within HYST degrees of its zone. A reading outside 0..360 or not a number says nothing: None."""
+    if isinstance(angle, bool) or not isinstance(angle, (int, float)) or angle != angle or angle < 0 or angle > 360:
+        return None
+    for name, low, high in ZONES:
+        if name == previous:
+            if low - HYST <= angle < high + HYST:
+                return name
+            break
+    for name, low, high in ZONES:
+        if low <= angle < high:
+            return name
+    return None
+
+
+FOLDING_STATE = {"book": "HALF_OPENED", "tent": "HALF_OPENED", "flat": "FLAT"}
+
+
+def folding_state(name):
+    """The Android window-layout folding state a posture name stands for: "FLAT" or "HALF_OPENED" (the only two Android
+    has, per the dossier), or None for closed, back and open: Android reports no hinge feature for those."""
+    return FOLDING_STATE.get(name)
+
+
+def describe(name, angle, one=True):
+    """One line for Settings: the posture and the hinge angle, or that the sensor is not giving one. Never raises.
+    one says whether the shell is in back mode now; folded back without it (the lid unknown, or the panes could not
+    move) both screens are lit, and the line says so."""
+    if isinstance(angle, bool) or not isinstance(angle, (int, float)) or angle != angle or not 0 <= angle <= 360:
+        return "No hinge reading: the sensor service is not running, so the posture is not known."
+    shown = "%s, hinge at %d degrees." % ((name or "open").capitalize(), round(angle))
+    if name == "back":
+        return shown + (" One screen is lit; the other is dark." if one else " Both screens are lit.")
+    return shown
+
+
+def one_screen(name, lid_closed):
+    """Whether the shell uses one screen only (back mode): the posture is "back" and the lid switch reads open. An
+    unknown lid (None: no watcher, or it was lost) is not open, so the phone then always uses both screens."""
+    return name == "back" and lid_closed is False
+
+
+def posture(lid_closed, angle=None, previous=None):
+    """The posture name: "closed" when the lid switch says so, otherwise what the hinge angle says (classify) or "open" when
+    there is no angle, or the angle alone says closed (the sensor service is not running, or it gave a reading that makes no sense). previous is the
+    name this returned last time, for classify's hysteresis."""
+    if lid_closed:
+        return "closed"
+    name = classify(angle, previous)
+    # "closed" is the lid switch's to say: a hinge reading near 0 with the lid open (a sensor that has not reported yet,
+    # a lid that has not tripped its switch) is only "open"
+    return "open" if name in (None, "closed") else name
 
 
 def _readable(fd, timeout):
