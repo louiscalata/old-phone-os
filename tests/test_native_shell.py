@@ -985,7 +985,8 @@ class ShellModule(unittest.TestCase):
             self.skipTest("GTK 4 or PyGObject is not installed here")
         from opos.native import screens
         self.assertEqual([c.name for c in screens.PAGES],
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"])
+                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls",
+                          "settings", "network"])
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ Wrong tries: the first four cost nothing. The fifth starts a 30 second wait, and
 
 `convert` enables `/convert` and the token-protected `/api/convert`. It converts length (mm, cm, m, km, inch, foot, yard, mile), mass (g, kg, oz, lb), volume (ml, L, US fl oz, US cup, US pint, US gal) and temperature (C, F, K) with fixed factors in `src/opos/convert.py`. The amount is plain decimal text of at most 40 characters and at most 10^12 in size: no exponent, ASCII digits only. Length, mass and volume refuse a negative amount, and a temperature below absolute zero is refused. The result has up to six significant figures. Nothing is stored, and nothing leaves the local server.
 
-The converter is a page of the browser interface only. The native shell (`src/opos/native/screens.py`) has no Converter screen, so on a Duo running the native shell it is reached only when the browser interface takes over.
+The native shell (`src/opos/native/screens.py`) has a Converter screen with the same switch: it reads the measures from `/api/convert` and sends each conversion there, so the answer it shows is the server's own text. It asks one conversion at a time and stores nothing. See `packaging/duo-os/NATIVE.md`. The screen has not been run on a phone or under real GTK.
 
 With the PIN lock on and the phone locked, `GET /api/convert` answers with the locked body described above, and a conversion is refused as `locked` (403), like any other app write.
 

@@ -1205,6 +1205,8 @@ class _Limits:
 def make_server(port, phone, host="127.0.0.1", token=None, span=None, updater=None):
     """Bind loopback server. updater: an opos.update_client.UpdateClient (default: this install's)."""
     secure.check_bind(host)
+    if host != "127.0.0.1":  # _Server is IPv4 only, and secure.host_ok/origin_ok accept no [::1] header
+        raise ValueError("IPv4 loopback only")
     class Bound(Handler):
         pass
     Bound.phone = phone
