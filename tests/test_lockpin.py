@@ -167,6 +167,46 @@ class LockStateCharacterization(LockCase):
         self.assertTrue(ok)
         self.assertEqual((status["failures"], status["wait_s"]), (0, 0))
 
+    def test_the_wait_is_capped_at_eight_hours(self):
+        """The wait doubles from 30 s and stops growing at 8 hours: the 15th wrong try and every one after it."""
+        lockpin.set_pin("1234")
+        now = 1_700_000_000
+        waits = {}
+        for failure in range(1, 41):
+            ok, status = lockpin.unlock("9999", now)
+            self.assertFalse(ok)
+            self.assertEqual(status["failures"], failure)
+            waits[failure] = status["wait_s"]
+            if status["wait_s"]:
+                self.assertEqual(self.saved()["wait_until"], now + status["wait_s"])
+                # One second before the end the wait still holds, for the right PIN too, and counts nothing.
+                ok, early = lockpin.unlock("1234", now + status["wait_s"] - 1)
+                self.assertFalse(ok)
+                self.assertEqual((early["failures"], early["wait_s"], early["locked"]), (failure, 1, True))
+            now += status["wait_s"]
+        self.assertEqual([waits[n] for n in range(1, 15)],
+                         [0, 0, 0, 0, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680, 15360])
+        self.assertEqual(lockpin.MAX_WAIT, 8 * 3600)
+        self.assertEqual({waits[n] for n in range(15, 41)}, {28800})
+        # The cap does not forgive anything: the count stays, the phone stays locked, and nothing is erased.
+        self.assertEqual(self.saved()["failures"], 40)
+        self.assertTrue(lockpin.has_pin())
+        ok, status = lockpin.unlock("1234", now)
+        self.assertTrue(ok)
+        self.assertEqual((status["failures"], status["wait_s"], status["locked"]), (0, 0, False))
+
+    def test_a_very_large_saved_count_still_gets_the_capped_wait(self):
+        lockpin.set_pin("1234")
+        for failures in (10**3, 10**6, 10**30):
+            with self.subTest(failures=failures):
+                data = self.saved()
+                data.update(locked=True, failures=failures, wait_until=0)
+                (self.root / "lock.json").write_text(json.dumps(data))
+                ok, status = lockpin.unlock("9999", 1_700_000_000)
+                self.assertFalse(ok)
+                self.assertEqual((status["locked"], status["failures"], status["wait_s"]), (True, failures + 1, 28800))
+                self.assertEqual(self.saved()["wait_until"], 1_700_000_000 + 28800)
+
     def test_blocks_exemptions(self):
         for action, path in (("stop", "/api/clock"), ("snooze", "/api/clock"),
                              ("hang_up", "/api"), ("unlock", "/api"),
