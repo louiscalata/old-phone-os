@@ -123,3 +123,17 @@ Additional app and volume configurations require their corresponding checks: `te
 (68 bytes). The script file is not part of the page. The historical record in `dfca35d4` on November 10 reported
 101,317 bytes with that tag and the six switches (683 bytes under the 102,000-byte gate). That count applies to that
 revision only. Later apps must not add to this page. `tests/test_apps_shell.py` checks the gate.
+
+## PIN pad
+
+`OPOS_LOCK` is not one of the six switches either. Unset, `page()` and the served home page are unchanged. With
+`OPOS_LOCK=1` the served home page gains one script tag for `/pin.js` (60 bytes with the server's 22-character nonce);
+the script file is not part of the page. Measured on November 14, 2026 on the tree that added the tag: 101,870 bytes
+with the six switches, 101,930 with the lock as well, and 101,998 with the lock and the five Duo apps, 2 bytes under
+the 102,000-byte gate. That count applies to that revision only; no test pins it. `tests/test_lockpin.py` checks that
+the tag and the script are absent while the lock is off.
+
+The pad's layout rules (three shrinkable columns, keys without the 160 px minimum of `#lock button` in `phone-a.css`)
+are set by `/pin.js` on the elements it creates. They are not in a stylesheet, so the narrow-screen fix of November 14,
+2026 added no byte to `page()` or to the served home page; the script grew instead, and it is not part of the page.
+The page sizes were not measured again for that change because no file that the page is built from was edited.

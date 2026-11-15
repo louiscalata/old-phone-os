@@ -20,7 +20,7 @@ The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,no
 | Phone | The front page dials and hangs up through the in-memory modem. Messages are threads in the same page. `src/opos/mm_modem.py` is not wired in. The Duo image carries ModemManager through ofono2mm. Calls and texts on that image are still the simulated modem. |
 | Music | No player, no library, no page. |
 | Memos | No voice memo. Written notes are the Notes app. |
-| Lock | A lock screen with the time, the battery line, and Call. An optional PIN (`OPOS_LOCK=1`) is enforced only when that variable is set. |
+| Lock | A lock screen with the time, the battery line, and Call. An optional PIN (`OPOS_LOCK=1`) is enforced only when that variable is set; the browser page then shows a digit pad and app reads are withheld while locked ([apps.md](apps.md)). No screen sets a PIN yet. |
 | Battery | Home, the lock screen, and the battery panel already show level, charge, and time left. This is not a gap. |
 
 ## Gaps

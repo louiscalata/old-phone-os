@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Optional lock PIN. The hash is PBKDF2-HMAC-SHA256. Five wrong tries start a 30 second wait that grows.
+"""Optional lock PIN. The hash is PBKDF2-HMAC-SHA256. Five wrong tries start a 30 second wait that doubles
+with every further wrong try and stops growing at 8 hours. Nothing is erased, however many tries are wrong.
 
 The server starts enforcing only when OPOS_LOCK=1. With the variable unset, the phone behaves as before.
 There is no emergency button: practice mode cannot place that call, and a real one has not been tested.
@@ -12,16 +13,43 @@ import os
 from pathlib import Path
 import time
 
+from opos import secure
 from opos.store import Store, default_root
+
+_JS = Path(__file__).with_name("web_static") / "pin.js"
+_TAG = '<script nonce="{nonce}" src=/pin.js></script>'
 
 ITERATIONS = 200_000
 _FILE = "lock.json"
 _STORE = None
 _WAIT = 30
+MAX_WAIT = 8 * 3600  # the longest wait after a wrong try (owner decision, November 14, 2026). No wipe.
+_DOUBLINGS = 10  # 30 s * 2**10 is already more than MAX_WAIT; a larger saved count is never used as an exponent
 
 
 def active():
     return os.environ.get("OPOS_LOCK") == "1"
+
+
+def script_bytes():
+    """The PIN pad script, or nothing when the file cannot be read."""
+    try:
+        return _JS.read_bytes()
+    except OSError:
+        return b""
+
+
+def inject_bytes(body, nonce):
+    """Add the PIN pad's tag to the home page while OPOS_LOCK=1. The same bytes otherwise; page() never grows."""
+    if not active() or not isinstance(body, (bytes, bytearray)) or b'src=/pin.js' in body:
+        return body
+    if not secure._nonce_ok(nonce):
+        return body
+    tag = _TAG.format(nonce=nonce).encode("utf-8")
+    found = body.rfind(b"</body>")
+    if found < 0:
+        return body + tag
+    return body[:found] + tag + body[found:]
 
 
 def reset():
@@ -130,7 +158,7 @@ def _transition(state, event, data, now, pin=None):
         failures = changed["failures"] + 1
         changed.update(locked=True, failures=failures)
         if failures >= 5:
-            changed["wait_until"] = now + _WAIT * (2 ** (failures - 5))
+            changed["wait_until"] = now + min(MAX_WAIT, _WAIT * 2 ** min(failures - 5, _DOUBLINGS))
     else:
         raise ValueError("lock event")
     return True, changed
@@ -208,8 +236,24 @@ def blocks(action, path):
     return True
 
 
+def _missed():
+    """Missed calls kept by the Call log app. Nothing when that app is off or its log cannot be read."""
+    try:
+        from opos import apps, calllog
+        if "calls" not in (apps.names_from() or []):
+            return 0
+        value = calllog.snapshot().get("missed_count")
+        return value if type(value) is int and value > 0 else 0
+    except Exception:
+        return 0
+
+
 def counts():
-    """Counts only. No names and no message text."""
+    """Counts only. No names and no message text.
+
+    missed comes from the call log. messages stays 0: the phone keeps no record of which messages were read,
+    so any number here would not be a count of new ones.
+    """
     alarm = ""
     try:
         from opos import clock_page
@@ -217,11 +261,13 @@ def counts():
         alarm = nxt.get("text") or ""
     except Exception:
         alarm = ""
-    return {"messages": 0, "missed": 0, "alarm": alarm}
+    return {"messages": 0, "missed": _missed(), "alarm": alarm}
 
 
 def redact(snap):
-    """The locked /api/state body. Battery percent and the clock stay. Names do not."""
+    """The body of every locked answer that would carry the phone's data. Battery percent and the clock stay. Names do not."""
+    if not isinstance(snap, dict):
+        snap = {}
     battery = snap.get("battery") if isinstance(snap.get("battery"), dict) else {}
     percent = battery.get("percent")
     return {
