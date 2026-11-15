@@ -18,6 +18,7 @@ evidence about the current source.
 ## How it works
 
 - [Architecture](architecture.md): module map, how a request flows from the page to the governor and to Muse Glimmer, page assembly and tests.
+- [OS architecture](os-architecture.md): what OPOS owns and what it inherits on the Duo image, the boot sequence and what each unit's failure does, checked against the unit files by `tests/test_boot_graph.py`; the order on the phone's systemd is NOT_RUN.
 - [Rules remain the safety floor](design-safety-floor.md): how the governor validates model advice so it can never override the rules, which limits are hard floors, what Undo can override and how the goal budget is shared.
 
 ## Meta AI and evaluation

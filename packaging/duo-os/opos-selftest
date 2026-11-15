@@ -22,6 +22,7 @@ import re
 import runpy
 import shlex
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -1145,6 +1146,108 @@ def check_firstrun(c):
             c.emit("WARN", "clock.kiosk-tz", "the saved zone is %s but the kiosk Chromium has TZ=%s: the screen shows the wrong time until Chromium restarts (pkill chromium)" % (own, tzv or "unset"))
 
 
+def server_unit(c):
+    """(User=, environment) of opos-server.service as its files set them: the unit, its drop-ins, and the EnvironmentFile= files that exist."""
+    d = "/etc/systemd/system/opos-server.service.d"
+    user, env, files = None, {}, []
+    for f in ["/etc/systemd/system/opos-server.service"] + [d + "/" + n for n in c.ls(d) or [] if n.endswith(".conf")]:
+        for line in (c.rd(f) or "").splitlines():
+            k, sep, v = line.strip().partition("=")
+            if not sep or k.startswith("#"):
+                continue
+            if k == "User":
+                user = v.strip() or None
+            elif k == "Environment":
+                try:
+                    words = shlex.split(v)
+                except ValueError:
+                    words = []
+                env.update(w.split("=", 1) for w in words if "=" in w)
+            elif k == "EnvironmentFile":
+                files.append(v.strip().lstrip("-"))
+    for f in files:  # systemd lets these files override Environment= lines, whatever their order
+        for line in (c.rd(f) or "").splitlines():
+            k, sep, v = line.strip().partition("=")
+            if sep and k and not k.startswith("#"):
+                env[k.strip()] = v.strip().strip("\"'")
+    return user, env
+
+
+def socket_state(c, path):
+    """'' when path is a Unix socket this user may open; otherwise why not. It is looked at, never connected to."""
+    try:
+        st = os.stat(c.p(path))
+    except OSError:
+        return "no socket at %s" % path
+    if not stat.S_ISSOCK(st.st_mode):
+        return "%s is not a socket" % path
+    if not os.access(c.p(path), os.R_OK | os.W_OK):
+        return "%s is not open to this user" % path
+    return ""
+
+
+def check_alarm_sound(c):
+    """Whether an alarm could be heard: src/opos/alarm_sound.py runs paplay from PATH as the server's own user."""
+    srv = [p for p in c.procs() if "opos.web" in " ".join(p["argv"]) and base(p["argv"]).startswith("python")]
+    user, env = server_unit(c)
+    senv = c.environ(srv[0]) if srv else None
+    stale = []
+
+    def value(name):  # the running server's environment, else the unit's files; a unit edited but not restarted is said
+        if senv is None:
+            return env.get(name)
+        if name not in senv and name in env:
+            stale.append("%s=%s is set for opos-server but the running server was started without it; restart opos-server" % (name, env[name]))
+        return senv.get(name)
+
+    if value("OPOS_ON_PHONE") != "1":
+        c.emit("SKIP", "alarm.sound", "not the phone: opos-server %s OPOS_ON_PHONE=1" % ("runs without" if srv else "is not running and its unit sets no"))
+        return
+    names = {}
+    for line in (c.rd("/etc/passwd") or "").splitlines():
+        f = line.split(":")
+        if len(f) > 2 and f[2].isdigit():
+            names.setdefault(f[0], int(f[2]))
+    uid = srv[0]["uid"] if srv and srv[0]["uid"] is not None else names.get(user)
+    if srv and uid is not None:
+        user = next((n for n, u in names.items() if u == uid), user)
+    who = "%s (uid %s)" % (user or "?", "?" if uid is None else uid)
+    path = senv.get("PATH") if senv else None
+    dirs = [d for d in (path.split(":") if path else DEFAULT_BIN) if d.startswith("/")]
+    player = next((d.rstrip("/") + "/paplay" for d in dirs if os.path.isfile(c.p(d + "/paplay")) and os.access(c.p(d + "/paplay"), os.X_OK)), None)
+    why = []
+    if player is None:
+        why.append("paplay is not on the server's PATH%s (the image recipes do not add it): alarm on screen only" % (" " + path if path else ""))
+    pulse, xdg = value("PULSE_SERVER"), value("XDG_RUNTIME_DIR")
+    route = sock = None
+    if pulse:  # libpulse takes PULSE_SERVER before XDG_RUNTIME_DIR: a list of servers, each maybe after a {machine id}
+        local = [e.split("}", 1)[-1] for e in pulse.split()]
+        local = [e[5:] if e.startswith("unix:") else e for e in local if e.startswith(("unix:", "/"))]
+        bad = [socket_state(c, s) for s in local]
+        if not local:
+            why.append("PULSE_SERVER=%s names no local socket, so this check cannot see it" % pulse)
+        elif all(bad):
+            why.append("PULSE_SERVER=%s: %s" % (pulse, bad[0]))
+        else:
+            route, sock = "PULSE_SERVER", local[bad.index("")]
+    elif xdg:
+        s = xdg.rstrip("/") + "/pulse/native"
+        bad = socket_state(c, s)
+        if bad:
+            why.append("XDG_RUNTIME_DIR=%s: %s for %s" % (xdg, bad, who))
+        else:
+            route, sock = "XDG_RUNTIME_DIR", s
+    else:
+        s = "/run/user/%d/pulse/native" % uid if uid is not None else None
+        bad = socket_state(c, s) if s else "the server's uid is unknown"
+        why.append("opos-server sets no XDG_RUNTIME_DIR or PULSE_SERVER, so no PulseAudio route for %s; %s" % (who, bad or "%s exists" % s))
+    why = stale + why
+    if why:
+        c.emit("WARN", "alarm.sound", "; ".join(why))
+    else:
+        c.emit("PASS", "alarm.sound", "%s for the server's user %s; PulseAudio socket %s through %s; nothing was played" % (player, who, sock, route))
+
+
 def check_dev(c):
     mode = c.rd("/etc/opos/build-mode")
     if mode == "release\n" and not os.path.islink(c.p("/etc/opos/build-mode")):
@@ -1204,13 +1307,13 @@ def check_identity(c):
 
 
 CHECKS = (check_identity, check_services, check_phoc, check_composer, check_output, check_backlight, check_kiosk, check_server, check_battery,
-          check_clock, check_logs, check_resources, check_usb, check_ssh, check_network, check_ota, check_osk, check_netpage, check_firstrun, check_dev)
+          check_clock, check_logs, check_resources, check_usb, check_ssh, check_network, check_ota, check_osk, check_netpage, check_firstrun, check_alarm_sound, check_dev)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="opos-selftest", formatter_class=argparse.RawDescriptionHelpFormatter,
                                  description="Read-only acceptance checks of the running OPOS OS.\nOne PASS/FAIL/WARN/SKIP line per check; exit 1 when any is FAIL.\nChanges nothing on the phone (the server does its usual work to answer /api/state, and ssh logins are logged).")
-    ap.add_argument("--only", action="append", metavar="PREFIX", help="print only checks whose id starts with PREFIX (identity, svc, phoc, gfx, kiosk, server, battery, clock, log, res, net, ssh, ota, osk, firstrun, dev); repeatable")
+    ap.add_argument("--only", action="append", metavar="PREFIX", help="print only checks whose id starts with PREFIX (identity, svc, phoc, gfx, kiosk, server, battery, clock, log, res, net, ssh, ota, osk, firstrun, alarm, dev); repeatable")
     ap.add_argument("--root", default="/", help="test seam: the directory standing in for / when reading /proc, /sys, /etc, /var, /opt")
     ap.add_argument("--bin", action="append", metavar="DIR", help="test seam: find systemctl, journalctl, wlr-randr and the other helpers only in these directories")
     ap.add_argument("--url", default=DEFAULT_URL, help="the OPOS server (default %(default)s)")
