@@ -10,12 +10,14 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from opos import alarms, appdoc, apps
+from opos import alarm_sound, alarms, appdoc, apps
 from opos.store import default_root
 
 _BOOK = None
 _FAKE = None
 _THREAD = None
+_PLAYER = None
+_SILENCE = {"stop", "snooze", "delete", "toggle"}
 _CODES = {"hour", "minute", "days", "label", "full", "id", "seconds", "now", "enabled"}
 
 _CSS = """
@@ -28,7 +30,7 @@ html[data-bed=1] #editor,html[data-bed=1] #pivots,html[data-bed=1] #rows,html[da
 
 _LIST = """
 <h1>Clock</h1>
-<p class="note">Alarms show on screen only. No sound or vibration is played yet.</p>
+<p class="note">An alarm shows on screen and plays six short beeps through paplay, ending within 24 seconds. Stop ends them. The tone has not been checked on a phone. No vibration.</p>
 <div id="pivots" class="chips">
 <button id="p-alarms" type="button" aria-pressed="true">Alarms</button>
 <button id="p-timer" type="button" aria-pressed="false">Timer</button>
@@ -121,8 +123,9 @@ window.oposClock={refresh:load};
 
 
 def reset():
-    """Tests drop the saved book and any pretended clock."""
+    """Tests drop the saved book, any pretended clock, and any beep still playing."""
     global _BOOK, _FAKE
+    silence()
     _BOOK = None
     _FAKE = None
 
@@ -205,6 +208,8 @@ def _when(text):
 def post(data):
     global _FAKE
     action = data.get("action") if isinstance(data, dict) else None
+    if action in _SILENCE:
+        silence()
     try:
         saved = book()
         if action == "add":
@@ -250,9 +255,7 @@ def start_thread():
         while True:
             time.sleep(30)
             try:
-                events = book().tick(current_now(), clock_known())
-                if events:
-                    _play(events)
+                _cycle()
             except Exception:
                 pass
 
@@ -260,17 +263,35 @@ def start_thread():
     _THREAD.start()
 
 
-def _play(events):
-    try:
-        from opos import alarm_sound
-    except ImportError:
-        return
-    alarm_sound.handle(events)
+def _player():
+    """The one paplay player of this process. The clock thread plays on it; page actions stop it."""
+    global _PLAYER
+    if _PLAYER is None:
+        _PLAYER = alarm_sound.Player()
+    return _PLAYER
+
+
+def silence():
+    """End any beep that is playing, and the rest of its ring. Stop, Snooze, Delete and Toggle call this first."""
+    if _PLAYER is not None:
+        _PLAYER.stop()
+
+
+def _cycle():
+    """One re-check. The stop count is read before the tick, so a Stop pressed in between still wins."""
+    since = _player().generation
+    events = book().tick(current_now(), clock_known())
+    if events:
+        _play(events, since)
+
+
+def _play(events, since=None):
+    alarm_sound.handle(events, spawn=_player(), since=since)
 
 
 apps.register(apps.App(
     "clock", "Clock", "/clock",
     "Alarms, a timer, a stopwatch and a bedside clock.",
-    "yes", "no", "screen only (no sound yet)", "real", "alarms", "ESSENTIAL", 0.1,
+    "yes", "no", "screen and a short tone (not checked on a phone)", "real", "alarms", "ESSENTIAL", 0.1,
     render, snapshot, post,
 ))

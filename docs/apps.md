@@ -25,4 +25,6 @@ The current phone uses ScreenModem, so its calls are labelled Practice. Its inco
 
 The Duo image names clock, contacts, notes, calc and calls. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls adds no home-page bytes.
 
-No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN. Sound and vibration are not played yet.
+No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN.
+
+An alarm or timer ring plays `src/opos/sounds/alarm.wav` through `paplay`: six beeps of 0.4 seconds, from 20 to 70 percent of the paplay stream, each one after the last has ended. The sink volume is not changed and no media role is set. A beep that has not ended after 2 seconds is terminated, then killed, so one ring ends within 24 seconds. Stop, Snooze, Delete and switching an alarm off end the beep that is playing and the rest of that ring. A timer ring has no Stop button; it ends by itself within the same 24 seconds. The server runs `paplay` from `PATH`, without a shell, as its own user. The image recipes do not add `paplay`; when it is missing, the alarm shows on screen only and nothing is raised. Whether the server reaches the PulseAudio session on the phone, and whether the tone is heard, is NOT_RUN. Vibration stays off.
