@@ -338,8 +338,9 @@ class PageBytes(unittest.TestCase):
         # Re-recorded for corrected component, simulation and hosted-demo privacy notices.
         # Under these same fixtures, only those three notice blocks differ from the prior copy.
         # Re-recorded again when the privacy notice went back to naming the Inference page (22 bytes longer each).
-        expected = [(100754, "66d1a59b5cf0daa15d316e07cf19c62b8db7692cf67ec0571215d817997ecdba"),
-                    (100797, "ba98da626d192742379c8bbbc1b12c190fdf884ed43c145cbea4a613322b2edc"),
-                    (100826, "843f5a36985decc89e9e673ed05709e01dbcf21cca48970aacc0de25bf47b179"),
-                    (101870, "afb2a2812d91c92bc1f8e2d237f4200f1bce52005c9e096d036963dc2b577a89")]
+        # Re-recorded when phone-b.css lost its focus ring that jaryo.css overrode (128 bytes shorter; 127 where the span squeezes).
+        expected = [(100626, "4589ef7bf1fb8534264d649a923b367f2ba83788b04371089c1b5a91406f3d6a"),
+                    (100670, "db4ef7c9c09d4a0828c23d26c3cf30e691592699570dadb252ddaba60a67f0eb"),
+                    (100698, "fe5cc9f003c1ad0b63c6ec9be1d41099122c0b0d357b34a19f6d4b93c4f97fed"),
+                    (101743, "d2702e31f49753ef48352bb5e3fd24f6836a3ad1ca10a005ab12c1931bbc12cd")]
         self.assertEqual([(len(body), hashlib.sha256(body).hexdigest()) for body in bodies], expected)
