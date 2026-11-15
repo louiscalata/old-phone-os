@@ -27,7 +27,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from opos import apps, notices  # noqa: E402
-from opos.native import logic, netlogic  # noqa: E402
+from opos.native import logic, netlogic, posture  # noqa: E402
 from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, vbox  # noqa: E402
 
 MISSING = "%s is not part of the OPOS installed on this phone yet. It arrives with the next update."
@@ -1038,10 +1038,13 @@ class Settings(Page):
     def build(self):
         self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")   # read on entering Settings, see enter()
         self.hand = button("", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"), "main")
+        self.hinge_line = label("", "mid", "dim")
         read = reading(label("Settings", "head"),
                        label("Hand", "big"),
                        label("The buttons sit on the screen under that hand; the other screen is for reading. "
                              "You can also swipe sideways across the hinge: the buttons follow your finger.", "mid", "dim"),
+                       label("Hinge", "big"),
+                       self.hinge_line,
                        label("Gestures", "big"),
                        label("Down from the top edge: battery. Up from the bottom edge: Home. Up on the lock screen: unlock.", "mid", "dim"),
                        label("Storage", "big"),
@@ -1051,6 +1054,7 @@ class Settings(Page):
         act = column(bottom=(self.hand, button("Network", lambda: self.shell.go("network")),
                              button("Use the old interface", self.shell.leave), bar(self.home())))
         self.paint_hand()
+        self.paint_posture()
         return read, act
 
     @staticmethod
@@ -1065,6 +1069,11 @@ class Settings(Page):
 
     def paint_hand(self):
         self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
+
+    def paint_posture(self):
+        """The posture line in Settings; a label only, nothing on the screen depends on it."""
+        self.hinge_line.set_label(posture.describe(getattr(self.shell, "posture", None), getattr(self.shell, "angle", None),
+                                                   getattr(self.shell, "back", None) is not None))
 
     def preview(self, snap):
         b = snap.get("battery") or {}
