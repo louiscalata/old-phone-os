@@ -21,6 +21,7 @@ classifiers = ["Programming Language :: Python :: 3"]
 [project.urls]
 Source = "https://github.com/louiscalata/old-phone-os"
 
-# The phone page is assembled from these files at run time (src/opos/web.py).
+# The pages, the alarm tone and the fonts are read from these files at run time (tests/test_package_data.py).
 [tool.setuptools.package-data]
-opos = ["web_static/*", "public_static/*"]
+opos = ["web_static/*", "web_static/fonts/*", "public_static/*", "panes_static/*", "osk_static/*", "apps_static/*",
+        "sounds/*"]

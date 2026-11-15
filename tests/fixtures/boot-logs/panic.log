@@ -1,0 +1,6 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x000f0510]
+[    0.000000] Kernel command line: console=ttyAMA0 root=/dev/vda rw rootwait panic=-1 opos.smoke=1
+[    2.410001] VFS: Cannot open root device "vda" or unknown-block(0,0): error -6
+[    2.410122] Please append a correct "root=" boot option; here are the available partitions:
+[    2.410513] Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)
+[    2.410790] ---[ end Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0) ]---
