@@ -54,13 +54,23 @@ unavailable checks refuse. Obtain expected hashes from a trusted image source.
 The script also requires exactly one fastboot device and a successful, unambiguous
 `product: surfaceduo` response, then selects that device for every fastboot and
 adb command. A missing, failed or different product response refuses before erasure.
+Then, as the guarded route does, it asks for `fastboot getvar current-slot` and
+`fastboot getvar battery-level` and refuses before erasure unless the slot is
+exactly `a` and the battery is a whole percent from 20 to 100 (a trailing `%` is
+allowed); a failed, missing, malformed or ambiguous answer refuses too.
 It also asks that device for `fastboot getvar unlocked` and refuses before erasure
 unless the answer is exactly one `unlocked: yes`; a failed, missing or ambiguous
-answer refuses too. Whether the Duo's bootloader answers this query in that form
+answer refuses too. Whether the Duo's bootloader answers this query in that form,
+and the slot and battery queries in theirs,
 is **NOT_RUN** on the phone; any other answer refuses with nothing erased.
 
-The battery is a manual step: check that it is at least 20 percent before running
-with `--yes`. The script prints that reminder and does not read the battery.
+Before any device command, after the rootfs image is hashed, the script requires
+a raw ext4 image, with the same rules as `Get-Ext4Problem` in
+`deploy/duo-opos-boot.ps1`. It refuses a file that starts with the zstd, gzip, xz
+or Android sparse magic bytes, a file with no ext4 superblock magic (0xEF53) at
+byte 1080, a superblock with no blocks or with blocks larger than 4096 bytes, and
+a file shorter than the size its superblock describes (a truncated copy). It reads
+only the first 1400 bytes and the length.
 
 With `--yes --erase-userdata` the script copies the TWRP and boot images once, when
 they are checked, into a private folder (made by `mktemp -d` under `TMPDIR`, mode
@@ -86,8 +96,7 @@ A process running as the same user can still change a private copy, or the rootf
 image, in the short time between a rehash and the command that reads the file; a
 rootfs changed during the push is caught afterwards by `verify failed`.
 
-This remains the less guarded route: it does not arm the misc brake, check the
-slot or the battery, or validate raw ext4 image contents. These added refusals
+This remains the less guarded route: it does not arm the misc brake. These added refusals
 do not replace the guarded `deploy/duo-opos-boot.ps1` workflow. The checks are
 tested with stand-ins for fastboot and adb only; a run of this script on the phone
 remains **NOT_RUN**.

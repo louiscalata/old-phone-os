@@ -29,7 +29,7 @@ import urllib.parse
 from html import escape
 from pathlib import Path
 
-from opos import clockcheck, firstrun_page, secure, timezone
+from opos import clock_health, clockcheck, firstrun_page, secure, timezone
 try:  # the on-screen keyboard (OPOS_OSK=1) also serves the time zone page's search box; its absence changes nothing
     from opos import osk
 except ImportError:
@@ -106,8 +106,16 @@ def pending(env=None):
     return enabled(env) and not _later and not done(env) and _writable(env)
 
 
-def clock_info(now=None):
-    """The phone's clock for the setup pages: whether it is plausible, and a plain sentence when it is not."""
+CLOCK_GUESS = "/run/opos/clock-floor"  # the same files as opos.web.clock_ok: opos-clock writes this when it raised an unset clock
+CLOCK_SYNCED = "/run/systemd/timesync/synchronized"  # systemd-timesyncd touches it once it has network time
+CLOCK_FLOOR = "/opt/opos/CLOCK_FLOOR"  # build-image.sh writes the image's floor here
+
+
+def clock_info(now=None, guess=CLOCK_GUESS, synced=CLOCK_SYNCED, floor=CLOCK_FLOOR):
+    """The phone's clock for the setup pages: whether it is plausible, and a plain sentence when it is not.
+
+    Plausible follows the server's own clock_ok (opos.clock_health.clock_status): a clock at or below the image's floor,
+    or one the image guessed at boot that has no network time yet, is not. With none of the files the rule is the year."""
     t = time.time() if now is None else now
     plausible = clockcheck.clock_plausible(t)
     try:
@@ -115,10 +123,21 @@ def clock_info(now=None):
         text = time.strftime("%a %d %b %Y, %H:%M", time.localtime(t))
     except (OverflowError, OSError, ValueError, TypeError):
         year, text = None, ""
+    image = False
+    if plausible and year is not None:
+        try:
+            with open(floor, "rb") as f:
+                floor_value = f.read(1024).decode("utf-8", "replace")
+        except OSError:
+            floor_value = ""
+        image = clock_health.clock_status(t, os.path.exists(guess), os.path.exists(synced), floor_value) in ("floor", "guess")
+        plausible = not image
     if plausible:
         note = ""
     elif year is None:
         note = "The phone's clock could not be read."
+    elif image:
+        note = "The phone's time was set from the system image, not from the network, so it may be off. It will correct itself once the phone has network time."
     else:
         note = f"The phone's clock reads {year}, which is almost certainly wrong, so the time and the daily goal will be off. It should correct itself once the phone is online."
     return {"plausible": plausible, "year": year, "text": text, "note": note}

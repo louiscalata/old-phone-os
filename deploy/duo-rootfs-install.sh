@@ -57,6 +57,55 @@ check_image() {
  fi
 }
 
+ext4_problem() {
+ # Halium loop-mounts /data/rootfs.img as it is, so it must be a RAW ext4 image. The same rules as
+ # Get-Ext4Problem in deploy/duo-opos-boot.ps1: reads only the first 1400 bytes and the length.
+ # Prints nothing when it looks right, otherwise what is wrong with it.
+ length=$(wc -c < "$1" | tr -d ' ') || return 1
+ bytes=$(od -An -tu1 -v -N 1400 "$1") || return 1
+ printf '%s\n' "$bytes" | awk -v len="$length" '
+   function starts(magic,   count, m, k) {
+     count = split(magic, m, " ")
+     if (n < count) return 0
+     for (k = 1; k <= count; k++) if (b[k - 1] != m[k]) return 0
+     return 1
+   }
+   # Superblock at byte 1024, all little endian.
+   function u32(at) { return b[at] + b[at + 1] * 256 + b[at + 2] * 65536 + b[at + 3] * 16777216 }
+   { for (i = 1; i <= NF; i++) b[n++] = $i + 0 }
+   END {
+     if (starts("40 181 47 253")) kind = "zstd"
+     else if (starts("31 139")) kind = "gzip"
+     else if (starts("253 55 122 88 90 0")) kind = "xz"
+     else if (starts("58 255 38 237")) kind = "Android sparse"
+     if (kind != "") { printf "it is a %s file, not a raw ext4 image (decompress or convert it to raw ext4 first)\n", kind; exit }
+     if (n < 1082) { printf "it is only %s bytes, too short to hold an ext4 superblock\n", len; exit }
+     if (b[1080] != 83 || b[1081] != 239) { print "there is no ext4 superblock magic (0xEF53) at byte 1080"; exit }
+     # blocks_count_lo at +4, log_block_size at +24, feature_incompat at +96 (0x80 = 64-bit), blocks_count_hi at +336.
+     blocks = u32(1028); logbs = u32(1048)
+     if (logbs > 6) { printf "the ext4 superblock has an impossible block size (log_block_size %.0f)\n", logbs; exit }
+     # The Duo kernel has 4 KiB pages and cannot mount an ext4 whose blocks are larger than a page.
+     if (logbs > 2) { printf "the ext4 block size is larger than 4096 bytes (log_block_size %.0f), which the Duo kernel cannot mount\n", logbs; exit }
+     if (int(b[1120] / 128) % 2 == 1 && u32(1360) != 0) { print "the ext4 superblock describes a filesystem of 16 TiB or more (64-bit block count), far beyond this phone"; exit }
+     if (blocks == 0) { print "the ext4 superblock says the filesystem has no blocks"; exit }
+     need = blocks * 1024 * 2 ^ logbs
+     if (len + 0 < need) printf "the file is %s bytes but its ext4 superblock describes %.0f bytes (a truncated copy?)\n", len, need
+   }
+ '
+}
+
+check_raw_ext4() {
+ problem=$(ext4_problem "$1") || refuse 'cannot check that the rootfs image is a raw ext4 image'
+ [ -z "$problem" ] || refuse "rootfs image is not a raw ext4 image: $problem"
+}
+
+battery_ok() {
+ # A whole percent from 20 to 100, as fastboot getvar battery-level reports it (a trailing % is allowed).
+ level=${1%\%}
+ case "$level" in ''|*[!0-9]*|0?*) return 1;; esac
+ [ "${#level}" -le 3 ] && [ "$level" -ge 20 ] && [ "$level" -le 100 ]
+}
+
 private_copy() {
  # Copy a checked image once into the private folder; the copy is what gets booted.
  # $1 image, $2 name of the copy, $3 the hash that passed the check.
@@ -84,6 +133,11 @@ check_device() {
  ') || refuse 'expected exactly one fastboot device'
  product=$(device_var product) || refuse 'cannot check device product'
  [ "$product" = surfaceduo ] || refuse 'unexpected device product: expected Surface Duo 1'
+ # The guarded route's preflight (deploy/duo-opos-boot.ps1): slot a and a battery of 20 percent or more.
+ slot=$(device_var current-slot) || refuse 'cannot check the current slot'
+ [ "$slot" = a ] || refuse 'the current slot is not a'
+ battery=$(device_var battery-level) || refuse 'cannot check the battery level'
+ battery_ok "$battery" || refuse "battery level $battery: needs 20 percent or more"
  # A locked bootloader cannot RAM-boot TWRP: refuse before anything is erased.
  unlocked=$(device_var unlocked) || refuse 'cannot check that the bootloader is unlocked'
  [ "$unlocked" = yes ] || refuse 'the bootloader does not report unlocked: yes'
@@ -170,7 +224,7 @@ main() {
  case "$3" in /*) rootfs=$3;; *) rootfs=./$3;; esac
  dest=/data/rootfs.img
  echo 'WARNING: fastboot format:ext4 userdata ERASES userdata'
- echo 'manual step: check the battery is at least 20 percent; this script does not check the battery'
+ echo 'with --yes it refuses before the erase unless fastboot reports slot a and a battery of at least 20 percent, and the rootfs is a raw ext4 image'
  echo 'stop on Device Error; never retry the RAM-boot'
  echo 'never run reboot or systemctl reboot on the RAM-booted kernel'
  if [ "$yes" = 1 ]; then
@@ -181,6 +235,8 @@ main() {
  boot_checked=$checked_hash
  check_image "$rootfs" "$rootfs_hash"
  rootfs_checked=$checked_hash
+ # After the hash: a file changed between the two reads fails the rehash before the erase.
+ check_raw_ext4 "$rootfs"
  # RAM-boot private copies, so a later change to the named files cannot reach the phone.
  trap cleanup EXIT
  trap 'exit 129' HUP

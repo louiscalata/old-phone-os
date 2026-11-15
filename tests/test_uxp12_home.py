@@ -59,17 +59,25 @@ class UXP12Static(unittest.TestCase):
         self.assertIn("#phone[data-app=\"home\"] #apps-list:not([hidden]){display:grid;grid-template-columns:1fr;gap:8px}", css)
 
     def test_focus_visible(self):
-        found = {}
-        for sel, decl in _css_rules(_css()):
-            d = decl.replace(" ", "")
-            for s in sel.split(","):
-                s = s.strip()
-                if s.endswith(":focus-visible"):
-                    found[s] = d
+        # jaryo.css (inlined after phone-b.css) draws the one ring; phone-b.css's 2 px white ring was overridden in every
+        # state and was removed for the Duo image's page bytes (docs/ui-byte-ledger.md).
+        def rings(text):
+            found = {}
+            for sel, decl in _css_rules(text):
+                d = decl.replace(" ", "")
+                for s in sel.split(","):
+                    s = s.strip()
+                    if s.endswith(":focus-visible"):
+                        found[s] = d
+            return found
+        jaryo = rings((STATIC / "jaryo.css").read_text(encoding="utf-8"))
+        own = rings(_css())
         for s in ("#home button:focus-visible", "#apps-list button:focus-visible", "#apps-close:focus-visible"):
-            self.assertIn(s, found)
-            self.assertIn("outline:2pxsolid#fff", found[s])
-        # White on the #111 phone background is far above 3:1.
+            self.assertIn(s, jaryo)
+            self.assertIn("outline:3pxsolidvar(--jaryo-fg)", jaryo[s])
+            self.assertIn("outline-offset:3px", jaryo[s])
+            self.assertNotIn(s, own)
+        # The Jaryo ink on the Jaryo ground is far above 3:1.
 
     def test_min_height_and_gaps(self):
         heights = {}
