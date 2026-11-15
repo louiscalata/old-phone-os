@@ -678,6 +678,7 @@ class ShellRules(unittest.TestCase):
         sh.get_application = lambda: types.SimpleNamespace(quit=lambda: setattr(sh, "quit_calls", sh.quit_calls + 1))
         sh.ready = logic.Ready(lambda: setattr(sh, "said_ready", True))
         sh.said_ready = False
+        sh.lock_check, sh.held = logic.LockCheck(), False     # the server said "no PIN lock" in every poll below
         sh.get_mapped = lambda: True
         sh.get_frame_clock = lambda: None
 
@@ -688,7 +689,7 @@ class ShellRules(unittest.TestCase):
         sh = self.sh
         poll, action = sh.seq.issue(), sh.seq.issue()
         sh.answered(action, self.state(in_call=True), None)
-        sh.polled(poll, self.state(in_call=False))      # the poll started before the call and landed after it
+        sh.polled(poll, self.state(in_call=False), False)      # the poll started before the call and landed after it
         self.assertTrue(sh.snap["in_call"])
         self.assertEqual(len(sh.pages["phone"].shown), 1)
 
@@ -697,10 +698,10 @@ class ShellRules(unittest.TestCase):
         action = sh.seq.issue()
         poll = sh.seq.issue()                            # sent while the call was on its way
         sh.answered(action, self.state(in_call=True), None)
-        sh.polled(poll, self.state(in_call=False))      # answered by the server before it acted on the call
+        sh.polled(poll, self.state(in_call=False), False)      # answered by the server before it acted on the call
         self.assertTrue(sh.snap["in_call"])
         self.assertEqual(sh.snap_seq, action)
-        sh.polled(sh.seq.issue(), self.state(in_call=True, status="later"))
+        sh.polled(sh.seq.issue(), self.state(in_call=True, status="later"), False)
         self.assertEqual(sh.snap["status"], "later", "the next poll is drawn")
 
     def test_a_reply_that_lost_the_race_still_reaches_the_screen_that_asked_and_asks_for_a_fresh_look(self):
@@ -715,25 +716,25 @@ class ShellRules(unittest.TestCase):
 
     def test_a_failed_poll_keeps_the_last_good_state_and_says_the_connection_is_lost(self):
         sh = self.sh
-        sh.polled(sh.seq.issue(), self.state(status="ready"))
+        sh.polled(sh.seq.issue(), self.state(status="ready"), False)
         good = sh.snap
-        sh.polled(sh.seq.issue(), None)
+        sh.polled(sh.seq.issue(), None, None)
         self.assertIs(sh.snap, good)
         self.assertEqual(sh.s_right.get_label(), logic.LINK_LOST)
         self.assertEqual(sh.pages["lock"].lost_text, logic.LINK_LOST, "the lock screen has no top line, so it says so itself")
         self.assertEqual(len(sh.pages["phone"].shown), 1, "no page was told anything new")
-        sh.polled(sh.seq.issue(), self.state())
+        sh.polled(sh.seq.issue(), self.state(), False)
         self.assertEqual((sh.s_right.get_label(), sh.pages["lock"].lost_text), ("80%  ", ""))
 
     def test_an_error_body_is_not_a_state(self):
         sh = self.sh
-        sh.polled(sh.seq.issue(), {"error": "forbidden"})
+        sh.polled(sh.seq.issue(), {"error": "forbidden"}, False)
         self.assertEqual(sh.snap, {})
         self.assertEqual(sh.s_right.get_label(), logic.LINK_WAITING)
 
     def test_a_locked_server_sends_the_owner_to_the_browser(self):
         sh = self.sh
-        sh.polled(sh.seq.issue(), {"locked": True, "battery": {"percent": 80}})
+        sh.polled(sh.seq.issue(), {"locked": True, "battery": {"percent": 80}}, False)
         self.assertEqual((sh.leaving, sh.quit_calls), (self.shell_module.LOCKED, 1))
 
     def test_a_request_to_change_page_while_the_cover_is_up_waits_and_the_page_stays_with_the_stack(self):

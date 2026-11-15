@@ -3,7 +3,9 @@
 alarm, a timer and a call. Pure functions and two small classes, so they are tested anywhere."""
 from __future__ import annotations
 
+import re
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from decimal import Decimal, DivisionByZero, InvalidOperation, localcontext
 
@@ -170,6 +172,44 @@ PRACTICE_SENT = "Practice message. Nothing was sent."
 CLOCK_UNSET = "Clock not set: alarms will not ring until the time is known."
 LINK_LOST = "Connection to OPOS lost. Showing the last state it sent."
 LINK_WAITING = "Waiting for OPOS."
+# Shown on the shell's own lock page while a state came but the server did not say whether it has a PIN lock.
+LOCK_UNKNOWN = "OPOS has not said whether this phone has a PIN lock. Waiting for its answer."
+# Said on Phone when the answer to a call or a hang-up did not come: the request may or may not have reached the modem.
+CALL_UNSURE = "No answer about that call. OPOS is being asked whether it went out; Call comes back when it says."
+HANG_UP_UNSURE = "No answer about hanging up. The call may still be up; OPOS is being asked, and the button comes back when it says."
+
+# The OPOS server this shell draws: the phone's own, on loopback. OPOS_SERVER_URL may name another port there and
+# nothing else. It is not OPOS_LOCAL_URL: that name is the Helper's model server (opos.assist), which is another program.
+SERVER_URL = "http://127.0.0.1:8765"
+SERVER_URL_REFUSED = ("OPOS_SERVER_URL is not http://127.0.0.1:PORT (a port from 1 to 65535 and nothing after it), "
+                      "so it is not used; asking " + SERVER_URL)
+_SERVER_URL = re.compile(r"http://127\.0\.0\.1:([1-9][0-9]{0,4})/?", re.ASCII)
+
+
+def server_url(env):
+    """(address, note): where the shell asks for the OPOS server, and what to say in the log about it ("" for nothing).
+
+    Unset or empty: the phone's own server. Set: taken only when it is exactly http://127.0.0.1:PORT (one optional
+    final "/"), so the shell's token and the owner's actions can go to this phone and nowhere else. Any other value (a
+    name, another address, https, a path, a user name, spaces) is refused, never repaired: the phone's own server is
+    asked and the note says so. The refused value is not repeated in the note."""
+    raw = env.get("OPOS_SERVER_URL")
+    if raw is None or raw == "":
+        return SERVER_URL, ""
+    found = _SERVER_URL.fullmatch(raw) if isinstance(raw, str) else None
+    if found and int(found.group(1)) <= 65535:
+        return "http://127.0.0.1:" + found.group(1), ""
+    return SERVER_URL, SERVER_URL_REFUSED
+
+
+def same_server(base, url):
+    """True when `url` is an address on the server at `base`: the same scheme, host and port, and no user name."""
+    try:
+        a, b = urllib.parse.urlsplit(base), urllib.parse.urlsplit(url)
+        return bool(b.scheme and b.hostname) and b.username is None and b.password is None \
+            and (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 
 class Sequence:
@@ -400,26 +440,36 @@ class Pending:
     """
 
     def __init__(self):
-        self.what, self.after = None, None
+        self.what, self.after, self.lost = None, None, False    # lost: the reply did not come (failed, or never sent)
 
     def start(self, what):
         if self.what is not None:
             return False
-        self.what, self.after = what, None
+        self.what, self.after, self.lost = what, None, False
         return True
 
     def answered(self, n, drawn_seq, newest_issued, ok):
         if ok and drawn_seq == n:
-            self.what = self.after = None
+            self.what, self.after, self.lost = None, None, False
         else:
             # The reply was dropped as older news, or it failed or timed out (the server may still have acted on it):
-            # wait for a state asked for after it before the button is offered again.
-            self.after = newest_issued
+            # wait for a state asked for after it before the button is offered again. `lost` lets the screen say which:
+            # with no reply nothing is being asked any more, and whether the request took effect is not known.
+            self.after, self.lost = newest_issued, not ok
 
     def seen(self, seq):
         """A state with request number seq was drawn."""
         if self.what is not None and self.after is not None and seq > self.after:
-            self.what = self.after = None
+            self.what, self.after, self.lost = None, None, False
+
+
+def pending_words(what, lost):
+    """The Phone screen's line while a call or a hang-up is pending: being asked, or its answer did not come."""
+    if what not in ("call", "hang_up"):
+        return ""
+    if lost:
+        return CALL_UNSURE if what == "call" else HANG_UP_UNSURE
+    return "Asking the phone to %s." % ("call" if what == "call" else "hang up")
 
 
 class RingGate:
@@ -458,6 +508,29 @@ class Ready:
 def is_snapshot(data):
     """True for a state from the server (it always has a battery); an error body or nothing at all is not one."""
     return isinstance(data, dict) and "error" not in data and "battery" in data
+
+
+class LockCheck:
+    """What to do with the server's answer to "do you have a PIN lock?", asked beside every state the shell would draw.
+
+    The shell has no PIN screen, so only a plain "no" (False) lets it draw the state ("open"); "yes" (True) hands the
+    phone to the browser ("browser"). No answer (the check failed, timed out, or said anything else) is never read as
+    "no": the state is not drawn and the shell stays on its own lock page ("hold"). After LIMIT states in a row with
+    no answer the browser takes over, since it shows whatever the server enforces and a held shell is no interface."""
+
+    LIMIT = 5
+
+    def __init__(self):
+        self.misses = 0
+
+    def answer(self, lock):
+        if lock is True:
+            return "browser"
+        if lock is False:
+            self.misses = 0
+            return "open"
+        self.misses += 1
+        return "browser" if self.misses >= self.LIMIT else "hold"
 
 
 def needs_browser(snap):

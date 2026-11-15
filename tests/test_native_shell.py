@@ -287,7 +287,8 @@ class StandInShell(unittest.TestCase):
     H = 900
     BORROWED = ("page_kind", "swipe_begin", "swipe_end", "event_ms", "drag_begin", "drag_update", "drag_end",
                 "drag_cancel", "dragged", "settle", "set_shade", "lid_changed", "blank_if_closed", "start_lid",
-                "lid_closed_now", "lid_lost", "restore", "retry_restore", "restore_again", "end")
+                "lid_closed_now", "lid_lost", "restore", "retry_restore", "restore_again", "end",
+                "watch_lid", "lid_report", "lid_gone", "lid_again")
 
     def setUp(self):
         import importlib
@@ -324,6 +325,7 @@ class StandInShell(unittest.TestCase):
                 self.start, self.gone, self.hands, self.quits = None, [], [], 0
                 self.lid_closed, self.lid_watcher, self.posture = None, None, "open"
                 self.restore_tries, self.restore_timer, self.restore_blanks = 0, None, 0
+                self.lid_gen, self.lid_tries, self.lid_timer, self.lid_said = 0, 0, None, False
                 self.page_slide, self.sheet_slide = Fake(dy=0.0), Fake(dy=0.0)
                 for s in (self.page_slide, self.sheet_slide):
                     s.offset = (lambda s: lambda dy: setattr(s, "dy", float(dy)))(s)
@@ -775,7 +777,8 @@ class LidSource(unittest.TestCase):
         text = SHELL.read_text(encoding="utf-8")
         self.assertIn("if not probe and not shots:", text)
         self.assertIn("win.start_lid()", text)
-        self.assertIn("GLib.idle_add(self.lid_changed", text)
+        self.assertIn("GLib.idle_add(self.lid_report, gen, closed)", text)
+        self.assertIn("return self.lid_changed(closed)", text)
         self.assertIn("GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, win.end)", text)
         main = text[text.index("def main("):]
         self.assertLess(main.index("finally:"), main.index("win.blanker.restore()"))

@@ -26,9 +26,9 @@ GTK 4 and PyGObject are already part of the Droidian image, so nothing is instal
 
     python3 -m opos.native.shell [--probe] [--shots FOLDER]
 
-Exit status: 10 when the owner chose the old interface in Settings, 11 when the server has a PIN lock (this shell has no
-PIN screen), 3 when the window could not be built; the session's launcher (packaging/duo-os/opos-native) starts the
-browser on 10 and 11 and counts every other end.
+Exit status: 10 when the owner chose the old interface in Settings, 11 when the server has a PIN lock or did not say
+whether it has one (this shell has no PIN screen), 3 when the window could not be built; the session's launcher
+(packaging/duo-os/opos-native) starts the browser on 10 and 11 and counts every other end.
 
 --probe walks the main changes twice, prints the frame pacing of each and quits. --shots saves a picture of every
 screen into FOLDER and quits. Both are for checking the shell, not for use.
@@ -57,10 +57,15 @@ from opos.native.layout import (SLOP, drag_kind, drag_offset, drag_progress, dra
                                 hinge_px, load_hand, pane_order, save_hand, swipe_action)
 from opos.native.ui import ANIMATE, CSS, MOVE_MS, Slide, bar, button, column, label, reading, two_panes  # noqa: E402
 
-BASE = os.environ.get("OPOS_LOCAL_URL", "http://127.0.0.1:8765")
+# The OPOS server, on loopback: OPOS_SERVER_URL when it is exactly http://127.0.0.1:PORT, else the phone's own port
+# (logic.server_url; a refused value is said once in the log and never used). Never OPOS_LOCAL_URL: that is the Helper's
+# model server, and reading it here sent the shell's token and the owner's actions to whatever that name pointed at.
+BASE, BASE_NOTE = logic.server_url(os.environ)
+if BASE_NOTE:
+    print("opos shell: " + BASE_NOTE, file=sys.stderr, flush=True)
 POLL_S = 3.0
 LEAVE = 10      # exit status when the owner chose the old interface; the launcher (opos-native) starts the browser
-LOCKED = 11     # exit status when the server has a PIN lock: this shell has no PIN screen, so the browser must show it
+LOCKED = 11     # exit status when the server has a PIN lock, or would not say: no PIN screen here, so the browser shows it
 BROKEN = 3      # exit status when the window could not be built
 ASKED_TO_END = 128 + signal.SIGTERM   # SIGTERM: the launcher reads 143 as "asked to start again", as before
 BLANK_MS = 350  # after the lid closes, the screens go dark this much later, once the lock screen is up
@@ -68,16 +73,38 @@ BLANK_MS = 350  # after the lid closes, the screens go dark this much later, onc
 # 1 s, 2 s, 4 s, then every RESTORE_EVERY_MS, with no upper limit (one timer at a time, never a busy loop).
 RESTORE_BACKOFF_MS = (1000, 2000, 4000)
 RESTORE_EVERY_MS = 5000
+# A lid watcher that stopped is looked for again this many seconds later, then every LID_AGAIN_EVERY_S, with no upper
+# limit (one timer at a time, on the seconds clock, which the system may group with other wake-ups).
+LID_AGAIN_S = (5, 15, 30)
+LID_AGAIN_EVERY_S = 60
+
+
+class OnlyThisServer(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to another page of the same server; one that names another address is an error."""
+
+    def __init__(self, base):
+        self.base = base
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not logic.same_server(self.base, newurl):
+            err = urllib.error.HTTPError(req.full_url, code, "redirected away from the OPOS server; not followed", headers, fp)
+            err.close()     # the refused answer is not read: its connection is closed here, not whenever the error is dropped
+            raise err
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class Core:
-    """The running OPOS server, asked over loopback. One token read, then /api/state, /api and /api/<app>."""
+    """The running OPOS server, asked over loopback. One token read, then /api/state, /api and /api/<app>.
+
+    Every request goes through this object's own opener: it uses no proxy, whatever http_proxy says (urllib would send
+    a loopback request, token included, through one), and it does not follow a redirect to another address."""
 
     def __init__(self, base=BASE):
         self.base, self.token = base, None
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), OnlyThisServer(base))
 
     def _open(self, path, headers=None):
-        return urllib.request.urlopen(urllib.request.Request(self.base + path, headers=headers or {}), timeout=5)
+        return self.opener.open(urllib.request.Request(self.base + path, headers=headers or {}), timeout=5)
 
     def state(self):
         if self.token is None:
@@ -106,7 +133,7 @@ class Core:
             self.state()
         req = urllib.request.Request(self.base + path, data=json.dumps(data).encode(), method="POST", headers={
             "X-OPOS-Token": self.token, "Content-Type": "application/json", "Origin": self.base})
-        return json.load(urllib.request.urlopen(req, timeout=timeout))
+        return json.load(self.opener.open(req, timeout=timeout))
 
     def post(self, action, **fields):
         """One action for the server (call, hang_up, send, open). Returns the new state, as /api does."""
@@ -146,6 +173,12 @@ class Shell(Gtk.ApplicationWindow):
         # both screens dark while the lid is closed; the lid daemon's request to blank is refused while the lid reads open
         self.blanker = blank.Blanker(may_blank=lambda: self.lid_closed is not False)
         self.restore_tries, self.restore_timer, self.restore_blanks = 0, None, 0
+        # the lid watcher: the number of the one listened to (a lost one is retired), how many looks for a new one
+        # there have been since the last report, the timer of the next look, and whether the loss has been said
+        self.lid_gen, self.lid_tries, self.lid_timer, self.lid_said = 0, 0, None, False
+        # the PIN lock: what the server's answers add up to (logic.LockCheck), and whether the shell is held on its lock
+        # page because a state came without an answer
+        self.lock_check, self.held = logic.LockCheck(), False
 
         classes = list(screens.enabled_pages())      # Clock, Contacts, Notes and Call log only when OPOS_APPS has them
         self.apps = self.tiles(classes)     # Network has no tile: Settings opens it
@@ -241,6 +274,8 @@ class Shell(Gtk.ApplicationWindow):
         request waits and is made the moment the cover goes (self.page and the stacks never disagree)."""
         if name not in self.pages:
             return
+        if self.held and name != "lock":
+            return      # whether the server has a PIN lock is not known: nothing but the lock page (see hold)
         if self.warming:
             self.wanted = name
             return
@@ -340,7 +375,7 @@ class Shell(Gtk.ApplicationWindow):
 
     def paint_strip(self):
         """The top line: the lost connection first, then a short message, then the battery."""
-        lost = self.link.text()
+        lost = self.link.text() or (logic.LOCK_UNKNOWN if self.held else "")
         text = lost or (self.said_text if self.said and time.monotonic() < self.said else self.battery_line)
         self.s_right.set_label(text)
         self.pages["lock"].lost(lost)
@@ -357,13 +392,18 @@ class Shell(Gtk.ApplicationWindow):
             except Exception:
                 reply = None
             GLib.idle_add(self.answered, n, reply, done)
-        threading.Thread(target=work, daemon=True).start()
+        try:
+            threading.Thread(target=work, daemon=True).start()
+        except RuntimeError:        # no thread could be started: nothing was sent, and the screen that asked is told
+            GLib.idle_add(self.answered, n, None, done)
         return n
 
     def answered(self, n, reply, done):
         if not logic.is_snapshot(reply):
             reply = None
             self.say("That did not go through.")
+        elif self.held:
+            pass        # not drawn while the lock question is open; done() below still tells the screen that asked
         elif self.seq.accept(n, floor=True):     # a poll sent before this reply came may be older than it: refused
             self.show(reply, n)
         if done:
@@ -452,11 +492,8 @@ class Shell(Gtk.ApplicationWindow):
     def start_lid(self):
         """Watch the lid; its reports come from the watcher's thread and are handled on this one. Also answer the lid
         daemon's PowerSaveMode on the session bus, and light screens a crash left dark, unless the lid is closed now.
-        A missing or unreadable lid switch is said once; the shell then never blanks on its own."""
-        def missing(reason):
-            print("opos shell: no lid signal (%s); carrying on without it" % reason, file=sys.stderr, flush=True)
-            GLib.idle_add(self.lid_lost)
-
+        A missing or unreadable lid switch is said once; the shell then never blanks on its own, and looks for the
+        switch again (lid_lost)."""
         def say(line):
             print("opos shell: " + line, file=sys.stderr, flush=True)
         # The lid daemon's PowerSaveMode 0 goes through restore() too, so a restore that fails is tried again as any
@@ -466,7 +503,37 @@ class Shell(Gtk.ApplicationWindow):
         displayconfig.own(self.blanker, say)
         if not self.lid_closed_now():
             self.restore()
-        self.lid_watcher = posture.LidWatcher(lambda closed: GLib.idle_add(self.lid_changed, closed), missing).start()
+        self.watch_lid()
+
+    def watch_lid(self):
+        """Start a lid watcher and listen to it alone. Each watcher has a number; its reports and its loss carry it, and
+        anything from a watcher that is no longer the one listened to is dropped, so a late "closed" from a watcher
+        that was given up can never lock or darken a phone nobody is watching the opening of. A watcher that cannot
+        be started is a lost one."""
+        self.lid_gen += 1
+        gen = self.lid_gen
+        try:
+            self.lid_watcher = posture.LidWatcher(lambda closed: GLib.idle_add(self.lid_report, gen, closed),
+                                                  lambda reason: GLib.idle_add(self.lid_gone, gen, reason)).start()
+        except Exception as err:
+            self.lid_gone(gen, "cannot start the lid watcher: %s" % type(err).__name__)
+
+    def lid_report(self, gen, closed):
+        """The watcher numbered gen read the lid. Its first report is the switch's state now (EVIOCGSW)."""
+        if gen != self.lid_gen:
+            return False
+        self.lid_tries, self.lid_said = 0, False
+        return self.lid_changed(closed)
+
+    def lid_gone(self, gen, reason):
+        """The watcher numbered gen ended (no device, or it cannot be read). Said once until a watcher reports again."""
+        if gen != self.lid_gen:
+            return False
+        if not self.lid_said:
+            self.lid_said = True
+            print("opos shell: no lid signal (%s); carrying on without it and looking for it again" % reason,
+                  file=sys.stderr, flush=True)
+        return self.lid_lost()
 
     @staticmethod
     def lid_closed_now():
@@ -487,10 +554,24 @@ class Shell(Gtk.ApplicationWindow):
 
     def lid_lost(self):
         """The watcher stopped: the lid is unknown again, so the shell no longer refuses the daemon's blank. Without a lid
-        signal no "opened" will ever come, so the screens are lit now (and tried again until they are)."""
+        signal no "opened" would come, so the screens are lit now (and tried again until they are), the watcher is
+        retired (nothing it says later is listened to), and a new one is started LID_AGAIN_S later, then every
+        LID_AGAIN_EVERY_S. The new watcher's first report is the switch's state at that moment and is handled as any
+        report: closed locks and darkens, open lights. Looking again never darkens anything by itself."""
         self.lid_closed = None
+        self.lid_gen += 1
         self.restore()
+        if self.lid_timer is None:
+            n = self.lid_tries
+            wait_s = LID_AGAIN_S[n] if n < len(LID_AGAIN_S) else LID_AGAIN_EVERY_S
+            self.lid_timer = GLib.timeout_add_seconds(wait_s, self.lid_again)
         return False
+
+    def lid_again(self):
+        self.lid_timer = None
+        self.lid_tries += 1
+        self.watch_lid()
+        return False            # a one-shot timer; the next loss puts up the next one
 
     def restore(self):
         """Light both screens as they were. While they may still be dark (the saved file is there, or a panel could not
@@ -559,49 +640,88 @@ class Shell(Gtk.ApplicationWindow):
 
     # --- data --------------------------------------------------------------------------------------------------
     def poll(self):
-        checked = False
+        lock = None
         while True:
-            n = self.seq.issue()
-            try:
-                snap = self.core.state()
-            except Exception:  # the shell stays up when the server is restarting, and says so
-                snap, checked = None, False
-            if snap is not None and not checked:     # asked once, and again after the server went away: a restart may change it
-                try:
-                    checked = True
-                    if self.core.lock_on():
-                        GLib.idle_add(self.leave, LOCKED)
-                except Exception:
-                    checked = False
-            GLib.idle_add(self.polled, n, snap)
-            if not self.clock_absent:      # an alarm must be seen from any page
-                clock = self.pages["clock"]
-                m = clock.seq.issue()
-                try:
-                    GLib.idle_add(self.clock_seen, m, self.core.app("clock"))
-                except urllib.error.HTTPError as err:
-                    self.clock_absent = err.code == 404
-                except Exception:
-                    pass
+            lock = self.poll_once(lock)
             self.wake.wait(POLL_S)
             self.wake.clear()
 
-    def polled(self, n, snap):
-        """A poll answered (snap) or failed (None). A failure keeps what is on screen and says the connection is lost."""
+    def poll_once(self, lock):
+        """One look at the server, from the polling thread. `lock` is what is known of its PIN lock: True, False, or None
+        for not known. It is asked beside the first state, again while it has no answer, and again after the server
+        went away (a restart may change it). A check that fails or says anything but yes or no stays None: it is never
+        read as "no lock". The state and that answer reach the window together. Returns the answer for the next look."""
+        n = self.seq.issue()
+        try:
+            snap = self.core.state()
+        except Exception:  # the shell stays up when the server is restarting, and says so
+            snap, lock = None, None
+        if snap is not None and lock is None:
+            try:
+                said = self.core.lock_on()
+                lock = said if said is True or said is False else None
+            except Exception:
+                lock = None
+        GLib.idle_add(self.polled, n, snap, lock)
+        if not self.clock_absent:      # an alarm must be seen from any page
+            clock = self.pages["clock"]
+            m = clock.seq.issue()
+            try:
+                GLib.idle_add(self.clock_seen, m, self.core.app("clock"))
+            except urllib.error.HTTPError as err:
+                self.clock_absent = err.code == 404
+            except Exception:
+                pass
+        return lock
+
+    def polled(self, n, snap, lock):
+        """A poll answered (snap) or failed (None), with the server's answer about its PIN lock (True, False, or None
+        for none). A failure keeps what is on screen and says the connection is lost. A state is drawn only with the
+        answer "no lock"; "yes" ends the shell for the browser, and no answer holds the shell (logic.LockCheck)."""
+        if lock is True:
+            self.leave(LOCKED)
+            return False
         if not logic.is_snapshot(snap):
             self.link.failed()
             self.paint_strip()
+            return False
+        self.link.good()
+        verdict = self.lock_check.answer(lock)
+        if verdict == "browser":
+            print("opos shell: the server did not say whether it has a PIN lock, %d times in a row; ending so the browser"
+                  " interface shows what it enforces" % logic.LockCheck.LIMIT, file=sys.stderr, flush=True)
+            self.leave(LOCKED)
+        elif verdict == "hold":
+            self.hold()
         else:
-            self.link.good()
+            self.held = False
             if self.seq.accept(n):
                 self.show(snap, n)
             else:
                 self.paint_strip()
         return False
 
+    def hold(self):
+        """A state came, but the server did not say whether it has a PIN lock. That is never taken as "no lock": the
+        state is not drawn, any drag ends where it began, and the shell goes to its own lock page and stays there
+        (go refuses every other page) until the answer comes. The lock page says why."""
+        if not self.held:
+            self.held = True
+            print("opos shell: the server did not say whether it has a PIN lock; staying on the lock page until it does",
+                  file=sys.stderr, flush=True)
+        kind, self.drag = self.drag, None
+        if kind is not None:
+            self.owned = True           # the finger still down must not act when it lifts
+            self.settle(kind, "cancel")
+        self.set_shade(False)
+        self.go("lock")
+        self.paint_strip()
+
     def clock_seen(self, n, data):
         clock = self.pages["clock"]
         clock.deliver(n, data)
+        if self.held:
+            return False        # the alarm comes forward once the shell is free: the ring is not marked as seen here
         if isinstance(data, dict) and self.ring.new(data.get("ringing")):
             self.go("clock")        # once for each ringing alarm: the owner can leave the page and the alarm stays on it
         return False
