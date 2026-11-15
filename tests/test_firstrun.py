@@ -75,6 +75,97 @@ class ClockSentence(unittest.TestCase):
         self.assertIn("S.clock.note", page)  # filled from /api/firstrun
 
 
+class ClockSentenceOnTheImage(unittest.TestCase):
+    """The setup's sentence follows the same rule as web.clock_ok: the image's floor, or a boot-time guess without network time."""
+    FLOOR = 1798761600  # 2027-01-01 00:00:00 UTC
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.guess = self.dir / "clock-floor"
+        self.synced = self.dir / "synchronized"
+        self.floor = self.dir / "CLOCK_FLOOR"
+
+    def info(self, now):
+        return firstrun.clock_info(now, guess=str(self.guess), synced=str(self.synced), floor=str(self.floor))
+
+    def assert_image_sentence(self, info):
+        self.assertFalse(info["plausible"])
+        self.assertIn("set from the system image", info["note"])
+        self.assertIn("network time", info["note"])
+        self.assertNotIn("almost certainly wrong", info["note"])
+        self.assertNotRegex(info["note"], r"[<>{}]")
+        self.assertRegex(info["text"], r"\d\d:\d\d")
+
+    def test_the_defaults_are_the_servers_own_files(self):
+        self.assertEqual(web.CLOCK_GUESS, firstrun.CLOCK_GUESS)
+        self.assertEqual(web.CLOCK_SYNCED, firstrun.CLOCK_SYNCED)
+        self.assertEqual(inspect.signature(web.clock_ok).parameters["floor"].default, firstrun.CLOCK_FLOOR)
+
+    def test_a_clock_at_the_image_floor_gets_the_image_sentence(self):
+        self.floor.write_text(f"{self.FLOOR}\n", encoding="utf-8")
+        info = self.info(self.FLOOR)
+        self.assert_image_sentence(info)
+        self.assertEqual(2027, info["year"])
+
+    def test_a_boot_time_guess_without_network_time_gets_the_image_sentence(self):
+        self.guess.write_text("", encoding="utf-8")
+        self.assert_image_sentence(self.info(self.FLOOR + 3600))
+
+    def test_network_time_clears_the_guess(self):
+        self.guess.write_text("", encoding="utf-8")
+        self.synced.write_text("", encoding="utf-8")
+        self.floor.write_text(f"{self.FLOOR}\n", encoding="utf-8")
+        info = self.info(self.FLOOR + 3600)
+        self.assertTrue(info["plausible"])
+        self.assertEqual("", info["note"])
+
+    def test_a_1970_clock_keeps_its_year_sentence_on_the_image(self):
+        self.guess.write_text("", encoding="utf-8")
+        self.floor.write_text(f"{self.FLOOR}\n", encoding="utf-8")
+        info = self.info(0)
+        self.assertFalse(info["plausible"])
+        self.assertIn("1970", info["note"])
+        self.assertIn("almost certainly wrong", info["note"])
+
+    def test_an_unreadable_clock_keeps_its_sentence_on_the_image(self):
+        self.guess.write_text("", encoding="utf-8")
+        self.floor.write_text(f"{self.FLOOR}\n", encoding="utf-8")
+        for bad in (float("nan"), float("inf"), "x", 10 ** 30):
+            with self.subTest(now=bad):
+                info = self.info(bad)
+                self.assertFalse(info["plausible"])
+                self.assertIsNone(info["year"])
+                self.assertEqual("The phone's clock could not be read.", info["note"])
+
+    def test_with_none_of_the_files_the_result_is_unchanged(self):
+        for now in (0, 1767225599, 1767225600, self.FLOOR, 4102444800, float("nan")):
+            with self.subTest(now=now):
+                self.assertEqual(firstrun.clock_info(now), self.info(now))
+        info = self.info(self.FLOOR)
+        self.assertTrue(info["plausible"])
+        self.assertEqual("", info["note"])
+        self.assertEqual({"plausible", "year", "text", "note"}, set(info))
+
+    def test_it_agrees_with_the_servers_clock_ok(self):
+        cases = [(g, s, f, now) for g in (False, True) for s in (False, True) for f in (None, str(self.FLOOR), "junk")
+                 for now in (0, self.FLOOR - 1, self.FLOOR, self.FLOOR + 1)]
+        for g, s, f, now in cases:
+            with self.subTest(guess=g, synced=s, floor=f, now=now):
+                for p, on in ((self.guess, g), (self.synced, s)):
+                    if on:
+                        p.write_text("", encoding="utf-8")
+                    elif p.exists():
+                        p.unlink()
+                if f is None:
+                    if self.floor.exists():
+                        self.floor.unlink()
+                else:
+                    self.floor.write_text(f, encoding="utf-8")
+                ok = web.clock_ok(now, guess=str(self.guess), synced=str(self.synced), floor=str(self.floor))
+                self.assertEqual(ok, self.info(now)["plausible"])
+
+
 class Env(unittest.TestCase):
     """A temporary config directory, first run on, and the process time zone put back afterwards."""
 

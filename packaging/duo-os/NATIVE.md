@@ -11,7 +11,7 @@ handling and the frame pacing have not been run on the phone, and no image with 
 | File | Role |
 | --- | --- |
 | `src/opos/native/shell.py` | the window, the gestures and the polling of the OPOS server |
-| `src/opos/native/screens.py` | the screens: Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Call log, Settings, Network |
+| `src/opos/native/screens.py` | the screens: Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Converter, Call log, Settings, Network |
 | `src/opos/native/logic.py` | what the screens decide for themselves, with no toolkit, so it is tested anywhere |
 | `src/opos/native/netlogic.py` | the same for the Network screen: its rows, sentences and replies, and the typed password |
 | `src/opos/native/layout.py`, `ui.py` | the hinge gap, swipe and drag rules; the few widgets and the stylesheet |
@@ -37,7 +37,7 @@ process, with `OPOS_NATIVE_TRIED` set, so it never hands back) when:
 
 `/etc/opos/native-off` keeps the browser as the interface from the next time the session starts. The two-screen span
 (`OPOS_SPAN`) comes from `/etc/default/opos-native`, which the image build writes with the server's own value. The
-everyday apps (Clock, Contacts, Notes, Call log) get pages only when `OPOS_APPS` names them, as on the server: the
+everyday apps (Clock, Contacts, Notes, Converter, Call log) get pages only when `OPOS_APPS` names them, as on the server: the
 launcher reads the same `Environment=OPOS_APPS=` line from the server's drop-in (`OPOS_NATIVE_APPS_CONF`, default
 `/etc/systemd/system/opos-server.service.d/20-opos-apps.conf`); absent or empty means none.
 
@@ -72,6 +72,16 @@ redirect to another address is not followed, so the shell's token and the owner'
   back while the call is up. A failed poll keeps the last good state and says the connection is lost; it never shows an
   empty phone.
 - Notes opens only the note its last open or New note request asked for, matched by request number.
+- Converter (`OPOS_APPS` names `convert`) reads its measures and units from the server's `/api/convert` and sends each
+  conversion there, as the browser's `/convert` page does. The phone works nothing out: the answer shown is the
+  server's own text and line, and a refusal is said in the browser page's words ("Enter a number.", "Length, mass and
+  volume stay at zero or more.", "That is below absolute zero."). The amount is typed on the screen's own number pad;
+  Measure, From and To step through the server's units, and Swap exchanges From and To. One conversion is asked at a
+  time: Convert says "Converting" and a second tap sends nothing. While it is on its way the amount and the units cannot
+  change, and an answer is drawn only when it is the answer to the last request, for the measure and units on screen;
+  any later change clears it. A conversion changes nothing on the server, so its answer sets no floor and asks for no
+  refresh. A lost connection says "That conversion is not available.", never the error's own text. Nothing is stored:
+  the amount and the last answer live in the page while the shell runs.
 - A change the owner asks for shows only when the server has confirmed it. A typed message, a new contact or a new alarm
   stays where it is until then; a refusal (an empty battery, a number the practice phone will not dial) is shown in the
   server's own words.
