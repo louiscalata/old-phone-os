@@ -5,8 +5,9 @@ A screen draws and asks; the rules stay in the OPOS server. Phone and Messages u
 What a screen shows is always the newest answer the server gave (an older reply never puts the screen back), and a
 change the owner asks for shows only when the server has confirmed it: a typed message, a saved note or a new alarm
 stays where it is until then, and a refusal is shown in the server's words.
-Clock, Contacts, Notes and Call log use the server's own app endpoints (GET and POST /api/<app>), so the native
-screens and the old interface show the same alarms, people, notes and calls. The calculator needs no server.
+Clock, Contacts, Notes, Converter and Call log use the server's own app endpoints (GET and POST /api/<app>), so the
+native screens and the old interface show the same alarms, people, notes, conversions and calls. The calculator needs
+no server.
 Network (opened from Settings) uses the server's net_* actions, the same ones the browser's /network page uses.
 """
 from __future__ import annotations
@@ -798,6 +799,201 @@ class Calculator(Page):
         return "\n".join(self.calc.tape[-6:]) or "No sums yet.", []
 
 
+class Converter(Page):
+    """Length, mass, volume and temperature, worked out by the server's converter (GET and POST /api/convert, the same
+    as the browser's /convert page). The phone works nothing out: the measures and units are the server's, and the
+    answer shown is the server's own text. One conversion is asked at a time; while it is on its way the amount and the
+    units cannot change, so the answer drawn is always for what is on screen, and any later change clears it. Nothing
+    is stored: what is typed and the last answer live only in this page while the shell runs."""
+    name, title, api = "convert", "Converter", "convert"
+    UNAVAILABLE = "That conversion is not available."
+    LOADING = "Loading the converter."
+    # the browser page's words for the server's refusals (convert_page.py)
+    WORDS = {"value": "Enter a number.", "sign": "Length, mass and volume stay at zero or more.",
+             "cold": "That is below absolute zero.", "unit": "Choose a unit.", "kind": "Choose a measure."}
+    PAD = "789456123-0."
+
+    def build(self):
+        self.kinds, self.kind, self.src, self.dst = [], None, None, None
+        self.entry, self.busy, self.want_n = logic.Entry(limit=40), False, None
+        self.result, self.line = label("", "clock"), label("", "big")
+        read = reading(label("Converter", "head"), self.note, self.result, self.line,
+                       label("Worked out by OPOS on this phone. Nothing is stored.", "dim"))
+        self.measure = button("Measure: not read yet", self.next_kind, "row")
+        self.from_b = button("From", lambda: self.next_unit("src"), "chip")
+        self.swap_b = button("Swap", self.swap, "chip")
+        self.to_b = button("To", lambda: self.next_unit("dst"), "chip")
+        self.amount = label(" ", "head", wrap=False, x=1.0)
+        self.amount.add_css_class("rule")
+        self.pad = Gtk.Grid(column_spacing=8, row_spacing=8, column_homogeneous=True)
+        for i, key in enumerate(self.PAD):
+            self.pad.attach(button(key, lambda k=key: self.key(k), "pad"), i % 3, i // 3, 1, 1)
+        self.pad.attach(button("Delete", lambda: self.key("<"), "pad"), 0, 4, 3, 1)
+        self.go = button("Convert", self.convert, "main")
+        act = column(bottom=(self.measure, hbox(self.from_b, self.swap_b, self.to_b, spacing=8), self.amount, self.pad,
+                             bar(self.home(), self.go)))
+        self.paint_inputs()
+        return read, act
+
+    # --- what the server offers -----------------------------------------------------------------------------------
+    @staticmethod
+    def measures(data):
+        """The measures in a read of /api/convert that can be used: an id, a title and at least two units, each with an
+        id and a title. The server's starting units are kept when they are two of its own; otherwise the first two."""
+        out = []
+        for k in (data or {}).get("kinds") or []:
+            if not isinstance(k, dict) or not isinstance(k.get("id"), str) or not isinstance(k.get("title"), str):
+                continue
+            units = [(u["id"], u["title"]) for u in k.get("units") or []
+                     if isinstance(u, dict) and isinstance(u.get("id"), str) and isinstance(u.get("title"), str)]
+            ids = [u for u, _t in units]
+            if len(set(ids)) < 2 or len(set(ids)) != len(ids):
+                continue
+            src = k.get("src") if k.get("src") in ids else ids[0]
+            dst = k.get("dst") if k.get("dst") in ids and k.get("dst") != src else next(u for u in ids if u != src)
+            out.append({"id": k["id"], "title": k["title"], "src": src, "dst": dst, "units": units})
+        return out
+
+    def spec(self):
+        return next((k for k in self.kinds if k["id"] == self.kind), None)
+
+    def unit_title(self, unit):
+        return dict((self.spec() or {}).get("units") or []).get(unit, "")
+
+    def inputs(self):
+        return self.kind, self.entry.text, self.src, self.dst
+
+    def paint(self, data):
+        before = self.inputs()
+        self.kinds = self.measures(data)
+        spec = self.spec()
+        units = dict(spec["units"]) if spec else {}
+        if not (spec and self.src in units and self.dst in units and self.src != self.dst):
+            self.use(self.kinds[0] if self.kinds else None)
+        if not self.kinds:
+            self.say(self.UNAVAILABLE)
+        if self.inputs() != before:
+            self.clear()
+        self.paint_inputs()
+
+    def use(self, spec):
+        self.kind, self.src, self.dst = (spec["id"], spec["src"], spec["dst"]) if spec else (None, None, None)
+
+    def paint_inputs(self):
+        spec = self.spec()
+        self.measure.set_label("Measure: %s" % spec["title"] if spec else "Measure: not read yet")
+        self.from_b.set_label("From: %s" % self.unit_title(self.src) if spec else "From")
+        self.to_b.set_label("To: %s" % self.unit_title(self.dst) if spec else "To")
+        self.amount.set_label(self.entry.text or " ")
+        for w in (self.measure, self.from_b, self.swap_b, self.to_b, self.pad):
+            w.set_sensitive(not self.busy and spec is not None)
+        self.go.set_label("Converting" if self.busy else "Convert")
+        self.go.set_sensitive(not self.busy)
+
+    def clear(self):
+        """No answer on screen: the one shown was for other input."""
+        self.result.set_label("")
+        self.line.set_label("")
+
+    # --- the owner's taps -----------------------------------------------------------------------------------------
+    def changed(self):
+        self.clear()
+        self.say("")
+        self.paint_inputs()
+
+    def key(self, k):
+        if self.busy or self.spec() is None:
+            return
+        if self.entry.key(None if k == "<" else k):
+            self.changed()
+
+    def next_kind(self):
+        if self.busy or not self.kinds:
+            return
+        ids = [k["id"] for k in self.kinds]
+        self.use(self.kinds[(ids.index(self.kind) + 1) % len(ids)] if self.kind in ids else self.kinds[0])
+        self.changed()
+
+    def next_unit(self, which):
+        """Step From or To to the next unit of the measure, skipping the one on the other side."""
+        spec = self.spec()
+        if self.busy or spec is None:
+            return
+        ids, other = [u for u, _t in spec["units"]], self.dst if which == "src" else self.src
+        at = ids.index(getattr(self, which))
+        for step in range(1, len(ids)):
+            nxt = ids[(at + step) % len(ids)]
+            if nxt != other:
+                setattr(self, which, nxt)
+                break
+        self.changed()
+
+    def swap(self):
+        if self.busy or self.spec() is None:
+            return
+        self.src, self.dst = self.dst, self.src
+        self.changed()
+
+    def set_busy(self, on):
+        self.busy = on
+        self.paint_inputs()
+
+    def convert(self):
+        """One conversion at a time; its answer is drawn only if it is the answer to this request, for these units."""
+        if self.busy:
+            return
+        if self.spec() is None:
+            self.say(self.LOADING)
+            self.refresh()
+            return
+        if not self.entry.text:
+            self.say("Type an amount first.")
+            return
+        sent = self.inputs()
+        self.clear()
+        self.say("")
+        self.set_busy(True)
+        asked = []      # the request's number; empty if the answer comes before call() returns (it could not be sent)
+        self.want_n = self.call({"kind": sent[0], "value": sent[1], "src": sent[2], "dst": sent[3]},
+                                done=lambda answer, _fresh: self.converted(answer, asked[0] if asked else None, sent))
+        asked.append(self.want_n)
+
+    def converted(self, data, n, sent):
+        if n is not None and n != self.want_n:
+            return      # the answer to an earlier request: not for what is on screen now
+        self.set_busy(False)
+        if n is None:
+            self.say(self.UNAVAILABLE)
+        elif self.inputs() != sent:
+            self.say(self.UNAVAILABLE)
+        elif (self.confirmed(data) and isinstance(data.get("text"), str) and isinstance(data.get("line"), str)
+              and (data.get("kind"), data.get("src"), data.get("dst")) == (sent[0], sent[2], sent[3])):
+            self.result.set_label(data["text"])
+            self.line.set_label(data["line"])
+        else:
+            self.say(MISSING % self.title if (data or {}).get("missing") else self.refusal_words(data))
+
+    def deliver(self, n, data, done=None, wrote=False):
+        """A conversion changes nothing on the server, so its answer sets no floor, asks for no refresh and is not the
+        page's data: converted() alone decides what is drawn. A read of the measures goes the usual way."""
+        if not wrote:
+            return super().deliver(n, data, done, wrote)
+        if done:
+            done(data, False)
+        return False
+
+    @classmethod
+    def refusal_words(cls, data):
+        if isinstance(data, dict) and data.get("missing"):
+            return ""
+        return cls.WORDS.get((data or {}).get("error"), cls.UNAVAILABLE)
+
+    def preview(self, snap):
+        if self.data is None:
+            return self.LOADING, []
+        return self.line.get_label() or "No conversion yet.", []
+
+
 class Calls(Page):
     name, title, api = "calls", "Call log", "calls"
 
@@ -1475,11 +1671,11 @@ class Network(Page):
         self.cancel()
 
 
-PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Calls, Settings, Network)
+PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Converter, Calls, Settings, Network)
 
 
 def enabled_pages(env=None):
-    """The pages this phone has. Clock, Contacts, Notes and Call log are the server's everyday apps: each is shown only
+    """The pages this phone has. Clock, Contacts, Notes, Converter and Call log are the server's everyday apps: each is shown only
     when OPOS_APPS switches it on (opos.apps, which loads it as the server does); absent or empty means none of them.
     Every other page needs nothing from that list."""
     on = {a.id for a in apps.enabled(env)}

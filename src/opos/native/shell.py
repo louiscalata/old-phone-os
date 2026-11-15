@@ -145,7 +145,7 @@ class Core:
         return self._send("/api", dict(fields, action=action), timeout)
 
     def app(self, name, data=None):
-        """One of the server's apps (clock, contacts, notes, calls): its snapshot, or the result of one action."""
+        """One of the server's apps (clock, contacts, notes, convert, calls): its snapshot, or the result of one action."""
         if data is not None:
             return self._send("/api/" + name, data)
         if self.token is None:
@@ -180,7 +180,7 @@ class Shell(Gtk.ApplicationWindow):
         # page because a state came without an answer
         self.lock_check, self.held = logic.LockCheck(), False
 
-        classes = list(screens.enabled_pages())      # Clock, Contacts, Notes and Call log only when OPOS_APPS has them
+        classes = list(screens.enabled_pages())      # Clock, Contacts, Notes, Converter, Call log: only when OPOS_APPS has them
         self.apps = self.tiles(classes)     # Network has no tile: Settings opens it
         T = Gtk.StackTransitionType
         self.reads = Gtk.Stack(transition_type=T.SLIDE_LEFT_RIGHT if ANIMATE else T.NONE,
