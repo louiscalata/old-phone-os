@@ -80,9 +80,13 @@ Pinned by a test, so they stay until an owner-approved test rewrite. They are th
 
 | Bytes | Rule | Pinned by |
 |---:|---|---|
-| 128 | `#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible{outline:2px solid #fff...}` (`phone-b.css`; `jaryo.css` sets a 3 px ring) | `test_uxp12_home.test_focus_visible` |
 | 42 | `#history-label{font-size:14px;opacity:.6}` (`css-3.css`; `jaryo.css` sets rem and opacity 1) | `test_ux_u026_touch_css` |
 | 16 | the `min-height:48px` on `#topbar,#textsize` in `phone-b.css` (`jaryo.css` sets it) | `test_uxp13_settings.test_hit_areas` |
+
+The first row of this table, the 128-byte `#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible`
+2 px white ring in `phone-b.css`, was taken on November 14, 2026 for the Duo image (next section). `jaryo.css` comes later in the
+page and sets the 3 px Jaryo ring on the same three selectors, so the removed rule had no effect in any state.
+`test_uxp12_home.test_focus_visible` now checks the Jaryo ring and that `phone-b.css` has no ring of its own for them.
 
 ## The page is also pinned by a digest
 
@@ -137,3 +141,23 @@ The pad's layout rules (three shrinkable columns, keys without the 160 px minimu
 are set by `/pin.js` on the elements it creates. They are not in a stylesheet, so the narrow-screen fix of November 14,
 2026 added no byte to `page()` or to the served home page; the script grew instead, and it is not part of the page.
 The page sizes were not measured again for that change because no file that the page is built from was edited.
+
+## The Duo image
+
+The Duo image sets more than the six switches: `opos-server.service` also sets `OPOS_VOLUME_KEYS=1`, and the
+`opos-apps.conf` drop-in names the five apps. `WaveGate.test_the_served_duo_image_home_page_fits_the_wave_gate_with_and_without_the_lock`
+reads every `OPOS_*` from the image's own unit files (`opos-server.service`, `opos-network.conf`, `opos-apps.conf`) and checks
+the served home page against the 102,000-byte gate, once as the image ships it and once with `OPOS_LOCK=1` as well, which the
+owner may turn on. Before November 14, 2026 no test combined them: the volume and apps checks each added one tag to the six
+switches. On the tree of that day the Duo image served 102,021 bytes and 102,081 with the lock, over the gate. The gate was
+kept; the 128-byte focus ring above was removed from `page()`. Measured on November 14, 2026 on the tree that removed it:
+
+| Figure | Bytes | Free under the 102,000 gate |
+|---|---:|---:|
+| `page()` | 100,397 | 1,603 |
+| served, every switch | 101,743 | 257 |
+| served, Duo image | 101,894 | 106 |
+| served, Duo image and the lock | 101,954 | 46 |
+
+These counts apply to that revision only. With the lock, 46 bytes are left; the two dead rules still in the table above hold
+58 more.
