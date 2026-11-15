@@ -12,7 +12,11 @@ import os
 from pathlib import Path
 import time
 
+from opos import secure
 from opos.store import Store, default_root
+
+_JS = Path(__file__).with_name("web_static") / "pin.js"
+_TAG = '<script nonce="{nonce}" src=/pin.js></script>'
 
 ITERATIONS = 200_000
 _FILE = "lock.json"
@@ -22,6 +26,27 @@ _WAIT = 30
 
 def active():
     return os.environ.get("OPOS_LOCK") == "1"
+
+
+def script_bytes():
+    """The PIN pad script, or nothing when the file cannot be read."""
+    try:
+        return _JS.read_bytes()
+    except OSError:
+        return b""
+
+
+def inject_bytes(body, nonce):
+    """Add the PIN pad's tag to the home page while OPOS_LOCK=1. The same bytes otherwise; page() never grows."""
+    if not active() or not isinstance(body, (bytes, bytearray)) or b'src=/pin.js' in body:
+        return body
+    if not secure._nonce_ok(nonce):
+        return body
+    tag = _TAG.format(nonce=nonce).encode("utf-8")
+    found = body.rfind(b"</body>")
+    if found < 0:
+        return body + tag
+    return body[:found] + tag + body[found:]
 
 
 def reset():
@@ -208,8 +233,24 @@ def blocks(action, path):
     return True
 
 
+def _missed():
+    """Missed calls kept by the Call log app. Nothing when that app is off or its log cannot be read."""
+    try:
+        from opos import apps, calllog
+        if "calls" not in (apps.names_from() or []):
+            return 0
+        value = calllog.snapshot().get("missed_count")
+        return value if type(value) is int and value > 0 else 0
+    except Exception:
+        return 0
+
+
 def counts():
-    """Counts only. No names and no message text."""
+    """Counts only. No names and no message text.
+
+    missed comes from the call log. messages stays 0: the phone keeps no record of which messages were read,
+    so any number here would not be a count of new ones.
+    """
     alarm = ""
     try:
         from opos import clock_page
@@ -217,11 +258,13 @@ def counts():
         alarm = nxt.get("text") or ""
     except Exception:
         alarm = ""
-    return {"messages": 0, "missed": 0, "alarm": alarm}
+    return {"messages": 0, "missed": _missed(), "alarm": alarm}
 
 
 def redact(snap):
-    """The locked /api/state body. Battery percent and the clock stay. Names do not."""
+    """The body of every locked answer that would carry the phone's data. Battery percent and the clock stay. Names do not."""
+    if not isinstance(snap, dict):
+        snap = {}
     battery = snap.get("battery") if isinstance(snap.get("battery"), dict) else {}
     percent = battery.get("percent")
     return {

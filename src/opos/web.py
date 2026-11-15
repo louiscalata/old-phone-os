@@ -833,6 +833,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         if osk is not None and osk.serve(self, path):  # track osk: /osk.js and /osk.css are served only while OPOS_OSK=1 (src/opos/osk.py)
             return
+        if path == "/pin.js" and lockpin.active():  # the PIN pad, served only while OPOS_LOCK=1 (src/opos/lockpin.py)
+            body = lockpin.script_bytes()
+            if not body:
+                self._json({"error": "not found"}, 404)
+                return
+            self.send_response(200)
+            for k, v in secure.security_headers().items():
+                self.send_header(k, v)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+            return
         if path == "/network":  # track: network
             _net_serve(self)
             return
@@ -860,6 +874,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/":
                 body = apps_page.inject_bytes(body, nonce)  # More apps, only when OPOS_APPS names an app; otherwise the same bytes
                 body = volume.inject_bytes(body, nonce)
+                body = lockpin.inject_bytes(body, nonce)  # the PIN pad, only while OPOS_LOCK=1; otherwise the same bytes
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if self.command != "HEAD":
@@ -1078,6 +1093,8 @@ class Handler(BaseHTTPRequestHandler):
         if bad:
             self._json({"error": "unknown action" if a not in {"battery","temp","call","hang_up","send","receive","open","visible","sim","tick","charge","goal","undo","in_use","explain","ask","plan","restart_helper"} else "bad request"}, 400)
             return
+        if lockpin.is_locked():  # hang up is allowed while locked; its answer is the locked state, as GET /api/state gives
+            snap = lockpin.redact(snap)
         self._json(snap)
     def _lock_act(self, data):
         """Set, skip, lock or unlock. Request now works only with OPOS_LOCK_TEST_CLOCK=1."""
