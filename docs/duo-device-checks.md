@@ -641,19 +641,20 @@ ring while the clock is unknown, no warning, or no ring once set.
 ### C23. The alarm tone on the speaker
 
 Sources: `ROADMAP.md:134` "The alarm tone plays on the speaker and steps from 20 percent to 70 percent."; PR #28 "The
-tone has not been played on the Duo".
+tone has not been played on the Duo"; `ROADMAP.md:22` "Hearing the tone on a phone is NOT_RUN."
 
-**Preconditions.** On this revision the alarm player's default refuses playback and no audio mixer is connected
-([VOLUME.md](../packaging/duo-os/VOLUME.md)), and the roadmap says sound and vibration are not played yet. So this check
-cannot pass on this revision; it is listed so that it is run when a player change lands.
+**Preconditions.** A ring plays six short beeps of `src/opos/sounds/alarm.wav` through `paplay`, from 20 to 70 percent of
+the paplay stream ([docs/apps.md](apps.md)). No OPOS mixer path is connected ([VOLUME.md](../packaging/duo-os/VOLUME.md)).
+The image recipes do not add `paplay`; on an image without it the alarm shows on screen only and no tone can play.
 
 **Steps.**
-1. During the ring of C21, listen at the speaker.
+1. [READ-ONLY] On the phone: `command -v paplay`.
+2. During the ring of C21, listen at the speaker.
 
-**Observe.** Whether any tone plays.
+**Observe.** Whether `paplay` is on the path, and whether any tone plays.
 
-**Pass or fail.** On this revision the expected observation is no tone, and the check stays NOT_RUN. It passes only on a
-revision with a connected player, when the tone starts at about 20 percent and steps to 70 percent and stops at Stop.
+**Pass or fail.** Passes when six beeps play, getting louder from about 20 percent to 70 percent, and end at Stop or
+within 24 seconds. With no `paplay` on the path the expected observation is no tone, and the check stays NOT_RUN.
 
 **Stop and undo.** Stop on the ring screen.
 
@@ -729,8 +730,8 @@ cannot be reached.
 
 Sources: `ROADMAP.md:144` "The apps index and More apps on the glass."; PR #23 "Device: NOT_RUN (D1–D11)".
 
-**Preconditions.** `OPOS_APPS` names Clock, Contacts, Notes and Calculator (the image's drop-in). Browser interface for
-More apps.
+**Preconditions.** `OPOS_APPS` names Clock, Contacts, Notes, Calculator, Call log and Converter (the image's drop-in).
+Browser interface for More apps.
 
 **Steps.**
 1. [READ-ONLY] On the phone: `systemctl show opos-server -p Environment` (look for `OPOS_APPS`).
