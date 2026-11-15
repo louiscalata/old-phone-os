@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Optional lock PIN. The hash is PBKDF2-HMAC-SHA256. Five wrong tries start a 30 second wait that grows.
+"""Optional lock PIN. The hash is PBKDF2-HMAC-SHA256. Five wrong tries start a 30 second wait that doubles
+with every further wrong try and stops growing at 8 hours. Nothing is erased, however many tries are wrong.
 
 The server starts enforcing only when OPOS_LOCK=1. With the variable unset, the phone behaves as before.
 There is no emergency button: practice mode cannot place that call, and a real one has not been tested.
@@ -22,6 +23,8 @@ ITERATIONS = 200_000
 _FILE = "lock.json"
 _STORE = None
 _WAIT = 30
+MAX_WAIT = 8 * 3600  # the longest wait after a wrong try (owner decision, November 14, 2026). No wipe.
+_DOUBLINGS = 10  # 30 s * 2**10 is already more than MAX_WAIT; a larger saved count is never used as an exponent
 
 
 def active():
@@ -155,7 +158,7 @@ def _transition(state, event, data, now, pin=None):
         failures = changed["failures"] + 1
         changed.update(locked=True, failures=failures)
         if failures >= 5:
-            changed["wait_until"] = now + _WAIT * (2 ** (failures - 5))
+            changed["wait_until"] = now + min(MAX_WAIT, _WAIT * 2 ** min(failures - 5, _DOUBLINGS))
     else:
         raise ValueError("lock event")
     return True, changed

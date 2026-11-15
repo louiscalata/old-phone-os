@@ -48,7 +48,11 @@ Old Phone OS Interface runs on a Droidian phone as a Python stdlib-only layer wi
 - Device runbook (`deploy/harden-device.sh`) defaults to check and changes nothing, requires root and the typed word yes-apply for `--apply`, backs up every changed file and restores it with `--rollback`, covers SSH key-only login without root login with AllowUsers and a new password prompt, covers an nftables inet opos_filter table with default drop inbound and SSH only on usb0 and rndis0, turns avahi and cups and rpcbind off, applies Debian security updates only with sysctl hardening, and reports FDE read-only. Tests: `tests/test_harden_device.py` (15) against a fake root.
 - Repo scanning (`guard/historyscan.py`) scans every commit on all branches for secrets and personal paths and LAN addresses, and `tests/test_no_unsafe_code.py` (4) fails on eval and exec and pickle and shell=True and os.system and on logging calls with arguments named text, message, body, or number. Tests: `tests/test_historyscan.py` (16). `ci/security.sh` runs the full suite, the security tests three times, guard, history scan, and shellcheck, ruff, bandit, and semgrep only if installed.
 
+- Lock PIN (`src/opos/lockpin.py`, `src/opos/web_static/pin.js`, only with `OPOS_LOCK=1`): the server compares the PIN (PBKDF2-HMAC-SHA256, 200,000 rounds), refuses writes and withholds app data while locked, and makes wrong tries wait: 30 seconds after the fifth, doubling to a cap of 8 hours from the 15th on, with no wipe. Through the lock screen that is 3 tries a day, about 9 years for all 10,000 four-digit PINs ([apps.md](apps.md)). The page takes its lock screen off only after an "unlocked" answer that it asked for after the server confirmed the lock. Tests: `tests/test_lockpin.py`, `tests/test_lock_pad.py` (node stand-in; browser and phone **NOT_RUN**).
+
 ## Residual risks
+- The lock PIN's wait limits tries made through the server only. The saved PIN record is a file of the same user; whoever can read it can test all four-digit PINs against it offline.
+- If the page's Lock request does not reach the server, the lock screen is shown and says so, but the server stays unlocked until a retry goes through.
 - Other apps on the phone can still read files of the same user.
 - `messages.json` stays plaintext.
 - The kiosk browser is not in private mode.
