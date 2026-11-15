@@ -122,4 +122,6 @@ Additional app and volume configurations require their corresponding checks: `te
 (`page()` is not edited). When it names an app, the served home page gains one script tag for `/apps-home.js`
 (68 bytes). The script file is not part of the page. The historical record in `dfca35d4` on November 10 reported
 101,317 bytes with that tag and the six switches (683 bytes under the 102,000-byte gate). That count applies to that
-revision only. Later apps must not add to this page. `tests/test_apps_shell.py` checks the gate.
+revision only. Later apps must not add to this page: naming one app or every app adds the same one tag, and `page()`
+itself does not grow. `tests/test_apps_shell.py` checks the gate. `tests/test_apps_gate.py` checks that each app's
+routes answer 404 until `OPOS_APPS` names that app, and that the whole set adds one tag.

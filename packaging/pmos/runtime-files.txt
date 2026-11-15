@@ -33,6 +33,8 @@ src/opos/clock_page.py
 src/opos/clockcheck.py
 src/opos/contacts.py
 src/opos/contacts_page.py
+src/opos/convert.py
+src/opos/convert_page.py
 src/opos/dashboard.py
 src/opos/demo.py
 src/opos/display.py

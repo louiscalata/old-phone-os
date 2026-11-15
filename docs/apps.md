@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Everyday apps
 
-`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls`. The demo and the postmarketOS build do not set the variable.
+`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls,convert`. The demo and the postmarketOS build do not set the variable.
 
 Each named app is its own page. The main page gains one link, More apps, inside All apps. `web.page()` does not grow.
 
@@ -21,8 +21,14 @@ Recording happens through the optional modem `call_observer`, using `opos.calllo
 
 The current phone uses ScreenModem, so its calls are labelled Practice. Its incoming and answer hooks are local simulation hooks, with no incoming-call UI added here. A future real adapter can use the same observer with `practice=False`; no real modem is connected by this change. Example contacts are used only for practice calls in an empty book. There is no account, network request outside the local server, new package, or new service. Keyboard input, pane layout, and Home use the shared app shell. Every on-device call-log check is **NOT_RUN**.
 
+## Converter
+
+`convert` enables `/convert` and the token-protected `/api/convert`. It converts length (mm, cm, m, km, inch, foot, yard, mile), mass (g, kg, oz, lb), volume (ml, L, US fl oz, US cup, US pint, US gal) and temperature (C, F, K) with fixed factors in `src/opos/convert.py`. The amount is plain decimal text of at most 40 characters and at most 10^12 in size: no exponent, ASCII digits only. Length, mass and volume refuse a negative amount, and a temperature below absolute zero is refused. The result has up to six significant figures. Nothing is stored, and nothing leaves the local server.
+
+The converter is a page of the browser interface only. The native shell (`src/opos/native/screens.py`) has no Converter screen, so on a Duo running the native shell it is reached only when the browser interface takes over.
+
 ## Not run on a phone
 
-The Duo image names clock, contacts, notes, calc and calls. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls adds no home-page bytes.
+The Duo image names clock, contacts, notes, calc, calls and convert. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls or convert adds no home-page bytes.
 
 No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN. Sound and vibration are not played yet.
