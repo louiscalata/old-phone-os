@@ -164,6 +164,15 @@ class TestReleaseDocs(unittest.TestCase):
         if "earlier Surface Duo installation report" in flat(read("docs/pmos.md")):
             self.assertIn("Earlier Surface Duo installs ran an older snapshot on Droidian", roadmap)
 
+    def test_roadmap_names_the_duo_apps_and_the_alarm_sound(self):
+        conf = read("packaging/duo-os/opos-apps.conf")
+        apps = re.search(r"^Environment=OPOS_APPS=(\S+)$", conf, re.M).group(1)
+        roadmap = flat(read("ROADMAP.md"))
+        self.assertIn(f"(`{apps}` in `packaging/duo-os/opos-apps.conf`)", roadmap)
+        # alarm_sound.py plays the ring through paplay; the roadmap must not say no sound is played.
+        self.assertNotIn("sound and vibration are not played yet", roadmap)
+        self.assertIn("Hearing the tone on a phone is NOT_RUN.", roadmap)
+
     def test_package_metadata(self):
         with open(ROOT / "pyproject.toml", "rb") as handle:
             data = tomllib.load(handle)
