@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Everyday apps
 
-`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls`. The demo and the postmarketOS build do not set the variable.
+`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls,convert`. The demo and the postmarketOS build do not set the variable.
 
 Each named app is its own page. The main page gains one link, More apps, inside All apps. `web.page()` does not grow.
 
@@ -27,8 +27,16 @@ This applies only with the PIN lock on (`OPOS_LOCK=1`); with it off, nothing her
 
 With the lock on, the served home page gains one tag for `/pin.js`, the PIN pad. Showing the lock screen locks the server. Unlock, a swipe up, Escape, Call and Helper on the lock screen all ask the server: with a saved PIN the pad asks for the digits and sends them, and with no saved PIN the server unlocks without digits. The lock screen comes off only after the server has answered that the phone is unlocked; a wrong PIN, a running wait, or no answer leaves it on. The script does not compare or keep a PIN. It was run in node against a stand-in page (`tests/test_lock_pad.py`); a browser and the phone are **NOT_RUN**.
 
+## Converter
+
+`convert` enables `/convert` and the token-protected `/api/convert`. It converts length (mm, cm, m, km, inch, foot, yard, mile), mass (g, kg, oz, lb), volume (ml, L, US fl oz, US cup, US pint, US gal) and temperature (C, F, K) with fixed factors in `src/opos/convert.py`. The amount is plain decimal text of at most 40 characters and at most 10^12 in size: no exponent, ASCII digits only. Length, mass and volume refuse a negative amount, and a temperature below absolute zero is refused. The result has up to six significant figures. Nothing is stored, and nothing leaves the local server.
+
+The converter is a page of the browser interface only. The native shell (`src/opos/native/screens.py`) has no Converter screen, so on a Duo running the native shell it is reached only when the browser interface takes over.
+
+With the PIN lock on and the phone locked, `GET /api/convert` answers with the locked body described above, and a conversion is refused as `locked` (403), like any other app write.
+
 ## Not run on a phone
 
-The Duo image names clock, contacts, notes, calc and calls. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls adds no home-page bytes.
+The Duo image names clock, contacts, notes, calc, calls and convert. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls or convert adds no home-page bytes.
 
 No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN. Sound and vibration are not played yet.
