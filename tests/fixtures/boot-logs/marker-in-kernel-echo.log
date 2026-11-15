@@ -1,0 +1,5 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x000f0510]
+[    0.000000] Kernel command line: console=ttyAMA0 root=/dev/vda rw panic=-1 opos.smoke=1 opos.note="OPOS_BOOT_OK bdb339e56673771e01e232646a3185abfeebf9cf4f61b584cece7d8f3d436377 server=ok"
+[    3.990417] OPOS_BOOT_OK bdb339e56673771e01e232646a3185abfeebf9cf4f61b584cece7d8f3d436377 server=ok
+[    4.101233] systemd[1]: systemd 252 running in system mode
+[  OK  ] Reached target local-fs.target - Local File Systems.

@@ -1,0 +1,22 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x000f0510]
+[    0.000000] Linux version 6.1.0-test-arm64 (fixture) #1 SMP
+[    0.000000] Machine model: linux,dummy-virt
+[    0.000000] Kernel command line: console=ttyAMA0 root=/dev/vda rw rootwait panic=-1 opos.smoke=1 systemd.mask=lxc@android.service systemd.mask=android-service@hwcomposer.service systemd.mask=opos.service
+[    1.204311] virtio_blk virtio1: [vda] 8388608 512-byte logical blocks
+[    2.881020] EXT4-fs (vda): mounted filesystem with ordered data mode. Quota mode: none.
+[    2.902114] VFS: Mounted root (ext4 filesystem) on device 254:0.
+[    3.410772] Run /sbin/init as init process
+[    4.101233] systemd[1]: systemd 252 running in system mode
+[    4.398001] systemd[1]: Hostname set to <opos>.
+[  OK  ] Reached target local-fs.target - Local File Systems.
+[  OK  ] Finished opos-update-boot.service - OPOS: apply a pending update at boot.
+[  OK  ] Finished opos-clock.service - OPOS: clock floor.
+[  OK  ] Started opos-server.service - OPOS server: rules, governor and helper on the phone's real battery.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+         Starting opos-boot-ok.service - OPOS: boot smoke marker...
+
+OPOS_BOOT_OK 349626652bbf0bcc6a14cead3b1b1940a9dc5d58c9b36b2309c1e9dbc67093e7 server=ok
+[  OK  ] Finished opos-boot-ok.service - OPOS: boot smoke marker.
+         Stopping opos-server.service - OPOS server...
+[  OK  ] Reached target poweroff.target - System Power Off.
+[   61.002210] reboot: Power down

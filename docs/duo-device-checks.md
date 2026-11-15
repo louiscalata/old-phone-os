@@ -140,7 +140,8 @@ that include Wi-Fi addresses.
 
 Sources: PR #130 "the device checks stay NOT_RUN"; `ROADMAP.md:161` "the device checks above remain";
 `packaging/duo-os/NATIVE.md:242` "the server's address (`OPOS_SERVER_URL`, never `OPOS_LOCAL_URL`), what Phone says while
-an answer is missing, the hold on the lock page while the PIN lock question has no answer".
+an answer is missing, the hold on the lock page while the PIN lock question has no answer"; `ROADMAP.md:116` "Checked
+with a stand-in toolkit only; all four remain".
 
 **Preconditions.** First-run setup finished, `OPOS_LOCK` not set, `/etc/opos/native-off` absent.
 
@@ -213,7 +214,7 @@ Bedside on the real hinge stays NOT_RUN: see C29.
 Sources: `packaging/duo-os/NATIVE.md:244` "the lid watcher that is looked for again"; `packaging/duo-os/NATIVE.md:224`
 "the switch is looked for again 5 s, 15 s and 30 s later, then every 60 s"; `packaging/duo-os/NATIVE.md:229` "A lid
 switch that flaps"; `packaging/duo-os/NATIVE.md:262` "a lid switch that disappears and comes back"; PR #135 "any lid
-close, blank or restore on a Duo".
+close, blank or restore on a Duo"; `ROADMAP.md:112` "any lid close, blank or restore on the Duo remains".
 
 **Preconditions.** C05 passed. This check only watches what happens; it never makes a panel fail on purpose, and it
 never makes the lid switch go away on purpose (no driver unbind, no module removal, no writes under `/sys`), because
@@ -878,6 +879,34 @@ NOT_RUN".
 
 **Record.** In that runbook's own record, and the gate reached here.
 
+### C33. Boot smoke test in QEMU on the PC (no phone)
+
+Sources: `packaging/duo-os/README.md`, "Boot smoke test (QEMU, PC only)"; `packaging/duo-os/qemu-boot-smoke.sh` and
+`packaging/duo-os/boot-smoke-verdict.py`.
+
+**Preconditions.** The PC session on Linux, with `qemu-system-aarch64` and a generic arm64 kernel (with its initrd if it
+needs one); no phone connected, since this check never touches one. An image built from this checkout.
+
+**Steps.**
+1. [READ-ONLY] `sh packaging/duo-os/qemu-boot-smoke.sh --kernel <vmlinuz> [--initrd <initrd>] --rootfs <OUT.img>
+   --accept server-started --timeout 600` (the drive is `snapshot=on`, so the image file is not written).
+
+**Observe.** The harness's last line, a JSON line with `verdict`, `exit`, `source`, `server_started` and `negative`, and
+its exit status. QEMU `virt` has no hwcomposer, so the shell does not start; the run covers systemd ordering, the
+updater's boot step, the clock floor and the server process. It does not name the image: the identity marker
+(`--expect`) needs the proposed `opos-boot-ok.service`, which is not installed until Louis says yes (see the README
+section).
+
+**Pass or fail.** Pass: exit 0, one `Started opos-server.service` line, no negative marker. Fail: exit 1 (a negative
+marker, or the server started more than once) or exit 3 (no such line before the timeout). Exit 2 is a setup problem,
+not a result.
+
+**Stop and undo.** Nothing to undo: the image is not written and no phone is involved. A run that hangs is ended by the
+harness's timeout.
+
+**Record.** The exit status, the JSON line, the kernel used and the date. Keep the serial log with the session record,
+without addresses or serials.
+
 ## Recovery paths
 
 Use these when a check goes wrong. The aim is that the phone is never left dark or unreachable.
@@ -982,3 +1011,4 @@ This copy stays NOT_RUN.
 | C30 | The image folder check on the Windows PC | | NOT_RUN | | | |
 | C31 | The shell installer's first phone run | | NOT_RUN | | | erases userdata |
 | C32 | The persistent kernel | | NOT_RUN | | | see duo-persistent-install.md |
+| C33 | Boot smoke test in QEMU on the PC | | NOT_RUN | | | PC session; no phone |
