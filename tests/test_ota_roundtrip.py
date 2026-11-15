@@ -34,6 +34,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 if not sys.platform.startswith("linux"):
     raise unittest.SkipTest("the updater is Linux-only (flock, O_NOFOLLOW, systemd)")
@@ -272,6 +273,11 @@ class World:
             os.makedirs(os.path.join(r, d), mode=0o755, exist_ok=True)
             os.chmod(os.path.join(r, d), 0o755)
         os.makedirs(self.staging, mode=0o700)
+        # The update site binds first: free_port releases the port it returns, and the next bind to port 0 may get it back.
+        handler = functools.partial(QuietSite, directory=self.site)
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.httpd.daemon_threads = True
+        threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
         self.health_port = free_port()
         # The image: release 0 built from a tree like the later ones, the old overlay files, the owner's public key.
         base = os.path.join(self.releases, rel_name(0))
@@ -302,11 +308,7 @@ class World:
         self.cfg.log = self.logs.append
         self.cfg.sync = lambda: None
         self.cfg.boot_id = lambda: self.boot
-        # The update site, and the phone's opt-in to it.
-        handler = functools.partial(QuietSite, directory=self.site)
-        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        self.httpd.daemon_threads = True
-        threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+        # The phone's opt-in to the update site.
         self.url = "http://127.0.0.1:%d/latest.json" % self.httpd.server_address[1]
         wr(self.update_json, json.dumps({"url": self.url, "auto_check": False, "allow_lan_http": True}))
         self.client = uc.UpdateClient(paths=uc.Paths(config=self.update_json, root=self.var, revision=os.path.join(self.opt_link, "REVISION")),
@@ -513,6 +515,56 @@ class WorldCase(unittest.TestCase):
         self.w = World(real=self.real, health_timeout=self.health_timeout)
         self.addCleanup(self.w.close)
         self.assertEqual(self.w.server()["release"], os.path.realpath(self.w.opt_link))
+
+
+class RecyclingKernel:
+    """Hands a bind to port 0 the port the last closed IPv4 socket held, as a Linux kernel sometimes does."""
+
+    def __init__(self):
+        self.released = None
+        self.bind, self.close = socket.socket.bind, socket.socket.close
+
+    def __enter__(self):
+        kernel = self
+
+        def bind(sock, addr):
+            if sock.family == socket.AF_INET and addr[1] == 0 and kernel.released:
+                port, kernel.released = kernel.released, None
+                try:
+                    return kernel.bind(sock, (addr[0], port))
+                except OSError:
+                    pass
+            return kernel.bind(sock, addr)
+
+        def close(sock):
+            if sock.family == socket.AF_INET and sock.fileno() != -1:
+                try:
+                    kernel.released = sock.getsockname()[1] or kernel.released
+                except OSError:
+                    pass
+            return kernel.close(sock)
+
+        self.patches = [mock.patch.object(socket.socket, "bind", bind), mock.patch.object(socket.socket, "close", close)]
+        for p in self.patches:
+            p.start()
+        return self
+
+    def __exit__(self, *exc):
+        for p in self.patches:
+            p.stop()
+
+
+@needs_keygen
+class Ports(unittest.TestCase):
+    def test_the_update_site_never_gets_the_port_the_server_is_told_to_bind(self):
+        # CI run 43698631676: the site took the health port, the server could not bind it, and GET / was the site's empty listing.
+        with RecyclingKernel():
+            w = World()
+        self.addCleanup(w.close)
+        self.assertNotEqual(w.httpd.server_address[1], w.health_port)
+        code, body = w.get("/")
+        self.assertEqual(code, 200)
+        self.assertIn(b'name="opos-token"', body)
 
 
 def tamper_payload(path):
