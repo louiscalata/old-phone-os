@@ -140,7 +140,8 @@ that include Wi-Fi addresses.
 
 Sources: PR #130 "the device checks stay NOT_RUN"; `ROADMAP.md:161` "the device checks above remain";
 `packaging/duo-os/NATIVE.md:242` "the server's address (`OPOS_SERVER_URL`, never `OPOS_LOCAL_URL`), what Phone says while
-an answer is missing, the hold on the lock page while the PIN lock question has no answer".
+an answer is missing, the hold on the lock page while the PIN lock question has no answer"; `ROADMAP.md:116` "Checked
+with a stand-in toolkit only; all four remain".
 
 **Preconditions.** First-run setup finished, `OPOS_LOCK` not set, `/etc/opos/native-off` absent.
 
@@ -213,7 +214,7 @@ Bedside on the real hinge stays NOT_RUN: see C29.
 Sources: `packaging/duo-os/NATIVE.md:244` "the lid watcher that is looked for again"; `packaging/duo-os/NATIVE.md:224`
 "the switch is looked for again 5 s, 15 s and 30 s later, then every 60 s"; `packaging/duo-os/NATIVE.md:229` "A lid
 switch that flaps"; `packaging/duo-os/NATIVE.md:262` "a lid switch that disappears and comes back"; PR #135 "any lid
-close, blank or restore on a Duo".
+close, blank or restore on a Duo"; `ROADMAP.md:112` "any lid close, blank or restore on the Duo remains".
 
 **Preconditions.** C05 passed. This check only watches what happens; it never makes a panel fail on purpose, and it
 never makes the lid switch go away on purpose (no driver unbind, no module removal, no writes under `/sys`), because
