@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -147,6 +148,19 @@ class Fake:
             f.chmod(mode)
         return f
 
+    def pulse(self, rel):
+        """Leave a Unix socket file at rel, bound by its bare name because a temporary path can be longer than a socket address may be."""
+        f = self.root / rel.lstrip("/")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        here, s = os.getcwd(), socket.socket(socket.AF_UNIX)
+        try:
+            os.chdir(f.parent)
+            s.bind(f.name)
+        finally:
+            os.chdir(here)
+            s.close()
+        return f
+
     def rm(self, rel):
         f = self.root / rel.lstrip("/")
         if f.is_dir() and not f.is_symlink():
@@ -208,7 +222,11 @@ class Fake:
                   env={"XDG_RUNTIME_DIR": "/run/user/%d" % self.uid, "WAYLAND_DISPLAY": "wayland-0", "HOME": "/phone-home"})
         self.proc(201, ["/usr/lib/chromium/chromium", "--type=gpu-process", "--ozone-platform=wayland"], "chromium")
         self.proc(202, ["/usr/lib/chromium/chromium", "--type=renderer"], "chromium")
-        self.proc(300, SERVER_ARGV, "python3", env=dict(SERVER_ENV))
+        # A server that can sound an alarm: paplay on its PATH and the session's PulseAudio socket through XDG_RUNTIME_DIR. The image's own
+        # unit does not set XDG_RUNTIME_DIR yet; AlarmSound.test_the_shipped_unit_warns says what the phone reports with it as it is.
+        self.proc(300, SERVER_ARGV, "python3", env=dict(SERVER_ENV, XDG_RUNTIME_DIR="/run/user/%d" % self.uid))
+        self.put("usr/bin/paplay", "#!/bin/sh\nexit 0\n", mode=0o755)
+        self.pulse("run/user/%d/pulse/native" % self.uid)
         for mod in ("osk", "net_page", "firstrun", "timezone"):  # the image was built with the keyboard, the Network page and the first run
             self.put("opt/opos/src/opos/%s.py" % mod, "# the module\n")
         self.put("proc/uptime", "1234.50 4000.00\n")
@@ -463,7 +481,7 @@ class HealthyPhone(SelftestCase):
                     "server.http", "server.state", "server.token-gate", "battery.sysfs", "battery.api-match", "battery.temp",
                     "clock.year", "clock.timezone", "log.journal", "log.diag", "log.opos-errors", "res.disk", "res.mem",
                     "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.build-mode", "dev.ssh-key", "dev.devtools", "dev.time-drop", "dev.span", "dev.sudo",
-                    "osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes"):
+                    "osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes", "alarm.sound"):
             self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
 
     def test_output_format_is_one_line_per_check_with_a_summary(self):
@@ -1369,6 +1387,154 @@ class FirstRun(PieceCase):
     def test_only_firstrun_prefix(self):
         r = self.run_st("--only", "firstrun")
         self.assertEqual(sorted(r.rows), ["firstrun.flag", "firstrun.routes"])
+
+
+class AlarmSound(PieceCase):
+    """alarm.sound: whether the server could make an alarm heard (paplay, the session's PulseAudio socket). It plays nothing."""
+
+    UNIT = ROOT / "packaging/duo-os/opos-server.service"
+
+    def test_a_server_with_paplay_and_the_session_socket_passes(self):
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "PASS", r.text)
+        ev = r.ev("alarm.sound")
+        self.assertIn("/usr/bin/paplay", ev)
+        self.assertIn("/run/user/32011/pulse/native", ev)
+        self.assertIn("droidian (uid 32011)", ev)
+        self.assertIn("XDG_RUNTIME_DIR", ev)
+        self.assertIn("nothing was played", ev)
+
+    def test_it_plays_nothing_starts_nothing_and_changes_nothing(self):
+        before = self.f.snapshot()
+        with mock.patch.object(ST, "CHECKS", (ST.check_alarm_sound,)):  # --only filters lines, not checks, so run this one alone
+            r = self.run_st("--only", "alarm")
+        self.assertEqual(sorted(r.rows), ["alarm.sound"])
+        self.assertEqual(r.status("alarm.sound"), "PASS", r.text)
+        self.assertEqual(self.f.calls(), [], "no command, paplay or any other, is run")
+        self.assertEqual(self.f.snapshot(), before)
+        src = SELFTEST.read_text(encoding="utf-8")
+        self.assertNotIn('"paplay",', src, "paplay is looked for, never given to run()")
+
+    def test_a_missing_paplay_warns(self):
+        self.f.rm("usr/bin/paplay")
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN", r.ev("alarm.sound"))
+        self.assertIn("paplay is not on the server's PATH", r.ev("alarm.sound"))
+        self.assertIn("the image recipes do not add it", r.ev("alarm.sound"))
+        self.assertIn("on screen only", r.ev("alarm.sound"))
+        self.assertEqual(r.rc, 0, "a silent alarm is a warning, not a failure")
+        self.f.put("usr/bin/paplay", "not executable\n", mode=0o644)
+        self.assertEqual(self.run_st().status("alarm.sound"), "WARN", "a file that cannot be run is not a player")
+
+    def test_paplay_is_looked_for_on_the_servers_own_path(self):
+        self.server(**dict(SERVER_ENV, XDG_RUNTIME_DIR="/run/user/32011", PATH="/opt/elsewhere:/usr/games"))
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN")
+        self.assertIn("/opt/elsewhere:/usr/games", r.ev("alarm.sound"))
+        self.f.put("opt/elsewhere/paplay", "#!/bin/sh\n", mode=0o755)
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "PASS", r.ev("alarm.sound"))
+        self.assertIn("/opt/elsewhere/paplay", r.ev("alarm.sound"))
+
+    def test_no_socket_for_the_server_user_warns(self):
+        self.f.rm("run/user/32011/pulse/native")
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN")
+        self.assertIn("no socket at /run/user/32011/pulse/native", r.ev("alarm.sound"))
+        self.f.put("run/user/32011/pulse/native", "a plain file\n")
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN")
+        self.assertIn("/run/user/32011/pulse/native is not a socket", r.ev("alarm.sound"))
+
+    def test_the_socket_is_the_one_for_the_uid_the_server_runs_as(self):
+        self.f.put("etc/passwd", "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\nother:x:4000:4000::/o:/bin/sh\n")
+        self.f.proc(300, SERVER_ARGV, "python3", uid=4000, env=dict(SERVER_ENV))
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN")
+        self.assertIn("other (uid 4000)", r.ev("alarm.sound"))
+        self.assertIn("/run/user/4000/pulse/native", r.ev("alarm.sound"))
+
+    def test_a_unit_that_sets_neither_variable_warns_even_with_a_socket(self):
+        self.server(**SERVER_ENV)
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN", r.ev("alarm.sound"))
+        self.assertIn("sets no XDG_RUNTIME_DIR or PULSE_SERVER", r.ev("alarm.sound"))
+        self.assertIn("/run/user/32011/pulse/native exists", r.ev("alarm.sound"))
+        self.f.rm("usr/bin/paplay")
+        ev = self.run_st().ev("alarm.sound")
+        self.assertIn("paplay is not on the server's PATH", ev)
+        self.assertIn("/run/user/32011/pulse/native exists", ev, "both reasons fit in one line")
+
+    def test_pulse_server_names_the_socket(self):
+        self.f.pulse("srv/pulse/native")
+        for value in ("unix:/srv/pulse/native", "/srv/pulse/native", "{0123abcd}unix:/srv/pulse/native", "tcp:localhost unix:/srv/pulse/native"):
+            with self.subTest(value):
+                self.server(**dict(SERVER_ENV, PULSE_SERVER=value))
+                r = self.run_st()
+                self.assertEqual(r.status("alarm.sound"), "PASS", r.ev("alarm.sound"))
+                self.assertIn("/srv/pulse/native", r.ev("alarm.sound"))
+                self.assertIn("PULSE_SERVER", r.ev("alarm.sound"))
+        self.server(**dict(SERVER_ENV, XDG_RUNTIME_DIR="/run/user/32011", PULSE_SERVER="unix:/srv/none"))
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN", "PULSE_SERVER wins over XDG_RUNTIME_DIR, as in libpulse")
+        self.assertIn("no socket at /srv/none", r.ev("alarm.sound"))
+        self.server(**dict(SERVER_ENV, PULSE_SERVER="tcp:192.0.2.1"))
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN")
+        self.assertIn("names no local socket", r.ev("alarm.sound"))
+
+    def test_the_shipped_unit_warns(self):
+        """The image's opos-server.service as it is, with no server running: the files are what the check reads."""
+        self.f.put("etc/systemd/system/opos-server.service", self.UNIT.read_text(encoding="utf-8"))
+        self.f.kill(300)
+        r = self.run_st("--only", "alarm")
+        self.assertEqual(r.status("alarm.sound"), "WARN", r.ev("alarm.sound"))
+        self.assertIn("droidian (uid 32011)", r.ev("alarm.sound"))
+        self.assertIn("sets no XDG_RUNTIME_DIR or PULSE_SERVER", r.ev("alarm.sound"))
+        self.f.put("etc/systemd/system/opos-server.service.d/40-sound.conf", "[Service]\nEnvironment=XDG_RUNTIME_DIR=/run/user/32011\n")
+        self.assertEqual(self.run_st("--only", "alarm").status("alarm.sound"), "PASS", "a drop-in that sets it is read")
+
+    def test_a_unit_edited_but_not_restarted_warns(self):
+        self.f.put("etc/systemd/system/opos-server.service", "[Service]\nUser=droidian\nEnvironment=OPOS_ON_PHONE=1 XDG_RUNTIME_DIR=/run/user/32011\n")
+        self.server(**SERVER_ENV)
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN")
+        self.assertIn("restart opos-server", r.ev("alarm.sound"))
+
+    def test_an_environment_file_overrides_the_environment_lines(self):
+        """As in systemd, whatever the order of the lines; no server runs, so the files are what the check reads."""
+        self.f.put("etc/systemd/system/opos-server.service",
+                   "[Service]\nUser=droidian\nEnvironmentFile=-/etc/opos/server.env\nEnvironment=OPOS_ON_PHONE=1 XDG_RUNTIME_DIR=/run/user/1\n")
+        self.f.put("etc/opos/server.env", "XDG_RUNTIME_DIR=/run/user/32011\n")
+        self.f.kill(300)
+        r = self.run_st("--only", "alarm")
+        self.assertEqual(r.status("alarm.sound"), "PASS", r.ev("alarm.sound"))
+        self.assertIn("/run/user/32011/pulse/native", r.ev("alarm.sound"))
+
+    @unittest.skipIf(os.geteuid() == 0, "os.access is always true for root")
+    def test_a_socket_the_selftest_user_cannot_open_warns(self):
+        sock = self.f.root / "run/user/32011/pulse/native"
+        sock.chmod(0o000)
+        self.addCleanup(sock.chmod, 0o755)
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "WARN", r.ev("alarm.sound"))
+        self.assertIn("/run/user/32011/pulse/native is not open to this user", r.ev("alarm.sound"))
+
+    def test_off_the_phone_it_skips(self):
+        self.server(OPOS_OSK="1", OPOS_NETWORK="1", OPOS_FIRSTRUN="1", XDG_RUNTIME_DIR="/run/user/32011")
+        r = self.run_st()
+        self.assertEqual(r.status("alarm.sound"), "SKIP")
+        self.assertIn("not the phone", r.ev("alarm.sound"))
+        self.f.kill(300)
+        self.assertEqual(self.run_st("--only", "alarm").status("alarm.sound"), "SKIP", "no server and no unit: nothing says this is the phone")
+
+    def test_it_is_documented(self):
+        doc = (ROOT / "docs/duo-acceptance.md").read_text(encoding="utf-8")
+        row = [ln for ln in doc.splitlines() if ln.startswith("| `alarm.sound`")]
+        self.assertEqual(len(row), 1, "one row in the selftest table")
+        for word in ("paplay", "PULSE_SERVER", "XDG_RUNTIME_DIR", "/run/user/", "SKIP", "plays no sound"):
+            self.assertIn(word, row[0])
+        self.assertIn("alarm", re.search(r'--only", action="append".*', SELFTEST.read_text(encoding="utf-8")).group(0))
 
 
 class DevMarkers(SelftestCase):
