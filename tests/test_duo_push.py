@@ -123,7 +123,10 @@ class DuoPushTest(unittest.TestCase):
                     stub_proc = subprocess.run(args, input=body, capture_output=True, text=True, env=env)
                     self.assertEqual(stub_proc.returncode, 64)
                     self.assertFalse(os.path.exists(marker))
-            proc = subprocess.run(["sh", str(SCRIPT), "admin@example.invalid", "HEAD"], capture_output=True, text=True, env=env)
+            proc = subprocess.run(
+                ["sh", str(SCRIPT), "admin@example.invalid", "HEAD"],
+                capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60,
+            )
             self.assertEqual(proc.returncode, 37)
             with open(git_log) as handle:
                 git_args = handle.read()

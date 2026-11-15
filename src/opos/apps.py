@@ -18,6 +18,7 @@ MODULES = {
     "notes": "opos.notes_page",
     "calc": "opos.calc_page",
     "calls": "opos.calls_page",
+    "convert": "opos.convert_page",
 }
 _APPS = {}
 _BROKEN = set()

@@ -122,7 +122,9 @@ Additional app and volume configurations require their corresponding checks: `te
 (`page()` is not edited). When it names an app, the served home page gains one script tag for `/apps-home.js`
 (68 bytes). The script file is not part of the page. The historical record in `dfca35d4` on November 10 reported
 101,317 bytes with that tag and the six switches (683 bytes under the 102,000-byte gate). That count applies to that
-revision only. Later apps must not add to this page. `tests/test_apps_shell.py` checks the gate.
+revision only. Later apps must not add to this page: naming one app or every app adds the same one tag, and `page()`
+itself does not grow. `tests/test_apps_shell.py` checks the gate. `tests/test_apps_gate.py` checks that each app's
+routes answer 404 until `OPOS_APPS` names that app, and that the whole set adds one tag.
 
 ## PIN pad
 
@@ -137,3 +139,9 @@ The pad's layout rules (three shrinkable columns, keys without the 160 px minimu
 are set by `/pin.js` on the elements it creates. They are not in a stylesheet, so the narrow-screen fix of November 14,
 2026 added no byte to `page()` or to the served home page; the script grew instead, and it is not part of the page.
 The page sizes were not measured again for that change because no file that the page is built from was edited.
+
+The converter added after it is reached through the same `/apps-home.js` tag. Measured again on November 14, 2026 on
+the tree that adds it on top of the narrow-screen fix and the alarm playback: 101,870 bytes with the six switches,
+101,930 with the lock as well, and 101,998 with the lock and the six Duo apps (`convert` included), the same as with
+five or with one, 2 bytes under the gate. `tests/test_apps_gate.py` checks that the lock and every app together stay at
+or under 102,000 bytes and add nothing over the lock and one app.

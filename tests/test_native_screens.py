@@ -366,6 +366,9 @@ class Screens(unittest.TestCase):
         self.assertEqual(names({"OPOS_APPS": "notes,clock"}), ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "network"])
         self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
                          ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"])
+        self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls,convert"}),
+                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"],
+                         "the Duo list: the converter is a browser page, with no native screen")
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
 
     # --- two taps to delete, as the browser asks --------------------------------------------------------------------
