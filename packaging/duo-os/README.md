@@ -436,8 +436,9 @@ not run on a phone.
 
 `deploy/duo-rootfs-install.sh` prints a dry run unless both `--yes --erase-userdata`
 are supplied. Before formatting, it requires readable, non-empty images, computable
-SHA-256 hashes, exactly one fastboot device, the expected Surface Duo 1 product and
-an `unlocked: yes` answer from `fastboot getvar unlocked`.
+SHA-256 hashes, a raw ext4 rootfs (the rules of `Get-Ext4Problem` in `deploy/duo-opos-boot.ps1`),
+exactly one fastboot device, the expected Surface Duo 1 product, slot a, a battery of
+20 percent or more and an `unlocked: yes` answer from `fastboot getvar unlocked`.
 Optional `--twrp-sha256`, `--boot-sha256` and `--rootfs-sha256` values must match.
 It selects the checked device for every fastboot and adb command. It RAM-boots
 private copies of the TWRP and boot images made when they are checked, rehashes
@@ -445,9 +446,8 @@ all three images and both copies directly before the erase, rehashes each copy
 directly before its RAM-boot and the rootfs image directly before the push, and
 requires the same product again after the return to the bootloader. Missing or
 failed checks refuse. See the [shell install contract](../../docs/duo-usb-install.md#rootfs-install-through-twrp).
-The battery is a manual step: the script prints a reminder and does not read it.
-It still omits the misc brake, slot and battery checks, raw ext4 validation and
-network search, so it remains the less guarded route. These checks are tested with
+It still omits the misc brake, so it remains the less guarded route. It also has no
+network search, since it does not connect to the booted phone. These checks are tested with
 stand-ins for fastboot and adb only; a run on the phone is **NOT_RUN**.
 
 ## USB-link addresses
@@ -572,6 +572,40 @@ starts, and writes `/var/log/opos-boot-diag.txt` (overwritten each boot): system
 OPOS, composer and phoc processes, `/dev/dri`, network addresses, power supplies, the OPOS and phoc journals,
 DRM clients, backlight values and kernel warnings. Read it over ssh. From TWRP the same files can be read by
 mounting userdata and loop-mounting `/data/rootfs.img`; that has not been rehearsed. A format erases both.
+
+## Boot smoke test (QEMU, PC only)
+
+A boot test that only a positive line can pass. On the PC (Linux, not the Mac), `qemu-boot-smoke.sh --kernel VMLINUZ
+--rootfs OUT.img --accept server-started` boots a generic arm64 kernel on QEMU `virt` with the rootfs on virtio-blk
+(`snapshot=on`, so the file is never written), `-display none -no-reboot -nic none -serial file:LOG`, `panic=-1` and a
+hard timeout (900 s by default); `--image` boots a whole disk through the AAVMF firmware instead, and that disk's own
+boot entry must carry the kernel arguments. Its exit status is that of `boot-smoke-verdict.py`: 0 only for exactly one
+positive line and none of `Kernel panic`, `Failed to start`, `emergency mode`, `Dependency failed`, `opos-fallback` or
+`OPOS_BOOT_FAIL` in the log; 1 for any of those, a repeated positive line or a malformed marker; exit 3 for no positive
+line (a timeout or silence); 2 for bad arguments or a missing `qemu-system-aarch64` or firmware. It prints one JSON
+line of evidence.
+
+The positive line comes from one of two sources. `--accept server-started` takes systemd's own console line for the
+shipped `opos-server.service`, `[  OK  ] Started opos-server.service - <Description>.` (or `Started <Description>.` on
+systemd before 253), with the description read from this folder's unit. It shows that systemd started the server
+process once; it does not name the image or show that the server answers, and since nothing powers the guest off the
+run lasts until the timeout (give a shorter `--timeout`). `--expect ID` requires the documented marker
+`OPOS_BOOT_OK <ID> server=ok` alone on its line, ID being the SHA-256 of the image's `/etc/opos/image.json` (on the
+builder: `sha256sum` of that file with the image mounted `-o ro,loop,noload`). No shipped unit prints that marker.
+
+PROPOSAL, not installed: an `opos-boot-ok.service` for test images only, a oneshot after `opos-server.service` with
+`ConditionKernelCommandLine=opos.smoke=1` (the harness already sets that word, and nothing shipped reads it), that
+asks 127.0.0.1:8765 for the page, the token-gated `/api/state` and its 403 without the token, writes `OPOS_BOOT_OK
+<ID> server=ok` (or `OPOS_BOOT_FAIL <ID> server=<why>`) to `/dev/console` and powers off. `AGENTS.md` says a new service
+needs Louis's yes before it is added; until that yes is recorded, no unit, build switch or image check for it is in
+this tree, and the PC session can add the marker later.
+
+Scope: QEMU `virt` has no hwcomposer, so the harness masks `lxc@android.service`, `android-service@hwcomposer.service`
+and `opos.service`, and phoc and the shell do not start there. A run covers systemd ordering, the updater's boot step,
+the clock floor and the server, nothing more; the Duo's own boot is proved only by its RAM-boot. Another port unit that
+fails without the phone's hardware fails the run, on purpose. Every run is NOT_RUN until the PC session records one
+(check C33 in [docs/duo-device-checks.md](../../docs/duo-device-checks.md)); the logs in `tests/fixtures/boot-logs` are
+written by hand.
 
 ## Known issues
 
