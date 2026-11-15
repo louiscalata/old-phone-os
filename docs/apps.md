@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Everyday apps
 
-`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls`. The demo and the postmarketOS build do not set the variable.
+`OPOS_APPS` names the extra apps, comma-separated (`clock,contacts`). When the variable is absent or empty, the main page is unchanged and `/apps` is not served. The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,notes,calc,calls,convert`. The demo and the postmarketOS build do not set the variable.
 
 Each named app is its own page. The main page gains one link, More apps, inside All apps. `web.page()` does not grow.
 
@@ -33,9 +33,17 @@ The pad is three columns that shrink with the screen (`minmax(0,1fr)` tracks, ke
 
 Wrong tries: the first four cost nothing. The fifth starts a 30 second wait, and each further wrong try doubles it (60 s, 2 min, ... about 64 minutes at the 12th, about 4 hours 16 minutes at the 14th) up to 8 hours, which the 15th wrong try and every later one get. During a wait every try is refused without being counted, the right PIN included. The count is kept on disk and only the right PIN clears it; restarting the phone does not. Nothing is ever erased: there is no wipe. What this means for guessing through the lock screen: after the first 14 tries (about 8 and a half hours of waits) a guesser gets 3 tries a day, so trying all 10,000 four-digit PINs takes about 9 years, and about 4 and a half years on average. A longer PIN is slower to guess in proportion (an 8-digit PIN: about 91,000 years for all of them). The owner who forgets the PIN is never locked out for more than 8 hours at a time. The limit covers tries made through the server; someone who can read the saved PIN record on the phone's storage can test PINs against it without the server and without any wait.
 
+## Converter
+
+`convert` enables `/convert` and the token-protected `/api/convert`. It converts length (mm, cm, m, km, inch, foot, yard, mile), mass (g, kg, oz, lb), volume (ml, L, US fl oz, US cup, US pint, US gal) and temperature (C, F, K) with fixed factors in `src/opos/convert.py`. The amount is plain decimal text of at most 40 characters and at most 10^12 in size: no exponent, ASCII digits only. Length, mass and volume refuse a negative amount, and a temperature below absolute zero is refused. The result has up to six significant figures. Nothing is stored, and nothing leaves the local server.
+
+The converter is a page of the browser interface only. The native shell (`src/opos/native/screens.py`) has no Converter screen, so on a Duo running the native shell it is reached only when the browser interface takes over.
+
+With the PIN lock on and the phone locked, `GET /api/convert` answers with the locked body described above, and a conversion is refused as `locked` (403), like any other app write.
+
 ## Not run on a phone
 
-The Duo image names clock, contacts, notes, calc and calls. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls adds no home-page bytes.
+The Duo image names clock, contacts, notes, calc, calls and convert. Each is its own page. The home page only gains the existing short `/apps-home.js` tag, which adds the More apps link and, when an alarm is armed, the words "Alarm" and "Alarm 07:00" on the lock screen. Enabling calls or convert adds no home-page bytes.
 
 No install has been made for this work. Every on-device check in the phone-features spec (D1-D11) is NOT_RUN.
 
