@@ -140,7 +140,8 @@ that include Wi-Fi addresses.
 
 Sources: PR #130 "the device checks stay NOT_RUN"; `ROADMAP.md:161` "the device checks above remain";
 `packaging/duo-os/NATIVE.md:242` "the server's address (`OPOS_SERVER_URL`, never `OPOS_LOCAL_URL`), what Phone says while
-an answer is missing, the hold on the lock page while the PIN lock question has no answer".
+an answer is missing, the hold on the lock page while the PIN lock question has no answer"; `ROADMAP.md:116` "Checked
+with a stand-in toolkit only; all four remain".
 
 **Preconditions.** First-run setup finished, `OPOS_LOCK` not set, `/etc/opos/native-off` absent.
 
@@ -213,7 +214,7 @@ Bedside on the real hinge stays NOT_RUN: see C29.
 Sources: `packaging/duo-os/NATIVE.md:244` "the lid watcher that is looked for again"; `packaging/duo-os/NATIVE.md:224`
 "the switch is looked for again 5 s, 15 s and 30 s later, then every 60 s"; `packaging/duo-os/NATIVE.md:229` "A lid
 switch that flaps"; `packaging/duo-os/NATIVE.md:262` "a lid switch that disappears and comes back"; PR #135 "any lid
-close, blank or restore on a Duo".
+close, blank or restore on a Duo"; `ROADMAP.md:112` "any lid close, blank or restore on the Duo remains".
 
 **Preconditions.** C05 passed. This check only watches what happens; it never makes a panel fail on purpose, and it
 never makes the lid switch go away on purpose (no driver unbind, no module removal, no writes under `/sys`), because
@@ -641,19 +642,20 @@ ring while the clock is unknown, no warning, or no ring once set.
 ### C23. The alarm tone on the speaker
 
 Sources: `ROADMAP.md:134` "The alarm tone plays on the speaker and steps from 20 percent to 70 percent."; PR #28 "The
-tone has not been played on the Duo".
+tone has not been played on the Duo"; `ROADMAP.md:22` "Hearing the tone on a phone is NOT_RUN."
 
-**Preconditions.** On this revision the alarm player's default refuses playback and no audio mixer is connected
-([VOLUME.md](../packaging/duo-os/VOLUME.md)), and the roadmap says sound and vibration are not played yet. So this check
-cannot pass on this revision; it is listed so that it is run when a player change lands.
+**Preconditions.** A ring plays six short beeps of `src/opos/sounds/alarm.wav` through `paplay`, from 20 to 70 percent of
+the paplay stream ([docs/apps.md](apps.md)). No OPOS mixer path is connected ([VOLUME.md](../packaging/duo-os/VOLUME.md)).
+The image recipes do not add `paplay`; on an image without it the alarm shows on screen only and no tone can play.
 
 **Steps.**
-1. During the ring of C21, listen at the speaker.
+1. [READ-ONLY] On the phone: `command -v paplay`.
+2. During the ring of C21, listen at the speaker.
 
-**Observe.** Whether any tone plays.
+**Observe.** Whether `paplay` is on the path, and whether any tone plays.
 
-**Pass or fail.** On this revision the expected observation is no tone, and the check stays NOT_RUN. It passes only on a
-revision with a connected player, when the tone starts at about 20 percent and steps to 70 percent and stops at Stop.
+**Pass or fail.** Passes when six beeps play, getting louder from about 20 percent to 70 percent, and end at Stop or
+within 24 seconds. With no `paplay` on the path the expected observation is no tone, and the check stays NOT_RUN.
 
 **Stop and undo.** Stop on the ring screen.
 
@@ -729,8 +731,8 @@ cannot be reached.
 
 Sources: `ROADMAP.md:144` "The apps index and More apps on the glass."; PR #23 "Device: NOT_RUN (D1–D11)".
 
-**Preconditions.** `OPOS_APPS` names Clock, Contacts, Notes and Calculator (the image's drop-in). Browser interface for
-More apps.
+**Preconditions.** `OPOS_APPS` names Clock, Contacts, Notes, Calculator, Call log and Converter (the image's drop-in).
+Browser interface for More apps.
 
 **Steps.**
 1. [READ-ONLY] On the phone: `systemctl show opos-server -p Environment` (look for `OPOS_APPS`).

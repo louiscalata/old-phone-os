@@ -37,7 +37,6 @@ body{padding-top:calc(48px + env(safe-area-inset-top,0px))}
 #apps-list button{width:100%;min-height:48px;margin:0;font-size:1.125rem}
 #apps-close{min-height:48px;margin:0 12px}
 #phone[data-app="home"][data-allapps] #back:not([hidden]){display:block;width:calc(100% - 24px);height:48px;min-height:48px;margin:40px 12px 0}
-#home button:focus-visible,#apps-list button:focus-visible,#apps-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
 @media (min-width:600px) and (min-aspect-ratio:3/4) and (max-aspect-ratio:4/3){html:not([data-ff]) #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}}
 @media (orientation:landscape) and (max-height:520px){html:not([data-ff]) #phone[data-app] #apps-list:not([hidden]){grid-template-columns:repeat(3,1fr)}}
 html[data-ff="foldable"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:1fr 1fr}
