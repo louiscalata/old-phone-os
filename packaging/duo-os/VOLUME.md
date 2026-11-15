@@ -6,8 +6,9 @@ The owner reported working volume-down events (114) on `qpnp_pon` and volume-up
 events (115) on `gpio-keys`. That measurement does not verify this new consumer.
 
 There is no connected OPOS media/ringer mixer path. Settings previously stored a
-browser-local practice volume; `alarm_sound.py` takes an injected player and its
-default refuses playback. This change therefore implements the requested fallback:
+browser-local practice volume. The Clock page plays its alarm beeps with `paplay
+--volume` on their own stream (see [docs/apps.md](../../docs/apps.md)); the volume keys
+do not change that stream. This change therefore implements the requested fallback:
 **volume keys change simulated state only. No speaker, media, ringer, call or alarm
 volume is changed.** It does not configure PulseAudio, set an alarm media role or
 invoke an audio command. Connecting a real audio path remains future work.

@@ -13,7 +13,7 @@ The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,no
 
 | Piece | What the source does |
 |---|---|
-| Clock and alarm | `/clock`: alarms, one timer, a stopwatch, and a bedside clock. The timer is one countdown in whole minutes and is stored with the alarms. The stopwatch runs in the page and is cleared when the page is closed. A tone exists in `alarm_sound.py`. Hearing it on a phone is NOT_RUN. |
+| Clock and alarm | `/clock`: alarms, one timer, a stopwatch, and a bedside clock. The timer is one countdown in whole minutes and is stored with the alarms. The stopwatch runs in the page and is cleared when the page is closed. A ring plays six short beeps through `paplay` (`alarm_sound.py`), ending within 24 seconds, and Stop ends them. Hearing it on a phone is NOT_RUN. |
 | Calculator | `/calc`. Arithmetic runs in the page. Nothing is stored. |
 | Contacts | `/contacts`. A local book, search, and vCard import and export. Call and Text on that page say the call is practice and that nothing was sent. |
 | Notes | `/notes`. Plain text files on the phone. |

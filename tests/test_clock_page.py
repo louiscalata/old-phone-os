@@ -6,11 +6,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime
 from unittest import mock
 
-from opos import apps, apps_page, clock_page, web
+from opos import alarm_sound, apps, apps_page, clock_page, web
 from opos.alarms import Event
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible
@@ -45,18 +47,167 @@ class ClockPage(unittest.TestCase):
         self.assertNotIn('type="time"', html)
         self.assertEqual(set(), css_hexes(style_of(html)) - TOKENS)
         self.assertTrue(is_quiet(visible(html)))
-        self.assertIn("Works offline: yes. Sends data: no. Uses: screen only (no sound yet). Real or practice: real.", apps.by_id("clock").card())
+        self.assertIn("Works offline: yes. Sends data: no. Uses: screen and a short tone (not checked on a phone). Real or practice: real.", apps.by_id("clock").card())
 
-    def test_production_alarm_without_a_player_discloses_screen_only_behavior(self):
-        event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
-        with self.assertRaisesRegex(RuntimeError, "no player"):
-            clock_page._play([event])
+    def test_the_page_says_the_tone_is_short_unchecked_and_has_no_vibration(self):
         html = clock_page.render("tok", "nonce")
-        notice = '<p class="note">Alarms show on screen only. No sound or vibration is played yet.</p>'
+        notice = ('<p class="note">An alarm shows on screen and plays six short beeps through paplay, ending within'
+                  ' %d seconds. Stop ends them. The tone has not been checked on a phone. No vibration.</p>'
+                  % alarm_sound.worst_case_seconds())
         self.assertIn(notice, html)
+        self.assertNotIn("No sound or vibration is played yet", html)
         card = apps.by_id("clock").card()
-        self.assertIn("Uses: screen only (no sound yet).", card)
+        self.assertIn("Uses: screen and a short tone (not checked on a phone).", card)
         self.assertIn("Real or practice: real.", card)
+
+    def _stub(self, body):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        script = os.path.join(folder, "paplay")
+        with open(script, "w", encoding="utf-8") as out:
+            out.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(script, 0o755)
+        log = os.path.join(folder, "log")
+        self.enterContext(mock.patch.dict(os.environ, {
+            "PATH": folder + os.pathsep + os.environ.get("PATH", ""), "OPOS_PAPLAY_LOG": log,
+        }))
+        return log
+
+    def test_the_clock_thread_path_plays_the_ramp_through_paplay(self):
+        log = self._stub("printf '%s\\n' \"$*\" >> \"$OPOS_PAPLAY_LOG\"")
+        event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
+        clock_page._play([event])
+        with open(log, encoding="utf-8") as seen:
+            lines = seen.read().splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertTrue(lines[0].startswith("--volume %d " % (20 * 655)), lines[0])
+        self.assertTrue(lines[-1].startswith("--volume %d " % (70 * 655)), lines[-1])
+        self.assertTrue(all(line.endswith("alarm.wav") for line in lines))
+
+    def test_stop_on_the_page_ends_a_ramp_that_is_playing(self):
+        log = self._stub("printf '%s\\n' \"$*\" >> \"$OPOS_PAPLAY_LOG\"\nexec sleep 30")
+        self.enterContext(mock.patch.dict(os.environ, {
+            "OPOS_STATE_DIR": self.tmp.name, "OPOS_CLOCK_ZONE": "UTC", "OPOS_CLOCK_OK": "1", "OPOS_CLOCK_TEST": "1",
+        }))
+        clock_page.post({"action": "tick", "now": "2026-11-16T06:00:00+00:00"})
+        clock_page.post({"action": "add", "hour": 7, "minute": 0})
+        event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
+        clock_page.post({"action": "tick", "now": FIRE})
+        ramp = threading.Thread(target=clock_page._play, args=([event],))
+        begun = time.monotonic()
+        ramp.start()
+        for _ in range(200):
+            if os.path.exists(log):
+                break
+            time.sleep(0.01)
+        code, snap = clock_page.post({"action": "stop"})
+        self.assertEqual(code, 200)
+        self.assertIsNone(snap["ringing"])
+        ramp.join(5)
+        self.assertFalse(ramp.is_alive())
+        self.assertLess(time.monotonic() - begun, 5)
+        with open(log, encoding="utf-8") as seen:
+            self.assertEqual(len(seen.read().splitlines()), 1)
+        self.assertIsNone(clock_page._player().proc)
+
+    def test_stop_silences_even_when_nothing_is_ringing(self):
+        player = clock_page._player()
+        before = player.generation
+        with mock.patch.dict(os.environ, {"OPOS_STATE_DIR": self.tmp.name, "OPOS_CLOCK_ZONE": "UTC"}):
+            code, _snap = clock_page.post({"action": "stop"})
+        self.assertEqual(code, 400)
+        self.assertEqual(player.generation, before + 1)
+
+    def test_a_stop_between_the_tick_and_the_ramp_wins(self):
+        log = self._stub("printf '%s\\n' \"$*\" >> \"$OPOS_PAPLAY_LOG\"")
+        event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
+
+        class Book:
+            def tick(self, _now, _known):
+                clock_page.silence()
+                return [event]
+
+        with mock.patch.object(clock_page, "book", return_value=Book()):
+            clock_page._cycle()
+        self.assertFalse(os.path.exists(log))
+
+    def test_a_locked_phone_shows_the_ring_without_its_label_and_stop_and_snooze_end_the_beep(self):
+        from opos import lockpin
+        log = self._stub("printf '%s\\n' \"$*\" >> \"$OPOS_PAPLAY_LOG\"\nexec sleep 30")
+        self.addCleanup(lockpin.reset)
+        lockpin.reset()
+        env = dict(self.env, OPOS_LOCK="1", OPOS_CONFIG_DIR=self.tmp.name)
+        event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
+
+        def beeps():
+            if not os.path.exists(log):
+                return 0
+            with open(log, encoding="utf-8") as seen:
+                return len(seen.read().splitlines())
+
+        def ring_then_lock(server, token, now, heard):
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            code, raw = post(server, "/api/clock", {"action": "tick", "now": now}, token)
+            self.assertEqual(code, 200, raw)
+            self.assertEqual(json.loads(raw)["ringing"]["text"], "Alarm 07:00")
+            ramp = threading.Thread(target=clock_page._play, args=([event],))
+            ramp.start()
+            for _ in range(500):
+                if beeps() > heard:
+                    break
+                time.sleep(0.01)
+            self.assertEqual(beeps(), heard + 1)
+            code, raw = post(server, "/api/lock", {"action": "lock"}, token)
+            self.assertEqual(code, 200, raw)
+            status, raw = get(server, "/api/clock", token)
+            self.assertEqual(status, 200, raw)
+            body = json.loads(raw)
+            self.assertIs(body["locked"], True)
+            self.assertEqual(body["ringing"], {"text": "Alarm 07:00"})
+            self.assertEqual(body["alarms"], [])
+            self.assertIsNone(body["timer"])
+            self.assertNotIn(b"Pills", raw)
+            self.assertNotIn(b"Ana", raw)
+            self.assertIsNotNone(clock_page._player().proc)  # the beep is still playing behind the lock
+            return ramp
+
+        def answer_while_locked(server, token, action, ramp, heard):
+            begun = time.monotonic()
+            code, raw = post(server, "/api/clock", {"action": action}, token)
+            self.assertEqual(code, 200, raw)
+            body = json.loads(raw)
+            self.assertIs(body["locked"], True)
+            self.assertIsNone(body["ringing"])
+            self.assertEqual(body["alarms"], [])
+            self.assertNotIn(b"Pills", raw)
+            self.assertNotIn(b"Ana", raw)
+            ramp.join(alarm_sound.worst_case_seconds())
+            self.assertFalse(ramp.is_alive())
+            self.assertLess(time.monotonic() - begun, 5)
+            self.assertEqual(beeps(), heard)
+            self.assertIsNone(clock_page._player().proc)
+
+        with running(env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/lock", {"action": "set", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            code, raw = post(server, "/api/clock", {"action": "tick", "now": "2026-11-16T06:00:00+00:00"}, token)
+            self.assertEqual(code, 200, raw)
+            code, raw = post(server, "/api/clock", {"action": "add", "hour": 7, "minute": 0, "days": [], "label": "Pills for Ana"}, token)
+            self.assertEqual(code, 200, raw)
+            ramp = ring_then_lock(server, token, FIRE, 0)
+            answer_while_locked(server, token, "snooze", ramp, 1)
+            ramp = ring_then_lock(server, token, SNOOZE, 1)
+            answer_while_locked(server, token, "stop", ramp, 2)
+            # The ring is over: unlocked, the owner sees their alarm and its label again.
+            code, raw = post(server, "/api/lock", {"action": "unlock", "pin": "1234"}, token)
+            self.assertEqual(code, 200, raw)
+            status, raw = get(server, "/api/clock", token)
+            self.assertIn(b"Pills for Ana", raw)
+            self.assertIsNone(json.loads(raw)["ringing"])
 
     def test_ring_snooze_stop_and_a_clock_that_is_not_set(self):
         with running(self.env) as server:
