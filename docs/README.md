@@ -56,6 +56,7 @@ evidence about the current source.
 - [Surface Duo USB notes](duo-usb-install.md): **historical** Droidian development and recovery notes; the current Duo routes are the two above.
 - [On-device checklist](duo-on-device-checklist.md): every check that needs the physical phone. Each one is **NOT_RUN**.
 - [Duo device checks](duo-device-checks.md): the step-by-step runbook for the person at the phone, one check for each phone check the docs still mark NOT_RUN (native shell lid, Network screen, lock PIN, clock and alarms, everyday apps, the image folder check and the installer's first run), with markers on the steps that erase, reboot or change Wi-Fi, recovery paths and a results table. Nothing in it has been run.
+- [Real-GTK check of the native shell](../tools/README.md): `tools/gtk-headless.sh` and `tests/test_native_gtk_real.py` measure every page of the real shell under GTK 4 in a headless Weston on a Linux machine; skipped everywhere else and not in CI; the real run has not been made on this repository's Mac.
 
 ## Security and privacy
 
