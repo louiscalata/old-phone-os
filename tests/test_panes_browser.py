@@ -311,7 +311,7 @@ class PanesBrowser(unittest.TestCase):
         def rgb(h):
             return "rgb(%d, %d, %d)" % tuple(int(h[i : i + 2], 16) for i in (1, 3, 5))
 
-        inks = {"light": ("#1a1a1a", "#f3f0e8"), "dark": ("#fff", "#000000")}
+        inks = {"light": ("#1a1a1a", "#f3f0e8"), "dark": ("#ffffff", "#000000")}
         self.assertEqual(
             set(self.r["checkbox"]),
             {"phone-light", "phone-dark", "below-light", "below-dark", "span-right", "span-left"},
