@@ -1171,7 +1171,8 @@ class PushScriptTextTest(unittest.TestCase):
         for pattern in (r"[A-Za-z]:\\", r"/home/", r"/Users/", r"\\Users\\", r"(?<![\d.])\d{1,3}(\.\d{1,3}){3}(?![\d.])", r"https?://", r"(?i)\.local\b",
                         r"(?i)localhost", r"id_(rsa|ed25519)", r"\.pub\b", r"BEGIN [A-Z ]*KEY"):
             self.assertNotRegex(self.text, pattern)
-        self.assertEqual(re.findall(r"fe80\S*", self.text), ["fe80::1%8,"], "the one address is the documentation example in the header")
+        self.assertIn("<phone-usb-address>", self.text)
+        self.assertNotIn("fe80::1%8", self.text, "the header uses a placeholder")
 
     def test_the_key_is_never_read_and_the_bundle_only_for_its_serial(self):
         self.assertNotRegex(self.text, r"Get-Content[^\n]*\$(Key|Bundle)")

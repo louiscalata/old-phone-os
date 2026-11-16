@@ -5,10 +5,11 @@
 # (plus the scp transfer itself), and the copy lands under a .partial name that the inbox's path unit ignores until
 # the final mv, so a half-written file is never picked up.
 #
-#   powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Host <phone address> -Key <ssh login key>
+#   powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Host <phone-usb-address> -Key <ssh login key>
 #
 # -Key is the key that logs in to the phone's account (the image's development ssh key), NOT the release signing key.
-# -Host is the phone's address on the USB network (an IPv6 link-local address with its zone, such as fe80::1%8, works).
+# -Host is <phone-usb-address>; include the interface zone for IPv6 link-local connections.
+# Find the current value using packaging/duo-os/README.md, USB-link addresses.
 # Exit codes: 0 done, 1 rolled-back or failed, 2 timed out waiting, 3 could not deliver (bad argument, no route, no inbox).
 #
 # Which status is this bundle's? Only one that names it. The updater writes the bundle's serial (the one in its manifest, read

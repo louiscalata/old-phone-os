@@ -133,11 +133,11 @@ For the running phone, with no Wi-Fi and no host, copy the bundle into the phone
 image built with a login key (above) and that key's private half on your PC.
 
 ```powershell
-powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Host fe80::1%8 -Key <login key>
+powershell -File deploy\duo-push-update.ps1 -Bundle dist\opos-8.opos-update -Host "<phone-usb-address>" -Key "<login-key>"
 ```
 
-`-Host` is the phone's address on the USB network (an IPv6 link-local address needs its zone, as in the example; see
-[duo-usb-install.md](duo-usb-install.md)), `-Key` the login key (not the release key), `-User` defaults to `droidian`. The
+`-Host` is the phone's address on the USB network; an IPv6 link-local address needs its interface zone.
+Replace the placeholder using [USB-link addresses](../packaging/duo-os/README.md#usb-link-addresses); `-Key` the login key (not the release key), `-User` defaults to `droidian`. The
 script reads the serial from the bundle's manifest (and refuses a bundle whose file name says another), copies to
 `opos-8.opos-update.partial` in `/var/lib/opos-update/inbox`, renames it on the phone so the path unit never sees half a
 file, then reads `/var/lib/opos-update/status.json` every two seconds until the phase is `done`, `rolled-back` or `failed`

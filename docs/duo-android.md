@@ -1,8 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # OPOS on a stock-Android Surface Duo
 
-Status, November 7, 2026: **running on the owner's Surface Duo** (AT&T `duo-att`, stock 2022.902.48 after a
-factory reset), deployed over wireless debugging; the owner confirmed on November 11, 2026 that the phone's USB-C port carries data. Results below are from that phone on that day; they are one device and one session, not a field test.
+On November 7, 2026, OPOS ran on one Microsoft Surface Duo 1 under stock Android using Termux. The results below describe one device and one session, not a field test.
 
 ## Results on the phone, November 7, 2026
 
@@ -94,11 +93,10 @@ From the owner's November 4 read-only backup (`dumpsys`, `getprop`), not from pu
 
 | Fact | Value |
 |---|---|
-| Model / product | Surface Duo, `duo-att`, build 2022.902.48 (Android 12L, SDK 32), security patch 2023-08-01 |
+| Platform | Microsoft Surface Duo 1; Android 12L, SDK 32 |
 | SoC / ABI | Snapdragon 855 (`SM8150`, `msmnile`), `arm64-v8a` |
 | Display | One 2784 × 1800 surface at density 2.5: two 1350 px screens and an 84 px hinge, so 540 CSS px per screen and a 33.6 px hinge when spanned |
 | Battery | Li-ion, 3,179,000 µAh at 100 %; design 3,577 mAh (public spec) |
-| Bootloader | Already unlocked (`ro.boot.flash.locked=0`, verified boot `orange`) |
 | Browsers | Chrome (system), Microsoft Edge; Termux 0.118.3 was installed (same SHA-256 as the deploy's APK) |
 
 ## Deploy and undo
