@@ -3,7 +3,9 @@
 
 On the Surface Duo 1 running Droidian each panel has a backlight under /sys/class/backlight, and the shell's user may
 write its `brightness` file. Blanking writes 0 to both, after saving what they read to a small file in the user's
-runtime folder; restoring writes the saved values back and removes the file. Only those two brightness files and the
+runtime folder; restoring writes the saved values back and removes the file. In back mode (folded back, lid open) the
+shell darkens one panel only, blank(only=(index,)), under the same rules: both are saved first, the other is kept lit,
+and restore() lights both. Only those two brightness files and the
 saved file are ever written; nothing else under /sys is touched (each panel's max_brightness is read, never written),
 and nothing is ever read from debugfs. Nothing here starts a program, so nothing here can restart the compositor, the
 session or the phone.
@@ -24,7 +26,8 @@ The phone must never be left dark:
     display service never reports dark for screens it left lit; every value still reaches blank() or restore();
   - the saved file lives only in a private runtime folder (absolute path, a real folder owned by this user, not writable
     by group or others) and is read without following a symlink; otherwise nothing is blanked at all;
-  - the shell restores when the lid opens, when it starts with the lid not closed, when its lid signal is lost, when the
+  - the shell restores when the lid opens, when it starts with the lid not closed, when back mode ends (any posture but
+    "back", or no hinge reading; the lid closing hands the dark over to the lid's own blank), when its lid signal is lost, when the
     lid daemon asks (PowerSaveMode 0, through on_restore, so the shell's retries cover it), and when it ends (also on
     SIGTERM); the session launcher runs `python3 -m opos.native.blank --restore` after every end of the shell, clean
     (0) and SIGTERM (143) included, and before the browser starts, and the browser kiosk runs it before the browser starts, which covers
@@ -189,15 +192,19 @@ class Blanker:
         finally:
             os.close(fd)
 
-    def blank(self):
+    def blank(self, only=None):
         """Save both panels' brightness, then write 0 to both. Returns True when it wrote 0 to a panel. Does nothing
         (False) when blanking is not allowed now, when the runtime folder is not private, or when every readable panel
         is already dark. A panel that reads 0 or cannot be read is saved as its default.
+
+        only, a tuple of PANELS indexes, darkens those panels alone and keeps every other one lit (see _blank_some).
 
         When a saved file is already there, it is never replaced (it must never be overwritten with zeros or with
         values read after a blank): the panels it covers are already meant to be dark, so any panel that reads above 0
         now (a crash after saving and before writing, or a panel that came back on while the lid stayed closed) is
         written 0 again."""
+        if only is not None:
+            return self._blank_some(only)
         if not self.may_blank():
             return False
         why = unsafe_dir(self.run_dir)
@@ -223,6 +230,51 @@ class Blanker:
         self.blanks += 1
         self._darken(PANELS)
         return True
+
+    def _blank_some(self, only):
+        """blank(only=...): the panels at those indexes dark, every other panel lit. The shell asks for this in back mode
+        (one screen used, the lid open), so may_blank (the lid daemon's guard) is not asked, and it does not count in
+        `blanks`: it is not a request for dark screens, and a restore the shell is retrying must not stop for it.
+
+        The same rules as blank(): both panels are saved before any is written, and a saved file already there (a lid
+        blank not yet restored, an earlier blank of one panel) is never replaced; its values stay what restore() writes
+        back. Then each other panel that reads 0 or cannot be read is lit with its saved value, and only when all of
+        them were lit is each panel asked for that does not read 0 written 0; when one could not be lit, nothing is
+        darkened (False). `failed` lists only the panels that could not be lit, so the shell tries again. When nothing can be saved (the runtime folder is not private, the file cannot be written) nothing is
+        darkened and restore() is run instead, so the result is never darker than asked."""
+        ids = tuple(only) if isinstance(only, (tuple, list)) else (only,)
+        dark = [p for i, p in enumerate(PANELS) if i in ids]
+        if not dark or len(dark) == len(PANELS):
+            self.say("blank(only=%r) names no single panel; nothing is darkened" % (only,))
+            self.restore()
+            return False
+        why = unsafe_dir(self.run_dir)
+        if why:
+            self.say(why + "; the screens stay lit")
+            self.restore()
+            return False
+        now = [self.read(p) for p in PANELS]
+        if not os.path.lexists(self.saved_path):
+            try:
+                self._save(tuple(v if v else d for v, d in zip(now, DEFAULTS)))   # False: one appeared meanwhile; kept
+            except OSError as err:
+                self.say("cannot save the brightness in %s (%s); the screens stay lit" % (self.run_dir, err.strerror or err))
+                self.restore()
+                return False
+        if os.path.islink(self.saved_path) or not os.path.isfile(self.saved_path):
+            self.restore()          # not a saved file this module wrote: never darken on it
+            return False
+        # Light first, darken after: when the panel that should be lit cannot be written, the other is left as it was,
+        # so a failed switch from one screen to the other never leaves both dark.
+        failed = []
+        for p, v, s in zip(PANELS, now, parse_saved(self._read_saved())):
+            if p not in dark and not v:
+                self._write(p, self.lit(p, s), failed)
+        self.failed = failed
+        if failed:
+            self.say("cannot light " + "; ".join(failed) + "; the other screen is left as it is")
+            return False
+        return self._darken([p for p, v in zip(PANELS, now) if p in dark and v != 0])
 
     def _darken(self, panels):
         """Write 0 to each of panels; True when at least one was written."""

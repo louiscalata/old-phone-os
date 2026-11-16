@@ -128,13 +128,71 @@ class Events(unittest.TestCase):
 
 
 class Posture(unittest.TestCase):
-    def test_closed_or_open_and_the_angle_changes_nothing_yet(self):
+    def test_closed_or_open_without_an_angle(self):
         self.assertEqual(posture.posture(True), "closed")
         self.assertEqual(posture.posture(False), "open")
         self.assertEqual(posture.posture(None), "open")
+        for angle in (None, "x", -1, 361, float("nan"), True):
+            self.assertEqual(posture.posture(False, angle), "open", "a reading that says nothing leaves it open")
+
+    def test_closed_is_the_lid_switchs_to_say(self):
+        for angle in (0, 5, 14.9):
+            self.assertEqual(posture.classify(angle), "closed", "the zone exists for the angle on its own")
+            self.assertEqual(posture.posture(False, angle), "open", "but with the lid open it is only open")
+            self.assertEqual(posture.posture(False, angle, "closed"), "open")
+        self.assertEqual(posture.posture(True, 0), "closed")
+
+    def test_the_lid_wins_over_the_angle(self):
         for angle in (0, 90, 180, 300, None):
-            self.assertEqual(posture.posture(False, angle), "open")
             self.assertEqual(posture.posture(True, angle=angle), "closed")
+
+    def test_the_angle_tells_the_postures_apart(self):
+        for angle, name in ((15, "book"), (90, "book"), (169, "book"), (170, "flat"),
+                            (180, "flat"), (189, "flat"), (190, "tent"), (270, "tent"), (344, "tent"), (345, "back"), (360, "back")):
+            with self.subTest(angle=angle):
+                self.assertEqual(posture.posture(False, angle), name)
+
+    def test_a_posture_is_held_a_few_degrees_past_its_border(self):
+        self.assertEqual(posture.posture(False, 165, "flat"), "flat")      # 170 is the border; HYST is 6
+        self.assertEqual(posture.posture(False, 163, "flat"), "book")
+        self.assertEqual(posture.posture(False, 195, "flat"), "flat")
+        self.assertEqual(posture.posture(False, 197, "flat"), "tent")
+        self.assertEqual(posture.posture(False, 175, "book"), "book")
+        self.assertEqual(posture.posture(False, 176, "book"), "flat")
+        self.assertEqual(posture.posture(False, 170, "no-such-posture"), "flat")
+
+    def test_the_dossier_numbers_agree_with_the_screens_the_shell_is_given(self):
+        self.assertEqual(posture.PANEL_WIDTH_PX * 2 + posture.HINGE_COLUMN_PX, 2784)
+        self.assertEqual(posture.HINGE_RANGE, (0, 360))
+        self.assertEqual((posture.ZONES[0][1], posture.ZONES[-1][2]), (0, posture.HINGE_RANGE[1] + 1), "the zones cover the whole range")
+        for (_n1, _l1, high), (_n2, low, _h2) in zip(posture.ZONES, posture.ZONES[1:]):
+            self.assertEqual(high, low, "no gap between zones")
+        span = (Path(__file__).resolve().parents[1] / "packaging" / "duo-os" / "opos-native").read_text(encoding="utf-8")
+        self.assertIn("675,42", span)          # pane and gap in logical px, scale 2: 2 * 675 + 42 = 2784 / 2
+        self.assertEqual(2 * (2 * 675 + 42), 2 * 1392)
+        self.assertEqual(posture.HINGE_COLUMN_PX // 2, 42)
+        self.assertEqual(posture.PANEL_WIDTH_PX // 2, 675)
+
+    def test_the_android_folding_state_has_only_two_values(self):
+        self.assertEqual({posture.folding_state(n) for n in ("book", "tent", "flat")}, {"HALF_OPENED", "FLAT"})
+        for name in ("closed", "back", "open", None, "x"):
+            self.assertIsNone(posture.folding_state(name))
+
+    def test_the_settings_line_names_the_posture_and_never_raises(self):
+        self.assertEqual(posture.describe("book", 131.6), "Book, hinge at 132 degrees.")
+        self.assertEqual(posture.describe(None, 0), "Open, hinge at 0 degrees.")
+        self.assertIn("One screen is lit", posture.describe("back", 360))
+        for bad in (None, "x", -1, 400, float("nan"), True):
+            self.assertTrue(posture.describe("book", bad).startswith("No hinge reading"), bad)
+        for name in ("flat", "tent", "book"):
+            self.assertNotIn("do not depend", posture.describe(name, 180), "that was true before back mode")
+
+    def test_a_wobble_on_a_border_does_not_flicker(self):
+        seen, prev = [], None
+        for angle in (168, 171, 169, 172, 168, 171, 167, 173, 169):
+            prev = posture.posture(False, angle, prev)
+            seen.append(prev)
+        self.assertEqual(len(set(seen[1:])), 1, seen)
 
 
 class Watcher(unittest.TestCase):

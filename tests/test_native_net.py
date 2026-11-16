@@ -1664,6 +1664,7 @@ class ShellParts(unittest.TestCase):
                                     strip=types.SimpleNamespace(set_opacity=lambda v: None), set_shade=lambda v: None,
                                     show_page=lambda name, how: events.append("show " + name), blank_if_closed=lambda: None)
         win.go = lambda n: self.shell.Shell.go(win, n)
+        win.set_posture = lambda: None
         timers = []
         err = io.StringIO()
         with mock.patch.object(self.shell, "GLib", types.SimpleNamespace(timeout_add=lambda ms, fn: timers.append(fn))), \
