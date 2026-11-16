@@ -9,7 +9,7 @@ from opos import firstrun_page, net_page
 TOKENS = {
     "#1a1a1a",
     "#f3f0e8",
-    "#e6e2d9",
+    "#fff",
     "#000",
 }  # the two token pairs of jaryo.css, the only colour literals a page may state
 HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")

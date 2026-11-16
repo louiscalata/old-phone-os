@@ -252,10 +252,10 @@ class PanesBrowser(unittest.TestCase):
             self.assertEqual((m["attrs"]["panes"], m["attrs"]["hand"]), ("two", hand), k)
 
     def test_the_root_has_the_ink_of_the_right_pane_and_the_caret_follows_it(self):
-        # html paints the right pane, so its colour is that pane's ink (not the theme's): #e6e2d9 on black in Right, #1a1a1a on white in Left
+        # html paints the right pane, so its colour is that pane's ink (not the theme's): #fff on black in Right, #1a1a1a on white in Left
         for prefix in ("states", "os"):
             for k, scheme, hand, name, m in self.states(prefix):
-                ink = "rgb(230, 226, 217)" if hand == "right" else "rgb(26, 26, 26)"
+                ink = "rgb(255, 255, 255)" if hand == "right" else "rgb(26, 26, 26)"
                 self.assertEqual((m["root"]["color"], m["root"]["caret"]), (ink, ink), k)
 
     def test_the_two_surfaces_are_one_black_and_one_white_and_the_hinge_is_black(self):
@@ -295,7 +295,7 @@ class PanesBrowser(unittest.TestCase):
                 self.assertEqual(m["bad"], [], k)
                 self.assertLessEqual(
                     set(m["colors"]),
-                    {"rgb(0,0,0)", "rgb(230,226,217)", "rgb(243,240,232)", "rgb(26,26,26)", "transparent"},
+                    {"rgb(0,0,0)", "rgb(255,255,255)", "rgb(243,240,232)", "rgb(26,26,26)", "transparent"},
                     k,
                 )
 
@@ -311,7 +311,7 @@ class PanesBrowser(unittest.TestCase):
         def rgb(h):
             return "rgb(%d, %d, %d)" % tuple(int(h[i : i + 2], 16) for i in (1, 3, 5))
 
-        inks = {"light": ("#1a1a1a", "#f3f0e8"), "dark": ("#e6e2d9", "#000000")}
+        inks = {"light": ("#1a1a1a", "#f3f0e8"), "dark": ("#fff", "#000000")}
         self.assertEqual(
             set(self.r["checkbox"]),
             {"phone-light", "phone-dark", "below-light", "below-dark", "span-right", "span-left"},
@@ -421,7 +421,7 @@ class PanesBrowser(unittest.TestCase):
         "unlock": ("lock-start", "lock"),
         "lock-call": ("lock-start", "lock"),
     }
-    PRESSED_ON_BLACK = ("rgb(0,0,0)", "rgb(230,226,217)")  # label, fill: the black pane's inverted fill
+    PRESSED_ON_BLACK = ("rgb(0,0,0)", "rgb(255,255,255)")  # label, fill: the black pane's inverted fill
 
     def pressed(self, kind):
         """(page, state key, state name, item) for every pressed control of the main page and the OS pages."""
@@ -536,8 +536,8 @@ class PanesBrowser(unittest.TestCase):
             k = self.r["osk"][hand]
             self.assertIsNotNone(k, hand)
             first, last = k["panels"][0], k["panels"][-1]
-            lft = ("rgb(26, 26, 26)", WHITE) if hand == "right" else ("rgb(230, 226, 217)", BLACK)
-            rgt = ("rgb(230, 226, 217)", BLACK) if hand == "right" else ("rgb(26, 26, 26)", WHITE)
+            lft = ("rgb(26, 26, 26)", WHITE) if hand == "right" else ("rgb(255, 255, 255)", BLACK)
+            rgt = ("rgb(255, 255, 255)", BLACK) if hand == "right" else ("rgb(26, 26, 26)", WHITE)
             self.assertEqual((first["keyFg"], first["keyBg"]), lft, hand)
             self.assertEqual((last["keyFg"], last["keyBg"]), rgt, hand)
             self.assertLess(first["r"], 700, hand)

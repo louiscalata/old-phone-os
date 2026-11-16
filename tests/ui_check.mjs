@@ -105,7 +105,7 @@ const reloadAndWait = async (cdp) => {
           await reloadAndWait(cdp);
           await evalJs(cdp, `document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
           const v = await evalJs(cdp, `(()=>{const m=document.querySelector('#meter'), f=document.querySelector('#meter-fill'), s=getComputedStyle(f), root=getComputedStyle(document.documentElement);return {tone:m.dataset.tone,title:document.querySelector('#sheet-title').dataset.tone,fill:s.backgroundColor,shadow:s.boxShadow,animation:getComputedStyle(m).animationName,fg:root.getPropertyValue('--jaryo-fg').trim(),bg:getComputedStyle(m).backgroundColor}})()`);
-          const expected = theme === 'light' ? 'rgb(26, 26, 26)' : 'rgb(230, 226, 217)';
+          const expected = theme === 'light' ? 'rgb(26, 26, 26)' : 'rgb(255, 255, 255)';
           if (v.tone !== tone || v.title !== tone) throw new Error(`tone ${JSON.stringify(v)} != ${tone}`);
           if (v.fill !== expected || v.fill === v.bg || v.shadow !== 'none' || v.animation !== 'none') throw new Error(`theme ${theme}: ${JSON.stringify(v)}`);
         }

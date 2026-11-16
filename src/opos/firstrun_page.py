@@ -12,9 +12,9 @@ from opos import secure
 
 CSS = """
 :root{--fg:#1a1a1a;--bg:#f3f0e8;--hinge:42px;color-scheme:light}
-@media(prefers-color-scheme:dark){:root:not([data-theme]){--fg:#e6e2d9;--bg:#000;color-scheme:dark}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--fg:#fff;--bg:#000;color-scheme:dark}}
 :root[data-theme=light]{--fg:#1a1a1a;--bg:#f3f0e8;color-scheme:light}
-:root[data-theme=dark]{--fg:#e6e2d9;--bg:#000;color-scheme:dark}
+:root[data-theme=dark]{--fg:#fff;--bg:#000;color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
