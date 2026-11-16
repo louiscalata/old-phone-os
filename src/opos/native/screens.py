@@ -113,7 +113,7 @@ class Page:
 
         def work():
             try:
-                got = self.shell.core.app(self.api, data)
+                got = self.fetch(data)
             except urllib.error.HTTPError as err:
                 try:
                     got = {"error": json.loads(err.read().decode("utf-8", "replace")).get("error") or "refused"}
@@ -130,6 +130,10 @@ class Page:
         except RuntimeError:  # no thread could be started: nothing was sent. Answer, so no button waits for ever.
             GLib.idle_add(self.deliver, n, {"error": "not sent"}, done, False)
         return n
+
+    def fetch(self, data):
+        """The answer to one call, worked out on the worker thread: the server's app endpoint (a read when data is None)."""
+        return self.shell.core.app(self.api, data)
 
     def deliver(self, n, data, done=None, wrote=False):
         # The reply to a write (an alarm added, a note saved) is accepted with a floor, as Shell.answered does: a refresh
@@ -907,12 +911,25 @@ class Calculator(Page):
         return "\n".join(self.calc.tape[-6:]) or "No sums yet.", []
 
 
+def converter_source():
+    """The converter's own code, run in this process: (read the measures, work one conversion out). It is the code the
+    server's /api/convert runs (convert.snapshot and the /convert page's own post), so an answer, a refusal and a word of
+    either cannot differ from the server's. None when that code cannot be loaded; the screen then asks the server."""
+    try:
+        from opos import convert, convert_page
+    except Exception:
+        return None
+    return convert.snapshot, convert_page.post
+
+
 class Converter(Page):
-    """Length, mass, volume and temperature, worked out by the server's converter (GET and POST /api/convert, the same
-    as the browser's /convert page). The phone works nothing out: the measures and units are the server's, and the
-    answer shown is the server's own text. One conversion is asked at a time; while it is on its way the amount and the
-    units cannot change, so the answer drawn is always for what is on screen, and any later change clears it. Nothing
-    is stored: what is typed and the last answer live only in this page while the shell runs."""
+    """Length, mass, volume and temperature, worked out in this process by the same code as the server's converter
+    (opos.convert: GET and POST /api/convert and the browser's /convert page run it too), so no server is needed and a
+    server that is down changes nothing. Only if that code cannot be loaded does the screen ask /api/convert instead.
+    The measures and units are the converter's own, and the answer shown is its own text. One conversion is asked at a
+    time; while it is on its way the amount and the units cannot change, so the answer drawn is always for what is on
+    screen, and any later change clears it. Nothing is stored: what is typed and the last answer live only in this
+    page while the shell runs."""
 
     name, title, api = "convert", "Converter", "convert"
     UNAVAILABLE = "That conversion is not available."
@@ -926,6 +943,17 @@ class Converter(Page):
         "kind": "Choose a measure.",
     }
     PAD = "789456123-0."
+    source = staticmethod(converter_source)  # what to run in this process; a test hands in another, or None
+
+    def fetch(self, data):
+        local = self.source()
+        if local is None:
+            return super().fetch(data)
+        read, post = local
+        if data is None:
+            return read()
+        status, body = post(data)
+        return body if status == 200 else {"error": (body or {}).get("error") or "refused"}
 
     def build(self):
         self.kinds, self.kind, self.src, self.dst = [], None, None, None
