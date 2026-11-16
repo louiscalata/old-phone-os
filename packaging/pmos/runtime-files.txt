@@ -51,6 +51,8 @@ src/opos/home.py
 src/opos/hw/__init__.py
 src/opos/hw/battery.py
 src/opos/hw/detect.py
+src/opos/hw/device.py
+src/opos/hw/facts.py
 src/opos/hw/live_battery.py
 src/opos/hw/store.py
 src/opos/image_identity.py
