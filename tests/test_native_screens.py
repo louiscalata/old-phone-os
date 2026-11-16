@@ -4,6 +4,7 @@ records what the screens ask the server and answers when the test says so. No di
 run everywhere. What they pin: a draft, a contact, an alarm or a note changes on screen only when the server confirms,
 a late reply never puts a screen back, rows that read the same act on the newest id, and practice is said."""
 import importlib
+import os
 import sys
 import threading
 import types
@@ -835,6 +836,35 @@ class Screens(unittest.TestCase):
         c.convert()
         self.flush()
         self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")
+
+    # --- Settings: storage ----------------------------------------------------------------------------------------
+    def test_storage_is_read_when_settings_is_entered_and_not_before(self):
+        reads = []
+
+        def usage(path):
+            reads.append(path)
+            return types.SimpleNamespace(total=52_100_000_000, used=0, free=12_300_000_000)
+        self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
+        s = self.page(self.screens.Settings)
+        s.preview({})
+        s.show({})
+        s.tick()
+        self.assertEqual(reads, [], "building, previewing, a new state and the clock read nothing")
+        self.assertEqual(s.storage.get_label(), "Storage: unknown")
+        s.enter()
+        self.assertEqual(s.storage.get_label(), "Storage: 12.3 GB free of 52.1 GB")
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(reads[0], os.path.expanduser("~") if os.path.isdir(os.path.expanduser("~")) else os.sep, "the owner's home folder is the one measured")
+        s.enter()
+        self.assertEqual(len(reads), 2, "read again on each visit, once")
+
+    def test_a_failing_storage_read_says_unknown(self):
+        def usage(path):
+            raise PermissionError("no")
+        self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
+        s = self.page(self.screens.Settings)
+        s.enter()
+        self.assertEqual(s.storage.get_label(), "Storage: unknown")
 
 
 class Recorder:

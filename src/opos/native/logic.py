@@ -536,3 +536,41 @@ class LockCheck:
 def needs_browser(snap):
     """True when the server is locked with a PIN: the native shell has no PIN screen, so the browser must show it."""
     return isinstance(snap, dict) and snap.get("locked") is True
+
+
+STORAGE_UNKNOWN = "Storage: unknown"
+_SIZES = ((10 ** 12, "TB"), (10 ** 9, "GB"), (10 ** 6, "MB"))     # decimal units, as phones and shops count them
+
+
+def size_words(n):
+    """A count of bytes as one short size: "12.3 GB", "512.0 MB", "0 MB"; under 1 MB (not 0) is "under 1 MB"."""
+    if n == 0:
+        return "0 MB"
+    for i, (unit, word) in enumerate(_SIZES):     # the biggest unit n reaches
+        if n >= unit:
+            shown = round(n / unit, 1)
+            if shown >= 1000 and i:     # 999.96 GB would read "1000.0 GB": it reads "1.0 TB"
+                return "%.1f %s" % (round(n / _SIZES[i - 1][0], 1), _SIZES[i - 1][1])
+            return "%.1f %s" % (shown, word)
+    return "under 1 MB"
+
+
+def storage_line(usage):
+    """The Settings line for a shutil.disk_usage() answer: "Storage: 12.3 GB free of 52.1 GB". None, or numbers that
+    cannot be true (no total, a negative count, more free than there is), read "Storage: unknown"."""
+    try:
+        total, free = int(usage.total), int(usage.free)
+    except (AttributeError, TypeError, ValueError):
+        return STORAGE_UNKNOWN
+    if total <= 0 or free < 0 or free > total:
+        return STORAGE_UNKNOWN
+    return "Storage: %s free of %s" % (size_words(free), size_words(total))
+
+
+def read_storage(path, disk_usage):
+    """storage_line() for the folder at `path`, read once with disk_usage (shutil.disk_usage). Any failure to read
+    (no such folder, no permission, a broken mount) reads "Storage: unknown"; nothing is retried or polled."""
+    try:
+        return storage_line(disk_usage(path))
+    except Exception:
+        return STORAGE_UNKNOWN

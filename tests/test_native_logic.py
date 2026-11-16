@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What the native screens work out without a toolkit: typing, sums, and the lines for alarms, timers and calls."""
 import ast
+import types
 import unittest
 from pathlib import Path
 
@@ -349,6 +350,50 @@ class Pending(unittest.TestCase):
         self.assertEqual(p.what, "call", "7 may have been asked before the reply came")
         p.seen(8)
         self.assertIsNone(p.what)
+
+
+class Storage(unittest.TestCase):
+    """The Settings storage line: one factual line from a shutil.disk_usage() answer."""
+
+    def usage(self, total, free):
+        return types.SimpleNamespace(total=total, used=total - free, free=free)
+
+    def test_one_factual_line(self):
+        self.assertEqual(logic.storage_line(self.usage(52_100_000_000, 12_300_000_000)), "Storage: 12.3 GB free of 52.1 GB")
+        self.assertEqual(logic.storage_line(self.usage(64_000_000_000, 512_000_000)), "Storage: 512.0 MB free of 64.0 GB")
+
+    def test_sizes(self):
+        self.assertEqual(logic.size_words(0), "0 MB")
+        self.assertEqual(logic.size_words(1), "under 1 MB")
+        self.assertEqual(logic.size_words(1_000_000), "1.0 MB")
+        self.assertEqual(logic.size_words(999_960_000), "1.0 GB", "never 1000.0 MB")
+        self.assertEqual(logic.size_words(999_940_000_000), "999.9 GB")
+        self.assertEqual(logic.size_words(2 ** 70), "1180591620.7 TB", "huge still reads as one number")
+
+    def test_an_empty_disk_and_a_full_one(self):
+        self.assertEqual(logic.storage_line(self.usage(32_000_000_000, 0)), "Storage: 0 MB free of 32.0 GB")
+        self.assertEqual(logic.storage_line(self.usage(32_000_000_000, 32_000_000_000)), "Storage: 32.0 GB free of 32.0 GB")
+
+    def test_numbers_that_cannot_be_true_read_unknown(self):
+        for bad in (None, self.usage(0, 0), self.usage(-1, 0), self.usage(10, 20), self.usage(10, -1),
+                    types.SimpleNamespace(total="many", free=1), object()):
+            self.assertEqual(logic.storage_line(bad), "Storage: unknown", repr(bad))
+
+    def test_a_failing_read_reads_unknown(self):
+        def broken(path):
+            raise OSError("no such folder")
+        self.assertEqual(logic.read_storage("/nowhere", broken), "Storage: unknown")
+
+        def not_a_path(path):
+            raise ValueError("embedded null byte")      # not an OSError: still unknown, never a traceback in Settings
+        self.assertEqual(logic.read_storage("/x", not_a_path), "Storage: unknown")
+        self.assertEqual(logic.read_storage("/x", lambda p: self.usage(2_000_000_000, 1_000_000_000)),
+                         "Storage: 1.0 GB free of 2.0 GB")
+
+    def test_this_computer_gives_a_line(self):
+        import shutil
+        line = logic.read_storage("/", shutil.disk_usage)
+        self.assertRegex(line, r"^Storage: (unknown|(0 MB|under 1 MB|[\d.]+ [MGT]B) free of [\d.]+ [MGT]B)$")
 
 
 if __name__ == "__main__":
