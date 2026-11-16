@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Loopback server security helpers."""
+
 import hmac
 import json
 import secrets
@@ -94,8 +95,10 @@ def read_json_body(rfile: BinaryIO, headers: Any, limit: int = MAX_BODY) -> dict
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         raise BodyError(400, "bad json")
+
     def _bad(_v: str) -> Any:
         raise ValueError("bad constant")
+
     try:
         value = json.loads(text, parse_constant=_bad)
     except (ValueError, RecursionError):
@@ -107,7 +110,11 @@ def read_json_body(rfile: BinaryIO, headers: Any, limit: int = MAX_BODY) -> dict
 
 def _nonce_ok(nonce: Any) -> bool:
     """Check nonce uses only URL-safe characters."""
-    return isinstance(nonce, str) and 1 <= len(nonce) <= 128 and all(c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in nonce)
+    return (
+        isinstance(nonce, str)
+        and 1 <= len(nonce) <= 128
+        and all(c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in nonce)
+    )
 
 
 def csp(nonce: str) -> str:

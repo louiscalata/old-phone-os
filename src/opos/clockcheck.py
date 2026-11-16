@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Is the system clock plausible? A phone that has never had its time set reports 1970."""
+
 import time
 
 

@@ -13,6 +13,7 @@ no network name reaches the helper. Calls and texts are still simulated, and eve
     python3 -m opos.net [status|scan|probe]     what OPOS sees (probe: the raw tool output, to refine the parsers)
     python3 -m opos.net join SSID < password    the same join the page does (password on stdin)
 """
+
 from __future__ import annotations
 
 import os
@@ -38,10 +39,12 @@ NEEDS = {
     "power": ("enable-disable-wifi",),
 }
 ACTIONS = tuple(sorted({NM + p for v in NEEDS.values() for p in v}))
-SIMULATED = ("Calls and texts in OPOS are still simulated: this page shows the phone's real radios, "
-             "but no real call or text goes through the modem yet.")
-READ_S = 6.0      # one read-only tool
-BUDGET_S = 15.0   # one whole status pass
+SIMULATED = (
+    "Calls and texts in OPOS are still simulated: this page shows the phone's real radios, "
+    "but no real call or text goes through the modem yet."
+)
+READ_S = 6.0  # one read-only tool
+BUDGET_S = 15.0  # one whole status pass
 JOIN_WAIT_S = 35  # nmcli --wait for a join
 JOIN_EXTRA_S = 10  # how long past that OPOS waits for nmcli itself
 CACHE_S = 3.0
@@ -67,7 +70,11 @@ class Run(NamedTuple):
 def _env(path=None):
     base = os.environ.get("PATH") or "/usr/bin:/bin"
     # C.UTF-8 keeps nmcli's messages English and its SSIDs unmangled.
-    return {"PATH": path if path is not None else base + ":/usr/local/sbin:/usr/sbin:/sbin", "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8"}
+    return {
+        "PATH": path if path is not None else base + ":/usr/local/sbin:/usr/sbin:/sbin",
+        "LC_ALL": "C.UTF-8",
+        "LANG": "C.UTF-8",
+    }
 
 
 def _kill(p):
@@ -85,12 +92,15 @@ def _run_tty(argv, timeout, stdin, env):
     import pty
     import select
     import termios
+
     master, slave = pty.openpty()
     attrs = termios.tcgetattr(slave)
     attrs[3] &= ~termios.ECHO  # what is typed is not echoed back into the output
     termios.tcsetattr(slave, termios.TCSANOW, attrs)
     try:
-        p = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, env=env, close_fds=True, start_new_session=True)
+        p = subprocess.Popen(
+            argv, stdin=slave, stdout=slave, stderr=slave, env=env, close_fds=True, start_new_session=True
+        )
     except FileNotFoundError:
         os.close(master)
         return Run(127, missing=True)
@@ -135,8 +145,17 @@ def run(argv, timeout=READ_S, stdin=None, *, path=None, tty=False):
     if tty and stdin is not None:
         return _run_tty(list(argv), timeout, stdin, env)
     try:
-        p = subprocess.Popen(list(argv), stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, env=env, text=True, encoding="utf-8", errors="replace", start_new_session=True)
+        p = subprocess.Popen(
+            list(argv),
+            stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            start_new_session=True,
+        )
     except FileNotFoundError:
         return Run(127, missing=True)
     except (OSError, ValueError):
@@ -243,7 +262,9 @@ def check_password(pw):
     if not isinstance(pw, str) or not pw:
         return "Type the network's password."
     if len(pw) == 64:
-        return None if re.fullmatch(r"[0-9A-Fa-f]{64}", pw) else "A 64-character Wi-Fi password must use only 0-9 and a-f."
+        return (
+            None if re.fullmatch(r"[0-9A-Fa-f]{64}", pw) else "A 64-character Wi-Fi password must use only 0-9 and a-f."
+        )
     if not 8 <= len(pw) <= 63:
         return "A Wi-Fi password is 8 to 63 characters."
     if any(not 32 <= ord(c) <= 126 for c in pw):
@@ -282,7 +303,11 @@ def explain(r, secret=None):
     if r.rc == 8:
         return "The phone's network service (NetworkManager) is not running."
     first = next((l.strip() for l in raw.splitlines() if l.strip()), "")
-    return ("The network service refused: " + clean(first.removeprefix("Error:").strip(), 120)) if first else "The network service did not say why."
+    return (
+        ("The network service refused: " + clean(first.removeprefix("Error:").strip(), 120))
+        if first
+        else "The network service did not say why."
+    )
 
 
 def _ok(msg, **kw):
@@ -346,7 +371,14 @@ class Net:
         if not rows or rows[0][0] != "running":
             return None
         f = rows[0]
-        return {"state": f[1], "connectivity": f[2], "wifi_hw": f[3] == "enabled", "wifi": f[4] == "enabled", "wwan_hw": f[5] == "enabled", "wwan": f[6] == "enabled"}
+        return {
+            "state": f[1],
+            "connectivity": f[2],
+            "wifi_hw": f[3] == "enabled",
+            "wifi": f[4] == "enabled",
+            "wwan_hw": f[5] == "enabled",
+            "wwan": f[6] == "enabled",
+        }
 
     def _devices(self, q):
         r = q.call(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"])
@@ -358,7 +390,7 @@ class Net:
         r = q.call(["nmcli", "-t", "general", "permissions"])
         if not r.ok:
             return None
-        return {f[0][len(NM):]: f[1].strip().lower() for f in _rows(r.out, 2) if f[0].startswith(NM)}
+        return {f[0][len(NM) :]: f[1].strip().lower() for f in _rows(r.out, 2) if f[0].startswith(NM)}
 
     def _rfkill(self, q):
         r = q.call(["rfkill", "list"])
@@ -374,7 +406,9 @@ class Net:
                 if skip:
                     cur = None
                     continue
-                kind = {"wireless lan": "wlan", "bluetooth": "bluetooth", "wireless wan": "wwan"}.get(m.group(2).lower(), m.group(2).lower())
+                kind = {"wireless lan": "wlan", "bluetooth": "bluetooth", "wireless wan": "wwan"}.get(
+                    m.group(2).lower(), m.group(2).lower()
+                )
                 cur = {"name": m.group(1), "type": kind, "soft": False, "hard": False}
                 rows.append(cur)
                 continue
@@ -401,7 +435,9 @@ class Net:
         r = q.call(["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE", "connection", "show"])
         if not r.ok:
             return None
-        return [{"name": f[0], "uuid": f[1], "type": f[2], "active": f[3] not in ("", "--")} for f in _rows(r.out, 4)]  # nmcli may print -- for no device
+        return [
+            {"name": f[0], "uuid": f[1], "type": f[2], "active": f[3] not in ("", "--")} for f in _rows(r.out, 4)
+        ]  # nmcli may print -- for no device
 
     def _wifi_profiles(self, q, limit=None):
         """(profiles, complete): the saved Wi-Fi profiles with their SSIDs, or (None, False) if NetworkManager does not list them.
@@ -426,7 +462,11 @@ class Net:
         return self._wifi_profiles(q, PROFILE_MAX)[0]
 
     def _nm_why(self, q):
-        return q.why("nmcli", "NetworkManager") if (q.missing or q.slow) else "NetworkManager is not running or did not answer"
+        return (
+            q.why("nmcli", "NetworkManager")
+            if (q.missing or q.slow)
+            else "NetworkManager is not running or did not answer"
+        )
 
     # ---- status ----
 
@@ -454,10 +494,20 @@ class Net:
         wifi = self._wifi(q, gs, devs, ips, radios)
         modem, sim = self._modem(q)
         bt = self._bluetooth(q, rf, radios)
-        s = {"ok": True, "wifi": wifi, "bluetooth": bt, "modem": modem, "sim": sim,
-             "data": self._data(gs, profiles, wifi), "airplane": self._airplane(gs, rf, bt, radios, modem), "usb": self._usb(ips, radios),
-             "clock": self._net_clock(q, gs),
-             "control": self._control(q, gs, perms), "simulated": SIMULATED, "notes": []}
+        s = {
+            "ok": True,
+            "wifi": wifi,
+            "bluetooth": bt,
+            "modem": modem,
+            "sim": sim,
+            "data": self._data(gs, profiles, wifi),
+            "airplane": self._airplane(gs, rf, bt, radios, modem),
+            "usb": self._usb(ips, radios),
+            "clock": self._net_clock(q, gs),
+            "control": self._control(q, gs, perms),
+            "simulated": SIMULATED,
+            "notes": [],
+        }
         if self._wall() < 1.6e9:
             s["notes"].append("The phone's clock is not set yet, so secure websites and updates may fail until it is.")
         s["tools_missing"] = sorted(q.missing)
@@ -479,13 +529,24 @@ class Net:
         return {"state": "unknown", "summary": "Clock: network time could not be checked"}
 
     def _wifi(self, q, gs, devs, ips, radios):
-        w = {"present": True if "wifi" in radios["radios_present"] else None, "enabled": None, "state": "unavailable", "device": None,
-             "ssid": None, "signal": None, "security": None, "ip": None, "internet": None}
+        w = {
+            "present": True if "wifi" in radios["radios_present"] else None,
+            "enabled": None,
+            "state": "unavailable",
+            "device": None,
+            "ssid": None,
+            "signal": None,
+            "security": None,
+            "ip": None,
+            "internet": None,
+        }
         if gs is None:
             wl = next((v for k, v in (ips or {}).items() if k.startswith(("wl", "wifi"))), None)
             if wl and wl["addrs"]:
                 w["ip"] = wl["addrs"][0].split("/")[0]
-            w["summary"] = "Wi-Fi: unknown (" + self._nm_why(q) + ")" + (f"; the adapter has address {w['ip']}" if w["ip"] else "")
+            w["summary"] = (
+                "Wi-Fi: unknown (" + self._nm_why(q) + ")" + (f"; the adapter has address {w['ip']}" if w["ip"] else "")
+            )
             return w
         w["enabled"] = gs["wifi"]
         dev = next((d for d in devs or [] if d["type"] == "wifi"), None)
@@ -496,7 +557,9 @@ class Net:
             if w["present"] is None:
                 w["present"] = False
             w["state"] = "absent"
-            w["summary"] = "Wi-Fi: NetworkManager lists no Wi-Fi adapter" + (" although the system shows one" if w["present"] else "")
+            w["summary"] = "Wi-Fi: NetworkManager lists no Wi-Fi adapter" + (
+                " although the system shows one" if w["present"] else ""
+            )
             return w
         w["present"], w["device"] = True, dev["device"]
         st = dev["state"].split(" ")[0]
@@ -507,8 +570,12 @@ class Net:
         elif st == "connected":
             w.update(self._link(q, dev["device"], dev["connection"]))
             w["internet"] = {"full": True, "limited": False, "none": False, "portal": False}.get(gs["connectivity"])
-            tail = {"full": ", NetworkManager reports internet access", "limited": ", but NetworkManager sees no internet", "none": ", but NetworkManager sees no internet",
-                    "portal": ", but a sign-in page is in the way"}.get(gs["connectivity"], "")
+            tail = {
+                "full": ", NetworkManager reports internet access",
+                "limited": ", but NetworkManager sees no internet",
+                "none": ", but NetworkManager sees no internet",
+                "portal": ", but a sign-in page is in the way",
+            }.get(gs["connectivity"], "")
             sig = f" (signal {w['signal']}%, {_bars(w['signal'])})" if w["signal"] is not None else ""
             w["state"] = "connected"
             w["summary"] = f"Wi-Fi: connected to {w['ssid']}{sig}" + (f", address {w['ip']}" if w["ip"] else "") + tail
@@ -524,7 +591,21 @@ class Net:
 
     def _link(self, q, dev, conn):
         out = {"ssid": clean(conn) if conn else None, "signal": None, "security": None, "ip": None}
-        r = q.call(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", dev, "--rescan", "no"])
+        r = q.call(
+            [
+                "nmcli",
+                "-t",
+                "-f",
+                "ACTIVE,SSID,SIGNAL,SECURITY",
+                "device",
+                "wifi",
+                "list",
+                "ifname",
+                dev,
+                "--rescan",
+                "no",
+            ]
+        )
         for f in _rows(r.out, 4) if r.ok else []:
             if f[0] == "yes":
                 out["ssid"] = clean(f[1]) or out["ssid"]
@@ -554,13 +635,25 @@ class Net:
         if any(x["hard"] for x in rows):
             b["state"], b["enabled"], s = "blocked", False, "Bluetooth: blocked by a hardware switch"
         elif any(x["soft"] for x in rows):
-            b["state"], b["enabled"], s = "off", False, "Bluetooth: off (blocked in software, for example by airplane mode)"
+            b["state"], b["enabled"], s = (
+                "off",
+                False,
+                "Bluetooth: off (blocked in software, for example by airplane mode)",
+            )
         elif m:
             b["state"], s = ("on" if b["enabled"] else "off"), "Bluetooth: " + ("on" if b["enabled"] else "off")
         elif b["present"] and asked and "Controller " not in blob:
-            b["state"], s = "no controller", "Bluetooth: the radio is there, but the Bluetooth service sees no controller yet"
+            b["state"], s = (
+                "no controller",
+                "Bluetooth: the radio is there, but the Bluetooth service sees no controller yet",
+            )
         elif b["present"]:
-            b["state"], s = "unknown", "Bluetooth: present; whether it is switched on is not known (" + q.why("bluetoothctl", "the Bluetooth tool") + ")"
+            b["state"], s = (
+                "unknown",
+                "Bluetooth: present; whether it is switched on is not known ("
+                + q.why("bluetoothctl", "the Bluetooth tool")
+                + ")",
+            )
         elif asked and "No default controller" in blob:
             b["present"], b["state"], s = False, "absent", "Bluetooth: no adapter found"
         else:
@@ -586,12 +679,22 @@ class Net:
         st = k.get("modem.generic.state", "unknown")
         why = k.get("modem.generic.state-failed-reason", "")
         op = clean(k.get("modem.3gpp.operator-name", ""), 40) or None
-        tech = next((v for key, v in k.items() if key.startswith("modem.generic.access-technologies.value") and v), None)
+        tech = next(
+            (v for key, v in k.items() if key.startswith("modem.generic.access-technologies.value") and v), None
+        )
         sg = k.get("modem.generic.signal-quality.value", "")
         m.update(present=True, state=st, operator=op, tech=tech, signal=int(sg) if sg.isdigit() else None)
-        words = {"registered": "registered" + (f" on {op}" if op else ""), "connected": "connected (a data session is open)",
-                 "searching": "searching for a network", "enabled": "on, not registered", "disabled": "switched off", "locked": "locked by the SIM",
-                 "failed": "failed" + (f" ({why})" if why else ""), "initializing": "starting", "unknown": "state not known"}
+        words = {
+            "registered": "registered" + (f" on {op}" if op else ""),
+            "connected": "connected (a data session is open)",
+            "searching": "searching for a network",
+            "enabled": "on, not registered",
+            "disabled": "switched off",
+            "locked": "locked by the SIM",
+            "failed": "failed" + (f" ({why})" if why else ""),
+            "initializing": "starting",
+            "unknown": "state not known",
+        }
         extra = (f", {tech.upper()}" if tech else "") + (f", signal {m['signal']}%" if m["signal"] is not None else "")
         m["summary"] = "Modem: " + words.get(st, st) + (extra if st in ("registered", "connected") else "")
         path = k.get("modem.generic.sim", "")
@@ -601,7 +704,12 @@ class Net:
         elif why == "sim-missing" or not path:
             sim.update(present=False, locked=False, state="absent", summary="SIM card: none found")
         elif lock and lock not in ("none", "--"):
-            sim.update(present=True, locked=True, state="locked", summary="SIM card: present but locked (it needs a PIN, which OPOS cannot enter yet)")
+            sim.update(
+                present=True,
+                locked=True,
+                state="locked",
+                summary="SIM card: present but locked (it needs a PIN, which OPOS cannot enter yet)",
+            )
         else:
             sim.update(present=True, locked=False, state="present", summary="SIM card: present")
         return m, sim
@@ -618,7 +726,10 @@ class Net:
         elif not gsm:
             d["state"], d["summary"] = "not set up", "Mobile data: not set up (no mobile connection is saved)"
         elif wifi.get("state") == "connected":
-            d["state"], d["summary"] = "off", "Mobile data: off while Wi-Fi is connected (this port switches it off on Wi-Fi to save battery)"
+            d["state"], d["summary"] = (
+                "off",
+                "Mobile data: off while Wi-Fi is connected (this port switches it off on Wi-Fi to save battery)",
+            )
         else:
             d["state"], d["summary"] = "off", "Mobile data: off"
         return d
@@ -638,8 +749,14 @@ class Net:
             if not any(x["type"] == "wwan" for x in kinds):
                 flags.append(not gs["wwan"] or not gs["wwan_hw"])
         if gs is None and "wifi" in present and not any(x["type"] == "wlan" for x in kinds):
-            unknown.append("Wi-Fi")  # the system shows an adapter, but neither rfkill nor NetworkManager said whether it is blocked
-        if gs is None and not any(x["type"] == "wwan" for x in kinds) and ("wwan" in present or (modem or {}).get("present") is True):
+            unknown.append(
+                "Wi-Fi"
+            )  # the system shows an adapter, but neither rfkill nor NetworkManager said whether it is blocked
+        if (
+            gs is None
+            and not any(x["type"] == "wwan" for x in kinds)
+            and ("wwan" in present or (modem or {}).get("present") is True)
+        ):
             # a modem the system or ModemManager shows, and nobody else says whether it is blocked: only a modem that is on says so
             if (modem or {}).get("state") in MODEM_ON:
                 flags.append(False)
@@ -655,25 +772,50 @@ class Net:
         if any(not f for f in flags):  # some radio is known to be working, so not every radio is blocked
             state, on = ("partly", None) if any(flags) else ("off", False)
         elif unknown:
-            return {"on": None, "state": "unknown", "summary": "Airplane mode: unknown (the state of " + ", ".join(unknown[:-1]) + (" and " if len(unknown) > 1 else "") + unknown[-1] + " could not be read, "
-                                                                "so it cannot be said that every radio is blocked)"}
+            return {
+                "on": None,
+                "state": "unknown",
+                "summary": "Airplane mode: unknown (the state of "
+                + ", ".join(unknown[:-1])
+                + (" and " if len(unknown) > 1 else "")
+                + unknown[-1]
+                + " could not be read, "
+                "so it cannot be said that every radio is blocked)",
+            }
         else:
             state, on = "on", True
-        return {"on": on, "state": state, "summary": {"on": "Airplane mode: on (all radios are blocked)", "off": "Airplane mode: off",
-                                                       "partly": "Airplane mode: off, but some radios are blocked or switched off"}[state]}
+        return {
+            "on": on,
+            "state": state,
+            "summary": {
+                "on": "Airplane mode: on (all radios are blocked)",
+                "off": "Airplane mode: off",
+                "partly": "Airplane mode: off, but some radios are blocked or switched off",
+            }[state],
+        }
 
     def _usb(self, ips, radios):
         names = ips if ips is not None else {n: None for n in radios["net_ifaces"]}
         usb = [n for n in sorted(names) if n.startswith(USB_IFACES)]
         if not names:
-            return {"present": None, "state": "unavailable", "ip": None, "summary": "USB network: unavailable (the tools that list network adapters did not answer)"}
+            return {
+                "present": None,
+                "state": "unavailable",
+                "ip": None,
+                "summary": "USB network: unavailable (the tools that list network adapters did not answer)",
+            }
         if not usb:
             return {"present": False, "state": "absent", "ip": None, "summary": "USB network: no USB network adapter"}
         v = names[usb[0]]
         ip = next((a.split("/")[0] for a in (v["addrs"] if v else []) if ":" not in a), None)
         up = bool(v) and v["state"] in ("UP", "UNKNOWN")
-        return {"present": True, "device": usb[0], "ip": ip, "state": "up" if up and ip else "no address",
-                "summary": f"USB network: {usb[0]} " + (f"has address {ip}" if ip else "is present, with no address yet")}
+        return {
+            "present": True,
+            "device": usb[0],
+            "ip": ip,
+            "state": "up" if up and ip else "no address",
+            "summary": f"USB network: {usb[0]} " + (f"has address {ip}" if ip else "is present, with no address yet"),
+        }
 
     def _can(self, op, perms):
         v = [perms.get(p) for p in NEEDS[op]]
@@ -681,23 +823,31 @@ class Net:
 
     def _deny_text(self, verdict):
         if verdict == "auth":
-            return ("NetworkManager would ask an administrator before changing Wi-Fi here, and OPOS cannot answer. "
-                    "The system image needs a small permission rule (docs/network.md); until then, set up Wi-Fi from a computer.")
-        return ("NetworkManager does not let OPOS change Wi-Fi on this phone yet. "
-                "The system image needs a small permission rule (docs/network.md); until then, set up Wi-Fi from a computer.")
+            return (
+                "NetworkManager would ask an administrator before changing Wi-Fi here, and OPOS cannot answer. "
+                "The system image needs a small permission rule (docs/network.md); until then, set up Wi-Fi from a computer."
+            )
+        return (
+            "NetworkManager does not let OPOS change Wi-Fi on this phone yet. "
+            "The system image needs a small permission rule (docs/network.md); until then, set up Wi-Fi from a computer."
+        )
 
     def _control(self, q, gs, perms):
         c = {"enabled": self.control_enabled(), "allowed": False, "ops": {}, "reason": ""}
         if not c["enabled"]:
             c["reason"] = "Network changes are switched off on this install. They are on in the Duo OS image."
         elif gs is None:
-            c["reason"] = "The phone's network service (NetworkManager) is not available, so Wi-Fi cannot be changed from here."
+            c["reason"] = (
+                "The phone's network service (NetworkManager) is not available, so Wi-Fi cannot be changed from here."
+            )
         elif perms is None:
             c["reason"] = "NetworkManager did not say what OPOS may change, so Wi-Fi changes may be refused."
             c["allowed"] = True
         else:
             c["ops"] = {op: self._can(op, perms) for op in NEEDS}
-            worst = next((v for v in ("no", "auth") if v in (c["ops"]["join"], c["ops"]["forget"], c["ops"]["power"])), None)
+            worst = next(
+                (v for v in ("no", "auth") if v in (c["ops"]["join"], c["ops"]["forget"], c["ops"]["power"])), None
+            )
             c["allowed"] = worst is None
             if worst:
                 c["reason"] = self._deny_text(worst)
@@ -763,7 +913,12 @@ class Net:
 
     def _networks(self, q, note):
         dev = self._wifi_dev(q)
-        r = q.call(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"] + (["ifname", dev] if dev else []) + ["--rescan", "no"], timeout=10)
+        r = q.call(
+            ["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"]
+            + (["ifname", dev] if dev else [])
+            + ["--rescan", "no"],
+            timeout=10,
+        )
         if not r.ok:
             return _bad(explain(r))
         saved = self._saved_wifi(q) or []
@@ -778,17 +933,37 @@ class Net:
             sec = f[3] if f[3] not in ("", "--") else "open"
             cur = best.get(ssid)
             if cur is None or sig > cur["signal"] or f[0] == "yes":
-                best[ssid] = {"ssid": ssid, "signal": sig, "security": sec, "active": f[0] == "yes" or bool(cur and cur["active"])}
+                best[ssid] = {
+                    "ssid": ssid,
+                    "signal": sig,
+                    "security": sec,
+                    "active": f[0] == "yes" or bool(cur and cur["active"]),
+                }
         nets = sorted(best.values(), key=lambda n: (not n["active"], -n["signal"]))[:SCAN_MAX]
         for n in nets:
             n["secure"] = n["security"] != "open"
             n["known"] = n["ssid"] in known
             n["supported"] = "802.1X" not in n["security"] and "WEP" not in n["security"]
-            how = ("connected" if n["active"] else "saved" if n["known"] else "open network" if not n["secure"] else
-                   "needs a password" if n["supported"] else "company or school network, not supported yet" if "802.1X" in n["security"] else "old WEP security, not supported")
+            how = (
+                "connected"
+                if n["active"]
+                else "saved"
+                if n["known"]
+                else "open network"
+                if not n["secure"]
+                else "needs a password"
+                if n["supported"]
+                else "company or school network, not supported yet"
+                if "802.1X" in n["security"]
+                else "old WEP security, not supported"
+            )
             n["label"] = f"{how}, signal {n['signal']}%"
-        return _ok(note or f"{len(nets)} network{'s' if len(nets) != 1 else ''} found.", networks=nets, hidden=hidden,
-                   saved=sorted(known - {n["ssid"] for n in nets}))
+        return _ok(
+            note or f"{len(nets)} network{'s' if len(nets) != 1 else ''} found.",
+            networks=nets,
+            hidden=hidden,
+            saved=sorted(known - {n["ssid"] for n in nets}),
+        )
 
     def join(self, ssid, password=None, hidden=False):
         """Join `ssid`. A password replaces any saved entry for it; with none, a saved entry or an open network is used."""
@@ -806,7 +981,9 @@ class Net:
 
     def _join(self, ssid, password, hidden):
         q = _Q(self, JOIN_WAIT_S + 60)
-        listed, complete = self._wifi_profiles(q)  # all of them: a saved network must not be missed because it is the 21st
+        listed, complete = self._wifi_profiles(
+            q
+        )  # all of them: a saved network must not be missed because it is the 21st
         saved = [p for p in listed or [] if p["ssid"] == ssid]
         op = "connect" if saved and not password else "join"
         gs, err = self._ready(q, op)
@@ -821,31 +998,72 @@ class Net:
             # The password is not an argument. OPOS_NET_TTY=1 still types it on a terminal; otherwise it is a mode 0600 file
             # passed to `connection up ... passwd-file`, and that file is removed before this returns.
             if self.env.get("OPOS_NET_TTY") == "1":
-                r = q.call(["nmcli"] + wait + ["--ask", "device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S, password + "\n")
+                r = q.call(
+                    ["nmcli"]
+                    + wait
+                    + ["--ask", "device", "wifi", "connect", ssid]
+                    + ifn
+                    + (["hidden", "yes"] if hidden else []),
+                    JOIN_WAIT_S + JOIN_EXTRA_S,
+                    password + "\n",
+                )
             else:
                 # Profile names are not unique; activation must select the new profile, not an old same-name one.
                 new_uuid = str(uuid.uuid4())
                 secret = _secret_file(password)
                 try:
-                    added = q.call(["nmcli", "connection", "add", "type", "wifi", "con-name", ssid, "ssid", ssid,
-                                    "connection.uuid", new_uuid, "wifi-sec.key-mgmt", "wpa-psk"] + ifn + (["wifi.hidden", "yes"] if hidden else []))
-                    r = added if not added.ok else q.call(["nmcli"] + wait + ["connection", "up", "uuid", new_uuid, "passwd-file", secret], JOIN_WAIT_S + JOIN_EXTRA_S)
+                    added = q.call(
+                        [
+                            "nmcli",
+                            "connection",
+                            "add",
+                            "type",
+                            "wifi",
+                            "con-name",
+                            ssid,
+                            "ssid",
+                            ssid,
+                            "connection.uuid",
+                            new_uuid,
+                            "wifi-sec.key-mgmt",
+                            "wpa-psk",
+                        ]
+                        + ifn
+                        + (["wifi.hidden", "yes"] if hidden else [])
+                    )
+                    r = (
+                        added
+                        if not added.ok
+                        else q.call(
+                            ["nmcli"] + wait + ["connection", "up", "uuid", new_uuid, "passwd-file", secret],
+                            JOIN_WAIT_S + JOIN_EXTRA_S,
+                        )
+                    )
                 finally:
                     try:
                         os.remove(secret)
                     except OSError:
                         pass
         elif saved:
-            r = q.call(["nmcli"] + wait + ["connection", "up", "uuid", saved[0]["uuid"]] + ifn, JOIN_WAIT_S + JOIN_EXTRA_S)
+            r = q.call(
+                ["nmcli"] + wait + ["connection", "up", "uuid", saved[0]["uuid"]] + ifn, JOIN_WAIT_S + JOIN_EXTRA_S
+            )
         else:
             seen = next((n for n in (self._networks(q, "").get("networks") or []) if n["ssid"] == ssid), None)
             if seen and seen["secure"]:
                 return _bad("This network needs a password.")
-            r = q.call(["nmcli"] + wait + ["device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []), JOIN_WAIT_S + JOIN_EXTRA_S)
+            r = q.call(
+                ["nmcli"] + wait + ["device", "wifi", "connect", ssid] + ifn + (["hidden", "yes"] if hidden else []),
+                JOIN_WAIT_S + JOIN_EXTRA_S,
+            )
         if r.ok:
-            msg = f"Connected to {ssid}." + (" The password is kept by the phone's network service, not by OPOS." if password else "")
+            msg = f"Connected to {ssid}." + (
+                " The password is kept by the phone's network service, not by OPOS." if password else ""
+            )
             if password and saved:
-                msg += self._drop_replaced(q, [p for p in saved if p["read"]], r)  # an entry matched only by its name may be another network
+                msg += self._drop_replaced(
+                    q, [p for p in saved if p["read"]], r
+                )  # an entry matched only by its name may be another network
             return _ok(msg)
         msg = explain(r, password)
         if password:
@@ -860,7 +1078,10 @@ class Net:
             return " The older saved entry for this network was kept, because OPOS could not tell which entry is the new one."
         stuck = 0
         for p in saved:
-            if p["uuid"].lower() != m.group(1).lower() and not q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]]).ok:
+            if (
+                p["uuid"].lower() != m.group(1).lower()
+                and not q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]]).ok
+            ):
                 stuck += 1
         return " The older saved entry for this network could not be removed." if stuck else ""
 
@@ -877,7 +1098,9 @@ class Net:
             return keep + " OPOS could not check whether the attempt left an entry behind."
         unresolved = 0
         for p in [p for p in after if p["uuid"] not in before]:
-            if not (p["read"] and p["ssid"] == ssid and q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]]).ok):
+            if not (
+                p["read"] and p["ssid"] == ssid and q.call(["nmcli", "connection", "delete", "uuid", p["uuid"]]).ok
+            ):
                 unresolved += 1
         if unresolved:
             return keep + " OPOS could not remove everything the attempt left behind."
@@ -912,8 +1135,10 @@ class Net:
         # Say "gone" only after looking again at every profile.
         again, complete_again = self._wifi_profiles(q)
         if again is None or not complete_again or any(p["read"] and p["ssid"] == ssid for p in again):
-            return _bad(f"Removed {len(mine)} saved {'entry' if len(mine) == 1 else 'entries'} for {ssid}, but OPOS could not check every saved network "
-                        "afterwards, so a saved password for it may remain. Try again.")
+            return _bad(
+                f"Removed {len(mine)} saved {'entry' if len(mine) == 1 else 'entries'} for {ssid}, but OPOS could not check every saved network "
+                "afterwards, so a saved password for it may remain. Try again."
+            )
         return _ok(f"Forgot {ssid}. Its password is gone from this phone.")
 
     def wifi(self, mode):
@@ -932,7 +1157,11 @@ class Net:
             if not dev:
                 return _bad("NetworkManager lists no Wi-Fi adapter.")
             r = q.call(["nmcli", "device", "disconnect", dev], 20)
-            return _ok("Disconnected. Wi-Fi stays on, but the phone will not rejoin a network until you join one.") if r.ok else _bad(explain(r))
+            return (
+                _ok("Disconnected. Wi-Fi stays on, but the phone will not rejoin a network until you join one.")
+                if r.ok
+                else _bad(explain(r))
+            )
         gs, err = self._ready(q, "power")
         if err:
             return err
@@ -941,19 +1170,31 @@ class Net:
             return _bad(explain(r))
         gs = self._general(q)
         if mode == "on" and gs is not None and not gs["wifi_hw"]:
-            return _bad("Wi-Fi is on in software, but a hardware switch or airplane mode still blocks it. OPOS cannot lift that.")
+            return _bad(
+                "Wi-Fi is on in software, but a hardware switch or airplane mode still blocks it. OPOS cannot lift that."
+            )
         return _ok("Wi-Fi is on." if mode == "on" else "Wi-Fi is off.")
 
 
-PROBES = (["nmcli", "-t", "-f", "RUNNING,STATE,CONNECTIVITY,WIFI-HW,WIFI,WWAN-HW,WWAN", "general", "status"], ["nmcli", "-t", "general", "permissions"],
-          ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"], ["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE", "connection", "show"],
-          ["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"], ["nmcli", "-t", "device", "show"],
-          ["rfkill", "list"], ["ip", "-br", "addr"], ["bluetoothctl", "show"], ["mmcli", "-K", "-m", "any"], ["id"])
+PROBES = (
+    ["nmcli", "-t", "-f", "RUNNING,STATE,CONNECTIVITY,WIFI-HW,WIFI,WWAN-HW,WWAN", "general", "status"],
+    ["nmcli", "-t", "general", "permissions"],
+    ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"],
+    ["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE", "connection", "show"],
+    ["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"],
+    ["nmcli", "-t", "device", "show"],
+    ["rfkill", "list"],
+    ["ip", "-br", "addr"],
+    ["bluetoothctl", "show"],
+    ["mmcli", "-K", "-m", "any"],
+    ["id"],
+)
 
 
 def main(argv=None):
     import json
     import sys
+
     a = list(sys.argv[1:] if argv is None else argv) or ["status"]
     n = Net(env={**os.environ, "OPOS_NETWORK": "1"})  # typing the command is the owner's choice to change things
     if a[0] == "status":
@@ -970,7 +1211,15 @@ def main(argv=None):
         print("# raw output: it holds network names, addresses and device identifiers; share it with care")
         for cmd in PROBES:
             r = run(cmd, 8)
-            print("$ " + " ".join(cmd) + f"\nrc={r.rc}" + (" (missing)" if r.missing else " (timed out)" if r.timed_out else "") + "\n" + r.out + r.err)
+            print(
+                "$ "
+                + " ".join(cmd)
+                + f"\nrc={r.rc}"
+                + (" (missing)" if r.missing else " (timed out)" if r.timed_out else "")
+                + "\n"
+                + r.out
+                + r.err
+            )
         return 0
     else:
         print(__doc__)

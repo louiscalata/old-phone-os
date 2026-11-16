@@ -4,6 +4,7 @@
 The schedule is opos.alarms. This module is the page and the /api/clock actions.
 A test may POST action "tick" only when OPOS_CLOCK_TEST=1.
 """
+
 import os
 import re
 import threading
@@ -147,6 +148,7 @@ def clock_known():
         return True
     try:
         from opos.web import clock_ok
+
         return bool(clock_ok())
     except Exception:
         return False
@@ -173,20 +175,42 @@ def snapshot():
     rows = []
     ringing = None
     for row in saved.alarms:
-        rows.append({
-            "id": row["id"], "hour": row["hour"], "minute": row["minute"],
-            "days": list(row.get("days") or []), "label": row.get("label") or "",
-            "enabled": bool(row.get("enabled")), "once": bool(row.get("once")),
-        })
+        rows.append(
+            {
+                "id": row["id"],
+                "hour": row["hour"],
+                "minute": row["minute"],
+                "days": list(row.get("days") or []),
+                "label": row.get("label") or "",
+                "enabled": bool(row.get("enabled")),
+                "once": bool(row.get("once")),
+            }
+        )
         if alarms.occurrence(row) is alarms.Occurrence.RINGING and ringing is None:
-            ringing = {"id": row["id"], "label": row.get("label") or "", "text": "Alarm %02d:%02d" % (row["hour"], row["minute"])}
+            ringing = {
+                "id": row["id"],
+                "label": row.get("label") or "",
+                "text": "Alarm %02d:%02d" % (row["hour"], row["minute"]),
+            }
     timer = None
     if saved.timer and isinstance(saved.timer.get("fires_at"), str):
-        timer = {"id": saved.timer.get("id") or "", "fires_at": saved.timer["fires_at"], "label": saved.timer.get("label") or ""}
+        timer = {
+            "id": saved.timer.get("id") or "",
+            "fires_at": saved.timer["fires_at"],
+            "label": saved.timer.get("label") or "",
+        }
     return {
-        "ok": True, "clock_ok": clock_known(), "now": now.isoformat(), "alarms": rows,
-        "ringing": ringing, "timer": timer, "notices": list(saved.notices), "recovered": saved.recovered or "",
-        "next": None if nxt is None else {"id": nxt["id"], "text": nxt["text"], "label": nxt["label"], "at": nxt["at"].isoformat()},
+        "ok": True,
+        "clock_ok": clock_known(),
+        "now": now.isoformat(),
+        "alarms": rows,
+        "ringing": ringing,
+        "timer": timer,
+        "notices": list(saved.notices),
+        "recovered": saved.recovered or "",
+        "next": None
+        if nxt is None
+        else {"id": nxt["id"], "text": nxt["text"], "label": nxt["label"], "at": nxt["at"].isoformat()},
     }
 
 
@@ -202,9 +226,15 @@ def locked_snapshot():
     ring = full.get("ringing")
     text = ring.get("text") if isinstance(ring, dict) else None
     return {
-        "ok": True, "clock_ok": full.get("clock_ok") is True, "now": full.get("now") if isinstance(full.get("now"), str) else "",
-        "alarms": [], "ringing": {"text": text} if isinstance(text, str) and _RING_TEXT.fullmatch(text) else None,
-        "timer": None, "notices": [], "recovered": "", "next": None,
+        "ok": True,
+        "clock_ok": full.get("clock_ok") is True,
+        "now": full.get("now") if isinstance(full.get("now"), str) else "",
+        "alarms": [],
+        "ringing": {"text": text} if isinstance(text, str) and _RING_TEXT.fullmatch(text) else None,
+        "timer": None,
+        "notices": [],
+        "recovered": "",
+        "next": None,
     }
 
 
@@ -308,9 +338,22 @@ def _play(events, since=None):
     alarm_sound.handle(events, spawn=_player(), since=since)
 
 
-apps.register(apps.App(
-    "clock", "Clock", "/clock",
-    "Alarms, a timer, a stopwatch and a bedside clock.",
-    "yes", "no", "screen and a short tone (not checked on a phone)", "real", "alarms", "ESSENTIAL", 0.1,
-    render, snapshot, post, locked_json=locked_snapshot,
-))
+apps.register(
+    apps.App(
+        "clock",
+        "Clock",
+        "/clock",
+        "Alarms, a timer, a stopwatch and a bedside clock.",
+        "yes",
+        "no",
+        "screen and a short tone (not checked on a phone)",
+        "real",
+        "alarms",
+        "ESSENTIAL",
+        0.1,
+        render,
+        snapshot,
+        post,
+        locked_json=locked_snapshot,
+    )
+)

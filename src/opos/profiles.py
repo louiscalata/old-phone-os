@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Measure the governor on six device profiles."""
+
 import random
 import sys
 from opos.evaluate import EVAL_TASKS, router_policy, rules_policy, static_low_power
 from opos.governor import PowerState, Priority
 from opos.power import KEEP
 from opos.sim import DrainSim
+
 PROFILES = {
     "fresh": {"level": (40, 100), "health": (0.85, 1.0), "temp": (20, 32), "r0": None},
     "worn": {"level": (30, 100), "health": (0.4, 0.6), "temp": (20, 32), "r0": None},
@@ -14,6 +16,8 @@ PROFILES = {
     "lowstart": {"level": (5, 20), "health": (0.5, 1.0), "temp": (20, 32), "r0": None},
     "eol": {"level": (30, 100), "health": (0.35, 0.35), "temp": (15, 30), "r0": 0.2},
 }
+
+
 def scenarios(profile, n, seed):
     if profile not in PROFILES:
         raise ValueError(profile)
@@ -26,6 +30,8 @@ def scenarios(profile, n, seed):
         temp = rng.uniform(*cfg["temp"])
         out.append({"level": level, "health": health, "temp": temp, "r0": cfg["r0"]})
     return out
+
+
 def run(policy, scenario, tick_s=60.0, max_min=1440):
     lvl = scenario.get("level")
     hlth = scenario.get("health")
@@ -51,6 +57,8 @@ def run(policy, scenario, tick_s=60.0, max_min=1440):
         elapsed += 1
     brownout = 1 if sim.dead and sim.level > 0 else 0
     return {"important_min": elapsed, "useful_min": useful_min, "missing_kept": missing_kept, "brownout": brownout}
+
+
 def benchmark(policy_factory, profile, n=40, seed=100):
     scens = scenarios(profile, n, seed)
     sums = {"important_min": 0.0, "useful_min": 0.0, "missing_kept": 0.0, "brownout": 0.0}
@@ -65,6 +73,8 @@ def benchmark(policy_factory, profile, n=40, seed=100):
         for k in sums:
             sums[k] += res[k]
     return {k: sums[k] / len(scens) if scens else 0.0 for k in sums}
+
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
@@ -84,7 +94,11 @@ def main(argv=None):
     for pname in PROFILES:
         for pol_name, fac in factories.items():
             res = benchmark(fac, pname, n=n, seed=100)
-            print(f"{pname} {pol_name} important_min={res['important_min']:.1f} useful_min={res['useful_min']:.1f} missing_kept={res['missing_kept']:.1f} brownout={res['brownout']:.1f}")
+            print(
+                f"{pname} {pol_name} important_min={res['important_min']:.1f} useful_min={res['useful_min']:.1f} missing_kept={res['missing_kept']:.1f} brownout={res['brownout']:.1f}"
+            )
     return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -16,27 +16,35 @@ class ScreenModem:
         self.call_observer = call_observer
         self._call = None
         self._connected = None
+
     def _emit(self, state, duration=None):
         ident, number, direction = self._call
-        notify(self.call_observer, CallEvent(ident, state, number, direction, time.time(), True,
-                                          duration, self._connected is not None))
+        notify(
+            self.call_observer,
+            CallEvent(ident, state, number, direction, time.time(), True, duration, self._connected is not None),
+        )
+
     def _start(self, number, direction):
         if self._call is not None:
             raise RuntimeError("already in a call")
         self._call = (uuid.uuid4().hex, number, direction)
         self._connected = None
         self._emit("started")
+
     def dial(self, number):
         self._start(number, "outgoing")
         self.events.append(("dial", number))
         self.answer_call()  # The simulated modem connects immediately; no radio is used.
+
     def receive_call(self, number):
         """Simulate ringing for local tests; this is outside the Modem protocol."""
         self._start(number, "incoming")
+
     def answer_call(self):
         if self._call is not None and self._connected is None:
             self._connected = time.monotonic()
             self._emit("connected")
+
     def hang_up(self):
         self.events.append(("hang_up",))
         if self._call is not None:
@@ -44,6 +52,7 @@ class ScreenModem:
             self._emit("ended", duration)
             self._call = None
             self._connected = None
+
     def send_sms(self, number, text):
         self.events.append(("sms", number, text))
 
@@ -64,6 +73,7 @@ class PhoneApp:
     def __init__(self, root, visible=False):
         from opos.essentials import Essentials
         from opos.runtime import Runtime
+
         self.runtime = Runtime(visible=visible)
         self.modem = ScreenModem()
         self.ess = Essentials(self.modem)
@@ -71,9 +81,14 @@ class PhoneApp:
         root.title("Old Phone OS Interface")
         self.screen = root.Label if hasattr(root, "Label") else None
         import tkinter as tk
-        self.battery = tk.Scale(root, from_=0, to=100, orient="horizontal", label="Battery", command=lambda _v: self.refresh())
+
+        self.battery = tk.Scale(
+            root, from_=0, to=100, orient="horizontal", label="Battery", command=lambda _v: self.refresh()
+        )
         self.battery.set(50)
-        self.temp = tk.Scale(root, from_=15, to=60, orient="horizontal", label="Temp C", command=lambda _v: self.refresh())
+        self.temp = tk.Scale(
+            root, from_=15, to=60, orient="horizontal", label="Temp C", command=lambda _v: self.refresh()
+        )
         self.temp.set(25)
         self.display = tk.Label(root, font=("TkDefaultFont", 18), justify="left", anchor="nw")
         self.display.pack(fill="both", expand=True)
@@ -129,14 +144,17 @@ def main(argv=None):
     args = ap.parse_args(argv)
     try:
         import tkinter as tk
+
         root = tk.Tk()
     except (ImportError, tk.TclError) if "tk" in dir() else (ImportError, Exception):
         from opos.runtime import Runtime
+
         tick = Runtime(visible=False).step(time.monotonic(), 0.05, temp_c=25.0)
         print(render(tick))
         return 0
     except Exception:
         from opos.runtime import Runtime
+
         tick = Runtime(visible=False).step(time.monotonic(), 0.05, temp_c=25.0)
         print(render(tick))
         return 0

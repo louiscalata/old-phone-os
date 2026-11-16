@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Notes. One text file per note, kept on the phone. Plain text only."""
+
 import os
 import re
 import uuid
@@ -122,7 +123,11 @@ def _clock():
 
 def snapshot(extra=None):
     rows, note = _index()
-    out = {"ok": True, "notes": [{"id": row["id"], "title": row.get("title") or "Empty note"} for row in rows], "recovered": note}
+    out = {
+        "ok": True,
+        "notes": [{"id": row["id"], "title": row.get("title") or "Empty note"} for row in rows],
+        "recovered": note,
+    }
     if extra:
         out.update(extra)
     return out
@@ -180,9 +185,21 @@ def render(token, nonce):
     return appdoc.render("Notes", token, nonce, _LIST, _THUMB, _SCRIPT, _CSS)
 
 
-apps.register(apps.App(
-    "notes", "Notes", "/notes",
-    "Plain text notes kept on this phone.",
-    "yes", "no", "none", "real", "notes", "USEFUL", 0,
-    render, snapshot, post,
-))
+apps.register(
+    apps.App(
+        "notes",
+        "Notes",
+        "/notes",
+        "Plain text notes kept on this phone.",
+        "yes",
+        "no",
+        "none",
+        "real",
+        "notes",
+        "USEFUL",
+        0,
+        render,
+        snapshot,
+        post,
+    )
+)

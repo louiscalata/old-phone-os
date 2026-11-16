@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Read the application version from its source, current OTA release or package."""
+
 import json
 import re
 import tomllib
@@ -19,8 +20,12 @@ def project_version():
             current = json.loads((release / "manifest.json").read_bytes())
             revision = (release / "REVISION").read_text(encoding="utf-8").strip()
             version = current["version"]
-            if (re.fullmatch(r"[0-9a-f]{40}", revision) and current["revision"] == revision
-                    and isinstance(version, str) and re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z._+-]{0,63}", version)):
+            if (
+                re.fullmatch(r"[0-9a-f]{40}", revision)
+                and current["revision"] == revision
+                and isinstance(version, str)
+                and re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z._+-]{0,63}", version)
+            ):
                 return version
         except (OSError, ValueError, KeyError, TypeError):
             pass

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Call log page and read/clear API. Call events enter only at the modem."""
+
 from opos import appdoc, apps, calllog
 
 _CSS = """
@@ -73,8 +74,21 @@ def render(token, nonce):
     return appdoc.render("Call log", token, nonce, _LIST, _THUMB, _SCRIPT, _CSS)
 
 
-apps.register(apps.App(
-    "calls", "Call log", "/calls", "Recent calls kept on this phone.",
-    "yes", "no", "none", "each call is labelled", "call-log", "ESSENTIAL", 0,
-    render, calllog.snapshot, post,
-))
+apps.register(
+    apps.App(
+        "calls",
+        "Call log",
+        "/calls",
+        "Recent calls kept on this phone.",
+        "yes",
+        "no",
+        "none",
+        "each call is labelled",
+        "call-log",
+        "ESSENTIAL",
+        0,
+        render,
+        calllog.snapshot,
+        post,
+    )
+)

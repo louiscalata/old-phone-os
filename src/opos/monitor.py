@@ -20,6 +20,7 @@ somehow still old is shown as not current, never as live.
 Standard library only (Python 3.11 to 3.14). ``Monitor.snapshot()`` is thread-safe and never raises. It must
 be called outside the request handler's lock, because a slow LAN host can take several seconds.
 """
+
 import http.client
 import ipaddress
 import json
@@ -34,17 +35,17 @@ import urllib.parse
 SNAPSHOT_PATH = "/api/snapshot"
 CONNECT_TIMEOUT = 2.0
 READ_TIMEOUT = 3.0
-TOTAL_DEADLINE = 6.0   # the whole remote fetch: name lookup, every address, headers and body
-DNS_DEADLINE = 3.0     # of which the name lookup may use at most this much
+TOTAL_DEADLINE = 6.0  # the whole remote fetch: name lookup, every address, headers and body
+DNS_DEADLINE = 3.0  # of which the name lookup may use at most this much
 MAX_BYTES = 256 * 1024
 CACHE_SECONDS = 2.0
 LOCAL_DEFAULT_URL = "http://127.0.0.1:8080/v1"
 LOCAL_TIMEOUT = 1.0
-LOCAL_TOTAL = 2.0      # the whole local probe: headers, 1xx lines and body
-STALE_AFTER = CACHE_SECONDS + LOCAL_TOTAL + TOTAL_DEADLINE + 2   # a collection older than this is not current
+LOCAL_TOTAL = 2.0  # the whole local probe: headers, 1xx lines and body
+STALE_AFTER = CACHE_SECONDS + LOCAL_TOTAL + TOTAL_DEADLINE + 2  # a collection older than this is not current
 MAX_MACHINES = 8
 MAX_MODELS = 8
-MAX_LOOKUPS = 4        # name lookups that may be running at once, abandoned ones included
+MAX_LOOKUPS = 4  # name lookups that may be running at once, abandoned ones included
 MORE = "and more"
 
 # Built from octets so the repository's privacy guard does not read them as addresses.
@@ -57,13 +58,26 @@ _PRIVATE_NETS = (
 
 # Plain words for every machine reason code AGIW can send (kept in step with AGIW web/monitor-board.mjs).
 REASON_WORDS = {
-    "observed": "observed", "reported_down": "reported down", "reported_degraded": "reported degraded",
-    "not_observed": "never observed", "not_connected": "went silent", "unavailable": "unavailable",
-    "timeout": "timed out", "refused": "connection refused", "non_json": "unreadable reply",
-    "oversize": "reply too large", "schema_invalid": "unexpected reply", "stale": "reading too old",
-    "clock_skew": "clock out of step", "host_key_mismatch": "host key changed", "share_unmounted": "share not mounted",
-    "asleep": "asleep", "untrusted": "not trusted", "unverified": "not verified",
-    "identity_mismatch": "identity does not match", "read_error": "read failed",
+    "observed": "observed",
+    "reported_down": "reported down",
+    "reported_degraded": "reported degraded",
+    "not_observed": "never observed",
+    "not_connected": "went silent",
+    "unavailable": "unavailable",
+    "timeout": "timed out",
+    "refused": "connection refused",
+    "non_json": "unreadable reply",
+    "oversize": "reply too large",
+    "schema_invalid": "unexpected reply",
+    "stale": "reading too old",
+    "clock_skew": "clock out of step",
+    "host_key_mismatch": "host key changed",
+    "share_unmounted": "share not mounted",
+    "asleep": "asleep",
+    "untrusted": "not trusted",
+    "unverified": "not verified",
+    "identity_mismatch": "identity does not match",
+    "read_error": "read failed",
 }
 
 # What a failed fetch is called on the page. Fixed words only; nothing from the remote host is echoed.
@@ -145,6 +159,7 @@ def _seconds(value):
 
 
 # ---------------------------------------------------------------- remote address rules
+
 
 class Remote:
     __slots__ = ("scheme", "host", "port", "host_header")
@@ -252,6 +267,7 @@ def resolve_allowed(host, port, resolver=socket.getaddrinfo, timeout=DNS_DEADLIN
 
 # ---------------------------------------------------------------- fetching
 
+
 def boot_clock():
     """Seconds since boot, including time spent suspended where the platform has such a clock (Linux)."""
     clock_id = getattr(time, "CLOCK_BOOTTIME", None)
@@ -275,7 +291,9 @@ class _Pinned(http.client.HTTPConnection):
     says Connection: close, so a watchdog reading `self.sock` would miss a body or trailer that drips.
     """
 
-    def __init__(self, family, sockaddr, host, port, tls, connect_timeout=CONNECT_TIMEOUT, read_timeout=None, abort=None):
+    def __init__(
+        self, family, sockaddr, host, port, tls, connect_timeout=CONNECT_TIMEOUT, read_timeout=None, abort=None
+    ):
         self._abort = abort
         self.connected = False
         self._read_timeout = READ_TIMEOUT if read_timeout is None else read_timeout
@@ -299,7 +317,9 @@ class _Pinned(http.client.HTTPConnection):
             sock.settimeout(self._read_timeout)
             if self._tls:
                 # The handshake is done by hand so the watchdog can cut a handshake that drips, too.
-                sock = ssl.create_default_context().wrap_socket(sock, server_hostname=self._tls_host, do_handshake_on_connect=False)
+                sock = ssl.create_default_context().wrap_socket(
+                    sock, server_hostname=self._tls_host, do_handshake_on_connect=False
+                )
                 self.live = sock
                 self._check_abort()
                 sock.do_handshake()
@@ -320,7 +340,9 @@ def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
     """
     deadline = clock() + TOTAL_DEADLINE
     addresses = resolve_allowed(remote.host, remote.port, resolver, min(DNS_DEADLINE, TOTAL_DEADLINE))
-    host_header = remote.host_header or (f"{remote.host}:{remote.port}" if ":" not in remote.host else f"[{remote.host}]:{remote.port}")
+    host_header = remote.host_header or (
+        f"{remote.host}:{remote.port}" if ":" not in remote.host else f"[{remote.host}]:{remote.port}"
+    )
     last = "unreachable"
     untrusted = None
     for family, sockaddr in addresses:
@@ -328,8 +350,15 @@ def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
         if remaining <= 0:
             raise FetchError("timeout")
         cut = threading.Event()
-        conn = _Pinned(family, sockaddr, remote.host, remote.port, remote.scheme == "https",
-                       connect_timeout=min(CONNECT_TIMEOUT, remaining), abort=cut)
+        conn = _Pinned(
+            family,
+            sockaddr,
+            remote.host,
+            remote.port,
+            remote.scheme == "https",
+            connect_timeout=min(CONNECT_TIMEOUT, remaining),
+            abort=cut,
+        )
 
         def watchdog(conn=conn, cut=cut):
             cut.set()
@@ -396,8 +425,9 @@ def fetch_snapshot(remote, resolver=socket.getaddrinfo, clock=time.monotonic):
             # The watchdog's shutdown surfaces as a disconnect or a short read; say what really happened.
             if cut.is_set():
                 raise FetchError("timeout") from None
-            if (isinstance(error, http.client.HTTPException)
-                    and not isinstance(error, (http.client.RemoteDisconnected, http.client.IncompleteRead))):
+            if isinstance(error, http.client.HTTPException) and not isinstance(
+                error, (http.client.RemoteDisconnected, http.client.IncompleteRead)
+            ):
                 # It answered, but not in HTTP: a garbled status line, too many interim replies, a header too long.
                 raise FetchError("invalid") from None
             last = "unreachable"
@@ -424,12 +454,18 @@ def _parse_json(raw):
 
 # ---------------------------------------------------------------- this phone
 
+
 def local_models_url(env):
     """OPOS_LOCAL_URL when it is http on 127.0.0.1 or localhost (as assist.local_route reads it), else the default."""
     url = (env or {}).get("OPOS_LOCAL_URL") or LOCAL_DEFAULT_URL
     try:
         parts = urllib.parse.urlsplit(url)
-        if parts.scheme != "http" or parts.hostname not in ("127.0.0.1", "localhost") or parts.username or parts.password:
+        if (
+            parts.scheme != "http"
+            or parts.hostname not in ("127.0.0.1", "localhost")
+            or parts.username
+            or parts.password
+        ):
             raise ValueError
         port = parts.port or 80
     except ValueError:
@@ -445,7 +481,11 @@ def _loopback_addresses(host, port):
     try:
         literal = ipaddress.ip_address(host)
     except ValueError:
-        return [(socket.AF_INET, ("127.0.0.1", port)), (socket.AF_INET6, ("::1", port, 0, 0))] if host == "localhost" else []
+        return (
+            [(socket.AF_INET, ("127.0.0.1", port)), (socket.AF_INET6, ("::1", port, 0, 0))]
+            if host == "localhost"
+            else []
+        )
     if not literal.is_loopback:
         return []
     return [(socket.AF_INET6, (host, port, 0, 0)) if literal.version == 6 else (socket.AF_INET, (host, port))]
@@ -504,7 +544,16 @@ def probe_local(env=None):
         for family, sockaddr in addresses:
             if fired.is_set():
                 break
-            conn = _Pinned(family, sockaddr, host, port, False, connect_timeout=LOCAL_TIMEOUT, read_timeout=LOCAL_TIMEOUT, abort=fired)
+            conn = _Pinned(
+                family,
+                sockaddr,
+                host,
+                port,
+                False,
+                connect_timeout=LOCAL_TIMEOUT,
+                read_timeout=LOCAL_TIMEOUT,
+                abort=fired,
+            )
             current["conn"] = conn
             try:
                 outcome = _probe_request(conn, path)
@@ -569,21 +618,23 @@ def machine_rows(document):
         trust = trust_raw if isinstance(trust_raw, str) and _TRUST.fullmatch(trust_raw) else None
         age = clean_number(entry.get("ageSeconds"), 0, 7 * 86400)
         fresh_for = clean_number(entry.get("freshForSeconds"), 0, 7 * 86400)
-        rows.append({
-            "name": _PLATFORMS.get(platform) or (host or "MACHINE").upper()[:12],
-            "host": host,
-            "state": "DEGRADED" if degraded else state,
-            "reason": reason,
-            "confirmed": confirmed,
-            "trust": trust,
-            "age": age,
-            "freshFor": fresh_for,
-            "loaded": loaded,
-            "busy": busy,
-            "prompt": entry.get("promptTokensPerSecond"),
-            "generation": entry.get("generationTokensPerSecond"),
-            "handsOff": entry.get("handsOff"),
-        })
+        rows.append(
+            {
+                "name": _PLATFORMS.get(platform) or (host or "MACHINE").upper()[:12],
+                "host": host,
+                "state": "DEGRADED" if degraded else state,
+                "reason": reason,
+                "confirmed": confirmed,
+                "trust": trust,
+                "age": age,
+                "freshFor": fresh_for,
+                "loaded": loaded,
+                "busy": busy,
+                "prompt": entry.get("promptTokensPerSecond"),
+                "generation": entry.get("generationTokensPerSecond"),
+                "handsOff": entry.get("handsOff"),
+            }
+        )
     return rows
 
 
@@ -634,9 +685,17 @@ def remote_section(document, label, fetched_ago, stale=False, took=0.0, landed_a
     since_landing = fetched_ago if landed_ago is None else landed_ago
     since_landing = max(0.0, clean_number(since_landing, 0, 7 * 86400) or 0.0)
     took = max(0.0, clean_number(took, 0, 7 * 86400) or 0.0)
-    fresh = bool(hub and hub["state"] in ("UP", "DEGRADED") and hub["confirmed"] and hub["age"] is not None
-                 and hub["freshFor"] is not None
-                 and hub["age"] + took + max(0.0, since_landing - CACHE_SECONDS) <= hub["freshFor"]) and not stale
+    fresh = (
+        bool(
+            hub
+            and hub["state"] in ("UP", "DEGRADED")
+            and hub["confirmed"]
+            and hub["age"] is not None
+            and hub["freshFor"] is not None
+            and hub["age"] + took + max(0.0, since_landing - CACHE_SECONDS) <= hub["freshFor"]
+        )
+        and not stale
+    )
     if hub is None:
         status, glyph = "UNKNOWN", "[?]"
     elif fresh:
@@ -651,7 +710,9 @@ def remote_section(document, label, fetched_ago, stale=False, took=0.0, landed_a
     elif hub["state"] == "DEGRADED":
         lines.append("This monitor reports itself degraded.")
     elif hub["state"] == "UP" and not hub["confirmed"]:
-        lines.append(f"The monitor's own row says {hub['reason']}, which does not fit an up machine, so its numbers are not live.")
+        lines.append(
+            f"The monitor's own row says {hub['reason']}, which does not fit an up machine, so its numbers are not live."
+        )
     elif not fresh:
         lines.append("The monitor's own sample is old or unverified, so its numbers are not live.")
     raw_machines = document.get("machines")
@@ -670,7 +731,12 @@ def remote_section(document, label, fetched_ago, stale=False, took=0.0, landed_a
             facts.append([f"{name} age", _seconds(row["age"])])
             continue
         if row["loaded"] is not None:
-            facts.append([f"{name} models", f"{row['loaded']} loaded" + (f" ({row['busy']} busy)" if row["busy"] is not None else "")])
+            facts.append(
+                [
+                    f"{name} models",
+                    f"{row['loaded']} loaded" + (f" ({row['busy']} busy)" if row["busy"] is not None else ""),
+                ]
+            )
         else:
             facts.append([f"{name} models", "Model list incomplete"])
         facts.append([f"{name} prompts", _rate(row["prompt"])])
@@ -688,12 +754,22 @@ def remote_section(document, label, fetched_ago, stale=False, took=0.0, landed_a
         loaded = entry.get("loaded")
         models.append(f"{name} · " + ("loaded" if loaded is True else "not loaded" if loaded is False else "unknown"))
     if models:
-        lines.append("Models on that monitor: " + "; ".join(models + ([MORE] if len(raw_models) > MAX_MODELS else [])) + ".")
-    return {"id": "remote", "title": "AGIW monitor", "status": status, "glyph": glyph, "lines": lines,
-            "facts": facts[:40], "pre": peer_map(rows, fresh)}
+        lines.append(
+            "Models on that monitor: " + "; ".join(models + ([MORE] if len(raw_models) > MAX_MODELS else [])) + "."
+        )
+    return {
+        "id": "remote",
+        "title": "AGIW monitor",
+        "status": status,
+        "glyph": glyph,
+        "lines": lines,
+        "facts": facts[:40],
+        "pre": peer_map(rows, fresh),
+    }
 
 
 # ---------------------------------------------------------------- the monitor
+
 
 def _local_section(result, local_state, checked_ago, address, stale=False):
     kind, names = result
@@ -718,24 +794,53 @@ def _local_section(result, local_state, checked_ago, address, stale=False):
         ["Battery source", source or "Not reported"],
         ["Model server checked", f"{checked_ago} s ago"],
     ]
-    return {"id": "duo", "title": "This Duo", "status": status, "glyph": glyph, "lines": [text], "facts": facts, "pre": None}
+    return {
+        "id": "duo",
+        "title": "This Duo",
+        "status": status,
+        "glyph": glyph,
+        "lines": [text],
+        "facts": facts,
+        "pre": None,
+    }
 
 
 def _remote_error_section(code, label):
     status, text = FETCH_WORDS.get(code, FETCH_WORDS["invalid"])
     where = f" at {label}" if label else ""
-    return {"id": "remote", "title": "AGIW monitor", "status": status, "glyph": "[?]",
-            "lines": [f"AGIW monitor{where}: {text}", "Nothing about other machines is known."], "facts": [], "pre": None}
+    return {
+        "id": "remote",
+        "title": "AGIW monitor",
+        "status": status,
+        "glyph": "[?]",
+        "lines": [f"AGIW monitor{where}: {text}", "Nothing about other machines is known."],
+        "facts": [],
+        "pre": None,
+    }
 
 
 def _unconfigured_section():
-    return {"id": "remote", "title": "AGIW monitor", "status": "NOT CONFIGURED", "glyph": "[ ]",
-            "lines": ["No AGIW monitor is configured on this phone.", "Nothing about other machines is known."], "facts": [], "pre": None}
+    return {
+        "id": "remote",
+        "title": "AGIW monitor",
+        "status": "NOT CONFIGURED",
+        "glyph": "[ ]",
+        "lines": ["No AGIW monitor is configured on this phone.", "Nothing about other machines is known."],
+        "facts": [],
+        "pre": None,
+    }
 
 
 def _checking_section(title, what):
-    return {"id": "duo" if title == "This Duo" else "remote", "title": title, "status": "CHECKING", "glyph": "[?]",
-            "lines": [f"Checking {what}. Nothing is known yet."], "facts": [], "pre": None}
+    return {
+        "id": "duo" if title == "This Duo" else "remote",
+        "title": title,
+        "status": "CHECKING",
+        "glyph": "[?]",
+        "lines": [f"Checking {what}. Nothing is known yet."],
+        "facts": [],
+        "pre": None,
+    }
 
 
 class Monitor:
@@ -770,10 +875,14 @@ class Monitor:
                 # Publish the phone's own answer now, whatever the remote does next. The remote's last answer, or
                 # CHECKING on the first look, stays as it was with its own age.
                 before = self._cache
-                self._cache = {"at": local_at, "local_at": local_at, "local": local,
-                               "remote": before["remote"] if before else ("checking", None),
-                               "remote_at": before.get("remote_at", before["at"]) if before else local_at,
-                               "remote_done": before.get("remote_done", before["at"]) if before else local_at}
+                self._cache = {
+                    "at": local_at,
+                    "local_at": local_at,
+                    "local": local,
+                    "remote": before["remote"] if before else ("checking", None),
+                    "remote_at": before.get("remote_at", before["at"]) if before else local_at,
+                    "remote_done": before.get("remote_done", before["at"]) if before else local_at,
+                }
             # Stamped before the fetch: a fetch that takes 6 s produced data that is at least that old when it lands.
             remote_at = self._clock()
             try:
@@ -783,7 +892,14 @@ class Monitor:
             except Exception:
                 remote = ("error", "unreachable")
         done = self._clock()
-        return {"at": done, "local_at": local_at, "local": local, "remote": remote, "remote_at": remote_at, "remote_done": done}
+        return {
+            "at": done,
+            "local_at": local_at,
+            "local": local,
+            "remote": remote,
+            "remote_at": remote_at,
+            "remote_done": done,
+        }
 
     def _view(self, cache, local_state, now):
         ago = max(0, round(now - cache["at"]))
@@ -797,8 +913,16 @@ class Monitor:
         label = self._remote.label if self._remote else None
         try:
             if kind == "ok":
-                sections.append(remote_section(value, label, remote_ago, stale=remote_ago > STALE_AFTER,
-                                                  took=remote_took, landed_ago=remote_landed))
+                sections.append(
+                    remote_section(
+                        value,
+                        label,
+                        remote_ago,
+                        stale=remote_ago > STALE_AFTER,
+                        took=remote_took,
+                        landed_ago=remote_landed,
+                    )
+                )
             elif kind == "error":
                 sections.append(_remote_error_section(value, label))
             elif kind == "checking":
@@ -814,9 +938,22 @@ class Monitor:
         try:
             return self._snapshot(local_state)
         except Exception:
-            return {"version": 1, "title": "Inference", "updatedAgoSeconds": None, "sections": [
-                {"id": "duo", "title": "This Duo", "status": "UNKNOWN", "glyph": "[?]",
-                 "lines": ["The monitor could not build this view. Nothing is known."], "facts": [], "pre": None}]}
+            return {
+                "version": 1,
+                "title": "Inference",
+                "updatedAgoSeconds": None,
+                "sections": [
+                    {
+                        "id": "duo",
+                        "title": "This Duo",
+                        "status": "UNKNOWN",
+                        "glyph": "[?]",
+                        "lines": ["The monitor could not build this view. Nothing is known."],
+                        "facts": [],
+                        "pre": None,
+                    }
+                ],
+            }
 
     def _snapshot(self, local_state):
         collect = False
@@ -842,8 +979,12 @@ class Monitor:
             cache = fresh if fresh is not None else self._cache
         now = self._clock()
         if cache is None:
-            return {"version": 1, "title": "Inference", "updatedAgoSeconds": None, "sections": [
-                _checking_section("This Duo", "this phone")]}
+            return {
+                "version": 1,
+                "title": "Inference",
+                "updatedAgoSeconds": None,
+                "sections": [_checking_section("This Duo", "this phone")],
+            }
         return self._view(cache, local_state, now)
 
 

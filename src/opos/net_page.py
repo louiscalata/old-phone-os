@@ -6,6 +6,7 @@ rate-limit rules as every other action and calls handle() for the actions; the l
 is part of /api/state, so no network name reaches the helper. A password is read from the request, handed to
 nmcli on its standard input and dropped.
 """
+
 import threading
 from html import escape
 
@@ -19,8 +20,13 @@ _LOCK = threading.Lock()
 
 def buckets():
     """Fresh per-server rate limits (burst, then one per 2 s to one per 10 s)."""
-    return {"net_status": secure.RateLimiter(0.5, 6), "net_scan": secure.RateLimiter(0.1, 2), "net_join": secure.RateLimiter(0.1, 3),
-            "net_forget": secure.RateLimiter(0.2, 5), "net_wifi": secure.RateLimiter(0.2, 5)}
+    return {
+        "net_status": secure.RateLimiter(0.5, 6),
+        "net_scan": secure.RateLimiter(0.1, 2),
+        "net_join": secure.RateLimiter(0.1, 3),
+        "net_forget": secure.RateLimiter(0.2, 5),
+        "net_wifi": secure.RateLimiter(0.2, 5),
+    }
 
 
 def service():
@@ -71,8 +77,10 @@ def handle(action, data, svc=None):
     return 400, {"error": "unknown action"}
 
 
-LINK = ('<section aria-labelledby="set-net"><h3 id="set-net">Network</h3><a id="net-link" href="/network" '
-        'style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline">Wi-Fi and radios</a></section>')
+LINK = (
+    '<section aria-labelledby="set-net"><h3 id="set-net">Network</h3><a id="net-link" href="/network" '
+    'style="display:inline-block;min-height:48px;line-height:48px;color:inherit;text-decoration:underline">Wi-Fi and radios</a></section>'
+)
 ANCHOR = '<section aria-labelledby="set-about">'
 
 
@@ -174,4 +182,6 @@ button:disabled::after{content:" unavailable"}
 
 def render(token, nonce):
     """The page, with the session token and the CSP nonce on its inline style and script."""
-    return secure.add_nonce(PAGE.replace("@@CSS@@", _BASE + _NET_CSS).replace("@@TOKEN@@", escape(token, quote=True)), nonce)
+    return secure.add_nonce(
+        PAGE.replace("@@CSS@@", _BASE + _NET_CSS).replace("@@TOKEN@@", escape(token, quote=True)), nonce
+    )

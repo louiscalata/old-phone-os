@@ -5,6 +5,7 @@ A saved alarm does not ring while the clock is unknown. A fire more than 10 minu
 late is a missed alarm, not a ring. A wall time that does not exist (the spring-forward
 gap) is skipped. A repeated wall time (the fall-back hour) rings once, at the first one.
 """
+
 import threading
 import uuid
 from dataclasses import dataclass
@@ -180,12 +181,15 @@ class Book:
         self.notices = [note for note in notes if isinstance(note, str)][-20:]
 
     def _save(self):
-        self.store.write_json(_FILE, {
-            "alarms": self.alarms,
-            "timer": self.timer,
-            "last_seen": self.last_seen,
-            "notices": self.notices[-20:],
-        })
+        self.store.write_json(
+            _FILE,
+            {
+                "alarms": self.alarms,
+                "timer": self.timer,
+                "last_seen": self.last_seen,
+                "notices": self.notices[-20:],
+            },
+        )
 
     def add(self, hour, minute, days=(), label="", now=None):
         with self._lock:
@@ -193,14 +197,18 @@ class Book:
                 raise ValueError("full")
             hour, minute = _clock(hour, minute)
             row = {"id": uuid.uuid4().hex[:8]}
-            self._transition(row, "edit", changes={
-                "hour": hour,
-                "minute": minute,
-                "days": list(_days(days)),
-                "label": _label(label),
-                "enabled": True,
-                "once": not _days(days),
-            })
+            self._transition(
+                row,
+                "edit",
+                changes={
+                    "hour": hour,
+                    "minute": minute,
+                    "days": list(_days(days)),
+                    "label": _label(label),
+                    "enabled": True,
+                    "once": not _days(days),
+                },
+            )
             self.alarms.append(row)
             if now is not None and self.last_seen is None:
                 self.last_seen = _iso(_aware(now))
@@ -212,7 +220,17 @@ class Book:
             row = self._row(alarm_id)
             hour, minute = _clock(hour, minute)
             picked = _days(days)
-            self._transition(row, "edit", changes={"hour": hour, "minute": minute, "days": list(picked), "label": _label(label), "once": not picked})
+            self._transition(
+                row,
+                "edit",
+                changes={
+                    "hour": hour,
+                    "minute": minute,
+                    "days": list(picked),
+                    "label": _label(label),
+                    "once": not picked,
+                },
+            )
             self._save()
             return dict(row)
 
@@ -235,7 +253,11 @@ class Book:
             now = _aware(now)
             if isinstance(seconds, bool) or not isinstance(seconds, int) or not 1 <= seconds <= MAX_TIMER_S:
                 raise ValueError("seconds")
-            self.timer = {"id": uuid.uuid4().hex[:8], "fires_at": _iso(now + timedelta(seconds=seconds)), "label": _label(label)}
+            self.timer = {
+                "id": uuid.uuid4().hex[:8],
+                "fires_at": _iso(now + timedelta(seconds=seconds)),
+                "label": _label(label),
+            }
             if self.last_seen is None:
                 self.last_seen = _iso(now)
             self._save()
@@ -317,7 +339,12 @@ class Book:
                 best, best_row = when, row
         if best is None:
             return None
-        return {"id": best_row["id"], "at": best, "label": best_row.get("label") or "", "text": "Alarm " + _hhmm(best_row["hour"], best_row["minute"])}
+        return {
+            "id": best_row["id"],
+            "at": best,
+            "label": best_row.get("label") or "",
+            "text": "Alarm " + _hhmm(best_row["hour"], best_row["minute"]),
+        }
 
     def _row(self, alarm_id):
         for row in self.alarms:
@@ -413,8 +440,13 @@ class Book:
                 row.pop("ringing", None)
             else:
                 row["ringing"] = True
-            return Event("missed" if missed else "ring", "alarm", row["id"], when,
-                         ("Missed alarm " if missed else "Alarm ") + _hhmm(row["hour"], row["minute"]))
+            return Event(
+                "missed" if missed else "ring",
+                "alarm",
+                row["id"],
+                when,
+                ("Missed alarm " if missed else "Alarm ") + _hhmm(row["hour"], row["minute"]),
+            )
 
     def _timer_events(self, start, now):
         if not self.timer:

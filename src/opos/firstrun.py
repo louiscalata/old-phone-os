@@ -15,6 +15,7 @@ directory cannot be written there is no first run at all; and a failure while de
 /?firstrun=later changes nothing on the server: it only makes that one response the home page. "Not now" for the whole
 server run is an authenticated POST ({"action": "later"}) that the page's "Open Home" button sends first.
 """
+
 import contextlib
 import json
 import logging
@@ -30,6 +31,7 @@ from html import escape
 from pathlib import Path
 
 from opos import clock_health, clockcheck, firstrun_page, secure, timezone
+
 try:  # the on-screen keyboard (OPOS_OSK=1) also serves the time zone page's search box; its absence changes nothing
     from opos import osk
 except ImportError:
@@ -41,7 +43,13 @@ log = logging.getLogger("opos.firstrun")
 FLAG = "firstrun.json"
 KIOSK_PROFILE = (".cache", "opos-kiosk")  # opos-kiosk starts Chromium with --user-data-dir=$HOME/.cache/opos-kiosk
 RESTART_DELAY_S = 1.5
-DUO_DEVICE = {"id": "surface-duo-1", "name": "Surface Duo", "source": "manual", "battery_health": None, "form_factor": "dual-screen"}
+DUO_DEVICE = {
+    "id": "surface-duo-1",
+    "name": "Surface Duo",
+    "source": "manual",
+    "battery_health": None,
+    "form_factor": "dual-screen",
+}
 _GOAL_TIME = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 _later = False  # "Not now" for this server run
 
@@ -106,7 +114,9 @@ def pending(env=None):
     return enabled(env) and not _later and not done(env) and _writable(env)
 
 
-CLOCK_GUESS = "/run/opos/clock-floor"  # the same files as opos.web.clock_ok: opos-clock writes this when it raised an unset clock
+CLOCK_GUESS = (
+    "/run/opos/clock-floor"  # the same files as opos.web.clock_ok: opos-clock writes this when it raised an unset clock
+)
 CLOCK_SYNCED = "/run/systemd/timesync/synchronized"  # systemd-timesyncd touches it once it has network time
 CLOCK_FLOOR = "/opt/opos/CLOCK_FLOOR"  # build-image.sh writes the image's floor here
 
@@ -130,7 +140,10 @@ def clock_info(now=None, guess=CLOCK_GUESS, synced=CLOCK_SYNCED, floor=CLOCK_FLO
                 floor_value = f.read(1024).decode("utf-8", "replace")
         except OSError:
             floor_value = ""
-        image = clock_health.clock_status(t, os.path.exists(guess), os.path.exists(synced), floor_value) in ("floor", "guess")
+        image = clock_health.clock_status(t, os.path.exists(guess), os.path.exists(synced), floor_value) in (
+            "floor",
+            "guess",
+        )
         plausible = not image
     if plausible:
         note = ""
@@ -168,12 +181,23 @@ def _save_goal(enabled_, hhmm, env=None):
 
 def timezone_state(env=None):
     names, source = timezone.zones()
-    return {"zones": names, "source": source, "saved": timezone.load_setting(env), "active": os.environ.get("TZ", ""), "clock": clock_info()}
+    return {
+        "zones": names,
+        "source": source,
+        "saved": timezone.load_setting(env),
+        "active": os.environ.get("TZ", ""),
+        "clock": clock_info(),
+    }
 
 
 def state(phone=None, env=None):
-    return {"pending": pending(env), "clock": clock_info(), "goal": _goal_now(env), "helper": "on" if getattr(phone, "visible", False) else "off",
-            "timezone": {"saved": timezone.load_setting(env)}}
+    return {
+        "pending": pending(env),
+        "clock": clock_info(),
+        "goal": _goal_now(env),
+        "helper": "on" if getattr(phone, "visible", False) else "off",
+        "timezone": {"saved": timezone.load_setting(env)},
+    }
 
 
 def _goal_clock(phone):
@@ -191,7 +215,7 @@ def apply_answers(data, phone=None, lock=None, env=None):
 
     def live(fn):
         if phone is not None:
-            with (lock if lock is not None else contextlib.nullcontext()):
+            with lock if lock is not None else contextlib.nullcontext():
                 fn()
 
     if data.get("zone") is not None:
@@ -203,7 +227,12 @@ def apply_answers(data, phone=None, lock=None, env=None):
             errors.append("time zone")
     g = data.get("goal")
     if g is not None:
-        if isinstance(g, dict) and type(g.get("enabled")) is bool and isinstance(g.get("time"), str) and _GOAL_TIME.fullmatch(g["time"]):
+        if (
+            isinstance(g, dict)
+            and type(g.get("enabled")) is bool
+            and isinstance(g.get("time"), str)
+            and _GOAL_TIME.fullmatch(g["time"])
+        ):
             try:
                 _save_goal(g["enabled"], g["time"], env)
                 live(lambda: phone.dash.set_goal(g["time"] if g["enabled"] else None, _goal_clock(phone)))
@@ -269,8 +298,13 @@ def decorate(html, env=None):
     if _ANCHOR not in html:
         return html
     zone = timezone.load_setting(env) or "default (" + time.tzname[0] + ")"
-    link = ('<section aria-labelledby="set-time"><h3 id="set-time">Date and time</h3><a id="tz-link" href="/timezone" style="'
-            + _LINK_STYLE + '">Time zone: ' + escape(zone) + "</a></section>")
+    link = (
+        '<section aria-labelledby="set-time"><h3 id="set-time">Date and time</h3><a id="tz-link" href="/timezone" style="'
+        + _LINK_STYLE
+        + '">Time zone: '
+        + escape(zone)
+        + "</a></section>"
+    )
     return html.replace(_ANCHOR, link + _ANCHOR, 1)
 
 
@@ -388,10 +422,12 @@ def route_post(h):
         return True
     # One check at a time, in this order, as opos.web does: the shared "post" budget is charged only to a request that has
     # passed Host, Origin, Content-Type and the token, so rejected requests cannot use up the owner's.
-    for test, code, msg, why in ((lambda: secure.origin_ok(h.headers.get("Origin"), h.port), 403, "forbidden", "origin"),
-                                 (lambda: secure.json_type_ok(h.headers.get("Content-Type")), 415, "unsupported media type", "type"),
-                                 (lambda: secure.token_ok(h.headers.get("X-OPOS-Token"), h.token), 403, "forbidden", "token"),
-                                 (lambda: h.limiter.allow("post"), 429, "too many requests", "rate")):
+    for test, code, msg, why in (
+        (lambda: secure.origin_ok(h.headers.get("Origin"), h.port), 403, "forbidden", "origin"),
+        (lambda: secure.json_type_ok(h.headers.get("Content-Type")), 415, "unsupported media type", "type"),
+        (lambda: secure.token_ok(h.headers.get("X-OPOS-Token"), h.token), 403, "forbidden", "token"),
+        (lambda: h.limiter.allow("post"), 429, "too many requests", "rate"),
+    ):
         if not test():
             h._deny(code, msg, why)
             return True

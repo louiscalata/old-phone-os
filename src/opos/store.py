@@ -4,6 +4,7 @@
 The directory is $XDG_STATE_HOME/opos, or the default state directory when that variable is unset.
 A file that cannot be read is moved aside to <name>.bad-<time> and the caller starts empty.
 """
+
 import json
 import os
 import re

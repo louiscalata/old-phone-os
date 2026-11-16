@@ -10,6 +10,7 @@ else 1.0 with health_source "assumed", so the screen never claims a measured hea
 not read. Time left follows MeasuredDrain, the discharge rate seen in the readings themselves, once
 it has enough of them; until then the caller keeps the model's rate and says so.
 """
+
 from __future__ import annotations
 
 import json
@@ -73,7 +74,9 @@ def _termux_status(run=subprocess.run, which=shutil.which):
 
 def _model(run=subprocess.run):
     try:
-        return run(["getprop", "ro.product.model"], capture_output=True, text=True, timeout=5, check=False).stdout.strip()
+        return run(
+            ["getprop", "ro.product.model"], capture_output=True, text=True, timeout=5, check=False
+        ).stdout.strip()
     except Exception:
         return ""
 
@@ -268,7 +271,12 @@ class MeasuredDrain:
         last reached a new low caps the average: that stretch lost under one point (a quarter with
         the counter), so the rate is under that over its length.
         """
-        if self.ema is None or now - self.t_last > DRAIN_MAX_GAP_S or self.window_s < DRAIN_WINDOW_S or self._drop < DRAIN_MIN_DROP:
+        if (
+            self.ema is None
+            or now - self.t_last > DRAIN_MAX_GAP_S
+            or self.window_s < DRAIN_WINDOW_S
+            or self._drop < DRAIN_MIN_DROP
+        ):
             return None
         r = self.ema
         if self.t_last > self._lo_t:
@@ -342,7 +350,9 @@ class LiveBattery:
             self.temp_c = r["temp_c"]
         self.charging = r["charging"]
         self.source = r["source"]
-        self.drain.observe(self._drain_clock(), self.level, self.charging, r.get("charge_counter_uah") or r.get("counter"))
+        self.drain.observe(
+            self._drain_clock(), self.level, self.charging, r.get("charge_counter_uah") or r.get("counter")
+        )
 
     def drain_rate(self, model_per_h):
         """(percent per hour to divide the level by, how it was got): measured once trusted, else the model's.
@@ -376,7 +386,9 @@ class LiveBattery:
             return f"drain from the model, not measured yet ({int(w // 60)} of {DRAIN_WINDOW_S / 60:.0f} min)"
         if (info["age_s"] or 0) > DRAIN_MAX_GAP_S:
             return "drain from the model, readings have lapsed"
-        return f"drain from the model, waiting for the next {info['via']} step"  # the window is full; a closed step is not
+        return (
+            f"drain from the model, waiting for the next {info['via']} step"  # the window is full; a closed step is not
+        )
 
     def rate_estimator(self):
         return _MeasuredRate(self)

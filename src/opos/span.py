@@ -7,6 +7,7 @@ server the geometry (OPOS_SPAN or --span) and only then the page is served as if
 segments: that query becomes a width test and the segment env() values become --pane and --hinge. Unset, the
 page is served exactly as before.
 """
+
 import math
 import re
 from typing import NamedTuple
@@ -34,7 +35,9 @@ def parse(text):
         raise ValueError(f"expected PANE,HINGE in CSS px, e.g. 675,42, not {text!r}")
     s = Span(float(m[1]), float(m[2]))
     if not 0 < s.hinge < s.pane or not 840 <= s.width <= 8192:
-        raise ValueError(f"{text.strip()!r} does not describe two panes and a hinge (the whole span must be 840 to 8192 CSS px)")
+        raise ValueError(
+            f"{text.strip()!r} does not describe two panes and a hinge (the whole span must be 840 to 8192 CSS px)"
+        )
     return s
 
 
@@ -59,11 +62,13 @@ def variables(span):
 # across the whole window and the shade's grab handle sits at 50%: both move into the first pane. The segment
 # rules also top-align the lock screen; the wide Foldable layout centres it. The stale-page banner is a fixed box under the
 # status bar that would run across the hinge, so it is one pane wide (the first; with OPOS_PANES the list pane: panes.css).
-EXTRA = ('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}'
-         "#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}"
-         "#meter{right:auto;width:var(--pane)}"
-         "#meter-hit::after{left:calc(var(--pane)/2)}"
-         "[data-stale] #notice{max-width:var(--pane)}")
+EXTRA = (
+    'html[data-ff="foldable"] #lock:not([hidden]){align-content:center}'
+    "#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}"
+    "#meter{right:auto;width:var(--pane)}"
+    "#meter-hit::after{left:calc(var(--pane)/2)}"
+    "[data-stale] #notice{max-width:var(--pane)}"
+)
 
 
 def readout(span):
@@ -72,10 +77,12 @@ def readout(span):
     phone-b.js rewrites that line from scratch on every resize, so the readout is appended again on each one; its
     script is the last in the page, which puts its listener after phone-b.js's. A resize delivered before load
     would otherwise append it twice, so it is skipped when the line already carries it."""
-    return ("<script>['load','resize'].forEach(function(t){addEventListener(t,function(){"
-            "var e=document.getElementById('ff-detected');"
-            "if(e&&e.textContent.indexOf('. Window ')<0)e.textContent+='. Window '+innerWidth+' x '+innerHeight+' CSS px at '+devicePixelRatio+'x, "
-            f"span {_n(span.pane)} + {_n(span.hinge)} + {_n(span.pane)}.'}})}})</script>")
+    return (
+        "<script>['load','resize'].forEach(function(t){addEventListener(t,function(){"
+        "var e=document.getElementById('ff-detected');"
+        "if(e&&e.textContent.indexOf('. Window ')<0)e.textContent+='. Window '+innerWidth+' x '+innerHeight+' CSS px at '+devicePixelRatio+'x, "
+        f"span {_n(span.pane)} + {_n(span.hinge)} + {_n(span.pane)}.'}})}})</script>"
+    )
 
 
 def rewrites(span):

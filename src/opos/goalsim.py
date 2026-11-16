@@ -11,7 +11,22 @@ from opos.reserve import call_possible, should_shutdown
 KNOWN_STEPS = ("dim screen", "batch sync", "model")
 
 
-def _drain_loop(tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, paused, steps_used, update=None, pre_shutdown=None, check_brownout=True):
+def _drain_loop(
+    tasks,
+    health,
+    temp_c,
+    level,
+    t_s,
+    step_s,
+    max_h,
+    profile,
+    r0,
+    paused,
+    steps_used,
+    update=None,
+    pre_shutdown=None,
+    check_brownout=True,
+):
     shutdown_level = None
     while True:
         if update is not None:
@@ -23,7 +38,10 @@ def _drain_loop(tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, p
             shutdown_level = level
             break
         if profile == "eol":
-            if check_brownout and brownout(level, load_amps(drain_per_h * health) + BURST_A["call"], temp_c, r0) is True:
+            if (
+                check_brownout
+                and brownout(level, load_amps(drain_per_h * health) + BURST_A["call"], temp_c, r0) is True
+            ):
                 shutdown_level = level
                 break
         remaining = max_h * 3600.0 - t_s
@@ -42,7 +60,18 @@ def _drain_loop(tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, p
     return level, t_s, paused, steps_used, shutdown_level
 
 
-def simulate(policy, level=40.0, health=0.6, temp_c=30.0, goal_h=11.0, tasks=None, step_s=60.0, max_h=48.0, profile=None, model_path=None) -> dict:
+def simulate(
+    policy,
+    level=40.0,
+    health=0.6,
+    temp_c=30.0,
+    goal_h=11.0,
+    tasks=None,
+    step_s=60.0,
+    max_h=48.0,
+    profile=None,
+    model_path=None,
+) -> dict:
     if policy not in ("basic", "router", "model"):
         raise ValueError(f"unknown policy: {policy!r}")
     if not isinstance(step_s, (int, float)) or not math.isfinite(step_s) or step_s <= 0:
@@ -70,7 +99,9 @@ def simulate(policy, level=40.0, health=0.6, temp_c=30.0, goal_h=11.0, tasks=Non
         floor_overrides = sorted(paused & protected)
         paused = {p for p in paused if p not in protected}
         steps_used = tuple(steps)
-        level, t_s, paused, steps_used, shutdown_level = _drain_loop(tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, paused, tuple(steps))
+        level, t_s, paused, steps_used, shutdown_level = _drain_loop(
+            tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, paused, tuple(steps)
+        )
     elif policy == "router":
         rt = Runtime(tasks=tasks)
         paused = set()
@@ -84,9 +115,28 @@ def simulate(policy, level=40.0, health=0.6, temp_c=30.0, goal_h=11.0, tasks=Non
             return kept, tuple(tick.steps)
 
         def _pre(lvl, base_a):
-            return (profile == "eol" and (not call_possible(lvl, temp_c, health, base_a=base_a) or should_shutdown(lvl, temp_c, health)) is True)
+            return (
+                profile == "eol"
+                and (not call_possible(lvl, temp_c, health, base_a=base_a) or should_shutdown(lvl, temp_c, health))
+                is True
+            )
 
-        level, t_s, paused, steps_used, shutdown_level = _drain_loop(tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, paused, steps_used, update=_update, pre_shutdown=_pre, check_brownout=False)
+        level, t_s, paused, steps_used, shutdown_level = _drain_loop(
+            tasks,
+            health,
+            temp_c,
+            level,
+            t_s,
+            step_s,
+            max_h,
+            profile,
+            r0,
+            paused,
+            steps_used,
+            update=_update,
+            pre_shutdown=_pre,
+            check_brownout=False,
+        )
         floor_overrides = sorted(floor_seen)
     else:
         mpath = resolve_model_path(model_path)
@@ -107,8 +157,29 @@ def simulate(policy, level=40.0, health=0.6, temp_c=30.0, goal_h=11.0, tasks=Non
         if overridden:
             raise ValueError(f"model invalid: cannot pause ESSENTIAL {sorted(overridden)!r} {mpath!r}")
         steps_used = tuple(steps_cfg)
-        level, t_s, paused, steps_used, shutdown_level = _drain_loop(tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, paused, steps_used)
+        level, t_s, paused, steps_used, shutdown_level = _drain_loop(
+            tasks, health, temp_c, level, t_s, step_s, max_h, profile, r0, paused, steps_used
+        )
         hours = t_s / 3600.0
-        return {"policy": policy, "hours": hours, "reaches_goal": hours >= goal_h, "paused_final": sorted(paused), "steps_final": list(steps_used), "profile": profile, "shutdown_level": shutdown_level, "model_version": model_data.get("version"), "floor_overrides": []}
+        return {
+            "policy": policy,
+            "hours": hours,
+            "reaches_goal": hours >= goal_h,
+            "paused_final": sorted(paused),
+            "steps_final": list(steps_used),
+            "profile": profile,
+            "shutdown_level": shutdown_level,
+            "model_version": model_data.get("version"),
+            "floor_overrides": [],
+        }
     hours = t_s / 3600.0
-    return {"policy": policy, "hours": hours, "reaches_goal": hours >= goal_h, "paused_final": sorted(paused), "steps_final": list(steps_used), "profile": profile, "shutdown_level": shutdown_level, "floor_overrides": floor_overrides}
+    return {
+        "policy": policy,
+        "hours": hours,
+        "reaches_goal": hours >= goal_h,
+        "paused_final": sorted(paused),
+        "steps_final": list(steps_used),
+        "profile": profile,
+        "shutdown_level": shutdown_level,
+        "floor_overrides": floor_overrides,
+    }

@@ -11,6 +11,7 @@ OUTPUT_PX and OUTPUT_SCALE, posture.LID_NAME, the brightness unit's runtime dire
 tests/test_hw_facts.py; they are not read from it. The native shell's posture.py reads its panel geometry from here
 (panel_px, and the hinge column that output_px leaves between the panels).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,19 +26,19 @@ class Fact:
 
 @dataclass(frozen=True)
 class DeviceFacts:
-    model: Fact | None              # a part of /proc/device-tree/model
-    compatible: Fact | None         # one entry of /proc/device-tree/compatible
-    panels: Fact | None             # DRM connectors that list a mode
-    panel_px: Fact | None           # (width, height) of each panel, device px
-    output_px: Fact | None          # (width, height) of the one composed output, device px
-    scale: Fact | None              # the compositor's output scale
-    span: Fact | None               # one pane's width in CSS px
-    hinge: Fact | None              # the hinge's width in CSS px
-    lid_name: Fact | None           # the switch input device that reports the lid
+    model: Fact | None  # a part of /proc/device-tree/model
+    compatible: Fact | None  # one entry of /proc/device-tree/compatible
+    panels: Fact | None  # DRM connectors that list a mode
+    panel_px: Fact | None  # (width, height) of each panel, device px
+    output_px: Fact | None  # (width, height) of the one composed output, device px
+    scale: Fact | None  # the compositor's output scale
+    span: Fact | None  # one pane's width in CSS px
+    hinge: Fact | None  # the hinge's width in CSS px
+    lid_name: Fact | None  # the switch input device that reports the lid
     fuel_gauge_driver: Fact | None  # the power_supply name prefix of the fuel gauges
-    fuel_gauges: Fact | None        # how many fuel gauges
-    backlights: Fact | None         # how many /sys/class/backlight entries
-    session_uid: Fact | None        # the uid of the session user (droidian)
+    fuel_gauges: Fact | None  # how many fuel gauges
+    backlights: Fact | None  # how many /sys/class/backlight entries
+    session_uid: Fact | None  # the uid of the session user (droidian)
 
 
 PORT_PANELS = "the port's display-panels/qcom,sm8150-mtp.json (packaging/duo-os/README.md)"

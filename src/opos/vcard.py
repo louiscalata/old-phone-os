@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A small vCard 3.0 reader and writer. FN, N, TEL and NOTE are kept. Other fields are counted and skipped."""
+
 import re
 
 from opos.essentials import normalize_number

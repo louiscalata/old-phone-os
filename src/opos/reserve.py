@@ -7,8 +7,10 @@ WORN_REASON = "worn battery: keeping a reserve for calls"
 BACKGROUND_MARGIN = 15.0
 ESSENTIAL_MARGIN = 4.0
 
+
 def reserve_level(temp_c, health):
     return call_reserve(temp_c, r0_for_health(health), health=health)
+
 
 def reserve_keeps(level, temp_c, health, tasks):
     """While the worn-battery reserve is engaged, return a test for the names it still runs; otherwise None."""
@@ -21,6 +23,7 @@ def reserve_keeps(level, temp_c, health, tasks):
         return lambda name: name in KEEP
     task_map = {t.name: t for t in tasks}
     return lambda name: name in KEEP or ((t := task_map.get(name)) is not None and t.priority == Priority.ESSENTIAL)
+
 
 def apply_reserve(decision, level, temp_c, health, tasks):
     keeps = reserve_keeps(level, temp_c, health, tasks)
@@ -39,15 +42,18 @@ def apply_reserve(decision, level, temp_c, health, tasks):
     new_deferred = tuple(new_deferred_list)
     return Decision(Mode.CRITICAL, new_allowed, new_deferred, WORN_REASON)
 
+
 def shape_burst(burst_a, level, temp_c, health, base_a=0.0):
     if not is_worn(health):
         return burst_a
     return min(burst_a, max(0.0, max_safe_amps(level, temp_c, r0_for_health(health)) - base_a))
 
+
 def should_shutdown(level, temp_c, health):
     if not is_worn(health):
         return False
     return level <= shutdown_floor(temp_c, r0_for_health(health))
+
 
 def call_possible(level, temp_c, health, base_a=0.0):
     return shape_burst(1.0, level, temp_c, health, base_a) >= MIN_CALL_A

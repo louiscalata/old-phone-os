@@ -10,6 +10,7 @@ native screens and the old interface show the same alarms, people, notes, conver
 no server.
 Network (opened from Settings) uses the server's net_* actions, the same ones the browser's /network page uses.
 """
+
 from __future__ import annotations
 
 import functools
@@ -31,9 +32,18 @@ from opos.native import logic, netlogic, posture  # noqa: E402
 from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, vbox  # noqa: E402
 
 MISSING = "%s is not part of the OPOS installed on this phone yet. It arrives with the next update."
-ERRORS = {"full": "That list is full.", "id": "That one cannot be changed.", "name": "It needs a name.",
-          "hour": "That is not a time.", "minute": "That is not a time.", "favorites": "Six favourites is the most.",
-          "size": "That note is too long.", "seconds": "That timer is too long."}
+ERRORS = {
+    "full": "That list is full.",
+    "id": "That one cannot be changed.",
+    "name": "It needs a name.",
+    "hour": "That is not a time.",
+    "minute": "That is not a time.",
+    "favorites": "Six favourites is the most.",
+    "size": "That note is too long.",
+    "seconds": "That timer is too long.",
+}
+
+
 def emergency_words(risks):
     """The shared risk line about emergency calls (notices.RISKS, shown by the browser under About), from its
     sentence that names emergency calls on. A real call is never called simulated, and a reworded notice never
@@ -55,7 +65,7 @@ class Page:
     """One screen. build() returns (reading pane, thumb pane); show() gets every state the server sends."""
 
     name, title, api = "", "", None
-    tile = True         # False: the page has no tile on Home and is opened from another page
+    tile = True  # False: the page has no tile on Home and is opened from another page
 
     def __init__(self, shell):
         self.shell, self.data = shell, None
@@ -107,16 +117,17 @@ class Page:
             except urllib.error.HTTPError as err:
                 try:
                     got = {"error": json.loads(err.read().decode("utf-8", "replace")).get("error") or "refused"}
-                except Exception:       # a body that is not JSON, or a connection lost while reading it: still an answer
+                except Exception:  # a body that is not JSON, or a connection lost while reading it: still an answer
                     got = {"error": "refused"}
                 if err.code == 404:
                     got = {"missing": True}
             except Exception as err:
                 got = {"error": str(err)[:60]}
             GLib.idle_add(self.deliver, n, got, done, data is not None)
+
         try:
             threading.Thread(target=work, daemon=True).start()
-        except RuntimeError:    # no thread could be started: nothing was sent. Answer, so no button waits for ever.
+        except RuntimeError:  # no thread could be started: nothing was sent. Answer, so no button waits for ever.
             GLib.idle_add(self.deliver, n, {"error": "not sent"}, done, False)
         return n
 
@@ -132,7 +143,7 @@ class Page:
         if done:
             done(data, fresh)
         if wrote and not fresh and self.confirmed(data):
-            self.refresh()      # the change went through, but a newer answer was drawn first: draw what is true now
+            self.refresh()  # the change went through, but a newer answer was drawn first: draw what is true now
         return False
 
     @staticmethod
@@ -174,9 +185,15 @@ class Lock(Page):
         self.link = label("", "big")
         self.link.set_visible(False)
         read = reading(self.time, self.date, self.batt, self.story, self.link)
-        act = column(bottom=(label("Swipe up to unlock", "dim", x=0.5),
-                             bar(button("Call", lambda: self.shell.go("phone")),
-                                 button("Unlock", lambda: self.shell.go("home"), "main"))))
+        act = column(
+            bottom=(
+                label("Swipe up to unlock", "dim", x=0.5),
+                bar(
+                    button("Call", lambda: self.shell.go("phone")),
+                    button("Unlock", lambda: self.shell.go("home"), "main"),
+                ),
+            )
+        )
         return read, act
 
     def show(self, snap):
@@ -197,6 +214,7 @@ class Lock(Page):
 
 class Home(Page):
     """The tiles under the thumb; the other screen previews the chosen app, live, and its rows can be tapped."""
+
     name = "home"
 
     def build(self):
@@ -208,16 +226,20 @@ class Home(Page):
         for i, (app_id, name) in enumerate(self.shell.apps):
             tile = button(name, lambda a=app_id: self.shell.go(a), "tile")
             hold = Gtk.GestureLongPress()
-            hold.connect("pressed", lambda g, *_xy, a=app_id: (g.set_state(Gtk.EventSequenceState.CLAIMED), self.choose(a)))
+            hold.connect(
+                "pressed", lambda g, *_xy, a=app_id: (g.set_state(Gtk.EventSequenceState.CLAIMED), self.choose(a))
+            )
             tile.add_controller(hold)
             grid.attach(tile, i % 2, i // 2, 1, 1)
         self.open = button("Open", lambda: self.shell.go(self.chosen), "main")
-        act = column(label("Tap to open. Press and hold to look first.", "dim"),
-                     bottom=(grid, bar(button("Lock", lambda: self.shell.go("lock")), self.open)))
+        act = column(
+            label("Tap to open. Press and hold to look first.", "dim"),
+            bottom=(grid, bar(button("Lock", lambda: self.shell.go("lock")), self.open)),
+        )
         return read, act
 
     def enter(self):
-        self.shell.pages[self.chosen].refresh()     # the preview must not be what the app showed at its last visit
+        self.shell.pages[self.chosen].refresh()  # the preview must not be what the app showed at its last visit
 
     def choose(self, app_id):
         self.chosen = app_id
@@ -230,7 +252,9 @@ class Home(Page):
         self.v_title.set_label(page.title)
         self.v_text.set_label(text)
         self.v_text.set_visible(bool(text))
-        self.v_note.set_label(snap.get("home_note") or "")     # the server words it: practice mode, or calls and messages on
+        self.v_note.set_label(
+            snap.get("home_note") or ""
+        )  # the server words it: practice mode, or calls and messages on
         self.open.set_label("Open %s" % page.title)
         fill(self.v_rows, rows)
 
@@ -239,14 +263,16 @@ class Phone(Page):
     name, title = "phone", "Phone"
 
     def build(self):
-        self.pending = logic.Pending()      # "call" or "hang_up" until a drawn state includes it
+        self.pending = logic.Pending()  # "call" or "hang_up" until a drawn state includes it
         self.status, self.people = label("", "big"), vbox(spacing=0)
         read = reading(label("Phone", "head"), self.status, self.people)
         self.number = label("", "head", wrap=False, x=0.5)
         self.number.add_css_class("rule")
         pad = Gtk.Grid(column_spacing=8, row_spacing=8, column_homogeneous=True)
         for i, key in enumerate("123456789+0<"):
-            pad.attach(button("Delete" if key == "<" else key, lambda k=key: self.dial_key(k), "pad"), i % 3, i // 3, 1, 1)
+            pad.attach(
+                button("Delete" if key == "<" else key, lambda k=key: self.dial_key(k), "pad"), i % 3, i // 3, 1, 1
+            )
         self.go_call = button("Call", self.call_or_hang, "main")
         act = column(bottom=(self.number, pad, bar(self.home(), self.go_call)))
         return read, act
@@ -272,7 +298,7 @@ class Phone(Page):
         else:
             return
         self.pending.start(what)
-        sent = []       # the request's number; empty if the answer comes before ask() returns (it could not be sent)
+        sent = []  # the request's number; empty if the answer comes before ask() returns (it could not be sent)
         sent.append(self.shell.ask(what, done=lambda reply: self.answered(sent[0] if sent else 0, reply), **fields))
         self.show(self.shell.snap)
 
@@ -285,11 +311,13 @@ class Phone(Page):
         busy = self.pending.what
         lines = [x for x in (logic.call_words(snap), logic.refusal(snap)) if x]
         lines.append("Practice only: this phone cannot make real calls yet." if logic.simulated(snap) else EMERGENCY)
-        if busy:    # being asked, or its answer did not come: then nothing is being asked and the screen says so
+        if busy:  # being asked, or its answer did not come: then nothing is being asked and the screen says so
             lines.append(logic.pending_words(busy, self.pending.lost))
         self.status.set_label("\n".join(lines))
         self.status.set_visible(bool(lines))
-        self.go_call.set_label({"call": "Calling", "hang_up": "Hanging up"}.get(busy) or ("Hang up" if snap.get("in_call") else "Call"))
+        self.go_call.set_label(
+            {"call": "Calling", "hang_up": "Hanging up"}.get(busy) or ("Hang up" if snap.get("in_call") else "Call")
+        )
         self.go_call.set_sensitive(not busy)
         fill(self.people, [(n or num, num, lambda v=num: self.dial(v)) for n, num in people_of(snap)])
 
@@ -297,8 +325,10 @@ class Phone(Page):
         def ring(number):
             self.dial(number)
             self.shell.go("phone")
-        return logic.call_words(snap), \
-            [("Call %s" % (n or num), num, lambda v=num: ring(v)) for n, num in people_of(snap)]
+
+        return logic.call_words(snap), [
+            ("Call %s" % (n or num), num, lambda v=num: ring(v)) for n, num in people_of(snap)
+        ]
 
 
 class Messages(Page):
@@ -307,7 +337,7 @@ class Messages(Page):
 
     def build(self):
         self.convo, self.draft, self.typed = logic.Conversation(), logic.Draft(), logic.Entry(limit=480)
-        self.outcome = ""        # what the last send did, in the server's words
+        self.outcome = ""  # what the last send did, in the server's words
         self.head, self.list, self.thread = label("Messages", "head"), vbox(spacing=0), label("", "big")
         self.practice = label("", "dim")
         read = reading(self.head, self.practice, self.list, self.thread)
@@ -391,7 +421,9 @@ class Messages(Page):
             if isinstance(t, dict) and t.get("number"):
                 seen.add(t["number"])
                 rows.append((t.get("name") or t["number"], (t.get("last") or "")[:60], lambda v=t["number"]: opener(v)))
-        return rows + [(n or num, "No messages yet", lambda v=num: opener(v)) for n, num in people_of(snap) if num not in seen]
+        return rows + [
+            (n or num, "No messages yet", lambda v=num: opener(v)) for n, num in people_of(snap) if num not in seen
+        ]
 
     def show(self, snap):
         self.practice.set_label(logic.messages_line(snap, self.outcome))
@@ -411,6 +443,7 @@ class Messages(Page):
         def opener(number):
             self.shell.go("messages")
             self.open_thread(number)
+
         return "", self.rows(snap, opener)
 
 
@@ -424,14 +457,23 @@ class Clock(Page):
         self.warn.set_visible(False)
         self.alarms = vbox(spacing=0)
         read = reading(label("Clock", "head"), self.note, self.warn, self.now, self.next, self.timer, self.alarms)
-        self.ring = hbox(button("Snooze", lambda: self.call({"action": "snooze", "id": self.ringing}), "pad"),
-                         button("Stop", lambda: self.call({"action": "stop", "id": self.ringing}), "main"))
+        self.ring = hbox(
+            button("Snooze", lambda: self.call({"action": "snooze", "id": self.ringing}), "pad"),
+            button("Stop", lambda: self.call({"action": "stop", "id": self.ringing}), "main"),
+        )
         self.ringing = None
         self.pick = label("", "big")
-        self.sure, self.adding = logic.Confirm(), False      # Remove asks twice; Add waits for its answer
+        self.sure, self.adding = logic.Confirm(), False  # Remove asks twice; Add waits for its answer
         self.remove_button = button("Remove", self.remove, "chip")
-        self.pick_box = vbox(self.pick, hbox(button("On or off", self.toggle, "chip"), self.remove_button,
-                                             button("Done", lambda: self.choose(None), "chip"), spacing=8))
+        self.pick_box = vbox(
+            self.pick,
+            hbox(
+                button("On or off", self.toggle, "chip"),
+                self.remove_button,
+                button("Done", lambda: self.choose(None), "chip"),
+                spacing=8,
+            ),
+        )
         self.typed = label("", "head", wrap=False, x=0.5)
         self.typed.add_css_class("rule")
         self.once = button("Once", lambda: self.set_daily(False), "chip")
@@ -439,14 +481,32 @@ class Clock(Page):
         pad = Gtk.Grid(column_spacing=8, row_spacing=8, column_homogeneous=True)
         for i, key in enumerate("123456789 0<"):
             if key != " ":
-                pad.attach(button("Delete" if key == "<" else key, lambda k=key: self.digit(k), "key"), i % 3, i // 3, 1, 1)
-        self.timers = hbox(*[button("%d min" % m, lambda m=m: self.call({"action": "timer_start", "seconds": m * 60}), "chip")
-                             for m in (5, 10, 30)], spacing=8)
+                pad.attach(
+                    button("Delete" if key == "<" else key, lambda k=key: self.digit(k), "key"), i % 3, i // 3, 1, 1
+                )
+        self.timers = hbox(
+            *[
+                button("%d min" % m, lambda m=m: self.call({"action": "timer_start", "seconds": m * 60}), "chip")
+                for m in (5, 10, 30)
+            ],
+            spacing=8,
+        )
         self.cancel = button("Cancel the timer", lambda: self.call({"action": "timer_cancel"}), "chip")
         self.add = button("Add alarm", self.add_alarm, "main")
-        act = column(self.ring, self.pick_box, bottom=(label("Timer", "dim"), self.timers, self.cancel,
-                                                        label("New alarm: type the time", "dim"), self.typed,
-                                                        hbox(self.once, self.every, spacing=8), pad, bar(self.home(), self.add)))
+        act = column(
+            self.ring,
+            self.pick_box,
+            bottom=(
+                label("Timer", "dim"),
+                self.timers,
+                self.cancel,
+                label("New alarm: type the time", "dim"),
+                self.typed,
+                hbox(self.once, self.every, spacing=8),
+                pad,
+                bar(self.home(), self.add),
+            ),
+        )
         self.set_daily(False)
         self.choose(None)
         self.ring.set_visible(False)
@@ -463,7 +523,7 @@ class Clock(Page):
         self.typed.set_label(logic.digits_shown(self.digits) or " ")
 
     def add_alarm(self):
-        if self.adding:          # one add at a time: a second tap would make a second alarm
+        if self.adding:  # one add at a time: a second tap would make a second alarm
             return
         when = logic.clock_digits(self.digits)
         if when is None:
@@ -480,7 +540,11 @@ class Clock(Page):
             elif self.digits == sent:
                 self.digits = ""
                 self.typed.set_label(" ")
-        self.call({"action": "add", "hour": when[0], "minute": when[1], "days": list(range(7)) if self.daily else []}, done=done)
+
+        self.call(
+            {"action": "add", "hour": when[0], "minute": when[1], "days": list(range(7)) if self.daily else []},
+            done=done,
+        )
 
     def set_adding(self, on):
         self.adding = on
@@ -546,7 +610,9 @@ class Clock(Page):
         text = self.shell.time_text() + ("\nNext alarm: %s" % nxt.get("text") if nxt else "")
         if not self.shell.clock_known():
             text += "\n" + logic.CLOCK_UNSET
-        return text, [("%s  %s" % logic.alarm_line(r), "", lambda: self.shell.go("clock")) for r in data.get("alarms") or []]
+        return text, [
+            ("%s  %s" % logic.alarm_line(r), "", lambda: self.shell.go("clock")) for r in data.get("alarms") or []
+        ]
 
 
 class Contacts(Page):
@@ -560,13 +626,29 @@ class Contacts(Page):
         self.pick = label("", "big")
         self.sure = logic.Confirm()
         self.remove_button = button("Remove", self.remove, "chip")
-        self.pick_box = vbox(self.pick, hbox(button("Call", self.ring, "chip"), button("Message", self.write, "chip"),
-                                             self.remove_button, button("Done", lambda: self.choose(None), "chip"), spacing=8))
+        self.pick_box = vbox(
+            self.pick,
+            hbox(
+                button("Call", self.ring, "chip"),
+                button("Message", self.write, "chip"),
+                self.remove_button,
+                button("Done", lambda: self.choose(None), "chip"),
+                spacing=8,
+            ),
+        )
         self.boxes = {f: button("", lambda f=f: self.focus(f), "row") for f in self.entries}
         self.keys = Keys(self.key)
         self.save_button = button("Save", self.save, "main")
-        act = column(self.pick_box, bottom=(label("New contact", "dim"), self.boxes["name"], self.boxes["number"], self.keys,
-                                            bar(self.home(), self.save_button)))
+        act = column(
+            self.pick_box,
+            bottom=(
+                label("New contact", "dim"),
+                self.boxes["name"],
+                self.boxes["number"],
+                self.keys,
+                bar(self.home(), self.save_button),
+            ),
+        )
         self.focus("name")
         self.choose(None)
         return read, act
@@ -609,6 +691,7 @@ class Contacts(Page):
                     self.focus("name")
             else:
                 self.say(self.refusal_words(data) or MISSING % self.title)
+
         self.call({"action": "add", "name": sent["name"], "number": sent["number"]}, done=done)
 
     def person(self):
@@ -651,8 +734,17 @@ class Contacts(Page):
             self.call({"action": "delete", "id": self.chosen})
 
     def paint(self, data):
-        fill(self.people, [((p.get("name") or "") + ("  (favourite)" if p.get("favorite") else ""), self.number_of(p),
-                            lambda v=p.get("id"): self.choose(v)) for p in data.get("people") or []])
+        fill(
+            self.people,
+            [
+                (
+                    (p.get("name") or "") + ("  (favourite)" if p.get("favorite") else ""),
+                    self.number_of(p),
+                    lambda v=p.get("id"): self.choose(v),
+                )
+                for p in data.get("people") or []
+            ],
+        )
         if data.get("practice"):
             self.say("These are practice contacts. Save one of your own and they go away.")
         self.choose(self.chosen)
@@ -661,6 +753,7 @@ class Contacts(Page):
         def ring(number):
             self.shell.pages["phone"].dial(number)
             self.shell.go("phone")
+
         return "", [(n or num, num, lambda v=num: ring(v)) for n, num in people_of(snap)]
 
 
@@ -669,9 +762,9 @@ class Notes(Page):
 
     def build(self):
         self.ident, self.entry = None, logic.Entry(limit=20000, multiline=True)
-        self.want, self.busy = None, False     # the note being opened ("add" for a new one); a save or delete in flight
-        self.want_n = None                     # the request number of the last open or add: only its reply is adopted
-        self.sure = logic.Confirm()            # Delete asks twice, as in the browser
+        self.want, self.busy = None, False  # the note being opened ("add" for a new one); a save or delete in flight
+        self.want_n = None  # the request number of the last open or add: only its reply is adopted
+        self.sure = logic.Confirm()  # Delete asks twice, as in the browser
         self.head, self.list, self.text = label("Notes", "head"), vbox(spacing=0), label("", "big")
         read = reading(self.head, self.note, self.list, self.text)
         self.keys = Keys(self.key)
@@ -715,7 +808,12 @@ class Notes(Page):
         then write into the wrong one): not even an existing note's reply arriving after New note was tapped."""
         if n is None or n != self.want_n or self.want is None:
             return
-        if self.confirmed(data) and isinstance(data.get("text"), str) and data.get("id") and self.want in ("add", data.get("id")):
+        if (
+            self.confirmed(data)
+            and isinstance(data.get("text"), str)
+            and data.get("id")
+            and self.want in ("add", data.get("id"))
+        ):
             self.want, self.want_n = None, None
             self.ident, self.entry.text = data["id"], data["text"]
             self.text.set_label(self.entry.text + "_")
@@ -745,6 +843,7 @@ class Notes(Page):
             else:
                 self.say(self.refusal_words(answer) or MISSING % self.title)
             self.mode()
+
         self.call(data, done=done)
 
     def close(self):
@@ -761,15 +860,22 @@ class Notes(Page):
             self.mode()
 
     def paint(self, data):
-        fill(self.list, [(n.get("title") or "Empty note", "", lambda v=n.get("id"): self.open_note(v))
-                         for n in data.get("notes") or []])
+        fill(
+            self.list,
+            [
+                (n.get("title") or "Empty note", "", lambda v=n.get("id"): self.open_note(v))
+                for n in data.get("notes") or []
+            ],
+        )
         if not data.get("notes") and self.ident is None:
             self.say("No notes yet. New note starts one.")
 
     def preview(self, snap):
         if self.data is None:
             return "Loading the notes.", []
-        return "", [(n.get("title") or "Empty note", "", lambda: self.shell.go("notes")) for n in self.data.get("notes") or []]
+        return "", [
+            (n.get("title") or "Empty note", "", lambda: self.shell.go("notes")) for n in self.data.get("notes") or []
+        ]
 
 
 class Calculator(Page):
@@ -807,20 +913,31 @@ class Converter(Page):
     answer shown is the server's own text. One conversion is asked at a time; while it is on its way the amount and the
     units cannot change, so the answer drawn is always for what is on screen, and any later change clears it. Nothing
     is stored: what is typed and the last answer live only in this page while the shell runs."""
+
     name, title, api = "convert", "Converter", "convert"
     UNAVAILABLE = "That conversion is not available."
     LOADING = "Loading the converter."
     # the browser page's words for the server's refusals (convert_page.py)
-    WORDS = {"value": "Enter a number.", "sign": "Length, mass and volume stay at zero or more.",
-             "cold": "That is below absolute zero.", "unit": "Choose a unit.", "kind": "Choose a measure."}
+    WORDS = {
+        "value": "Enter a number.",
+        "sign": "Length, mass and volume stay at zero or more.",
+        "cold": "That is below absolute zero.",
+        "unit": "Choose a unit.",
+        "kind": "Choose a measure.",
+    }
     PAD = "789456123-0."
 
     def build(self):
         self.kinds, self.kind, self.src, self.dst = [], None, None, None
         self.entry, self.busy, self.want_n = logic.Entry(limit=40), False, None
         self.result, self.line = label("", "clock"), label("", "big")
-        read = reading(label("Converter", "head"), self.note, self.result, self.line,
-                       label("Worked out by OPOS on this phone. Nothing is stored.", "dim"))
+        read = reading(
+            label("Converter", "head"),
+            self.note,
+            self.result,
+            self.line,
+            label("Worked out by OPOS on this phone. Nothing is stored.", "dim"),
+        )
         self.measure = button("Measure: not read yet", self.next_kind, "row")
         self.from_b = button("From", lambda: self.next_unit("src"), "chip")
         self.swap_b = button("Swap", self.swap, "chip")
@@ -832,8 +949,15 @@ class Converter(Page):
             self.pad.attach(button(key, lambda k=key: self.key(k), "pad"), i % 3, i // 3, 1, 1)
         self.pad.attach(button("Delete", lambda: self.key("<"), "pad"), 0, 4, 3, 1)
         self.go = button("Convert", self.convert, "main")
-        act = column(bottom=(self.measure, hbox(self.from_b, self.swap_b, self.to_b, spacing=8), self.amount, self.pad,
-                             bar(self.home(), self.go)))
+        act = column(
+            bottom=(
+                self.measure,
+                hbox(self.from_b, self.swap_b, self.to_b, spacing=8),
+                self.amount,
+                self.pad,
+                bar(self.home(), self.go),
+            )
+        )
         self.paint_inputs()
         return read, act
 
@@ -846,8 +970,11 @@ class Converter(Page):
         for k in (data or {}).get("kinds") or []:
             if not isinstance(k, dict) or not isinstance(k.get("id"), str) or not isinstance(k.get("title"), str):
                 continue
-            units = [(u["id"], u["title"]) for u in k.get("units") or []
-                     if isinstance(u, dict) and isinstance(u.get("id"), str) and isinstance(u.get("title"), str)]
+            units = [
+                (u["id"], u["title"])
+                for u in k.get("units") or []
+                if isinstance(u, dict) and isinstance(u.get("id"), str) and isinstance(u.get("title"), str)
+            ]
             ids = [u for u, _t in units]
             if len(set(ids)) < 2 or len(set(ids)) != len(ids):
                 continue
@@ -955,21 +1082,27 @@ class Converter(Page):
         self.clear()
         self.say("")
         self.set_busy(True)
-        asked = []      # the request's number; empty if the answer comes before call() returns (it could not be sent)
-        self.want_n = self.call({"kind": sent[0], "value": sent[1], "src": sent[2], "dst": sent[3]},
-                                done=lambda answer, _fresh: self.converted(answer, asked[0] if asked else None, sent))
+        asked = []  # the request's number; empty if the answer comes before call() returns (it could not be sent)
+        self.want_n = self.call(
+            {"kind": sent[0], "value": sent[1], "src": sent[2], "dst": sent[3]},
+            done=lambda answer, _fresh: self.converted(answer, asked[0] if asked else None, sent),
+        )
         asked.append(self.want_n)
 
     def converted(self, data, n, sent):
         if n is not None and n != self.want_n:
-            return      # the answer to an earlier request: not for what is on screen now
+            return  # the answer to an earlier request: not for what is on screen now
         self.set_busy(False)
         if n is None:
             self.say(self.UNAVAILABLE)
         elif self.inputs() != sent:
             self.say(self.UNAVAILABLE)
-        elif (self.confirmed(data) and isinstance(data.get("text"), str) and isinstance(data.get("line"), str)
-              and (data.get("kind"), data.get("src"), data.get("dst")) == (sent[0], sent[2], sent[3])):
+        elif (
+            self.confirmed(data)
+            and isinstance(data.get("text"), str)
+            and isinstance(data.get("line"), str)
+            and (data.get("kind"), data.get("src"), data.get("dst")) == (sent[0], sent[2], sent[3])
+        ):
             self.result.set_label(data["text"])
             self.line.set_label(data["line"])
         else:
@@ -1003,10 +1136,14 @@ class Calls(Page):
         self.rows = vbox(spacing=0)
         read = reading(label("Call log", "head"), self.note, self.rows)
         self.missed = label("", "big")
-        self.sure = hbox(button("Keep it", lambda: self.sure.set_visible(False)),
-                         button("Yes, clear", self.clear_log, "main"))
+        self.sure = hbox(
+            button("Keep it", lambda: self.sure.set_visible(False)), button("Yes, clear", self.clear_log, "main")
+        )
         self.sure.set_visible(False)
-        act = column(self.missed, bottom=(self.sure, bar(self.home(), button("Clear the log", lambda: self.sure.set_visible(True)))))
+        act = column(
+            self.missed,
+            bottom=(self.sure, bar(self.home(), button("Clear the log", lambda: self.sure.set_visible(True)))),
+        )
         return read, act
 
     def clear_log(self):
@@ -1036,23 +1173,39 @@ class Settings(Page):
     name, title = "settings", "Settings"
 
     def build(self):
-        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")   # read on entering Settings, see enter()
+        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")  # read on entering Settings, see enter()
         self.hand = button("", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"), "main")
         self.hinge_line = label("", "mid", "dim")
-        read = reading(label("Settings", "head"),
-                       label("Hand", "big"),
-                       label("The buttons sit on the screen under that hand; the other screen is for reading. "
-                             "You can also swipe sideways across the hinge: the buttons follow your finger.", "mid", "dim"),
-                       label("Hinge", "big"),
-                       self.hinge_line,
-                       label("Gestures", "big"),
-                       label("Down from the top edge: battery. Up from the bottom edge: Home. Up on the lock screen: unlock.", "mid", "dim"),
-                       label("Storage", "big"),
-                       self.storage,
-                       label("About", "big"),
-                       label(notices.as_text(), "mid", "dim"))
-        act = column(bottom=(self.hand, button("Network", lambda: self.shell.go("network")),
-                             button("Use the old interface", self.shell.leave), bar(self.home())))
+        read = reading(
+            label("Settings", "head"),
+            label("Hand", "big"),
+            label(
+                "The buttons sit on the screen under that hand; the other screen is for reading. "
+                "You can also swipe sideways across the hinge: the buttons follow your finger.",
+                "mid",
+                "dim",
+            ),
+            label("Hinge", "big"),
+            self.hinge_line,
+            label("Gestures", "big"),
+            label(
+                "Down from the top edge: battery. Up from the bottom edge: Home. Up on the lock screen: unlock.",
+                "mid",
+                "dim",
+            ),
+            label("Storage", "big"),
+            self.storage,
+            label("About", "big"),
+            label(notices.as_text(), "mid", "dim"),
+        )
+        act = column(
+            bottom=(
+                self.hand,
+                button("Network", lambda: self.shell.go("network")),
+                button("Use the old interface", self.shell.leave),
+                bar(self.home()),
+            )
+        )
         self.paint_hand()
         self.paint_posture()
         return read, act
@@ -1072,19 +1225,30 @@ class Settings(Page):
 
     def paint_posture(self):
         """The posture line in Settings; a label only, nothing on the screen depends on it."""
-        self.hinge_line.set_label(posture.describe(getattr(self.shell, "posture", None), getattr(self.shell, "angle", None),
-                                                   getattr(self.shell, "back", None) is not None))
+        self.hinge_line.set_label(
+            posture.describe(
+                getattr(self.shell, "posture", None),
+                getattr(self.shell, "angle", None),
+                getattr(self.shell, "back", None) is not None,
+            )
+        )
 
     def preview(self, snap):
         b = snap.get("battery") or {}
-        return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), \
-            [("Buttons on the %s" % self.shell.hand, "Tap to switch", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right")),
-             ("Network", "Wi-Fi and radios", lambda: self.shell.go("network"))]
+        return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), [
+            (
+                "Buttons on the %s" % self.shell.hand,
+                "Tap to switch",
+                lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"),
+            ),
+            ("Network", "Wi-Fi and radios", lambda: self.shell.go("network")),
+        ]
 
 
 def owners_tap(fn):
     """Marks a handler as the owner's own tap: whatever it changes on a button is what the owner asked for, so it starts
     no hold and ends one (Network.shown). Every other change to what a button says (a newer read, an answer) starts one."""
+
     @functools.wraps(fn)
     def tap(self, *args):
         outer, self.by_owner = self.by_owner, True
@@ -1092,6 +1256,7 @@ def owners_tap(fn):
             return fn(self, *args)
         finally:
             self.by_owner = outer
+
     return tap
 
 
@@ -1143,6 +1308,7 @@ class Network(Page):
     until a change's answer comes, even across visits, so nothing can be typed in a later visit before an earlier
     visit's answer. The sending thread drops its copy once the request has gone. Nothing here prints, logs or saves it.
     """
+
     name, title, tile = "network", "Network", False
     POLL_MS = 10000
     TITLES = {"name": "Name", "password": "Password"}
@@ -1150,19 +1316,19 @@ class Network(Page):
     # its own budget), 35 s for a forget; a read is quicker
     WAIT = {"net_status": 20, "net_scan": 30, "net_join": 100, "net_forget": 45, "net_wifi": 35}
     CHANGES = ("net_join", "net_forget", "net_wifi")
-    HOLD_S = 1.5    # after a button changes by itself (not by the owner's tap), taps on it are ignored this long
+    HOLD_S = 1.5  # after a button changes by itself (not by the owner's tap), taps on it are ignored this long
 
     def build(self):
         self.scan_data, self.status_data, self.chosen, self.other = None, None, None, False
         self.busy, self.polling, self.timer, self.open_net, self.field = False, None, None, False, "name"
-        self.visit, self.scan_owed = 0, False   # which visit this is (leave() starts a new one); a scan put off by busy
-        self.held = {}                      # button -> until when a tap on it is ignored (hold())
-        self.seen, self.by_owner = {}, False    # what each button last said (shown()); inside an owners_tap handler
-        self.radios, self.found = logic.Sequence(), logic.Sequence()    # the order of the status and of the scan answers
-        self.sure = logic.Confirm()         # Forget, Disconnect and Turn Wi-Fi off ask twice
+        self.visit, self.scan_owed = 0, False  # which visit this is (leave() starts a new one); a scan put off by busy
+        self.held = {}  # button -> until when a tap on it is ignored (hold())
+        self.seen, self.by_owner = {}, False  # what each button last said (shown()); inside an owners_tap handler
+        self.radios, self.found = logic.Sequence(), logic.Sequence()  # the order of the status and of the scan answers
+        self.sure = logic.Confirm()  # Forget, Disconnect and Turn Wi-Fi off ask twice
         self.secret, self.ssid_entry = netlogic.Secret(), logic.Entry(limit=32)
-        self.status_n, self.scan_n = 0, 0   # the request numbers (ask()) of the radios read and of the list now drawn
-        self.checking = None                # (network, request number) while a confirming Disconnect tap's read waits
+        self.status_n, self.scan_n = 0, 0  # the request numbers (ask()) of the radios read and of the list now drawn
+        self.checking = None  # (network, request number) while a confirming Disconnect tap's read waits
         self.lines, self.nets = label("Reading the radios...", "mid"), vbox(spacing=0)
         read = reading(label("Network", "head"), self.lines, self.note, self.nets)
         self.pick, self.why = label("", "big"), label("", "mid", "dim")
@@ -1177,8 +1343,20 @@ class Network(Page):
         self.forget_b, self.cancel_b = button("Forget", self.forget, "chip"), button("Cancel", self.cancel, "chip")
         self.chips = hbox(self.forget_b, self.cancel_b, spacing=8)
         self.main = button("Scan again", self.main_action, "main")
-        act = column(self.pick, self.why, bottom=(self.idle, self.boxes["name"], self.boxes["password"], self.kinds,
-                                                  self.typed, self.keys, self.chips, bar(self.home(), self.main)))
+        act = column(
+            self.pick,
+            self.why,
+            bottom=(
+                self.idle,
+                self.boxes["name"],
+                self.boxes["password"],
+                self.kinds,
+                self.typed,
+                self.keys,
+                self.chips,
+                bar(self.home(), self.main),
+            ),
+        )
         self.paint_act()
         return read, act
 
@@ -1196,8 +1374,15 @@ class Network(Page):
         m, row = self.mode(), self.chosen or {}
         self.pick.set_label("Other network" if m == "other" else row.get("ssid") or "")
         self.pick.set_visible(m != "idle")
-        why = (netlogic.why_not(row) if m == "unsupported" else netlogic.OPEN_NOTE if m == "open" else
-               "Saved on this phone, not in range now." if row.get("visible") is False else "")
+        why = (
+            netlogic.why_not(row)
+            if m == "unsupported"
+            else netlogic.OPEN_NOTE
+            if m == "open"
+            else "Saved on this phone, not in range now."
+            if row.get("visible") is False
+            else ""
+        )
         self.why.set_label(why)
         self.why.set_visible(bool(why))
         self.idle.set_visible(m == "idle")
@@ -1220,10 +1405,17 @@ class Network(Page):
 
     def paint_wifi(self):
         on = netlogic.wifi_on(self.status_data)
-        says = ("Wi-Fi: not known yet" if on is None else "Turn Wi-Fi on" if on is False else
-                "Turn Wi-Fi off now?" if self.sure.armed == ("wifi-off",) else "Turn Wi-Fi off")
+        says = (
+            "Wi-Fi: not known yet"
+            if on is None
+            else "Turn Wi-Fi on"
+            if on is False
+            else "Turn Wi-Fi off now?"
+            if self.sure.armed == ("wifi-off",)
+            else "Turn Wi-Fi off"
+        )
         self.wifi.set_label(says)
-        self.shown("wifi", (says, self.mode() == "idle"))     # what it says, and whether it is there at all
+        self.shown("wifi", (says, self.mode() == "idle"))  # what it says, and whether it is there at all
         self.wifi.set_sensitive(on is not None and not self.busy)
 
     def paint_typed(self):
@@ -1237,8 +1429,11 @@ class Network(Page):
 
     def paint_list(self):
         found = netlogic.rows(self.scan_data)
-        fill(self.nets, [(r["ssid"], netlogic.detail(r), lambda r=r: self.select(r)) for r in found] or
-             [("No networks found", "Tap to scan again", self.scan_row)])
+        fill(
+            self.nets,
+            [(r["ssid"], netlogic.detail(r), lambda r=r: self.select(r)) for r in found]
+            or [("No networks found", "Tap to scan again", self.scan_row)],
+        )
         # which network is in each place and what a tap there would offer: a newer list that changes either holds row taps
         self.shown("rows", tuple((r["ssid"], netlogic.choice(r), r["visible"]) for r in found))
 
@@ -1246,7 +1441,7 @@ class Network(Page):
     @owners_tap
     def select(self, row):
         if self.holding("rows", netlogic.LIST_CHANGED):
-            return      # the list changed under the finger: the tap was meant for what was in its place before
+            return  # the list changed under the finger: the tap was meant for what was in its place before
         self.drop_check()
         self.secret.clear()
         self.sure.keep_only(None)
@@ -1291,13 +1486,13 @@ class Network(Page):
                 self.focus("password")
             elif self.ssid_entry.key(ch):
                 if len(self.secret):
-                    self.say(netlogic.NAME_CHANGED)     # it was typed for the name as it was before this key
+                    self.say(netlogic.NAME_CHANGED)  # it was typed for the name as it was before this key
                 self.untype()
         elif m in ("other", "password"):
             if ch == "\n":
                 self.join()
             elif self.busy:
-                self.say(netlogic.KEYS_WAIT)    # while a request waits, password keys are not kept, and it says so
+                self.say(netlogic.KEYS_WAIT)  # while a request waits, password keys are not kept, and it says so
             elif self.secret.key(ch, self.typing_for()):
                 self.paint_typed()
 
@@ -1330,17 +1525,18 @@ class Network(Page):
             try:
                 got = core.net(action, fields, wait)
             except urllib.error.HTTPError as err:
-                got = netlogic.refusal(err.code)    # a 4xx: refused before anything ran (netlogic.NOT_SENT)
-            except Exception as err:        # never shown or logged as it is: it may quote the request
+                got = netlogic.refusal(err.code)  # a 4xx: refused before anything ran (netlogic.NOT_SENT)
+            except Exception as err:  # never shown or logged as it is: it may quote the request
                 got = netlogic.failed(err, change)
             finally:
                 fields.clear()
             got = netlogic.scrub(got, typed)
             typed = None
             GLib.idle_add(self.answer, then, got)
+
         try:
             threading.Thread(target=work, daemon=True).start()
-        except Exception as err:            # no thread: nothing was sent; the answer is a plain failure, given now
+        except Exception as err:  # no thread: nothing was sent; the answer is a plain failure, given now
             fields.clear()
             self.answer(then, dict(netlogic.failed(err, False), **{netlogic.NOT_SENT: True}))
 
@@ -1420,13 +1616,13 @@ class Network(Page):
         else:
             return
         if need and not self.secret.is_for(fields["ssid"]):
-            self.untype()       # none typed, or typed for another name than the one this join would send: not sent
+            self.untype()  # none typed, or typed for another name than the one this join would send: not sent
             self.say(netlogic.NEED_PW)
             return
         if need:
             fields["password"] = self.secret.reveal()
         self.busy = True
-        self.secret.clear()     # handed to the sending thread below: from here on this page holds no typed password
+        self.secret.clear()  # handed to the sending thread below: from here on this page holds no typed password
         self.say("Joining...")
         self.paint_act()
         self.send("net_join", fields, self.reply_to(self.done))
@@ -1511,7 +1707,7 @@ class Network(Page):
             return
         on = netlogic.wifi_on(self.status_data)
         if on is None:
-            self.say(netlogic.WIFI_UNKNOWN)     # never switch a radio whose state is not known
+            self.say(netlogic.WIFI_UNKNOWN)  # never switch a radio whose state is not known
         elif on is False:
             self.act_on("net_wifi", {"mode": "on"}, "Turning Wi-Fi on...")
         elif self.sure.tap(("wifi-off",)):
@@ -1537,7 +1733,12 @@ class Network(Page):
         """`row` as the radios read drawn says it is, when that read was asked after the list drawn and says which
         network is connected: connected or not follows the one asked later. Otherwise `row` itself."""
         known, now = netlogic.connected_to(self.status_data)
-        if row is None or not known or self.status_n <= self.scan_n or bool(row.get("active")) == (now == row.get("ssid")):
+        if (
+            row is None
+            or not known
+            or self.status_n <= self.scan_n
+            or bool(row.get("active")) == (now == row.get("ssid"))
+        ):
             return row
         return dict(row, active=now == row.get("ssid"))
 
@@ -1547,8 +1748,11 @@ class Network(Page):
         self.polling = n
         if check:
             self.checking = (check, n)
-        self.send("net_status", {"fresh": True} if fresh else {},
-                  self.reply_to(lambda got, visit: self.statused(n, got, then_scan, visit)))
+        self.send(
+            "net_status",
+            {"fresh": True} if fresh else {},
+            self.reply_to(lambda got, visit: self.statused(n, got, then_scan, visit)),
+        )
 
     def drop_check(self):
         """The choice is closed or changed by the owner while a confirming Disconnect tap's read waits: that tap's
@@ -1567,7 +1771,7 @@ class Network(Page):
         if known and now == ssid:
             if self.visible() and not self.other and self.ssid() == ssid and self.mode() == "connected":
                 self.say(netlogic.disconnecting(ssid))
-                self.send("net_wifi", {"mode": "disconnect"}, self.reply_to(self.done))     # the page stays busy
+                self.send("net_wifi", {"mode": "disconnect"}, self.reply_to(self.done))  # the page stays busy
                 return
             self.say(netlogic.DISCONNECT_CLOSED)
         else:
@@ -1595,7 +1799,7 @@ class Network(Page):
         if self.polling == n:
             self.polling = None
         if self.stale(visit):
-            return False        # read for an earlier visit: this visit reads the radios itself
+            return False  # read for an earlier visit: this visit reads the radios itself
         drawn = self.radios.accept(n)
         if drawn:
             before = netlogic.connected_to(self.status_data)
@@ -1607,7 +1811,7 @@ class Network(Page):
             if (known, now) != before:
                 self.disarm_row()
             if self.chosen and not self.other:
-                row = self.current(self.chosen)     # only when this read was asked after the list drawn
+                row = self.current(self.chosen)  # only when this read was asked after the list drawn
                 if row is not self.chosen:
                     self.rechoose(row)
             self.paint_act()
@@ -1615,7 +1819,7 @@ class Network(Page):
             self.checked(self.checking[0], drawn)
         if then_scan and self.visible():
             if self.busy:
-                self.scan_owed = True       # run when the page is free (free())
+                self.scan_owed = True  # run when the page is free (free())
             else:
                 self.scan(True)
         return False
@@ -1628,13 +1832,15 @@ class Network(Page):
             self.say("Scanning..." if rescan else "")
             self.paint_act()
         n = self.ask(self.found)
-        self.send("net_scan", {"rescan": bool(rescan)}, self.reply_to(lambda got, visit: self.scanned(n, got, quiet, visit)))
+        self.send(
+            "net_scan", {"rescan": bool(rescan)}, self.reply_to(lambda got, visit: self.scanned(n, got, quiet, visit))
+        )
 
     def scanned(self, n, got, quiet=False, visit=None):
         if self.stale(visit):
             if not quiet:
                 self.paint_act()
-                self.free()     # the list of an earlier visit is not drawn; this visit scans for itself
+                self.free()  # the list of an earlier visit is not drawn; this visit scans for itself
             return False
         if not quiet:
             self.busy = False

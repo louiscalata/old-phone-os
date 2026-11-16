@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The native shell's few widgets and its one stylesheet. Three kinds of thing can be touched, and they look different:
 an action (outlined), the main action of a screen (filled), and a row of content (a line of text with a rule under it)."""
+
 from __future__ import annotations
 
 import gi
@@ -46,7 +47,9 @@ button.chip { min-height: 52px; min-width: 0; padding: 2px 8px; font-size: 19px;
 
 def label(text="", *classes, wrap=True, x=0.0):
     w = Gtk.Label(label=text, xalign=x, wrap=wrap)
-    w.set_wrap_mode(Pango.WrapMode.WORD_CHAR)  # word, then character: a long number or address never pushes the pane wider
+    w.set_wrap_mode(
+        Pango.WrapMode.WORD_CHAR
+    )  # word, then character: a long number or address never pushes the pane wider
     for c in classes:
         w.add_css_class(c)
     return w
@@ -134,8 +137,12 @@ def reading(*children):
     that let a finger scroll at all (off, a list taller than the pane cannot be moved by touch). GTK's own scroll
     inertia comes with it and is kept, because nothing it shows is ever wrong: the scrolled content is already in its
     final state, and the coast only changes which part of it is in view."""
-    view = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
-                              kinetic_scrolling=True, overlay_scrolling=True)
+    view = Gtk.ScrolledWindow(
+        hscrollbar_policy=Gtk.PolicyType.NEVER,
+        vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+        kinetic_scrolling=True,
+        overlay_scrolling=True,
+    )
     view.set_child(column(*children))
     return view
 
@@ -165,19 +172,24 @@ def one_column(row, screen):
     if getattr(row, "column", None) is None:
         row.column, row.empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL), Gtk.Box()
     read, act = row.read, row.act
-    if getattr(row, "kept", None) is None:      # how the panes stretched before, put back by two_columns
-        row.kept = (read.get_vexpand_set(), read.get_vexpand(), act.get_vexpand_set(), act.get_vexpand(),
-                    act.get_vhomogeneous() if isinstance(act, Gtk.Stack) else None)
+    if getattr(row, "kept", None) is None:  # how the panes stretched before, put back by two_columns
+        row.kept = (
+            read.get_vexpand_set(),
+            read.get_vexpand(),
+            act.get_vexpand_set(),
+            act.get_vexpand(),
+            act.get_vhomogeneous() if isinstance(act, Gtk.Stack) else None,
+        )
     for w in (read, act):
         if w.get_parent() is not None:
             w.get_parent().remove(w)
     read.set_vexpand(True)
     act.set_vexpand(False)
     if isinstance(act, Gtk.Stack):
-        act.set_vhomogeneous(False)     # as tall as the page shown, not as the tallest page
+        act.set_vhomogeneous(False)  # as tall as the page shown, not as the tallest page
     row.column.append(read)
     row.column.append(act)
-    for w in ((row.column, row.empty) if screen == 0 else (row.empty, row.column)):
+    for w in (row.column, row.empty) if screen == 0 else (row.empty, row.column):
         row.append(w)
 
 
@@ -186,7 +198,7 @@ def two_columns(row, hand):
     order, stretching as they did before. Safe to call on a row that is already two panes."""
     for w in (row.read, row.act, getattr(row, "column", None), getattr(row, "empty", None)):
         if w is not None and w.get_parent() is not None:
-            w.get_parent().remove(w)        # every one comes off; the two panes go back below, in order
+            w.get_parent().remove(w)  # every one comes off; the two panes go back below, in order
     kept, row.kept = getattr(row, "kept", None), None
     if kept is not None:
         row.read.set_vexpand(kept[1])
@@ -236,7 +248,7 @@ class Slide(Gtk.Widget):
 
 
 LETTERS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
-SIGNS = ("1234567890", "-/:;()&@\"", ".,?!'+=")
+SIGNS = ("1234567890", '-/:;()&@"', ".,?!'+=")
 
 
 class Keys(Gtk.Stack):
@@ -253,7 +265,7 @@ class Keys(Gtk.Stack):
         self.add_named(self.layer(SIGNS, False), "123")
 
     def layer(self, lines, letters):
-        grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True)   # 20 half-key columns
+        grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True)  # 20 half-key columns
         for y, line in enumerate(lines[:2]):
             for i, ch in enumerate(line):
                 grid.attach(self.char(ch, letters), (20 - 2 * len(line)) // 2 + 2 * i, y, 2, 1)
@@ -263,7 +275,15 @@ class Keys(Gtk.Stack):
         for i, ch in enumerate(lines[2]):
             grid.attach(self.char(ch, letters), 3 + 2 * i, 2, 2, 1)
         grid.attach(button("Delete", lambda: self.on_key(None), "key"), 17, 2, 3, 1)
-        grid.attach(button("123" if letters else "abc", lambda: self.set_visible_child_name("123" if letters else "abc"), "key"), 0, 3, 4, 1)
+        grid.attach(
+            button(
+                "123" if letters else "abc", lambda: self.set_visible_child_name("123" if letters else "abc"), "key"
+            ),
+            0,
+            3,
+            4,
+            1,
+        )
         grid.attach(button("Space", lambda: self.on_key(" "), "key"), 4, 3, 12, 1)
         grid.attach(button("Return", lambda: self.on_key("\n"), "key"), 16, 3, 4, 1)
         return grid

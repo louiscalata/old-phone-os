@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Length, mass, volume and temperature. The factors are fixed. Nothing is stored or sent."""
+
 import re
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -126,11 +127,13 @@ def snapshot():
     """The measures and their units, for the page."""
     kinds = []
     for spec in KINDS:
-        kinds.append({
-            "id": spec["id"],
-            "title": spec["title"],
-            "src": spec["src"],
-            "dst": spec["dst"],
-            "units": [{"id": item[0], "title": item[1]} for item in spec["units"]],
-        })
+        kinds.append(
+            {
+                "id": spec["id"],
+                "title": spec["title"],
+                "src": spec["src"],
+                "dst": spec["dst"],
+                "units": [{"id": item[0], "title": item[1]} for item in spec["units"]],
+            }
+        )
     return {"ok": True, "kinds": kinds}

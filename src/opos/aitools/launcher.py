@@ -5,11 +5,16 @@ import os
 import shlex
 import tempfile
 from opos.aitools.catalog import Tool
+
 BEGIN = "# >>> opos coding tools >>>"
 END = "# <<< opos coding tools <<<"
+
+
 def _target(p: Path) -> Path:
     """Resolve symlink."""
     return p.resolve() if p.is_symlink() else p
+
+
 def _atomic_write(t: Path, d: bytes) -> None:
     """Write atomically."""
     t.parent.mkdir(parents=True, exist_ok=True)
@@ -29,7 +34,11 @@ def _atomic_write(t: Path, d: bytes) -> None:
                 os.close(fd)
         with contextlib.suppress(Exception):
             os.unlink(tp)
-def render_wrapper(tool: Tool, real_bin: Path, sandbox: Path, run_dir: Path, mode: str, python: str, src_dir: Path) -> str:
+
+
+def render_wrapper(
+    tool: Tool, real_bin: Path, sandbox: Path, run_dir: Path, mode: str, python: str, src_dir: Path
+) -> str:
     """Render wrapper."""
     lines = ["#!/bin/sh", "# SPDX-License-Identifier: GPL-3.0-or-later"]
     if mode == "lite":
@@ -66,12 +75,18 @@ def render_wrapper(tool: Tool, real_bin: Path, sandbox: Path, run_dir: Path, mod
     q_src = shlex.quote(str(src_dir))
     q_py = shlex.quote(python)
     q_run = shlex.quote(str(run_dir))
-    lines.append(f"PYTHONPATH={q_src} nohup {q_py} -m opos.aitools guard --run-dir {q_run} >/dev/null 2>&1 </dev/null &")
-    lines.append(f"exec {shlex.quote(str(real_bin))} \"$@\"")
+    lines.append(
+        f"PYTHONPATH={q_src} nohup {q_py} -m opos.aitools guard --run-dir {q_run} >/dev/null 2>&1 </dev/null &"
+    )
+    lines.append(f'exec {shlex.quote(str(real_bin))} "$@"')
     return "\n".join(lines) + "\n"
+
+
 def render_env(bin_dir: Path) -> str:
     """Render env snippet."""
-    return f"# SPDX-License-Identifier: GPL-3.0-or-later\nexport PATH={shlex.quote(str(bin_dir))}:\"$PATH\"\n"
+    return f'# SPDX-License-Identifier: GPL-3.0-or-later\nexport PATH={shlex.quote(str(bin_dir))}:"$PATH"\n'
+
+
 def add_profile_block(profile: Path, env_file: Path) -> bool:
     """Add block."""
     q = shlex.quote(str(env_file))
@@ -90,6 +105,8 @@ def add_profile_block(profile: Path, env_file: Path) -> bool:
     tgt.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(tgt, block)
     return True
+
+
 def remove_profile_block(profile: Path) -> bool:
     """Remove block."""
     tgt = _target(profile)

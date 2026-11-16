@@ -3,6 +3,7 @@
 
 Each app has a disclosure card and a governor task. The helper is not given a way to write these stores.
 """
+
 import importlib
 import os
 import re
@@ -42,8 +43,24 @@ class App:
     locked_json, when given, returns the few fields the app may still show while the phone is locked.
     """
 
-    def __init__(self, id, title, path, summary, offline, sends, uses, reality, task_name, priority, cost, render, get_json=None, post=None,
-                 locked_json=None):
+    def __init__(
+        self,
+        id,
+        title,
+        path,
+        summary,
+        offline,
+        sends,
+        uses,
+        reality,
+        task_name,
+        priority,
+        cost,
+        render,
+        get_json=None,
+        post=None,
+        locked_json=None,
+    ):
         if _ID.fullmatch(id) is None:
             raise ValueError("bad id")
         if priority not in ("ESSENTIAL", "USEFUL", "OPTIONAL"):
@@ -65,7 +82,12 @@ class App:
         self.locked_json = locked_json
 
     def card(self):
-        return "Works offline: %s. Sends data: %s. Uses: %s. Real or practice: %s." % (self.offline, self.sends, self.uses, self.reality)
+        return "Works offline: %s. Sends data: %s. Uses: %s. Real or practice: %s." % (
+            self.offline,
+            self.sends,
+            self.uses,
+            self.reality,
+        )
 
     def task(self):
         return Task(self.task_name, Priority[self.priority], self.cost)
@@ -165,7 +187,9 @@ def pause_reason(app_id, level, charging=False, health=1.0, temp_c=25.0, in_use=
     if app is None:
         return "Not on this phone."
     runtime = Runtime(tasks=(app.task(),))
-    tick = runtime.step(0, level, charging=charging, health=health, temp_c=temp_c, in_use=app.task_name if in_use else None)
+    tick = runtime.step(
+        0, level, charging=charging, health=health, temp_c=temp_c, in_use=app.task_name if in_use else None
+    )
     if app.task_name in tick.decision.allowed:
         return None
     cause = dict(tick.causes).get(app.task_name, "other")

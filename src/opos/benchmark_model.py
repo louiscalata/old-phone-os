@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Shared model loader for benchmark harnesses."""
+
 import json
 import os
 
@@ -30,5 +31,11 @@ def resolve_model_path(model_path=None, *args, **kwargs):
         if isinstance(first, str):
             path = first
     if path is None:
-        path = kwargs.get("model_path") or kwargs.get("model") or kwargs.get("path") or os.environ.get("OPOS_MODEL_PATH") or os.environ.get("OPOS_MODEL")
+        path = (
+            kwargs.get("model_path")
+            or kwargs.get("model")
+            or kwargs.get("path")
+            or os.environ.get("OPOS_MODEL_PATH")
+            or os.environ.get("OPOS_MODEL")
+        )
     return path

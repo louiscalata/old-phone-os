@@ -3,6 +3,7 @@ import contextlib
 from dataclasses import dataclass
 from enum import Enum
 
+
 @dataclass(frozen=True)
 class PowerState:
     level: float
@@ -11,21 +12,25 @@ class PowerState:
     temp_c: float
     goal_hours: float | None = None
 
+
 class Mode(Enum):
     NORMAL = "NORMAL"
     SAVER = "SAVER"
     CRITICAL = "CRITICAL"
+
 
 class Priority(Enum):
     ESSENTIAL = "ESSENTIAL"
     USEFUL = "USEFUL"
     OPTIONAL = "OPTIONAL"
 
+
 @dataclass(frozen=True)
 class Task:
     name: str
     priority: Priority
     cost: float
+
 
 @dataclass(frozen=True)
 class Decision:
@@ -34,6 +39,7 @@ class Decision:
     deferred: tuple
     reason: str
 
+
 def effective_level(state: PowerState) -> float:
     eff = state.level * state.health
     if eff < 0:
@@ -41,6 +47,7 @@ def effective_level(state: PowerState) -> float:
     if eff > 100:
         eff = 100.0
     return float(eff)
+
 
 def rule_decide(state: PowerState, tasks) -> Decision:
     if not 0 <= state.level <= 100:
@@ -72,6 +79,7 @@ def rule_decide(state: PowerState, tasks) -> Decision:
         else:
             deferred.append(t.name)
     return Decision(mode, tuple(allowed), tuple(deferred), "rules")
+
 
 class Governor:
     def __init__(self, advisor=None):
