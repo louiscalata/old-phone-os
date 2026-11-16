@@ -326,7 +326,7 @@ class OskFilesTest(unittest.TestCase):
         self.assertIn("var(--jaryo-fg,#1a1a1a)", CSS)
         self.assertRegex(
             CSS,
-            r"@media \(prefers-color-scheme:dark\)\{#opos-osk\{--osk-bg:var\(--jaryo-bg,#000\);--osk-fg:var\(--jaryo-fg,#e6e2d9\)",
+            r"@media \(prefers-color-scheme:dark\)\{#opos-osk\{--osk-bg:var\(--jaryo-bg,#000\);--osk-fg:var\(--jaryo-fg,#fff\)",
         )
         self.assertIn("#opos-osk[hidden]{display:none}", CSS)
         self.assertIn(":focus-visible", CSS)

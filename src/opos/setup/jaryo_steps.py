@@ -4,9 +4,9 @@ from opos import notices
 
 STYLE = """
 #jaryo-setup{--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8;color:var(--jaryo-fg);background:var(--jaryo-bg);font-family:Georgia,'Times New Roman',serif;overflow-wrap:anywhere}
-@media(prefers-color-scheme:dark){#jaryo-setup{--jaryo-fg:#e6e2d9;--jaryo-bg:#000}}
+@media(prefers-color-scheme:dark){#jaryo-setup{--jaryo-fg:#fff;--jaryo-bg:#000}}
 #jaryo-setup[data-theme=light]{--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8}
-#jaryo-setup[data-theme=dark]{--jaryo-fg:#e6e2d9;--jaryo-bg:#000}
+#jaryo-setup[data-theme=dark]{--jaryo-fg:#fff;--jaryo-bg:#000}
 #jaryo-setup h3,#jaryo-setup legend{font-family:'Arial Narrow',system-ui,sans-serif;font-size:1.5rem}
 #jaryo-setup fieldset{min-width:0;border:1px solid var(--jaryo-fg)}
 #jaryo-setup label{display:flex;align-items:center;gap:8px;min-height:48px;min-width:48px;margin:8px 0}

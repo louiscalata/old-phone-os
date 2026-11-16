@@ -971,7 +971,7 @@ class Pages(unittest.TestCase):
         self.assertIn("[hidden]{display:none!important}", css)
 
     def test_two_colours_and_no_script_in_the_style(self):
-        self.assertNotRegex(firstrun_page.CSS, r"#(?!1a1a1a|f3f0e8|e6e2d9|000)[0-9a-fA-F]{3,6}\b")
+        self.assertNotRegex(firstrun_page.CSS, r"#(?!1a1a1a|f3f0e8|000|fff)[0-9a-fA-F]{3,6}\b")
 
     def test_a_skip_is_always_on_screen_and_home_is_always_reachable(self):
         page = firstrun_page.firstrun_page("t", "n")

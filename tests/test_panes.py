@@ -39,7 +39,7 @@ DUO = Span(675, 42)
 TOKEN = "t" * 43
 ON = {"OPOS_PANES": "1"}
 PAGE_BUDGET = 100 * 1024  # tests/test_uxp30_budget.py
-ALLOWED = {"#000", "#e6e2d9", "#f3f0e8", "#1a1a1a"}  # the two token pairs of jaryo.css
+ALLOWED = {"#000", "#fff", "#f3f0e8", "#1a1a1a"}  # the two token pairs of jaryo.css
 PURE_ALLOWED = {"#000", "#fff"}
 
 
@@ -82,15 +82,15 @@ class Sheet(unittest.TestCase):
 
     def test_tokens_are_the_jaryo_pairs(self):
         j = (WEB / "jaryo.css").read_text(encoding="utf-8")
-        self.assertIn("--jaryo-fg:#e6e2d9;--jaryo-bg:#000", j)  # dark
+        self.assertIn("--jaryo-fg:#fff;--jaryo-bg:#000", j)  # dark
         self.assertIn("--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8", j)  # light
         self.assertEqual(
             panes.SOFT,
-            {"@K@": "#000", "@KI@": "#e6e2d9", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"},
+            {"@K@": "#000", "@KI@": "#fff", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"},
         )
         out = self.served()
         self.assertIn(
-            "--jp-k:#000;--jp-k-ink:#e6e2d9;--jp-k-cs:dark;--jp-w:#f3f0e8;--jp-w-ink:#1a1a1a;--jp-w-cs:light", out
+            "--jp-k:#000;--jp-k-ink:#fff;--jp-k-cs:dark;--jp-w:#f3f0e8;--jp-w-ink:#1a1a1a;--jp-w-cs:light", out
         )
 
     def test_only_token_colours_and_no_forbidden_paint(self):
@@ -165,7 +165,7 @@ class Sheet(unittest.TestCase):
     def test_the_root_takes_the_ink_of_the_pane_it_paints(self):
         # html is the right pane's canvas, so its colour (and the caret that follows it) is that pane's ink: with "pure" #fff or #000, not
         # the theme's soft ink. No caret-color is set: it would be inherited into the other pane.
-        for env, k_ink, w_ink in ((ON, "#e6e2d9", "#1a1a1a"), ({"OPOS_PANES": "1,pure"}, "#fff", "#000")):
+        for env, k_ink, w_ink in ((ON, "#fff", "#1a1a1a"), ({"OPOS_PANES": "1,pure"}, "#fff", "#000")):
             out = self.served(**env)
             root = [d.strip() for d in re.search(r"html\[data-panes=two\]\{([^}]*)\}", out).group(1).split(";")]
             self.assertIn("background:var(--jp-r)", root)
@@ -180,7 +180,7 @@ class Sheet(unittest.TestCase):
     def test_modes_change_one_thing_each(self):
         soft, pure = self.served(), self.served(**{"OPOS_PANES": "1,pure"})
         self.assertIn("--jp-k-ink:#fff;--jp-k-cs:dark;--jp-w:#fff;--jp-w-ink:#000", pure)
-        self.assertEqual(soft.replace("#e6e2d9", "#fff").replace("#f3f0e8", "#fff").replace("#1a1a1a", "#000"), pure)
+        self.assertEqual(soft.replace("#f3f0e8", "#fff").replace("#1a1a1a", "#000"), pure)
         invert = self.served(**{"OPOS_PANES": "invert"})
         self.assertNotIn("[data-hand=left][data-ff] #phone>", invert)  # no layout mirror
         self.assertIn("[data-hand=left]{--jp-l:var(--jp-k)", invert)  # but the colours still swap

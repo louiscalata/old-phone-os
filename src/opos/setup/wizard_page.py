@@ -14,33 +14,33 @@ _TEMPLATE: str = """<!doctype html>
 <title>Old Phone OS Interface setup</title>
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;background:#000;color:#e6e2d9;font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
-h1{font-family:Georgia,'Times New Roman',serif;font-weight:700;border-bottom:3px solid #e6e2d9;padding-bottom:8px}
+html,body{margin:0;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
+h1{font-family:Georgia,'Times New Roman',serif;font-weight:700;border-bottom:3px solid #fff;padding-bottom:8px}
 #meter{position:fixed;top:0;left:0;width:100%;height:3px;background:#222}
-#meter-fill{height:100%;width:0;background:#e6e2d9;transition:width .2s}
+#meter-fill{height:100%;width:0;background:#fff;transition:width .2s}
 .wrap{max-width:420px;margin:24px auto;padding:16px}
-.panel{background:#000;border:1px solid #e6e2d9;padding:16px;margin:12px 0}
+.panel{background:#000;border:1px solid #fff;padding:16px;margin:12px 0}
 .muted{color:#bbb}
-button{min-height:48px;background:#000;color:#e6e2d9;border:1px solid #e6e2d9;padding:8px 14px}
-button:active{background:#e6e2d9;color:#000}
+button{min-height:48px;background:#000;color:#fff;border:1px solid #fff;padding:8px 14px}
+button:active{background:#fff;color:#000}
 button:disabled{opacity:.5}
-input,select,textarea{font-size:16px;width:100%;background:#000;color:#e6e2d9;border:1px solid #e6e2d9;padding:10px}
-input[type=checkbox],input[type=radio]{width:24px;height:24px;margin:0;padding:0;flex:none;accent-color:#e6e2d9}
+input,select,textarea{font-size:16px;width:100%;background:#000;color:#fff;border:1px solid #fff;padding:10px}
+input[type=checkbox],input[type=radio]{width:24px;height:24px;margin:0;padding:0;flex:none;accent-color:#fff}
 .panel label{display:flex;align-items:center;gap:8px;min-height:44px}
-:focus-visible{outline:3px solid #e6e2d9;outline-offset:3px}
+:focus-visible{outline:3px solid #fff;outline-offset:3px}
 .row{display:flex;gap:8px;justify-content:space-between;margin-top:12px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .pending{background:#8a8f98}
 .running{background:#f2c14e}
-.ok{background:#e6e2d9}
+.ok{background:#fff}
 .failed{background:#e5484d}
 .skipped{background:#444;opacity:.6}
-a{color:#e6e2d9}
+a{color:#fff}
 #error{color:#e5484d}
 .ff-tiles{display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:center;border:0;margin:12px 0 0;padding:0}
 .ff-tiles legend{padding:0;margin-bottom:8px}
-.ff-tiles label{border:1px solid #e6e2d9;padding:8px 12px;min-height:48px}
-.ff-tiles input:checked+label{border:3px double #e6e2d9;font-weight:700}
+.ff-tiles label{border:1px solid #fff;padding:8px 12px;min-height:48px}
+.ff-tiles input:checked+label{border:3px double #fff;font-weight:700}
 .ferr{color:#e5484d;margin:4px 0 0}
 </style>
 <div id="meter" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="meter-fill"></div></div>

@@ -98,8 +98,7 @@ class TilesStatic(unittest.TestCase):
     def _assert_palette_and_no_reordering(self, source):
         css = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
         self.assertEqual(
-            set(re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", css))
-            - {"#000", "#fff", "#1a1a1a", "#f3f0e8", "#e6e2d9"},
+            set(re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", css)) - {"#000", "#fff", "#1a1a1a", "#f3f0e8"},
             set(),
         )
         self.assertNotRegex(css, r"[;{]\s*order\s*:|row-reverse|column-reverse|@font-face|url\(|gradient")
@@ -187,7 +186,7 @@ CHECKS.jaryo_tiles = async function() {
     ['phone','messages'].forEach(function(n){var c=getComputedStyle($('#home [data-open='+n+']'));if(c.gridRowStart!=='span 2')out.push(n+' row end '+c.gridRowStart)});
     ['helper','settings'].forEach(function(n){if(h('#home [data-open='+n+']')>=h('#home [data-open=phone]'))out.push(n+' small not shorter than medium')});
     // Allowed (text, background) pairs: each theme's own two tokens, either way round; never mixed across themes.
-    var D=['rgb(230, 226, 217)','rgb(0, 0, 0)'],L=['rgb(26, 26, 26)','rgb(243, 240, 232)'];
+    var D=['rgb(255, 255, 255)','rgb(0, 0, 0)'],L=['rgb(26, 26, 26)','rgb(243, 240, 232)'];
     var PAIRS=[D.join('/'),D.slice().reverse().join('/'),L.join('/'),L.slice().reverse().join('/')];
     [].slice.call(document.querySelectorAll('#home button')).concat([$('#home-notice')]).forEach(function(e){
       var c=getComputedStyle(e),id=e.id||e.textContent;
