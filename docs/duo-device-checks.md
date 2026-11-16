@@ -787,9 +787,10 @@ by itself, so an automatic bedside posture stays NOT_RUN; the Bedside button is 
 
 ### C34. Hinge postures and back mode (native shell)
 
-Sources: `packaging/duo-os/NATIVE.md:319` "a dark screen ignoring touch, the Settings Hinge line on the glass";
-`ROADMAP.md:92` "November 15 hinge angle and back mode"; `ROADMAP.md:176` "Hinge angle: the postures closed, book,
-flat, tent and back"; `ROADMAP.md:178` "D12 is a partial record, not a pass."; `docs/duo-os-final.md:102` "The hinge
+Sources: `packaging/duo-os/NATIVE.md:323` "a dark screen ignoring touch, the Settings Hinge line on the glass";
+`ROADMAP.md:92` "November 15 hinge angle and back mode"; `ROADMAP.md:102` "Sensor service start (stage 1";
+`ROADMAP.md:181` "Hinge angle: the postures closed, book, flat, tent and back"; `ROADMAP.md:183` "D12 is a partial
+record, not a pass."; `docs/duo-os-final.md:102` "The hinge
 posture needs the phone's sensor service."
 
 **Preconditions.** C04 and C05 passed, `/etc/opos/native-off` absent, and the sensor service already running:
@@ -804,11 +805,11 @@ under `/sys/kernel/debug`.
    lit screen and read the Hinge line.
 3. Folded back, turn the phone over so the other screen faces you; wait two seconds; then touch the dark screen.
 4. Unfold the phone; then close the lid for ten seconds and open it.
-5. [REBOOTS] [OWNER ONLY] Only if the owner's own delayed sensor start, installed by hand on that phone, is still there
-   (it is not in this repository's image, and nothing in this repository starts the sensor service): ten cold boots in
+5. [REBOOTS] [OWNER ONLY] Only on an image built with `opos-sensorfwd-delayed.timer` (the image build installs it; it
+   starts the sensor service 120 s after boot unless `/etc/opos/sensors-off` exists): ten cold boots in
    a row, each a start from power off. A RAM-boot from the PC (R5) is a last resort and does not count as a cold boot.
    After each boot repeat step 1 only. Stop at the first stall or reset; do not continue the count. Without that
-   delayed start, skip this step: it stays NOT_RUN.
+   timer, skip this step: it stays NOT_RUN.
 
 **Observe.** The log names book, flat, tent and back as the angle passes through them, and closed only when the lid
 switch says so; folded back, one screen lit and the page one screen wide; the Settings line ("One screen is lit; the
@@ -821,8 +822,8 @@ left dark after the lid opens, or any stall or reset.
 
 **Stop and undo.** Unfold the phone, or close and open the lid: both screens are lit again. A dark screen: R1. The
 shell wrong or stuck: R2. The sensor service itself is left as it was found. If the owner decides to stop it, the
-file `/etc/opos/sensors-off` is not enough: on the owner's hand-installed delayed start, as reported by the PC session,
-that file only blocks later starts and does not stop a `sensorfwd` that is already running. A live stop is
+file `/etc/opos/sensors-off` is not enough: with the image's timer, that file only blocks later starts and does not
+stop a `sensorfwd` that is already running. A live stop is
 `sudo systemctl disable --now opos-sensorfwd-delayed.timer`, then `sudo systemctl stop sensorfwd`; that is the owner's
 decision, not a step of this check.
 
