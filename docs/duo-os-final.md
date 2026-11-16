@@ -133,15 +133,16 @@ done for this merge.
 
 ## Live checks, in order
 
-For whoever holds the phone. Read-only unless a step says otherwise; replace `<phone>` and `<key>`. Keep the output: names,
-addresses and passwords appear in some of it.
+For whoever holds the phone. Read-only unless a step says otherwise; replace `<phone-usb-address>` and `<key>`.
+Find the current USB value using [USB-link addresses](../packaging/duo-os/README.md#usb-link-addresses).
+Keep the output private: names, addresses and passwords appear in some of it.
 
 1. **Build and verify** (builder, root): `sudo sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD`, with
    `OPOS_DEV_SSH_PUBKEY=<file.pub>` for a dev image you can ssh into (add `OPOS_DEV_SPAN=1` to record a dev-span drop-in as well as the normal service span; `OPOS_DEV_SUDO=1` to give `droidian` passwordless sudo, for an image that is never carried or shared; and `OPOS_NET_POLKIT=1` only if step 5 shows NetworkManager
    refusing); then `sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img`. Expect `VERIFY: PASS` and, among the lines,
    "the keyboard, the Network page and the first run answer together in one server from the image".
 2. **Boot** from the PC as before, wait five minutes (the boot dump is due 90 s after multi-user.target).
-3. **The suite, from the PC:** `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key> -OutDir <folder>`; on the phone,
+3. **The suite, from the PC:** `pwsh -File deploy\duo-acceptance.ps1 -Host <phone-usb-address> -Key <key> -OutDir <folder>`; on the phone,
    `/usr/sbin/opos-selftest ; echo rc=$?`. Expect no FAIL. Expected WARNs on a first boot of a dev image: `battery.temp`, `clock.year`
    (1970, or the image's floor until network time or a set time), `clock.timezone` (UTC), `dev.*` (`dev.ssh-key`, `dev.devtools`, `dev.time-drop`, `dev.span` with `OPOS_DEV_SPAN=1`, and `dev.sudo` on an image built with `OPOS_DEV_SUDO=1`), possibly `svc.system`. Expected WARN: `ota.updater` on an image built without `OPOS_UPDATE_SIGNERS` (no update is accepted). Expected SKIP: `clock.kiosk-tz` until a zone is chosen; `kiosk.restarts` reports the exits `opos-kiosk` logged this boot.
    Expected PASS: `osk.keyboard`, `net.page`, `net.permissions` (WARN means NetworkManager will refuse; see step 5),

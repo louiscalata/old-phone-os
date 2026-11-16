@@ -21,7 +21,7 @@ class DuoPushDocsTest(unittest.TestCase):
         self.assertTrue(section)
         self.assertIn("deploy/push-to-duo.sh", section)
         self.assertIn("--dry-run", section)
-        self.assertIn("fe80::1%8", section)
+        self.assertIn("<phone-usb-address>", section)
         self.assertIn("opos.bak-", section)
         self.assertIn("install.sh --no-launch --yes", section)
         self.assertIn("opos status", section)

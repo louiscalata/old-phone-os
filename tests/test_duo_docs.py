@@ -20,10 +20,10 @@ class TestDuoDocs(unittest.TestCase):
         else:
             subsection = text[usb_idx:next_heading_pos]
         markers = [
-            '169.254',
-            'fe80::1%8',
-            '[fe80::1%8]',
-            '%%8',
+            'link-local',
+            '<phone-usb-address>',
+            '[<phone-usb-address>]',
+            '%%',
             'ifIndex',
             'ssh',
             'scp',
