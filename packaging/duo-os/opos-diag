@@ -33,6 +33,10 @@ sleep 90
     for b in /sys/class/backlight/*; do
         echo "$b brightness=$(cat "$b/brightness" 2>/dev/null) actual=$(cat "$b/actual_brightness" 2>/dev/null) max=$(cat "$b/max_brightness" 2>/dev/null) bl_power=$(cat "$b/bl_power" 2>/dev/null)"
     done
+    # --- track: device facts (read-only): the declared Duo profile (src/opos/hw/device.py) against what the kernel reports ---
+    echo "== device facts"
+    PYTHONPATH=/opt/opos/src timeout 20 python3 -B -m opos.hw.facts --root / --profile "Surface Duo" 2>&1; echo "facts: exit $?"
+    # --- end track: device facts ---
     echo "== phoc, this boot"; journalctl -b -t phoc --no-pager 2>&1 | tail -40
     echo "== kernel warnings and errors"; dmesg --level=err,warn 2>/dev/null | tail -80
 } > "$out" 2>&1

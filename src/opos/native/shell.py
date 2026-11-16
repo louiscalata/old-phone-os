@@ -10,9 +10,16 @@ movement is a skin to add later). Gestures:
     battery sheet drag up anywhere                  the sheet follows the finger; closes past 35% or on a flick
     any app page  drag up from the bottom edge      the page follows the finger; Home past 30% or on a flick
     any app page  swipe in from an outer side edge  Home
-    anywhere      swipe sideways across the hinge   move the buttons to that side (right- or left-handed)
+    anywhere      swipe sideways across the hinge   move the buttons to that side (right- or left-handed); not in back mode
     Home          press and hold a tile             look at that app on the other screen without opening it
     lid closed    the shell locks, and both screens go dark; opening the lid lights them as they were
+    folded back   back mode: the page on one screen, the other dark and deaf to touch (see below)
+
+Back mode is the one thing the hinge angle changes. In posture "back" (folded all the way back) with the lid switch
+reading open, the active screen (the one last touched, else the thumb side) shows the reading pane above the thumb pane,
+and the other screen is darkened through the Blanker (blank(only=...)) and ignores touches that go down on it. Any other
+posture, no hinge reading, the lid closing, the lid signal lost or the shell ending leaves it, and both screens are lit
+again (the lid closing hands over to its own blank of both). The angle never locks, changes the page or the hand.
 
 A drag that follows the finger is direct manipulation, not animation: each frame draws the surface where the finger
 holds it, and the frame after the finger lifts shows the result, complete (no easing, no coasting, no spring-back on a
@@ -52,10 +59,12 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from opos.native import blank, displayconfig, logic, posture, screens  # noqa: E402
-from opos.native.layout import (SLOP, drag_kind, drag_offset, drag_progress, drag_release, drag_velocity,  # noqa: E402
-                                hinge_px, load_hand, pane_order, save_hand, swipe_action)
-from opos.native.ui import ANIMATE, CSS, MOVE_MS, Slide, bar, button, column, label, reading, two_panes  # noqa: E402
+from opos.native import blank, displayconfig, facing, hinge, logic, posture, screens  # noqa: E402
+from opos.native.layout import (SLOP, active_screen, drag_kind, drag_offset, drag_progress, drag_release,  # noqa: E402
+                                drag_velocity, hinge_px, load_hand, pane_order, panel_to_darken, save_hand, screen_at,
+                                swipe_action, touch_ignored)
+from opos.native.ui import (ANIMATE, CSS, MOVE_MS, Slide, bar, button, column, label, one_column, reading,  # noqa: E402
+                            two_columns, two_panes)
 
 # The OPOS server, on loopback: OPOS_SERVER_URL when it is exactly http://127.0.0.1:PORT, else the phone's own port
 # (logic.server_url; a refused value is said once in the log and never used). Never OPOS_LOCAL_URL: that is the Helper's
@@ -170,6 +179,7 @@ class Shell(Gtk.ApplicationWindow):
         self.drag, self.drag_decided, self.drag_start, self.samples, self.owned = None, False, None, [], False
         # the lid: None until the watcher reports (or after it stopped); posture is posture.posture() of it
         self.lid_closed, self.lid_watcher, self.posture = None, None, posture.posture(False)
+        self.angle, self.hinge_watcher = None, None     # the hinge angle in degrees (None: no reading) and its watcher
         # both screens dark while the lid is closed; the lid daemon's request to blank is refused while the lid reads open
         self.blanker = blank.Blanker(may_blank=lambda: self.lid_closed is not False)
         self.restore_tries, self.restore_timer, self.restore_blanks = 0, None, 0
@@ -179,6 +189,9 @@ class Shell(Gtk.ApplicationWindow):
         # the PIN lock: what the server's answers add up to (logic.LockCheck), and whether the shell is held on its lock
         # page because a state came without an answer
         self.lock_check, self.held = logic.LockCheck(), False
+        # back mode: None, or the screen in use (0 left, 1 right); the screen touched last; whether this touch is ignored
+        self.back, self.last_screen, self.ignored, self.back_failed = None, None, False, False
+        self.facing = facing.Facing()       # which screen faces the user, from the accelerometer (only back mode uses it)
 
         classes = list(screens.enabled_pages())      # Clock, Contacts, Notes, Converter, Call log: only when OPOS_APPS has them
         self.apps = self.tiles(classes)     # Network has no tile: Settings opens it
@@ -361,7 +374,7 @@ class Shell(Gtk.ApplicationWindow):
         if hand not in ("right", "left") or hand == self.hand:
             return
         self.hand = hand
-        for row in self.rows:
+        for row in self.rows if self.back is None else ():     # in back mode the order is put right when it ends
             row.reorder_child_after(getattr(row, pane_order(hand)[0]), None)   # None = first; the other pane follows
         self.pages["settings"].paint_hand()
         self.pages["home"].show(self.snap)
@@ -422,7 +435,11 @@ class Shell(Gtk.ApplicationWindow):
     def swipe_end(self, _gesture, vx, vy):
         if self.warming or self.owned:
             return      # the start-up cover is up, or a drag followed this touch and has already decided what it does
-        act = swipe_action(self.page_kind(), self.sheet.get_reveal_child(), self.start, self.get_width(), self.get_height(), vx, vy, self.hinge)
+        if touch_ignored(self.start, self.get_width(), self.hinge, self.back):
+            return      # back mode: it went down on the dark screen
+        act = swipe_action(self.page_kind(), self.sheet.get_reveal_child(), self.start, self.get_width(), self.get_height(), vx, vy, self.hinge, self.back)
+        if self.back is not None and act in ("hand-right", "hand-left"):
+            return      # one column: there is no hinge to push the buttons across
         if act == "shade-open":
             self.set_shade(True)
         elif act == "shade-close":
@@ -440,8 +457,20 @@ class Shell(Gtk.ApplicationWindow):
     def drag_begin(self, gesture, x, y):
         self.owned, self.drag, self.drag_decided, self.drag_start = False, None, False, (x, y)
         self.samples = [(self.event_ms(gesture), 0.0)]
+        self.ignored = touch_ignored((x, y), self.get_width(), self.hinge, self.back)
+        if self.ignored:
+            # back mode, on the dark screen: claimed here, in the capture phase, so no button under it is pressed, and
+            # owned, so neither the drag nor the swipe acts on it. Only where a touch goes down counts.
+            self.owned = True
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return
+        seen = screen_at(x, self.get_width(), self.hinge)
+        if seen is not None:
+            self.last_screen = seen     # the screen back mode will use, if the phone is folded back next
 
     def drag_update(self, gesture, dx, dy):
+        if self.ignored:
+            return
         if not self.drag_decided:
             if self.warming or (abs(dx) <= SLOP and abs(dy) <= SLOP):
                 return          # not yet: this may still be a tap (or the start-up cover is up)
@@ -504,6 +533,14 @@ class Shell(Gtk.ApplicationWindow):
         if not self.lid_closed_now():
             self.restore()
         self.watch_lid()
+        try:
+            self.hinge_watcher = hinge.HingeWatcher(lambda angle: GLib.idle_add(self.hinge_changed, angle),
+                                                    on_tilt=lambda z: GLib.idle_add(self.tilt_changed, z,
+                                                                                    time.monotonic())).start()
+        except Exception as err:    # no hinge readings: two screens, as without the sensor service
+            self.hinge_watcher = None
+            print("opos shell: cannot start the hinge watcher (%s); carrying on without it" % type(err).__name__,
+                  file=sys.stderr, flush=True)
 
     def watch_lid(self):
         """Start a lid watcher and listen to it alone. Each watcher has a number; its reports and its loss carry it, and
@@ -560,6 +597,10 @@ class Shell(Gtk.ApplicationWindow):
         report: closed locks and darkens, open lights. Looking again never darkens anything by itself."""
         self.lid_closed = None
         self.lid_gen += 1
+        watcher = getattr(self, "hinge_watcher", None)
+        if watcher is not None and hasattr(watcher, "set_paused"):
+            watcher.set_paused(False)       # the lid is unknown: readings carry on, so the posture stays known
+        self.set_posture()
         self.restore()
         if self.lid_timer is None:
             n = self.lid_tries
@@ -574,17 +615,29 @@ class Shell(Gtk.ApplicationWindow):
         return False            # a one-shot timer; the next loss puts up the next one
 
     def restore(self):
-        """Light both screens as they were. While they may still be dark (the saved file is there, or a panel could not
+        """Light both screens as they were (in back mode: the active one, see relight). While they may still be dark (the saved file is there, or a panel could not
         be written) and the lid is not closed, it is tried again: RESTORE_BACKOFF_MS, then every RESTORE_EVERY_MS, with
         no upper limit. A blank made after this call (the lid closed, the daemon asked while the lid is unknown) ends
         the tries: dark is then what was asked for, and the next open or restore starts them again."""
         self.restore_tries, self.restore_blanks = 0, self.blanker.blanks
-        self.blanker.restore()
+        self.relight()
         self.retry_restore()
 
+    def relight(self):
+        """Light what should be lit now: both screens, or in back mode the active one (the other is kept dark)."""
+        if self.back is not None:
+            try:
+                self.blanker.blank(only=(panel_to_darken(self.back),))
+                return
+            except Exception as err:    # never left with one screen dark by a fault: light both instead
+                print("opos shell: cannot darken one screen (%s); lighting both" % type(err).__name__, file=sys.stderr, flush=True)
+        self.blanker.restore()
+
     def retry_restore(self):
-        """Put up the next try, unless one is already waiting, nothing may be dark, or the lid is closed."""
-        if self.restore_timer is not None or self.lid_closed or not self.blanker.pending():
+        """Put up the next try, unless one is already waiting, nothing may be dark, or the lid is closed. In back mode one
+        screen is dark on purpose (the saved file is there), so only a screen that could not be lit is tried again."""
+        may_be_dark = self.blanker.failed if self.back is not None else self.blanker.pending()
+        if self.restore_timer is not None or self.lid_closed or not may_be_dark:
             return
         n = self.restore_tries
         ms = RESTORE_BACKOFF_MS[n] if n < len(RESTORE_BACKOFF_MS) else RESTORE_EVERY_MS
@@ -595,7 +648,7 @@ class Shell(Gtk.ApplicationWindow):
         if self.lid_closed or self.blanker.blanks != self.restore_blanks:
             return False        # closed again, or darkened on purpose since: dark is right
         self.restore_tries += 1
-        self.blanker.restore()
+        self.relight()
         self.retry_restore()
         return False            # each try is its own one-shot timer, so the wait can grow
 
@@ -610,8 +663,12 @@ class Shell(Gtk.ApplicationWindow):
         screens. It opened: the lock screen is already showing, and both screens are lit again as they were (the first
         report, open, does that too: it is harmless when nothing was dark). Every change is one frame."""
         closed = bool(closed)
-        self.lid_closed, self.posture = closed, posture.posture(closed)
+        self.lid_closed = closed
+        watcher = getattr(self, "hinge_watcher", None)
+        if watcher is not None and hasattr(watcher, "set_paused"):
+            watcher.set_paused(closed)       # a closed lid needs no hinge or accelerometer readings
         if closed:
+            self.set_posture()      # leaves back mode, without lighting the dark screen: both go dark BLANK_MS later
             kind, self.drag = self.drag, None
             if kind is not None:
                 self.owned = True           # the finger still down must not act when it lifts
@@ -620,7 +677,86 @@ class Shell(Gtk.ApplicationWindow):
             self.go("lock")
             GLib.timeout_add(BLANK_MS, self.blank_if_closed)
         else:
+            self.restore()          # the lid's own restore first: both lit
+            self.set_posture()      # then, still folded back, back mode again
+        return False
+
+    def set_posture(self):
+        """The posture from the lid and the hinge angle now; a change is one line in the log. Back mode follows it."""
+        was = self.posture
+        self.posture = posture.posture(self.lid_closed, self.angle, was)
+        if self.posture != was:
+            print("opos shell: posture %s -> %s (hinge %s)" % (was, self.posture, self.angle), file=sys.stderr, flush=True)
+        self.fit_back()
+        page = self.pages.get("settings")
+        if page is not None and hasattr(page, "paint_posture"):
+            page.paint_posture()
+
+    def fit_back(self):
+        """Enter or leave back mode as the posture and the lid now say (posture.one_screen). One change, one frame."""
+        want = posture.one_screen(self.posture, self.lid_closed)
+        if not want:
+            self.back_failed = False
+        if want and self.back is None and not self.back_failed:
+            self.enter_back()
+        elif not want and self.back is not None:
+            self.leave_back()
+
+    def enter_back(self):
+        """Folded back with the lid open: the page in one column on the active screen, the other screen dark. If the
+        panes cannot be moved, back mode is not entered: both screens stay lit, in two panes, and the shell carries on."""
+        side = active_screen(self.last_screen, self.hand, self.facing.current)
+        try:
+            for row in self.rows:
+                one_column(row, side)
+        except Exception as err:
+            print("opos shell: cannot use one screen (%s); staying on two" % type(err).__name__, file=sys.stderr, flush=True)
+            self.back_failed = True     # not tried again until the posture leaves back (every hinge reading would retry)
+            self.two_rows()
             self.restore()
+            return
+        self.back = side
+        print("opos shell: back mode on screen %d" % side, file=sys.stderr, flush=True)
+        self.restore()              # relight() in back mode: the other panel dark, this one lit, retried if it fails
+
+    def leave_back(self):
+        """Back mode ends: the two panes as before, and both screens lit (unless the lid is closed: its blank follows)."""
+        self.back = None
+        self.two_rows()
+        print("opos shell: back mode off", file=sys.stderr, flush=True)
+        if not self.lid_closed:
+            self.restore()
+
+    def two_rows(self):
+        for row in getattr(self, "rows", ()):
+            try:
+                two_columns(row, self.hand)
+            except Exception as err:    # never stops the restore that follows
+                print("opos shell: cannot put the panes back (%s)" % type(err).__name__, file=sys.stderr, flush=True)
+
+    def tilt_changed(self, z, sampled_at=None):
+        """A new accelerometer reading (None: lost), taken at sampled_at (time.monotonic() in the watcher thread; now
+        when not given). It only chooses the screen back mode uses: when it says the other screen faces the user (held
+        for a moment, see facing.py), back mode moves to that screen."""
+        if z is None:
+            self.facing.reset()
+            return False
+        # the time the watcher thread took the reading, not when this thread got round to it: a stalled main loop
+        # must not make readings taken a second apart look simultaneous, or the other way round
+        self.facing.update(z, time.monotonic() if sampled_at is None else sampled_at)
+        if self.back is not None and self.facing.current:
+            want = active_screen(self.last_screen, self.hand, self.facing.current)
+            if want != self.back:
+                self.back = None
+                self.two_rows()
+                self.enter_back()
+        return False
+
+    def hinge_changed(self, angle):
+        """A new hinge reading (None: the sensor service went away). It names the posture, and so back mode; it never
+        locks, changes the page or the hand, and never darkens both screens (that is the lid's)."""
+        self.angle = angle
+        self.set_posture()
         return False
 
     def end(self, status=ASKED_TO_END):

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The D1-D11 on-device table stays NOT_RUN until a dated evidence link exists."""
+"""The D1-D12 on-device table stays NOT_RUN until a dated evidence link exists."""
 import re
 import unittest
 from pathlib import Path
@@ -9,6 +9,7 @@ HEADING = "## On-device checks"
 LINK = re.compile(r"\]\(https?://[^)\s]+\)")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 BANNED = ("imei", "imsi", "iccid", "msisdn")
+UNLINKED = "no pull request number yet"   # the only Evidence allowed without a link, and only for D12 (the hinge row)
 
 
 def section():
@@ -44,15 +45,17 @@ def pass_is_complete(row):
 
 
 class DeviceLog(unittest.TestCase):
-    def test_d1_through_d11_are_present_and_not_passed(self):
+    def test_d1_through_d12_are_present_and_not_passed(self):
         got = rows()
-        self.assertEqual([row["id"] for row in got], ["D%d" % n for n in range(1, 12)])
+        self.assertEqual([row["id"] for row in got], ["D%d" % n for n in range(1, 13)])
         body = section().lower()
         for word in BANNED:
             self.assertNotIn(word, body)
         for row in got:
             self.assertTrue(pass_is_complete(row), row["id"])
-            self.assertIn("](https://github.com/louiscalata/old-phone-os/pull/", row["evidence"], row["id"])
+            # D12's feature pull request has no number yet: only the link check is skipped for it
+            if not (row["id"] == "D12" and row["evidence"].startswith(UNLINKED)):
+                self.assertIn("](https://github.com/louiscalata/old-phone-os/pull/", row["evidence"], row["id"])
             self.assertEqual(row["result"], "NOT_RUN", row["id"])
             self.assertEqual(row["date"], "", row["id"])
 

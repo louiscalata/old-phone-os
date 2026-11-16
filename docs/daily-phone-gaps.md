@@ -35,7 +35,7 @@ A gap fits the ethos when it is a plain local tool, keeps its own data on the ph
 | Flashlight | A pocket light fits. | The LED is a kernel path, not a package in this tree, and writing it is not approved. A white screen would need no package and is a poor stand-in. | Listed only. |
 | Timer and stopwatch | Already in Clock. Not a gap. | No. | Do not add a second one. |
 | Battery readout | Already on the phone. Not a gap. | No. | None. |
-| Storage readout | Yes. One factual line for free space, from the standard library. | No. | Not this round. The call log is the higher daily need. |
+| Storage readout | Yes. One factual line for free space, from the standard library. | No. | Implemented in the native shell only. Settings shows one line such as "Storage: 12.3 GB free of 52.1 GB" for the home folder (`shutil.disk_usage`), in decimal GB/MB. It is read once each time Settings is opened and never in the background. A failed read shows "Storage: unknown". Formatting is `logic.storage_line`, tested on the Mac. The browser interface has no storage line. On-device check NOT_RUN. |
 | Do Not Disturb | Only if calls, messages, and alarms still come through. A switch that hides optional noise can stay local. | No. | Not this round. |
 | Unit converter | Yes. The same kind of tool as the calculator. | No. | Implemented at `/convert`, enabled by `OPOS_APPS=convert`, in the browser interface and as the native shell's Converter screen, which asks the same `/api/convert`. Every on-device check is NOT_RUN. |
 | Music | A local player is a weaker fit than calls and notes. | Files the browser can already play need no package. Further codecs would be a new package. | Listed only. |

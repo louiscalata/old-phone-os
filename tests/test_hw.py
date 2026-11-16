@@ -113,6 +113,30 @@ class TestHW(unittest.TestCase):
         with self.assertRaises(KeyError):
             builtin_profile("nope")
 
+    def test_the_duo_profile_carries_the_declared_facts_and_generic_none(self):
+        import dataclasses
+
+        from opos.hw import device
+        self.assertIs(builtin_profile("Surface Duo").facts, device.SURFACE_DUO)
+        self.assertIsNone(builtin_profile("Generic phone").facts)
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            device.SURFACE_DUO.span = device.Fact(1, True, "x")  # type: ignore[misc]
+        for f in dataclasses.fields(device.DeviceFacts):
+            fact = getattr(device.SURFACE_DUO, f.name)
+            with self.subTest(fact=f.name):
+                self.assertIsInstance(fact, device.Fact)
+                self.assertIsInstance(fact.measured, bool)
+                self.assertTrue(fact.source)
+        self.assertFalse(device.SURFACE_DUO.span.measured)
+        self.assertFalse(device.SURFACE_DUO.hinge.measured)
+
+    def test_the_duo_geometry_adds_up(self):
+        from opos.hw.device import SURFACE_DUO as d
+        (pw, ph), (ow, oh), scale = d.panel_px.value, d.output_px.value, d.scale.value
+        self.assertEqual(ow, d.panels.value * pw + d.hinge.value * scale)  # two panels and the hinge make one output
+        self.assertEqual(oh, ph)
+        self.assertEqual(d.span.value * scale, pw)
+
     def test_list_profiles_and_choose(self):
         from opos.setup.device import choose_profile, list_profiles
 

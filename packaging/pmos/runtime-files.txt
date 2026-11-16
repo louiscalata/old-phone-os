@@ -51,6 +51,8 @@ src/opos/home.py
 src/opos/hw/__init__.py
 src/opos/hw/battery.py
 src/opos/hw/detect.py
+src/opos/hw/device.py
+src/opos/hw/facts.py
 src/opos/hw/live_battery.py
 src/opos/hw/store.py
 src/opos/image_identity.py
@@ -62,6 +64,8 @@ src/opos/muse.py
 src/opos/native/__init__.py
 src/opos/native/blank.py
 src/opos/native/displayconfig.py
+src/opos/native/facing.py
+src/opos/native/hinge.py
 src/opos/native/layout.py
 src/opos/native/logic.py
 src/opos/native/netlogic.py
