@@ -2,10 +2,12 @@
 
 How many bytes the OPOS page takes, where they go, and how to measure them again. The interface finalization plan
 (section 3) gives every wave of changes one rule: **after the wave, `page()` and the home page the server really sends with
-every switch on must both be at most 102,000 bytes.** The test (`tests/test_uxp30_budget.py`) enforces only the hard cap of
-102,400 bytes for `page()`; the 400 bytes between the two numbers are the reserve for what the server adds around `page()`.
+the six switches below on must both be at most 102,000 bytes.** `WaveGate` in `tests/test_uxp30_budget.py` enforces that gate;
+`Budget` also checks the 102,400-byte hard cap. Additional app and volume configurations have separate checks.
 
-All numbers are UTF-8 bytes. They are exact, not estimates: the same script gives the same figure on every run.
+All numbers are UTF-8 bytes for a particular source revision, configuration and build metadata.
+The November 12 development record in [ROADMAP.md](../ROADMAP.md) reports 101,895 bytes with volume and the existing switches
+enabled; this is a recorded local result, not a phone-performance measurement. Older byte counts below apply only to their named revisions.
 
 ## What is measured
 
@@ -14,7 +16,7 @@ All numbers are UTF-8 bytes. They are exact, not estimates: the same script give
 | `page()` | `opos.web.page()` with no argument and no environment switch: the number `test_uxp30_budget` checks against 102,400. |
 | `page()` spanned | `page(span=Span(675, 42))`: what `OPOS_SPAN=675,42` serves (the Duo configuration). `span.apply()` squeezes whitespace and rewrites the geometry, so it is a little smaller. |
 | served, no switch | What `GET /` returns from a running server, no switch set: `page()` plus the token meta tag and the nonce on every `<style>` and `<script>`. |
-| served, every switch | The same with `OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 OPOS_MONITOR=1 OPOS_PANES=1 OPOS_SPAN=675,42`. This is the real Duo image, and the figure the wave gate is about. |
+| served, every switch | The same with `OPOS_OSK=1 OPOS_NETWORK=1 OPOS_FIRSTRUN=1 OPOS_MONITOR=1 OPOS_PANES=1 OPOS_SPAN=675,42`, including the first-run hook. These are the six switches tested by `WaveGate`; they do not include apps or volume. |
 
 ## The ledger of 11c39ba (the base of the room, wave 1 tracks)
 
@@ -102,42 +104,22 @@ EOF
 
 ## How to measure again
 
-From the root of a checkout. It needs only Python 3 and the repository; it starts a server on a free loopback port and
-stops it again.
+From the root of a checkout with Python 3.11 or newer. The test creates temporary configuration directories,
+starts servers on free loopback ports, and stops them again.
 
-```
-PYTHONPATH=src python3 - <<'EOF'
-import os, threading, urllib.request
-SW = {"OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1", "OPOS_MONITOR": "1", "OPOS_PANES": "1", "OPOS_SPAN": "675,42"}
-for k in SW: os.environ.pop(k, None)
-from opos import web
-from opos.span import parse
-span = parse(SW["OPOS_SPAN"])
-def served(env, **kw):
-    os.environ.update(env)
-    srv = web.make_server(0, web.Phone(), **kw)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    port = srv.server_address[1]
-    n = len(urllib.request.urlopen("http://127.0.0.1:%d/" % port, timeout=20).read())
-    srv.shutdown(); srv.server_close()
-    for k in env: os.environ.pop(k, None)
-    return n
-print("page()                %7d" % len(web.page().encode()))
-print("page() spanned        %7d" % len(web.page(span=span).encode()))
-print("served, no switch     %7d" % served({}))
-print("served, every switch  %7d" % served(SW, span=span))
-EOF
+```sh
+PYTHONPATH=src python3 -m unittest tests.test_uxp30_budget.WaveGate
 ```
 
-Run it before a change and after each item, and keep both "served" figures under 102,000. For one switch alone, call
-`served({"OPOS_OSK": "1"})` (and pass `span=span` only for `OPOS_SPAN`). A checkout reports its build as `unpublished`
-(11 bytes); a release build puts a git hash of at most 12 characters in its place, so a shipped image is at most one byte
-larger (`test_uxp30_budget` checks that case against the cap).
+This prints and checks the page sizes for the six switches defined by that test, including the first-run hook.
+Additional app and volume configurations require their corresponding checks: `tests/test_apps_shell.py` and
+`tests/test_volume.py`. Run the checks before and after a change. A checkout reports its build as
+`unpublished`; release metadata can add one byte, which `Budget` checks against the hard cap.
 
 ## Everyday apps
 
 `OPOS_APPS` is not one of the six switches above. When it is absent, `page()` and the served home page are unchanged
 (`page()` is not edited). When it names an app, the served home page gains one script tag for `/apps-home.js`
-(68 bytes). The script file is not part of the page. Measured with the tag and the six switches, the served home page
-is 101,317 bytes (683 bytes under the 102,000 gate). Later apps must not add to this page. `tests/test_apps_shell.py`
-checks the gate.
+(68 bytes). The script file is not part of the page. The historical record in `dfca35d4` on November 10 reported
+101,317 bytes with that tag and the six switches (683 bytes under the 102,000-byte gate). That count applies to that
+revision only. Later apps must not add to this page. `tests/test_apps_shell.py` checks the gate.
