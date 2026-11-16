@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Per-task pause explanations and native disclosure controls."""
+
 import base64
 import json
 from html.parser import HTMLParser
@@ -22,9 +23,11 @@ from tests.test_uxr_acceptance import find_chrome
 
 class PausedReasonState(unittest.TestCase):
     def setUp(self):
-        for patcher in (mock.patch("opos.web.prefs.load", side_effect=OSError),
-                        mock.patch("opos.web.assist.free_mb", return_value=4096),
-                        mock.patch("opos.web.self_rss_mb", return_value=12)):
+        for patcher in (
+            mock.patch("opos.web.prefs.load", side_effect=OSError),
+            mock.patch("opos.web.assist.free_mb", return_value=4096),
+            mock.patch("opos.web.self_rss_mb", return_value=12),
+        ):
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -39,7 +42,8 @@ class PausedReasonState(unittest.TestCase):
     def add_glimmer(self, phone, names=("email",)):
         ask = mock.Mock(return_value=json.dumps({"defer": names}))
         phone.runtime.governor.advisor = GlimmerAdvisor(
-            Router(visible=True), route=object(), ask=ask, spawn=lambda fn: fn())
+            Router(visible=True), route=object(), ask=ask, spawn=lambda fn: fn()
+        )
         phone.state()  # Fill the advisor cache; the next tick applies it.
         return ask
 
@@ -94,7 +98,7 @@ class PausedReasonState(unittest.TestCase):
     def test_worn_battery_reserve_explains_calls(self):
         phone = Phone(visible=True)
         self.add_glimmer(phone)
-        phone.sim.level, phone.sim.health = 8, .4
+        phone.sim.level, phone.sim.health = 8, 0.4
         reasons = self.reasons(phone)
         self.assertTrue(reasons)
         self.assertEqual(set(reasons.values()), {"Battery rules paused this to keep a battery reserve for calls."})
@@ -123,7 +127,9 @@ class PausedReasonState(unittest.TestCase):
         phone.charging = True
         self.assertEqual(self.reasons(phone), {})
         self.add_glimmer(phone)
-        self.assertEqual(self.reasons(phone), {"email": "Muse Glimmer paused this to save power for calls and messages."})
+        self.assertEqual(
+            self.reasons(phone), {"email": "Muse Glimmer paused this to save power for calls and messages."}
+        )
 
     def test_undo_and_in_use_remove_the_row_and_reason(self):
         phone = Phone()
@@ -135,7 +141,7 @@ class PausedReasonState(unittest.TestCase):
 
     def test_quiet_redacted_name_still_gets_the_right_reason(self):
         phone = Phone()
-        phone.runtime = Runtime(tasks=(Task("calls", Priority.ESSENTIAL, .5), Task("AI backup", Priority.OPTIONAL, 6)))
+        phone.runtime = Runtime(tasks=(Task("calls", Priority.ESSENTIAL, 0.5), Task("AI backup", Priority.OPTIONAL, 6)))
         phone.dash = Dashboard(phone.runtime.tasks)
         reasons = self.reasons(phone)
         self.assertEqual(set(reasons), {"... backup"})
@@ -174,14 +180,16 @@ const replaced=list.children[0]!==before;
 process.stdout.write(JSON.stringify({html,stable,replaced,calls,remaining:list.children.map(r=>r.innerHTML)}));})();
 """
         source = Path(__file__).resolve().parents[1] / "src/opos/web_static/js-7.js"
-        result = subprocess.run([shutil.which("node"), "-e", script, str(source)], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script, str(source)], capture_output=True, text=True, timeout=10
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
         row = _RowMarkup()
         row.feed(output["html"])
         self.assertEqual(row.tags, ["details", "summary", "span", "p", "button"])
         self.assertNotIn("open", row.attrs["details"])
-        self.assertEqual(row.text[:2], ['maps <&"', 'Battery rules <img src=x onerror=bad>.'])
+        self.assertEqual(row.text[:2], ['maps <&"', "Battery rules <img src=x onerror=bad>."])
         self.assertEqual(row.attrs["button"]["aria-label"], 'Turn maps <&" back on')
         self.assertTrue(output["stable"])
         self.assertTrue(output["replaced"])
@@ -248,18 +256,37 @@ class PausedReasonBrowser(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="paused-reason-") as directory:
             root = Path(directory)
             nonce = "paused-reason-test"
-            policy = "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'"
-            html = page("t" * 43, nonce, demo=True).replace("<head>", '<head><meta http-equiv="Content-Security-Policy" content="' + policy + '">', 1)
+            policy = (
+                "default-src 'none'; script-src 'nonce-"
+                + nonce
+                + "'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'"
+            )
+            html = page("t" * 43, nonce, demo=True).replace(
+                "<head>", '<head><meta http-equiv="Content-Security-Policy" content="' + policy + '">', 1
+            )
             # A file fixture has no /favicon.ico route; retain the actual icon
             # without granting file or network image access to this CSP test.
-            icon = base64.b64encode(FAVICON).decode('ascii')
+            icon = base64.b64encode(FAVICON).decode("ascii")
             html = html.replace('href="/favicon.ico"', 'href="data:image/png;base64,' + icon + '"', 1)
             (root / "page.html").write_text(html, encoding="utf-8")
             with mock.patch("opos.web.prefs.load", side_effect=OSError):
                 state = Phone().state()
             (root / "state.json").write_text(json.dumps(state), encoding="utf-8")
             (root / "driver.js").write_text(CDP, encoding="utf-8")
-            result = subprocess.run([node, str(root / "driver.js"), chrome, (root / "page.html").as_uri(), str(root / "state.json"), str(root / "profile")], capture_output=True, text=True, timeout=40, env=dict(os.environ, TMPDIR=directory))
+            result = subprocess.run(
+                [
+                    node,
+                    str(root / "driver.js"),
+                    chrome,
+                    (root / "page.html").as_uri(),
+                    str(root / "state.json"),
+                    str(root / "profile"),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=40,
+                env=dict(os.environ, TMPDIR=directory),
+            )
             if "bootstrap_check_in" in result.stderr and "Permission denied" in result.stderr:
                 self.skipTest("sandbox denies Chromium MachPortRendezvousServer launch")
             self.assertEqual(result.returncode, 0, result.stderr)

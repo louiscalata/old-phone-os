@@ -174,7 +174,6 @@ class InUseTest(unittest.TestCase):
             self.assertIn("messages", tick.decision.allowed)
         phone.dash.set_in_use("")
 
-
     def test_in_use_preserves_reserves(self):
         phone = Phone()
         phone.runtime.governor.advisor = None

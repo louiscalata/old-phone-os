@@ -13,10 +13,10 @@ class TestRuntime(unittest.TestCase):
     def test_level5_allows_essential_defers_optional(self):
         rt = Runtime(visible=False)
         tick = rt.step(0, 5)
-        self.assertIn('calls', tick.decision.allowed)
-        self.assertIn('messages', tick.decision.allowed)
-        self.assertIn('photos backup', tick.decision.deferred)
-        self.assertIn('Calls', tick.screen)
+        self.assertIn("calls", tick.decision.allowed)
+        self.assertIn("messages", tick.decision.allowed)
+        self.assertIn("photos backup", tick.decision.deferred)
+        self.assertIn("Calls", tick.screen)
 
     def test_falling_level_finite_hours_left(self):
         rt = Runtime(visible=False)
@@ -45,7 +45,7 @@ class TestRuntime(unittest.TestCase):
     def test_budget_reflects_final_critical_after_real_reserve(self):
         tasks = tuple(t for t in runtime_mod.DEFAULT_TASKS if t.priority == Priority.ESSENTIAL)
         original = runtime_mod.apply_reserve
-        with mock.patch.object(runtime_mod, 'apply_reserve', wraps=original) as spy:
+        with mock.patch.object(runtime_mod, "apply_reserve", wraps=original) as spy:
             rt = Runtime(visible=False, tasks=tasks)
             tick = rt.step(0, 31, charging=False, health=0.49, temp_c=-50.0)
         self.assertEqual(spy.call_count, 1)
@@ -58,8 +58,8 @@ class TestRuntime(unittest.TestCase):
         tasks = tuple(t for t in runtime_mod.DEFAULT_TASKS if t.priority == Priority.ESSENTIAL)
         reserve_original = runtime_mod.apply_reserve
         budget_original = runtime_mod.budget_for
-        with mock.patch.object(runtime_mod, 'apply_reserve', wraps=reserve_original) as reserve_spy:
-            with mock.patch.object(runtime_mod, 'budget_for', wraps=budget_original) as budget_spy:
+        with mock.patch.object(runtime_mod, "apply_reserve", wraps=reserve_original) as reserve_spy:
+            with mock.patch.object(runtime_mod, "budget_for", wraps=budget_original) as budget_spy:
                 rt = Runtime(visible=False, tasks=tasks)
                 tick = rt.step(0, 31, charging=False, health=0.49, temp_c=-50.0)
         self.assertEqual(reserve_spy.call_count, 1)
@@ -73,7 +73,7 @@ class TestRuntime(unittest.TestCase):
         def fake_reserve(decision, level, temp_c, health, tasks):
             return Decision(Mode.CRITICAL, decision.allowed, decision.deferred, decision.reason)
 
-        with mock.patch.object(runtime_mod, 'apply_reserve', side_effect=fake_reserve) as spy:
+        with mock.patch.object(runtime_mod, "apply_reserve", side_effect=fake_reserve) as spy:
             rt = Runtime(visible=False)
             tick = rt.step(0, 80, charging=False, health=1.0, temp_c=25.0)
         self.assertEqual(spy.call_count, 1)
@@ -93,5 +93,5 @@ class TestRuntime(unittest.TestCase):
             self.assertEqual(tick.budget, budget_for(tick.decision.mode, 25.0))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

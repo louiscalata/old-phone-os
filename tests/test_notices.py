@@ -13,9 +13,11 @@ from opos import notices
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "opos" / "notices.py"
-EXACT = ("Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, "
-         "provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's "
-         "operating system and may erase data; back up first and use at your own risk.")
+EXACT = (
+    "Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, "
+    "provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's "
+    "operating system and may erase data; back up first and use at your own risk."
+)
 NETWORK = {"urllib", "http", "socket", "requests", "ssl", "ftplib", "smtplib", "asyncio", "subprocess"}
 
 
@@ -31,9 +33,10 @@ class TestNotices(unittest.TestCase):
         self.assertEqual(notices.DISCLAIMER, EXACT)
         self.assertEqual(notices.notices()["disclaimer"], EXACT)
         self.assertIn(EXACT + "\n\n" + notices.INSTALL_SCOPE + "\n\n", notices.as_text())
-        self.assertEqual(notices.INSTALL_SCOPE,
-                         "The replacement warning is for OS flashing; per-user install.sh "
-                         "installs OPOS within the existing OS.")
+        self.assertEqual(
+            notices.INSTALL_SCOPE,
+            "The replacement warning is for OS flashing; per-user install.sh installs OPOS within the existing OS.",
+        )
         jaryo = (ROOT / "docs" / "jaryo.md").read_text(encoding="utf-8")
         self.assertIn("> " + EXACT, jaryo)
 
@@ -65,9 +68,9 @@ class TestNotices(unittest.TestCase):
 
     def test_source_address_matches_the_public_project_contract(self):
         from urllib.parse import urlsplit
+
         address = urlsplit("https://" + notices.SOURCE_URL)
-        self.assertEqual((address.hostname, address.path),
-                         ("github.com", "/louiscalata/old-phone-os"))
+        self.assertEqual((address.hostname, address.path), ("github.com", "/louiscalata/old-phone-os"))
         self.assertIsNone(address.username)
         self.assertIsNone(address.password)
         self.assertFalse(address.query or address.fragment)
@@ -85,9 +88,18 @@ class TestNotices(unittest.TestCase):
     def test_no_private_paths_ips_or_quiet_words(self):
         texts = _all_text(notices.notices()) + [(ROOT / "docs" / "NOTICES.md").read_text(encoding="utf-8")]
         blob = "\n".join(texts)
-        for pat in (r"/Users/", r"/home/", r"C:\\Users", r"~/",
-                    r"\b10\.\d+\.\d+\.\d+\b", r"\b192\.168\.\d+\.\d+\b", r"\b172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\b",
-                    r"\b127\.\d+\.\d+\.\d+\b", r"\bfe80:", r"@"):
+        for pat in (
+            r"/Users/",
+            r"/home/",
+            r"C:\\Users",
+            r"~/",
+            r"\b10\.\d+\.\d+\.\d+\b",
+            r"\b192\.168\.\d+\.\d+\b",
+            r"\b172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\b",
+            r"\b127\.\d+\.\d+\.\d+\b",
+            r"\bfe80:",
+            r"@",
+        ):
             self.assertIsNone(re.search(pat, blob), pat)
         for t in _all_text(notices.notices()):
             self.assertIsNone(re.search(r"\b(AI|model|models|governor|assistant)\b", t, re.I), t)

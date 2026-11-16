@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """facing.py: which screen faces the user while folded back, from the accelerometer z reading."""
+
 import unittest
 
 from opos.native import facing
@@ -7,8 +8,21 @@ from opos.native import facing
 
 class Verdict(unittest.TestCase):
     def test_the_measured_readings(self):
-        for z, want in ((920, "right"), (945, "right"), (1024, "right"), (-945, "left"), (-800, "left"), (-1015, "left"),
-                        (0, None), (200, None), (-200, None), (358, None), (359, "right"), (-358, None), (-359, "left")):
+        for z, want in (
+            (920, "right"),
+            (945, "right"),
+            (1024, "right"),
+            (-945, "left"),
+            (-800, "left"),
+            (-1015, "left"),
+            (0, None),
+            (200, None),
+            (-200, None),
+            (358, None),
+            (359, "right"),
+            (-358, None),
+            (-359, "left"),
+        ):
             with self.subTest(z=z):
                 self.assertEqual(facing.verdict(z), want)
 
@@ -38,7 +52,7 @@ class Holding(unittest.TestCase):
         f = facing.Facing(fallback="left")
         for t in (0.0, 0.5, 0.9):
             f.update(900, t)
-        for i in range(40):                 # alternating readings every 0.2 s: no verdict holds for 0.8 s
+        for i in range(40):  # alternating readings every 0.2 s: no verdict holds for 0.8 s
             f.update(-900 if i % 2 else 900, 1.0 + 0.2 * i)
         self.assertEqual(f.current, "right")
 
@@ -47,7 +61,7 @@ class Holding(unittest.TestCase):
         for t in (0.0, 0.5, 0.9):
             f.update(900, t)
         f.update(-900, 1.0)
-        f.update(0, 1.4)                    # held upright: unclear, the run towards "left" is broken
+        f.update(0, 1.4)  # held upright: unclear, the run towards "left" is broken
         self.assertEqual(f.update(-900, 1.9), "right")
         self.assertEqual(f.update(-900, 2.8), "left")
 

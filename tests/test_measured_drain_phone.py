@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Measured drain in the web Phone: a live phone's time left and goal estimate follow its real discharge, not the model."""
+
 import json
 import unittest
 from unittest import mock
@@ -23,8 +24,14 @@ class PhoneDrainTests(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def reader(self):
-        return {"level": round(self.true[0]), "temp_c": 29.0, "charging": self.charging[0], "source": "sysfs",
-                "health": 0.7, "health_source": "OPOS_BATTERY_HEALTH"}
+        return {
+            "level": round(self.true[0]),
+            "temp_c": 29.0,
+            "charging": self.charging[0],
+            "source": "sysfs",
+            "health": 0.7,
+            "health_source": "OPOS_BATTERY_HEALTH",
+        }
 
     def phone(self, **kw):
         b = LiveBattery(reader=self.reader, clock=lambda: self.now[0], refresh_s=15)

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Lease/input tests and production fake-tree wiring; no phone or sleep."""
+
 import configparser
 import io
 import os
@@ -53,8 +54,7 @@ class Presses(unittest.TestCase):
         self.assertEqual(self.press(state, 500_000, 600_000)[1], "short")
 
     def test_exact_short_limit_and_long_hold(self):
-        for duration, expected in ((0, "short"), (1_500_000, "short"),
-                                   (1_500_001, "light"), (10_000_000, "light")):
+        for duration, expected in ((0, "short"), (1_500_000, "short"), (1_500_001, "light"), (10_000_000, "light")):
             with self.subTest(duration=duration):
                 state, action = self.press(pk.PressState(), 0, duration)
                 self.assertEqual(action, expected)
@@ -130,8 +130,10 @@ class FakePanels:
 
     def read(self):
         self.reads += 1
-        result = tuple(value if present and readable else None
-                       for value, present, readable in zip(self.values, self.present, self.readable))
+        result = tuple(
+            value if present and readable else None
+            for value, present, readable in zip(self.values, self.present, self.readable)
+        )
         self.after_read()
         return result
 
@@ -156,8 +158,7 @@ class Lease(unittest.TestCase):
         self.now = 0
         self.probe = mock.Mock(return_value=True)
         self.log = mock.Mock()
-        self.daemon = pk.PowerKey(self.panels.read, self.panels.write, self.probe,
-                                  lambda: self.now, self.log)
+        self.daemon = pk.PowerKey(self.panels.read, self.panels.write, self.probe, lambda: self.now, self.log)
         self.daemon.start()
         self.panels.writes.clear()
         self.panels.passes.clear()
@@ -194,7 +195,7 @@ class Lease(unittest.TestCase):
         self.assertEqual(self.panels.passes, [4, 0])
 
     def test_inactive_or_failing_probe_denies_blank(self):
-        for failure in (False, None, RuntimeError("probe"), subprocess.TimeoutExpired("probe", .5)):
+        for failure in (False, None, RuntimeError("probe"), subprocess.TimeoutExpired("probe", 0.5)):
             with self.subTest(failure=failure):
                 self.panels.values[:] = [0, 0]
                 self.probe.side_effect = failure if isinstance(failure, Exception) else None
@@ -301,8 +302,9 @@ class Lease(unittest.TestCase):
         self.assertIsNone(self.daemon.tick())
         self.assertEqual(self.panels.values, [0, 0])
         self.assertFalse(self.daemon.recovery_pending)
-        self.assertEqual(self.log.call_args_list, [mock.call("unblank recovery pending"),
-                                                 mock.call("unblank recovery confirmed")])
+        self.assertEqual(
+            self.log.call_args_list, [mock.call("unblank recovery pending"), mock.call("unblank recovery confirmed")]
+        )
 
     def test_failed_light_readback_keeps_retrying_and_logs_only_transitions(self):
         self.panels.writable[0] = False
@@ -365,8 +367,7 @@ class Lease(unittest.TestCase):
         self.daemon.event(event(510_000, 0, kind=0, code=3))
         self.assertEqual(self.panels.values, [0, 0])
         self.assertEqual(self.daemon.tick(), 1)  # Waiting for SYN_REPORT is pending input.
-        for item in (event(520_000, 1), event(530_000, 0), event(540_000, 0, kind=0, code=0),
-                     event(600_000, 0)):
+        for item in (event(520_000, 1), event(530_000, 0), event(540_000, 0, kind=0, code=0), event(600_000, 0)):
             self.daemon.event(item)
         self.assertEqual(self.panels.passes, [4, 0])
         self.short(1_000_000)
@@ -438,23 +439,28 @@ class DeviceLookup(FakeTree):
         streams = [mock.Mock(), mock.Mock()]
         for path, stream in zip(paths, streams):
             path.open.return_value = stream
-        with mock.patch.object(pk, "find_device", side_effect=paths) as lookup, \
-                mock.patch.object(pk.os, "set_blocking") as nonblocking, \
-                mock.patch.object(pk.fcntl, "ioctl") as ioctl:
+        with (
+            mock.patch.object(pk, "find_device", side_effect=paths) as lookup,
+            mock.patch.object(pk.os, "set_blocking") as nonblocking,
+            mock.patch.object(pk.fcntl, "ioctl") as ioctl,
+        ):
             for stream in streams:
                 self.assertIs(pk.open_input(self.root), stream)
         self.assertEqual(lookup.call_args_list, [mock.call(self.root)] * 2)
         for stream in streams:
             self.assertIn(mock.call(stream.fileno(), False), nonblocking.call_args_list)
-            self.assertIn(mock.call(stream, pk.EVIOCSCLOCKID, struct.pack("=i", pk.time.CLOCK_MONOTONIC)),
-                          ioctl.call_args_list)
+            self.assertIn(
+                mock.call(stream, pk.EVIOCSCLOCKID, struct.pack("=i", pk.time.CLOCK_MONOTONIC)), ioctl.call_args_list
+            )
 
     def test_clock_failure_closes_device_and_does_not_use_wall_clock(self):
         path = mock.Mock()
-        with mock.patch.object(pk, "find_device", return_value=path), \
-                mock.patch.object(pk.os, "set_blocking"), \
-                mock.patch.object(pk.fcntl, "ioctl", side_effect=OSError("clock")), \
-                self.assertRaises(OSError):
+        with (
+            mock.patch.object(pk, "find_device", return_value=path),
+            mock.patch.object(pk.os, "set_blocking"),
+            mock.patch.object(pk.fcntl, "ioctl", side_effect=OSError("clock")),
+            self.assertRaises(OSError),
+        ):
             pk.open_input(self.root)
         path.open.return_value.close.assert_called_once_with()
 
@@ -557,8 +563,9 @@ class ProductionLoop(FakeTree):
                     self.assertEqual(read, [stream])
                     if calls <= 2:
                         self.assertEqual(timeout, 1)
-                        self.assertEqual(pk.read_panels(self.root),
-                                         pk.BLANK if failure == "unwritable" else (None, None))
+                        self.assertEqual(
+                            pk.read_panels(self.root), pk.BLANK if failure == "unwritable" else (None, None)
+                        )
                         self.assertIn("unblank recovery pending", log.getvalue())
                         if calls == 2:
                             blocked = False
@@ -572,8 +579,11 @@ class ProductionLoop(FakeTree):
                     self.assertIsNone(timeout)
                     raise self.StopLoop
 
-                with mock.patch.object(Path, "open", open_panel), \
-                        mock.patch.object(pk.sys, "stderr", log), self.assertRaises(self.StopLoop):
+                with (
+                    mock.patch.object(Path, "open", open_panel),
+                    mock.patch.object(pk.sys, "stderr", log),
+                    self.assertRaises(self.StopLoop),
+                ):
                     pk.run(self.root, is_active=probe, wait=wait, open_device=open_device)
                 self.assertEqual(calls, 3)
                 open_device.assert_called_once_with(self.root)
@@ -588,12 +598,20 @@ class ShellProbe(unittest.TestCase):
             self.assertTrue(pk.shell_active())
         run.assert_called_once_with(
             ["systemctl", "is-active", "--quiet", "opos.service"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=0.5, check=False)
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=0.5,
+            check=False,
+        )
 
     def test_nonzero_error_and_timeout_are_inactive_and_recover_blank(self):
-        for failure in (mock.Mock(returncode=1), mock.Mock(returncode=3), FileNotFoundError("systemctl"),
-                        subprocess.TimeoutExpired("systemctl", 0.5)):
+        for failure in (
+            mock.Mock(returncode=1),
+            mock.Mock(returncode=3),
+            FileNotFoundError("systemctl"),
+            subprocess.TimeoutExpired("systemctl", 0.5),
+        ):
             with self.subTest(failure=failure):
                 panels = FakePanels((4, 4))
                 daemon = pk.PowerKey(panels.read, panels.write, pk.shell_active)
@@ -628,6 +646,7 @@ class InputLoop(unittest.TestCase):
             self.assertEqual(self.panels.passes, [0])  # Startup only.
             self.probe.assert_not_called()
             raise self.StopLoop
+
         self.run_loop(wait)
         self.assertEqual(self.panels.passes, [0, 0])  # Finally-stop lights too.
 
@@ -635,6 +654,7 @@ class InputLoop(unittest.TestCase):
         self.panels.present[0] = False
         self.panels.values[:] = [4, 4]
         calls = 0
+
         def wait(read, write, error, timeout):
             nonlocal calls
             self.assertTrue(self.open.called)
@@ -649,6 +669,7 @@ class InputLoop(unittest.TestCase):
             self.assertFalse(self.daemon.recovery_pending)
             self.assertIsNone(timeout)
             raise self.StopLoop
+
         self.run_loop(wait)
         self.assertEqual(self.panels.values, [0, 0])
 
@@ -656,6 +677,7 @@ class InputLoop(unittest.TestCase):
         self.panels.values[:] = [4, 4]
         self.panels.writable[0] = False
         calls = 0
+
         def wait(read, write, error, timeout):
             nonlocal calls
             self.assertTrue(self.open.called)
@@ -670,12 +692,14 @@ class InputLoop(unittest.TestCase):
             self.assertEqual(self.panels.values, [0, 0])
             self.assertFalse(self.daemon.recovery_pending)
             raise self.StopLoop
+
         self.run_loop(wait)
 
     def test_partial_event_never_blocks_tick_and_assembles_later(self):
         pieces = [wire(0, 1)[:5], wire(0, 1)[5:], wire(100_000, 0)]
         self.stream.read.side_effect = pieces
         calls = 0
+
         def wait(read, write, error, timeout):
             nonlocal calls
             calls += 1
@@ -687,14 +711,16 @@ class InputLoop(unittest.TestCase):
                 self.assertEqual(self.panels.values, [4, 4])
                 self.assertEqual(timeout, 1)
                 raise self.StopLoop
-            self.now = .1 if calls == 3 else 0
+            self.now = 0.1 if calls == 3 else 0
             return read, [], []
+
         self.run_loop(wait)
         self.assertEqual(self.stream.read.call_count, 3)  # One read per readiness, no assembly loop.
 
     def test_repeat_flood_cannot_postpone_tick_or_expiry(self):
         self.stream.read.side_effect = [wire(0, 1), wire(1_000_000, 2), wire(2_000_000, 2)]
         calls = 0
+
         def wait(read, write, error, timeout):
             nonlocal calls
             calls += 1
@@ -705,6 +731,7 @@ class InputLoop(unittest.TestCase):
                 raise self.StopLoop
             self.now = calls - 1
             return read, [], []
+
         self.run_loop(wait)
 
     def test_tick_runs_between_buffered_events_before_processing_more_input(self):
@@ -717,6 +744,7 @@ class InputLoop(unittest.TestCase):
         packed = wire(0, 1) + wire(100_000, 0) + pk.INPUT_EVENT.pack(*event(200_000, 1, code=114))
         self.stream.read.return_value = packed
         handle = self.daemon.event
+
         def check_event(item):
             if item.code == 114:
                 # The shell became inactive at the blank probe. Recover before
@@ -724,8 +752,10 @@ class InputLoop(unittest.TestCase):
                 self.assertEqual(self.panels.values, [0, 0])
                 self.assertEqual(self.panels.passes, [0, 4, 0])
             handle(item)
+
         self.daemon.event = check_event
         calls = 0
+
         def wait(read, write, error, timeout):
             nonlocal calls
             calls += 1
@@ -733,6 +763,7 @@ class InputLoop(unittest.TestCase):
                 return read, [], []
             self.assertEqual(self.probe.call_count, 2)
             raise self.StopLoop
+
         self.run_loop(wait)
 
     def test_would_block_or_incomplete_read_returns_through_tick(self):
@@ -741,6 +772,7 @@ class InputLoop(unittest.TestCase):
                 self.setUp()
                 self.stream.read.side_effect = [chunk, wire(0, 1)]
                 calls = 0
+
                 def wait(read, write, error, timeout):
                     nonlocal calls
                     calls += 1
@@ -749,15 +781,18 @@ class InputLoop(unittest.TestCase):
                         self.assertEqual(self.daemon.press.pressed_at, 0)
                         raise self.StopLoop
                     return read, [], []
+
                 self.run_loop(wait)
 
     def test_open_would_block_is_input_loss_with_finite_retry(self):
         self.open.side_effect = BlockingIOError("open unavailable")
+
         def wait(read, write, error, timeout):
             self.assertEqual(read, [])
             self.assertEqual(timeout, 1)
             self.assertEqual(self.panels.values, [0, 0])
             raise self.StopLoop
+
         with mock.patch.object(self.daemon, "input_lost", wraps=self.daemon.input_lost) as lost:
             self.run_loop(wait)
         lost.assert_called_once_with()
@@ -766,9 +801,12 @@ class InputLoop(unittest.TestCase):
         for failure in (b"", OSError("disconnected")):
             with self.subTest(failure=failure):
                 self.setUp()
-                self.stream.read.side_effect = [wire(0, 1) + wire(100_000, 0),
-                                                failure if isinstance(failure, Exception) else failure]
+                self.stream.read.side_effect = [
+                    wire(0, 1) + wire(100_000, 0),
+                    failure if isinstance(failure, Exception) else failure,
+                ]
                 calls = 0
+
                 def wait(read, write, error, timeout):
                     nonlocal calls
                     calls += 1
@@ -783,18 +821,21 @@ class InputLoop(unittest.TestCase):
                     self.assertEqual(self.panels.values, [0, 0])
                     self.assertIsNone(self.daemon.press.pressed_at)
                     raise self.StopLoop
+
                 self.run_loop(wait)
 
     def test_lookup_open_or_ioctl_failure_lights_and_retries_without_sleep(self):
         for error in (FileNotFoundError("lookup"), OSError("open"), OSError("clock ioctl")):
             with self.subTest(error=error):
                 self.open.side_effect = error
+
                 def wait(read, write, exceptional, timeout):
                     self.assertEqual(read, [])
                     self.assertEqual(timeout, 1)
                     self.assertEqual(self.panels.values, [0, 0])
                     self.assertIn(0, self.panels.passes)
                     raise self.StopLoop
+
                 with mock.patch.object(self.daemon, "input_lost", wraps=self.daemon.input_lost) as lost:
                     self.run_loop(wait)
                 lost.assert_called_once_with()
@@ -806,6 +847,7 @@ class InputLoop(unittest.TestCase):
         streams[1].read.return_value = wire(100_000, 0)
         self.open.side_effect = streams
         calls = 0
+
         def wait(read, write, error, timeout):
             nonlocal calls
             calls += 1
@@ -818,12 +860,14 @@ class InputLoop(unittest.TestCase):
                 self.assertIsNone(self.daemon.press.pressed_at)
                 raise self.StopLoop
             return read, [], []
+
         self.run_loop(wait)
 
     def test_sigterm_unwinds_into_final_light_attempt(self):
         def wait(*args):
             self.panels.values[:] = [4, 4]
             pk.terminate(pk.signal.SIGTERM, None)
+
         with self.assertRaises(SystemExit):
             pk.run(controller=self.daemon, wait=wait, open_device=self.open)
         self.assertEqual(self.panels.values, [0, 0])
@@ -840,9 +884,14 @@ class Helpers(FakeTree):
         # A scenario's injected sleep wins; otherwise helper retries never sleep.
         first = helper_env["PATH"].split(":")[0] if env and "PATH" in env else str(no_sleep)
         helper_env["PATH"] = f"{first}:{no_sleep}:{helper_env['PATH']}"
-        return subprocess.run(["sh", str(DUO / "opos-unblank")],
-                              env=helper_env,
-                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+        return subprocess.run(
+            ["sh", str(DUO / "opos-unblank")],
+            env=helper_env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     def test_unblank_helper_writes_zero_to_both_and_leaves_brightness(self):
         paths = self.panels()
@@ -885,8 +934,10 @@ class Helpers(FakeTree):
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
         sleep = fake_bin / "sleep"
-        sleep.write_text('#!/bin/sh\nnode="$OPOS_SYS_ROOT/sys/class/backlight/panel0-backlight/bl_power"\n'
-                         'rmdir "$node"\nprintf "4\\n" > "$node"\n')
+        sleep.write_text(
+            '#!/bin/sh\nnode="$OPOS_SYS_ROOT/sys/class/backlight/panel0-backlight/bl_power"\n'
+            'rmdir "$node"\nprintf "4\\n" > "$node"\n'
+        )
         sleep.chmod(0o755)
         result = self.helper({"PATH": f"{fake_bin}:/usr/bin:/bin"})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -898,14 +949,15 @@ class Helpers(FakeTree):
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
         cat = fake_bin / "cat"
-        cat.write_text('#!/bin/sh\nif [ ! -e "$OPOS_SYS_ROOT/interleaved" ]; then\n'
-                       '  touch "$OPOS_SYS_ROOT/interleaved"\n  printf "4\\n" > "$1"\nfi\n/bin/cat "$@"\n')
+        cat.write_text(
+            '#!/bin/sh\nif [ ! -e "$OPOS_SYS_ROOT/interleaved" ]; then\n'
+            '  touch "$OPOS_SYS_ROOT/interleaved"\n  printf "4\\n" > "$1"\nfi\n/bin/cat "$@"\n'
+        )
         cat.chmod(0o755)
         result = self.helper({"PATH": f"{fake_bin}:/usr/bin:/bin"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.root / "interleaved").exists())
         self.assertEqual([p.read_text() for p in paths], ["0\n"] * 2)
-
 
 
 class Packaging(FakeTree):
@@ -915,18 +967,34 @@ class Packaging(FakeTree):
 
     def install(self):
         self.put("opt/opos/src/opos/powerkey.py", (ROOT / "src/opos/powerkey.py").read_text())
-        result = subprocess.run(["sh", "-eu", "-c", 'here=$1; r=$2\n' + self.block("build-image.sh"),
-                                 "powerkey-test", str(DUO), str(self.root)], stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            [
+                "sh",
+                "-eu",
+                "-c",
+                "here=$1; r=$2\n" + self.block("build-image.sh"),
+                "powerkey-test",
+                str(DUO),
+                str(self.root),
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         for name in ("opos.service", "opos-fallback.service"):
             shutil.copyfile(DUO / name, self.root / "etc/systemd/system" / name)
 
     def verify(self):
         prelude = 'r=$1; w=$r/etc/systemd/system; fail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
-        return subprocess.run(["sh", "-c", prelude + self.block("verify-image.sh") + '\nexit "$fail"\n',
-                               "powerkey-test", str(self.root)], stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=10)
+        return subprocess.run(
+            ["sh", "-c", prelude + self.block("verify-image.sh") + '\nexit "$fail"\n', "powerkey-test", str(self.root)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     def test_actual_install_and_verification_blocks(self):
         self.install()
@@ -941,8 +1009,11 @@ class Packaging(FakeTree):
 
     def test_verification_rejects_missing_module_helper_or_enable_link(self):
         self.install()
-        for name in ("opt/opos/src/opos/powerkey.py", "usr/libexec/opos/opos-unblank",
-                     "etc/systemd/system/opos.service.wants/opos-powerkey.service"):
+        for name in (
+            "opt/opos/src/opos/powerkey.py",
+            "usr/libexec/opos/opos-unblank",
+            "etc/systemd/system/opos.service.wants/opos-powerkey.service",
+        ):
             with self.subTest(name=name):
                 path = self.root / name
                 saved = path.with_name(path.name + ".saved")
@@ -972,17 +1043,22 @@ class Packaging(FakeTree):
         unit = configparser.ConfigParser(strict=False, interpolation=None)
         unit.optionxform = str
         unit.read_string((DUO / "opos-powerkey.service").read_text())
-        for section, key, expected in (("Service", "Restart", "always"),
-                                       ("Service", "RestartSec", "3"),
-                                       ("Unit", "StartLimitIntervalSec", "0")):
+        for section, key, expected in (
+            ("Service", "Restart", "always"),
+            ("Service", "RestartSec", "3"),
+            ("Unit", "StartLimitIntervalSec", "0"),
+        ):
             with self.subTest(section=section, key=key):
                 self.assertEqual(unit.get(section, key), expected)
 
     def test_verification_rejects_later_effective_command_resets_and_replacements(self):
         self.install()
-        for unit, key in (("opos-powerkey.service", "ExecStopPost"),
-                          ("opos-powerkey.service", "ExecStartPre"),
-                          ("opos.service", "ExecStartPre"), ("opos-fallback.service", "ExecStartPre")):
+        for unit, key in (
+            ("opos-powerkey.service", "ExecStopPost"),
+            ("opos-powerkey.service", "ExecStartPre"),
+            ("opos.service", "ExecStartPre"),
+            ("opos-fallback.service", "ExecStartPre"),
+        ):
             path = self.root / "etc/systemd/system" / unit
             original = path.read_text()
             for replacement in ("", "/bin/true"):
@@ -996,9 +1072,12 @@ class Packaging(FakeTree):
 
     def test_verification_rejects_later_resets_with_systemd_whitespace(self):
         self.install()
-        for unit, key in (("opos-powerkey.service", "ExecStopPost"),
-                          ("opos-powerkey.service", "ExecStartPre"),
-                          ("opos.service", "ExecStartPre"), ("opos-fallback.service", "ExecStartPre")):
+        for unit, key in (
+            ("opos-powerkey.service", "ExecStopPost"),
+            ("opos-powerkey.service", "ExecStartPre"),
+            ("opos.service", "ExecStartPre"),
+            ("opos-fallback.service", "ExecStartPre"),
+        ):
             path = self.root / "etc/systemd/system" / unit
             original = path.read_text()
             with self.subTest(unit=unit, key=key):

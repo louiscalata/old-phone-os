@@ -5,6 +5,7 @@ Static checks on the page's own CSS and scripts. What the real layout does (a 10
 the field and Send above the keyboard) can only be measured in a browser: tests/test_span.py does it for the hinge, and the
 measurements for this track are in docs/jaryo-panes.md section 11.
 """
+
 import json
 import os
 import re
@@ -77,7 +78,9 @@ class Keyboard(unittest.TestCase):
     def test_sticky_controls_were_tried_and_are_not_used(self):
         # position:sticky on #controls is the plan's first idea: in the spanned grid the bar is stretched to its grid row and cannot leave
         # it (Send ended above the field), and without the keyboard it covers #msg. A scroll margin does the job without either.
-        css = re.sub(r'html\[data-ff="slideout"\][^{}]*\{[^{}]*\}', "", (STATIC / "phone-b.css").read_text(encoding="utf-8"))
+        css = re.sub(
+            r'html\[data-ff="slideout"\][^{}]*\{[^{}]*\}', "", (STATIC / "phone-b.css").read_text(encoding="utf-8")
+        )
         self.assertNotIn("sticky", css)
 
 
@@ -98,11 +101,24 @@ class HelperLog(unittest.TestCase):
     def setUpClass(cls):
         from tests import test_uxp31_helper_screen as h
         from opos import assist
+
         script = h.HARNESS.replace("const S={", "const S={" + HELPER_FOLLOWS, 1)
-        assert script != h.HARNESS, "tests/test_uxp31_helper_screen.py's harness changed: no 'const S={' to add a scenario to"
-        p = subprocess.run([NODE, "-e", script, str(STATIC / "phone-b.js"), h.WHY,
-                            json.dumps(assist.answer("what is paused?", env={}, free=0, context={"mode": "CRITICAL"}))],
-                           capture_output=True, text=True, timeout=60)
+        assert script != h.HARNESS, (
+            "tests/test_uxp31_helper_screen.py's harness changed: no 'const S={' to add a scenario to"
+        )
+        p = subprocess.run(
+            [
+                NODE,
+                "-e",
+                script,
+                str(STATIC / "phone-b.js"),
+                h.WHY,
+                json.dumps(assist.answer("what is paused?", env={}, free=0, context={"mode": "CRITICAL"})),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         assert p.returncode == 0, p.stderr
         cls.r = json.loads(p.stdout.strip().splitlines()[-1])
 
@@ -110,7 +126,9 @@ class HelperLog(unittest.TestCase):
         self.assertNotIn("error", self.r)
         self.assertEqual(self.r["followlog"]["scrollTop"], 777)
 
-    def test_a_focused_field_is_scrolled_back_above_the_keyboard_when_the_log_grows_but_a_resting_one_is_left_alone(self):
+    def test_a_focused_field_is_scrolled_back_above_the_keyboard_when_the_log_grows_but_a_resting_one_is_left_alone(
+        self,
+    ):
         r = self.r["followlog"]
         self.assertEqual(r["unfocused"]["reveals"], 0)
         self.assertGreater(len(r["reveals"]), 0)
@@ -215,8 +233,10 @@ def driver():
     """The UXP21 driver up to its cases, then this file's (the way tests/test_span.py builds its own)."""
     head, sep, _ = profiles.CDP.partition("async function run(")
     if not sep:
-        raise AssertionError("tests/test_uxp21_profiles.py's driver changed: it has no 'async function run(' for "
-                             "tests/test_w1_layout.py to replace; update MAIN here to match")
+        raise AssertionError(
+            "tests/test_uxp21_profiles.py's driver changed: it has no 'async function run(' for "
+            "tests/test_w1_layout.py to replace; update MAIN here to match"
+        )
     return head + MAIN
 
 
@@ -224,8 +244,14 @@ def states():
     """The canned /api/state answers the page boots from: the real ones plus eight threads, one with a 100 character link."""
     hidden, visible = Phone().state(), Phone(visible=True).state()
     for s in (hidden, visible):
-        s["threads"] = [{"number": "+1555010%d" % i, "name": "+1555010%d" % i,
-                         "preview": LINK if i == 3 else "Message number %d with some words in it to fill the page" % i} for i in range(8)]
+        s["threads"] = [
+            {
+                "number": "+1555010%d" % i,
+                "name": "+1555010%d" % i,
+                "preview": LINK if i == 3 else "Message number %d with some words in it to fill the page" % i,
+            }
+            for i in range(8)
+        ]
     return {"hidden": hidden, "visible": visible}
 
 
@@ -246,13 +272,28 @@ class Browser(unittest.TestCase):
             for asset in ("osk.js", "osk.css"):
                 shutil.copy(Path(osk.__file__).with_name("osk_static") / asset, Path(d) / asset)
             files["osk"] = Path(d) / "osk.html"
-            files["osk"].write_text(osk.inject(page(span=DUO), "n" * 22, {"OPOS_OSK": "1"}).replace('"/osk.', '"osk.'), encoding="utf-8")
+            files["osk"].write_text(
+                osk.inject(page(span=DUO), "n" * 22, {"OPOS_OSK": "1"}).replace('"/osk.', '"osk.'), encoding="utf-8"
+            )
             state = Path(d) / "state.json"
             state.write_text(json.dumps(states(), default=str), encoding="utf-8")
             drv = Path(d) / "cdp.js"
             drv.write_text(script, encoding="utf-8")
-            p = subprocess.run([NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri(), files["osk"].as_uri()],
-                               capture_output=True, text=True, timeout=180, env=dict(os.environ, TMPDIR=d))
+            p = subprocess.run(
+                [
+                    NODE,
+                    str(drv),
+                    chrome,
+                    files["span"].as_uri(),
+                    str(state),
+                    files["plain"].as_uri(),
+                    files["osk"].as_uri(),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=dict(os.environ, TMPDIR=d),
+            )
             if p.returncode:
                 raise AssertionError("CDP driver failed: " + p.stderr[-5000:])
             cls.r = json.loads(p.stdout.strip().splitlines()[-1])
@@ -286,13 +327,22 @@ class Browser(unittest.TestCase):
             for t in turns:
                 self.assertTrue(t["answered"]["shown"], name)
                 self.assertGreaterEqual(t["logs"], 1, name)
-                self.assertAlmostEqual(t["asked"], t["answered"]["q"]["top"], delta=1, msg=name + ": the field moved when the answer arrived")
+                self.assertAlmostEqual(
+                    t["asked"],
+                    t["answered"]["q"]["top"],
+                    delta=1,
+                    msg=name + ": the field moved when the answer arrived",
+                )
                 self.assertLessEqual(t["answered"]["q"]["bottom"], t["answered"]["kbd"] + 0.5, name)
-                self.assertLessEqual(t["answered"]["hs"]["bottom"], t["answered"]["kbd"] + 0.5, name + ": Send is under the keyboard")
+                self.assertLessEqual(
+                    t["answered"]["hs"]["bottom"], t["answered"]["kbd"] + 0.5, name + ": Send is under the keyboard"
+                )
 
     def test_changing_app_scrolls_the_page_back_to_the_top(self):
         for name in ("phone", "pane", "span"):
-            self.assertGreater(self.r["scrolled_" + name], 0, name + ": the page has to be scrolled for this to mean anything")
+            self.assertGreater(
+                self.r["scrolled_" + name], 0, name + ": the page has to be scrolled for this to mean anything"
+            )
             self.assertEqual(self.r["settings_" + name], 0, name)
 
 

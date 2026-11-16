@@ -90,11 +90,12 @@ def make_env(base):
     tools.mkdir(parents=True, exist_ok=True)
     systemctl = tools / "systemctl"
     systemctl.write_text(
-        '#!/bin/sh\n'
+        "#!/bin/sh\n"
         'case "$*" in\n'
         '  "--user list-unit-files --no-legend opos-server.service") exit 0 ;;\n'
         '  *) echo "unexpected systemctl call: $*" >&2; exit 99 ;;\n'
-        'esac\n', encoding="utf-8",
+        "esac\n",
+        encoding="utf-8",
     )
     systemctl.chmod(0o755)
     return {
@@ -163,18 +164,14 @@ def assert_sandboxed(env, args):
     for var in ("HOME", "OPOS_HOME", "OPOS_BIN_DIR", "OPOS_CONFIG_DIR"):
         value = env.get(var)
         if not value:
-            raise AssertionError(
-                "%s=%s is not under temp dir %s: install.sh was not run" % (var, value, tmp)
-            )
+            raise AssertionError("%s=%s is not under temp dir %s: install.sh was not run" % (var, value, tmp))
         resolved = Path(value).resolve()
         try:
             sandbox = _sandbox_for(resolved)
         except AssertionError:
             sandbox = None
         if sandbox is None or resolved == sandbox or _overlaps(resolved, ROOT.resolve()):
-            raise AssertionError(
-                "%s=%s is not under temp dir %s: install.sh was not run" % (var, value, tmp)
-            )
+            raise AssertionError("%s=%s is not under temp dir %s: install.sh was not run" % (var, value, tmp))
     if "--uninstall" in args and "--dry-run" not in args:
         source = Path(INSTALL_SH).resolve()
         try:
@@ -266,9 +263,7 @@ class SandboxGuardTest(unittest.TestCase):
             env = make_env(Path(tmp))
             fake_root = Path(tmp) / "worktree"
             fake_root.mkdir(parents=True)
-            (fake_root / ".git").write_text(
-                "gitdir" + chr(58) + " " + str(fake_root), encoding="utf-8"
-            )
+            (fake_root / ".git").write_text("gitdir" + chr(58) + " " + str(fake_root), encoding="utf-8")
             self.assertTrue((fake_root / ".git").is_file())
             installer_copy = fake_root / "install.sh"
             installer_copy.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -284,9 +279,9 @@ class SandboxGuardTest(unittest.TestCase):
         with fresh_sandbox() as tmp:
             self.assertIsNone(assert_sandboxed(make_env(Path(tmp)), ()))
 
-
     def test_rejects_unowned_temp_directory(self):
         import unittest.mock as mock
+
         mod = sys.modules[__name__]
         with tempfile.TemporaryDirectory() as other:
             env = make_env(Path(other))
@@ -298,6 +293,7 @@ class SandboxGuardTest(unittest.TestCase):
 
     def test_rejects_sandbox_root_and_checkout_overlap(self):
         import unittest.mock as mock
+
         mod = sys.modules[__name__]
         with fresh_sandbox() as tmp:
             env = make_env(Path(tmp))
@@ -312,7 +308,6 @@ class SandboxGuardTest(unittest.TestCase):
                     with self.assertRaises(AssertionError):
                         run_installer(env, "--help")
                     run_mock.assert_not_called()
-
 
     def test_fixture_git_env_isolated(self):
         """Hostile inherited GIT_* must not leak into fixture git env."""
@@ -480,10 +475,7 @@ class SandboxGuardTest(unittest.TestCase):
             repo.mkdir(parents=True)
             hostile_dir = str(ROOT.resolve())
             q = chr(39)
-            hostile_param = (
-                q + "core.hooksPath=" + hostile_dir + q
-                + " " + q + "core.worktree=" + hostile_dir + q
-            )
+            hostile_param = q + "core.hooksPath=" + hostile_dir + q + " " + q + "core.worktree=" + hostile_dir + q
             with mock.patch.dict(os.environ, {"GIT_CONFIG_PARAMETERS": hostile_param}):
                 env = fixture_git_env(repo)
             self.assertNotIn("GIT_CONFIG_PARAMETERS", env)
@@ -754,23 +746,35 @@ class InstallerTest(unittest.TestCase):
                 nested = target / "nested" / "keep.txt"
                 nested.parent.mkdir(parents=True)
                 nested.write_text(content, encoding="utf-8")
-                script = "FOUND=0\nDRY=0\n" + 'HOME="' + str(home) + '"\n' + func + 'remove_path "' + str(target) + '" f\n'
-                done = subprocess.run(["sh"], input=script, capture_output=True, text=True, env=dict(os.environ), timeout=TIMEOUT)
+                script = (
+                    "FOUND=0\nDRY=0\n" + 'HOME="' + str(home) + '"\n' + func + 'remove_path "' + str(target) + '" f\n'
+                )
+                done = subprocess.run(
+                    ["sh"], input=script, capture_output=True, text=True, env=dict(os.environ), timeout=TIMEOUT
+                )
                 self.assertNotEqual(done.returncode, 0, done.stderr)
                 self.assertTrue(nested.is_file())
                 self.assertEqual(nested.read_text(encoding="utf-8"), content)
                 self.assertTrue(target.is_dir())
                 shutil.rmtree(target)
                 target.write_text(content, encoding="utf-8")
-                script = "FOUND=0\nDRY=0\n" + 'HOME="' + str(home) + '"\n' + func + 'remove_path "' + str(target) + '" f\n'
-                done = subprocess.run(["sh"], input=script, capture_output=True, text=True, env=dict(os.environ), timeout=TIMEOUT)
+                script = (
+                    "FOUND=0\nDRY=0\n" + 'HOME="' + str(home) + '"\n' + func + 'remove_path "' + str(target) + '" f\n'
+                )
+                done = subprocess.run(
+                    ["sh"], input=script, capture_output=True, text=True, env=dict(os.environ), timeout=TIMEOUT
+                )
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertFalse(target.exists())
             nested_venv = venv_dir / "lib" / "keep.txt"
             nested_venv.parent.mkdir(parents=True)
             nested_venv.write_text(content, encoding="utf-8")
-            script = "FOUND=0\nDRY=0\n" + 'HOME="' + str(home) + '"\n' + func + 'remove_path "' + str(venv_dir) + '" d\n'
-            done = subprocess.run(["sh"], input=script, capture_output=True, text=True, env=dict(os.environ), timeout=TIMEOUT)
+            script = (
+                "FOUND=0\nDRY=0\n" + 'HOME="' + str(home) + '"\n' + func + 'remove_path "' + str(venv_dir) + '" d\n'
+            )
+            done = subprocess.run(
+                ["sh"], input=script, capture_output=True, text=True, env=dict(os.environ), timeout=TIMEOUT
+            )
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertFalse(venv_dir.exists())
             self.assertFalse(nested_venv.exists())
@@ -808,22 +812,28 @@ class InstallerTest(unittest.TestCase):
                 nested.write_text(content, encoding="utf-8")
             pwsh = shutil.which("pwsh") or shutil.which("powershell")
             if pwsh is not None:
+
                 def _q(p):
                     return "'" + str(p).replace("'", "''") + "'"
+
                 wrapper = (
-                    "function Say([string]$m) { Write-Host \"==> $m\" }\n"
+                    'function Say([string]$m) { Write-Host "==> $m" }\n'
                     "$found=$false\n"
                     "$ErrorActionPreference='Continue'\n"
                     "$Launcher=" + _q(launcher) + "\n"
                     "$VenvDir=" + _q(venv) + "\n"
                     "$Manifest=" + _q(manifest) + "\n"
                     "$OposHome=" + _q(opos_home) + "\n"
-                    "$DryRun=$false\n"
-                    + loop
+                    "$DryRun=$false\n" + loop
                 )
                 script = base / "run_uninstall.ps1"
                 script.write_text(wrapper, encoding="utf-8")
-                subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-File", str(script)], capture_output=True, text=True, timeout=TIMEOUT)
+                subprocess.run(
+                    [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script)],
+                    capture_output=True,
+                    text=True,
+                    timeout=TIMEOUT,
+                )
             else:
                 self.skipTest("PowerShell unavailable")
             for target in (launcher, manifest):
@@ -859,8 +869,8 @@ class InstallerTest(unittest.TestCase):
         self.assertIn("('set \"PYTHONPATH=' + $BatchSrc + '\"')", bat_text)
         self.assertIn("('\"' + $BatchPy + '\" -m opos.setup %*')", bat_text)
         self.assertEqual(block.count("[System.IO.File]::WriteAllText("), 2)
-        self.assertIn("WriteAllText($Launcher, ($bat -join \"`r`n\"), $enc)", block)
-        self.assertIn("WriteAllText($Manifest, \"launcher=$Launcher`r`nvenv=$VenvDir`r`nrepo=$Root\", $enc)", block)
+        self.assertIn('WriteAllText($Launcher, ($bat -join "`r`n"), $enc)', block)
+        self.assertIn('WriteAllText($Manifest, "launcher=$Launcher`r`nvenv=$VenvDir`r`nrepo=$Root", $enc)', block)
         self.assertNotIn("Set-Content", block)
         self.assertNotIn("encoding ascii", block.lower())
 
@@ -1140,8 +1150,7 @@ class InstallerTest(unittest.TestCase):
                                 if proc.poll() is not None:
                                     out, err = proc.communicate()
                                     self.fail(
-                                        "installer exited early: %s stdout=%r stderr=%r"
-                                        % (proc.returncode, out, err)
+                                        "installer exited early: %s stdout=%r stderr=%r" % (proc.returncode, out, err)
                                     )
                                 if ready.exists():
                                     break
@@ -1161,11 +1170,7 @@ class InstallerTest(unittest.TestCase):
                                 release.write_text("go", encoding="utf-8")
                             out, err = proc.communicate(timeout=TIMEOUT)
                             self.assertEqual(proc.returncode, expected, err)
-                            leftovers = (
-                                list(opos_home.glob(".venv-staging.*"))
-                                if opos_home.exists()
-                                else []
-                            )
+                            leftovers = list(opos_home.glob(".venv-staging.*")) if opos_home.exists() else []
                             self.assertEqual(leftovers, [], "staging left: %r" % (leftovers,))
                             self.assertFalse((opos_home / "manifest").exists())
                             self.assertFalse(launcher_path(env).exists())
@@ -1220,8 +1225,8 @@ class InstallerTest(unittest.TestCase):
                             "    sys.exit(0)\n"
                             "if argv[1:3] == ['-m', 'venv']:\n"
                             "    Path(argv[-1]).mkdir(parents=True, exist_ok=True)\n"
-                            + handlers +
-                            "    ready.write_text('ready', encoding='utf-8')\n"
+                            + handlers
+                            + "    ready.write_text('ready', encoding='utf-8')\n"
                             "    end = time.monotonic() + 30\n"
                             "    while time.monotonic() < end:\n"
                             "        time.sleep(0.05)\n"
@@ -1254,8 +1259,7 @@ class InstallerTest(unittest.TestCase):
                                 if proc.poll() is not None:
                                     out, err = proc.communicate()
                                     self.fail(
-                                        "installer exited early: %s stdout=%r stderr=%r"
-                                        % (proc.returncode, out, err)
+                                        "installer exited early: %s stdout=%r stderr=%r" % (proc.returncode, out, err)
                                     )
                                 if ready.exists():
                                     break
@@ -1270,11 +1274,7 @@ class InstallerTest(unittest.TestCase):
                             os.killpg(proc.pid, sig)
                             out, err = proc.communicate(timeout=TIMEOUT)
                             self.assertEqual(proc.returncode, expected, err)
-                            leftovers = (
-                                list(opos_home.glob(".venv-staging.*"))
-                                if opos_home.exists()
-                                else []
-                            )
+                            leftovers = list(opos_home.glob(".venv-staging.*")) if opos_home.exists() else []
                             self.assertEqual(leftovers, [], "staging left: %r" % (leftovers,))
                             self.assertFalse((opos_home / "manifest").exists())
                             self.assertFalse(launcher_path(env).exists())
@@ -1305,7 +1305,7 @@ class InstallerTest(unittest.TestCase):
                 "  exit 0\n"
                 "fi\n"
                 'if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then\n'
-                "  venv_path=\"\"\n"
+                '  venv_path=""\n'
                 '  for arg in "$@"; do\n'
                 '    venv_path="$arg"\n'
                 "  done\n"
@@ -1413,9 +1413,7 @@ class InstallerTest(unittest.TestCase):
             marker = home / "marker"
             installer = repo / "install.sh"
             installer.write_text(
-                "#!/bin/sh\n"
-                'd="$(cd "$(dirname "$0")" && pwd -P)"\n'
-                'printf "%s\\n" "$d" "$*" > "' + str(marker) + '"\n',
+                '#!/bin/sh\nd="$(cd "$(dirname "$0")" && pwd -P)"\nprintf "%s\\n" "$d" "$*" > "' + str(marker) + '"\n',
                 encoding="utf-8",
             )
             installer.chmod(0o755)
@@ -1521,7 +1519,10 @@ class UninstallRecoveryTest(unittest.TestCase):
                 Path("/etc/ssh/sshd_config.d/60-opos.conf").exists(),
                 "host has a real OPOS sshd drop-in; this test would touch it",
             )
-            manifest.write_text(f"launcher={base / 'nonexistent_launcher'}\nvenv={base / 'nonexistent_venv'}\nrepo={base / 'nonexistent_repo'}\n", encoding="utf-8")
+            manifest.write_text(
+                f"launcher={base / 'nonexistent_launcher'}\nvenv={base / 'nonexistent_venv'}\nrepo={base / 'nonexistent_repo'}\n",
+                encoding="utf-8",
+            )
             result_bad = run_installer(env, "--uninstall", "--yes")
             bad_detail = f"stdout={result_bad.stdout!r} stderr={result_bad.stderr!r}"
             self.assertNotEqual(result_bad.returncode, 0, bad_detail)
@@ -1536,13 +1537,36 @@ class UninstallRecoveryTest(unittest.TestCase):
             result_ok = run_installer(env, "--uninstall", "--yes")
             ok_detail = f"stdout={result_ok.stdout!r} stderr={result_ok.stderr!r}"
             self.assertEqual(result_ok.returncode, 0, ok_detail)
-            self.assertFalse(launcher.exists(), f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
-            self.assertFalse(manifest.exists(), f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
-            self.assertFalse(venv_python.exists(), f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
-            self.assertFalse(Path(env["OPOS_HOME"]).exists(), f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
-            self.assertEqual(config_files(env), [], f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
-            self.assertTrue(unowned.is_file(), f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
-            self.assertEqual(unowned.read_text(encoding="utf-8"), "keep", f'leftovers={sorted(p.name for p in Path(env["OPOS_HOME"]).glob("*")) if Path(env["OPOS_HOME"]).exists() else []} {ok_detail}')
+            self.assertFalse(
+                launcher.exists(),
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
+            self.assertFalse(
+                manifest.exists(),
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
+            self.assertFalse(
+                venv_python.exists(),
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
+            self.assertFalse(
+                Path(env["OPOS_HOME"]).exists(),
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
+            self.assertEqual(
+                config_files(env),
+                [],
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
+            self.assertTrue(
+                unowned.is_file(),
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
+            self.assertEqual(
+                unowned.read_text(encoding="utf-8"),
+                "keep",
+                f"leftovers={sorted(p.name for p in Path(env['OPOS_HOME']).glob('*')) if Path(env['OPOS_HOME']).exists() else []} {ok_detail}",
+            )
 
 
 class InstallerCloseTest(unittest.TestCase):
@@ -1742,7 +1766,6 @@ class InstallerCloseTest(unittest.TestCase):
                     with contextlib.suppress(Exception):
                         orig_close(captured["fd"])
 
-
     def test_missing_catalog_rejected_before_side_effects(self):
         """Missing catalog entry must fail before fetch, runner, or dirs."""
         import unittest.mock as mock
@@ -1937,7 +1960,7 @@ class PowerShellInstallerRegressionTest(unittest.TestCase):
         cleanup = live.split("finally {", 1)[1]
         self.assertIn("$env:PYTHONPATH = $OldPythonPath", cleanup)
         self.assertIn("Remove-Item Env:PYTHONPATH", cleanup)
-        self.assertNotIn("$env:PYTHONPATH =", self.text[:self.text.index(block)])
+        self.assertNotIn("$env:PYTHONPATH =", self.text[: self.text.index(block)])
 
     def test_native_failures_are_checked_before_reporting_success(self):
         for invocation, success in (
@@ -2014,7 +2037,9 @@ class PowerShellInstallerRegressionTest(unittest.TestCase):
             )
             done = subprocess.run(
                 [pwsh, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(driver)],
-                capture_output=True, text=True, timeout=TIMEOUT,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT,
             )
             self.assertEqual(done.returncode, 0, done.stderr)
             result = json.loads(done.stdout.splitlines()[-1])
@@ -2028,7 +2053,8 @@ class PowerShellInstallerRegressionTest(unittest.TestCase):
                 with self.subTest(initial=initial, mode=mode):
                     setup = (
                         "Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue\n"
-                        if initial is None else "$env:PYTHONPATH = 'caller path;with spaces'\n"
+                        if initial is None
+                        else "$env:PYTHONPATH = 'caller path;with spaces'\n"
                     )
                     setup += (
                         "$VenvPy = 'Invoke-FakePython'\n"
@@ -2051,14 +2077,18 @@ class PowerShellInstallerRegressionTest(unittest.TestCase):
         venv_start = self.text.index("if ((Test-Path -LiteralPath $VenvPy)")
         pip_start = self.text.index("if ($need) {")
         blocks = (
-            (self.text[venv_start:self.text.index("$req =", venv_start)], "$VenvPy = Join-Path $Root 'missing-python.exe'"),
-            (self.text[pip_start:self.text.index(self.selftest_block())], "$VenvPy = 'Invoke-FakePython'"),
+            (
+                self.text[venv_start : self.text.index("$req =", venv_start)],
+                "$VenvPy = Join-Path $Root 'missing-python.exe'",
+            ),
+            (self.text[pip_start : self.text.index(self.selftest_block())], "$VenvPy = 'Invoke-FakePython'"),
         )
         for block, venv_setup in blocks:
             for code in (0, 17):
                 with self.subTest(block=block.splitlines()[0], code=code):
                     result = self.run_fragment(
-                        block, venv_setup + "\n$Python = 'Invoke-FakePython'\n$PythonArgs = @()\n"
+                        block,
+                        venv_setup + "\n$Python = 'Invoke-FakePython'\n$PythonArgs = @()\n"
                         "$VenvDir = Join-Path $Root 'venv'\n$req = 'unused-requirements.txt'\n"
                         f"$DryRun = $false\n$need = $true\n$FakeCode = {code}\n$FakeThrow = $false",
                     )
@@ -2224,7 +2254,9 @@ class CmdQuotingTest(unittest.TestCase):
         text = Path(__file__).read_text(encoding="utf-8")
         good = chr(95) + "cmd" + chr(95) + "status" + chr(95) + "commandline(comspec, launcher)"
         self.assertEqual(text.count(good), 3)
-        bad = chr(91) + "comspec, " + chr(34) + chr(47) + "d" + chr(34) + ", " + chr(34) + chr(47) + "c" + chr(34) + ", "
+        bad = (
+            chr(91) + "comspec, " + chr(34) + chr(47) + "d" + chr(34) + ", " + chr(34) + chr(47) + "c" + chr(34) + ", "
+        )
         self.assertNotIn(bad, text)
 
 

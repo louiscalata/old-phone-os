@@ -2,6 +2,7 @@
 """deploy/duo-opos-boot.ps1 installs and RAM-boots the Duo OS image; it is never run here.
 The text tests read it as a file. The PowerShell tests parse it (and run its network probe against loopback)
 with pwsh or powershell when one is installed, and skip otherwise."""
+
 import base64
 import functools
 import json
@@ -15,9 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy" / "duo-opos-boot.ps1"
-HASHES = ("abec1fe9ce4cbb7a9296c3abd4fd7b4acc1283842e86f2bfe0879a7e84fae552",
-          "457d8d2397b83eeffb843090da17d7959bcef7ed08658591938b3cda27b8132f",
-          "892627cb4356d1d16c37bf243d700b5c9a0ab672d263de9ccd640c86b5cd6a5a")
+HASHES = (
+    "abec1fe9ce4cbb7a9296c3abd4fd7b4acc1283842e86f2bfe0879a7e84fae552",
+    "457d8d2397b83eeffb843090da17d7959bcef7ed08658591938b3cda27b8132f",
+    "892627cb4356d1d16c37bf243d700b5c9a0ab672d263de9ccd640c86b5cd6a5a",
+)
 
 
 def text():
@@ -43,7 +46,7 @@ def as_list(value):
 
 def header():
     lines = text().splitlines()
-    return "\n".join(lines[:next(i for i, line in enumerate(lines) if line.startswith("param("))])
+    return "\n".join(lines[: next(i for i, line in enumerate(lines) if line.startswith("param("))])
 
 
 class DuoBootScriptText(unittest.TestCase):
@@ -55,20 +58,22 @@ class DuoBootScriptText(unittest.TestCase):
 
     def test_header_documents_the_safety_rules(self):
         flat = " ".join(header().replace("#", " ").split())
-        for rule in ("SHA-256 of every file is checked before the first write",
-                     "the rootfs is checked again on the phone",
-                     "product surfaceduo, current-slot a, unlocked yes, battery 20 percent or more",
-                     "The misc brake",
-                     "exactly ONCE and never retried",
-                     "Device Error",
-                     "Only misc (erase, flash) and userdata (format) are written",
-                     "Nothing is written to boot, vbmeta, dtbo or recovery",
-                     "no slot is changed",
-                     "The first failure stops the script",
-                     "ERASES userdata",
-                     "Without -Yes it checks those files, prints the steps and stops",
-                     "Without -Key that step is skipped",
-                     "reboot bootloader"):
+        for rule in (
+            "SHA-256 of every file is checked before the first write",
+            "the rootfs is checked again on the phone",
+            "product surfaceduo, current-slot a, unlocked yes, battery 20 percent or more",
+            "The misc brake",
+            "exactly ONCE and never retried",
+            "Device Error",
+            "Only misc (erase, flash) and userdata (format) are written",
+            "Nothing is written to boot, vbmeta, dtbo or recovery",
+            "no slot is changed",
+            "The first failure stops the script",
+            "ERASES userdata",
+            "Without -Yes it checks those files, prints the steps and stops",
+            "Without -Key that step is skipped",
+            "reboot bootloader",
+        ):
             with self.subTest(rule=rule):
                 self.assertIn(rule, flat)
 
@@ -86,8 +91,21 @@ class DuoBootScriptText(unittest.TestCase):
                 if verb == "format:ext4":
                     self.assertEqual(target, "userdata")
         self.assertEqual(sorted(v.strip("'") for v, _ in calls).count("format:ext4"), 1)
-        for forbidden in ("set_active", "--slot", "flash:raw", "flashing", "oem ", "fastboot.exe reboot",
-                          "poweroff", "shutdown", "mkfs", "dd if=", "rm -", "systemctl reboot", "reboot -f"):
+        for forbidden in (
+            "set_active",
+            "--slot",
+            "flash:raw",
+            "flashing",
+            "oem ",
+            "fastboot.exe reboot",
+            "poweroff",
+            "shutdown",
+            "mkfs",
+            "dd if=",
+            "rm -",
+            "systemctl reboot",
+            "reboot -f",
+        ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, body)
         self.assertIsNone(re.search(r"\bflash\s+(?!misc\b)\S+", body.replace("flash misc", "")))
@@ -102,8 +120,8 @@ class DuoBootScriptText(unittest.TestCase):
         body = code()
         boots = [m.start() for m in re.finditer(r"\bFb boot\b", body)]
         self.assertEqual(len(boots), 2)
-        self.assertIn("surfaceduo1-twrp.img", body[boots[0]:boots[0] + 60])
-        self.assertIn("boot.img", body[boots[1]:boots[1] + 40])
+        self.assertIn("surfaceduo1-twrp.img", body[boots[0] : boots[0] + 60])
+        self.assertIn("boot.img", body[boots[1] : boots[1] + 40])
         self.assertLess(body.index("refusing a second RAM-boot"), boots[1])
         self.assertEqual(body.count("refusing a second RAM-boot"), 1)
         first_write = body.index("Set-MiscBrake $p[")
@@ -137,8 +155,17 @@ class DuoBootScriptText(unittest.TestCase):
         body = code()
         self.assertLess(body.index("if (-not $Yes)"), body.index("Fb getvar"))
         self.assertIn("[switch]$Yes", body)
-        self.assertIn("exit 0", body[body.index("if (-not $Yes)"):body.index("Fb getvar")])
-        for private in ("C:\\Users", "AppData", "/Users/", "/home/", "scratchpad", "duo_dev", "DUO-SERIAL-REDACTED", "Temp\\"):
+        self.assertIn("exit 0", body[body.index("if (-not $Yes)") : body.index("Fb getvar")])
+        for private in (
+            "C:\\Users",
+            "AppData",
+            "/Users/",
+            "/home/",
+            "scratchpad",
+            "duo_dev",
+            "DUO-SERIAL-REDACTED",
+            "Temp\\",
+        ):
             with self.subTest(private=private):
                 self.assertNotIn(private, text())
         self.assertIn("[string]$Serial = ''", body)
@@ -160,23 +187,31 @@ class DuoBootScriptText(unittest.TestCase):
         for dead in ("IPv4DefaultGateway", "Get-NetNeighbor", "Test-NetConnection", "NextHop"):
             with self.subTest(dead=dead):
                 self.assertNotIn(dead, body)
-        for live in ("System.Net.Sockets.TcpClient", "ConnectAsync", "Get-NetIPAddress", "Remote NDIS|RNDIS",
-                     "OwnIp.LastIndexOf('.')", "1..254"):
+        for live in (
+            "System.Net.Sockets.TcpClient",
+            "ConnectAsync",
+            "Get-NetIPAddress",
+            "Remote NDIS|RNDIS",
+            "OwnIp.LastIndexOf('.')",
+            "1..254",
+        ):
             with self.subTest(live=live):
                 self.assertIn(live, body)
         self.assertIn("[int]$PreferHost = 82", body)
         self.assertIn("Find-PhoneSsh $own $PreferHost 22", body)
         # The preferred host is probed alone before the sweep, and only inside the adapter's /24.
-        find = body[body.index("function Find-PhoneSsh"):body.index("function RndisAddress")]
+        find = body[body.index("function Find-PhoneSsh") : body.index("function RndisAddress")]
         self.assertLess(find.index("Test-Tcp @($Prefer)"), find.index("1..254"))
         self.assertIn("$net + $PreferHost", find)
         self.assertIn("-ne $OwnIp", find)
 
     def test_preflight_checks_each_throw_and_no_native_fastboot_call_can_bypass_the_wrapper(self):
         body = code()
-        checks = {"product": ("surfaceduo", "not a Surface Duo 1"),
-                  "current-slot": ("current-slot:", "current slot is not a"),
-                  "unlocked": ("unlocked:", "bootloader is not unlocked")}
+        checks = {
+            "product": ("surfaceduo", "not a Surface Duo 1"),
+            "current-slot": ("current-slot:", "current slot is not a"),
+            "unlocked": ("unlocked:", "bootloader is not unlocked"),
+        }
         for var, (pattern, notice) in checks.items():
             with self.subTest(getvar=var):
                 lines = [line for line in body.splitlines() if "Fb getvar %s)" % var in line]
@@ -201,7 +236,9 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertEqual(body.count("Native 'fastboot.exe'"), 1)
         self.assertIn("Native 'fastboot.exe'", function_text("Fb"))
         self.assertIn("& fastboot.exe devices", function_text("FastbootSerials"))
-        self.assertNotRegex(body, r"(?i)Start-Process|Invoke-Expression|\biex\b|&\s*['\"]?\$?fastboot\b(?!\.exe devices)")
+        self.assertNotRegex(
+            body, r"(?i)Start-Process|Invoke-Expression|\biex\b|&\s*['\"]?\$?fastboot\b(?!\.exe devices)"
+        )
         # The one adb call outside the wrapper (the push) names the serial too.
         for call in re.findall(r"Native 'adb\.exe' @\(([^)]*)\)", body):
             self.assertTrue(call.startswith("'-s', $Serial"), call)
@@ -213,8 +250,18 @@ class DuoBootScriptText(unittest.TestCase):
         for check in ("-PhoneIp must be an IPv4 address", "-PreferHost must be a host number"):
             at = body.index(check)
             with self.subTest(check=check):
-                for later in ("Resolve-Path", "New-Item", "Get-Command $t", "Get-FileHash", "if (-not $Yes)",
-                              "@(FastbootSerials)", "Fb getvar", "Set-MiscBrake $p[", "Fb boot", "Invoke-Ssh $ip"):
+                for later in (
+                    "Resolve-Path",
+                    "New-Item",
+                    "Get-Command $t",
+                    "Get-FileHash",
+                    "if (-not $Yes)",
+                    "@(FastbootSerials)",
+                    "Fb getvar",
+                    "Set-MiscBrake $p[",
+                    "Fb boot",
+                    "Invoke-Ssh $ip",
+                ):
                     self.assertLess(at, body.index(later), later)
         self.assertIn("if ($PhoneIp -and -not (Test-Ipv4 $PhoneIp))", body)
 
@@ -229,16 +276,18 @@ class DuoBootScriptText(unittest.TestCase):
 
     def test_header_documents_the_install_chain_guards(self):
         flat = " ".join(header().replace("#", " ").split())
-        for rule_text in ("must be a RAW ext4 image",
-                          "zstd, gzip, xz and Android sparse files are refused by their magic bytes",
-                          "the brake may be ABSENT",
-                          "tries the brake image once more (no second erase)",
-                          "stay in Boot Select",
-                          "adb commands included",
-                          "keep them open",
-                          "never the originals",
-                          "refuses to guess",
-                          "fingerprint that ssh accepted is printed"):
+        for rule_text in (
+            "must be a RAW ext4 image",
+            "zstd, gzip, xz and Android sparse files are refused by their magic bytes",
+            "the brake may be ABSENT",
+            "tries the brake image once more (no second erase)",
+            "stay in Boot Select",
+            "adb commands included",
+            "keep them open",
+            "never the originals",
+            "refuses to guess",
+            "fingerprint that ssh accepted is printed",
+        ):
             with self.subTest(rule=rule_text):
                 self.assertIn(rule_text, flat)
 
@@ -258,11 +307,17 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertIn("BRAKE WRITE FAILED", brake)
         self.assertEqual(brake.count("throw "), 2)
         warning = function_text("Show-BrakeWarning")
-        for words in ("MAY BE ABSENT", "KEEP THE PHONE IN BOOT SELECT", "power-cycle", "restart on its own", "wipes userdata"):
+        for words in (
+            "MAY BE ABSENT",
+            "KEEP THE PHONE IN BOOT SELECT",
+            "power-cycle",
+            "restart on its own",
+            "wipes userdata",
+        ):
             with self.subTest(words=words):
                 self.assertIn(words, warning)
         # ... and again last, in the catch, where it is not scrolled away.
-        caught = body[body.index("} catch {\n    $failed = $true"):]
+        caught = body[body.index("} catch {\n    $failed = $true") :]
         self.assertIn("if ($script:brakeMayBeAbsent)", caught)
         self.assertLess(caught.index("Show-BrakeWarning"), caught.index("} finally {"))
 
@@ -281,13 +336,13 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertLess(downs[0], brake.index("BRAKE WRITE FAILED"))
         self.assertGreater(downs[1], brake.rindex("Fb flash misc"))
         # The finally keeps the brake image whenever the flag is up, and says so when the catch did not.
-        final = body[body.index("} finally {\n    if ($script:brakeMayBeAbsent)"):]
+        final = body[body.index("} finally {\n    if ($script:brakeMayBeAbsent)") :]
         self.assertIn("if (-not $failed) { try { Show-BrakeWarning; Show-BrakeByHand } catch { } }", final)
         self.assertLess(final.index("Show-BrakeByHand"), final.index("Release-Staged"))
 
     def test_the_by_hand_brake_command_puts_the_staged_path_in_double_quotes(self):
         hand = function_text("Show-BrakeByHand")
-        self.assertIn("flash misc `\"$($p['misc-brake.img'])`\"\"", hand)
+        self.assertIn('flash misc `"$($p[\'misc-brake.img\'])`""', hand)
         self.assertNotIn("$orig", hand)
         self.assertNotIn("flash misc $(", hand)
 
@@ -330,12 +385,23 @@ class DuoBootScriptText(unittest.TestCase):
     def test_the_rootfs_is_checked_as_raw_ext4_before_any_hash_copy_or_phone_command(self):
         body = code()
         at = body.index("Get-Ext4Problem $p[$Rootfs]")
-        for later in ("Get-FileHash", "if (-not $Yes)", "Stage-Image $orig", "@(FastbootSerials)", "Fb getvar",
-                      "Set-MiscBrake $p["):
+        for later in (
+            "Get-FileHash",
+            "if (-not $Yes)",
+            "Stage-Image $orig",
+            "@(FastbootSerials)",
+            "Fb getvar",
+            "Set-MiscBrake $p[",
+        ):
             with self.subTest(later=later):
                 self.assertLess(at, body.index(later))
         check = function_text("Get-Ext4Problem")
-        for magic in ("0x28, 0xB5, 0x2F, 0xFD", "0x1F, 0x8B", "0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00", "0x3A, 0xFF, 0x26, 0xED"):
+        for magic in (
+            "0x28, 0xB5, 0x2F, 0xFD",
+            "0x1F, 0x8B",
+            "0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00",
+            "0x3A, 0xFF, 0x26, 0xED",
+        ):
             with self.subTest(magic=magic):
                 self.assertIn(magic, check)
         # Only the first 1200 bytes and the length are read: the image is never loaded.
@@ -357,10 +423,15 @@ class DuoBootScriptText(unittest.TestCase):
         # Hashed through the handle that is kept, after opening it: the bytes hashed are the bytes later read.
         self.assertLess(stage.index("New-Object System.IO.FileStream"), stage.index("ComputeHash($fs)"))
         self.assertNotIn("Get-FileHash", stage)
-        self.assertIn("    } else {\n        Release-Staged $held $staged $stage\n    }\n}\nif ($failed) { exit 1 }", body)
+        self.assertIn(
+            "    } else {\n        Release-Staged $held $staged $stage\n    }\n}\nif ($failed) { exit 1 }", body
+        )
         # ... except the verified brake image, kept for the by-hand command after a failed brake write.
-        self.assertIn("if ($script:brakeMayBeAbsent) {\n        if (-not $failed) { try { Show-BrakeWarning; Show-BrakeByHand } catch { } }\n"
-                      "        Release-Staged $held @($staged | Where-Object", body)
+        self.assertIn(
+            "if ($script:brakeMayBeAbsent) {\n        if (-not $failed) { try { Show-BrakeWarning; Show-BrakeByHand } catch { } }\n"
+            "        Release-Staged $held @($staged | Where-Object",
+            body,
+        )
         self.assertIn("Where-Object { $_ -ne $p['misc-brake.img'] }", body)
         # The staged rootfs is checked again, with its copy open.
         self.assertIn("$bad = Get-Ext4Problem $dst", body)
@@ -386,7 +457,7 @@ class DuoBootScriptText(unittest.TestCase):
         early = body.index("$other = @(RndisAdapters -Any)")
         self.assertLess(body.index("preflight ok"), early)
         self.assertLess(early, body.index("Set-MiscBrake $p["))
-        self.assertIn("if (-not $PhoneIp) {", body[early - 40:early])
+        self.assertIn("if (-not $PhoneIp) {", body[early - 40 : early])
         # The existing dev-key behaviour stays; the fingerprint ssh took is printed after the diagnostics.
         self.assertIn("StrictHostKeyChecking=no", function_text("Invoke-Ssh"))
         self.assertIn("ssh-keygen.exe -l -f $kh", function_text("Show-HostKey"))
@@ -402,8 +473,9 @@ def powershell():
         if not found:
             continue
         try:
-            done = subprocess.run([found, "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
-                                  capture_output=True, timeout=60)
+            done = subprocess.run(
+                [found, "-NoProfile", "-NonInteractive", "-Command", "exit 0"], capture_output=True, timeout=60
+            )
         except (OSError, subprocess.SubprocessError):
             continue
         if done.returncode == 0:
@@ -416,23 +488,30 @@ def powershell():
 # split at a marker line. The program is dot-sourced at the top level (global scope), with the script text in
 # $global:ScriptText.
 SCRIPT_MARKER = "\n#--OPOS-SCRIPT-FOLLOWS--\n"
-LOADER = ('$all = [Console]::In.ReadToEnd(); $m = "`n#--OPOS-SCRIPT-FOLLOWS--`n"; '
-          '$i = $all.IndexOf($m, [StringComparison]::Ordinal); $global:ScriptText = $all.Substring($i + $m.Length); '
-          '. ([scriptblock]::Create($all.Substring(0, $i)))')
+LOADER = (
+    '$all = [Console]::In.ReadToEnd(); $m = "`n#--OPOS-SCRIPT-FOLLOWS--`n"; '
+    "$i = $all.IndexOf($m, [StringComparison]::Ordinal); $global:ScriptText = $all.Substring($i + $m.Length); "
+    ". ([scriptblock]::Create($all.Substring(0, $i)))"
+)
 
 
 def run_powershell(program, timeout=180):
     """Run a PowerShell program with the script text available to it; its stdout is one JSON document."""
     program = "$ProgressPreference = 'SilentlyContinue'\n" + program
     encoded = base64.b64encode(LOADER.encode("utf-16-le")).decode("ascii")
-    done = subprocess.run([powershell(), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-                          input=program.encode("ascii") + SCRIPT_MARKER.encode("ascii") + SCRIPT.read_bytes(),
-                          capture_output=True, timeout=timeout)
+    done = subprocess.run(
+        [powershell(), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+        input=program.encode("ascii") + SCRIPT_MARKER.encode("ascii") + SCRIPT.read_bytes(),
+        capture_output=True,
+        timeout=timeout,
+    )
     out = done.stdout.decode("utf-8", "replace")
     if done.returncode != 0 or not out.strip():
-        raise AssertionError("powershell exit %s\nstdout: %s\nstderr: %s" % (
-            done.returncode, out[-2000:], done.stderr.decode("utf-8", "replace")[-2000:]))
-    return json.loads(out[out.index("{"):])
+        raise AssertionError(
+            "powershell exit %s\nstdout: %s\nstderr: %s"
+            % (done.returncode, out[-2000:], done.stderr.decode("utf-8", "replace")[-2000:])
+        )
+    return json.loads(out[out.index("{") :])
 
 
 AST = r"""
@@ -445,7 +524,9 @@ function FunctionText([string]$name) {
 }
 """
 
-PARSE = AST + r"""
+PARSE = (
+    AST
+    + r"""
 $cmds = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.CommandAst] -and $a.GetCommandName() -eq 'Fb' }, $true)
 $boots = @($cmds | Where-Object { $_.CommandElements[1].Extent.Text -eq 'boot' } | ForEach-Object {
     $n = $_.Parent; $nested = $false
@@ -459,11 +540,14 @@ $mandatory = @($ast.ParamBlock.Parameters | Where-Object { $_.Attributes | Where
 $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
 [pscustomobject]@{ errors = @($errors | ForEach-Object { $_.Message }); boots = $boots; mandatory = $mandatory; names = $names; version = "$($PSVersionTable.PSVersion)" } | ConvertTo-Json -Compress -Depth 4
 """
+)
 
 # The phone is host 82 of a /24 around this PC's own address; loopback stands in for that /24. A second
 # listener on host 20 (same port) is something else that answers on TCP 22: it tells "the preferred host was
 # probed first and alone" from "the sweep happened to find it".
-DISCOVER = AST + r"""
+DISCOVER = (
+    AST
+    + r"""
 . ([scriptblock]::Create((FunctionText 'Test-Tcp')))
 . ([scriptblock]::Create((FunctionText 'Find-PhoneSsh')))
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.82'), 0)
@@ -481,19 +565,24 @@ $sw = [Diagnostics.Stopwatch]::StartNew()
 $none = @(Find-PhoneSsh '127.0.0.147' 82 $port 1000)
 [pscustomobject]@{ swept = $swept; preferred = $preferred; preferred_other = $preferred_other; only = $only; none = $none.Count; none_ms = $sw.ElapsedMilliseconds } | ConvertTo-Json -Compress
 """
+)
 
 
 def ipv4_program(cases):
-    return (AST + ". ([scriptblock]::Create((FunctionText 'Test-Ipv4')))\n"
-            "$cases = '" + json.dumps(cases) + "' | ConvertFrom-Json\n"
-            "[pscustomobject]@{ results = @($cases | ForEach-Object { [bool](Test-Ipv4 $_) }) } | ConvertTo-Json -Compress\n")
+    return (
+        AST + ". ([scriptblock]::Create((FunctionText 'Test-Ipv4')))\n"
+        "$cases = '" + json.dumps(cases) + "' | ConvertFrom-Json\n"
+        "[pscustomobject]@{ results = @($cases | ForEach-Object { [bool](Test-Ipv4 $_) }) } | ConvertTo-Json -Compress\n"
+    )
 
 
 # ssh.exe is replaced by a function that behaves like OpenSSH with StrictHostKeyChecking=no and no known_hosts
 # entry: its first line, on stderr, is the "Permanently added" warning, unless LogLevel=ERROR was passed. It records
 # where it was started: the PowerShell location of the moment, and, on Windows, the working directory a REAL native
 # process gets from PowerShell (cmd.exe /c cd). Run once with a plain log folder and once with a space in its name.
-SSH = AST + r"""
+SSH = (
+    AST
+    + r"""
 $base = Join-Path ([IO.Path]::GetTempPath()) ('opos-duo-ssh-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $base | Out-Null
 try {
@@ -525,6 +614,7 @@ try {
     Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
 }
 """
+)
 
 # The whole script, run in this PowerShell session with fastboot.exe, adb.exe, ssh.exe, ssh-keygen.exe, the network
 # cmdlets, Get-PnpDevice and Start-Sleep replaced by functions: every fastboot and adb call is appended to a log, and
@@ -547,7 +637,9 @@ try {
 # (that is, is a handle held), and what does it hash to at that moment. tamper rewrites the original images when
 # the first getvar is answered, as a download or a sync tool might. others are RNDIS-like adapters that are up
 # from the start; late_others come up with the phone's own adapter once the kernel has been booted.
-FAKE_PHONE = AST + r"""
+FAKE_PHONE = (
+    AST
+    + r"""
 $work = Join-Path ([IO.Path]::GetTempPath()) ('opos-duo-boot-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
@@ -789,6 +881,7 @@ try {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 """
+)
 
 
 def fake_phone_program(runs):
@@ -806,7 +899,7 @@ def ext4_image(blocks=4, log_bs=0, length=4096, magic=0xEF53, head=b"", incompat
     struct.pack_into("<H", data, 1080, magic)
     struct.pack_into("<I", data, 1120, incompat)
     struct.pack_into("<I", data, 1360, blocks_hi)
-    data[:len(head)] = head
+    data[: len(head)] = head
     return bytes(data[:length])
 
 
@@ -825,9 +918,21 @@ EXT4_CASES = [
     ("compression magic one byte off", ext4_image(head=bytes.fromhex("28b52ffe")), ""),
     ("one byte short", ext4_image(blocks=5, length=5119), "describes 5120 bytes"),
     ("short by whole blocks", ext4_image(blocks=2, log_bs=2, length=4096), "describes 8192 bytes"),
-    ("block count that needs 64-bit arithmetic", ext4_image(blocks=0xFFFFFFFF, log_bs=2), "describes 17592186040320 bytes"),
-    ("64-bit block count of 16 TiB and more", ext4_image(blocks=16384, log_bs=2, length=1 << 26, incompat=0x80, blocks_hi=1), "16 TiB or more"),
-    ("8 KiB blocks (larger than a page of the Duo's kernel)", ext4_image(blocks=1, log_bs=3, length=8192), "larger than 4096 bytes"),
+    (
+        "block count that needs 64-bit arithmetic",
+        ext4_image(blocks=0xFFFFFFFF, log_bs=2),
+        "describes 17592186040320 bytes",
+    ),
+    (
+        "64-bit block count of 16 TiB and more",
+        ext4_image(blocks=16384, log_bs=2, length=1 << 26, incompat=0x80, blocks_hi=1),
+        "16 TiB or more",
+    ),
+    (
+        "8 KiB blocks (larger than a page of the Duo's kernel)",
+        ext4_image(blocks=1, log_bs=3, length=8192),
+        "larger than 4096 bytes",
+    ),
     ("64 KiB blocks", ext4_image(blocks=1, log_bs=6, length=65536), "larger than 4096 bytes"),
     ("zstd", ext4_image(head=bytes.fromhex("28b52ffd")), "zstd"),
     ("gzip", ext4_image(head=bytes.fromhex("1f8b")), "gzip"),
@@ -842,7 +947,9 @@ EXT4_CASES = [
     ("zero blocks", ext4_image(blocks=0), "no blocks"),
 ]
 
-EXT4 = AST + r"""
+EXT4 = (
+    AST
+    + r"""
 . ([scriptblock]::Create((FunctionText 'Get-Ext4Problem')))
 $work = Join-Path ([IO.Path]::GetTempPath()) ('opos-duo-ext4-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -858,10 +965,13 @@ try {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 """
+)
 
 # Stage-Image on its own: the copy is hashed through a handle that stays open and shares reading only; a copy that
 # does not hash to the expected value is refused and does not leave its handle behind; nothing is overwritten.
-STAGE = AST + r"""
+STAGE = (
+    AST
+    + r"""
 . ([scriptblock]::Create((FunctionText 'Stage-Image')))
 . ([scriptblock]::Create((FunctionText 'Release-Staged')))
 function Log($m) { }
@@ -906,6 +1016,7 @@ try {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 """
+)
 
 # What the fake phone answers, in the order the script asks, for a run that goes all the way. <S> stands for the
 # staging folder. The numbered names are the places a test makes a command fail.
@@ -932,15 +1043,34 @@ GOLDEN = [
     "fastboot -s SER1 flash misc <S>/misc-brake.img",
     "fastboot -s SER1 boot <S>/boot.img",
 ]
-(GETVAR_PRODUCT, GETVAR_SLOT, GETVAR_UNLOCKED, GETVAR_BATTERY, ERASE1, FLASH1, FORMAT, TWRP, ADB_DEVICES, MOUNT,
- MOUNTED, PUSH, SHA, UMOUNT, REBOOT, FB_DEVICES2, ERASE2, FLASH2, KERNEL) = range(2, 21)
+(
+    GETVAR_PRODUCT,
+    GETVAR_SLOT,
+    GETVAR_UNLOCKED,
+    GETVAR_BATTERY,
+    ERASE1,
+    FLASH1,
+    FORMAT,
+    TWRP,
+    ADB_DEVICES,
+    MOUNT,
+    MOUNTED,
+    PUSH,
+    SHA,
+    UMOUNT,
+    REBOOT,
+    FB_DEVICES2,
+    ERASE2,
+    FLASH2,
+    KERNEL,
+) = range(2, 21)
 STAGED_ARGS = ["misc-brake.img", "surfaceduo1-twrp.img", "rootfs.img", "misc-brake.img", "boot.img"]
 STAGE_DIR = re.compile(r"stage-\d{8}-\d{6}-[0-9a-f]{8}")
 
 
 def upto(index, *extra):
     """The commands up to and including GOLDEN[index], then `extra`: the last command a run may have issued."""
-    return GOLDEN[:index + 1] + list(extra)
+    return GOLDEN[: index + 1] + list(extra)
 
 
 def norm(call):
@@ -978,60 +1108,121 @@ def run_yes(runs):
 # The brake rows rely on the retry: after a failed erase or flash the brake image is written ONCE more, without a
 # second erase.
 BRAKE_MAY_BE_ABSENT = "THE MISC BRAKE MAY BE ABSENT"
-BRAKE_RETRY_OK = ["BRAKE WRITE FAILED", BRAKE_MAY_BE_ABSENT, "trying the brake image once more, without another erase",
-                  "the second try succeeded"]
-BRAKE_RETRY_FAILS = ["BRAKE WRITE FAILED", BRAKE_MAY_BE_ABSENT, "the misc brake could not be written",
-                     "KEEP THE PHONE IN BOOT SELECT", "To put the brake back by hand"]
-STOPS = [
-    ("other product", [rule("fastboot", "getvar product", "output", text="product: otherphone")],
-     upto(GETVAR_PRODUCT), ["not a Surface Duo 1"]),
-    ("slot b", [rule("fastboot", "getvar current-slot", "output", text="current-slot: b")],
-     upto(GETVAR_SLOT), ["current slot is not a"]),
-    ("bootloader locked", [rule("fastboot", "getvar unlocked", "output", text="unlocked: no")],
-     upto(GETVAR_UNLOCKED), ["bootloader is not unlocked"]),
-    ("battery 10 percent", [rule("fastboot", "getvar battery-level", "output", text="battery-level: 10")],
-     upto(GETVAR_BATTERY), ["needs 20 or more"]),
-    ("first brake: erase fails (exit code)", [rule("fastboot", "erase misc")],
-     upto(FLASH1), BRAKE_RETRY_OK),
-    ("first brake: erase answers FAILED", [rule("fastboot", "erase misc", "failed0")],
-     upto(FLASH1), BRAKE_RETRY_OK),
-    ("first brake: flash fails once (exit code)", [rule("fastboot", "flash misc", times=1)],
-     upto(FLASH1, GOLDEN[FLASH1]), BRAKE_RETRY_OK),
-    ("first brake: flash fails once (FAILED, exit 0)", [rule("fastboot", "flash misc", "failed0", times=1)],
-     upto(FLASH1, GOLDEN[FLASH1]), BRAKE_RETRY_OK),
-    ("first brake: flash fails twice", [rule("fastboot", "flash misc", "failed")],
-     upto(FLASH1, GOLDEN[FLASH1]), BRAKE_RETRY_FAILS),
-    ("first brake: erase and flash both fail", [rule("fastboot", "erase misc"), rule("fastboot", "flash misc")],
-     upto(FLASH1), BRAKE_RETRY_FAILS),
-    ("format fails", [rule("fastboot", "format:ext4", "failed")],
-     upto(FORMAT), ["format:ext4 userdata failed"]),
-    ("TWRP does not boot", [rule("fastboot", r"boot .*twrp")],
-     upto(TWRP), ["twrp.img failed"]),
-    ("TWRP mount command fails", [rule("adb", "mount -t ext4")],
-     upto(MOUNT), ["adb shell mountpoint -q /data || mount -t ext4"]),
-    ("/data is not mounted", [rule("adb", "echo MOUNTED", "output", text="UNMOUNTED")],
-     upto(MOUNTED), ["/data did not mount in TWRP"]),
-    ("push fails", [rule("adb", " push ")],
-     upto(PUSH), ["adb push failed"]),
-    ("sha256sum fails", [rule("adb", "sha256sum")],
-     upto(SHA), ["sha256sum /data/rootfs.img failed (exit 1)"]),
-    ("hash on the phone differs", [rule("adb", "sha256sum", "output", text="0" * 64 + "  /data/rootfs.img")],
-     upto(SHA), ["rootfs hash on the phone differs"]),
-    ("umount fails", [rule("adb", "umount")],
-     upto(UMOUNT), ["sync && umount /data failed (exit 1)"]),
-    ("reboot bootloader fails", [rule("adb", "reboot bootloader")],
-     upto(REBOOT), ["reboot bootloader failed (exit 1)"]),
-    ("second brake: erase fails", [rule("fastboot", "erase misc", skip=1)],
-     upto(FLASH2), BRAKE_RETRY_OK),
-    ("second brake: flash fails once", [rule("fastboot", "flash misc", skip=1, times=1)],
-     upto(FLASH2, GOLDEN[FLASH2]), BRAKE_RETRY_OK),
-    ("second brake: flash fails twice (FAILED, exit 0)", [rule("fastboot", "flash misc", "failed0", skip=1)],
-     upto(FLASH2, GOLDEN[FLASH2]), BRAKE_RETRY_FAILS),
-    ("second brake: erase and flash both fail", [rule("fastboot", "erase misc", skip=1), rule("fastboot", "flash misc", skip=1)],
-     upto(FLASH2), BRAKE_RETRY_FAILS),
-    ("kernel boot fails", [rule("fastboot", r"\sboot\s.*boot\.img$", "failed")],
-     upto(KERNEL), ["boot.img failed"]),
+BRAKE_RETRY_OK = [
+    "BRAKE WRITE FAILED",
+    BRAKE_MAY_BE_ABSENT,
+    "trying the brake image once more, without another erase",
+    "the second try succeeded",
 ]
+BRAKE_RETRY_FAILS = [
+    "BRAKE WRITE FAILED",
+    BRAKE_MAY_BE_ABSENT,
+    "the misc brake could not be written",
+    "KEEP THE PHONE IN BOOT SELECT",
+    "To put the brake back by hand",
+]
+STOPS = [
+    (
+        "other product",
+        [rule("fastboot", "getvar product", "output", text="product: otherphone")],
+        upto(GETVAR_PRODUCT),
+        ["not a Surface Duo 1"],
+    ),
+    (
+        "slot b",
+        [rule("fastboot", "getvar current-slot", "output", text="current-slot: b")],
+        upto(GETVAR_SLOT),
+        ["current slot is not a"],
+    ),
+    (
+        "bootloader locked",
+        [rule("fastboot", "getvar unlocked", "output", text="unlocked: no")],
+        upto(GETVAR_UNLOCKED),
+        ["bootloader is not unlocked"],
+    ),
+    (
+        "battery 10 percent",
+        [rule("fastboot", "getvar battery-level", "output", text="battery-level: 10")],
+        upto(GETVAR_BATTERY),
+        ["needs 20 or more"],
+    ),
+    ("first brake: erase fails (exit code)", [rule("fastboot", "erase misc")], upto(FLASH1), BRAKE_RETRY_OK),
+    ("first brake: erase answers FAILED", [rule("fastboot", "erase misc", "failed0")], upto(FLASH1), BRAKE_RETRY_OK),
+    (
+        "first brake: flash fails once (exit code)",
+        [rule("fastboot", "flash misc", times=1)],
+        upto(FLASH1, GOLDEN[FLASH1]),
+        BRAKE_RETRY_OK,
+    ),
+    (
+        "first brake: flash fails once (FAILED, exit 0)",
+        [rule("fastboot", "flash misc", "failed0", times=1)],
+        upto(FLASH1, GOLDEN[FLASH1]),
+        BRAKE_RETRY_OK,
+    ),
+    (
+        "first brake: flash fails twice",
+        [rule("fastboot", "flash misc", "failed")],
+        upto(FLASH1, GOLDEN[FLASH1]),
+        BRAKE_RETRY_FAILS,
+    ),
+    (
+        "first brake: erase and flash both fail",
+        [rule("fastboot", "erase misc"), rule("fastboot", "flash misc")],
+        upto(FLASH1),
+        BRAKE_RETRY_FAILS,
+    ),
+    ("format fails", [rule("fastboot", "format:ext4", "failed")], upto(FORMAT), ["format:ext4 userdata failed"]),
+    ("TWRP does not boot", [rule("fastboot", r"boot .*twrp")], upto(TWRP), ["twrp.img failed"]),
+    (
+        "TWRP mount command fails",
+        [rule("adb", "mount -t ext4")],
+        upto(MOUNT),
+        ["adb shell mountpoint -q /data || mount -t ext4"],
+    ),
+    (
+        "/data is not mounted",
+        [rule("adb", "echo MOUNTED", "output", text="UNMOUNTED")],
+        upto(MOUNTED),
+        ["/data did not mount in TWRP"],
+    ),
+    ("push fails", [rule("adb", " push ")], upto(PUSH), ["adb push failed"]),
+    ("sha256sum fails", [rule("adb", "sha256sum")], upto(SHA), ["sha256sum /data/rootfs.img failed (exit 1)"]),
+    (
+        "hash on the phone differs",
+        [rule("adb", "sha256sum", "output", text="0" * 64 + "  /data/rootfs.img")],
+        upto(SHA),
+        ["rootfs hash on the phone differs"],
+    ),
+    ("umount fails", [rule("adb", "umount")], upto(UMOUNT), ["sync && umount /data failed (exit 1)"]),
+    (
+        "reboot bootloader fails",
+        [rule("adb", "reboot bootloader")],
+        upto(REBOOT),
+        ["reboot bootloader failed (exit 1)"],
+    ),
+    ("second brake: erase fails", [rule("fastboot", "erase misc", skip=1)], upto(FLASH2), BRAKE_RETRY_OK),
+    (
+        "second brake: flash fails once",
+        [rule("fastboot", "flash misc", skip=1, times=1)],
+        upto(FLASH2, GOLDEN[FLASH2]),
+        BRAKE_RETRY_OK,
+    ),
+    (
+        "second brake: flash fails twice (FAILED, exit 0)",
+        [rule("fastboot", "flash misc", "failed0", skip=1)],
+        upto(FLASH2, GOLDEN[FLASH2]),
+        BRAKE_RETRY_FAILS,
+    ),
+    (
+        "second brake: erase and flash both fail",
+        [rule("fastboot", "erase misc", skip=1), rule("fastboot", "flash misc", skip=1)],
+        upto(FLASH2),
+        BRAKE_RETRY_FAILS,
+    ),
+    ("kernel boot fails", [rule("fastboot", r"\sboot\s.*boot\.img$", "failed")], upto(KERNEL), ["boot.img failed"]),
+]
+
 
 @unittest.skipUnless(powershell(), "needs pwsh or powershell to parse the script")
 class DuoBootScriptPowerShell(unittest.TestCase):
@@ -1066,17 +1257,47 @@ class DuoBootScriptPowerShell(unittest.TestCase):
 
     def test_ipv4_check_accepts_dotted_quads_only(self):
         good = ["0.0.0.0", "127.0.0.1", "203.0.113.7", "255.255.255.255", "9.9.9.9", "1.20.200.249"]
-        bad = ["", "phone.local", "1", "1.2", "1.2.3", "1.2.3.4.5", "256.1.1.1", "1.2.3.256", "01.2.3.4", "1.2.3.04",
-               "0x7f.0.0.1", "1.2.3.4:22", "2001:db8::1", " 1.2.3.4", "1.2.3.4 ", "1.2.3.4\n", "1.2.3.-4",
-               "\u0661.2.3.4", "1,2,3,4", "203.0.113.7/24", "-1.2.3.4"]
+        bad = [
+            "",
+            "phone.local",
+            "1",
+            "1.2",
+            "1.2.3",
+            "1.2.3.4.5",
+            "256.1.1.1",
+            "1.2.3.256",
+            "01.2.3.4",
+            "1.2.3.04",
+            "0x7f.0.0.1",
+            "1.2.3.4:22",
+            "2001:db8::1",
+            " 1.2.3.4",
+            "1.2.3.4 ",
+            "1.2.3.4\n",
+            "1.2.3.-4",
+            "\u0661.2.3.4",
+            "1,2,3,4",
+            "203.0.113.7/24",
+            "-1.2.3.4",
+        ]
         got = as_list(run_powershell(ipv4_program(good + bad))["results"])
         self.assertEqual(got, [True] * len(good) + [False] * len(bad))
 
     def test_a_bad_phone_ip_or_prefer_host_stops_before_any_tool_runs(self):
         """The late failure this prevents: a typo in -PhoneIp used to surface only after userdata was formatted,
         the rootfs pushed and the one kernel RAM-boot spent. Here every fastboot and adb call is recorded."""
-        bad_ips = ["phone.local", "203.0.113", "203.0.113.256", "1", "0x7f.0.0.1", "2001:db8::1", "203.0.113.7:22",
-                   "203.0.113.07", " 203.0.113.7", "203.0.113.7 "]
+        bad_ips = [
+            "phone.local",
+            "203.0.113",
+            "203.0.113.256",
+            "1",
+            "0x7f.0.0.1",
+            "2001:db8::1",
+            "203.0.113.7:22",
+            "203.0.113.07",
+            " 203.0.113.7",
+            "203.0.113.7 ",
+        ]
         runs = [{"label": "ip %r" % ip, "args": {"PhoneIp": ip, "Yes": True}} for ip in bad_ips]
         runs.append({"label": "dry run", "args": {"PhoneIp": "phone.local"}})
         runs += [{"label": "host %s" % n, "args": {"PreferHost": n, "Yes": True}} for n in (0, 255, -1, 1000)]
@@ -1084,17 +1305,22 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         self.assertEqual(len(got), len(runs))
         for run in got:
             with self.subTest(run=run["label"]):
-                expected = ("-PreferHost must be a host number from 1 to 254" if run["label"].startswith("host")
-                            else "-PhoneIp must be an IPv4 address")
+                expected = (
+                    "-PreferHost must be a host number from 1 to 254"
+                    if run["label"].startswith("host")
+                    else "-PhoneIp must be an IPv4 address"
+                )
                 self.assertEqual(run["threw"], expected)
                 self.assertEqual(as_list(run["calls"]), [], "a fastboot or adb command ran")
                 self.assertFalse(run["logs_dir"], "the script got as far as making its log folder")
 
     def test_good_phone_ip_and_prefer_host_pass_the_check_and_a_dry_run_runs_no_tool(self):
-        runs = [{"label": "ip", "args": {"PhoneIp": "203.0.113.7"}},
-                {"label": "first host", "args": {"PreferHost": 1}},
-                {"label": "last host", "args": {"PreferHost": 254, "PhoneIp": "255.255.255.255"}},
-                {"label": "none given", "args": {}}]
+        runs = [
+            {"label": "ip", "args": {"PhoneIp": "203.0.113.7"}},
+            {"label": "first host", "args": {"PreferHost": 1}},
+            {"label": "last host", "args": {"PreferHost": 254, "PhoneIp": "255.255.255.255"}},
+            {"label": "none given", "args": {}},
+        ]
         got = as_list(run_powershell(fake_phone_program(runs))["runs"])
         self.assertEqual(len(got), len(runs))
         for run in got:
@@ -1134,8 +1360,11 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 self.assertEqual(got["cwd"].lower(), got["logdir"].lower())
                 self.assertTrue(got["location_restored"], "Invoke-Ssh left the PowerShell location changed")
                 if got["native_cwd"] is not None:
-                    self.assertEqual(got["native_cwd"].rstrip("\\").lower(), got["logdir"].rstrip("\\").lower(),
-                                     "a real native process did not start in the log folder")
+                    self.assertEqual(
+                        got["native_cwd"].rstrip("\\").lower(),
+                        got["logdir"].rstrip("\\").lower(),
+                        "a real native process did not start in the log folder",
+                    )
 
     def test_get_ext4_problem_accepts_raw_ext4_and_names_what_is_wrong_with_anything_else(self):
         cases = [{"b64": b64(data)} for _, data, _ in EXT4_CASES]
@@ -1182,7 +1411,11 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         """Every path given to fastboot or adb is a copy in a new folder under the log folder, hashed through a
         handle that is still held when the tool is called (another opener asking for exclusive access is refused)
         and equal to the verified image, even though the originals were rewritten after they had been checked."""
-        runs = [{"label": "plain"}, {"label": "originals rewritten after the check", "tamper": True}, {"label": "again"}]
+        runs = [
+            {"label": "plain"},
+            {"label": "originals rewritten after the check", "tamper": True},
+            {"label": "again"},
+        ]
         got = run_yes(runs)
         folders = []
         for run in got:
@@ -1242,18 +1475,25 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 if "To put the brake back by hand" in says:
                     # Only the verified brake image is kept, with its folder, for the by-hand command.
                     self.assertEqual(len(as_list(run["stage_left"])), 2)
-                    self.assertEqual(as_list(run["stage_hashes"]), ["misc-brake.img|" + run["expected"]["misc-brake.img"]])
+                    self.assertEqual(
+                        as_list(run["stage_hashes"]), ["misc-brake.img|" + run["expected"]["misc-brake.img"]]
+                    )
                 else:
                     self.assertEqual(as_list(run["stage_left"]), [], "the staged copies were not released and removed")
                 # The kernel is only ever booted by the very last command of a full run.
                 self.assertLessEqual(sum(1 for c in run["calls"] if re.search(r" boot <S>/boot\.img$", c)), 1)
 
     def test_a_failed_brake_write_is_loud_and_the_retry_does_not_erase(self):
-        got = {r["label"]: r for r in run_yes([
-            {"label": "retry works", "fail": [rule("fastboot", "flash misc", times=1)]},
-            {"label": "retry fails", "fail": [rule("fastboot", "flash misc")]},
-            {"label": "second arm, retry fails", "fail": [rule("fastboot", "flash misc", skip=1)]},
-        ])}
+        got = {
+            r["label"]: r
+            for r in run_yes(
+                [
+                    {"label": "retry works", "fail": [rule("fastboot", "flash misc", times=1)]},
+                    {"label": "retry fails", "fail": [rule("fastboot", "flash misc")]},
+                    {"label": "second arm, retry fails", "fail": [rule("fastboot", "flash misc", skip=1)]},
+                ]
+            )
+        }
         works, fails, second = got["retry works"], got["retry fails"], got["second arm, retry fails"]
         # Two flashes after one erase: the retry is a flash only.
         self.assertEqual(works["calls"].count("fastboot -s SER1 erase misc"), 1)
@@ -1265,7 +1505,10 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         self.assertEqual(fails["log"].count(BRAKE_MAY_BE_ABSENT), 2)
         hand = [line for line in fails["log"].splitlines() if "To put the brake back by hand" in line]
         self.assertEqual(len(hand), 1)
-        self.assertRegex(hand[0], r'fastboot -s SER1 flash misc "\S+[\\/]img[\\/]logs[\\/]stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img"$')
+        self.assertRegex(
+            hand[0],
+            r'fastboot -s SER1 flash misc "\S+[\\/]img[\\/]logs[\\/]stage-\d{8}-\d{6}-[0-9a-f]{8}[\\/]misc-brake\.img"$',
+        )
         self.assertIn("(SHA-256 " + fails["expected"]["misc-brake.img"] + ")", fails["log"])
         self.assertEqual(second["log"].count(BRAKE_MAY_BE_ABSENT), 2)
         self.assertNotIn(" boot <S>/boot.img", " ".join(second["calls"]))
@@ -1274,7 +1517,15 @@ class DuoBootScriptPowerShell(unittest.TestCase):
     def test_the_by_hand_brake_command_keeps_a_path_with_a_space_in_one_piece(self):
         """The late failure this prevents: the command printed after a double brake failure was meant to be pasted,
         and with the image folder 'C:/Duo Images' its unquoted staged path became two words."""
-        got = run_yes([{"label": "spaced image folder", "imgdir": "Duo Images", "fail": [rule("fastboot", "flash misc", "failed")]}])[0]
+        got = run_yes(
+            [
+                {
+                    "label": "spaced image folder",
+                    "imgdir": "Duo Images",
+                    "fail": [rule("fastboot", "flash misc", "failed")],
+                }
+            ]
+        )[0]
         self.assertIsNone(got["threw"])
         self.assertEqual(got["exit"], 1)
         self.assertEqual(got["log"].count(BRAKE_MAY_BE_ABSENT), 2)
@@ -1294,10 +1545,17 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         """File.Copy and FileStream resolve a relative path against the process working directory, which Set-Location
         and Push-Location do not change. The script makes -ImageDir and -LogDir absolute before it stages anything;
         each relative run here has the PowerShell location in the work folder and the process in another one."""
-        runs = [{"label": "relative -LogDir", "logdir": "relative-logs", "relative": ["LogDir"]},
-                {"label": "relative -ImageDir", "relative": ["ImageDir"]},
-                {"label": "both, image folder with a space", "imgdir": "relative images", "logdir": "relative-logs", "relative": ["ImageDir", "LogDir"]},
-                {"label": "absolute, log folder with a space", "logdir": "absolute logs"}]
+        runs = [
+            {"label": "relative -LogDir", "logdir": "relative-logs", "relative": ["LogDir"]},
+            {"label": "relative -ImageDir", "relative": ["ImageDir"]},
+            {
+                "label": "both, image folder with a space",
+                "imgdir": "relative images",
+                "logdir": "relative-logs",
+                "relative": ["ImageDir", "LogDir"],
+            },
+            {"label": "absolute, log folder with a space", "logdir": "absolute logs"},
+        ]
         got = run_yes([dict(r) for r in runs])
         for run, wanted in zip(got, runs):
             with self.subTest(run=run["label"]):
@@ -1308,7 +1566,9 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 self.assertEqual(as_list(run["stage_left"]), [])
                 if wanted.get("relative"):
                     self.assertTrue(run["proc_cwd"] and run["ps_location"])
-                    self.assertNotEqual(run["proc_cwd"].lower(), run["ps_location"].lower(), "the test did not separate the two")
+                    self.assertNotEqual(
+                        run["proc_cwd"].lower(), run["ps_location"].lower(), "the test did not separate the two"
+                    )
                 folder = "/" + wanted.get("logdir", "img/logs") + "/stage-"
                 self.assertTrue(all(folder in line for line in as_list(run["probes"])), run["probes"])
 
@@ -1318,11 +1578,16 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         Set-MiscBrake caught it, its next Log threw outside the try: no retry flash, no warning, no hand command.
         Here the log file is made read-only when the erase is issued; what the script printed is read from the screen."""
         locked = {"lock_log_on": "erase misc"}
-        got = {r["label"]: r for r in run_yes([
-            dict(label="retry works", fail=[rule("fastboot", "flash misc", times=1)], **locked),
-            dict(label="retry fails", fail=[rule("fastboot", "flash misc")], **locked),
-            dict(label="nothing fails", **locked),
-        ])}
+        got = {
+            r["label"]: r
+            for r in run_yes(
+                [
+                    dict(label="retry works", fail=[rule("fastboot", "flash misc", times=1)], **locked),
+                    dict(label="retry fails", fail=[rule("fastboot", "flash misc")], **locked),
+                    dict(label="nothing fails", **locked),
+                ]
+            )
+        }
         screen = {label: "\n".join(run["output"]) for label, run in got.items()}
         for label, run in got.items():
             with self.subTest(run=label):
@@ -1335,13 +1600,21 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         works, fails, fine = got["retry works"], got["retry fails"], got["nothing fails"]
         self.assertEqual(works["exit"], 1)
         self.assertEqual(works["calls"], upto(FLASH1, GOLDEN[FLASH1]))
-        for words in (BRAKE_MAY_BE_ABSENT, "trying the brake image once more, without another erase", "the second try succeeded"):
+        for words in (
+            BRAKE_MAY_BE_ABSENT,
+            "trying the brake image once more, without another erase",
+            "the second try succeeded",
+        ):
             self.assertIn(words, screen["retry works"])
         self.assertEqual(as_list(works["stage_left"]), [])
         self.assertEqual(fails["exit"], 1)
         self.assertEqual(fails["calls"], upto(FLASH1, GOLDEN[FLASH1]))
         self.assertEqual(screen["retry fails"].count(BRAKE_MAY_BE_ABSENT), 2)
-        for words in ("KEEP THE PHONE IN BOOT SELECT", "the misc brake could not be written", "To put the brake back by hand"):
+        for words in (
+            "KEEP THE PHONE IN BOOT SELECT",
+            "the misc brake could not be written",
+            "To put the brake back by hand",
+        ):
             self.assertIn(words, screen["retry fails"])
         self.assertEqual(as_list(fails["stage_hashes"]), ["misc-brake.img|" + fails["expected"]["misc-brake.img"]])
         self.assertEqual(fine["exit"], 0)
@@ -1354,11 +1627,16 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         between 'erase misc' and the confirmed flash (which a catch never sees) left it down, the finally deleted the
         staged brake image and nothing warned. Ctrl+C is simulated by stopping the script's output pipeline at the
         line that reports the erase: the catch blocks are skipped (no 'STOPPED at') and the finally blocks run."""
-        got = {r["label"]: r for r in run_yes([
-            {"label": "first arming", "stop_on": "fastboot erase misc ->"},
-            {"label": "second arming", "stop_on": "fastboot erase misc ->", "stop_skip": 1},
-            {"label": "after the brake was confirmed", "stop_on": "adb reboot bootloader ->"},
-        ])}
+        got = {
+            r["label"]: r
+            for r in run_yes(
+                [
+                    {"label": "first arming", "stop_on": "fastboot erase misc ->"},
+                    {"label": "second arming", "stop_on": "fastboot erase misc ->", "stop_skip": 1},
+                    {"label": "after the brake was confirmed", "stop_on": "adb reboot bootloader ->"},
+                ]
+            )
+        }
         for label, last in (("first arming", ERASE1), ("second arming", ERASE2)):
             run = got[label]
             with self.subTest(run=label):
@@ -1385,9 +1663,17 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         """The late failure this prevents: ssh got '-o UserKnownHostsFile=<log folder>/known_hosts' as one argument, split
         it at the blanks of the folder name and wrote the host key elsewhere (here: to the first word), so Show-HostKey
         saw no file. The fake ssh behaves that way; now it gets a bare file name and the log folder as its directory."""
-        runs = [{"label": "folders with spaces", "key": True, "imgdir": "Duo Images", "logdir": "Log Folder"},
-                {"label": "relative -Key", "key": True, "relative": ["Key"]},
-                {"label": "everything relative, with spaces", "key": True, "imgdir": "my images", "logdir": "my logs", "relative": ["ImageDir", "LogDir", "Key"]}]
+        runs = [
+            {"label": "folders with spaces", "key": True, "imgdir": "Duo Images", "logdir": "Log Folder"},
+            {"label": "relative -Key", "key": True, "relative": ["Key"]},
+            {
+                "label": "everything relative, with spaces",
+                "key": True,
+                "imgdir": "my images",
+                "logdir": "my logs",
+                "relative": ["ImageDir", "LogDir", "Key"],
+            },
+        ]
         got = run_yes([dict(r) for r in runs])
         for run, wanted in zip(got, runs):
             with self.subTest(run=run["label"]):
@@ -1397,35 +1683,60 @@ class DuoBootScriptPowerShell(unittest.TestCase):
                 calls = [json.loads(line) for line in as_list(run["ssh_calls"])]
                 self.assertEqual(len(calls), 1)
                 argv = as_list(calls[0]["argv"])
-                self.assertEqual([a for a in argv if a.startswith("UserKnownHostsFile=")], ["UserKnownHostsFile=known_hosts"])
+                self.assertEqual(
+                    [a for a in argv if a.startswith("UserKnownHostsFile=")], ["UserKnownHostsFile=known_hosts"]
+                )
                 key = argv[argv.index("-i") + 1]
                 self.assertRegex(key, r"^(?:[A-Za-z]:)?[\\/]", "the key was handed to ssh as a relative path")
                 self.assertTrue(calls[0]["key_found"])
                 folder = "/" + wanted.get("logdir", "img/logs")
                 self.assertTrue(calls[0]["cwd"].replace("\\", "/").endswith(folder), calls[0]["cwd"])
-                self.assertEqual(calls[0]["wrote"].replace("\\", "/"), calls[0]["cwd"].replace("\\", "/") + "/known_hosts")
+                self.assertEqual(
+                    calls[0]["wrote"].replace("\\", "/"), calls[0]["cwd"].replace("\\", "/") + "/known_hosts"
+                )
                 self.assertIn("diagnostics saved to boot-diag.txt", run["log"])
-                self.assertIn("ssh accepted this host key without checking it first: 256 SHA256:TESTFINGERPRINT", run["log"])
+                self.assertIn(
+                    "ssh accepted this host key without checking it first: 256 SHA256:TESTFINGERPRINT", run["log"]
+                )
 
     def test_adb_failures_are_not_swallowed(self):
         """Ab used to return text only. A failing 'umount /data' must stop the run before the phone leaves TWRP."""
-        got = run_yes([{"label": "umount", "fail": [rule("adb", "umount")]},
-                       {"label": "reboot", "fail": [rule("adb", "reboot bootloader")]}])
+        got = run_yes(
+            [
+                {"label": "umount", "fail": [rule("adb", "umount")]},
+                {"label": "reboot", "fail": [rule("adb", "reboot bootloader")]},
+            ]
+        )
         self.assertEqual(got[0]["calls"][-1], GOLDEN[UMOUNT])
         self.assertNotIn("adb -s SER1 reboot bootloader", got[0]["calls"])
         self.assertEqual(got[1]["calls"][-1], GOLDEN[REBOOT])
         self.assertFalse([c for c in got[1]["calls"] if " boot <S>/boot.img" in c])
 
     def test_more_than_one_rndis_adapter_is_refused_with_the_candidates_listed(self):
-        tether = {"name": "Ethernet 7", "desc": "Remote NDIS based Internet Sharing Device", "ip": "198.51.100.129", "index": 7}
+        tether = {
+            "name": "Ethernet 7",
+            "desc": "Remote NDIS based Internet Sharing Device",
+            "ip": "198.51.100.129",
+            "index": 7,
+        }
         other = {"name": "Ethernet 8", "desc": "Remote NDIS Compatible Device", "ip": "198.51.100.2", "index": 8}
-        got = {r["label"]: r for r in run_yes([
-            {"label": "one adapter, the phone's"},
-            {"label": "another adapter already up", "others": [tether, other]},
-            {"label": "an adapter up that has no address yet", "others": [{"name": "Ethernet 6", "desc": "Remote NDIS Compatible Device", "ip": None, "index": 6}]},
-            {"label": "two adapters after the boot", "late_others": [tether]},
-            {"label": "-PhoneIp skips the search", "args": {"PhoneIp": "203.0.113.82"}, "others": [tether]},
-        ])}
+        got = {
+            r["label"]: r
+            for r in run_yes(
+                [
+                    {"label": "one adapter, the phone's"},
+                    {"label": "another adapter already up", "others": [tether, other]},
+                    {
+                        "label": "an adapter up that has no address yet",
+                        "others": [
+                            {"name": "Ethernet 6", "desc": "Remote NDIS Compatible Device", "ip": None, "index": 6}
+                        ],
+                    },
+                    {"label": "two adapters after the boot", "late_others": [tether]},
+                    {"label": "-PhoneIp skips the search", "args": {"PhoneIp": "203.0.113.82"}, "others": [tether]},
+                ]
+            )
+        }
         good = got["one adapter, the phone's"]
         self.assertEqual(good["calls"], GOLDEN)
         self.assertIn("phone answers on TCP 22 at 203.0.113.82", good["log"])
@@ -1442,7 +1753,13 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         late = got["two adapters after the boot"]
         self.assertEqual(late["exit"], 1)
         self.assertEqual(late["calls"], GOLDEN)
-        for words in ("more than one RNDIS-like USB network adapter", "Ethernet 7", "198.51.100.129", "Ethernet 9", "203.0.113.147"):
+        for words in (
+            "more than one RNDIS-like USB network adapter",
+            "Ethernet 7",
+            "198.51.100.129",
+            "Ethernet 9",
+            "203.0.113.147",
+        ):
             with self.subTest(words=words):
                 self.assertIn(words, late["log"])
         self.assertNotIn("phone answers on TCP 22", late["log"])
@@ -1453,11 +1770,16 @@ class DuoBootScriptPowerShell(unittest.TestCase):
         self.assertNotIn("probing TCP 22", skipped["log"])
 
     def test_the_host_key_fingerprint_ssh_accepted_is_printed_after_the_diagnostics(self):
-        got = {r["label"]: r for r in run_yes([
-            {"label": "key", "key": True},
-            {"label": "key, no ssh-keygen", "key": True, "no_keygen": True},
-            {"label": "no key"},
-        ])}
+        got = {
+            r["label"]: r
+            for r in run_yes(
+                [
+                    {"label": "key", "key": True},
+                    {"label": "key, no ssh-keygen", "key": True, "no_keygen": True},
+                    {"label": "no key"},
+                ]
+            )
+        }
         log = got["key"]["log"]
         self.assertEqual(got["key"]["calls"], GOLDEN)
         self.assertIn("ssh accepted this host key without checking it first: 256 SHA256:TESTFINGERPRINT", log)

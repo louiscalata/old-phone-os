@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """W1-01: the practice phone says it is practice (words, the emergency-number rule, the Home card, the real-OS controls)."""
+
 import json
 import re
 import threading
@@ -53,6 +54,7 @@ class Words(unittest.TestCase):
 
         class Other:
             pass
+
         p.essentials.modem = Other()
         self.assertFalse(practice.simulated(p.essentials))
         self.assertFalse(practice.simulated(object()))
@@ -61,8 +63,12 @@ class Words(unittest.TestCase):
         self.assertEqual(practice.home_note(True, []), PRACTICE_NOTE)
         self.assertEqual(practice.home_note(False, []), "Calls and messages are on.")
         paused = [{"name": "maps", "id": "#1"}, {"name": "photos backup", "id": "#2"}]
-        self.assertEqual(practice.home_note(True, paused), PRACTICE_NOTE + "\nPaused to save power: maps, photos backup.")
-        self.assertEqual(practice.home_note(False, paused), "Calls and messages are on.\nPaused to save power: maps, photos backup.")
+        self.assertEqual(
+            practice.home_note(True, paused), PRACTICE_NOTE + "\nPaused to save power: maps, photos backup."
+        )
+        self.assertEqual(
+            practice.home_note(False, paused), "Calls and messages are on.\nPaused to save power: maps, photos backup."
+        )
 
     def test_home_note_skips_names_the_page_never_showed(self):
         # The old page script filtered with known(): blank and "not known" names are not a task.
@@ -147,8 +153,11 @@ class Server(unittest.TestCase):
         return server
 
     def post(self, body):
-        req = urllib.request.Request(self.base + "/api", data=json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json", "X-OPOS-Token": self.token})
+        req = urllib.request.Request(
+            self.base + "/api",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", "X-OPOS-Token": self.token},
+        )
         try:
             with urllib.request.urlopen(req) as resp:
                 return resp.status, json.load(resp)
@@ -173,8 +182,16 @@ class Server(unittest.TestCase):
         self.assertEqual(s["notice"], "New message")
 
     def test_a_live_phone_refuses_injected_text(self):
-        live = LiveBattery(reader=lambda: {"level": 55.0, "temp_c": None, "charging": False, "source": "sysfs",
-                                           "health": 1.0, "health_source": "assumed"})
+        live = LiveBattery(
+            reader=lambda: {
+                "level": 55.0,
+                "temp_c": None,
+                "charging": False,
+                "source": "sysfs",
+                "health": 1.0,
+                "health_source": "assumed",
+            }
+        )
         phone = Phone(live_battery=live)
         self.assertTrue(phone.live)
         server = self.serve(phone)
@@ -219,11 +236,21 @@ class Page(unittest.TestCase):
         self.assertNotRegex(page(), r"<b>Contacts</b>")
 
     def test_the_module_is_in_the_runtime_inventory(self):
-        listed = (Path(__file__).resolve().parents[1] / "packaging/pmos/runtime-files.txt").read_text(encoding="utf-8").splitlines()
+        listed = (
+            (Path(__file__).resolve().parents[1] / "packaging/pmos/runtime-files.txt")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
         paths = [x for x in listed if x and not x.startswith("#")]
         self.assertIn("src/opos/practice.py", paths)
         self.assertEqual(paths, sorted(paths))
-        self.assertTrue(re.search(r"^from opos import .*\bpractice\b", (Path(__file__).resolve().parents[1] / "src/opos/web.py").read_text(encoding="utf-8"), re.M))
+        self.assertTrue(
+            re.search(
+                r"^from opos import .*\bpractice\b",
+                (Path(__file__).resolve().parents[1] / "src/opos/web.py").read_text(encoding="utf-8"),
+                re.M,
+            )
+        )
 
 
 if __name__ == "__main__":

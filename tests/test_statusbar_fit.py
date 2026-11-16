@@ -5,6 +5,7 @@ Interface plan acceptance 15: the bar is not clipped in the low-battery state at
 not fit, the note ("Battery not readable") gives way with an ellipsis; the chip and the Helper word are never cut and nothing runs
 off the edge of the bar. The fit is measured in a real browser (skipped where there is none); the CSS rules are checked in text.
 """
+
 import json
 import os
 from pathlib import Path
@@ -48,32 +49,37 @@ CHECKS.statusbar = async function() {
 class StatusBarCss(unittest.TestCase):
     def test_the_note_gives_way_before_the_helper_word(self):
         css = page()
-        self.assertIn('#sb-net,#sb-engine{overflow:hidden;text-overflow:ellipsis}', css)
+        self.assertIn("#sb-net,#sb-engine{overflow:hidden;text-overflow:ellipsis}", css)
         # The Helper word keeps its own width (shrink 0) and takes the room that is left; the note is the one that shrinks.
-        self.assertRegex(css, r'#sb-engine\{flex:1 0 auto;text-align:center\}')
-        self.assertNotRegex(css, r'#sb-engine\{flex:1;')
+        self.assertRegex(css, r"#sb-engine\{flex:1 0 auto;text-align:center\}")
+        self.assertNotRegex(css, r"#sb-engine\{flex:1;")
 
 
 class StatusBarFit(unittest.TestCase):
     skip_reason = None
-    mode = 'port'
+    mode = "port"
     setUpClass = classmethod(acceptance.TestUxrAcceptance.setUpClass.__func__)
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
     tearDown = acceptance.TestUxrAcceptance.tearDown
 
     def test_worst_case_fits_at_390_and_320_px(self):
-        driver = Path(self.run_dir) / 'statusbar.js'
+        driver = Path(self.run_dir) / "statusbar.js"
         source = acceptance.DRIVER.read_text()
-        self.assertIn('(async () => {', source)
-        driver.write_text(source.replace('(async () => {', CHECK + '\n(async () => {', 1))
-        target = str(self.port) if self.proc is not None else 'pipe'
+        self.assertIn("(async () => {", source)
+        driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
+        target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        result = subprocess.run([self.node, str(driver), target, self.url, 'statusbar', self.state],
-                                capture_output=True, text=True, timeout=60, env=env)
+        result = subprocess.run(
+            [self.node, str(driver), target, self.url, "statusbar", self.state],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1000:])
-        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])['violations'], [])
+        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

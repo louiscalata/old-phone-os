@@ -38,7 +38,10 @@ class PollIntervalTests(unittest.TestCase):
     def test_state_exposes_poll_ms(self):
         for visible in (False, True):
             for free in (None, 1535, 1536, 8192):
-                with self.subTest(visible=visible, free=free), mock.patch.object(web.assist, "free_mb", return_value=free):
+                with (
+                    self.subTest(visible=visible, free=free),
+                    mock.patch.object(web.assist, "free_mb", return_value=free),
+                ):
                     phone = web.Phone(visible=visible)
                     for level in (100, 3):
                         phone.set_battery(level)

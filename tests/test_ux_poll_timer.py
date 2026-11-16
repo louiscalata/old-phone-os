@@ -67,12 +67,18 @@ class TestPollTimerSource(unittest.TestCase):
         # one lost request look like two misses, so the banner came after one failed poll whenever the simulation ran.
         tick = re.search(r"async function pollTick\(\)\{.*?\n", self.js).group(0)
         self.assertEqual(tick.count("oposPoll("), 2)
-        self.assertLess(tick.find("else{"), tick.find("oposPoll(s&&!s.error?1:0)"), "only a state poll reports success itself")
+        self.assertLess(
+            tick.find("else{"), tick.find("oposPoll(s&&!s.error?1:0)"), "only a state poll reports success itself"
+        )
         self.assertIn("catch(e){running||oposPoll(0)}", tick)
 
     def test_an_unchanged_state_is_not_drawn_again(self):
         # W1-09: the poll skipped a render whose state is what was last drawn (a11y-cost-05 (a)).
-        self.assertIn("seen='';await renderShown(s);if(s&&!s.error){seen=stateKey(s);", self.js, "a render, or a failed one, always sets it")
+        self.assertIn(
+            "seen='';await renderShown(s);if(s&&!s.error){seen=stateKey(s);",
+            self.js,
+            "a render, or a failed one, always sets it",
+        )
         self.assertIn("const stateKey=s=>JSON.stringify(s,(k,v)=>k==='lean'?0:v)+navigator.onLine;", self.js)
         self.assertIn("if(!s||s.error||stateKey(s)!==seen)await render(s)", self.js)
         self.assertIn("['load','click','keydown','input'].forEach(t=>addEventListener(t,()=>seen='',1));", self.js)
@@ -145,7 +151,10 @@ class TestPollTimerStub(unittest.TestCase):
         # a simulation tick that fails is api()'s to report (phone-a.js), so the poll adds nothing: no error is rendered and it is not counted twice
         self.assertEqual(out["fail"], {"notices": 0, "pending": 1, "polls": []})
         # a state poll reports its own outcome: good once, then, with the request lost, not ok once, and still no error line
-        self.assertEqual(out["stopped"], {"calls": 0, "pending": 1, "stateReads": 2, "states": [{"paused_by_glimmer": ["email"]}], "polls": [1]})
+        self.assertEqual(
+            out["stopped"],
+            {"calls": 0, "pending": 1, "stateReads": 2, "states": [{"paused_by_glimmer": ["email"]}], "polls": [1]},
+        )
         self.assertEqual(out["stateDown"], {"notices": 0, "polls": [1, 0], "pending": 1})
 
 
@@ -193,6 +202,7 @@ const fire=t=>listeners[t].forEach(f=>f({}));
 @unittest.skipUnless(shutil.which("node"), "node missing")
 class TestPollSkipsAnUnchangedState(unittest.TestCase):
     """W1-09 / a11y-cost-05 (a): a poll whose state is what was last drawn draws nothing (about 60 DOM writes per poll before)."""
+
     @classmethod
     def setUpClass(cls):
         code = SKIP_STUB + JS8.read_text(encoding="utf-8") + SKIP_DRIVER
@@ -203,7 +213,11 @@ class TestPollSkipsAnUnchangedState(unittest.TestCase):
     def test_the_first_poll_before_the_load_event_draws_again_and_then_the_same_state_does_not(self):
         o = self.out
         self.assertEqual(o["boot"], 1)
-        self.assertEqual(o["firstPollBeforeLoad"], 1, "the stub never fires 'load', so the state of the first draw is already what was drawn")
+        self.assertEqual(
+            o["firstPollBeforeLoad"],
+            1,
+            "the stub never fires 'load', so the state of the first draw is already what was drawn",
+        )
         self.assertEqual(o["same"], 1)
 
     def test_a_change_is_drawn_but_the_memory_figures_alone_are_not_a_change(self):
@@ -220,7 +234,9 @@ class TestPollSkipsAnUnchangedState(unittest.TestCase):
         # a notice the page wrote itself ("Type the incoming text first.") used to be cleared by the next poll
         for t in ("click", "keydown", "input"):
             self.assertEqual((self.out[t], self.out[t + "Then"]), (1, 1), t)
-        self.assertEqual(self.out["load"], 1, "scripts that load after js-8.js may have missed the first draw: 'load' re-arms it")
+        self.assertEqual(
+            self.out["load"], 1, "scripts that load after js-8.js may have missed the first draw: 'load' re-arms it"
+        )
 
     def test_an_error_render_and_an_error_answer_are_always_drawn(self):
         self.assertEqual(self.out["afterErrorRender"], ["error:offline", "2"])

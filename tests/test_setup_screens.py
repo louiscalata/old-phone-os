@@ -10,11 +10,12 @@ from unittest.mock import patch
 from opos import notices
 from opos.setup import wizard_page, jaryo_steps, jaryo_steps_js
 
+
 class TestSetupScreens(unittest.TestCase):
     def test_disclaimer_literal_and_escaped_in_page(self):
         literal = "Old Phone OS Interface is Louis Calata's hackathon demo. It is experimental software, provided as-is with no warranty (GPL-3.0). Installing it replaces your phone's operating system and may erase data; back up first and use at your own risk."
         self.assertEqual(notices.DISCLAIMER, literal)
-        page = wizard_page.page('tok', 'nonce123')
+        page = wizard_page.page("tok", "nonce123")
         escaped = html.escape(notices.DISCLAIMER)
         self.assertIn(escaped, page)
         self.assertIn(html.escape(literal), page)
@@ -23,13 +24,15 @@ class TestSetupScreens(unittest.TestCase):
     def test_fields_titles_in_fragment(self):
         fragment = jaryo_steps.fragment()
         for key in notices.FIELDS:
-            if key == 'disclaimer':
+            if key == "disclaimer":
                 continue
-            self.assertIn(f'<dt data-notice="{html.escape(key, quote=True)}">{html.escape(notices._TITLES[key])}</dt>', fragment)
+            self.assertIn(
+                f'<dt data-notice="{html.escape(key, quote=True)}">{html.escape(notices._TITLES[key])}</dt>', fragment
+            )
 
     def test_jstep_blocks_and_skip_all(self):
         fragment = jaryo_steps.fragment()
-        names = ['theme', 'layout', 'text_size', 'device_type', 'language', 'wifi', 'pin', 'helper']
+        names = ["theme", "layout", "text_size", "device_type", "language", "wifi", "pin", "helper"]
         self.assertEqual(fragment.count('data-jstep="'), len(names))
         for name in names:
             self.assertIn(f'data-jstep="{name}"', fragment)
@@ -45,10 +48,10 @@ class TestSetupScreens(unittest.TestCase):
                 if idx != -1 and idx < next_start:
                     next_start = idx
             block = fragment[start:next_start]
-            self.assertIn('data-jskip', block)
-            self.assertIn('>Skip</button>', block)
+            self.assertIn("data-jskip", block)
+            self.assertIn(">Skip</button>", block)
             prev_end = start + 1
-        self.assertIn('Skip all', fragment)
+        self.assertIn("Skip all", fragment)
 
     def test_pin_step_is_record_only(self):
         # JRY34: the page steps and the server steps are the same list, in the same order. The lock PIN step
@@ -56,131 +59,142 @@ class TestSetupScreens(unittest.TestCase):
         # steps (Helper j7, Lock PIN j8), so page order and id order differ on purpose. The PIN step asks for
         # nothing: no input of any kind, only the "set up later" button and Skip.
         from opos.setup import prefs
+
         self.assertEqual(tuple(jaryo_steps.OPTIONS), prefs.STEPS)
-        self.assertEqual(prefs.STEPS.index('pin'), prefs.STEPS.index('wifi') + 1)
-        self.assertEqual(prefs.STEPS[-1], 'helper')
+        self.assertEqual(prefs.STEPS.index("pin"), prefs.STEPS.index("wifi") + 1)
+        self.assertEqual(prefs.STEPS[-1], "helper")
         fragment = jaryo_steps.fragment()
         for step, sid in jaryo_steps.IDS.items():
             self.assertIn(f'<section class="step jaryo-step" id="{sid}" data-jstep="{step}" hidden>', fragment)
         # Exact composition: the accepted "Choose your edition" panel (JRY32, not a data-jstep) leads, then the
         # eight stateful steps in prefs.STEPS order. Nine jaryo-step sections in total, no more and no fewer.
-        sections = re.findall(r'<section class="step jaryo-step" id="([^"]+)" (data-jedition|data-jstep="[^"]+") hidden>', fragment)
+        sections = re.findall(
+            r'<section class="step jaryo-step" id="([^"]+)" (data-jedition|data-jstep="[^"]+") hidden>', fragment
+        )
         self.assertEqual(len(sections), 9)
         self.assertEqual(len(re.findall(r'<section class="step jaryo-step"', fragment)), 9)
-        self.assertEqual(sections[0], ('jaryo-edition', 'data-jedition'))
-        self.assertEqual(fragment.count('data-jedition'), 1)
+        self.assertEqual(sections[0], ("jaryo-edition", "data-jedition"))
+        self.assertEqual(fragment.count("data-jedition"), 1)
         self.assertEqual(fragment.count('id="jaryo-edition"'), 1)
         stateful = sections[1:]
         self.assertEqual(len(stateful), 8)
         self.assertEqual([attr for _, attr in stateful], [f'data-jstep="{step}"' for step in prefs.STEPS])
         self.assertEqual([sid for sid, _ in stateful], [jaryo_steps.IDS[step] for step in prefs.STEPS])
-        self.assertEqual([sid for sid, _ in stateful], ['j1', 'j2', 'j3', 'j4', 'j5', 'j6', 'j8', 'j7'])
-        self.assertEqual(stateful[-3:], [('j6', 'data-jstep="wifi"'), ('j8', 'data-jstep="pin"'), ('j7', 'data-jstep="helper"')])
+        self.assertEqual([sid for sid, _ in stateful], ["j1", "j2", "j3", "j4", "j5", "j6", "j8", "j7"])
+        self.assertEqual(
+            stateful[-3:], [("j6", 'data-jstep="wifi"'), ("j8", 'data-jstep="pin"'), ("j7", 'data-jstep="helper"')]
+        )
         # The seven legacy identities keep their ids and class attributes; the PIN step is the explicit eighth, j8.
-        self.assertEqual(sorted(jaryo_steps.IDS[s] for s in prefs.STEPS if s != 'pin'), [f'j{i}' for i in range(1, 8)])
-        self.assertEqual(jaryo_steps.IDS['pin'], 'j8')
+        self.assertEqual(sorted(jaryo_steps.IDS[s] for s in prefs.STEPS if s != "pin"), [f"j{i}" for i in range(1, 8)])
+        self.assertEqual(jaryo_steps.IDS["pin"], "j8")
         for i in range(1, 9):
             self.assertEqual(fragment.count(f'<section class="step jaryo-step" id="j{i}" data-jstep="'), 1)
         self.assertEqual(fragment.count('data-jstep="'), 8)
         self.assertLess(fragment.index('data-jstep="wifi"'), fragment.index('data-jstep="pin"'))
         self.assertLess(fragment.index('data-jstep="pin"'), fragment.index('data-jstep="helper"'))
         start = fragment.index('data-jstep="pin"')
-        block = fragment[start:fragment.index('</section>', start)]
-        self.assertNotIn('<input', block)
+        block = fragment[start : fragment.index("</section>", start)]
+        self.assertNotIn("<input", block)
         self.assertIn('<h3 tabindex="-1">Lock PIN</h3>', block)
-        self.assertIn('not available in this build', block)
+        self.assertIn("not available in this build", block)
         self.assertIn('<button type="button" data-jpin>Set up later in Settings › Device</button>', block)
-        for word in ('password', 'inputmode', 'digits'):
+        for word in ("password", "inputmode", "digits"):
             self.assertNotIn(word, block)
             self.assertNotIn(word, jaryo_steps_js.SCRIPT)
         self.assertIn("[data-jpin]", jaryo_steps_js.SCRIPT)
 
     def test_style_no_hex_or_rgb_except_definitions(self):
         style = jaryo_steps.STYLE
-        clean = re.sub(r'--jaryo-fg:[^;]+', '', style)
-        clean = re.sub(r'--jaryo-bg:[^;]+', '', clean)
-        self.assertIsNone(re.search(r'#[0-9a-fA-F]{3,6}', clean))
-        self.assertNotIn('rgb(', clean)
+        clean = re.sub(r"--jaryo-fg:[^;]+", "", style)
+        clean = re.sub(r"--jaryo-bg:[^;]+", "", clean)
+        self.assertIsNone(re.search(r"#[0-9a-fA-F]{3,6}", clean))
+        self.assertNotIn("rgb(", clean)
 
     def test_fragment_no_forbidden_elements_or_words(self):
         fragment = jaryo_steps.fragment()
-        self.assertNotIn('<img', fragment)
-        self.assertNotIn('<svg', fragment)
+        self.assertNotIn("<img", fragment)
+        self.assertNotIn("<svg", fragment)
         self.assertNotIn('type="password"', fragment)
-        for word in ['AI', 'model', 'governor', 'assistant']:
-            self.assertIsNone(re.search(r'\b' + re.escape(word) + r'\b', fragment, re.I))
+        for word in ["AI", "model", "governor", "assistant"]:
+            self.assertIsNone(re.search(r"\b" + re.escape(word) + r"\b", fragment, re.I))
 
     def test_wifi_is_read_only_and_explains_detection(self):
         fragment = jaryo_steps.fragment()
-        wifi = fragment.split('data-jstep="wifi"', 1)[1].split('</section>', 1)[0]
+        wifi = fragment.split('data-jstep="wifi"', 1)[1].split("</section>", 1)[0]
         self.assertIn('role="status"', wifi)
-        self.assertIn('Radio detection does not show whether you are connected.', wifi)
-        self.assertNotIn('your edition', wifi)
-        self.assertIn('Joining a network is not available in this build', wifi)
-        self.assertIn('data-jwifi>Set up later in Settings › Network', wifi)
-        self.assertNotIn('<input', wifi)
-        for control in ('data-jback', 'data-jnext', 'data-jskip'):
+        self.assertIn("Radio detection does not show whether you are connected.", wifi)
+        self.assertNotIn("your edition", wifi)
+        self.assertIn("Joining a network is not available in this build", wifi)
+        self.assertIn("data-jwifi>Set up later in Settings › Network", wifi)
+        self.assertNotIn("<input", wifi)
+        for control in ("data-jback", "data-jnext", "data-jskip"):
             self.assertIn(control, wifi)
 
     def test_script_contents(self):
         script = jaryo_steps_js.SCRIPT
-        self.assertIn('/setup/api/prefs', script)
-        self.assertIn('skip-all', script)
-        self.assertNotIn('innerHTML', script)
+        self.assertIn("/setup/api/prefs", script)
+        self.assertIn("skip-all", script)
+        self.assertNotIn("innerHTML", script)
         # JRY32: Use <edition> saves the edition as the existing device_type answer, then skip-all.
         self.assertIn("{step: 'device_type', value: picked.value}", script)
         self.assertIn("'/setup/api/prefs/skip-all'", script)
-        self.assertNotRegex(script, r'\b(AI|model|assistant)\b')
+        self.assertNotRegex(script, r"\b(AI|model|assistant)\b")
 
     def test_edition_panel_leads_and_maps_to_device_type(self):
         # JRY32 (design decision 6): one leading "Choose your edition" panel. It is not a data-jstep, so the
         # seven steps, resume and skip-all keep their pinned behaviour (test_jstep_blocks_and_skip_all).
         from opos.setup import prefs
+
         fragment = jaryo_steps.fragment()
         start = fragment.index('<section class="step jaryo-step" id="jaryo-edition" data-jedition hidden>')
-        block = fragment[start:fragment.index('</section>', start)]
+        block = fragment[start : fragment.index("</section>", start)]
         self.assertLess(start, fragment.index('data-jstep="theme"'))
-        self.assertNotIn('data-jstep', block)
+        self.assertNotIn("data-jstep", block)
         self.assertIn('<legend tabindex="-1">Choose your edition</legend>', block)
-        radios = re.findall(r'<input type="radio" name="edition" value="([a-z]+)" data-jname="([^"]+)"( checked)?>', block)
-        self.assertEqual([(v, n) for v, n, _ in radios], [('slab', 'Pocket'), ('foldable', 'Foldable'), ('slideout', 'Slide-out'), ('tablet', 'Tablet')])
+        radios = re.findall(
+            r'<input type="radio" name="edition" value="([a-z]+)" data-jname="([^"]+)"( checked)?>', block
+        )
+        self.assertEqual(
+            [(v, n) for v, n, _ in radios],
+            [("slab", "Pocket"), ("foldable", "Foldable"), ("slideout", "Slide-out"), ("tablet", "Tablet")],
+        )
         for value, _, _ in radios:
-            self.assertIn(value, prefs.VALUES['device_type'])
-        self.assertEqual([n for _, n, c in radios if c], ['Pocket'])
+            self.assertIn(value, prefs.VALUES["device_type"])
+        self.assertEqual([n for _, n, c in radios if c], ["Pocket"])
         self.assertEqual(block.count('class="jaryo-edition-desc"'), 4)
-        self.assertEqual(block.count('data-jkicker='), 4)
-        self.assertEqual(block.count('>Suggested</span>'), 1)
-        self.assertIn('based on the browser window, not hardware detection', block)
+        self.assertEqual(block.count("data-jkicker="), 4)
+        self.assertEqual(block.count(">Suggested</span>"), 1)
+        self.assertIn("based on the browser window, not hardware detection", block)
         self.assertIn('<button type="button" id="jaryo-customise">Customise instead</button>', block)
         self.assertIn('<button type="button" id="jaryo-use-edition">Use Pocket</button>', block)
-        self.assertIn('Settings', block)
+        self.assertIn("Settings", block)
         self.assertNotIn('type="password"', block)
-        self.assertNotIn('<img', block)
+        self.assertNotIn("<img", block)
         # Primary action is inverted (bg text on fg) with a 3 px rule; both selectors outrank the base button rule.
-        rule = re.search(r'#jaryo-setup #jaryo-use-edition\{([^}]+)', jaryo_steps.STYLE)[1]
-        self.assertIn('background:var(--jaryo-fg)', rule)
-        self.assertIn('color:var(--jaryo-bg)', rule)
-        self.assertIn('border:3px solid var(--jaryo-fg)', rule)
+        rule = re.search(r"#jaryo-setup #jaryo-use-edition\{([^}]+)", jaryo_steps.STYLE)[1]
+        self.assertIn("background:var(--jaryo-fg)", rule)
+        self.assertIn("color:var(--jaryo-bg)", rule)
+        self.assertIn("border:3px solid var(--jaryo-fg)", rule)
 
     def test_page_contains_existing_ids(self):
-        page = wizard_page.page('tok', 'nonce123')
+        page = wizard_page.page("tok", "nonce123")
         for i in range(1, 8):
             self.assertIn(f'id="s{i}"', page)
         self.assertIn('id="apply"', page)
         self.assertIn('id="progress"', page)
 
     def test_page_script_nonced(self):
-        page = wizard_page.page('tok', 'nonce123')
+        page = wizard_page.page("tok", "nonce123")
         self.assertIn('nonce="nonce123"', page)
 
     def test_personal_steps_follow_complete_review_step(self):
-        page = wizard_page.page('tok', 'nonce123')
+        page = wizard_page.page("tok", "nonce123")
         review_start = page.index('<section class="step panel" id="s7"')
-        review_end = page.index('</section>', review_start)
-        self.assertIn('<button type="button" data-back>Back</button>',
-                      page[review_start:review_end])
+        review_end = page.index("</section>", review_start)
+        self.assertIn('<button type="button" data-back>Back</button>', page[review_start:review_end])
         self.assertGreater(page.index('<section id="jaryo-setup"'), review_end)
-        self.assertLess(page.index('<section id="jaryo-setup"'), page.index('</main>'))
+        self.assertLess(page.index('<section id="jaryo-setup"'), page.index("</main>"))
+
 
 class NodeDOM(HTMLParser):
     def __init__(self, page):
@@ -190,42 +204,47 @@ class NodeDOM(HTMLParser):
         self.feed(page)
 
     def handle_starttag(self, tag, attrs):
-        self.nodes.append(dict(tag=tag, attrs=dict(attrs), parent=self.stack[-1] if self.stack else -1, text=''))
-        if tag not in ('meta', 'input', 'br', 'hr', 'link'):
+        self.nodes.append(dict(tag=tag, attrs=dict(attrs), parent=self.stack[-1] if self.stack else -1, text=""))
+        if tag not in ("meta", "input", "br", "hr", "link"):
             self.stack.append(len(self.nodes) - 1)
 
     def handle_endtag(self, tag):
         for i in range(len(self.stack) - 1, -1, -1):
-            if self.nodes[self.stack[i]]['tag'] == tag:
+            if self.nodes[self.stack[i]]["tag"] == tag:
                 del self.stack[i:]
                 break
 
     def handle_data(self, data):
         for i in self.stack:
-            self.nodes[i]['text'] += data
+            self.nodes[i]["text"] += data
 
 
 class TestSetupRuntime(unittest.TestCase):
     def test_markup_escaping_and_targets(self):
-        with patch.dict(jaryo_steps.OPTIONS, theme=[('light', '<Light & bright>')]), patch.object(jaryo_steps, 'TITLES', ['<Theme & look>'] + jaryo_steps.TITLES[1:]), patch.object(notices, 'notices', return_value={'a"&': '<value>'}), patch.dict(notices._TITLES, {'a"&': '<Title>'}):
+        with (
+            patch.dict(jaryo_steps.OPTIONS, theme=[("light", "<Light & bright>")]),
+            patch.object(jaryo_steps, "TITLES", ["<Theme & look>"] + jaryo_steps.TITLES[1:]),
+            patch.object(notices, "notices", return_value={'a"&': "<value>"}),
+            patch.dict(notices._TITLES, {'a"&': "<Title>"}),
+        ):
             fragment = jaryo_steps.fragment()
         self.assertIn('<legend tabindex="-1">&lt;Theme &amp; look&gt;</legend>', fragment)
-        self.assertIn('> &lt;Light &amp; bright&gt;</label>', fragment)
+        self.assertIn("> &lt;Light &amp; bright&gt;</label>", fragment)
         self.assertIn('<dt data-notice="a&quot;&amp;">&lt;Title&gt;</dt><dd>&lt;value&gt;</dd>', fragment)
         self.assertNotIn('<h3 tabindex="-1">&lt;Theme', fragment)
-        self.assertNotRegex(fragment, r'<input[^>]*aria-describedby')
-        for selector in ('label', 'button'):
-            rule = re.search(r'#jaryo-setup ' + selector + r'\{([^}]+)', jaryo_steps.STYLE)[1]
-            self.assertIn('min-height:48px', rule)
-            self.assertIn('min-width:48px', rule)
-        self.assertIn('.row{display:flex;flex-wrap:wrap;gap:8px}', jaryo_steps.STYLE)
+        self.assertNotRegex(fragment, r"<input[^>]*aria-describedby")
+        for selector in ("label", "button"):
+            rule = re.search(r"#jaryo-setup " + selector + r"\{([^}]+)", jaryo_steps.STYLE)[1]
+            self.assertIn("min-height:48px", rule)
+            self.assertIn("min-width:48px", rule)
+        self.assertIn(".row{display:flex;flex-wrap:wrap;gap:8px}", jaryo_steps.STYLE)
 
-    @unittest.skipUnless(shutil.which('node'), 'Node is unavailable')
+    @unittest.skipUnless(shutil.which("node"), "Node is unavailable")
     def test_generated_script_navigation_and_recovery(self):
-        page = wizard_page.page('tok', 'nonce123')
-        script = re.search(r'<script[^>]*>(.*?)</script>', page, re.S)[1]
-        payload = json.dumps({'nodes': NodeDOM(page).nodes, 'script': script})
-        result = subprocess.run(['node', '-e', RUNTIME], input=payload, text=True, capture_output=True, timeout=20)
+        page = wizard_page.page("tok", "nonce123")
+        script = re.search(r"<script[^>]*>(.*?)</script>", page, re.S)[1]
+        payload = json.dumps({"nodes": NodeDOM(page).nodes, "script": script})
+        result = subprocess.run(["node", "-e", RUNTIME], input=payload, text=True, capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
@@ -423,5 +442,5 @@ try {
 });
 """
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

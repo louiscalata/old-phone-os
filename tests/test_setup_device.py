@@ -35,9 +35,7 @@ class FakeRunner:
 def make_profile(**overrides: object) -> SimpleNamespace:
     values: dict[str, object] = {
         "name": "Test Phone 5G",
-        "battery": SimpleNamespace(
-            capacity_mah=4500, health=0.87, voltage_v=3.9
-        ),
+        "battery": SimpleNamespace(capacity_mah=4500, health=0.87, voltage_v=3.9),
         "cpu": SimpleNamespace(name="CPU"),
         "screen": SimpleNamespace(width=1080, height=2400),
         "radios": ("wifi", "bluetooth"),
@@ -166,18 +164,12 @@ class ProfileToDeviceTests(unittest.TestCase):
 
     def test_battery_health_boundaries(self) -> None:
         for health in (0, 0.0, 1, 1.0, 0.5):
-            profile = make_profile(
-                battery=SimpleNamespace(health=health)
-            )
-            self.assertEqual(
-                profile_to_device(profile)["battery_health"], float(health)
-            )
+            profile = make_profile(battery=SimpleNamespace(health=health))
+            self.assertEqual(profile_to_device(profile)["battery_health"], float(health))
 
     def test_invalid_battery_health_becomes_none(self) -> None:
         for health in (-0.1, 1.01, "0.8", None, float("nan"), object()):
-            profile = make_profile(
-                battery=SimpleNamespace(health=health)
-            )
+            profile = make_profile(battery=SimpleNamespace(health=health))
             device = profile_to_device(profile)
             self.assertIsNone(device["battery_health"])
             self.assertEqual(device["source"], "hw-adapt")
@@ -188,9 +180,7 @@ class ProfileToDeviceTests(unittest.TestCase):
         self.assertIsInstance(device["battery_health"], float)
 
     def test_radios_become_list_and_modem_becomes_bool(self) -> None:
-        device = profile_to_device(
-            make_profile(radios=("lte",), modem=1)
-        )
+        device = profile_to_device(make_profile(radios=("lte",), modem=1))
         self.assertEqual(device["radios"], ["lte"])
         self.assertIs(device["modem"], True)
         device = profile_to_device(make_profile(radios=(), modem=""))
@@ -226,9 +216,7 @@ class CalibrationPresentTests(unittest.TestCase):
     def test_present_file(self) -> None:
         with TemporaryDirectory() as tmp:
             config_dir = Path(tmp)
-            (config_dir / "drain-calibration.json").write_text(
-                "{}", encoding="utf-8"
-            )
+            (config_dir / "drain-calibration.json").write_text("{}", encoding="utf-8")
             self.assertTrue(calibration_present(config_dir))
 
     def test_directory_with_that_name_is_not_a_file(self) -> None:
@@ -258,9 +246,7 @@ class DetectDeviceTests(unittest.TestCase):
             config_dir = Path(tmp)
             with mock.patch.dict(sys.modules, missing_hw_modules()):
                 self.assertFalse(detect_device(config_dir=config_dir)["calibrated"])
-                (config_dir / "drain-calibration.json").write_text(
-                    "{}", encoding="utf-8"
-                )
+                (config_dir / "drain-calibration.json").write_text("{}", encoding="utf-8")
                 device = detect_device(config_dir=config_dir)
             expected = stub_device()
             expected["calibrated"] = True
@@ -274,9 +260,7 @@ class DetectDeviceTests(unittest.TestCase):
             return make_profile(name="Detected Phone")
 
         with TemporaryDirectory() as tmp:
-            with mock.patch.dict(
-                sys.modules, fake_hw_modules(detect_impl=detect)
-            ):
+            with mock.patch.dict(sys.modules, fake_hw_modules(detect_impl=detect)):
                 device = detect_device(root=tmp)
             self.assertEqual(calls, [tmp])
         self.assertEqual(device["id"], "detected-phone")
@@ -286,9 +270,7 @@ class DetectDeviceTests(unittest.TestCase):
     def test_hw_profile_with_calibration(self) -> None:
         with TemporaryDirectory() as tmp:
             config_dir = Path(tmp)
-            (config_dir / "drain-calibration.json").write_text(
-                "{}", encoding="utf-8"
-            )
+            (config_dir / "drain-calibration.json").write_text("{}", encoding="utf-8")
             with mock.patch.dict(sys.modules, fake_hw_modules()):
                 device = detect_device(config_dir=config_dir)
             self.assertTrue(device["calibrated"])
@@ -298,9 +280,7 @@ class DetectDeviceTests(unittest.TestCase):
         def broken_detect(root: str = "/") -> SimpleNamespace:
             raise RuntimeError("detect failed")
 
-        with mock.patch.dict(
-            sys.modules, fake_hw_modules(detect_impl=broken_detect)
-        ):
+        with mock.patch.dict(sys.modules, fake_hw_modules(detect_impl=broken_detect)):
             self.assertEqual(detect_device(), stub_device())
 
     def test_hw_exception_still_applies_calibration(self) -> None:
@@ -309,12 +289,8 @@ class DetectDeviceTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp:
             config_dir = Path(tmp)
-            (config_dir / "drain-calibration.json").write_text(
-                "{}", encoding="utf-8"
-            )
-            with mock.patch.dict(
-                sys.modules, fake_hw_modules(detect_impl=broken_detect)
-            ):
+            (config_dir / "drain-calibration.json").write_text("{}", encoding="utf-8")
+            with mock.patch.dict(sys.modules, fake_hw_modules(detect_impl=broken_detect)):
                 device = detect_device(config_dir=config_dir)
             expected = stub_device()
             expected["calibrated"] = True
@@ -372,9 +348,7 @@ class DetectDeviceTests(unittest.TestCase):
             check_essentials(device)
         with self.subTest("none-detection-keeps-battery-and-wifi"):
             with TemporaryDirectory() as tmp:
-                with mock.patch(
-                    "opos.hw.detect.detect", return_value=None
-                ):
+                with mock.patch("opos.hw.detect.detect", return_value=None):
                     with mock.patch(
                         "opos.hw.battery.read_battery",
                         return_value={"health": 0.87},
@@ -436,13 +410,9 @@ class DetectDeviceTests(unittest.TestCase):
                 device["modem"] = True
             return device
 
-        case = DetectDeviceTests(
-            "test_f025_inconclusive_detection_preserves_phone_essentials"
-        )
+        case = DetectDeviceTests("test_f025_inconclusive_detection_preserves_phone_essentials")
         outcome = unittest.TestResult()
-        with mock.patch.object(
-            sys.modules[__name__], "detect_device", wrapper
-        ):
+        with mock.patch.object(sys.modules[__name__], "detect_device", wrapper):
             case.run(outcome)
         self.assertEqual(len(outcome.failures), 2)
         self.assertEqual(len(outcome.errors), 0)
@@ -454,9 +424,7 @@ class ListProfilesTests(unittest.TestCase):
             self.assertEqual(list_profiles(), [])
 
     def test_profiles_are_sorted_by_name_and_slugified(self) -> None:
-        modules = fake_hw_modules(
-            names=("Zeta Phone", "Alpha Phone!", "mid phone")
-        )
+        modules = fake_hw_modules(names=("Zeta Phone", "Alpha Phone!", "mid phone"))
         with mock.patch.dict(sys.modules, modules):
             self.assertEqual(
                 list_profiles(),
@@ -475,15 +443,11 @@ class ListProfilesTests(unittest.TestCase):
         def broken_names() -> tuple[str, ...]:
             raise RuntimeError("store failed")
 
-        with mock.patch.dict(
-            sys.modules, fake_hw_modules(names_impl=broken_names)
-        ):
+        with mock.patch.dict(sys.modules, fake_hw_modules(names_impl=broken_names)):
             self.assertEqual(list_profiles(), [])
 
     def test_idempotent(self) -> None:
-        with mock.patch.dict(
-            sys.modules, fake_hw_modules(names=("B Phone", "A Phone"))
-        ):
+        with mock.patch.dict(sys.modules, fake_hw_modules(names=("B Phone", "A Phone"))):
             self.assertEqual(list_profiles(), list_profiles())
 
 
@@ -527,9 +491,7 @@ class ChooseProfileTests(unittest.TestCase):
         def broken_profile(name: str) -> SimpleNamespace:
             raise KeyError(name)
 
-        with mock.patch.dict(
-            sys.modules, fake_hw_modules(names_impl=broken_names)
-        ):
+        with mock.patch.dict(sys.modules, fake_hw_modules(names_impl=broken_names)):
             self.assertIsNone(choose_profile("anything"))
         profiles = {"A Phone": make_profile(name="A Phone")}
         with mock.patch.dict(
@@ -548,9 +510,7 @@ class ChooseProfileTests(unittest.TestCase):
             sys.modules,
             fake_hw_modules(names=tuple(profiles), profiles=profiles),
         ):
-            self.assertEqual(
-                choose_profile("a-phone"), choose_profile("a-phone")
-            )
+            self.assertEqual(choose_profile("a-phone"), choose_profile("a-phone"))
 
 
 class ToConfigDeviceTests(unittest.TestCase):
@@ -615,20 +575,12 @@ class NoSideEffectsTests(unittest.TestCase):
 
 class TestNoSilentExceptPass(unittest.TestCase):
     def test_no_except_handler_with_only_pass(self) -> None:
-        target = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "opos"
-            / "setup"
-            / "device.py"
-        )
+        target = Path(__file__).resolve().parents[1] / "src" / "opos" / "setup" / "device.py"
         tree = ast.parse(target.read_text(encoding="utf-8"))
         lines = [
             node.lineno
             for node in ast.walk(tree)
-            if isinstance(node, ast.ExceptHandler)
-            and len(node.body) == 1
-            and isinstance(node.body[0], ast.Pass)
+            if isinstance(node, ast.ExceptHandler) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
         ]
         self.assertEqual(lines, [], f"silent except-pass at lines {lines}")
 

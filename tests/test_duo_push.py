@@ -3,23 +3,32 @@ import pathlib
 import re
 import subprocess
 import unittest
+
 SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "deploy" / "push-to-duo.sh"
+
+
 class DuoPushTest(unittest.TestCase):
     def test_missing_target_exits_2(self):
         proc = subprocess.run(["sh", str(SCRIPT), "--dry-run"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 2)
         self.assertIn("usage: push-to-duo.sh", proc.stderr)
+
     def test_dry_run_ipv6_link_local_forms(self):
         proc = subprocess.run(["sh", str(SCRIPT), "--dry-run", "admin@fe80::1%8"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0)
         lines = proc.stdout.splitlines()
         archive = [x for x in lines if x.startswith("+ git archive ") and x.endswith(" HEAD")]
         self.assertEqual(len(archive), 1)
-        copy = [x for x in lines if x.startswith("+ scp -q ") and x.endswith(" admin@[fe80::1%8]:<remote-tmp>/opos-push.tgz")]
+        copy = [
+            x
+            for x in lines
+            if x.startswith("+ scp -q ") and x.endswith(" admin@[fe80::1%8]:<remote-tmp>/opos-push.tgz")
+        ]
         self.assertEqual(len(copy), 1)
         login = [x for x in lines if x.startswith("+ ssh ") and x.endswith("admin@fe80::1%8 sh -s -- <remote-tmp>")]
         self.assertEqual(len(login), 1)
         self.assertNotIn("[", login[0])
+
     def test_remote_staging_and_install_lock_static(self):
         text = SCRIPT.read_text()
         self.assertIn("mktemp -d /tmp/opos-push.XXXXXXXX", text)
@@ -39,23 +48,38 @@ class DuoPushTest(unittest.TestCase):
         self.assertLess(lock_trap, replace)
         self.assertLess(lock_mkdir, install)
         self.assertLess(lock_trap, install)
+
     def test_script_text_static(self):
         text = SCRIPT.read_text()
         self.assertEqual(text.splitlines()[1], "# SPDX-License-Identifier: GPL-3.0-or-later")
         self.assertIn("opos.bak-", text)
         self.assertIn("sh install.sh --no-launch --yes", text)
-        self.assertIsNone(re.search(r"(?<![\d.])(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))(\.\d{1,3}){2,3}(?![\d.])", text))
+        self.assertIsNone(
+            re.search(r"(?<![\d.])(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))(\.\d{1,3}){2,3}(?![\d.])", text)
+        )
         self.assertNotIn("http://", text)
         proc = subprocess.run(["sh", "-n", str(SCRIPT)], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0)
+
     def test_remote_script_prunes_backups_and_checks_space_before_moving_install(self):
         text = SCRIPT.read_text()
         body = text.split("<<'REMOTE'\n", 1)[1].split("\nREMOTE\n", 1)[0]
         mv_at = body.index('mv "$HOME/opos" "$HOME/opos.bak-')
-        for needle in ['df -Pk "$HOME"', 'du -k "$stage/opos-push.tgz"', "reserve_kb=262144", "keep=2", "not enough free space", 'rm -f "$stage/opos-push.tgz"', "opos.bak-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]", '/install.sh"', "rm -rf"]:
+        for needle in [
+            'df -Pk "$HOME"',
+            'du -k "$stage/opos-push.tgz"',
+            "reserve_kb=262144",
+            "keep=2",
+            "not enough free space",
+            'rm -f "$stage/opos-push.tgz"',
+            "opos.bak-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]",
+            '/install.sh"',
+            "rm -rf",
+        ]:
             self.assertIn(needle, body)
             self.assertLess(body.index(needle), mv_at)
         self.assertLess(body.index('df -Pk "$HOME"'), body.index('mkdir "$HOME/opos"'))
+
     def test_remote_archive_paths_are_stage_scoped_static(self):
         text = SCRIPT.read_text()
         body = text.split("<<'REMOTE'\n", 1)[1].split("\nREMOTE\n", 1)[0]
@@ -63,11 +87,13 @@ class DuoPushTest(unittest.TestCase):
         self.assertIn('du -k "$stage/opos-push.tgz"', body)
         self.assertIn('rm -f "$stage/opos-push.tgz"', body)
         self.assertIn('tar -xzf "$stage/opos-push.tgz"', body)
+
     def test_deployment_propagates_installer_failure(self):
         import os
         import stat
         import tarfile
         import tempfile
+
         with tempfile.TemporaryDirectory() as top:
             bin_dir = os.path.join(top, "bin")
             os.mkdir(bin_dir)
@@ -87,15 +113,21 @@ class DuoPushTest(unittest.TestCase):
                 handle.write(sentinel_body)
             installer_src = os.path.join(top, "install.sh")
             with open(installer_src, "w") as handle:
-                handle.write("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/install-args\"\nexit 37\n")
+                handle.write('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$HOME/install-args"\nexit 37\n')
             with tarfile.open(fixture, "w:gz") as tar:
                 tar.add(installer_src, arcname="install.sh")
             with open(os.path.join(bin_dir, "git"), "w") as handle:
-                handle.write("#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" > \"$OPOS_GIT_LOG\"\no=\"\"\nprev=\"\"\nfor a in \"$@\"; do\nif [ \"$prev\" = \"-o\" ]; then\no=\"$a\"\nfi\nprev=\"$a\"\ndone\ncp \"$OPOS_FIXTURE\" \"$o\"\n")
+                handle.write(
+                    '#!/bin/sh\nset -eu\nprintf \'%s\\n\' "$*" > "$OPOS_GIT_LOG"\no=""\nprev=""\nfor a in "$@"; do\nif [ "$prev" = "-o" ]; then\no="$a"\nfi\nprev="$a"\ndone\ncp "$OPOS_FIXTURE" "$o"\n'
+                )
             with open(os.path.join(bin_dir, "scp"), "w") as handle:
-                handle.write("#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" > \"$OPOS_SCP_LOG\"\nsrc=\"\"\nfor a in \"$@\"; do\ncase \"$a\" in\n-*) ;;\n*)\nif [ -f \"$a\" ]; then\nsrc=\"$a\"\nfi\n;;\nesac\ndone\ncp \"$src\" \"$OPOS_STAGE_ARCHIVE\"\n")
+                handle.write(
+                    '#!/bin/sh\nset -eu\nprintf \'%s\\n\' "$*" > "$OPOS_SCP_LOG"\nsrc=""\nfor a in "$@"; do\ncase "$a" in\n-*) ;;\n*)\nif [ -f "$a" ]; then\nsrc="$a"\nfi\n;;\nesac\ndone\ncp "$src" "$OPOS_STAGE_ARCHIVE"\n'
+                )
             with open(os.path.join(bin_dir, "ssh"), "w") as handle:
-                handle.write("#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$OPOS_SSH_LOG\"\ntmp_in=\"$(mktemp)\"\ncat > \"$tmp_in\"\nif [ ! -s \"$tmp_in\" ]; then\ncase \"$*\" in\n*mktemp*)\nprintf '%s\\n' \"$OPOS_STAGE_DIR\"\nrm -f \"$tmp_in\"\nexit 0\n;;\nesac\nfi\ntmp_out=\"$(mktemp)\"\nsed \"s|/tmp/opos-push.tgz|$OPOS_STAGE_ARCHIVE|g\" \"$tmp_in\" > \"$tmp_out\"\nif [ \"$#\" -ne 5 ]; then\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit 64\nfi\nif [ \"$1\" != \"$OPOS_EXPECT_TARGET\" ]; then\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit 64\nfi\nif [ \"$2\" != \"sh\" ]; then\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit 64\nfi\nif [ \"$3\" != \"-s\" ]; then\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit 64\nfi\nif [ \"$4\" != \"--\" ]; then\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit 64\nfi\nif [ \"$5\" != \"$OPOS_STAGE_DIR\" ]; then\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit 64\nfi\nshift\nHOME=\"$OPOS_REMOTE_HOME\" \"$@\" < \"$tmp_out\"\ncode=$?\nrm -f \"$tmp_in\" \"$tmp_out\"\nexit \"$code\"\n")
+                handle.write(
+                    '#!/bin/sh\nset -eu\nprintf \'%s\\n\' "$*" >> "$OPOS_SSH_LOG"\ntmp_in="$(mktemp)"\ncat > "$tmp_in"\nif [ ! -s "$tmp_in" ]; then\ncase "$*" in\n*mktemp*)\nprintf \'%s\\n\' "$OPOS_STAGE_DIR"\nrm -f "$tmp_in"\nexit 0\n;;\nesac\nfi\ntmp_out="$(mktemp)"\nsed "s|/tmp/opos-push.tgz|$OPOS_STAGE_ARCHIVE|g" "$tmp_in" > "$tmp_out"\nif [ "$#" -ne 5 ]; then\nrm -f "$tmp_in" "$tmp_out"\nexit 64\nfi\nif [ "$1" != "$OPOS_EXPECT_TARGET" ]; then\nrm -f "$tmp_in" "$tmp_out"\nexit 64\nfi\nif [ "$2" != "sh" ]; then\nrm -f "$tmp_in" "$tmp_out"\nexit 64\nfi\nif [ "$3" != "-s" ]; then\nrm -f "$tmp_in" "$tmp_out"\nexit 64\nfi\nif [ "$4" != "--" ]; then\nrm -f "$tmp_in" "$tmp_out"\nexit 64\nfi\nif [ "$5" != "$OPOS_STAGE_DIR" ]; then\nrm -f "$tmp_in" "$tmp_out"\nexit 64\nfi\nshift\nHOME="$OPOS_REMOTE_HOME" "$@" < "$tmp_out"\ncode=$?\nrm -f "$tmp_in" "$tmp_out"\nexit "$code"\n'
+                )
             for name in ("git", "scp", "ssh"):
                 path = os.path.join(bin_dir, name)
                 mode = os.stat(path).st_mode
@@ -125,7 +157,11 @@ class DuoPushTest(unittest.TestCase):
                     self.assertFalse(os.path.exists(marker))
             proc = subprocess.run(
                 ["sh", str(SCRIPT), "admin@example.invalid", "HEAD"],
-                capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60,
+                capture_output=True,
+                text=True,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                timeout=60,
             )
             self.assertEqual(proc.returncode, 37)
             with open(git_log) as handle:
@@ -154,10 +190,12 @@ class DuoPushTest(unittest.TestCase):
             local_archive = parts[parts.index("-o") + 1]
             self.assertFalse(os.path.exists(local_archive))
             self.assertFalse(os.path.exists(os.path.dirname(local_archive)))
+
     def test_failed_install_restores_previous_deployment(self):
         import os
         import tarfile
         import tempfile
+
         text = SCRIPT.read_text()
         body = text.split("<<'REMOTE'\n", 1)[1].split("\nREMOTE\n", 1)[0]
         with tempfile.TemporaryDirectory() as top:

@@ -36,7 +36,7 @@ def blocks(text, head):
         while depth:
             depth += {"{": 1, "}": -1}.get(text[j], 0)
             j += 1
-        out.append(text[i + len(head):j - 1])
+        out.append(text[i + len(head) : j - 1])
         i = j
 
 
@@ -58,24 +58,36 @@ class UXP21Static(unittest.TestCase):
         wide = blocks(css(), "@media (min-width:840px){")
         self.assertEqual(len(wide), 1)
         body = wide[0]
-        self.assertIn('html[data-ff="foldable"] #phone{max-width:none;display:grid;grid-template-columns:1fr 1fr;column-gap:24px;', body)
+        self.assertIn(
+            'html[data-ff="foldable"] #phone{max-width:none;display:grid;grid-template-columns:1fr 1fr;column-gap:24px;',
+            body,
+        )
         self.assertNotIn("viewport-segment", body)
         # Nested grids stay even and wider-gapped so their middle gap covers the 24px centre.
         self.assertIn("column-gap:48px", body)
         self.assertIn('html[data-ff="foldable"] #home #allapps{grid-column:1/3}', body)
-        self.assertIn('html[data-ff="foldable"] #lock:not([hidden]){display:grid;grid-template-columns:1fr 1fr;column-gap:24px;', body)
+        self.assertIn(
+            'html[data-ff="foldable"] #lock:not([hidden]){display:grid;grid-template-columns:1fr 1fr;column-gap:24px;',
+            body,
+        )
 
     def test_foldable_columns_follow_dom_order(self):
         # Column 2 is one contiguous DOM run (#threads onward), so dense placement never reorders reading/Tab order.
         text = css()
-        self.assertIn('html[data-ff="foldable"] #phone>#threads,html[data-ff="foldable"] #phone>#threads~*,html[data-ff="foldable"] #lock>button{grid-column:2}', text)
+        self.assertIn(
+            'html[data-ff="foldable"] #phone>#threads,html[data-ff="foldable"] #phone>#threads~*,html[data-ff="foldable"] #lock>button{grid-column:2}',
+            text,
+        )
         body4 = (STATIC / "body-4.html").read_text(encoding="utf-8")
         self.assertTrue(body4.lstrip().startswith('<div id="threads"'))
 
     def test_letter_jump_row_tracks_allapps_grid(self):
         layout = (STATIC / "jaryo-layout.css").read_text(encoding="utf-8")
-        self.assertIn('#jaryo-letters{display:none;', layout)
-        self.assertIn('#phone[data-app="home"][data-allapps] #jaryo-letters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}', layout)
+        self.assertIn("#jaryo-letters{display:none;", layout)
+        self.assertIn(
+            '#phone[data-app="home"][data-allapps] #jaryo-letters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
+            layout,
+        )
         wide = blocks(layout, "@media (min-width:840px){")[0]
         self.assertIn('#phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1/-1;column-gap:48px}', wide)
         segment = blocks(layout, "@media (horizontal-viewport-segments:2){")[0]
@@ -88,7 +100,9 @@ class UXP21Static(unittest.TestCase):
         self.assertIn("env(viewport-segment-width 0 0)", seg[0])
         self.assertIn("env(viewport-segment-left 1 0)", seg[0])
         # Column 1 ends at the first segment's right edge even though #phone/#lock pad by the left inset.
-        self.assertIn("grid-template-columns:calc(env(viewport-segment-width 0 0) - env(safe-area-inset-left,0px)) 1fr;", seg[0])
+        self.assertIn(
+            "grid-template-columns:calc(env(viewport-segment-width 0 0) - env(safe-area-inset-left,0px)) 1fr;", seg[0]
+        )
         outside = text
         for b in seg:
             outside = outside.replace(b, "")
@@ -99,7 +113,9 @@ class UXP21Static(unittest.TestCase):
         text = css()
         land = [b for b in blocks(text, "@media (orientation:landscape){") if "slideout" in b]
         self.assertEqual(len(land), 1)
-        self.assertIn('html[data-ff="slideout"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr;', land[0])
+        self.assertIn(
+            'html[data-ff="slideout"] #phone[data-app] #home:not([hidden]){grid-template-columns:1fr;', land[0]
+        )
         self.assertIn('html[data-ff="slideout"] #controls{position:sticky;bottom:0;', land[0])
         self.assertIn('html[data-ff="slideout"] #controls button{min-height:64px', land[0])
         self.assertIn('html[data-ff="tablet"] #phone{max-width:720px}', text)
@@ -108,8 +124,13 @@ class UXP21Static(unittest.TestCase):
 
     def test_safe_areas(self):
         out = page("t" * 32, "n")
-        style = out[:out.index("</style>")]
-        for sel in ("#sb{", "#lock{", "#phone[data-app] #home:not([hidden]),#phone #settings{", 'html[data-ff="slideout"] #controls{'):
+        style = out[: out.index("</style>")]
+        for sel in (
+            "#sb{",
+            "#lock{",
+            "#phone[data-app] #home:not([hidden]),#phone #settings{",
+            'html[data-ff="slideout"] #controls{',
+        ):
             rules = [m for m in re.findall(re.escape(sel) + r"[^}]*\}", style) if "env(safe-area-inset-" in m]
             self.assertTrue(rules, sel)
         self.assertIn("calc(8px + env(safe-area-inset-bottom,0px))", style)
@@ -142,8 +163,17 @@ class UXP21Runtime(unittest.TestCase):
             h.write_text(JSVM, encoding="utf-8")
             r = subprocess.run([NODE, str(h), str(STATIC / "phone-b.js")], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(json.loads(r.stdout), {"slide": "slideout", "slideout": "slideout", "tablet": "tablet",
-                                                "foldable": "foldable", "bogus": None, "null": None})
+        self.assertEqual(
+            json.loads(r.stdout),
+            {
+                "slide": "slideout",
+                "slideout": "slideout",
+                "tablet": "tablet",
+                "foldable": "foldable",
+                "bogus": None,
+                "null": None,
+            },
+        )
 
 
 # Starts Chromium with --remote-debugging-pipe (no local port), loads the page per case, prints one JSON result.
@@ -297,11 +327,19 @@ class UXP21Browser(unittest.TestCase):
             html = Path(d) / "page.html"
             html.write_text(page(demo=True), encoding="utf-8")
             state = Path(d) / "state.json"
-            state.write_text(json.dumps({"hidden": Phone().state(), "visible": Phone(visible=True).state()}, default=str), encoding="utf-8")
+            state.write_text(
+                json.dumps({"hidden": Phone().state(), "visible": Phone(visible=True).state()}, default=str),
+                encoding="utf-8",
+            )
             drv = Path(d) / "cdp.js"
             drv.write_text(CDP, encoding="utf-8")
-            p = subprocess.run([NODE, str(drv), chrome, html.as_uri(), str(state)], capture_output=True, text=True,
-                               timeout=90, env=dict(os.environ, TMPDIR=d))
+            p = subprocess.run(
+                [NODE, str(drv), chrome, html.as_uri(), str(state)],
+                capture_output=True,
+                text=True,
+                timeout=90,
+                env=dict(os.environ, TMPDIR=d),
+            )
             if p.returncode:
                 raise AssertionError("CDP driver failed: " + p.stderr[-5000:])
             cls.r = json.loads(p.stdout.strip().splitlines()[-1])
@@ -311,7 +349,16 @@ class UXP21Browser(unittest.TestCase):
             self.skipTest("no headless chromium or node")
 
     def test_no_button_in_hinge_gutter(self):
-        for k in ("fold_full", "fold_home", "fold_phone", "fold_messages", "fold_helper", "fold_settings", "fold_allapps", "fold_lock"):
+        for k in (
+            "fold_full",
+            "fold_home",
+            "fold_phone",
+            "fold_messages",
+            "fold_helper",
+            "fold_settings",
+            "fold_allapps",
+            "fold_lock",
+        ):
             m = self.r[k]
             self.assertEqual(m["ff"], "foldable", k)
             self.assertGreater(m["n"], 0, k)

@@ -8,14 +8,18 @@ from tests.install_script_stubs import InstallStubs
 SCRIPT = Path(__file__).resolve().parents[1] / "deploy/duo-rootfs-install.sh"
 
 # The first bytes of the compressed and sparse formats the raw ext4 check refuses.
-MAGICS = {"zstd": b"\x28\xb5\x2f\xfd", "gzip": b"\x1f\x8b",
-          "xz": b"\xfd\x37\x7a\x58\x5a\x00", "Android sparse": b"\x3a\xff\x26\xed"}
+MAGICS = {
+    "zstd": b"\x28\xb5\x2f\xfd",
+    "gzip": b"\x1f\x8b",
+    "xz": b"\xfd\x37\x7a\x58\x5a\x00",
+    "Android sparse": b"\x3a\xff\x26\xed",
+}
 
 
 def ext4_image(head, blocks=4, log_block_size=0, incompat=0, blocks_hi=0, length=None):
     """A file shaped like a raw ext4 image: a superblock at byte 1024 and the length it describes."""
     data = bytearray((1024 << log_block_size) * blocks if length is None else length)
-    data[:len(head)] = head
+    data[: len(head)] = head
     if len(data) >= 1364:
         data[1028:1032] = blocks.to_bytes(4, "little")
         data[1048:1052] = log_block_size.to_bytes(4, "little")
@@ -30,8 +34,9 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.stub = InstallStubs()
         self.addCleanup(self.stub.close)
         # Different contents, so a test can tell which image a command was given.
-        self.images = [self.stub.image(name, name.encode() + b" contents\n") for name in
-                       ("twrp image.img", "boot image.img")]
+        self.images = [
+            self.stub.image(name, name.encode() + b" contents\n") for name in ("twrp image.img", "boot image.img")
+        ]
         self.images.append(self.stub.image("rootfs image.img", ext4_image(b"rootfs image.img contents\n")))
         self.hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in self.images]
         self.stub.set_rootfs(self.images[-1])
@@ -43,10 +48,16 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn(reason, result.stderr)
         for call in self.stub.commands():
-            self.assertIn(call, [["fastboot", "devices"], ["fastboot", "getvar", "product"],
-                                 ["fastboot", "getvar", "current-slot"],
-                                 ["fastboot", "getvar", "battery-level"],
-                                 ["fastboot", "getvar", "unlocked"]])
+            self.assertIn(
+                call,
+                [
+                    ["fastboot", "devices"],
+                    ["fastboot", "getvar", "product"],
+                    ["fastboot", "getvar", "current-slot"],
+                    ["fastboot", "getvar", "battery-level"],
+                    ["fastboot", "getvar", "unlocked"],
+                ],
+            )
         self.assert_no_device_write()
         self.assert_no_private_copy_left()
 
@@ -84,12 +95,15 @@ class TestDuoRootfsInstall(unittest.TestCase):
         lines = [line for line in result.stdout.splitlines() if line.startswith("+ ")]
         # The plan names the checks; the first one comes directly before the erase.
         self.assertEqual(lines[:2], ["+ recheck_images_before_erase", "+ fastboot format:ext4 userdata"])
-        self.assertLess(lines.index("+ recheck_rootfs_image"),
-                        next(i for i, line in enumerate(lines) if "adb push" in line))
+        self.assertLess(
+            lines.index("+ recheck_rootfs_image"), next(i for i, line in enumerate(lines) if "adb push" in line)
+        )
         self.assertEqual(lines[-3:-1], ["+ fastboot getvar product", "+ recheck_boot_image"])
         self.assertNotIn("+ recheck_device_product", lines)
-        self.assertLess(next(i for i, line in enumerate(lines) if "format:ext4" in line),
-                        next(i for i, line in enumerate(lines) if "adb push" in line))
+        self.assertLess(
+            next(i for i, line in enumerate(lines) if "format:ext4" in line),
+            next(i for i, line in enumerate(lines) if "adb push" in line),
+        )
         self.assertEqual(sum("fastboot boot" in line and "boot image.img" in line for line in lines), 1)
         self.assertEqual([line for line in lines if "reboot" in line], ["+ adb reboot bootloader"])
 
@@ -144,8 +158,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(self.stub.calls(), [])
 
     def test_single_fastboot_device_is_required(self):
-        for listing in ("", "\n", "unknown", "fixture\toffline\n",
-                        "first\tfastboot\nsecond\tfastboot\n"):
+        for listing in ("", "\n", "unknown", "fixture\toffline\n", "first\tfastboot\nsecond\tfastboot\n"):
             with self.subTest(listing=listing):
                 self.stub.env["STUB_DEVICES"] = listing
                 self.assert_refused(self.run_install("--yes", "--erase-userdata"), "one fastboot device")
@@ -155,10 +168,15 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assert_refused(self.run_install("--yes", "--erase-userdata"), "device")
 
     def test_product_mismatch_missing_malformed_or_ambiguous_refuses(self):
-        for response in ("", "product: other\n", "product: surfaceduo2\n",
-                         "not product: surfaceduo\n", "product: surfaceduo extra\n",
-                         "product: surfaceduo\nproduct: other\n",
-                         "product: surfaceduo\nproduct: surfaceduo\n"):
+        for response in (
+            "",
+            "product: other\n",
+            "product: surfaceduo2\n",
+            "not product: surfaceduo\n",
+            "product: surfaceduo extra\n",
+            "product: surfaceduo\nproduct: other\n",
+            "product: surfaceduo\nproduct: surfaceduo\n",
+        ):
             with self.subTest(response=response):
                 self.stub.env["STUB_PRODUCT"] = response
                 self.assert_refused(self.run_install("--yes", "--erase-userdata"), "product")
@@ -177,24 +195,30 @@ class TestDuoRootfsInstall(unittest.TestCase):
         rootfs = str(self.images[2])
         twrp, boot = (entry["path"] for entry in self.stub.booted())
         self.assert_booted_checked_copies(self.hashes[0], self.hashes[1])
-        self.assertEqual(self.stub.commands(), [
-            ["fastboot", "devices"],
-            ["fastboot", "getvar", "product"],
-            ["fastboot", "getvar", "current-slot"],
-            ["fastboot", "getvar", "battery-level"],
-            ["fastboot", "getvar", "unlocked"],
-            ["fastboot", "format:ext4", "userdata"],
-            ["fastboot", "boot", twrp],
-            ["adb", "wait-for-recovery"],
-            ["adb", "shell", "mountpoint -q /data || mount -t ext4 "
-             "/dev/block/platform/soc/1d84000.ufshc/by-name/userdata /data"],
-            ["adb", "push", rootfs, "/data/rootfs.img"],
-            ["adb", "shell", "sha256sum", "/data/rootfs.img"],
-            ["adb", "shell", "wc", "-c", "/data/rootfs.img"],
-            ["adb", "reboot", "bootloader"],
-            ["fastboot", "getvar", "product"],
-            ["fastboot", "boot", boot],
-        ])
+        self.assertEqual(
+            self.stub.commands(),
+            [
+                ["fastboot", "devices"],
+                ["fastboot", "getvar", "product"],
+                ["fastboot", "getvar", "current-slot"],
+                ["fastboot", "getvar", "battery-level"],
+                ["fastboot", "getvar", "unlocked"],
+                ["fastboot", "format:ext4", "userdata"],
+                ["fastboot", "boot", twrp],
+                ["adb", "wait-for-recovery"],
+                [
+                    "adb",
+                    "shell",
+                    "mountpoint -q /data || mount -t ext4 /dev/block/platform/soc/1d84000.ufshc/by-name/userdata /data",
+                ],
+                ["adb", "push", rootfs, "/data/rootfs.img"],
+                ["adb", "shell", "sha256sum", "/data/rootfs.img"],
+                ["adb", "shell", "wc", "-c", "/data/rootfs.img"],
+                ["adb", "reboot", "bootloader"],
+                ["fastboot", "getvar", "product"],
+                ["fastboot", "boot", boot],
+            ],
+        )
         for call in self.stub.calls()[1:]:
             self.assertEqual(call[1:3], ["-s", self.stub.device])
 
@@ -203,14 +227,11 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = [line for line in result.stdout.splitlines() if line.startswith("+ ")]
         device = self.stub.device
-        self.assertEqual(lines[:2], ["+ recheck_images_before_erase",
-                                     f"+ fastboot -s {device} format:ext4 userdata"])
+        self.assertEqual(lines[:2], ["+ recheck_images_before_erase", f"+ fastboot -s {device} format:ext4 userdata"])
         self.assertIn(f"+ adb -s {device} push {self.images[2]} /data/rootfs.img", lines)
         # The product check after the reboot is shown once, as the real command.
-        self.assertEqual([line for line in lines if "product" in line],
-                         [f"+ fastboot -s {device} getvar product"])
-        self.assertEqual(lines[-3:-1], [f"+ fastboot -s {device} getvar product",
-                                        "+ recheck_boot_image"])
+        self.assertEqual([line for line in lines if "product" in line], [f"+ fastboot -s {device} getvar product"])
+        self.assertEqual(lines[-3:-1], [f"+ fastboot -s {device} getvar product", "+ recheck_boot_image"])
         twrp, boot = (entry["path"] for entry in self.stub.booted())
         self.assertIn(f"+ fastboot -s {device} boot {twrp}", lines)
         self.assertEqual(lines[-1], f"+ fastboot -s {device} boot {boot}")
@@ -245,8 +266,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.stub.log.unlink(missing_ok=True)
                 original = self.images[index].read_bytes()
                 self.replace_during(self.LAST_BEFORE_ERASE, self.images[index])
-                self.assert_refused_before_erase(self.run_checked(),
-                                                 f"{label} changed after it was checked")
+                self.assert_refused_before_erase(self.run_checked(), f"{label} changed after it was checked")
                 self.images[index].write_bytes(original)
 
     def test_each_private_copy_replaced_before_the_erase_refuses_before_the_erase(self):
@@ -254,8 +274,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
             with self.subTest(copy=name):
                 self.stub.log.unlink(missing_ok=True)
                 self.replace_during(self.LAST_BEFORE_ERASE, self.private_copy(name))
-                self.assert_refused_before_erase(self.run_checked(),
-                                                 f"{label} changed after it was checked")
+                self.assert_refused_before_erase(self.run_checked(), f"{label} changed after it was checked")
 
     def test_twrp_file_replaced_after_the_erase_boots_the_checked_copy(self):
         self.replace_during("format:ext4 userdata", self.images[0])
@@ -322,9 +341,13 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertNotIn(["adb", "reboot", "bootloader"], self.stub.commands())
 
     def test_product_after_the_reboot_must_be_the_product_checked_before_the_erase(self):
-        for response in ("product: otherphone\n", "product: surfaceduo2\n", "",
-                         "product: surfaceduo extra\n",
-                         "product: surfaceduo\nproduct: surfaceduo\n"):
+        for response in (
+            "product: otherphone\n",
+            "product: surfaceduo2\n",
+            "",
+            "product: surfaceduo extra\n",
+            "product: surfaceduo\nproduct: surfaceduo\n",
+        ):
             with self.subTest(response=response):
                 self.stub.log.unlink(missing_ok=True)
                 self.stub.booted_log.unlink(missing_ok=True)
@@ -345,9 +368,17 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assert_booted_checked_copies(self.hashes[0], self.hashes[1])
 
     def test_bootloader_must_report_unlocked_before_the_erase(self):
-        for response in ("unlocked: no\n", "", "unlocked:\n", "unlocked: yes please\n",
-                         "unlocked: YES\n", "locked: yes\n", "not unlocked: yes\n",
-                         "unlocked: yes\nunlocked: no\n", "unlocked: yes\nunlocked: yes\n"):
+        for response in (
+            "unlocked: no\n",
+            "",
+            "unlocked:\n",
+            "unlocked: yes please\n",
+            "unlocked: YES\n",
+            "locked: yes\n",
+            "not unlocked: yes\n",
+            "unlocked: yes\nunlocked: no\n",
+            "unlocked: yes\nunlocked: yes\n",
+        ):
             with self.subTest(response=response):
                 self.stub.log.unlink(missing_ok=True)
                 self.stub.env["STUB_UNLOCKED"] = response
@@ -363,9 +394,17 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_current_slot_must_be_a_before_the_erase(self):
-        for response in ("current-slot: b\n", "", "current-slot:\n", "current-slot: _a\n",
-                         "current-slot: A\n", "current-slot: a extra\n", "not current-slot: a\n",
-                         "current-slot: a\ncurrent-slot: b\n", "current-slot: a\ncurrent-slot: a\n"):
+        for response in (
+            "current-slot: b\n",
+            "",
+            "current-slot:\n",
+            "current-slot: _a\n",
+            "current-slot: A\n",
+            "current-slot: a extra\n",
+            "not current-slot: a\n",
+            "current-slot: a\ncurrent-slot: b\n",
+            "current-slot: a\ncurrent-slot: a\n",
+        ):
             with self.subTest(response=response):
                 self.stub.log.unlink(missing_ok=True)
                 self.stub.env["STUB_SLOT"] = response
@@ -377,11 +416,21 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assert_refused(self.run_checked(), "slot")
 
     def test_battery_must_read_20_percent_or_more_before_the_erase(self):
-        for response in ("battery-level: 19\n", "battery-level: 0\n", "battery-level: 5%\n", "",
-                         "battery-level:\n", "battery-level: high\n", "battery-level: -50\n",
-                         "battery-level: 20 extra\n", "battery-level: 2O\n", "battery-level: 101\n",
-                         "battery-level: 0020\n", "battery-level: 020\n",
-                         "battery-level: 80\nbattery-level: 80\n"):
+        for response in (
+            "battery-level: 19\n",
+            "battery-level: 0\n",
+            "battery-level: 5%\n",
+            "",
+            "battery-level:\n",
+            "battery-level: high\n",
+            "battery-level: -50\n",
+            "battery-level: 20 extra\n",
+            "battery-level: 2O\n",
+            "battery-level: 101\n",
+            "battery-level: 0020\n",
+            "battery-level: 020\n",
+            "battery-level: 80\nbattery-level: 80\n",
+        ):
             with self.subTest(response=response):
                 self.stub.log.unlink(missing_ok=True)
                 self.stub.env["STUB_BATTERY"] = response
@@ -393,8 +442,11 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assert_refused(self.run_checked(), "battery")
 
     def test_battery_of_20_percent_or_more_in_bootloader_form_is_accepted(self):
-        for response in ("(bootloader) battery-level: 20\r\nFinished. Total time: 0.1s\n",
-                         "battery-level: 100\n", "battery-level: 85%\n"):
+        for response in (
+            "(bootloader) battery-level: 20\r\nFinished. Total time: 0.1s\n",
+            "battery-level: 100\n",
+            "battery-level: 85%\n",
+        ):
             with self.subTest(response=response):
                 self.stub.log.unlink(missing_ok=True)
                 self.stub.booted_log.unlink(missing_ok=True)
@@ -422,7 +474,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
             for at in range(len(magic)):
                 with self.subTest(format=name, wrong_byte=at):
                     near = bytearray(bytes(4096))
-                    near[:len(magic)] = magic
+                    near[: len(magic)] = magic
                     near[at] ^= 0xFF
                     result = self.refuse_rootfs(bytes(near), "no ext4 superblock magic (0xEF53)")
                     self.assertNotIn("it is a", result.stderr)
@@ -448,10 +500,12 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.refuse_rootfs(ext4_image(b"x", blocks=2, log_block_size=2, length=4096), "truncated")
 
     def test_impossible_ext4_superblock_refuses_before_device_access(self):
-        for kwargs, reason in (({"log_block_size": 7, "length": 4096}, "impossible block size"),
-                               ({"log_block_size": 3, "length": 4096}, "larger than 4096 bytes"),
-                               ({"incompat": 0x80, "blocks_hi": 1}, "16 TiB or more"),
-                               ({"blocks": 0, "length": 4096}, "no blocks")):
+        for kwargs, reason in (
+            ({"log_block_size": 7, "length": 4096}, "impossible block size"),
+            ({"log_block_size": 3, "length": 4096}, "larger than 4096 bytes"),
+            ({"incompat": 0x80, "blocks_hi": 1}, "16 TiB or more"),
+            ({"blocks": 0, "length": 4096}, "no blocks"),
+        ):
             with self.subTest(reason=reason):
                 self.refuse_rootfs(ext4_image(b"x", **kwargs), reason)
 

@@ -61,12 +61,12 @@ class UXP00Hooks(unittest.TestCase):
         self.assertIn("if(s&&!s.error){try{(window.oposHooks", src)
 
 
-
 class UXP00FailOpenScripts(unittest.TestCase):
     """Each extension file gets its own <script>, so a syntax error in one cannot stop core init."""
 
     def _scripts(self):
         import re
+
         return re.findall(r"<script[^>]*>(.*?)</script>", page("t" * 32, "n"), re.S)
 
     def test_phone_js_in_separate_script_elements(self):
@@ -84,6 +84,7 @@ class UXP00FailOpenScripts(unittest.TestCase):
         import json
         import shutil
         import subprocess
+
         node = shutil.which("node")
         if not node:
             self.skipTest("node not available")

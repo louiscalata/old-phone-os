@@ -11,12 +11,30 @@ from unittest import mock
 from opos.aitools import catalog
 from opos.aitools import place
 
+
 def _tool(archs: tuple[str, ...] = ("aarch64", "x86_64"), min_free_mb: int = 10) -> catalog.Tool:
     """Build minimal Tool for tests."""
-    return catalog.Tool(id="test-tool", name="Test Tool", binary="testbin", installer_url="https://example.com/install.sh", interpreter="sh", installer_args=(), installer_env={}, archs=archs, min_free_mb=min_free_mb, state_subdir="state", run_env={}, lite_env={}, signin="do signin", docs_url="https://example.com/docs")
+    return catalog.Tool(
+        id="test-tool",
+        name="Test Tool",
+        binary="testbin",
+        installer_url="https://example.com/install.sh",
+        interpreter="sh",
+        installer_args=(),
+        installer_env={},
+        archs=archs,
+        min_free_mb=min_free_mb,
+        state_subdir="state",
+        run_env={},
+        lite_env={},
+        signin="do signin",
+        docs_url="https://example.com/docs",
+    )
+
 
 class TestNormalizeArch(unittest.TestCase):
     """Cover normalize_arch."""
+
     def test_aarch64_variants(self):
         """Map aarch64 forms."""
         self.assertEqual(place.normalize_arch("aarch64"), "aarch64")
@@ -42,8 +60,10 @@ class TestNormalizeArch(unittest.TestCase):
         self.assertIsNone(place.normalize_arch("x86"))
         self.assertIsNone(place.normalize_arch("aarch64\n"))
 
+
 class TestChoosePrefix(unittest.TestCase):
     """Cover choose_prefix."""
+
     @unittest.skipIf(sys.platform == "win32", "POSIX absolute paths not on Windows")
     def test_env_absolute_override(self):
         """Absolute env wins."""
@@ -130,8 +150,10 @@ class TestChoosePrefix(unittest.TestCase):
         got = place.choose_prefix({}, home, persistent_roots=())
         self.assertEqual(got, Path("/fake/home/.local/share/opos"))
 
+
 class TestFreeMb(unittest.TestCase):
     """Cover free_mb."""
+
     def test_nonexistent_uses_parent(self):
         """Nonexistent path uses nearest parent."""
         with tempfile.TemporaryDirectory() as td:
@@ -181,9 +203,11 @@ class TestFreeMb(unittest.TestCase):
             self.assertEqual(got, fixed.free // (1024 * 1024))
             self.assertEqual(Path(m.call_args[0][0]), base)
 
+
 @unittest.skipIf(sys.platform == "win32", "/proc/mounts parsing is POSIX-only")
 class TestVolatileWarning(unittest.TestCase):
     """Cover volatile_warning."""
+
     def _write(self, td: str, content: str) -> Path:
         """Write mounts file."""
         p = Path(td) / "mounts"
@@ -260,7 +284,9 @@ class TestVolatileWarning(unittest.TestCase):
     def test_escaped_space(self):
         """\\040 decoded."""
         with tempfile.TemporaryDirectory() as td:
-            m = self._write(td, "/dev/sda1 /mnt/fake\\040space ext4 rw 0 0\ntmpfs /mnt/fake\\040space/tmp tmpfs rw 0 0\n")
+            m = self._write(
+                td, "/dev/sda1 /mnt/fake\\040space ext4 rw 0 0\ntmpfs /mnt/fake\\040space/tmp tmpfs rw 0 0\n"
+            )
             self.assertIsNone(place.volatile_warning(Path("/mnt/fake space/tool"), m))
             self.assertIsNotNone(place.volatile_warning(Path("/mnt/fake space/tmp/tool"), m))
 
@@ -271,8 +297,10 @@ class TestVolatileWarning(unittest.TestCase):
             w = place.volatile_warning(Path("/tmp"), m)
             self.assertIsNotNone(w)
 
+
 class TestPreflight(unittest.TestCase):
     """Cover preflight."""
+
     def test_bad_arch(self):
         """Unsupported arch reported."""
         t = _tool(archs=("aarch64",), min_free_mb=1)

@@ -5,6 +5,7 @@ import sys
 from opos.ui import render, ScreenModem, main
 from opos.runtime import Runtime
 
+
 class TestUI(unittest.TestCase):
     def test_render_joins_screen_lines(self):
         tick = Runtime().step(0, 5)
@@ -27,7 +28,9 @@ class TestUI(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith("linux") and not os.environ.get("DISPLAY"), "a window would open")
     def test_main_without_display_does_not_raise(self):
         from opos.ui import main
+
         main([])
+
 
 if __name__ == "__main__":
     unittest.main()

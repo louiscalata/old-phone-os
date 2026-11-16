@@ -36,7 +36,7 @@ class FakeRunner:
         self.commands.append(command)
         if self.error is not None:
             raise self.error
-        return (0, '')
+        return (0, "")
 
 
 class FakeResponse:
@@ -78,7 +78,11 @@ class BaseCase(unittest.TestCase):
             dst.write_text("[Unit]\nDescription=opos\n", encoding="utf-8")
         self.tools_prefix = self.root / "tools"
         self.tools_prefix.mkdir(parents=True, exist_ok=True)
-        self.env = {"HOME": str(self.home), "XDG_CONFIG_HOME": str(self.root / "xdg"), "OPOS_TOOLS_PREFIX": str(self.tools_prefix)}
+        self.env = {
+            "HOME": str(self.home),
+            "XDG_CONFIG_HOME": str(self.root / "xdg"),
+            "OPOS_TOOLS_PREFIX": str(self.tools_prefix),
+        }
         self.runner = FakeRunner()
 
     def cfg_dir(self, platform: str = "linux") -> Path:
@@ -245,7 +249,16 @@ class ApplyTests(BaseCase):
         self.assertIs(result, progress)
 
     def test_apply_never_raises_on_bad_cfg_shape(self) -> None:
-        progress = apply_mod.apply({}, repo_root=self.repo, python=sys.executable, home=self.home, platform="linux", env=self.env, runner=self.runner, health_check=lambda port: (True, "ok"))
+        progress = apply_mod.apply(
+            {},
+            repo_root=self.repo,
+            python=sys.executable,
+            home=self.home,
+            platform="linux",
+            env=self.env,
+            runner=self.runner,
+            health_check=lambda port: (True, "ok"),
+        )
         self.assertEqual(progress.snapshot()[0]["status"], "failed")
 
 
@@ -544,7 +557,14 @@ class UninstallTests(BaseCase):
                 link.symlink_to(real, target_is_directory=True)
                 env = dict(self.env)
                 env["OPOS_CONFIG_DIR"] = str(link)
-                lines = uninstall(home=self.home, platform="linux", env=env, runner=FakeRunner(), dry_run=dry_run, tools_uninstaller=lambda **kwargs: [])
+                lines = uninstall(
+                    home=self.home,
+                    platform="linux",
+                    env=env,
+                    runner=FakeRunner(),
+                    dry_run=dry_run,
+                    tools_uninstaller=lambda **kwargs: [],
+                )
                 self.assertTrue(link.is_symlink())
                 self.assertEqual(os.readlink(link), str(real))
                 for path, data in seeded.items():
@@ -594,7 +614,9 @@ class UninstallToolsTests(BaseCase):
             seen["dry_run"] = dry_run
             return ["would remove tools"]
 
-        lines = uninstall(home=self.home, platform="linux", env=self.env, runner=FakeRunner(), dry_run=True, tools_uninstaller=stub)
+        lines = uninstall(
+            home=self.home, platform="linux", env=self.env, runner=FakeRunner(), dry_run=True, tools_uninstaller=stub
+        )
         self.assertIn("would remove tools", lines)
         self.assertEqual(seen["dry_run"], True)
         self.assertTrue(d.exists())
@@ -610,7 +632,14 @@ class UninstallToolsTests(BaseCase):
         def stub(*, env, home, dry_run):
             return ["keep tools line"]
 
-        lines = uninstall(home=self.home, platform="linux", env=self.env, runner=FakeRunner(), keep_config=True, tools_uninstaller=stub)
+        lines = uninstall(
+            home=self.home,
+            platform="linux",
+            env=self.env,
+            runner=FakeRunner(),
+            keep_config=True,
+            tools_uninstaller=stub,
+        )
         self.assertIn("keep tools line", lines)
         self.assertTrue(config_path(self.env, "linux").exists())
 
@@ -698,7 +727,11 @@ class TestNoSilentExceptPass(unittest.TestCase):
     def test_no_except_handler_with_only_pass(self) -> None:
         target = Path(__file__).resolve().parents[1] / "src" / "opos" / "setup" / "apply.py"
         tree = ast.parse(target.read_text(encoding="utf-8"))
-        lines = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler) and len(n.body) == 1 and isinstance(n.body[0], ast.Pass)]
+        lines = [
+            n.lineno
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ExceptHandler) and len(n.body) == 1 and isinstance(n.body[0], ast.Pass)
+        ]
         self.assertEqual(lines, [], f"silent except-pass at lines {lines}")
 
 

@@ -36,18 +36,17 @@ class InstallSshdSandboxTests(unittest.TestCase):
             dest.symlink_to(target)
         else:
             dest.write_bytes(b"live configuration\n")
-        for name, content in (("stat", "printf '0 600\\n'"),
-                              ("sshd", "exit 0"), ("systemctl", "exit 0")):
+        for name, content in (("stat", "printf '0 600\\n'"), ("sshd", "exit 0"), ("systemctl", "exit 0")):
             stub = stubs / name
             stub.write_text("#!/bin/sh\n" + content + "\n")
             stub.chmod(0o755)
         script = body.replace(prod + ".d/60-opos.conf", str(dropin)).replace(prod, str(dest))
         self.assertNotIn(prod, script)
         script += '\nprintf "restore-status=%s\\n" "$_sshd"\n'
-        env = dict(os.environ, HOME=str(home), OPOS_HOME=str(opos),
-                   PATH=str(stubs) + os.pathsep + os.environ.get("PATH", ""))
-        proc = subprocess.run(["sh"], input=script, text=True, capture_output=True,
-                              env=env, cwd=root, timeout=30)
+        env = dict(
+            os.environ, HOME=str(home), OPOS_HOME=str(opos), PATH=str(stubs) + os.pathsep + os.environ.get("PATH", "")
+        )
+        proc = subprocess.run(["sh"], input=script, text=True, capture_output=True, env=env, cwd=root, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return proc, target, dropin, dest, backup
 
@@ -89,8 +88,8 @@ class InstallSshdSandboxTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as away:
             victim = Path(away) / "python3.12"
             proc, target, dropin, dest, backup = self.run_restore(
-                Path(tmp), "modified",
-                setup=lambda opos: (opos / "sshd_dropin.preserved").symlink_to(victim))
+                Path(tmp), "modified", setup=lambda opos: (opos / "sshd_dropin.preserved").symlink_to(victim)
+            )
             self.assertFalse(os.path.lexists(victim))
             preserved = Path(tmp) / "opos" / "sshd_dropin.preserved.1"
             self.assertFalse(preserved.is_symlink())

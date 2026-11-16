@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The Duo OS on-screen keyboard: the server side (injection, routes, unset = unchanged), the shipped files, and the logic under node."""
+
 import http.client
 import inspect
 import os
@@ -23,6 +24,7 @@ if "skip_host" not in _params and not any(p.kind is p.VAR_KEYWORD for p in _para
         kw.pop("skip_host", None)
         kw.pop("skip_accept_encoding", None)
         return _orig_request(self, method, url, body=body, headers=headers or {}, **kw)
+
     http.client.HTTPConnection.request = _compat  # type: ignore[method-assign]
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,8 +44,19 @@ def env_without(**kw):
 
 class OskEnvTest(unittest.TestCase):
     def test_mode(self):
-        for v, m in (("1", "web"), ("web", "web"), (" WEB ", "web"), ("stevia", "stevia"), ("Stevia", "stevia"),
-                     ("", ""), ("0", ""), ("off", ""), ("true", ""), ("2", ""), ("web2", "")):
+        for v, m in (
+            ("1", "web"),
+            ("web", "web"),
+            (" WEB ", "web"),
+            ("stevia", "stevia"),
+            ("Stevia", "stevia"),
+            ("", ""),
+            ("0", ""),
+            ("off", ""),
+            ("true", ""),
+            ("2", ""),
+            ("web2", ""),
+        ):
             self.assertEqual(osk.mode({"OPOS_OSK": v}), m, v)
         self.assertEqual(osk.mode({}), "")
         self.assertTrue(osk.enabled({"OPOS_OSK": "1"}))
@@ -60,8 +73,11 @@ class OskEnvTest(unittest.TestCase):
 
     def test_tags(self):
         t = osk.tags("abc_DEF-123", {"OPOS_OSK_HINGE": "40"})
-        self.assertEqual(t, '<link rel="stylesheet" href="/osk.css" nonce="abc_DEF-123">'
-                            '<script src="/osk.js" nonce="abc_DEF-123" data-hinge="40" defer></script>')
+        self.assertEqual(
+            t,
+            '<link rel="stylesheet" href="/osk.css" nonce="abc_DEF-123">'
+            '<script src="/osk.js" nonce="abc_DEF-123" data-hinge="40" defer></script>',
+        )
         for bad in ("", "a b", 'a"b', "<x>", "a" * 129, None, 5):
             with self.assertRaises(ValueError, msg=repr(bad)):
                 osk.tags(bad)
@@ -75,7 +91,9 @@ class OskEnvTest(unittest.TestCase):
         self.assertEqual(osk.inject(html, "n1", off), html)
         self.assertEqual(osk.inject("<p>no body end", "n1", on), "<p>no body end" + osk.tags("n1", on))
         two = "<body></body><script>'</body>'</script></BODY>"
-        self.assertTrue(osk.inject(two, "n1", on).endswith(osk.tags("n1", on) + "</BODY>"), "before the last </body>, any case")
+        self.assertTrue(
+            osk.inject(two, "n1", on).endswith(osk.tags("n1", on) + "</BODY>"), "before the last </body>, any case"
+        )
 
     def test_inject_survives_characters_whose_lower_case_is_longer(self):
         on = {"OPOS_OSK": "1"}  # "İ".lower() is two characters, so an index into lower() is wrong for the original
@@ -119,7 +137,9 @@ class OskServerTest(unittest.TestCase):
                 status, headers, body = self.get(run)
                 nonce, page = self.expected_page(run, headers)
                 self.assertEqual(status, 200)
-                self.assertEqual(body, fonts.inject(page.encode("utf-8"), nonce), "page plus the font sheet, OPOS_OSK=%r" % value)
+                self.assertEqual(
+                    body, fonts.inject(page.encode("utf-8"), nonce), "page plus the font sheet, OPOS_OSK=%r" % value
+                )
                 self.assertNotIn(b"/osk.", body)
                 for p in ("/osk.js", "/osk.css", "/osk.js?x=1"):
                     s, h, b = self.get(run, p)
@@ -136,8 +156,12 @@ class OskServerTest(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(headers["content-type"], "text/html; charset=utf-8")
             base = fonts.inject(page.encode("utf-8"), nonce).decode("utf-8")
-            self.assertEqual(body.decode("utf-8"), base[:base.rindex("</body>")] + tags + "</body></html>")
-            self.assertEqual(body.decode("utf-8").replace(tags, ""), base, "removing the keyboard tags leaves the page and the font sheet")
+            self.assertEqual(body.decode("utf-8"), base[: base.rindex("</body>")] + tags + "</body></html>")
+            self.assertEqual(
+                body.decode("utf-8").replace(tags, ""),
+                base,
+                "removing the keyboard tags leaves the page and the font sheet",
+            )
             self.assertEqual(int(headers["content-length"]), len(body))
             self.assertIn(f"script-src 'nonce-{nonce}'", headers["content-security-policy"])
             self.assertIn(f"style-src 'nonce-{nonce}'", headers["content-security-policy"])
@@ -145,7 +169,11 @@ class OskServerTest(unittest.TestCase):
 
     def test_without_the_module_the_server_serves_what_it_always_served(self):
         # a runtime that ships web.py without src/opos/osk.py (the pmos inventory once did): no 500, no keyboard, even with the env set
-        with env_without(OPOS_OSK="1"), mock.patch.object(webclient.web, "osk", None), webclient.Running(token=TOKEN) as run:
+        with (
+            env_without(OPOS_OSK="1"),
+            mock.patch.object(webclient.web, "osk", None),
+            webclient.Running(token=TOKEN) as run,
+        ):
             status, headers, body = self.get(run)
             nonce, page = self.expected_page(run, headers)
             self.assertEqual((status, body), (200, fonts.inject(page.encode("utf-8"), nonce)))
@@ -162,7 +190,10 @@ class OskServerTest(unittest.TestCase):
 
     def test_on_the_two_files_are_served_with_the_page_hardening(self):
         with env_without(OPOS_OSK="1"), webclient.Running(token=TOKEN) as run:
-            for path, name, ctype in (("/osk.js", "osk.js", "text/javascript; charset=utf-8"), ("/osk.css", "osk.css", "text/css; charset=utf-8")):
+            for path, name, ctype in (
+                ("/osk.js", "osk.js", "text/javascript; charset=utf-8"),
+                ("/osk.css", "osk.css", "text/css; charset=utf-8"),
+            ):
                 for q in ("", "?v=2"):
                     status, h, body = self.get(run, path + q)
                     self.assertEqual(status, 200, path + q)
@@ -206,8 +237,11 @@ class OskServerTest(unittest.TestCase):
         self.assertNotIn("/osk.", off)
         self.assertNotIn("opos-osk", off)
         self.assertLessEqual(len(off.encode("utf-8")), PAGE_BUDGET)
-        self.assertLessEqual(len(osk.inject(off, "n" * 22, {"OPOS_OSK": "1"}).encode("utf-8")) - len(off.encode("utf-8")), 300,
-                             "the two tags are small")
+        self.assertLessEqual(
+            len(osk.inject(off, "n" * 22, {"OPOS_OSK": "1"}).encode("utf-8")) - len(off.encode("utf-8")),
+            300,
+            "the two tags are small",
+        )
 
     def test_the_keyboard_files_are_not_inlined_in_the_page(self):
         page = webclient.web.page(TOKEN, "n" * 22)
@@ -225,7 +259,11 @@ class OskFilesTest(unittest.TestCase):
             self.assertTrue(text.isascii(), name + " is ASCII (other characters are written as escapes)")
             self.assertTrue(text.startswith("/* SPDX-License-Identifier: GPL-3.0-or-later */\n"), name)
             self.assertTrue(text.endswith("\n"), name)
-        self.assertTrue((ROOT / "src/opos/osk.py").read_text(encoding="utf-8").startswith("# SPDX-License-Identifier: GPL-3.0-or-later\n"))
+        self.assertTrue(
+            (ROOT / "src/opos/osk.py")
+            .read_text(encoding="utf-8")
+            .startswith("# SPDX-License-Identifier: GPL-3.0-or-later\n")
+        )
 
     def test_sizes(self):
         self.assertLess(len(JS.encode("utf-8")), 40 * 1024)
@@ -238,8 +276,20 @@ class OskFilesTest(unittest.TestCase):
         self.assertNotIn("@import", CSS)
         self.assertNotRegex(CSS, r"url\(")
         self.assertNotRegex(CSS, r"@font-face")
-        for bad in ("eval(", "new Function", "innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "XMLHttpRequest", "fetch(",
-                    "WebSocket", "sendBeacon", "importScripts", "setAttribute('style'"):
+        for bad in (
+            "eval(",
+            "new Function",
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "XMLHttpRequest",
+            "fetch(",
+            "WebSocket",
+            "sendBeacon",
+            "importScripts",
+            "setAttribute('style'",
+        ):
             self.assertNotIn(bad, JS, bad)
         self.assertNotRegex(JS, r"setTimeout\(\s*['\"]")
 
@@ -247,7 +297,7 @@ class OskFilesTest(unittest.TestCase):
         uses = [m.start() for m in re.finditer(r"localStorage", JS)]
         self.assertTrue(uses)
         for i in uses:
-            self.assertRegex(JS[max(0, i - 120):i], r"try \{", "every localStorage use sits in a try")
+            self.assertRegex(JS[max(0, i - 120) : i], r"try \{", "every localStorage use sits in a try")
 
     def test_the_page_part_only_runs_in_a_page_and_the_core_is_exported_for_tests(self):
         self.assertIn("if (typeof module === 'object' && module && module.exports) module.exports = core;", JS)
@@ -274,7 +324,10 @@ class OskFilesTest(unittest.TestCase):
     def test_the_style_sheet_follows_the_page_theme(self):
         self.assertIn("var(--jaryo-bg,#f3f0e8)", CSS)
         self.assertIn("var(--jaryo-fg,#1a1a1a)", CSS)
-        self.assertRegex(CSS, r"@media \(prefers-color-scheme:dark\)\{#opos-osk\{--osk-bg:var\(--jaryo-bg,#000\);--osk-fg:var\(--jaryo-fg,#e6e2d9\)")
+        self.assertRegex(
+            CSS,
+            r"@media \(prefers-color-scheme:dark\)\{#opos-osk\{--osk-bg:var\(--jaryo-bg,#000\);--osk-fg:var\(--jaryo-fg,#e6e2d9\)",
+        )
         self.assertIn("#opos-osk[hidden]{display:none}", CSS)
         self.assertIn(":focus-visible", CSS)
         self.assertIn("forced-colors", CSS)
@@ -285,8 +338,15 @@ class OskFilesTest(unittest.TestCase):
         self.assertRegex(CSS, r"touch-action:none", "a swipe over the keys must not scroll the page or cancel a key")
 
     def test_the_keys_are_labelled_buttons_in_a_named_group(self):
-        for s in ("setAttribute('role', 'group')", "setAttribute('aria-label', 'On-screen keyboard')", "b.type = 'button'",
-                  "'aria-pressed'", "b.tabIndex = -1", "e.detail === 0", "e.preventDefault();"):
+        for s in (
+            "setAttribute('role', 'group')",
+            "setAttribute('aria-label', 'On-screen keyboard')",
+            "b.type = 'button'",
+            "'aria-pressed'",
+            "b.tabIndex = -1",
+            "e.detail === 0",
+            "e.preventDefault();",
+        ):
             self.assertIn(s, JS, s)
         for label in ("Delete", "Enter", "Shift", "space", "Hide the keyboard"):
             self.assertIn(label, JS)
@@ -299,7 +359,9 @@ class OskFilesTest(unittest.TestCase):
         for s in ("'keydown'", "'keyup'", "'beforeinput'", "'input'", "'change'", "key: key", "bubbles: true"):
             self.assertIn(s, JS, s)
         # js-8.js / phone-b.js read these on the Enter handlers of #number, #msg and #q
-        page = "\n".join((ROOT / "src/opos/web_static" / n).read_text(encoding="utf-8") for n in ("js-8.js", "phone-b.js"))
+        page = "\n".join(
+            (ROOT / "src/opos/web_static" / n).read_text(encoding="utf-8") for n in ("js-8.js", "phone-b.js")
+        )
         self.assertIn("e.key==='Enter'&&!e.isComposing&&!e.repeat", page)
         self.assertNotIn("isComposing: true", JS)
 

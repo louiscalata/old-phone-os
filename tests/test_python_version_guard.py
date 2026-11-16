@@ -49,20 +49,17 @@ class TestPythonVersionGuard(unittest.TestCase):
         )
 
     def test_old_python_import_fails_clearly(self):
-        result = self.run_python(
-            "import sys; sys.version_info = (3, 9, 6); import opos"
-        )
+        result = self.run_python("import sys; sys.version_info = (3, 9, 6); import opos")
         self.assert_old_python_rejected(result)
 
     def test_old_python_runpy_fails_with_same_message(self):
         result = self.run_python(
-            'import sys; sys.version_info = (3, 9, 6); import runpy; '
-            'runpy.run_module("opos.web", run_name="__main__")'
+            'import sys; sys.version_info = (3, 9, 6); import runpy; runpy.run_module("opos.web", run_name="__main__")'
         )
         self.assert_old_python_rejected(result)
 
     def test_old_python_runpy_never_binds_a_port(self):
-        result = self.run_python('''
+        result = self.run_python("""
 import runpy
 import socket
 import sys
@@ -74,25 +71,21 @@ with patch.object(socket.socket, "bind", side_effect=AssertionError("unexpected 
         runpy.run_module("opos.web", run_name="__main__")
     finally:
         bind.assert_not_called()
-''')
+""")
         self.assert_old_python_rejected(result)
 
     def test_supported_python_import_succeeds(self):
         self.assert_import_succeeds(self.run_python("import sys; import opos"))
 
     def test_python_3_10_is_rejected_by_name(self):
-        result = self.run_python(
-            "import sys; sys.version_info = (3, 10, 14); import opos"
-        )
+        result = self.run_python("import sys; sys.version_info = (3, 10, 14); import opos")
         self.assert_old_python_rejected(result, version="3.10")
 
     def test_python_3_11_boundary_is_accepted(self):
         # The exact minimum, final and pre-release, must import silently.
         for version in ((3, 11, 0, "final", 0), (3, 11, 0, "alpha", 1)):
             with self.subTest(version=version):
-                self.assert_import_succeeds(self.run_python(
-                    f"import sys; sys.version_info = {version!r}; import opos"
-                ))
+                self.assert_import_succeeds(self.run_python(f"import sys; sys.version_info = {version!r}; import opos"))
 
 
 if __name__ == "__main__":

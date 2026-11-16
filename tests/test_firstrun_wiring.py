@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The first run and time zone as shipped: the unit's switch, verify-image.sh's checks, the docs."""
+
 import os
 import re
 import shutil
@@ -26,7 +27,11 @@ class Packaging(unittest.TestCase):
         self.assertEqual(1, text.count("# <<< track firstboot"))
         for needle in ("OPOS_FIRSTRUN=1", "usr/share/zoneinfo", "+0530", "opos.timezone --set", "opos-kiosk"):
             self.assertIn(needle, text)
-        r = subprocess.run(["sh", "-n", str(ROOT / "packaging/duo-os/verify-image.sh")], capture_output=True, text=True) if shutil.which("sh") else None
+        r = (
+            subprocess.run(["sh", "-n", str(ROOT / "packaging/duo-os/verify-image.sh")], capture_output=True, text=True)
+            if shutil.which("sh")
+            else None
+        )
         if r:
             self.assertEqual(0, r.returncode, r.stderr)
 
@@ -45,9 +50,13 @@ class Packaging(unittest.TestCase):
         shutil.copy(ROOT / "packaging/duo-os/opos-server.service", w)
         shutil.copy(ROOT / "packaging/duo-os/opos-kiosk", os.path.join(r, "usr/libexec/opos"))
         os.symlink("/usr/share/zoneinfo", os.path.join(r, "usr/share/zoneinfo"))
-        script = ("set -u\nfail=0\ncheck() { if eval \"$2\"; then echo \"PASS $1\"; else echo \"FAIL $1\"; fail=1; fi; }\n"
-                  f"r={r}\nw={w}\nwork={d}\n"
-                  f"py() {{ PYTHONPATH={ROOT / 'src'} PYTHONDONTWRITEBYTECODE=1 {sys.executable} \"$@\"; }}\n" + block + "\nexit $fail\n")
+        script = (
+            'set -u\nfail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
+            f"r={r}\nw={w}\nwork={d}\n"
+            f'py() {{ PYTHONPATH={ROOT / "src"} PYTHONDONTWRITEBYTECODE=1 {sys.executable} "$@"; }}\n'
+            + block
+            + "\nexit $fail\n"
+        )
         env = {k: v for k, v in os.environ.items() if k not in ("TZ", "OPOS_CONFIG_DIR")}
         res = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env, timeout=120)
         self.assertEqual(0, res.returncode, res.stdout + res.stderr)
@@ -64,8 +73,10 @@ class Packaging(unittest.TestCase):
         os.makedirs(os.path.join(d, "usr/libexec/opos"))
         Path(d, "etc/systemd/system/opos-server.service").write_text("[Service]\n")
         Path(d, "usr/libexec/opos/opos-kiosk").write_text("#!/bin/sh\nexec chromium\n")
-        script = ("set -u\nfail=0\ncheck() { if eval \"$2\"; then echo \"PASS $1\"; else echo \"FAIL $1\"; fail=1; fi; }\n"
-                  f"r={d}\nw={d}/etc/systemd/system\npy() {{ false; }}\n" + block + "\nexit $fail\n")
+        script = (
+            'set -u\nfail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
+            f"r={d}\nw={d}/etc/systemd/system\npy() {{ false; }}\n" + block + "\nexit $fail\n"
+        )
         res = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=60)
         self.assertEqual(1, res.returncode, res.stdout)
         self.assertEqual(2, res.stdout.count("FAIL"), res.stdout)
@@ -76,8 +87,19 @@ class Docs(unittest.TestCase):
     def test_the_doc_is_linked_and_says_what_it_does_and_what_it_does_not_show(self):
         self.assertIn("(duo-firstrun.md)", (ROOT / "docs/README.md").read_text(encoding="utf-8"))
         doc = (ROOT / "docs/duo-firstrun.md").read_text(encoding="utf-8")
-        for needle in ("OPOS_FIRSTRUN=1", "OPOS_KIOSK_RESTART=0", "firstrun.json", "/timezone", "/api/firstrun", "/api/timezone",
-                       "clock_plausible", "text/html", "/network", "Not yet run on the Duo", "What only the phone can show"):
+        for needle in (
+            "OPOS_FIRSTRUN=1",
+            "OPOS_KIOSK_RESTART=0",
+            "firstrun.json",
+            "/timezone",
+            "/api/firstrun",
+            "/api/timezone",
+            "clock_plausible",
+            "text/html",
+            "/network",
+            "Not yet run on the Duo",
+            "What only the phone can show",
+        ):
             self.assertIn(needle, doc)
         for name in ("firstrun.py", "firstrun_page.py", "timezone.py", "clockcheck.py"):
             self.assertIn(name, doc)
@@ -85,8 +107,16 @@ class Docs(unittest.TestCase):
         self.assertNotRegex(doc, r"(?i)verified on the (phone|duo)|works on the (phone|duo)")
 
     def test_new_files_carry_the_licence_header_and_unix_line_endings(self):
-        for rel in ("src/opos/clockcheck.py", "src/opos/timezone.py", "src/opos/firstrun.py", "src/opos/firstrun_page.py",
-                    "tests/test_firstrun.py", "tests/test_firstrun_wiring.py", "tests/test_timezone.py", "docs/duo-firstrun.md"):
+        for rel in (
+            "src/opos/clockcheck.py",
+            "src/opos/timezone.py",
+            "src/opos/firstrun.py",
+            "src/opos/firstrun_page.py",
+            "tests/test_firstrun.py",
+            "tests/test_firstrun_wiring.py",
+            "tests/test_timezone.py",
+            "docs/duo-firstrun.md",
+        ):
             raw = (ROOT / rel).read_bytes()
             self.assertNotIn(b"\r", raw, rel)
             self.assertIn(b"SPDX-License-Identifier: GPL-3.0-or-later", raw[:120], rel)

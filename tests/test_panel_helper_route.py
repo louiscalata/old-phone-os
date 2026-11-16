@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Where Why, Plan and Ask send the owner's question: a verified local route, LAN address ranges, closed responses."""
+
 import contextlib
 import io
 import json
@@ -36,6 +37,7 @@ def model_list(*ids):
 
 class Body(io.BytesIO):
     """A response body that records close(); like http.client responses it closes on exit."""
+
     def __init__(self, data):
         super().__init__(data)
         self.close_calls = 0
@@ -52,6 +54,7 @@ class Body(io.BytesIO):
 
 class PlainBody:
     """A response with read() and close() but no context-manager methods."""
+
     def __init__(self, data):
         self.data = data
         self.close_calls = 0
@@ -65,6 +68,7 @@ class PlainBody:
 
 class Servers:
     """Fake loopback servers: port 8080 lists local_models, Glimmer answers; records every request and body."""
+
     def __init__(self, local_models=None, local_error=None, local_reply="Llama answer."):
         self.local_models = local_models if local_models is not None else model_list("some-dev-server")
         self.local_error = local_error
@@ -127,7 +131,10 @@ class TestLocalRouteIsVerified(unittest.TestCase):
                 res = assist.answer(QUESTION, env={}, opener=servers, free=2000, context=FACTS)
                 self.assertEqual(res["engine"], "Muse Glimmer")
                 self.assert_nothing_private_sent_to_local(servers)
-        for error in (OSError("refused"), urllib.error.HTTPError(LOCAL_BASE + "/models", 404, "Not Found", {}, io.BytesIO(b"no"))):
+        for error in (
+            OSError("refused"),
+            urllib.error.HTTPError(LOCAL_BASE + "/models", 404, "Not Found", {}, io.BytesIO(b"no")),
+        ):
             with self.subTest(error=type(error).__name__):
                 servers = Servers(local_error=error)
                 res = assist.answer(QUESTION, env={}, opener=servers, free=2000, context=FACTS)
@@ -140,7 +147,9 @@ class TestLocalRouteIsVerified(unittest.TestCase):
             res = assist.answer(QUESTION, env={}, opener=servers, free=2000, context=FACTS)
         self.assertEqual((res["ok"], res["engine"], res["where"]), (True, "Meta Llama 3.2 1B", "on this computer"))
         local = servers.sent_to_local()
-        self.assertEqual([(m, u) for m, u, _ in local], [("GET", LOCAL_BASE + "/models"), ("POST", LOCAL_BASE + "/chat/completions")])
+        self.assertEqual(
+            [(m, u) for m, u, _ in local], [("GET", LOCAL_BASE + "/models"), ("POST", LOCAL_BASE + "/chat/completions")]
+        )
         self.assertIn(QUESTION, json.loads(local[1][2])["messages"][0]["content"])
         check_timeout = servers.requests[0][3]
         self.assertLessEqual(check_timeout, muse.MODEL_LIST_TIMEOUT)
@@ -159,10 +168,16 @@ class TestLocalRouteIsVerified(unittest.TestCase):
                 servers = Servers(local_models=model_list(*listed))
                 with mock.patch.object(assist, "PHONE_BUILD", False):
                     res = assist.answer(QUESTION, env={}, opener=servers, free=free, context=FACTS)
-                self.assertEqual((res["ok"], res["engine"], res["where"], res["text"]), (True, name, "on this computer", "Llama answer."))
+                self.assertEqual(
+                    (res["ok"], res["engine"], res["where"], res["text"]),
+                    (True, name, "on this computer", "Llama answer."),
+                )
                 self.assertIs(type(res["text"]), str)
                 local = servers.sent_to_local()
-                self.assertEqual([(m, u) for m, u, _ in local], [("GET", LOCAL_BASE + "/models"), ("POST", LOCAL_BASE + "/chat/completions")])
+                self.assertEqual(
+                    [(m, u) for m, u, _ in local],
+                    [("GET", LOCAL_BASE + "/models"), ("POST", LOCAL_BASE + "/chat/completions")],
+                )
                 body = json.loads(local[1][2])
                 self.assertEqual(body["model"], posted)
                 self.assertIn(QUESTION, body["messages"][0]["content"])
@@ -173,7 +188,10 @@ class TestLocalRouteIsVerified(unittest.TestCase):
         self.assertEqual((route.model, route.alternates), (LLAMA_1B, ((LLAMA_3B, "Meta Llama 3.2 3B"),)))
         reply = muse.ask(route, "hi", env={}, opener=servers)
         self.assertEqual(reply, "Llama answer.")
-        self.assertEqual((reply.route.name, reply.route.model, reply.route.where, reply.route.base_url), ("Meta Llama 3.2 3B", LLAMA_3B, route.where, LOCAL_BASE))
+        self.assertEqual(
+            (reply.route.name, reply.route.model, reply.route.where, reply.route.base_url),
+            ("Meta Llama 3.2 3B", LLAMA_3B, route.where, LOCAL_BASE),
+        )
         self.assertIs(muse.answered_by("plain text", route), route)
         # A configured OPOS_LOCAL_URL is used as set: no check and no alternate ids.
         self.assertEqual(assist.local_route({"OPOS_LOCAL_URL": LOCAL_BASE}, free=2000).alternates, ())
@@ -187,7 +205,9 @@ class TestLocalRouteIsVerified(unittest.TestCase):
         servers = Servers(local_models=model_list(LLAMA_1B), local_reply='["pause email", "dim screen"]')
         order = muse.plan(FACTS, ["dim screen", "pause email"], routes, env={}, opener=servers)
         self.assertEqual(list(order), ["pause email", "dim screen"])
-        self.assertEqual((order.route.key, order.route.name, order.route.model), ("local", "Meta Llama 3.2 1B", LLAMA_1B))
+        self.assertEqual(
+            (order.route.key, order.route.name, order.route.model), ("local", "Meta Llama 3.2 1B", LLAMA_1B)
+        )
         self.assertEqual(json.loads(servers.sent_to_local()[1][2])["model"], LLAMA_1B)
 
     def test_configured_url_is_used_without_a_check(self):
@@ -226,6 +246,7 @@ class TestLocalRouteIsVerified(unittest.TestCase):
 
 class PlanServers(Servers):
     """Glimmer replies with a step list so Plan has a usable answer."""
+
     def __call__(self, req, timeout=None):
         if req.full_url.startswith(GLIMMER_BASE):
             self.requests.append((req.get_method(), req.full_url, req.data.decode("utf-8"), timeout))
@@ -287,7 +308,9 @@ class TestLocalRouteLabel(unittest.TestCase):
             installed, _, kiosk, paths = self.layout(tmp, launcher=False)
             with self.environment(paths, kiosk):
                 self.assertFalse(assist._phone_package(installed))
-        apkbuild = (Path(__file__).resolve().parent.parent / "packaging" / "pmos" / "opos" / "APKBUILD").read_text(encoding="utf-8")
+        apkbuild = (Path(__file__).resolve().parent.parent / "packaging" / "pmos" / "opos" / "APKBUILD").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('"$pkgdir' + assist.PHONE_LAUNCHER + '"', apkbuild)
 
     def test_source_checkout_is_not_the_phone_build(self):
@@ -299,8 +322,14 @@ class TestLanAddressRanges(unittest.TestCase):
     """RFC 1918, IPv6 unique-local and loopback (the reverse tunnel in docs/duo-usb-install.md) only."""
 
     ACCEPTED = (
-        octets(10, 1, 2, 3), octets(172, 16, 0, 1), octets(172, 31, 255, 254), octets(192, 168, 0, 10),
-        "[fd12:3456::1]", "[fc00::1]", "127.0.0.1", "[::1]",
+        octets(10, 1, 2, 3),
+        octets(172, 16, 0, 1),
+        octets(172, 31, 255, 254),
+        octets(192, 168, 0, 10),
+        "[fd12:3456::1]",
+        "[fc00::1]",
+        "127.0.0.1",
+        "[::1]",
     )
     REFUSED = (
         octets(169, 254, 1, 1),  # IPv4 link-local
@@ -309,12 +338,15 @@ class TestLanAddressRanges(unittest.TestCase):
         "[2001:db8::1]",  # IPv6 documentation
         octets(198, 18, 0, 1),  # benchmarking
         octets(240, 0, 0, 1),  # reserved
-        "0.0.0.0", "[::]",  # unspecified
+        "0.0.0.0",
+        "[::]",  # unspecified
         octets(100, 64, 0, 1),  # carrier-grade NAT
         octets(172, 32, 0, 1),  # just outside 172.16/12
         "[fec0::1]",  # deprecated site-local
-        "8.8.8.8", "[::ffff:8.8.8.8]",
-        "localhost", "lan.example",
+        "8.8.8.8",
+        "[::ffff:8.8.8.8]",
+        "localhost",
+        "lan.example",
     )
 
     def test_accepts_private_lan_and_loopback(self):
@@ -322,7 +354,9 @@ class TestLanAddressRanges(unittest.TestCase):
             with self.subTest(host=host):
                 route = assist.lan_route({"OPOS_LAN_URL": f"http://{host}:1234/v1"})
                 self.assertIsNotNone(route)
-                self.assertEqual((route.key, route.where, route.model), ("lan", "on a computer you own", "muse-glimmer-30b"))
+                self.assertEqual(
+                    (route.key, route.where, route.model), ("lan", "on a computer you own", "muse-glimmer-30b")
+                )
 
     def test_refuses_link_local_reserved_and_public(self):
         for host in self.REFUSED:
@@ -332,7 +366,9 @@ class TestLanAddressRanges(unittest.TestCase):
     def test_refused_lan_gets_no_question(self):
         host = octets(169, 254, 1, 1)
         servers = Servers()
-        res = assist.answer(QUESTION, env={"OPOS_LAN_URL": f"http://{host}:1234/v1"}, opener=servers, free=None, context=FACTS)
+        res = assist.answer(
+            QUESTION, env={"OPOS_LAN_URL": f"http://{host}:1234/v1"}, opener=servers, free=None, context=FACTS
+        )
         self.assertEqual(res["engine"], "Muse Glimmer")
         self.assertEqual([u for _, u, _, _ in servers.requests], [GLIMMER_BASE + "/chat/completions"])
 
@@ -340,7 +376,9 @@ class TestLanAddressRanges(unittest.TestCase):
 class TestResponsesAreClosed(unittest.TestCase):
     def test_ask_closes_its_response(self):
         body = Body(chat("Hello."))
-        self.assertEqual(muse.ask(muse.glimmer_route({}), "hi", env={}, opener=lambda req, timeout=None: body), "Hello.")
+        self.assertEqual(
+            muse.ask(muse.glimmer_route({}), "hi", env={}, opener=lambda req, timeout=None: body), "Hello."
+        )
         self.assertGreaterEqual(body.close_calls, 1)
         self.assertEqual(body.reads, [muse.MAX_RESPONSE_BYTES + 1], "the read stays capped")
 
@@ -355,13 +393,17 @@ class TestResponsesAreClosed(unittest.TestCase):
 
     def test_ask_closes_a_response_without_context_manager_methods(self):
         body = PlainBody(chat("Hello."))
-        self.assertEqual(muse.ask(muse.glimmer_route({}), "hi", env={}, opener=lambda req, timeout=None: body), "Hello.")
+        self.assertEqual(
+            muse.ask(muse.glimmer_route({}), "hi", env={}, opener=lambda req, timeout=None: body), "Hello."
+        )
         self.assertEqual(body.close_calls, 1)
 
     def test_ask_closes_an_http_error_body(self):
         body = Body(b"Bad Gateway")
+
         def opener(req, timeout=None):
             raise urllib.error.HTTPError(req.full_url, 502, "Bad Gateway", {}, body)
+
         with self.assertRaises(muse.MuseError) as raised:
             muse.ask(muse.glimmer_route({}), "hi", env={}, opener=opener)
         # The error is still referenced here, so garbage collection has not closed it yet.
@@ -399,10 +441,16 @@ class TestResponsesAreClosed(unittest.TestCase):
 
     def test_default_transport_is_still_the_no_redirect_opener(self):
         bodies = []
+
         def fake(req, timeout=None):
-            body = Body(chat("Hello.") if req.full_url.endswith("/chat/completions") else json.dumps({"query": {"search": []}}).encode())
+            body = Body(
+                chat("Hello.")
+                if req.full_url.endswith("/chat/completions")
+                else json.dumps({"query": {"search": []}}).encode()
+            )
             bodies.append(body)
             return body
+
         with mock.patch.object(muse, "_open_no_redirect", side_effect=fake) as opener:
             self.assertEqual(muse.ask(muse.glimmer_route({}), "hi", env={}), "Hello.")
             self.assertEqual(assist.search("battery"), [])

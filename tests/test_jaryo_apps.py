@@ -7,8 +7,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parent.parent / 'src' / 'opos' / 'web_static'
-NODE = shutil.which('node')
+STATIC = Path(__file__).resolve().parent.parent / "src" / "opos" / "web_static"
+NODE = shutil.which("node")
 
 HARNESS = r"""
 const fs=require('fs'),vm=require('vm');
@@ -78,73 +78,113 @@ console.log(JSON.stringify(out));
 """
 
 
-@unittest.skipUnless(NODE, 'node not installed')
+@unittest.skipUnless(NODE, "node not installed")
 class TestJaryoApps(unittest.TestCase):
     def run_js(self, mode):
-        pre = 'const MODE=%s,PHONEB=%s,JARYO=%s;\n' % (
-            json.dumps(mode), json.dumps(str(STATIC / 'phone-b.js')), json.dumps(str(STATIC / 'jaryo-layout.js')))
+        pre = "const MODE=%s,PHONEB=%s,JARYO=%s;\n" % (
+            json.dumps(mode),
+            json.dumps(str(STATIC / "phone-b.js")),
+            json.dumps(str(STATIC / "jaryo-layout.js")),
+        )
         r = subprocess.run([NODE], input=pre + HARNESS, capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout.strip().splitlines()[-1])
 
     def test_build(self):
-        o = self.run_js('solo')['build']
-        self.assertEqual(o['apps'], ['Alarms', 'Calls', 'Camera', 'Messages', 'Settings'])  # Contacts dropped
-        self.assertEqual([h[0] for h in o['headers']], ['A', 'C', 'M', 'S'])
-        for letter, aria, hid in o['headers']:
-            self.assertEqual(aria, 'true')
-            self.assertEqual(hid, 'jaryo-letter-' + letter)
-        self.assertEqual(o['letters'], ['A', 'C', 'M', 'S'])
+        o = self.run_js("solo")["build"]
+        self.assertEqual(o["apps"], ["Alarms", "Calls", "Camera", "Messages", "Settings"])  # Contacts dropped
+        self.assertEqual([h[0] for h in o["headers"]], ["A", "C", "M", "S"])
+        for letter, aria, hid in o["headers"]:
+            self.assertEqual(aria, "true")
+            self.assertEqual(hid, "jaryo-letter-" + letter)
+        self.assertEqual(o["letters"], ["A", "C", "M", "S"])
 
     def test_shell_open_close_reopen(self):
-        o = self.run_js('shell')
-        self.assertEqual(o['start']['app'], 'home')
-        self.assertFalse(o['start']['letters'])  # letter row hidden while the list is hidden
-        for k in ('open1', 'open2', 'open3'):
-            self.assertEqual(o[k], {'app': 'home', 'home': False, 'list': True, 'letters': True, 'allapps': '1', 'back': False, 'close': True}, k)
-        for k in ('closed', 'returned'):
-            self.assertEqual(o[k], {'app': 'home', 'home': True, 'list': False, 'letters': False, 'allapps': None, 'back': False, 'close': False}, k)
-        self.assertEqual(o['navigated'], {'app': 'phone', 'home': False, 'list': False, 'letters': False, 'allapps': None, 'back': True, 'close': False})
-        for k in ('snap1', 'snap2'):
+        o = self.run_js("shell")
+        self.assertEqual(o["start"]["app"], "home")
+        self.assertFalse(o["start"]["letters"])  # letter row hidden while the list is hidden
+        for k in ("open1", "open2", "open3"):
+            self.assertEqual(
+                o[k],
+                {
+                    "app": "home",
+                    "home": False,
+                    "list": True,
+                    "letters": True,
+                    "allapps": "1",
+                    "back": False,
+                    "close": True,
+                },
+                k,
+            )
+        for k in ("closed", "returned"):
+            self.assertEqual(
+                o[k],
+                {
+                    "app": "home",
+                    "home": True,
+                    "list": False,
+                    "letters": False,
+                    "allapps": None,
+                    "back": False,
+                    "close": False,
+                },
+                k,
+            )
+        self.assertEqual(
+            o["navigated"],
+            {
+                "app": "phone",
+                "home": False,
+                "list": False,
+                "letters": False,
+                "allapps": None,
+                "back": True,
+                "close": False,
+            },
+        )
+        for k in ("snap1", "snap2"):
             s = o[k]
-            self.assertEqual(s['apps'], ['Helper', 'Messages', 'Phone', 'Settings'], k)
-            self.assertEqual(s['shown'], s['apps'], k)
-            self.assertNotIn('Contacts', s['apps'])
-            self.assertNotIn('Threads', s['apps'])
-            self.assertEqual([h[0] for h in s['headers']], ['H', 'M', 'P', 'S'], k)
-            self.assertTrue(all(h[1] == 'true' for h in s['headers']), k)
-            self.assertEqual(s['letters'], ['H', 'M', 'P', 'S'], k)
-        self.assertEqual(o['jump'], [1, 'Phone'])  # heading scrolled, focus on the first app under it
-
+            self.assertEqual(s["apps"], ["Helper", "Messages", "Phone", "Settings"], k)
+            self.assertEqual(s["shown"], s["apps"], k)
+            self.assertNotIn("Contacts", s["apps"])
+            self.assertNotIn("Threads", s["apps"])
+            self.assertEqual([h[0] for h in s["headers"]], ["H", "M", "P", "S"], k)
+            self.assertTrue(all(h[1] == "true" for h in s["headers"]), k)
+            self.assertEqual(s["letters"], ["H", "M", "P", "S"], k)
+        self.assertEqual(o["jump"], [1, "Phone"])  # heading scrolled, focus on the first app under it
 
 
 class TestJaryoLettersFoldable(unittest.TestCase):
-    CSS = 'src/opos/web_static/jaryo-layout.css'
+    CSS = "src/opos/web_static/jaryo-layout.css"
 
     def test_letter_row_spans_both_columns_and_keeps_the_gutter_clear(self):
         # build() inserts #jaryo-letters before #apps-list as a #phone child. On the UXP21 Foldable grid (>=840px) the list
         # spans both columns, so the row must too (DOM order = reading order; test_uxp21_profiles.test_no_button_in_hinge_gutter),
         # with its buttons kept to the left pane. Under real viewport segments both stay in column 1.
         # The stylesheet is production code the kiosk loads on every page: if it is missing, this test fails.
-        with open(self.CSS, encoding='utf-8') as f:
+        with open(self.CSS, encoding="utf-8") as f:
             css = f.read()
-        wide = css[css.index('@media (min-width:840px){'):]
-        wide = wide[:wide.index('}}') + 2]
-        self.assertIn('html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1/-1;padding-right:calc(50% + 12px)}', wide)
-        seg = css[css.index('@media (horizontal-viewport-segments:2){'):]
-        seg = seg[:seg.index('}}') + 2]
+        wide = css[css.index("@media (min-width:840px){") :]
+        wide = wide[: wide.index("}}") + 2]
+        self.assertIn(
+            'html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1/-1;padding-right:calc(50% + 12px)}', wide
+        )
+        seg = css[css.index("@media (horizontal-viewport-segments:2){") :]
+        seg = seg[: seg.index("}}") + 2]
         self.assertIn('html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1;padding-right:0}', seg)
         # No rule outside those media blocks places the row on the hinge grid: a folded (one-column) phone keeps the
         # plain row. Integration note: the UXP99 baseline layer in the same file (row hidden until All apps opens,
         # two-column button grid; pinned by test_uxp21_profiles.test_letter_jump_row_tracks_allapps_grid) styles the
         # row outside these blocks, so the original "no rule at all" check is obsolete; it now checks that no such
         # rule sets a column or padding, which is what the one-column guarantee depends on.
-        rest = css.replace(wide, '').replace(seg, '')
-        for rule in rest.split('}'):
-            if '#jaryo-letters{' in rule:
-                decl = rule.split('{', 1)[1]
-                self.assertNotIn('grid-column', decl, rule)
-                self.assertNotIn('padding', decl, rule)
+        rest = css.replace(wide, "").replace(seg, "")
+        for rule in rest.split("}"):
+            if "#jaryo-letters{" in rule:
+                decl = rule.split("{", 1)[1]
+                self.assertNotIn("grid-column", decl, rule)
+                self.assertNotIn("padding", decl, rule)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

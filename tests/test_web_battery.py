@@ -8,11 +8,13 @@ import threading
 import re
 import opos.web
 
+
 def _start_server(phone):
     srv = opos.web.make_server(0, phone)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     return srv
+
 
 class TestWebBattery(unittest.TestCase):
     def test_tone_boundaries(self):
@@ -66,10 +68,17 @@ class TestWebBattery(unittest.TestCase):
         self.addCleanup(srv.shutdown)
         port = srv.server_address[1]
         base = f"http://127.0.0.1:{port}"
+
         def post(payload):
             token = srv.RequestHandlerClass.token
-            req = urllib.request.Request(base + "/api", data=payload, headers={"Content-Type": "application/json", "X-OPOS-Token": token}, method="POST")
+            req = urllib.request.Request(
+                base + "/api",
+                data=payload,
+                headers={"Content-Type": "application/json", "X-OPOS-Token": token},
+                method="POST",
+            )
             return urllib.request.urlopen(req)
+
         try:
             post(json.dumps({"action": "tick", "real_s": -1}).encode())
             self.fail()
@@ -99,6 +108,7 @@ class TestWebBattery(unittest.TestCase):
         phone.visible = False
         battery_json = json.dumps(phone.state()["battery"])
         self.assertIsNone(re.search(r"\b(ai|model|governor|assistant)\b", battery_json, re.I))
+
 
 if __name__ == "__main__":
     unittest.main()

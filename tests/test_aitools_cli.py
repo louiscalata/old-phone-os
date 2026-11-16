@@ -19,7 +19,23 @@ _FAKE_SCRIPT = b"#!/bin/sh\necho hi\n"
 
 
 def _tool(tid="demo-tool", binary="mybin", archs=None, min_free=1):
-    return {"id": tid, "name": f"Name {tid}", "binary": binary, "installer_url": "https://example.com/install.sh", "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": archs or ["aarch64", "x86_64"], "min_free_mb": min_free, "state_subdir": ".state", "run_env": {}, "lite_env": {}, "signin": f"signin for {tid}", "docs_url": "https://example.com/docs", "installer_sha256": hashlib.sha256(_FAKE_SCRIPT).hexdigest()}
+    return {
+        "id": tid,
+        "name": f"Name {tid}",
+        "binary": binary,
+        "installer_url": "https://example.com/install.sh",
+        "interpreter": "sh",
+        "installer_args": [],
+        "installer_env": {},
+        "archs": archs or ["aarch64", "x86_64"],
+        "min_free_mb": min_free,
+        "state_subdir": ".state",
+        "run_env": {},
+        "lite_env": {},
+        "signin": f"signin for {tid}",
+        "docs_url": "https://example.com/docs",
+        "installer_sha256": hashlib.sha256(_FAKE_SCRIPT).hexdigest(),
+    }
 
 
 def _write_catalog(p, tools):
@@ -40,6 +56,7 @@ def _runner_for(bins):
             q.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             q.chmod(0o755)
         return (0, "")
+
     return _r
 
 
@@ -69,7 +86,15 @@ class CliTests(unittest.TestCase):
             home.mkdir()
             prefix = tp / "prefix"
             out = io.StringIO()
-            rc = cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix), "--dry-run"], env=env, home=home, machine="x86_64", out=out, fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            rc = cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix), "--dry-run"],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=out,
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             self.assertEqual(rc, 0)
             txt = out.getvalue()
             self.assertIn("prefix:", txt)
@@ -88,7 +113,15 @@ class CliTests(unittest.TestCase):
             home.mkdir()
             prefix = tp / "prefix"
             out = io.StringIO()
-            rc = cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out, fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            rc = cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=out,
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             self.assertEqual(rc, 0)
             txt = out.getvalue()
             self.assertIn("installed demo-tool", txt)
@@ -133,7 +166,10 @@ class CliTests(unittest.TestCase):
                     seen["HOME"] = renv["HOME"]
                     q = Path(renv["HOME"]) / ".local" / "bin" / "mybin"
                     q.parent.mkdir(parents=True, exist_ok=True)
-                    q.write_text("#!/bin/sh\nprintf '%s\\n' " + marker + "\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done\n", encoding="utf-8")
+                    q.write_text(
+                        "#!/bin/sh\nprintf '%s\\n' " + marker + '\nfor a in "$@"; do printf \'%s\\n\' "$a"; done\n',
+                        encoding="utf-8",
+                    )
                     q.chmod(0o755)
                     return (0, "")
 
@@ -154,7 +190,15 @@ class CliTests(unittest.TestCase):
                     out = io.StringIO()
                     with unittest.mock.patch.object(cli.sys, "executable", str(stub)):
                         with unittest.mock.patch.object(cli.place, "free_mb", side_effect=_spy):
-                            rc = cli.main(["install", "--tool", "demo-tool", "--mode", "full", "--prefix", prefix_arg], env=env, home=home, machine="x86_64", out=out, fetch=_fake_fetch, runner=_runner)
+                            rc = cli.main(
+                                ["install", "--tool", "demo-tool", "--mode", "full", "--prefix", prefix_arg],
+                                env=env,
+                                home=home,
+                                machine="x86_64",
+                                out=out,
+                                fetch=_fake_fetch,
+                                runner=_runner,
+                            )
                     self.assertEqual(rc, 0)
                     self.assertEqual(seen.get("HOME"), str(sandbox))
                     self.assertIn(expected, seen_prefix)
@@ -168,7 +212,9 @@ class CliTests(unittest.TestCase):
                     self.assertIn(shlex.quote(str(bin_dir)), env_file.read_text(encoding="utf-8"))
                     self.assertIn(shlex.quote(str(env_file)), (home / ".profile").read_text(encoding="utf-8"))
                     args = ["hello world", "it's", "plain"]
-                    proc = subprocess.run([str(wrapper)] + args, cwd=str(other), capture_output=True, text=True, timeout=30)
+                    proc = subprocess.run(
+                        [str(wrapper)] + args, cwd=str(other), capture_output=True, text=True, timeout=30
+                    )
                     self.assertEqual(proc.returncode, 0)
                     self.assertEqual(proc.stdout, marker + "\n" + "\n".join(args) + "\n")
                     lines = []
@@ -198,7 +244,15 @@ class CliTests(unittest.TestCase):
             home.mkdir()
             prefix = tp / "prefix"
             out = io.StringIO()
-            rc = cli.main(["install", "--tool", "nope", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out, fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            rc = cli.main(
+                ["install", "--tool", "nope", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=out,
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             self.assertEqual(rc, 1)
             self.assertIn("error: unknown tool", out.getvalue())
             self.assertIn("nope", out.getvalue())
@@ -213,7 +267,15 @@ class CliTests(unittest.TestCase):
             home.mkdir()
             prefix = tp / "prefix"
             out = io.StringIO()
-            rc = cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out, fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            rc = cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=out,
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             self.assertEqual(rc, 1)
             txt = out.getvalue()
             self.assertIn("error:", txt)
@@ -243,7 +305,15 @@ class CliTests(unittest.TestCase):
             home = tp / "home"
             home.mkdir()
             prefix = tp / "prefix"
-            cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=io.StringIO(), fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=io.StringIO(),
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             out = io.StringIO()
             rc = cli.main(["mode", "full", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out)
             self.assertEqual(rc, 0)
@@ -259,7 +329,15 @@ class CliTests(unittest.TestCase):
             home = tp / "home"
             home.mkdir()
             prefix = tp / "prefix"
-            cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=io.StringIO(), fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=io.StringIO(),
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             out = io.StringIO()
             rc = cli.main(["status", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out)
             self.assertEqual(rc, 0)
@@ -278,9 +356,19 @@ class CliTests(unittest.TestCase):
             home = tp / "home"
             home.mkdir()
             prefix = tp / "prefix"
-            cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=io.StringIO(), fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=io.StringIO(),
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             out = io.StringIO()
-            rc = cli.main(["uninstall", "--prefix", str(prefix), "--dry-run"], env=env, home=home, machine="x86_64", out=out)
+            rc = cli.main(
+                ["uninstall", "--prefix", str(prefix), "--dry-run"], env=env, home=home, machine="x86_64", out=out
+            )
             self.assertEqual(rc, 0)
             self.assertIn("would remove", out.getvalue())
             self.assertTrue((prefix / "opos-tools").exists())
@@ -294,7 +382,15 @@ class CliTests(unittest.TestCase):
             home = tp / "home"
             home.mkdir()
             prefix = tp / "prefix"
-            cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=io.StringIO(), fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=io.StringIO(),
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             out = io.StringIO()
             rc = cli.main(["uninstall", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out)
             self.assertEqual(rc, 0)
@@ -310,7 +406,15 @@ class CliTests(unittest.TestCase):
             home = tp / "home"
             home.mkdir()
             prefix = tp / "prefix"
-            cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=io.StringIO(), fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=io.StringIO(),
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             bad = tp / "bad_dir"
             bad.mkdir()
             mp = installer.manifest_path(prefix)
@@ -421,7 +525,15 @@ class TestSourceDir(unittest.TestCase):
             home.mkdir()
             prefix = tp / "prefix"
             out = io.StringIO()
-            rc = cli.main(["install", "--tool", "demo-tool", "--prefix", str(prefix)], env=env, home=home, machine="x86_64", out=out, fetch=_fake_fetch, runner=_runner_for(["mybin"]))
+            rc = cli.main(
+                ["install", "--tool", "demo-tool", "--prefix", str(prefix)],
+                env=env,
+                home=home,
+                machine="x86_64",
+                out=out,
+                fetch=_fake_fetch,
+                runner=_runner_for(["mybin"]),
+            )
             self.assertEqual(rc, 0)
             mf = installer.read_manifest(prefix)
             self.assertEqual(mf.get("src_dir"), str(cli._SRC_DIR))

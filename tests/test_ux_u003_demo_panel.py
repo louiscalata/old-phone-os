@@ -10,7 +10,7 @@ class DemoPanelTest(unittest.TestCase):
         text = web_text()
         marker = "async function toggleSim"
         idx = text.find(marker)
-        line = text[idx:text.find("\n", idx)]
+        line = text[idx : text.find("\n", idx)]
         self.assertNotEqual(idx, -1)
         self.assertIn("speed:60", line)
         self.assertIn("running:!running", line)

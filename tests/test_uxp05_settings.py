@@ -117,8 +117,9 @@ class UXP05SettingsRuntime(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             harness = Path(tmp) / "harness.js"
             harness.write_text(HARNESS, encoding="utf-8")
-            proc = subprocess.run(["node", str(harness), str(STATIC / "phone-b.js")],
-                                  capture_output=True, text=True, timeout=30)
+            proc = subprocess.run(
+                ["node", str(harness), str(STATIC / "phone-b.js")], capture_output=True, text=True, timeout=30
+            )
         if proc.returncode:
             raise AssertionError(proc.stderr)
         cls.r = json.loads(proc.stdout)

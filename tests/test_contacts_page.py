@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local contacts and vCard: add Ana, keep her, and do not put her name in the phone state."""
+
 import json
 import os
 import shutil
@@ -88,7 +89,9 @@ assert.equal(focused, '7 Eleven');
 assert.equal(scrolled, 'letter-other');
 console.log('mixed-name groups and jump target passed');
 """
-        result = subprocess.run([node, "-e", harness], input=json.dumps(contacts_page._SCRIPT), text=True, capture_output=True, timeout=20)
+        result = subprocess.run(
+            [node, "-e", harness], input=json.dumps(contacts_page._SCRIPT), text=True, capture_output=True, timeout=20
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mixed-name groups and jump target passed", result.stdout)
 
@@ -98,7 +101,11 @@ class ContactsApi(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         contacts_page.reset()
-        self.env = {"OPOS_APPS": "contacts", "OPOS_STATE_DIR": self.tmp.name, "OPOS_CONTACTS_DIR": str(Path(self.tmp.name) / "vcards")}
+        self.env = {
+            "OPOS_APPS": "contacts",
+            "OPOS_STATE_DIR": self.tmp.name,
+            "OPOS_CONTACTS_DIR": str(Path(self.tmp.name) / "vcards"),
+        }
 
     def tearDown(self):
         contacts_page.reset()
@@ -145,7 +152,9 @@ class ContactsApi(unittest.TestCase):
         with running({"OPOS_APPS": "clock"}) as server:
             self.assertEqual(get(server, "/contacts")[0], 404)
             self.assertEqual(get(server, "/api/contacts")[0], 404)
-            code, _raw = post(server, "/api/contacts", {"action": "add", "name": "Ana", "number": "+15550101"}, "x" * 20)
+            code, _raw = post(
+                server, "/api/contacts", {"action": "add", "name": "Ana", "number": "+15550101"}, "x" * 20
+            )
             self.assertEqual(code, 404)
             status, home = get(server, "/")
             self.assertEqual(status, 200)
@@ -179,9 +188,9 @@ class ContactsApi(unittest.TestCase):
         self.assertNotIn(b"practiceUrl", served)
         self.assertNotIn(b'id="letters"', served)
         home = Path(__file__).resolve().parents[1].joinpath("src/opos/apps_static/home.js").read_text(encoding="utf-8")
-        self.assertIn('data-fav', home)
+        self.assertIn("data-fav", home)
         self.assertIn("favourite", home)
-        self.assertIn('practice', home)
+        self.assertIn("practice", home)
         self.assertNotIn("unlock()", home)
         self.assertNotIn("action:'call'", home)
         self.assertNotIn('action:"call"', home)

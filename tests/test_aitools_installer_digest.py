@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Remote installers run only after their sha256 matches the catalog, and never through a redirect."""
+
 import functools
 import hashlib
 import io
@@ -25,7 +26,22 @@ DIGEST = hashlib.sha256(SCRIPT).hexdigest()
 
 
 def _entry(**over) -> dict:
-    base = {"id": "demo-tool", "name": "Demo", "binary": "demo", "installer_url": URL, "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": ["aarch64", "x86_64"], "min_free_mb": 1, "state_subdir": ".demo", "run_env": {}, "lite_env": {}, "signin": "Run demo login.", "docs_url": "https://vendor.example/docs"}
+    base = {
+        "id": "demo-tool",
+        "name": "Demo",
+        "binary": "demo",
+        "installer_url": URL,
+        "interpreter": "sh",
+        "installer_args": [],
+        "installer_env": {},
+        "archs": ["aarch64", "x86_64"],
+        "min_free_mb": 1,
+        "state_subdir": ".demo",
+        "run_env": {},
+        "lite_env": {},
+        "signin": "Run demo login.",
+        "docs_url": "https://vendor.example/docs",
+    }
     base.update(over)
     return base
 
@@ -38,14 +54,46 @@ def _load(*entries) -> tuple:
 
 
 def _tool(**over) -> Tool:
-    base = dict(id="demo-tool", name="Demo", binary="demo", installer_url=URL, interpreter="sh", installer_args=(), installer_env={}, archs=("x86_64",), min_free_mb=1, state_subdir=".demo", run_env={}, lite_env={}, signin="Run demo login.", docs_url="https://vendor.example/docs", installer_sha256=DIGEST, installer_sha256_checked="2026-11-03")
+    base = dict(
+        id="demo-tool",
+        name="Demo",
+        binary="demo",
+        installer_url=URL,
+        interpreter="sh",
+        installer_args=(),
+        installer_env={},
+        archs=("x86_64",),
+        min_free_mb=1,
+        state_subdir=".demo",
+        run_env={},
+        lite_env={},
+        signin="Run demo login.",
+        docs_url="https://vendor.example/docs",
+        installer_sha256=DIGEST,
+        installer_sha256_checked="2026-11-03",
+    )
     base.update(over)
     return Tool(**base)  # type: ignore[arg-type]
 
 
 def _unpinned_tool() -> Tool:
     """A tool built without any digest field, as a catalog entry without installer_sha256 loads."""
-    return Tool(id="demo-tool", name="Demo", binary="demo", installer_url=URL, interpreter="sh", installer_args=(), installer_env={}, archs=("x86_64",), min_free_mb=1, state_subdir=".demo", run_env={}, lite_env={}, signin="Run demo login.", docs_url="https://vendor.example/docs")
+    return Tool(
+        id="demo-tool",
+        name="Demo",
+        binary="demo",
+        installer_url=URL,
+        interpreter="sh",
+        installer_args=(),
+        installer_env={},
+        archs=("x86_64",),
+        min_free_mb=1,
+        state_subdir=".demo",
+        run_env={},
+        lite_env={},
+        signin="Run demo login.",
+        docs_url="https://vendor.example/docs",
+    )
 
 
 def _response(url: str, body: bytes, code: int = 200):
@@ -132,7 +180,20 @@ class InstallDigestTests(unittest.TestCase):
         self.home.mkdir()
 
     def install(self, tool, opener, runner, **kw):
-        return installer.install(tool, prefix=self.prefix, mode="lite", machine="x86_64", home=self.home, python="python3", src_dir=Path("/fake/src"), fetch=functools.partial(installer.default_fetch, opener=opener), runner=runner, free_mb_fn=lambda p: 100000, profiles=[], **kw)
+        return installer.install(
+            tool,
+            prefix=self.prefix,
+            mode="lite",
+            machine="x86_64",
+            home=self.home,
+            python="python3",
+            src_dir=Path("/fake/src"),
+            fetch=functools.partial(installer.default_fetch, opener=opener),
+            runner=runner,
+            free_mb_fn=lambda p: 100000,
+            profiles=[],
+            **kw,
+        )
 
     def assert_nothing_left(self):
         tr = installer.tools_root(self.prefix)
@@ -202,7 +263,18 @@ class InstallDigestTests(unittest.TestCase):
         runner = Runner()
         with mock.patch.object(urllib.request.HTTPSHandler, "https_open", fake_https_open):
             with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
-                installer.install(_tool(), prefix=self.prefix, mode="lite", machine="x86_64", home=self.home, python="python3", src_dir=Path("/fake/src"), runner=runner, free_mb_fn=lambda p: 100000, profiles=[])
+                installer.install(
+                    _tool(),
+                    prefix=self.prefix,
+                    mode="lite",
+                    machine="x86_64",
+                    home=self.home,
+                    python="python3",
+                    src_dir=Path("/fake/src"),
+                    runner=runner,
+                    free_mb_fn=lambda p: 100000,
+                    profiles=[],
+                )
         self.assertEqual(requested, [URL])
         self.assertEqual(runner.scripts, [])
 
@@ -216,7 +288,20 @@ class InstallDigestTests(unittest.TestCase):
                     return SCRIPT
 
                 with self.assertRaises(installer.InstallError) as cm:
-                    installer.install(_unpinned_tool(), prefix=self.prefix, mode="lite", machine="x86_64", home=self.home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, free_mb_fn=lambda p: 100000, profiles=[], dry_run=dry_run)
+                    installer.install(
+                        _unpinned_tool(),
+                        prefix=self.prefix,
+                        mode="lite",
+                        machine="x86_64",
+                        home=self.home,
+                        python="python3",
+                        src_dir=Path("/fake/src"),
+                        fetch=fetch,
+                        runner=runner,
+                        free_mb_fn=lambda p: 100000,
+                        profiles=[],
+                        dry_run=dry_run,
+                    )
                 self.assertIn("no installer_sha256", str(cm.exception))
                 self.assertIn("Nothing was downloaded", str(cm.exception))
                 self.assertEqual(fetched, [])
@@ -256,12 +341,24 @@ class SetupDryRunTests(unittest.TestCase):
                 cfg = copy.deepcopy(default_config())
                 cfg["ai_tools"] = {"tools": [shipped.id], "mode": "lite"}
                 env = {"HOME": str(home), "OPOS_CONFIG_DIR": str(Path(td) / "cfg"), "OPOS_TOOLS_PREFIX": prefix}
-                progress = apply(cfg, repo_root=ROOT, python=sys.executable, home=home, platform="linux", env=env, dry_run=True, health_check=lambda port: (True, "ok"), tools_runner=runner)
+                progress = apply(
+                    cfg,
+                    repo_root=ROOT,
+                    python=sys.executable,
+                    home=home,
+                    platform="linux",
+                    env=env,
+                    dry_run=True,
+                    health_check=lambda port: (True, "ok"),
+                    tools_runner=runner,
+                )
                 step = {s["id"]: s for s in progress.snapshot()}["tools"]
                 self.assertEqual(step["status"], "ok", step)
                 self.assertLessEqual(len(step["detail"]), 300)
                 self.assertTrue(step["detail"].endswith(f"Sign in yourself: {shipped.signin}"), step["detail"])
-                self.assertIn(f"would fetch {shipped.installer_url} and run it only if its sha256 matches", step["detail"])
+                self.assertIn(
+                    f"would fetch {shipped.installer_url} and run it only if its sha256 matches", step["detail"]
+                )
 
 
 class DefaultFetchTests(unittest.TestCase):
@@ -305,8 +402,19 @@ class WizardDigestTests(unittest.TestCase):
     def test_tool_without_digest_shown_as_not_installable(self):
         with tempfile.TemporaryDirectory() as td:
             cat = Path(td) / "ai-tools.json"
-            cat.write_text(json.dumps({"version": 1, "tools": [_entry(), _entry(id="pinned", binary="pinned", installer_sha256=DIGEST)]}), encoding="utf-8")
-            state = wizard.public_state(env={"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(Path(td) / "p")}, home=Path(td), machine="x86_64", platform="linux", free_mb_fn=lambda p: 100000)
+            cat.write_text(
+                json.dumps(
+                    {"version": 1, "tools": [_entry(), _entry(id="pinned", binary="pinned", installer_sha256=DIGEST)]}
+                ),
+                encoding="utf-8",
+            )
+            state = wizard.public_state(
+                env={"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(Path(td) / "p")},
+                home=Path(td),
+                machine="x86_64",
+                platform="linux",
+                free_mb_fn=lambda p: 100000,
+            )
         tools = {t["id"]: t for t in state["tools"]}
         self.assertFalse(tools["demo-tool"]["ok"])
         self.assertIn("no installer_sha256", tools["demo-tool"]["problem"])

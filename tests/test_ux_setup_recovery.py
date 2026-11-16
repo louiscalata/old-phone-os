@@ -2,6 +2,8 @@
 import html.parser
 import unittest
 from opos.setup.wizard_page import page
+
+
 class _Ids(html.parser.HTMLParser):
     def __init__(self):
         super().__init__()
@@ -9,6 +11,7 @@ class _Ids(html.parser.HTMLParser):
         self.infos = {}
         self.counts = {}
         self.stack = []
+
     def handle_starttag(self, tag, attrs):
         d = dict(attrs)
         if "id" in d:
@@ -19,12 +22,16 @@ class _Ids(html.parser.HTMLParser):
             self.stack.append(i)
         else:
             self.stack.append(None)
+
     def handle_data(self, data):
         if self.stack and self.stack[-1] is not None:
             self.infos[self.stack[-1]][-1]["text"] += data
+
     def handle_endtag(self, tag):
         if self.stack:
             self.stack.pop()
+
+
 class TestSetupRecovery(unittest.TestCase):
     def setUp(self):
         self.html = page("a" * 32, "n1")
@@ -40,6 +47,7 @@ class TestSetupRecovery(unittest.TestCase):
         p = _Ids()
         p.feed(self.html)
         self.ids = p
+
     def test_config_error_warns_owner(self):
         s = "Your saved settings could not be read, so the recommended settings are shown. Check each step, then tap Apply."
         self.assertIn("S.config_error", self.load)
@@ -52,6 +60,7 @@ class TestSetupRecovery(unittest.TestCase):
         self.assertNotEqual(c, -1)
         self.assertLess(a, b)
         self.assertLess(b, c)
+
     def test_failed_help_element_hidden_with_guidance(self):
         s = "Your choices are kept. Tap Try again. If it still fails, run opos again."
         self.assertEqual(self.ids.counts.get("failed-help", 0), 1)
@@ -60,6 +69,7 @@ class TestSetupRecovery(unittest.TestCase):
         self.assertEqual(rec["attrs"].get("class"), "muted")
         self.assertEqual(rec["text"], s)
         self.assertLess(self.ids.order.index("failed"), self.ids.order.index("failed-help"))
+
     def test_failed_help_shown_on_failure_and_cleared_on_retry(self):
         self.assertIn('q("#retry").hidden=false', self.poll)
         a = self.poll.find('q("#retry").hidden=false')
@@ -72,6 +82,7 @@ class TestSetupRecovery(unittest.TestCase):
         self.assertNotIn('q("#failed-help").hidden=false', self.load)
         self.assertNotIn('q("#failed-help").hidden=false', self.apply)
         self.assertEqual(self.html.count('q("#failed-help").hidden=false'), 1)
+
     def test_no_unsafe_markup(self):
         a = "Your saved settings could not be read, so the recommended settings are shown. Check each step, then tap Apply."
         b = "Your choices are kept. Tap Try again. If it still fails, run opos again."

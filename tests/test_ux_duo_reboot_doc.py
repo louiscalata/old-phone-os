@@ -4,11 +4,12 @@ from pathlib import Path
 import re
 import opos.setup.cli
 
+
 class TestDuoRebootDoc(unittest.TestCase):
     def setUp(self):
         repo_root = Path(__file__).resolve().parent.parent
-        self.doc_path = repo_root / 'docs' / 'duo-usb-install.md'
-        self.doc_text = self.doc_path.read_text(encoding='utf-8')
+        self.doc_path = repo_root / "docs" / "duo-usb-install.md"
+        self.doc_text = self.doc_path.read_text(encoding="utf-8")
         self.lines = self.doc_text.splitlines()
         self.warning = opos.setup.cli.RAM_BOOT_WARNING
 
@@ -30,13 +31,14 @@ class TestDuoRebootDoc(unittest.TestCase):
         except StopIteration:
             self.fail(f"Heading {expected_heading!r} not found")
         section_lines = []
-        for line in self.lines[idx+1:]:
-            if line.startswith('## '):
+        for line in self.lines[idx + 1 :]:
+            if line.startswith("## "):
                 break
             section_lines.append(line)
-        section_text = '\n'.join(section_lines)
-        for phrase in ('reboot bootloader', 'misc brake', 'fastboot boot', 'systemctl reboot'):
+        section_text = "\n".join(section_lines)
+        for phrase in ("reboot bootloader", "misc brake", "fastboot boot", "systemctl reboot"):
             self.assertIn(phrase, section_text)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

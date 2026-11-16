@@ -2,6 +2,7 @@
 """Behaviour the hinge, posture and back-mode tests left open, found by mutation testing (facing.py, posture.py, the
 pure parts of hinge.py, the back-mode functions of layout.py and Blanker._blank_some). Each test pins one rule the
 modules' docstrings state: a border value, a reading that says nothing, a retry that waits, a panel left as it is."""
+
 import os
 import threading
 import time
@@ -38,9 +39,9 @@ class PostureBorders(unittest.TestCase):
         self.assertEqual(posture.classify(0, "closed"), "closed")
 
     def test_a_posture_is_held_exactly_hyst_degrees_below_its_zone(self):
-        self.assertEqual(posture.posture(False, 164, "flat"), "flat")     # 170 - 6
-        self.assertEqual(posture.posture(False, 196, "flat"), "tent")     # 190 + 6 is already outside
-        self.assertEqual(posture.posture(False, 339, "back"), "back")     # 345 - 6
+        self.assertEqual(posture.posture(False, 164, "flat"), "flat")  # 170 - 6
+        self.assertEqual(posture.posture(False, 196, "flat"), "tent")  # 190 + 6 is already outside
+        self.assertEqual(posture.posture(False, 339, "back"), "back")  # 345 - 6
 
     def test_the_settings_line_has_no_reading_past_360(self):
         self.assertTrue(posture.describe("back", 360.5).startswith("No hinge reading"))
@@ -50,8 +51,8 @@ class PostureBorders(unittest.TestCase):
 class ScreenBorders(unittest.TestCase):
     def test_a_screen_with_no_width_is_no_screen_but_half_a_pixel_is_one(self):
         for x in (0, 21, 42):
-            self.assertIsNone(layout.screen_at(x, 42, 42), x)       # the hinge fills the window
-        self.assertEqual(layout.screen_at(0, 43, 42), 0)            # each screen is half a pixel wide
+            self.assertIsNone(layout.screen_at(x, 42, 42), x)  # the hinge fills the window
+        self.assertEqual(layout.screen_at(0, 43, 42), 0)  # each screen is half a pixel wide
         self.assertEqual(layout.screen_at(43, 43, 42), 1)
 
     def test_touch_ignored_answers_true_or_false(self):
@@ -63,11 +64,19 @@ class ScreenBorders(unittest.TestCase):
 
     def test_in_back_mode_the_edge_band_is_exactly_edge_pixels_on_each_side_of_the_screen_in_use(self):
         W, H, HG = 1392, 1800, 42
-        pane = (W - HG) / 2                                          # 675
+        pane = (W - HG) / 2  # 675
         swipe = lambda x, active: layout.swipe_action("app", False, (x, 400), W, H, 500, 0, HG, active)
-        cases = {0: ((0, "home"), (47, "home"), (48, None), (300, None), (627, None), (628, "home"), (674, "home")),
-                 1: ((pane + HG, "home"), (pane + HG + 47, "home"), (pane + HG + 48, None), (1000, None),
-                     (W - 48, None), (W - 47, "home"))}
+        cases = {
+            0: ((0, "home"), (47, "home"), (48, None), (300, None), (627, None), (628, "home"), (674, "home")),
+            1: (
+                (pane + HG, "home"),
+                (pane + HG + 47, "home"),
+                (pane + HG + 48, None),
+                (1000, None),
+                (W - 48, None),
+                (W - 47, "home"),
+            ),
+        }
         for active, xs in cases.items():
             for x, want in xs:
                 with self.subTest(active=active, x=x):
@@ -88,9 +97,11 @@ class WatcherClock(unittest.TestCase):
         def on_tilt(z):
             with lock:
                 tilts.append(z)
+
         kw.setdefault("tilt_min_s", 0)
-        w = hinge.HingeWatcher(on_angle, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0, on_tilt=on_tilt,
-                               **kw).start()
+        w = hinge.HingeWatcher(
+            on_angle, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0, on_tilt=on_tilt, **kw
+        ).start()
         bus.done.wait(5)
         w.stop()
         with lock:
@@ -173,8 +184,9 @@ class StillBus(FakeBus):
 class WatcherRate(unittest.TestCase):
     def watch(self, bus, **kw):
         kw.setdefault("poll_s", 0.01)
-        return hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, retry_s=0.05,
-                                  **kw).start()
+        return hinge.HingeWatcher(
+            lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, retry_s=0.05, **kw
+        ).start()
 
     def asked_in(self, bus, seconds, **kw):
         w = self.watch(bus, **kw)
@@ -192,9 +204,9 @@ class WatcherRate(unittest.TestCase):
     def test_waking_from_a_pause_reads_fast_for_a_moment(self):
         bus = StillBus(170)
         w = self.watch(bus, slow_poll_s=0.2, slow_tilt_s=1.0, calm_s=0.1)
-        time.sleep(0.3)                          # calm: slow now
+        time.sleep(0.3)  # calm: slow now
         w.set_paused(True)
-        time.sleep(0.4)                          # it notices within one slow poll and rests
+        time.sleep(0.4)  # it notices within one slow poll and rests
         w.set_paused(False)
         before = bus.asked
         time.sleep(0.08)
@@ -263,6 +275,7 @@ class OnePanelEdges(unittest.TestCase):
 
         def fails(values):
             raise OSError(28, "No space left on device")
+
         t.blanker._save = fails
         self.assertIs(t.blanker.blank(only=(1,)), False)
         self.assertEqual((t.values(), t.saved.exists()), ((90, 200), False))
@@ -297,7 +310,7 @@ class OnePanelEdges(unittest.TestCase):
     def test_a_lit_panel_is_left_at_the_brightness_it_has_now(self):
         t = Tree(self)
         t.blanker.blank(only=(1,))
-        t.brightness("panel0-backlight").write_text("150\n", encoding="ascii")     # turned up since
+        t.brightness("panel0-backlight").write_text("150\n", encoding="ascii")  # turned up since
         t.blanker.blank(only=(1,))
         self.assertEqual(t.values(), (150, 0), "only a panel that reads 0 is lit from the saved file")
 

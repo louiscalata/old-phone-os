@@ -24,14 +24,18 @@ class TestHW(unittest.TestCase):
     def test_f045_duo_modem_detail_response(self):
         import copy
         import json
+
         fixture_path = Path(__file__).parent / "fixtures" / "surface-duo-sysfs.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
         def make_runner(data):
             def run(args):
                 key = " ".join(args)
                 entry = data["cmds"][key]
                 return entry["rc"], entry["out"], entry["err"]
+
             return run
+
         rc, out, err = make_runner(fixture)(["mmcli", "-m", "0", "-J"])
         self.assertEqual(rc, 0)
         self.assertEqual(err, "")
@@ -117,6 +121,7 @@ class TestHW(unittest.TestCase):
         import dataclasses
 
         from opos.hw import device
+
         self.assertIs(builtin_profile("Surface Duo").facts, device.SURFACE_DUO)
         self.assertIsNone(builtin_profile("Generic phone").facts)
         with self.assertRaises(dataclasses.FrozenInstanceError):
@@ -132,6 +137,7 @@ class TestHW(unittest.TestCase):
 
     def test_the_duo_geometry_adds_up(self):
         from opos.hw.device import SURFACE_DUO as d
+
         (pw, ph), (ow, oh), scale = d.panel_px.value, d.output_px.value, d.scale.value
         self.assertEqual(ow, d.panels.value * pw + d.hinge.value * scale)  # two panels and the hinge make one output
         self.assertEqual(oh, ph)
@@ -171,11 +177,14 @@ class TestHW(unittest.TestCase):
             self.assertEqual(getattr(dev, "source"), "manual")
             self.assertEqual(getattr(dev, "name"), "Surface Duo")
 
-
     def test_f026_missing_cpu_frequency_preserves_positive_drain(self):
         from unittest.mock import patch
         from opos.power import FEATURE_COST, feature_drain, total_drain
-        with patch("builtins.open", side_effect=FileNotFoundError("CPU frequency unavailable")), patch("pathlib.Path.open", side_effect=FileNotFoundError("CPU frequency unavailable")):
+
+        with (
+            patch("builtins.open", side_effect=FileNotFoundError("CPU frequency unavailable")),
+            patch("pathlib.Path.open", side_effect=FileNotFoundError("CPU frequency unavailable")),
+        ):
             self.assertAlmostEqual(feature_drain()["model"], 0.8)
             self.assertAlmostEqual(total_drain(()), 10.8)
             with patch.dict(FEATURE_COST, {"model": 1.6}):

@@ -14,6 +14,7 @@ ARGS = [
     "http://127.0.0.1:8765/",
 ]
 
+
 class TestKiosk(unittest.TestCase):
     def setUp(self):
         self.launcher = Path(__file__).resolve().parents[1] / "packaging/pmos/opos/opos-kiosk"
@@ -23,7 +24,7 @@ class TestKiosk(unittest.TestCase):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         stub = Path(td.name) / "chromium"
-        stub.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@"\nexit 0\n')
+        stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\nexit 0\n")
         os.chmod(stub, 0o755)
         env = dict(os.environ, PATH=td.name + os.pathsep + os.environ.get("PATH", ""))
         r = subprocess.run(["sh", str(self.launcher)], capture_output=True, text=True, env=env)
@@ -32,6 +33,7 @@ class TestKiosk(unittest.TestCase):
     def test_posix_syntax(self):
         r = subprocess.run(["sh", "-n", str(self.launcher)], capture_output=True)
         self.assertEqual(r.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

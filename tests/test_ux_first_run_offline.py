@@ -2,19 +2,20 @@
 import unittest
 from opos.web import page
 
+
 class TestApiOffline(unittest.TestCase):
     def setUp(self):
         html = page()
-        marker = 'async function api(o){'
+        marker = "async function api(o){"
         assert marker in html
         start = html.find(marker)
         depth = 0
         end = None
         for idx in range(start, len(html)):
             c = html[idx]
-            if c == '{':
+            if c == "{":
                 depth += 1
-            elif c == '}':
+            elif c == "}":
                 depth -= 1
                 if depth == 0:
                     end = idx + 1
@@ -23,24 +24,24 @@ class TestApiOffline(unittest.TestCase):
 
     def test_api_has_try_catch(self):
         src = self.api_src
-        assert 'try{' in src
-        assert 'catch(' in src
-        assert src.find('try{') < src.find('fetch(')
+        assert "try{" in src
+        assert "catch(" in src
+        assert src.find("try{") < src.find("fetch(")
 
     def test_api_returns_offline_on_failure(self):
         src = self.api_src
         err = "error:'offline'"
         assert err in src
-        assert src.find(err) > src.find('catch(')
+        assert src.find(err) > src.find("catch(")
 
     def test_api_awaits_json(self):
         src = self.api_src
-        assert 'await r.json()' in src
-        try_idx = src.find('try{')
-        catch_idx = src.find('catch(')
-        await_idx = src.find('await r.json()')
+        assert "await r.json()" in src
+        try_idx = src.find("try{")
+        catch_idx = src.find("catch(")
+        await_idx = src.find("await r.json()")
         assert try_idx < await_idx < catch_idx
-        assert 'return r.json()' not in src
+        assert "return r.json()" not in src
 
     def test_request_unchanged(self):
         src = self.api_src

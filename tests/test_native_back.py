@@ -3,6 +3,7 @@
 
 The pure decisions (layout.py, posture.py), the Blanker's one-panel blank in a fake sysfs tree, the row moves in ui.py
 with stand-in boxes, and the shell's wiring on the stand-in window of test_native_shell. No toolkit, no device."""
+
 import ast
 import os
 import tempfile
@@ -14,11 +15,11 @@ from opos.native import blank, layout, posture
 from tests.test_native_blank import Tree, _broken
 from tests.test_native_shell import SHELL, FakeBlanker, StandInShell
 
-POSIX = hasattr(os, "getuid")     # the saved file needs a private runtime folder, which Windows cannot show
+POSIX = hasattr(os, "getuid")  # the saved file needs a private runtime folder, which Windows cannot show
 
 
 class Decisions(unittest.TestCase):
-    W, GAP = 1392, 42             # 675 + 42 + 675
+    W, GAP = 1392, 42  # 675 + 42 + 675
 
     def test_which_screen_a_point_is_on(self):
         at = lambda x: layout.screen_at(x, self.W, self.GAP)
@@ -58,7 +59,14 @@ class Decisions(unittest.TestCase):
 
     def test_one_screen_only_when_back_with_the_lid_open(self):
         self.assertTrue(posture.one_screen("back", False))
-        for name, lid in (("back", None), ("back", True), ("tent", False), ("open", False), ("closed", True), (None, False)):
+        for name, lid in (
+            ("back", None),
+            ("back", True),
+            ("tent", False),
+            ("open", False),
+            ("closed", True),
+            (None, False),
+        ):
             self.assertFalse(posture.one_screen(name, lid), (name, lid))
 
     def test_back_from_the_angle(self):
@@ -69,18 +77,24 @@ class Decisions(unittest.TestCase):
 
     def test_folded_back_without_back_mode_the_settings_line_says_both_are_lit(self):
         self.assertEqual(posture.describe("back", 352, False), "Back, hinge at 352 degrees. Both screens are lit.")
-        self.assertEqual(posture.describe("back", 352, True), "Back, hinge at 352 degrees. One screen is lit; the other is dark.")
-        self.assertEqual(posture.describe("tent", 250, True), "Tent, hinge at 250 degrees.", "only back mode darkens one")
+        self.assertEqual(
+            posture.describe("back", 352, True), "Back, hinge at 352 degrees. One screen is lit; the other is dark."
+        )
+        self.assertEqual(
+            posture.describe("tent", 250, True), "Tent, hinge at 250 degrees.", "only back mode darkens one"
+        )
 
 
 class SettingsLine(unittest.TestCase):
     """The Settings Hinge line on the screens' stand-in toolkit: it says one screen is dark only while one is."""
+
     from tests.test_native_screens import Screens as _Screens
+
     setUp = _Screens.setUp
 
     def test_the_line_follows_back_mode_not_the_angle_alone(self):
         shell = self.shell
-        shell.posture, shell.angle, shell.back = "back", 352, None      # folded back, the lid unknown: both lit
+        shell.posture, shell.angle, shell.back = "back", 352, None  # folded back, the lid unknown: both lit
         s = self.screens.Settings(shell)
         self.assertEqual(s.hinge_line.get_label(), "Back, hinge at 352 degrees. Both screens are lit.")
         shell.back = 1
@@ -107,7 +121,7 @@ class OnePanel(unittest.TestCase):
 
     def test_a_saved_file_already_there_is_kept_and_the_other_panel_is_lit_from_it(self):
         t = Tree(self)
-        t.blanker.blank()                       # the lid's blank, not yet restored
+        t.blanker.blank()  # the lid's blank, not yet restored
         self.assertEqual(t.values(), (0, 0))
         before = t.saved.read_bytes()
         t.blanker.blank(only=(1,))
@@ -138,8 +152,8 @@ class OnePanel(unittest.TestCase):
 
     def test_switching_screens_never_darkens_the_one_in_use_when_the_other_cannot_be_lit(self):
         t = Tree(self)
-        t.blanker.blank(only=(1,))                  # the left screen in use, the right one dark: (90, 0)
-        _broken(t, "panel1-backlight")              # and now the right one cannot be written
+        t.blanker.blank(only=(1,))  # the left screen in use, the right one dark: (90, 0)
+        _broken(t, "panel1-backlight")  # and now the right one cannot be written
         self.assertFalse(t.blanker.blank(only=(0,)), "asked to switch to the right screen: nothing darkened")
         self.assertEqual(t.brightness("panel0-backlight").read_text().strip(), "90", "the screen in use stays lit")
         self.assertTrue(t.blanker.failed and t.saved.exists(), "listed, so the shell tries again")
@@ -167,7 +181,7 @@ class OnePanel(unittest.TestCase):
 
     def test_the_daemons_guard_does_not_stop_it_but_still_stops_the_full_blank(self):
         t = Tree(self)
-        t.blanker.may_blank = lambda: False     # the lid reads open
+        t.blanker.may_blank = lambda: False  # the lid reads open
         self.assertFalse(t.blanker.blank())
         self.assertTrue(t.blanker.blank(only=(0,)))
         self.assertEqual(t.values(), (0, 200))
@@ -218,6 +232,7 @@ class Rows(StandInShell):
     def setUp(self):
         super().setUp()
         import importlib
+
         ui = self.ui = importlib.import_module("opos.native.ui")
         ui.Gtk.Box, ui.Gtk.Stack = StandInBox, StandInStack
 
@@ -254,7 +269,7 @@ class Rows(StandInShell):
         self.assertEqual(row.children, [row.read, row.act])
         row.column, row.empty = StandInBox(), StandInBox()
         row.remove(row.read)
-        row.column.append(row.read)         # stopped half way
+        row.column.append(row.read)  # stopped half way
         self.ui.two_columns(row, "right")
         self.assertEqual((row.children, row.column.children), ([row.read, row.act], []))
 
@@ -273,12 +288,14 @@ class ShellBack(StandInShell):
 
         class OnePanelBlanker(FakeBlanker):
             """Also records blank(only=...): one panel dark on purpose, not counted in `blanks`, as the real one."""
+
             def blank(self, only=None):
                 if only is None:
                     return FakeBlanker.blank(self)
                 self.calls.append(("blank", only))
                 self.dark = True
                 return True
+
         self.win.blanker = OnePanelBlanker(self.calls)
 
     def test_folded_back_uses_the_thumb_side_and_darkens_the_other(self):
@@ -292,7 +309,7 @@ class ShellBack(StandInShell):
     def test_the_last_touched_screen_is_used(self):
         w = self.win
         w.lid_changed(False)
-        self.touch(200, 400, [])                # a tap on the left screen
+        self.touch(200, 400, [])  # a tap on the left screen
         w.hinge_changed(352)
         self.assertEqual((w.back, self.calls[-1]), (0, ("blank", (1,))))
 
@@ -308,7 +325,10 @@ class ShellBack(StandInShell):
         self.calls.clear()
         self.layouts.clear()
         w.hinge_changed(180)
-        self.assertEqual((w.back, self.calls, self.layouts), (None, ["restore"], [("two", "page", "right"), ("two", "sheet", "right")]))
+        self.assertEqual(
+            (w.back, self.calls, self.layouts),
+            (None, ["restore"], [("two", "page", "right"), ("two", "sheet", "right")]),
+        )
 
     def test_the_sensor_lost_or_any_other_posture_leaves(self):
         for angle in (None, 200, 0, -5):
@@ -322,7 +342,7 @@ class ShellBack(StandInShell):
         w = self.win
         self.back()
         self.calls.clear()
-        for a in (349, 360, 341):       # 341 is inside the hysteresis
+        for a in (349, 360, 341):  # 341 is inside the hysteresis
             w.hinge_changed(a)
         self.assertEqual((w.back, self.calls), (1, []))
 
@@ -363,6 +383,7 @@ class ShellBack(StandInShell):
 
         def broken(row, screen):
             raise RuntimeError("no")
+
         self.shell.one_column = broken
         self.back()
         self.assertEqual((w.back, self.calls), (None, ["restore"]))
@@ -373,6 +394,7 @@ class ShellBack(StandInShell):
 
         def boom(only=None):
             raise OSError("no")
+
         w.blanker.blank = boom
         self.back()
         self.assertEqual((w.back, self.calls), (1, ["restore"]))
@@ -401,7 +423,7 @@ class ShellBack(StandInShell):
         w = self.win
         w.page = "home"
         self.back()
-        self.touch(200, 10, [(0, 40), (0, 300)], end_vy=2000)      # would open the sheet on the active side
+        self.touch(200, 10, [(0, 40), (0, 300)], end_vy=2000)  # would open the sheet on the active side
         self.assertEqual((self.g.state, w.owned, w.sheet.revealed, w.drag), ("claimed", True, False, None))
         self.g.state = None
         self.touch(200, 450, [(13, 0), (300, 0)], end_vx=900)
@@ -426,23 +448,24 @@ class ShellBack(StandInShell):
         clock = [100.0]
         self.shell.time = types.SimpleNamespace(monotonic=lambda: clock[0])
         w.lid_changed(False)
-        self.touch(200, 400, [])                    # the left screen was touched last (a grip touch, say)
-        for z in (900, 900, 900):                   # but the right screen is the one facing up
+        self.touch(200, 400, [])  # the left screen was touched last (a grip touch, say)
+        for z in (900, 900, 900):  # but the right screen is the one facing up
             w.tilt_changed(z)
             clock[0] += 0.5
         w.hinge_changed(352)
         self.assertEqual((w.back, self.calls[-1]), (1, ("blank", (0,))), "the sensor wins over the last touch")
         self.calls.clear()
-        for z in (-900, -900, -900):                # flipped over: the left screen faces up now
+        for z in (-900, -900, -900):  # flipped over: the left screen faces up now
             w.tilt_changed(z)
             clock[0] += 0.5
         self.assertEqual((w.back, self.calls[-1]), (0, ("blank", (1,))))
-        w.tilt_changed(None)                        # the sensor lost: it stays where it is
+        w.tilt_changed(None)  # the sensor lost: it stays where it is
         self.assertEqual(w.back, 0)
 
     def test_a_tilt_reading_keeps_the_time_the_watcher_thread_took_it(self):
         """The hold time is measured between the readings, not between the main loop's turns to them."""
         from unittest import mock
+
         shell, w = self.shell, self.win
         clock, queued, seen = [100.0], [], {}
         shell.time = types.SimpleNamespace(monotonic=lambda: clock[0])
@@ -453,20 +476,23 @@ class ShellBack(StandInShell):
 
             def start(self):
                 return self
-        with mock.patch.object(shell.hinge, "HingeWatcher", Capture), \
-                mock.patch.object(shell.posture, "find_lid", lambda *a: None), \
-                mock.patch.object(shell.displayconfig, "own", lambda b, say: None), \
-                mock.patch.object(shell.GLib, "idle_add", lambda fn, *a: queued.append((fn, a))):
+
+        with (
+            mock.patch.object(shell.hinge, "HingeWatcher", Capture),
+            mock.patch.object(shell.posture, "find_lid", lambda *a: None),
+            mock.patch.object(shell.displayconfig, "own", lambda b, say: None),
+            mock.patch.object(shell.GLib, "idle_add", lambda fn, *a: queued.append((fn, a))),
+        ):
             w.start_lid()
-            self.touch(200, 400, [])                # the left screen in use
+            self.touch(200, 400, [])  # the left screen in use
             w.lid_changed(False)
             w.hinge_changed(352)
             self.assertEqual(w.back, 0)
             queued.clear()
-            for _ in range(3):                      # the watcher thread: the right screen faces up, 0.5 s apart
+            for _ in range(3):  # the watcher thread: the right screen faces up, 0.5 s apart
                 seen["on_tilt"](900)
                 clock[0] += 0.5
-            clock[0] += 5.0                         # the main loop stalled; it gets to all three at once
+            clock[0] += 5.0  # the main loop stalled; it gets to all three at once
             for fn, a in queued:
                 fn(*a)
         self.assertEqual(w.back, 1, "held for a second by the readings' own times: moved")
@@ -475,21 +501,29 @@ class ShellBack(StandInShell):
         w = self.win
         w.lid_changed(False)
         self.touch(200, 400, [])
-        w.tilt_changed(50)                          # held upright: cannot tell
+        w.tilt_changed(50)  # held upright: cannot tell
         w.hinge_changed(352)
         self.assertEqual(w.back, 0)
 
     def test_in_back_mode_both_side_edges_of_the_screen_in_use_go_home(self):
         from opos.native.layout import swipe_action
+
         W, H, HG = 1392, 1800, 42
         pane = (W - HG) / 2
         for active, xs in ((1, (pane + HG + 3, W - 3)), (0, (3, pane - 3))):
             for x in xs:
                 with self.subTest(active=active, x=x):
                     self.assertEqual(swipe_action("app", False, (x, 400), W, H, 500, 0, HG, active), "home")
-                    self.assertIsNone(swipe_action("home", False, (x, 400), W, H, 500, 0, HG, active), "only on an app page")
-        self.assertIsNone(swipe_action("app", False, (pane + HG + 337, 400), W, H, 500, 0, HG, 1), "the middle of the screen is no edge")
-        self.assertEqual(swipe_action("app", False, (W / 2, 400), W, H, 500, 0, HG, None), "hand-right", "two screens as before")
+                    self.assertIsNone(
+                        swipe_action("home", False, (x, 400), W, H, 500, 0, HG, active), "only on an app page"
+                    )
+        self.assertIsNone(
+            swipe_action("app", False, (pane + HG + 337, 400), W, H, 500, 0, HG, 1),
+            "the middle of the screen is no edge",
+        )
+        self.assertEqual(
+            swipe_action("app", False, (W / 2, 400), W, H, 500, 0, HG, None), "hand-right", "two screens as before"
+        )
 
     def test_a_failed_move_is_tried_once_not_on_every_reading(self):
         w = self.win
@@ -498,12 +532,13 @@ class ShellBack(StandInShell):
         def broken(row, screen):
             tries.append(screen)
             raise RuntimeError("no")
+
         self.shell.one_column = broken
         w.lid_changed(False)
         for angle in (352, 355, 358, 360):
             w.hinge_changed(angle)
         self.assertEqual(len(tries), 1, "one attempt (the page row fails first), not one per reading")
-        w.hinge_changed(120)                # leaving back clears it
+        w.hinge_changed(120)  # leaving back clears it
         tries.clear()
         w.hinge_changed(352)
         self.assertEqual(len(tries), 1)
@@ -511,10 +546,13 @@ class ShellBack(StandInShell):
     def test_the_hand_setting_in_back_mode_moves_no_pane(self):
         w = self.win
         self.back()
-        w.pages = {"settings": types.SimpleNamespace(paint_hand=lambda: None), "home": types.SimpleNamespace(show=lambda snap: None)}
+        w.pages = {
+            "settings": types.SimpleNamespace(paint_hand=lambda: None),
+            "home": types.SimpleNamespace(show=lambda snap: None),
+        }
         w.snap = None
         self.shell.save_hand = lambda hand: None
-        self.shell.Shell.set_hand(w, "left", save=False)    # the rows are plain strings: touching one would raise
+        self.shell.Shell.set_hand(w, "left", save=False)  # the rows are plain strings: touching one would raise
         self.assertEqual(w.hand, "left")
 
     def test_a_hinge_watcher_that_cannot_start_leaves_the_lid_and_both_screens(self):
@@ -523,6 +561,7 @@ class ShellBack(StandInShell):
         import tempfile
         from pathlib import Path
         from unittest import mock
+
         shell, w = self.shell, self.win
 
         class Broken:
@@ -531,16 +570,21 @@ class ShellBack(StandInShell):
 
             def start(self):
                 raise RuntimeError("can't start new thread")
+
         err = io.StringIO()
         with tempfile.TemporaryDirectory() as d:
             node = Path(d) / "event5"
             node.write_bytes(b"")
-            with mock.patch.object(shell.hinge, "HingeWatcher", Broken), \
-                    mock.patch.object(shell.posture, "find_lid", lambda *a: str(node)), \
-                    mock.patch.object(shell.posture, "lid_state", lambda fd: False), \
-                    mock.patch.object(shell.posture, "LidWatcher", lambda *a: types.SimpleNamespace(start=lambda: "watcher")), \
-                    mock.patch.object(shell.displayconfig, "own", lambda b, say: None), \
-                    mock.patch("sys.stderr", err):
+            with (
+                mock.patch.object(shell.hinge, "HingeWatcher", Broken),
+                mock.patch.object(shell.posture, "find_lid", lambda *a: str(node)),
+                mock.patch.object(shell.posture, "lid_state", lambda fd: False),
+                mock.patch.object(
+                    shell.posture, "LidWatcher", lambda *a: types.SimpleNamespace(start=lambda: "watcher")
+                ),
+                mock.patch.object(shell.displayconfig, "own", lambda b, say: None),
+                mock.patch("sys.stderr", err),
+            ):
                 w.start_lid()
         self.assertEqual((w.lid_watcher, w.hinge_watcher, w.back), ("watcher", None, None))
         self.assertNotIn("blank", [c if isinstance(c, str) else c[0] for c in self.calls])
@@ -579,8 +623,10 @@ class Source(unittest.TestCase):
     def test_the_blanker_darkens_only_from_the_lid_timer_and_from_relight_one_panel_at_a_time(self):
         where = {n for n, m in self.methods.items() if any(c.startswith("self.blanker.blank(") for c in self.calls(n))}
         self.assertEqual(where, {"blank_if_closed", "relight"})
-        self.assertEqual([c for c in self.calls("relight") if c.startswith("self.blanker.blank(")],
-                         ["self.blanker.blank(only=(panel_to_darken(self.back),))"])
+        self.assertEqual(
+            [c for c in self.calls("relight") if c.startswith("self.blanker.blank(")],
+            ["self.blanker.blank(only=(panel_to_darken(self.back),))"],
+        )
 
     def test_the_panes_are_moved_only_under_a_guard(self):
         for name, fn in (("enter_back", "one_column("), ("two_rows", "two_columns(")):

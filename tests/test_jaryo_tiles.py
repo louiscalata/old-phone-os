@@ -7,6 +7,7 @@ Settings carries no attribute: small is the base #home button size, and
 tests/test_uxp13_settings.py pins its exact markup. Medium spans two grid rows;
 from 840px Home uses 4 tracks with column rules (docs/jaryo.md 3 and 4.2).
 """
+
 import json
 import os
 import re
@@ -50,11 +51,24 @@ class TilesStatic(unittest.TestCase):
         self.assertIn('#homebutton[data-size="wide"]{grid-column:1/-1;min-height:96px}', css)
         # docs/jaryo.md 4.2: medium = 1 track x 2 rows; small = 1 x 1 and never stretches to a neighbour.
         self.assertIn('#homebutton[data-size="medium"]{min-height:144px;grid-row:span2}', css)
-        self.assertIn('#homebutton[data-size="small"],#homebutton:not([data-size]){min-height:96px;grid-row:span1;align-self:start}', css)
+        self.assertIn(
+            '#homebutton[data-size="small"],#homebutton:not([data-size]){min-height:96px;grid-row:span1;align-self:start}',
+            css,
+        )
         base = re.search(r"#homebutton\{([^}]*)\}", css).group(1)
-        for d in ("display:flex", "align-items:flex-end", "justify-content:flex-start", "text-align:left", "font-size:1.5rem",
-                  "overflow-wrap:anywhere", "background:var(--jaryo-bg,#fff)", "color:var(--jaryo-fg,#000)",
-                  "border:1pxsolidvar(--jaryo-fg,#000)", "border-radius:0", "box-shadow:none"):
+        for d in (
+            "display:flex",
+            "align-items:flex-end",
+            "justify-content:flex-start",
+            "text-align:left",
+            "font-size:1.5rem",
+            "overflow-wrap:anywhere",
+            "background:var(--jaryo-bg,#fff)",
+            "color:var(--jaryo-fg,#000)",
+            "border:1pxsolidvar(--jaryo-fg,#000)",
+            "border-radius:0",
+            "box-shadow:none",
+        ):
             self.assertIn(d, base)
         self.assertNotRegex(base, r"(^|;)height:")
         # Home-only rules hold at every width, not only below 840px.
@@ -62,26 +76,43 @@ class TilesStatic(unittest.TestCase):
         for d in ('#phone[data-app="home"]#intro{display:none}', "#screen[hidden]{display:none}"):
             self.assertIn(d, top)
         notice = re.search(r"#home-notice\{([^}]*)\}", top).group(1)
-        for d in ("margin-top:0", "border-top:1pxsolidvar(--jaryo-fg,#000)", "border-left:0",
-                  "background:var(--jaryo-bg,#fff)", "color:var(--jaryo-fg,#000)"):
+        for d in (
+            "margin-top:0",
+            "border-top:1pxsolidvar(--jaryo-fg,#000)",
+            "border-left:0",
+            "background:var(--jaryo-bg,#fff)",
+            "color:var(--jaryo-fg,#000)",
+        ):
             self.assertIn(d, notice)
         # Below 840px; phone-a.css keeps the page's single max-width:839px block (test_uxp22_twopane).
         self.assertIn('@medianotalland(min-width:840px){#phone:not([data-app="home"])#screen{margin-top:12px}}', css)
         self.assertNotIn("max-width:839px", css)
         wide = css.split("@media(min-width:840px){", 1)[1]
-        self.assertIn('html:not([data-ff])#phone[data-app]#home:not([hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}', wide)
+        self.assertIn(
+            "html:not([data-ff])#phone[data-app]#home:not([hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}",
+            wide,
+        )
         self.assertIn("#home[data-open]{border-width:1px001px}", wide)
         self.assertIn("#home-favourites>[data-open]:first-child{border-left-width:0}", wide)
 
     def _assert_palette_and_no_reordering(self, source):
         css = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
-        self.assertEqual(set(re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", css)) - {"#000", "#fff", "#1a1a1a", "#f3f0e8", "#e6e2d9"}, set())
+        self.assertEqual(
+            set(re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", css))
+            - {"#000", "#fff", "#1a1a1a", "#f3f0e8", "#e6e2d9"},
+            set(),
+        )
         self.assertNotRegex(css, r"[;{]\s*order\s*:|row-reverse|column-reverse|@font-face|url\(|gradient")
         # Section2.3 requires neutralizing inherited paint effects. Permit only
         # exact neutral declarations; retain the effect ban on everything else,
         # including earlier declarations hidden by a later neutral reset.
-        neutral = re.sub(r"([;{])\s*(?:filter\s*:\s*none|opacity\s*:\s*1)\s*"
-                         r"(?:!important\s*)?(?=[;}])", r"\1", css, flags=re.IGNORECASE)
+        neutral = re.sub(
+            r"([;{])\s*(?:filter\s*:\s*none|opacity\s*:\s*1)\s*"
+            r"(?:!important\s*)?(?=[;}])",
+            r"\1",
+            css,
+            flags=re.IGNORECASE,
+        )
         self.assertNotRegex(neutral, re.compile(r"filter|opacity", re.IGNORECASE))
 
     def test_palette_and_no_reordering(self):
@@ -89,21 +120,38 @@ class TilesStatic(unittest.TestCase):
 
     def test_effect_guard_accepts_exact_neutral_resets(self):
         self._assert_palette_and_no_reordering(
-            '#screen{filter:none!important}#why{opacity:1}'
-            '#events{filter: none; opacity: 1 !important;}')
+            "#screen{filter:none!important}#why{opacity:1}#events{filter: none; opacity: 1 !important;}"
+        )
 
     def test_effect_guard_still_rejects_active_effects_and_forbidden_features(self):
-        for declaration in ('filter:blur(1px)', 'filter:blur(0)', 'filter:brightness(1)', 'filter:var(--effect)',
-                            'filter:none-blur', 'filter:none blur(0)', 'opacity:1 invalid',
-                            'FILTER:blur(1px)', 'opacity:.5', 'opacity:.99', 'opacity:1.01', 'opacity:0', 'opacity:var(--alpha)',
-                            'filter:blur(1px);filter:none', 'opacity:.5;opacity:1',
-                            'backdrop-filter:none', 'color:#333', 'order:1',
-                            'flex-direction:row-reverse', 'flex-direction:column-reverse',
-                            'background:url(x)', 'background:linear-gradient(#000,#fff)'):
+        for declaration in (
+            "filter:blur(1px)",
+            "filter:blur(0)",
+            "filter:brightness(1)",
+            "filter:var(--effect)",
+            "filter:none-blur",
+            "filter:none blur(0)",
+            "opacity:1 invalid",
+            "FILTER:blur(1px)",
+            "opacity:.5",
+            "opacity:.99",
+            "opacity:1.01",
+            "opacity:0",
+            "opacity:var(--alpha)",
+            "filter:blur(1px);filter:none",
+            "opacity:.5;opacity:1",
+            "backdrop-filter:none",
+            "color:#333",
+            "order:1",
+            "flex-direction:row-reverse",
+            "flex-direction:column-reverse",
+            "background:url(x)",
+            "background:linear-gradient(#000,#fff)",
+        ):
             with self.subTest(declaration=declaration), self.assertRaises(AssertionError):
-                self._assert_palette_and_no_reordering(_jaryo_css() + '#home button{' + declaration + '}')
+                self._assert_palette_and_no_reordering(_jaryo_css() + "#home button{" + declaration + "}")
         with self.assertRaises(AssertionError):
-            self._assert_palette_and_no_reordering(_jaryo_css() + '@font-face{font-family:downloaded}')
+            self._assert_palette_and_no_reordering(_jaryo_css() + "@font-face{font-family:downloaded}")
 
     def test_screen_hook(self):
         js = (STATIC / "phone-a.js").read_text(encoding="utf-8")
@@ -116,6 +164,7 @@ class TilesStatic(unittest.TestCase):
 @unittest.skipUnless(uxp12.NODE, "node not installed")
 class TilesRuntime(unittest.TestCase):
     """The UXP12 vm harness: tile sizes must not change Home or All apps order."""
+
     run_js = uxp12.UXP12Runtime.run_js
 
     def test_home_order_unchanged(self):
@@ -222,8 +271,14 @@ class TilesBrowser(unittest.TestCase):
         driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
         target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        r = subprocess.run([self.node, str(driver), target, self.url, "jaryo_tiles", self.state],
-                           check=False, capture_output=True, text=True, timeout=60, env=env)
+        r = subprocess.run(
+            [self.node, str(driver), target, self.url, "jaryo_tiles", self.state],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
         self.assertEqual(r.returncode, 0, r.stderr[-1000:])
         self.assertEqual(json.loads(r.stdout.strip().splitlines()[-1])["violations"], [])
 

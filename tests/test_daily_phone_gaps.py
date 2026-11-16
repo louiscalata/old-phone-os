@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The gap note stays factual: device checks are NOT_RUN, and service work is listed only."""
+
 import unittest
 from pathlib import Path
 

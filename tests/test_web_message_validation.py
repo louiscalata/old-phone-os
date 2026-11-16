@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Message validation names recipient errors without exposing internal exceptions."""
+
 import copy
 import unittest
 from unittest import mock
@@ -8,8 +9,9 @@ from opos.web import Phone, notice_for
 
 
 def message_state(phone):
-    return copy.deepcopy((phone.essentials.log, phone.essentials.outbox, phone.modem.events,
-                          phone.essentials.in_call, phone._in_call))
+    return copy.deepcopy(
+        (phone.essentials.log, phone.essentials.outbox, phone.modem.events, phone.essentials.in_call, phone._in_call)
+    )
 
 
 class TestMessageValidation(unittest.TestCase):
@@ -49,8 +51,10 @@ class TestMessageValidation(unittest.TestCase):
         phone.send("+1 (555) 0100", "Outgoing")
         phone.receive("Clinic", "Incoming")
         self.assertEqual(phone.modem.events, [("sms", "+15550100", "Outgoing")])
-        self.assertEqual([(m.number, m.text, m.outgoing) for m in phone.essentials.log],
-                         [("+15550100", "Outgoing", True), ("Clinic", "Incoming", False)])
+        self.assertEqual(
+            [(m.number, m.text, m.outgoing) for m in phone.essentials.log],
+            [("+15550100", "Outgoing", True), ("Clinic", "Incoming", False)],
+        )
         self.assertEqual(phone.status, "message received")
 
     def test_arbitrary_modem_exception_text_is_not_exposed(self):

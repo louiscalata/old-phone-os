@@ -19,7 +19,13 @@ class AssistGroundingTest(unittest.TestCase):
         with patch("opos.assist.muse.ask", return_value="Pause background work.") as ask:
             result = assist.answer(QUESTION, env={}, free=2000, web=False, context=make_context())
         prompt = ask.call_args[0][1]
-        expected = FACTS_PREFIX + "Facts about this phone (use them for questions about the phone): " + '{"mode": "reserve", "paused": ["sync"]}' + "\n\nQuestion: " + QUESTION
+        expected = (
+            FACTS_PREFIX
+            + "Facts about this phone (use them for questions about the phone): "
+            + '{"mode": "reserve", "paused": ["sync"]}'
+            + "\n\nQuestion: "
+            + QUESTION
+        )
         self.assertEqual(prompt, expected)
         self.assertEqual(result["text"], "Pause background work.")
 

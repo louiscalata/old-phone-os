@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Honesty and transport regression tests for the Meta helper."""
+
 import io
 import json
 import unittest
@@ -17,19 +18,26 @@ class CapturingOpener:
     def __init__(self, content="ok", *, model="muse-glimmer-30b", finish_reason="stop", error=None):
         self.content, self.model, self.finish_reason, self.error = content, model, finish_reason, error
         self.requests, self.timeouts = [], []
+
     def __call__(self, req, timeout=None):
         self.requests.append(req)
         self.timeouts.append(timeout)
         if self.error is not None:
             raise self.error
-        body = {"model": self.model, "choices": [{"message": {"content": self.content}, "finish_reason": self.finish_reason}]}
+        body = {
+            "model": self.model,
+            "choices": [{"message": {"content": self.content}, "finish_reason": self.finish_reason}],
+        }
         return io.BytesIO(json.dumps(body).encode())
 
 
 class MetaHelperHonestyTest(unittest.TestCase):
     def test_explain_fallback_uses_reason_and_safety_sentence(self):
         op = CapturingOpener(error=OSError("offline"))
-        facts = {"why_paused": "The battery is worn (60% health), so 60% charge is about 36% usable and it is not charging; to keep calls and messages working until 16:00, the phone paused maps.", "paused": ["maps"]}
+        facts = {
+            "why_paused": "The battery is worn (60% health), so 60% charge is about 36% usable and it is not charging; to keep calls and messages working until 16:00, the phone paused maps.",
+            "paused": ["maps"],
+        }
         out = muse.explain(facts, muse.glimmer_route({}), env={}, opener=op)
         self.assertTrue(out["text"].startswith(facts["why_paused"]))
         self.assertTrue(out["text"].endswith("Calls and messages are never paused."))
@@ -67,7 +75,9 @@ class MetaHelperHonestyTest(unittest.TestCase):
         route = muse.glimmer_route({})
         op = CapturingOpener(content="Model explanation.")
         out = muse.explain({"paused": ["maps"], "paused_by_glimmer": ["maps"]}, route, env={}, opener=op)
-        self.assertEqual(out, {"text": "Model explanation.", "engine": "Muse Glimmer", "where": "on a local server", "ok": True})
+        self.assertEqual(
+            out, {"text": "Model explanation.", "engine": "Muse Glimmer", "where": "on a local server", "ok": True}
+        )
         prompt = json.loads(op.requests[0].data)["messages"][0]["content"]
         self.assertIn("Muse Glimmer chose to pause those tasks", prompt)
         self.assertIn('"paused_by_glimmer": ["maps"]', prompt)
@@ -91,7 +101,10 @@ class MetaHelperHonestyTest(unittest.TestCase):
         self.assertIn("Muse Glimmer chose to pause it", prompt)
         lines = prompt.splitlines()
         facts_line = next(i for i, line in enumerate(lines) if line.startswith("Facts about this phone"))
-        self.assertEqual(lines[facts_line + 1], "If asked about a task listed in paused_by_glimmer, say that Muse Glimmer chose to pause it.")
+        self.assertEqual(
+            lines[facts_line + 1],
+            "If asked about a task listed in paused_by_glimmer, say that Muse Glimmer chose to pause it.",
+        )
 
     def test_probe_length_reports_token_budget_error(self):
         op = CapturingOpener(content="", finish_reason="length")
@@ -130,7 +143,13 @@ class MetaHelperHonestyTest(unittest.TestCase):
         muse.ask(route, "hi", env={}, opener=op, max_tokens=600)
         body = json.loads(op.requests[0].data)
         self.assertEqual(muse._payload(route, "hi", 600), body)
-        legacy = {"model": route.model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1800, "temperature": 0.2, "reasoning_effort": "low"}
+        legacy = {
+            "model": route.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1800,
+            "temperature": 0.2,
+            "reasoning_effort": "low",
+        }
         self.assertEqual(op.requests[0].data, json.dumps(legacy).encode("utf-8"))
         self.assertEqual(body["max_tokens"], 1800)
         self.assertEqual(body["reasoning_effort"], "low")
@@ -160,11 +179,14 @@ class MetaHelperHonestyTest(unittest.TestCase):
 
     def test_advisor_ignores_hidden_defer_and_uses_visible_json(self):
         op = CapturingOpener(content='<think>{"defer":["email"]}</think>{"defer":[]}')
+
         def ask(route, prompt, **kwargs):
             return muse.ask(route, prompt, env={}, opener=op, **kwargs)
+
         captured = []
-        advisor = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}), ask=ask,
-                                 spawn=captured.append, clock=lambda: 0)
+        advisor = GlimmerAdvisor(
+            Router(visible=True), route=muse.glimmer_route({}), ask=ask, spawn=captured.append, clock=lambda: 0
+        )
         initial = advisor(PowerState(90, False, 1, 25), DEFAULT_TASKS)
         self.assertIn("email", initial.allowed)
         self.assertEqual(len(captured), 1)
@@ -178,21 +200,29 @@ class MetaHelperHonestyTest(unittest.TestCase):
 
     def test_fallback_trims_and_caps_reason_before_safety_sentence(self):
         why = "  " + "reason " * 100 + "  "
-        out = muse.explain({"why_paused": why}, muse.glimmer_route({}), env={},
-                           opener=CapturingOpener(error=OSError("offline")))
+        out = muse.explain(
+            {"why_paused": why}, muse.glimmer_route({}), env={}, opener=CapturingOpener(error=OSError("offline"))
+        )
         self.assertEqual(out["text"], why.strip()[:500] + " Calls and messages are never paused.")
 
     def test_fallback_ignores_malformed_attribution_and_paused_values(self):
         for names in (None, "email", 5, [], ["email", None], [5]):
             with self.subTest(names=names):
-                out = muse.explain({"why_paused": "Reason.", "paused_by_glimmer": names},
-                                   muse.glimmer_route({}), env={}, opener=CapturingOpener(error=OSError("offline")))
+                out = muse.explain(
+                    {"why_paused": "Reason.", "paused_by_glimmer": names},
+                    muse.glimmer_route({}),
+                    env={},
+                    opener=CapturingOpener(error=OSError("offline")),
+                )
                 self.assertEqual(out["text"], "Reason. Calls and messages are never paused.")
         for paused in (None, "", 0, {}, ()):
             with self.subTest(paused=paused):
-                out = muse.explain({"paused": paused}, muse.glimmer_route({}), env={},
-                                   opener=CapturingOpener(error=OSError("offline")))
-                self.assertEqual(out["text"], "Calls and messages are never paused. Other tasks are paused to save battery.")
+                out = muse.explain(
+                    {"paused": paused}, muse.glimmer_route({}), env={}, opener=CapturingOpener(error=OSError("offline"))
+                )
+                self.assertEqual(
+                    out["text"], "Calls and messages are never paused. Other tasks are paused to save battery."
+                )
 
     def test_attribution_prompt_requires_nonempty_list(self):
         for names in (None, "email", 5, []):
@@ -210,29 +240,48 @@ class MetaHelperHonestyTest(unittest.TestCase):
     def test_probe_success_reports_visible_text_and_default_timeout(self):
         op = CapturingOpener(content="<think>hidden</think> OK ")
         out = muse.probe(env={}, opener=op)
-        self.assertEqual(out, {"answered": True, "latency_s": mock.ANY, "reply": "OK",
-                               "finish_reason": "stop", "reply_model": "muse-glimmer-30b"})
+        self.assertEqual(
+            out,
+            {
+                "answered": True,
+                "latency_s": mock.ANY,
+                "reply": "OK",
+                "finish_reason": "stop",
+                "reply_model": "muse-glimmer-30b",
+            },
+        )
         self.assertIsInstance(out["latency_s"], float)
         self.assertEqual(op.timeouts, [90.0])
-        self.assertEqual(json.loads(op.requests[0].data), {
-            "model": "muse-glimmer-30b", "messages": [{"role": "user", "content": "Reply with OK."}],
-            "max_tokens": 1800, "reasoning_effort": "low", "temperature": 0})
+        self.assertEqual(
+            json.loads(op.requests[0].data),
+            {
+                "model": "muse-glimmer-30b",
+                "messages": [{"role": "user", "content": "Reply with OK."}],
+                "max_tokens": 1800,
+                "reasoning_effort": "low",
+                "temperature": 0,
+            },
+        )
 
     def test_probe_latency_includes_opener_and_capped_read(self):
         events = []
         times = iter((10.0, 11.26))
+
         def clock():
             events.append("clock")
             return next(times)
+
         class Response:
             def read(self, cap):
                 events.append("read")
                 if cap != muse.MAX_RESPONSE_BYTES + 1:
                     raise AssertionError("uncapped response")
                 return b'{"choices": [{"message": {"content": "OK"}}]}'
+
         def opener(req, timeout=None):
             events.append("open")
             return Response()
+
         with mock.patch.object(muse.time, "monotonic", side_effect=clock):
             out = muse.probe(env={}, opener=opener)
         self.assertEqual(events, ["clock", "open", "read", "clock"])
@@ -245,13 +294,17 @@ class MetaHelperHonestyTest(unittest.TestCase):
         self.assertIsNone(out["reply_model"])
         for choice in (None, [], {"message": None}, {"message": []}):
             with self.subTest(choice=choice):
+
                 def opener(req, timeout=None):
                     return io.BytesIO(json.dumps({"choices": [choice]}).encode())
+
                 self.assertEqual(muse.probe(env={}, opener=opener), {"answered": False, "error": "bad response"})
 
     def test_fact_keys_include_glimmer_attribution(self):
         self.assertIn("paused_by_glimmer", muse.FACT_KEYS)
-        self.assertEqual(muse.facts({"paused_by_glimmer": ["email"], "private": "omit"}), {"paused_by_glimmer": ["email"]})
+        self.assertEqual(
+            muse.facts({"paused_by_glimmer": ["email"], "private": "omit"}), {"paused_by_glimmer": ["email"]}
+        )
 
 
 if __name__ == "__main__":

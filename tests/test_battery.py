@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from opos.battery import Sample, DrainEstimator, hours_left, essentials_reserve
 
+
 class TestBattery(unittest.TestCase):
     def test_steady_rate(self):
         est = DrainEstimator(window=20, alpha=0.3)
@@ -41,11 +42,13 @@ class TestBattery(unittest.TestCase):
     def test_essentials_reserve_rate(self):
         self.assertAlmostEqual(essentials_reserve(10), 10.7)
 
+
 class TestBatteryHw(unittest.TestCase):
     def test_present_excludes_absent(self):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -64,6 +67,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -80,6 +84,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -99,6 +104,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -118,6 +124,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -134,6 +141,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -150,6 +158,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -166,6 +175,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -180,6 +190,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -198,6 +209,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -228,6 +240,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -248,6 +261,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         valid = [
             ("50000", "4000000", 0.0125),
             ("2000", "4000", 0.5),
@@ -291,6 +305,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -313,6 +328,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ps = root / "sys/class/power_supply/BAT0"
@@ -331,6 +347,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         cases = [None, "invalid", "0"]
         for energy_full in cases:
             with self.subTest(energy_full=energy_full):
@@ -353,6 +370,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             b0 = root / "sys/class/power_supply/BAT0"
@@ -374,6 +392,7 @@ class TestBatteryHw(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from opos.hw.battery import read_battery
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             specs = (("BAT0", "2000000", "3700000", "100000"), ("BAT1", "3000000", "3800000", "200000"))
@@ -387,7 +406,16 @@ class TestBatteryHw(unittest.TestCase):
                 (psy / "voltage_now").write_text(volt)
                 (psy / "resistance").write_text(value)
             res = read_battery(root)
-            self.assertEqual(res, {"present": True, "status": "Discharging", "capacity_pct": None, "health": None, "health_coverage": 0.0})
+            self.assertEqual(
+                res,
+                {
+                    "present": True,
+                    "status": "Discharging",
+                    "capacity_pct": None,
+                    "health": None,
+                    "health_coverage": 0.0,
+                },
+            )
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             psy = root / "sys/class/power_supply/BAT0"
@@ -399,7 +427,11 @@ class TestBatteryHw(unittest.TestCase):
             (psy / "charge_full").write_text("4000000")
             (psy / "charge_full_design").write_text("5000000")
             res = read_battery(root)
-            self.assertEqual(res, {"present": True, "status": "Discharging", "capacity_pct": 60, "health": 0.8, "health_coverage": 1.0})
+            self.assertEqual(
+                res,
+                {"present": True, "status": "Discharging", "capacity_pct": 60, "health": 0.8, "health_coverage": 1.0},
+            )
+
 
 class TestNoSilentExceptPass(unittest.TestCase):
     def test_no_except_handler_with_only_pass(self):
@@ -408,9 +440,7 @@ class TestNoSilentExceptPass(unittest.TestCase):
         lines = sorted(
             node.lineno
             for node in ast.walk(tree)
-            if isinstance(node, ast.ExceptHandler)
-            and len(node.body) == 1
-            and isinstance(node.body[0], ast.Pass)
+            if isinstance(node, ast.ExceptHandler) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
         )
         self.assertEqual(lines, [], f"bare except-pass at lines {lines}")
 

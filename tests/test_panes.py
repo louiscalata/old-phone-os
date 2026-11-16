@@ -4,6 +4,7 @@
 The flag and its words, the style sheet (tokens, literals, scoping, the span rewrite), injection and routes, "off is byte
 identical", the main page's size budget, and the node DOM test for the Hand setting (tests/panes_dom_test.js).
 """
+
 import http.client
 import inspect
 import os
@@ -27,6 +28,7 @@ if "skip_host" not in _params and not any(p.kind is p.VAR_KEYWORD for p in _para
         kw.pop("skip_host", None)
         kw.pop("skip_accept_encoding", None)
         return _orig_request(self, method, url, body=body, headers=headers or {}, **kw)
+
     http.client.HTTPConnection.request = _compat  # type: ignore[method-assign]
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +51,13 @@ def env_without(**kw):
 
 class Flag(unittest.TestCase):
     def test_words(self):
-        for v, m in (("1", {"1"}), ("on", {"on"}), (" 1,pure ", {"1", "pure"}), ("INVERT", {"invert"}), ("1,theme", {"1", "theme"})):
+        for v, m in (
+            ("1", {"1"}),
+            ("on", {"on"}),
+            (" 1,pure ", {"1", "pure"}),
+            ("INVERT", {"invert"}),
+            ("1,theme", {"1", "theme"}),
+        ):
             self.assertEqual(panes.modes({"OPOS_PANES": v}), m, v)
         for v in ("", "0", "off", "yes", "1,wat", "true", "pure,"):
             self.assertEqual(panes.modes({"OPOS_PANES": v}), set() if v != "pure," else {"pure"}, v)
@@ -76,25 +84,48 @@ class Sheet(unittest.TestCase):
         j = (WEB / "jaryo.css").read_text(encoding="utf-8")
         self.assertIn("--jaryo-fg:#e6e2d9;--jaryo-bg:#000", j)  # dark
         self.assertIn("--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8", j)  # light
-        self.assertEqual(panes.SOFT, {"@K@": "#000", "@KI@": "#e6e2d9", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"})
+        self.assertEqual(
+            panes.SOFT,
+            {"@K@": "#000", "@KI@": "#e6e2d9", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"},
+        )
         out = self.served()
-        self.assertIn("--jp-k:#000;--jp-k-ink:#e6e2d9;--jp-k-cs:dark;--jp-w:#f3f0e8;--jp-w-ink:#1a1a1a;--jp-w-cs:light", out)
+        self.assertIn(
+            "--jp-k:#000;--jp-k-ink:#e6e2d9;--jp-k-cs:dark;--jp-w:#f3f0e8;--jp-w-ink:#1a1a1a;--jp-w-cs:light", out
+        )
 
     def test_only_token_colours_and_no_forbidden_paint(self):
         for env, allowed in ((ON, ALLOWED), ({"OPOS_PANES": "1,pure"}, PURE_ALLOWED | {"#000"})):
             out = self.served(**env)
             self.assertEqual(set(re.findall(r"#[0-9a-fA-F]{3,8}\b", out)), allowed)
-            for bad in ("@font-face", "url(", "gradient", "box-shadow", "filter:", "text-shadow", "rgb(", "rgba(", "hsl", "@import", "!important",
-                        "transition", "animation", "@keyframes", "content:url", "image-set"):
+            for bad in (
+                "@font-face",
+                "url(",
+                "gradient",
+                "box-shadow",
+                "filter:",
+                "text-shadow",
+                "rgb(",
+                "rgba(",
+                "hsl",
+                "@import",
+                "!important",
+                "transition",
+                "animation",
+                "@keyframes",
+                "content:url",
+                "image-set",
+            ):
                 self.assertNotIn(bad, out, bad)
             self.assertEqual(re.findall(r"opacity:[^;}]*", out), ["opacity:1"])  # ::placeholder only: no dimming
             self.assertNotIn("@@", out)
             self.assertNotRegex(out, r"@[A-Z]+@")
 
     def test_every_rule_is_scoped_by_the_switch(self):
-        out = (STATIC / "panes.css").read_text(encoding="utf-8") + (STATIC / "panes-mirror.css").read_text(encoding="utf-8")
+        out = (STATIC / "panes.css").read_text(encoding="utf-8") + (STATIC / "panes-mirror.css").read_text(
+            encoding="utf-8"
+        )
         out = re.sub(r"/\*.*?\*/", "", out, flags=re.S)
-        inner = out[out.index("@media (horizontal-viewport-segments:2){") + 40:]
+        inner = out[out.index("@media (horizontal-viewport-segments:2){") + 40 :]
         sels = [m.group(1).strip() for m in re.finditer(r"(?:^|\})\s*([^{}@/][^{}]*)\{", inner)]
         self.assertGreater(len(sels), 50)
         for sel in sels:
@@ -152,7 +183,7 @@ class Sheet(unittest.TestCase):
         self.assertEqual(soft.replace("#e6e2d9", "#fff").replace("#f3f0e8", "#fff").replace("#1a1a1a", "#000"), pure)
         invert = self.served(**{"OPOS_PANES": "invert"})
         self.assertNotIn("[data-hand=left][data-ff] #phone>", invert)  # no layout mirror
-        self.assertIn("[data-hand=left]{--jp-l:var(--jp-k)", invert)   # but the colours still swap
+        self.assertIn("[data-hand=left]{--jp-l:var(--jp-k)", invert)  # but the colours still swap
         self.assertIn("[data-hand=left][data-ff] #phone>", soft)
         self.assertIn("var(--jaryo-bg)", self.served(**{"OPOS_PANES": "theme"}))
 
@@ -174,8 +205,11 @@ class Sheet(unittest.TestCase):
 class FlagOffWording(unittest.TestCase):
     """What the docs, the module and the unit say about the flag being off is what is true (the tests above and test_panes_pages hold the
     facts: no assets, no tags, page() unchanged, the OS pages restyled either way)."""
-    SENTENCE = ("with OPOS_PANES unset the panes assets and tags are absent and page() is unchanged; "
-                "the Network, first-run and time zone pages carry the Jaryo conformance fixes either way")
+
+    SENTENCE = (
+        "with OPOS_PANES unset the panes assets and tags are absent and page() is unchanged; "
+        "the Network, first-run and time zone pages carry the Jaryo conformance fixes either way"
+    )
 
     @staticmethod
     def flat(text):
@@ -190,8 +224,12 @@ class FlagOffWording(unittest.TestCase):
         self.assertIn(self.SENTENCE, self.flat(self.read("packaging/duo-os/opos-server.service")))
 
     def test_nothing_still_promises_that_every_page_and_route_is_what_it_was(self):
-        for rel, promise in (("docs/jaryo-panes.md", "every route are what they were"), ("packaging/duo-os/opos-server.service", "byte-identical to before"),
-                             ("docs/duo-os-final.md", "every page is byte-identical"), ("CHANGELOG.md", "every page is byte-identical")):
+        for rel, promise in (
+            ("docs/jaryo-panes.md", "every route are what they were"),
+            ("packaging/duo-os/opos-server.service", "byte-identical to before"),
+            ("docs/duo-os-final.md", "every page is byte-identical"),
+            ("CHANGELOG.md", "every page is byte-identical"),
+        ):
             self.assertNotIn(promise, self.flat(self.read(rel)), rel)
         self.assertNotIn("every route are exactly what they were", self.flat(panes.__doc__))
 
@@ -206,7 +244,10 @@ class Inject(unittest.TestCase):
 
     def test_tags_and_place(self):
         t = panes.tags("abc_DEF-123")
-        self.assertEqual(t, '<link rel="stylesheet" href="/panes.css" nonce="abc_DEF-123"><script src="/panes.js" nonce="abc_DEF-123"></script>')
+        self.assertEqual(
+            t,
+            '<link rel="stylesheet" href="/panes.css" nonce="abc_DEF-123"><script src="/panes.js" nonce="abc_DEF-123"></script>',
+        )
         for bad in ("", "a b", 'a"b', "<x>", "a" * 129, None, 5):
             with self.assertRaises(ValueError, msg=repr(bad)):
                 panes.tags(bad)
@@ -214,7 +255,9 @@ class Inject(unittest.TestCase):
         got = panes.inject(html, "n1", ON)
         self.assertEqual(got, "<html><head><style>x</style>" + panes.tags("n1") + "</head><body><p>x</p></body></html>")
         self.assertEqual(panes.inject(got, "n1", ON), got, "idempotent")
-        self.assertEqual(panes.inject("<p>no head</p></body>", "n1", ON), "<p>no head</p>" + panes.tags("n1") + "</body>")
+        self.assertEqual(
+            panes.inject("<p>no head</p></body>", "n1", ON), "<p>no head</p>" + panes.tags("n1") + "</body>"
+        )
         self.assertEqual(panes.inject(html, "n1", {}), html)
 
     def test_after_the_page_s_own_style_so_it_wins_by_source_order(self):
@@ -254,6 +297,7 @@ class Routes(unittest.TestCase):
     def test_off_serves_every_full_page_exactly_as_the_pages_are_built(self):
         # Flag unset: the bytes on the wire are what web.page() and net_page.render() return, nothing added before or after.
         from opos import net_page
+
         with env_without(), webclient.Running(token=TOKEN, span=DUO) as run:
             for path, build in (("/", lambda t, n: page(t, n, span=DUO)), ("/network", net_page.render)):
                 for method in ("GET", "HEAD"):
@@ -282,7 +326,12 @@ class Routes(unittest.TestCase):
             nonce = re.search(r"script-src 'nonce-([A-Za-z0-9_-]+)'", h["content-security-policy"]).group(1)
             self.assertEqual(body.decode().count("/panes."), 2)
             self.assertIn(f'<link rel="stylesheet" href="/panes.css" nonce="{nonce}">', body.decode())
-            self.assertEqual(body.decode().replace(panes.tags(nonce), "").replace(fonts.inject(b"</head>", nonce).decode().removesuffix("</head>"), ""), page(TOKEN, nonce, span=DUO))
+            self.assertEqual(
+                body.decode()
+                .replace(panes.tags(nonce), "")
+                .replace(fonts.inject(b"</head>", nonce).decode().removesuffix("</head>"), ""),
+                page(TOKEN, nonce, span=DUO),
+            )
 
     def test_every_full_page_gets_it(self):
         with env_without(**ON), webclient.Running(token=TOKEN) as run:
@@ -300,7 +349,12 @@ class Routes(unittest.TestCase):
 @unittest.skipUnless(NODE, "no node")
 class HandDom(unittest.TestCase):
     def test_hand_toggle_persistence_and_switch(self):
-        p = subprocess.run([NODE, str(ROOT / "tests" / "panes_dom_test.js"), str(STATIC / "panes.js")], capture_output=True, text=True, timeout=60)
+        p = subprocess.run(
+            [NODE, str(ROOT / "tests" / "panes_dom_test.js"), str(STATIC / "panes.js")],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])
         self.assertIn("assertions passed", p.stdout)
 

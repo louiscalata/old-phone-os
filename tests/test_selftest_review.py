@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Regression: non-AssertionError details must not leak paths."""
+
 from __future__ import annotations
 import os
 import unittest
@@ -50,7 +51,13 @@ class SelftestDetailTest(unittest.TestCase):
                 app_server = mock.MagicMock()
                 app_server.server_address = (host, 18081)
                 body = b'{"device": {}}'
-                with mock.patch("opos.setup.config.ensure_token", return_value=token), mock.patch("opos.setup.server.make_server", return_value=wizard_server), mock.patch("opos.web.make_server", return_value=app_server), mock.patch("opos.setup.selftest._serve") as serve, mock.patch("opos.setup.selftest._get", side_effect=[(200, b""), (200, body), (status, b"")]):
+                with (
+                    mock.patch("opos.setup.config.ensure_token", return_value=token),
+                    mock.patch("opos.setup.server.make_server", return_value=wizard_server),
+                    mock.patch("opos.web.make_server", return_value=app_server),
+                    mock.patch("opos.setup.selftest._serve") as serve,
+                    mock.patch("opos.setup.selftest._get", side_effect=[(200, b""), (200, body), (status, b"")]),
+                ):
                     checks = run_checks()
                 found = any(app_server in c[0] or app_server in c[1].values() for c in serve.call_args_list)
                 self.assertTrue(found)
@@ -60,7 +67,10 @@ class SelftestDetailTest(unittest.TestCase):
 
     def test_apply_keeps_real_config_functions(self) -> None:
         from opos.setup import apply as apply_mod, config as config_mod
-        self.assertEqual((apply_mod.save is config_mod.save, apply_mod.ensure_token is config_mod.ensure_token), (True, True))
+
+        self.assertEqual(
+            (apply_mod.save is config_mod.save, apply_mod.ensure_token is config_mod.ensure_token), (True, True)
+        )
 
 
 if __name__ == "__main__":

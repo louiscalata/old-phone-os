@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Installed units and package-hook failures, without real service managers."""
+
 import configparser
 import os
 import shlex
@@ -26,10 +27,10 @@ class TestSystemdUnit(unittest.TestCase):
         service = self.unit("opos-server.service")["Service"]
         self.assertEqual(service["User"], "opos")
         self.assertEqual(service["Group"], "opos")
-        self.assertEqual(shlex.split(service["ExecStart"]),
-                         ["/usr/bin/python3", "-m", "opos.web", "--port", "8765"])
-        self.assertEqual(shlex.split(service["ExecStartPre"]),
-                         ["/usr/bin/python3", "/usr/libexec/opos-systemd-state", "--check"])
+        self.assertEqual(shlex.split(service["ExecStart"]), ["/usr/bin/python3", "-m", "opos.web", "--port", "8765"])
+        self.assertEqual(
+            shlex.split(service["ExecStartPre"]), ["/usr/bin/python3", "/usr/libexec/opos-systemd-state", "--check"]
+        )
         environment = dict(value.split("=", 1) for value in shlex.split(service["Environment"]))
         self.assertEqual(environment["HOME"], "/var/lib/opos")
         self.assertEqual(environment["OPOS_CONFIG_DIR"], "/var/lib/opos/.config/opos")
@@ -42,9 +43,14 @@ class TestSystemdUnit(unittest.TestCase):
     def test_server_retains_sandbox_and_unprivileged_prestart(self):
         service = self.unit("opos-server.service")["Service"]
         for name, value in {
-            "NoNewPrivileges": "yes", "ProtectSystem": "strict", "ProtectHome": "yes",
-            "PrivateTmp": "yes", "PrivateDevices": "yes", "CapabilityBoundingSet": "",
-            "AmbientCapabilities": "", "UMask": "0077",
+            "NoNewPrivileges": "yes",
+            "ProtectSystem": "strict",
+            "ProtectHome": "yes",
+            "PrivateTmp": "yes",
+            "PrivateDevices": "yes",
+            "CapabilityBoundingSet": "",
+            "AmbientCapabilities": "",
+            "UMask": "0077",
         }.items():
             with self.subTest(setting=name):
                 self.assertEqual(service[name], value)
@@ -52,19 +58,16 @@ class TestSystemdUnit(unittest.TestCase):
 
     def test_firstboot_has_explicit_shell_and_precedes_kiosk_and_server(self):
         unit = self.unit("opos-firstboot.service")
-        self.assertEqual(shlex.split(unit["Service"]["ExecStart"]),
-                         ["/bin/sh", "/usr/bin/opos-firstboot"])
+        self.assertEqual(shlex.split(unit["Service"]["ExecStart"]), ["/bin/sh", "/usr/bin/opos-firstboot"])
         self.assertEqual(unit["Service"]["Type"], "oneshot")
         self.assertEqual(unit["Unit"]["ConditionPathExists"], "!/var/lib/opos/firstboot-done")
-        self.assertTrue({"tinydm.service", "opos-server.service"}.issubset(
-            set(unit["Unit"]["Before"].split())))
+        self.assertTrue({"tinydm.service", "opos-server.service"}.issubset(set(unit["Unit"]["Before"].split())))
         self.assertIn("opos-firstboot.service", self.unit("opos-server.service")["Unit"]["After"].split())
 
     def test_recipe_installs_actual_unit_sources(self):
         body = function_body(PACKAGE / "APKBUILD", "_systemd")
         for name in ("opos-server.service", "opos-firstboot.service"):
-            self.assertIn(f'install -Dm644 "$srcdir/{name}" '
-                          f'"$subpkgdir/usr/lib/systemd/system/{name}"', body)
+            self.assertIn(f'install -Dm644 "$srcdir/{name}" "$subpkgdir/usr/lib/systemd/system/{name}"', body)
 
     def run_hook(self, failing=None):
         with tempfile.TemporaryDirectory() as temporary:
@@ -81,23 +84,32 @@ class TestSystemdUnit(unittest.TestCase):
             result = subprocess.run(
                 ["/bin/sh", str(PACKAGE / "opos-systemd.post-install")],
                 env=dict(os.environ, PATH=temporary, EVENTS=str(events), FAIL_AT=failing or ""),
-                capture_output=True, text=True, timeout=10, check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
             )
             return result, events.read_text().splitlines() if events.exists() else []
 
     def test_hook_prepares_then_enables_without_starting(self):
         result, events = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, [
-            "python3 /usr/libexec/opos-systemd-state --prepare",
-            "systemctl daemon-reload",
-            "systemctl enable opos-firstboot.service opos-server.service",
-        ])
+        self.assertEqual(
+            events,
+            [
+                "python3 /usr/libexec/opos-systemd-state --prepare",
+                "systemctl daemon-reload",
+                "systemctl enable opos-firstboot.service opos-server.service",
+            ],
+        )
         self.assertNotIn("--now", "\n".join(events))
 
     def test_hook_propagates_prepare_reload_and_enable_failures(self):
-        for failure, count in (("python3:/usr/libexec/opos-systemd-state", 1),
-                               ("systemctl:daemon-reload", 2), ("systemctl:enable", 3)):
+        for failure, count in (
+            ("python3:/usr/libexec/opos-systemd-state", 1),
+            ("systemctl:daemon-reload", 2),
+            ("systemctl:enable", 3),
+        ):
             with self.subTest(failure=failure):
                 result, events = self.run_hook(failure)
                 self.assertEqual(result.returncode, 27, result.stderr)

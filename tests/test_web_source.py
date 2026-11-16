@@ -8,6 +8,7 @@ from unittest import mock
 from tests.web_source import web_text
 from tests import web_source
 
+
 class TestWebSource(unittest.TestCase):
     def test_markers_expanded(self):
         raw = (web_source._OPOS / "web.py").read_text(encoding="utf-8")

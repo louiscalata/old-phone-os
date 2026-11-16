@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The image build binds the container debug port to loopback and closes a passwordless USB root shell."""
+
 import os
 import stat
 import subprocess
@@ -25,15 +26,15 @@ class CloseExposure(unittest.TestCase):
         if self.root.exists():
             subprocess.run(["rm", "-rf", str(self.root)], check=True)
         self.root.mkdir()
-        write(self.root / "etc/systemd/system/adbd.service",
-              "[Service]\nExecStart=/usr/bin/adbd -a -P 5555\nListenStream=0.0.0.0:5555\n")
-        write(self.root / "lib/systemd/system/telnet.service",
-              "[Service]\nExecStart=/usr/sbin/telnetd -l /bin/sh\n")
+        write(
+            self.root / "etc/systemd/system/adbd.service",
+            "[Service]\nExecStart=/usr/bin/adbd -a -P 5555\nListenStream=0.0.0.0:5555\n",
+        )
+        write(self.root / "lib/systemd/system/telnet.service", "[Service]\nExecStart=/usr/sbin/telnetd -l /bin/sh\n")
         wants = self.root / "etc/systemd/system/multi-user.target.wants"
         wants.mkdir(parents=True)
         os.symlink("/lib/systemd/system/telnet.service", wants / "telnet.service")
-        write(self.root / "etc/inetd.conf",
-              "telnet stream tcp nowait root /usr/sbin/telnetd telnetd -l /bin/sh\n")
+        write(self.root / "etc/inetd.conf", "telnet stream tcp nowait root /usr/sbin/telnetd telnetd -l /bin/sh\n")
         self.addCleanup(subprocess.run, ["rm", "-rf", str(self.root)], check=False)
 
     def run_script(self, **env):
@@ -45,8 +46,9 @@ class CloseExposure(unittest.TestCase):
         self.assertIn("127.0.0.1:5555", adbd)
         self.assertNotIn("0.0.0.0", adbd)
         self.assertNotIn(" -a", adbd)
-        self.assertEqual((self.root / "etc/opos/debug-port.conf").read_text(encoding="utf-8"),
-                         "listen=127.0.0.1\nport=5555\n")
+        self.assertEqual(
+            (self.root / "etc/opos/debug-port.conf").read_text(encoding="utf-8"), "listen=127.0.0.1\nport=5555\n"
+        )
         nft = (self.root / "etc/opos/wlan0-inbound.nft").read_text(encoding="utf-8")
         self.assertIn('iifname "wlan0" ct state established,related accept', nft)
         self.assertIn('iifname "wlan0" drop', nft)

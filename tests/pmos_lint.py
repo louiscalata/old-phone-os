@@ -18,7 +18,7 @@ def apkbuild_vars(path: str) -> dict[str, str]:
                     break
                 i += 1
             stripped = [p.strip() for p in pieces]
-            stripped[-1] = stripped[-1].replace('"', '')
+            stripped[-1] = stripped[-1].replace('"', "")
             result[opener.group(1)] = " ".join(p for p in stripped if p)
         else:
             single = re.match(r'^([a-z_][a-z0-9_]*)="?([^"\n]*)"?$', lines[i])
@@ -40,5 +40,5 @@ def function_body(path: str, name: str) -> str:
         raise ValueError(name)
     for idx in range(start + 1, len(lines)):
         if lines[idx] == "}":
-            return "\n".join(lines[start:idx + 1])
+            return "\n".join(lines[start : idx + 1])
     raise ValueError(name)

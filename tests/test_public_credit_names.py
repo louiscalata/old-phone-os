@@ -42,15 +42,19 @@ class TestPublicCreditNames(unittest.TestCase):
         self.assertEqual(len(templates), 1)
         message = templates[0]
         self.assertEqual(len(message.splitlines()), 6)
-        env = {key: value for key, value in os.environ.items()
-               if not key.startswith("GIT_")}
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         with tempfile.TemporaryDirectory() as directory:
             env["GIT_CEILING_DIRECTORIES"] = str(Path(directory).resolve().parent)
             parsed = subprocess.run(
-                ["git", "interpret-trailers", "--parse"], input=message,
-                text=True, capture_output=True, check=True, timeout=10,
-                cwd=directory, env=env,
+                ["git", "interpret-trailers", "--parse"],
+                input=message,
+                text=True,
+                capture_output=True,
+                check=True,
+                timeout=10,
+                cwd=directory,
+                env=env,
             )
         self.assertIn("Provenance: <id>", parsed.stdout.splitlines())
 

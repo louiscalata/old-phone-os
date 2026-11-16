@@ -12,6 +12,7 @@ release /opt/opos points at, so the updater's health probe talks to a live serve
 a variable. Not covered: the systemd path unit, the unit hardening, the real runuser/PAM, the kiosk browser, the
 phone's kernel, flash and clock. Nothing here touches a phone or any hardware.
 """
+
 import ast
 import fnmatch
 import functools
@@ -119,7 +120,7 @@ def free_port():
 
 # A stand-in for opos.web that keeps the health contract the updater probes: GET / is 200 with the page token,
 # GET /api/state with that token answers JSON with a "battery" key. mode.txt (shipped in the bundle) picks the fault.
-FAKE_WEB = '''import argparse, http.server, json, os, sys
+FAKE_WEB = """import argparse, http.server, json, os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 def read(name):
     with open(os.path.join(here, name)) as f:
@@ -148,11 +149,11 @@ class H(http.server.BaseHTTPRequestHandler):
 srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), H)
 print("stand-in server: http://127.0.0.1:%d/" % srv.server_address[1], flush=True)
 srv.serve_forever()
-'''
+"""
 
 # systemctl as the updater calls it. restart really restarts the application server from the release /opt/opos points
 # at (as opos-server.service does with PYTHONPATH=/opt/opos/src); is-active reports whether that process is alive.
-SYSTEMCTL = '''#!@PY@
+SYSTEMCTL = """#!@PY@
 import json, os, signal, socket, subprocess, sys, time
 RUN, OPT, PORT, PY, HOME = @RUN@, @OPT@, @PORT@, @PY@, @HOME@
 args = sys.argv[1:]
@@ -211,12 +212,19 @@ if args == ["daemon-reload"]:
     sys.exit(0)
 sys.stderr.write("the test stand-in for systemctl refuses: %s\\n" % " ".join(args))
 sys.exit(1)
-'''
+"""
 
 RUNUSER = '#!/bin/sh\necho "runuser $*" >> "@RUN@/calls.log"\n[ "$1" = "-u" ] && shift 2\n[ "$1" = "--" ] && shift\nexec "$@"\n'
 PKILL = '#!/bin/sh\necho "pkill $*" >> "@RUN@/calls.log"\nexit 1\n'
-ALLOWED_SYSTEMCTL = {"systemctl daemon-reload", "systemctl restart opos-server.service", "systemctl is-active opos-server.service"}
-OVERLAYS = {"usr/libexec/opos/opos-kiosk": ("opos-kiosk", 0o755), "etc/systemd/system/opos-server.service": ("opos-server.service", 0o644)}
+ALLOWED_SYSTEMCTL = {
+    "systemctl daemon-reload",
+    "systemctl restart opos-server.service",
+    "systemctl is-active opos-server.service",
+}
+OVERLAYS = {
+    "usr/libexec/opos/opos-kiosk": ("opos-kiosk", 0o755),
+    "etc/systemd/system/opos-server.service": ("opos-server.service", 0o644),
+}
 
 
 def render(template, **kw):
@@ -268,8 +276,23 @@ class World:
         self.staging = os.path.join(self.var, "staging")
         self.signers = os.path.join(r, "etc/opos/update/allowed_signers")
         self.update_json = os.path.join(r, "etc/opos/update.json")
-        for d in ("opt", "opt/opos-releases", "var", "var/lib", "var/lib/opos-update", "var/lib/opos-update/inbox", "etc", "etc/opos", "etc/opos/update",
-                  "etc/systemd", "etc/systemd/system", "usr", "usr/libexec", "usr/libexec/opos", "usr/sbin"):
+        for d in (
+            "opt",
+            "opt/opos-releases",
+            "var",
+            "var/lib",
+            "var/lib/opos-update",
+            "var/lib/opos-update/inbox",
+            "etc",
+            "etc/opos",
+            "etc/opos/update",
+            "etc/systemd",
+            "etc/systemd/system",
+            "usr",
+            "usr/libexec",
+            "usr/libexec/opos",
+            "usr/sbin",
+        ):
             os.makedirs(os.path.join(r, d), mode=0o755, exist_ok=True)
             os.chmod(os.path.join(r, d), 0o755)
         os.makedirs(self.staging, mode=0o700)
@@ -295,24 +318,46 @@ class World:
         # The tools and the stand-ins.
         for name, body in (("systemctl", SYSTEMCTL), ("runuser", RUNUSER), ("pkill", PKILL)):
             p = os.path.join(self.bin, name)
-            wr(p, render(body, PY=sys.executable, RUN=self.run, OPT=self.opt_link, PORT=self.health_port, HOME=self.home))
+            wr(
+                p,
+                render(body, PY=sys.executable, RUN=self.run, OPT=self.opt_link, PORT=self.health_port, HOME=self.home),
+            )
             os.chmod(p, 0o755)
         self.cfg = U.Config(
-            root=r, opt_link=self.opt_link, releases=self.releases, var=self.var, signers=self.signers,
-            base_version=os.path.join(r, "etc/opos/base-version"), trusted_uid=os.geteuid(), ssh_keygen=(KEYGEN,),
-            systemctl=(os.path.join(self.bin, "systemctl"),), runuser=(os.path.join(self.bin, "runuser"), "-u", "droidian", "--"),
-            pkill=(os.path.join(self.bin, "pkill"),), env_bin="/usr/bin/env", python=sys.executable, health_port=self.health_port,
-            smoke_chown=False, smoke_timeout=60.0 if self.real else 15.0,
-            health_timeout=60.0 if self.real else health_timeout, health_interval=0.1, confirm_timeout=3.0, lock_timeout=5.0, cmd_timeout=60.0,
-            pace=0.0, fail_pause=0.0)
+            root=r,
+            opt_link=self.opt_link,
+            releases=self.releases,
+            var=self.var,
+            signers=self.signers,
+            base_version=os.path.join(r, "etc/opos/base-version"),
+            trusted_uid=os.geteuid(),
+            ssh_keygen=(KEYGEN,),
+            systemctl=(os.path.join(self.bin, "systemctl"),),
+            runuser=(os.path.join(self.bin, "runuser"), "-u", "droidian", "--"),
+            pkill=(os.path.join(self.bin, "pkill"),),
+            env_bin="/usr/bin/env",
+            python=sys.executable,
+            health_port=self.health_port,
+            smoke_chown=False,
+            smoke_timeout=60.0 if self.real else 15.0,
+            health_timeout=60.0 if self.real else health_timeout,
+            health_interval=0.1,
+            confirm_timeout=3.0,
+            lock_timeout=5.0,
+            cmd_timeout=60.0,
+            pace=0.0,
+            fail_pause=0.0,
+        )
         self.cfg.log = self.logs.append
         self.cfg.sync = lambda: None
         self.cfg.boot_id = lambda: self.boot
         # The phone's opt-in to the update site.
         self.url = "http://127.0.0.1:%d/latest.json" % self.httpd.server_address[1]
         wr(self.update_json, json.dumps({"url": self.url, "auto_check": False, "allow_lan_http": True}))
-        self.client = uc.UpdateClient(paths=uc.Paths(config=self.update_json, root=self.var, revision=os.path.join(self.opt_link, "REVISION")),
-                                      limits=uc.Limits(io_timeout=10.0, index_deadline=20.0, bundle_deadline=60.0))
+        self.client = uc.UpdateClient(
+            paths=uc.Paths(config=self.update_json, root=self.var, revision=os.path.join(self.opt_link, "REVISION")),
+            limits=uc.Limits(io_timeout=10.0, index_deadline=20.0, bundle_deadline=60.0),
+        )
         # Boot: the boot unit writes state.json, then opos-server starts from the release the symlink names.
         self.run_updater("apply-pending-boot")
         self.systemctl("restart", "opos-server.service")
@@ -320,7 +365,12 @@ class World:
 
     def public_key(self, key, dest):
         """allowed_signers line exactly as the owner's how-to makes it (keygen-help), written where the image keeps it."""
-        out = subprocess.run([sys.executable, "-B", str(TOOL), "keygen-help", "--pub", KEYS[key] + ".pub"], capture_output=True, text=True, check=True).stdout
+        out = subprocess.run(
+            [sys.executable, "-B", str(TOOL), "keygen-help", "--pub", KEYS[key] + ".pub"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
         line = [l for l in out.splitlines() if l.startswith("opos-release ssh-ed25519 ")][-1]
         wr(dest, line + "\n")
         os.chmod(dest, 0o644)
@@ -329,7 +379,9 @@ class World:
     def write_app(self, base, build, mode):
         """The application tree of one build: the repository's own src when real, a small stand-in otherwise."""
         if self.real:
-            shutil.copytree(ROOT / "src", os.path.join(base, "src"), ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            shutil.copytree(
+                ROOT / "src", os.path.join(base, "src"), ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+            )
         else:
             wr(os.path.join(base, "src/opos/__init__.py"), "")
             wr(os.path.join(base, "src/opos/web.py"), FAKE_WEB)
@@ -352,18 +404,45 @@ class World:
         wr(os.path.join(tree, "packaging/duo-os/opos-server.service"), unit)
         wr(os.path.join(tree, "LICENSE"), licence)
         wr(os.path.join(tree, "THIRD_PARTY.md"), third)
-        args = ["build", "--dir", tree, "--revision", revision(serial), "--created", CREATED, "--serial", serial, "--version", "0.%d.0" % serial,
-                "--scope", scope, "--key", KEYS[key], "--out", self.site, "--overlay", "opos-kiosk", "--overlay", "opos-server.service",
-                "--notes", "round trip %d" % serial]
+        args = [
+            "build",
+            "--dir",
+            tree,
+            "--revision",
+            revision(serial),
+            "--created",
+            CREATED,
+            "--serial",
+            serial,
+            "--version",
+            "0.%d.0" % serial,
+            "--scope",
+            scope,
+            "--key",
+            KEYS[key],
+            "--out",
+            self.site,
+            "--overlay",
+            "opos-kiosk",
+            "--overlay",
+            "opos-server.service",
+            "--notes",
+            "round trip %d" % serial,
+        ]
         self.tool(*args)
-        self.expect[serial] = {"usr/libexec/opos/opos-kiosk": (sha(kiosk), 0o755), "etc/systemd/system/opos-server.service": (sha(unit), 0o644)}
+        self.expect[serial] = {
+            "usr/libexec/opos/opos-kiosk": (sha(kiosk), 0o755),
+            "etc/systemd/system/opos-server.service": (sha(unit), 0o644),
+        }
         bundle = os.path.join(self.site, "opos-%d.opos-update" % serial)
         if index:
             self.tool("index", bundle, *extra.get("index_args", ()))
         return bundle
 
     def tool(self, *args, check=True):
-        p = subprocess.run([sys.executable, "-B", str(TOOL), *map(str, args)], capture_output=True, text=True, timeout=120)
+        p = subprocess.run(
+            [sys.executable, "-B", str(TOOL), *map(str, args)], capture_output=True, text=True, timeout=120
+        )
         if check and p.returncode:
             raise AssertionError("opos-release.py %s failed (%d): %s" % (args[0], p.returncode, p.stderr))
         return p
@@ -439,10 +518,15 @@ class World:
         """Everything a refused bundle must leave alone."""
         st = self.state()
         srv = self.server()
-        return {"link": os.readlink(self.opt_link), "releases": sorted(os.listdir(self.releases)),
-                "files": {p: self.file_info(p) for p in OVERLAYS}, "state": {k: st[k] for k in ("current", "previous", "failed", "pending_boot", "trial", "txn")},
-                "server": srv and (srv["pid"], srv["release"]), "restarts": [c for c in self.calls() if "restart" in c or "daemon-reload" in c],
-                "staging": sorted(os.listdir(self.staging))}
+        return {
+            "link": os.readlink(self.opt_link),
+            "releases": sorted(os.listdir(self.releases)),
+            "files": {p: self.file_info(p) for p in OVERLAYS},
+            "state": {k: st[k] for k in ("current", "previous", "failed", "pending_boot", "trial", "txn")},
+            "server": srv and (srv["pid"], srv["release"]),
+            "restarts": [c for c in self.calls() if "restart" in c or "daemon-reload" in c],
+            "staging": sorted(os.listdir(self.staging)),
+        }
 
     def close(self):
         if self.closed:
@@ -544,7 +628,10 @@ class RecyclingKernel:
                     pass
             return kernel.close(sock)
 
-        self.patches = [mock.patch.object(socket.socket, "bind", bind), mock.patch.object(socket.socket, "close", close)]
+        self.patches = [
+            mock.patch.object(socket.socket, "bind", bind),
+            mock.patch.object(socket.socket, "close", close),
+        ]
         for p in self.patches:
             p.start()
         return self
@@ -582,7 +669,10 @@ class RoundTrip(WorldCase):
     def test_two_updates_in_a_row_and_old_releases_are_pruned(self):
         w = self.w
         snap = w.client.snapshot()
-        self.assertEqual((snap["available"], snap["running"]["serial"], snap["running"]["revision"], snap["source"]["configured"]), (True, 0, revision(0), True))
+        self.assertEqual(
+            (snap["available"], snap["running"]["serial"], snap["running"]["revision"], snap["source"]["configured"]),
+            (True, 0, revision(0), True),
+        )
         self.assertEqual(snap["running"]["version"], "image")
         w.release(1)
         chk = w.client.check()
@@ -596,7 +686,10 @@ class RoundTrip(WorldCase):
         self.assertIn("daemon-reload", " ".join(w.calls()))
         # What the page shows afterwards, read by the client from the files the updater wrote.
         snap = w.client.snapshot()
-        self.assertEqual((snap["running"]["serial"], snap["running"]["version"], snap["running"]["revision"]), (1, "0.1.0", revision(1)))
+        self.assertEqual(
+            (snap["running"]["serial"], snap["running"]["version"], snap["running"]["revision"]),
+            (1, "0.1.0", revision(1)),
+        )
         self.assertEqual((snap["pending"], snap["status"]["phase"], snap["status"]["serial"]), ([], "done", 1))
         self.assertEqual(snap["rollback"], {"possible": True, "requested": False})
         self.assertFalse(snap["check"]["newer"])
@@ -610,7 +703,16 @@ class RoundTrip(WorldCase):
         w.assert_on(self, 3, previous=[2, 1])
         # Everything the tool built passes its own verifier against the key the image trusts.
         for n in (1, 2, 3):
-            p = w.tool("verify", os.path.join(w.site, "opos-%d.opos-update" % n), "--allowed-signers", w.signers, "--current-serial", n - 1, "--base", 1)
+            p = w.tool(
+                "verify",
+                os.path.join(w.site, "opos-%d.opos-update" % n),
+                "--allowed-signers",
+                w.signers,
+                "--current-serial",
+                n - 1,
+                "--base",
+                1,
+            )
             self.assertIn("serial %d" % n, p.stdout)
 
     def test_a_bundle_signed_by_another_key_is_delivered_but_refused_and_nothing_changes(self):
@@ -624,7 +726,10 @@ class RoundTrip(WorldCase):
         st = w.status()
         self.assertEqual(st["phase"], "failed")
         self.assertIn("signature", st["message"])
-        self.assertIsNone(st["serial"], "refused before the manifest was read: no serial to report (the /update page keeps polling for a while)")
+        self.assertIsNone(
+            st["serial"],
+            "refused before the manifest was read: no serial to report (the /update page keeps polling for a while)",
+        )
         self.assertEqual(w.snapshot(), before)
         self.assertEqual(w.client.pending(), [])
         self.assertEqual(w.state()["failed"], [], "a refused bundle must not burn its serial")
@@ -652,7 +757,12 @@ class RoundTrip(WorldCase):
         self.assertEqual(os.listdir(w.inbox), [])
         # A host that also rewrites the index gets the file into the inbox; root refuses it.
         data = rd(bundle, "rb")
-        wr(os.path.join(w.site, "latest.json"), json.dumps({"serial": 1, "version": "0.1.0", "url": "opos-1.opos-update", "sha256": sha(data), "size": len(data)}))
+        wr(
+            os.path.join(w.site, "latest.json"),
+            json.dumps(
+                {"serial": 1, "version": "0.1.0", "url": "opos-1.opos-update", "sha256": sha(data), "size": len(data)}
+            ),
+        )
         self.assertEqual(w.download()["phase"], "done")
         self.assertEqual(w.run_updater("apply-inbox"), 3)
         self.assertIn("payload", w.status()["message"])
@@ -724,7 +834,7 @@ class RoundTrip(WorldCase):
         self.assertEqual(cm.exception.code, "no_rollback")
         self.assertEqual(os.listdir(w.inbox), [])
         before = w.snapshot()
-        open(os.path.join(w.inbox, "rollback.request"), "w").close()   # a process that does not ask politely
+        open(os.path.join(w.inbox, "rollback.request"), "w").close()  # a process that does not ask politely
         self.assertEqual(w.run_updater("apply-inbox"), 3)
         self.assertIn("already went back", w.status()["message"])
         self.assertEqual(w.snapshot(), before)
@@ -780,6 +890,7 @@ class RoundTrip(WorldCase):
                 return r.status, json.loads(r.read() or b"{}")
             finally:
                 c.close()
+
         self.assertEqual(w.get("/update", port=port)[0], 200)
         w.release(1)
         code, j = call("POST", "/api", {"action": "update_check"})
@@ -791,18 +902,24 @@ class RoundTrip(WorldCase):
         self.assertEqual((code, j["pending"], j["job"]["phase"]), (200, ["opos-1.opos-update"], "done"))
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         code, j = call("GET", "/api/update")
-        self.assertEqual((j["running"]["serial"], j["running"]["version"], j["status"]["phase"], j["pending"]), (1, "0.1.0", "done", []))
+        self.assertEqual(
+            (j["running"]["serial"], j["running"]["version"], j["status"]["phase"], j["pending"]),
+            (1, "0.1.0", "done", []),
+        )
         code, j = call("POST", "/api", {"action": "update_rollback"})
         self.assertEqual((code, j["rollback"]["requested"]), (200, True))
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         code, j = call("GET", "/api/update")
-        self.assertEqual((j["running"]["serial"], j["status"]["phase"], j["rollback"]["requested"]), (0, "rolled-back", False))
+        self.assertEqual(
+            (j["running"]["serial"], j["status"]["phase"], j["rollback"]["requested"]), (0, "rolled-back", False)
+        )
         w.assert_on(self, 0, failed=[])
 
 
 @needs_keygen
 class RealTree(WorldCase):
     """The repository's own src, packaged by the tool, accepted by the updater, started by the stand-in unit as `python -m opos.web`."""
+
     real = True
 
     def test_the_real_application_tree_updates_itself(self):
@@ -813,14 +930,22 @@ class RealTree(WorldCase):
         w.release(1)
         self.assertEqual(w.fetch_and_apply(1), 0, w.logs)
         w.assert_on(self, 1, previous=[0])
-        out = subprocess.run([sys.executable, "-B", "-c", "import opos._ota_marker as m; print(m.BUILD)"], capture_output=True, text=True,
-                             env={"PYTHONPATH": os.path.join(w.opt_link, "src"), "PATH": "/usr/bin:/bin"}, cwd="/").stdout.strip()
+        out = subprocess.run(
+            [sys.executable, "-B", "-c", "import opos._ota_marker as m; print(m.BUILD)"],
+            capture_output=True,
+            text=True,
+            env={"PYTHONPATH": os.path.join(w.opt_link, "src"), "PATH": "/usr/bin:/bin"},
+            cwd="/",
+        ).stdout.strip()
         self.assertEqual(out, "1")
         # The new tree is the live one: it serves the update page and reports the running version through its own client.
         code, page = w.get("/update")
         self.assertEqual(code, 200)
         self.assertIn(b"<html", page.lower())
-        self.assertFalse([n for d, _, fs in os.walk(os.path.join(w.releases, rel_name(1))) for n in fs if n.endswith(".pyc")], "the server must not write bytecode into a release")
+        self.assertFalse(
+            [n for d, _, fs in os.walk(os.path.join(w.releases, rel_name(1))) for n in fs if n.endswith(".pyc")],
+            "the server must not write bytecode into a release",
+        )
 
 
 class Contracts(unittest.TestCase):
@@ -828,7 +953,9 @@ class Contracts(unittest.TestCase):
 
     def test_the_client_reads_and_writes_where_the_updater_does(self):
         cfg, paths = U.Config(), uc.Paths()
-        self.assertEqual((paths.root, paths.inbox, paths.state, paths.status), (cfg.var, cfg.inbox, cfg.state_file, cfg.status_file))
+        self.assertEqual(
+            (paths.root, paths.inbox, paths.state, paths.status), (cfg.var, cfg.inbox, cfg.state_file, cfg.status_file)
+        )
         self.assertEqual(paths.revision, cfg.opt_link + "/REVISION")
         self.assertEqual(paths.config, "/etc/opos/update.json")
 
@@ -842,7 +969,9 @@ class Contracts(unittest.TestCase):
         self.assertEqual(exists, inbox + "/" + uc.ROLLBACK_REQUEST)
         self.assertTrue(glob.endswith("*" + uc.BUNDLE_EXT))
         for name in ("opos-1.opos-update.partial", "opos-1.partial", "rollback.request.partial"):
-            self.assertFalse(fnmatch.fnmatch(inbox + "/" + name, glob), "a half-delivered file must not start the updater: " + name)
+            self.assertFalse(
+                fnmatch.fnmatch(inbox + "/" + name, glob), "a half-delivered file must not start the updater: " + name
+            )
         push = rd(ROOT / "deploy" / "duo-push-update.ps1")
         self.assertIn('$inbox = "%s"' % inbox, push)
         self.assertIn('$statusFile = "%s"' % U.Config().status_file, push)
@@ -855,7 +984,12 @@ class Contracts(unittest.TestCase):
         tree = ast.parse(rd(UPDATER))
         phases = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "status" and node.args:
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "status"
+                and node.args
+            ):
                 if isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                     phases.add(node.args[0].value)
         self.assertEqual(phases, {"idle", "verifying", "applying", "checking", "done", "rolled-back", "failed"})
@@ -865,19 +999,60 @@ class Contracts(unittest.TestCase):
             self.assertIn(phase, doc)
 
     def test_the_tool_never_builds_a_path_the_updater_refuses(self):
-        real = [("opt/opos/" + p.relative_to(ROOT).as_posix()) for p in (ROOT / "src").rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"]
+        real = [
+            ("opt/opos/" + p.relative_to(ROOT).as_posix())
+            for p in (ROOT / "src").rglob("*")
+            if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"
+        ]
         real += ["opt/opos/LICENSE", "opt/opos/THIRD_PARTY.md"] + list(T.OVERLAY_DEST.values())
         self.assertGreater(len(real), 80)
         for path in real:
             kind = T.classify(path)
             self.assertEqual(U.classify(path)[0], kind, path)
-        tried = ["opt/opos/src/opos/web.py", "opt/opos/src/opos/a_b-c.d+e.py", "opt/opos/src/opos/x@y.py", "opt/opos/src/opos/.hidden", "opt/opos/src/opos/file.new",
-                 "opt/opos/REVISION", "opt/opos/overlay/x", "opt/opos/overlay-backup/x", "opt/opos/manifest.json", "opt/opos/README.md", "opt/opos/src/opos/sp ace.py",
-                 "etc/opos/update.json", "etc/opos/base-version", "etc/opos/update/allowed_signers", "etc/opos/theme.conf", "etc/opos/sub/x", "etc/default/opos", "etc/default/opos-x",
-                 "etc/default/other", "etc/systemd/system/opos.service", "etc/systemd/system/opos-update.service", "etc/systemd/system/opos-update.path", "etc/systemd/system/other.service",
-                 "etc/systemd/system/opos@.service", "etc/systemd/system/opos-x.timer", "usr/sbin/opos-switch", "usr/sbin/opos-update", "usr/sbin/opos-updater", "usr/sbin/other",
-                 "usr/libexec/opos/opos-kiosk", "usr/libexec/opos/sub/x", "usr/libexec/opos-updater/opos-updater", "usr/libexec/other/x", "usr/bin/opos", "/etc/passwd",
-                 "opt/opos/../../etc/passwd", "opt/opos/src/opos/./x.py", "opt/opos//x.py", "opt/opos/src/opos/é.py", "opt/other/x", "var/lib/opos-update/state.json", "x"]
+        tried = [
+            "opt/opos/src/opos/web.py",
+            "opt/opos/src/opos/a_b-c.d+e.py",
+            "opt/opos/src/opos/x@y.py",
+            "opt/opos/src/opos/.hidden",
+            "opt/opos/src/opos/file.new",
+            "opt/opos/REVISION",
+            "opt/opos/overlay/x",
+            "opt/opos/overlay-backup/x",
+            "opt/opos/manifest.json",
+            "opt/opos/README.md",
+            "opt/opos/src/opos/sp ace.py",
+            "etc/opos/update.json",
+            "etc/opos/base-version",
+            "etc/opos/update/allowed_signers",
+            "etc/opos/theme.conf",
+            "etc/opos/sub/x",
+            "etc/default/opos",
+            "etc/default/opos-x",
+            "etc/default/other",
+            "etc/systemd/system/opos.service",
+            "etc/systemd/system/opos-update.service",
+            "etc/systemd/system/opos-update.path",
+            "etc/systemd/system/other.service",
+            "etc/systemd/system/opos@.service",
+            "etc/systemd/system/opos-x.timer",
+            "usr/sbin/opos-switch",
+            "usr/sbin/opos-update",
+            "usr/sbin/opos-updater",
+            "usr/sbin/other",
+            "usr/libexec/opos/opos-kiosk",
+            "usr/libexec/opos/sub/x",
+            "usr/libexec/opos-updater/opos-updater",
+            "usr/libexec/other/x",
+            "usr/bin/opos",
+            "/etc/passwd",
+            "opt/opos/../../etc/passwd",
+            "opt/opos/src/opos/./x.py",
+            "opt/opos//x.py",
+            "opt/opos/src/opos/é.py",
+            "opt/other/x",
+            "var/lib/opos-update/state.json",
+            "x",
+        ]
         for path in tried:
             try:
                 mine = T.classify(path)
@@ -890,8 +1065,15 @@ class Contracts(unittest.TestCase):
             self.assertEqual(theirs, mine, path)
 
     def test_a_bundle_cannot_replace_the_updater_its_keys_or_the_owners_update_source(self):
-        for path in ("etc/opos/update.json", "etc/opos/base-version", "etc/opos/update/allowed_signers", "usr/libexec/opos-updater/opos-updater",
-                     "usr/sbin/opos-update", "etc/systemd/system/opos-update.service", "etc/systemd/system/opos-update.path"):
+        for path in (
+            "etc/opos/update.json",
+            "etc/opos/base-version",
+            "etc/opos/update/allowed_signers",
+            "usr/libexec/opos-updater/opos-updater",
+            "usr/sbin/opos-update",
+            "etc/systemd/system/opos-update.service",
+            "etc/systemd/system/opos-update.path",
+        ):
             with self.assertRaises(U.Reject, msg=path):
                 U.classify(path)
             with self.assertRaises(T.Refused, msg=path):
@@ -899,8 +1081,14 @@ class Contracts(unittest.TestCase):
 
     def test_the_updater_asks_systemd_for_nothing_but_the_server_unit(self):
         u = U.Updater(U.Config(systemctl=("/nonexistent/systemctl",)))
-        for args in (("restart", "opos.service"), ("stop", "opos-server.service"), ("restart", "phosh.service"), ("isolate", "rescue.target"),
-                     ("restart", "opos-server.service", "opos.service"), ("daemon-reload", "--force")):
+        for args in (
+            ("restart", "opos.service"),
+            ("stop", "opos-server.service"),
+            ("restart", "phosh.service"),
+            ("isolate", "rescue.target"),
+            ("restart", "opos-server.service", "opos.service"),
+            ("daemon-reload", "--force"),
+        ):
             with self.assertRaises(U.Fatal, msg=args):
                 u.systemctl(*args)
 
@@ -908,12 +1096,16 @@ class Contracts(unittest.TestCase):
         script = rd(PKG / "opos-kiosk").replace(chr(92) + chr(10), " ")  # join the shell line continuations
         line = re.search(r"^\s+(chromium .*)$", script, re.M).group(1)
         home = "/" + "home" + "/droidian"  # written in pieces: the repository guard refuses home-directory literals
-        if '"$@"' in line:  # the flags are in the script's `set -- --kiosk ...` line; the loop adds only the GPU switch (when needed) and the url
+        if (
+            '"$@"' in line
+        ):  # the flags are in the script's `set -- --kiosk ...` line; the loop adds only the GPU switch (when needed) and the url
             flags = re.search(r"^set -- (--kiosk .*)$", script, re.M).group(1)
             line = "chromium " + flags + " $url"
             script_dir = re.search(r"^dir=(\S+)$", script, re.M).group(1)  # dir=$HOME/.cache/opos-kiosk
             line = line.replace('"$dir"', '"' + script_dir + '"')
-        cmd = " ".join(line.replace("$url", "http://127.0.0.1:8765/").replace("$HOME/", home + "/").replace('"', "").split())
+        cmd = " ".join(
+            line.replace("$url", "http://127.0.0.1:8765/").replace("$HOME/", home + "/").replace('"', "").split()
+        )
         pattern = U.Config().kiosk_pattern
         self.assertRegex(cmd, pattern)
         self.assertRegex("/usr/lib/chromium/" + cmd, pattern)
@@ -930,7 +1122,9 @@ class Contracts(unittest.TestCase):
 
 
 def extract_block(path, what):
-    m = re.search(r"^# ---- BEGIN OPOS OTA %s.*?\n(.*?)^# ---- END OPOS OTA %s" % (what, what), path.read_text(), re.S | re.M)
+    m = re.search(
+        r"^# ---- BEGIN OPOS OTA %s.*?\n(.*?)^# ---- END OPOS OTA %s" % (what, what), path.read_text(), re.S | re.M
+    )
     assert m, "block markers for %s are missing in %s" % (what, path.name)
     return m.group(1)
 
@@ -951,19 +1145,28 @@ class ImageUpdateSource(unittest.TestCase):
         wr(os.path.join(self.r, "opt/opos/REVISION"), "0123456789abcdef0123456789abcdef01234567\n")
         os.makedirs(os.path.join(self.r, "etc/systemd/system/multi-user.target.wants"))
         os.makedirs(os.path.join(self.r, "usr/libexec/opos"))
-        wr(os.path.join(self.r, "etc/passwd"), "root:x:0:0:root:/root:/bin/sh\ndroidian:x:32011:32011::/nonexistent:/bin/bash\n")
+        wr(
+            os.path.join(self.r, "etc/passwd"),
+            "root:x:0:0:root:/root:/bin/sh\ndroidian:x:32011:32011::/nonexistent:/bin/bash\n",
+        )
 
     def build(self, url=None):
         self.make_root()
-        env ={k: v for k, v in os.environ.items() if not k.startswith("OPOS_UPDATE")}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_UPDATE")}
         if url is not None:
             env["OPOS_UPDATE_URL"] = url
-        script = "set -eu\nr=%s\nhere=%s\n%s\n" % (self.r, PKG, "" if os.geteuid() == 0 else "chown() { :; }\n") + extract_block(PKG / "build-image.sh", "updates")
+        script = "set -eu\nr=%s\nhere=%s\n%s\n" % (
+            self.r,
+            PKG,
+            "" if os.geteuid() == 0 else "chown() { :; }\n",
+        ) + extract_block(PKG / "build-image.sh", "updates")
         return subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env)
 
     def verify_line(self):
-        script = ('set -u\nr=%s\nw=$r/etc/systemd/system\nfail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fi; }\n%s'
-                  % (self.r, extract_block(PKG / "verify-image.sh", "checks")))
+        script = (
+            'set -u\nr=%s\nw=$r/etc/systemd/system\nfail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fi; }\n%s'
+            % (self.r, extract_block(PKG / "verify-image.sh", "checks"))
+        )
         out = subprocess.run(["sh", "-c", script], capture_output=True, text=True).stdout
         return [l for l in out.splitlines() if "update.json" in l][0]
 
@@ -983,14 +1186,18 @@ class ImageUpdateSource(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(stat.S_IMODE(os.stat(self.conf).st_mode), 0o644)
         cfg = uc.parse_config(rd(self.conf, "rb"))
-        self.assertEqual(cfg, uc.Config("https://updates.example.org/opos/latest.json", auto_check=False, allow_lan_http=False))
+        self.assertEqual(
+            cfg, uc.Config("https://updates.example.org/opos/latest.json", auto_check=False, allow_lan_http=False)
+        )
         self.assertTrue(self.verify_line().startswith("PASS"))
 
     def test_a_loopback_http_address_turns_on_lan_http_for_that_source_only(self):
         r = self.build("http://127.0.0.1:8000/latest.json")
         self.assertEqual(r.returncode, 0, r.stderr)
         cfg = uc.parse_config(rd(self.conf, "rb"))
-        self.assertEqual((cfg.url, cfg.auto_check, cfg.allow_lan_http), ("http://127.0.0.1:8000/latest.json", False, True))
+        self.assertEqual(
+            (cfg.url, cfg.auto_check, cfg.allow_lan_http), ("http://127.0.0.1:8000/latest.json", False, True)
+        )
 
     def test_plain_http_to_the_internet_is_written_but_the_client_refuses_to_use_it(self):
         r = self.build("http://updates.example.org/latest.json")
@@ -1000,8 +1207,19 @@ class ImageUpdateSource(unittest.TestCase):
         self.assertEqual(cm.exception.code, "bad_config")
 
     def test_anything_else_stops_the_build_and_leaves_no_file(self):
-        for bad in ("ftp://example.org/x", "file:///etc/passwd", "javascript:1", "example.org/latest.json", 'https://example.org/"x', "https://example.org/a b",
-                    "https://example.org/a\\b", "https://example.org/$(id)", "https://example.org/`id`", "https://example.org/a;b", "https://example.org/a\nb"):
+        for bad in (
+            "ftp://example.org/x",
+            "file:///etc/passwd",
+            "javascript:1",
+            "example.org/latest.json",
+            'https://example.org/"x',
+            "https://example.org/a b",
+            "https://example.org/a\\b",
+            "https://example.org/$(id)",
+            "https://example.org/`id`",
+            "https://example.org/a;b",
+            "https://example.org/a\nb",
+        ):
             with self.subTest(bad):
                 r = self.build(bad)
                 self.assertNotEqual(r.returncode, 0, r.stdout)
@@ -1010,9 +1228,14 @@ class ImageUpdateSource(unittest.TestCase):
 
     def test_verify_notices_a_source_that_was_tampered_with(self):
         self.assertEqual(self.build("https://updates.example.org/latest.json").returncode, 0)
-        for label, content in (("extra key", {"url": "https://x.example/latest.json", "auto_check": False, "allow_lan_http": False, "run": "x"}),
-                               ("auto check on", {"url": "https://x.example/latest.json", "auto_check": True, "allow_lan_http": False}),
-                               ("ftp", {"url": "ftp://x.example/latest.json", "auto_check": False, "allow_lan_http": False})):
+        for label, content in (
+            (
+                "extra key",
+                {"url": "https://x.example/latest.json", "auto_check": False, "allow_lan_http": False, "run": "x"},
+            ),
+            ("auto check on", {"url": "https://x.example/latest.json", "auto_check": True, "allow_lan_http": False}),
+            ("ftp", {"url": "ftp://x.example/latest.json", "auto_check": False, "allow_lan_http": False}),
+        ):
             with self.subTest(label):
                 wr(self.conf, json.dumps(content))
                 self.assertTrue(self.verify_line().startswith("FAIL"), label)
@@ -1030,12 +1253,21 @@ class DocsAreHonest(unittest.TestCase):
         self.assertIn("implemented", s)
         self.assertIn("not tested on the phone", s)
         self.assertNotIn("design only", s)
-        index = [l for l in rd(ROOT / "docs" / "README.md").splitlines() if "ota-update.md" in l and "Over-the-air" in l][0]
+        index = [
+            l for l in rd(ROOT / "docs" / "README.md").splitlines() if "ota-update.md" in l and "Over-the-air" in l
+        ][0]
         self.assertNotIn("not yet implemented", index)
 
     def test_the_image_readme_explains_the_build_option_and_the_limits(self):
         text = rd(PKG / "README.md")
-        for needle in ("OPOS_UPDATE_SIGNERS", "duo-push-update.ps1", "opos-release.py", "docs/ota-update.md", "not tested on the phone", "opos.service"):
+        for needle in (
+            "OPOS_UPDATE_SIGNERS",
+            "duo-push-update.ps1",
+            "opos-release.py",
+            "docs/ota-update.md",
+            "not tested on the phone",
+            "opos.service",
+        ):
             self.assertIn(needle, text)
 
 

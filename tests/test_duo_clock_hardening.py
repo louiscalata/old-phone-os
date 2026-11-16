@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Clock verification keeps recovery keys separate from developer-only state."""
+
 import unittest
 
 from tests import test_duo_os_clock as clock
@@ -23,7 +24,8 @@ class ClockKeyRoles(unittest.TestCase):
                 (r / "srv/droidian/.ssh/authorized_keys").write_text("owner key fixture\n")
                 self.assertIn("PASS no developer key: the time-file drop is not enabled", f.verify(r))
                 (r / "etc/systemd/system/multi-user.target.wants/opos-clock-set.path").symlink_to(
-                    "/etc/systemd/system/opos-clock-set.path")
+                    "/etc/systemd/system/opos-clock-set.path"
+                )
                 self.assertIn("FAIL no developer key: the time-file drop is not enabled", f.verify_fail(r))
 
     def test_a_marked_dev_image_still_requires_the_clock_drop(self):

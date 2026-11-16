@@ -10,8 +10,10 @@ class TestDuoInstallSudo(unittest.TestCase):
     def test_sudo_password_notice_precedes_the_prompt(self):
         repo = pathlib.Path(__file__).resolve().parent.parent
         text = (repo / "install.sh").read_text(encoding="utf-8")
-        func = text[text.index("ensure_venv()"):text.index("install_requirements()")]
-        notice = "==> sudo may ask for your password; to skip, run: sudo apt install python3-venv, then re-run install.sh"
+        func = text[text.index("ensure_venv()") : text.index("install_requirements()")]
+        notice = (
+            "==> sudo may ask for your password; to skip, run: sudo apt install python3-venv, then re-run install.sh"
+        )
         prompt = "Install python3-venv with sudo apt? [y/N] "
         self.assertIn(notice, func)
         self.assertIn(prompt, func)
@@ -21,7 +23,13 @@ class TestDuoInstallSudo(unittest.TestCase):
         host = ".".join(["127", "0", "0", "1"])
         scheme = "".join(["http", "://"])
         url = scheme + host + ":" + "".join(["8765"]) + "/"
-        text = "[Desktop Entry]\nType=Application\nName=OPOS\nExec=" + browser + " --kiosk " + url + "\nX-OPOS-Kiosk=true\n"
+        text = (
+            "[Desktop Entry]\nType=Application\nName=OPOS\nExec="
+            + browser
+            + " --kiosk "
+            + url
+            + "\nX-OPOS-Kiosk=true\n"
+        )
         return text.encode()
 
     def _run_install_prefix(self, args, extra_env=None, base_tmp=None):
@@ -48,7 +56,9 @@ class TestDuoInstallSudo(unittest.TestCase):
         if extra_env:
             env.update(extra_env)
         script = prefix + '\nparse_args "$@"\n'
-        proc = subprocess.run(["sh", "-c", script, "_"] + list(args), capture_output=True, text=True, env=env, cwd=str(repo))
+        proc = subprocess.run(
+            ["sh", "-c", script, "_"] + list(args), capture_output=True, text=True, env=env, cwd=str(repo)
+        )
         adir = home / ".config" / "autostart"
         target = adir / "opos-kiosk.desktop"
         return proc, adir, target
@@ -56,7 +66,9 @@ class TestDuoInstallSudo(unittest.TestCase):
     def test_f2182_kiosk_write_and_uninstall(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = pathlib.Path(tmp)
-            proc, adir, target = self._run_install_prefix(["--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "sh"}, base_tmp=base)
+            proc, adir, target = self._run_install_prefix(
+                ["--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "sh"}, base_tmp=base
+            )
             self.assertEqual(proc.returncode, 0)
             self.assertEqual(target.read_bytes(), self._expected_kiosk_bytes("sh"))
             proc, adir, target = self._run_install_prefix(["--uninstall"], base_tmp=base)
@@ -72,7 +84,9 @@ class TestDuoInstallSudo(unittest.TestCase):
     def test_f2182_kiosk_dry_run_help_and_missing_browser(self):
         with self.subTest("dry-run"):
             with tempfile.TemporaryDirectory() as tmp:
-                proc, adir, target = self._run_install_prefix(["--dry-run", "--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "sh"}, base_tmp=tmp)
+                proc, adir, target = self._run_install_prefix(
+                    ["--dry-run", "--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "sh"}, base_tmp=tmp
+                )
                 self.assertEqual(proc.returncode, 0)
                 self.assertFalse(adir.exists())
                 self.assertIn("==> would write kiosk autostart " + str(target), proc.stdout)
@@ -84,14 +98,20 @@ class TestDuoInstallSudo(unittest.TestCase):
                 self.assertIn("[--no-launch] [--kiosk]", proc.stdout)
         with self.subTest("missing-browser"):
             with tempfile.TemporaryDirectory() as tmp:
-                proc, adir, target = self._run_install_prefix(["--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "no-such-browser-xyz"}, base_tmp=tmp)
+                proc, adir, target = self._run_install_prefix(
+                    ["--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "no-such-browser-xyz"}, base_tmp=tmp
+                )
                 self.assertEqual(proc.returncode, 0)
                 self.assertFalse(adir.exists())
-                self.assertEqual(proc.stderr.strip(), "warning: kiosk browser not found: no-such-browser-xyz; autostart not written")
+                self.assertEqual(
+                    proc.stderr.strip(), "warning: kiosk browser not found: no-such-browser-xyz; autostart not written"
+                )
         with self.subTest("dry-run-uninstall"):
             with tempfile.TemporaryDirectory() as tmp:
                 base = pathlib.Path(tmp)
-                proc, adir, target = self._run_install_prefix(["--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "sh"}, base_tmp=base)
+                proc, adir, target = self._run_install_prefix(
+                    ["--kiosk"], extra_env={"OPOS_KIOSK_BROWSER": "sh"}, base_tmp=base
+                )
                 self.assertEqual(proc.returncode, 0)
                 before = target.read_bytes()
                 proc, adir, target = self._run_install_prefix(["--dry-run", "--uninstall"], base_tmp=base)

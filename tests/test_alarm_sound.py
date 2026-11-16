@@ -5,6 +5,7 @@ What is pinned here: each beep waits for the one before; a beep that does not en
 a stop from another thread ends the ramp and the running beep; a stop that comes before the ramp starts
 wins; a missing paplay leaves the alarm on screen without raising; no media role, no sink volume command.
 """
+
 import os
 import stat
 import subprocess
@@ -59,6 +60,7 @@ def fake_popen(made, **kw):
         proc = Proc(command, **kw)
         made.append(proc)
         return proc
+
     return popen
 
 
@@ -79,11 +81,14 @@ class Sound(unittest.TestCase):
         made = []
         player = alarm_sound.Player(popen=fake_popen(made))
         alarm_sound.play(player, steps=3)
-        self.assertEqual([p.command[:3] for p in made], [
-            ["paplay", "--volume", str(20 * 655)],
-            ["paplay", "--volume", str(45 * 655)],
-            ["paplay", "--volume", str(70 * 655)],
-        ])
+        self.assertEqual(
+            [p.command[:3] for p in made],
+            [
+                ["paplay", "--volume", str(20 * 655)],
+                ["paplay", "--volume", str(45 * 655)],
+                ["paplay", "--volume", str(70 * 655)],
+            ],
+        )
         self.assertTrue(all(p.command[3] == str(alarm_sound.TONE) for p in made))
         self.assertTrue(all(p.waits and p.waits[0] == alarm_sound.STEP_S for p in made))
 

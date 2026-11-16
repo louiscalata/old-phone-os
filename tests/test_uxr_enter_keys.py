@@ -3,46 +3,47 @@ import unittest
 from pathlib import Path
 import opos.web
 
+
 class TestEnterKeys(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.html = opos.web.page()
-        js_path = Path(opos.web.__file__).parent / 'web_static' / 'js-8.js'
-        cls.js8 = js_path.read_text(encoding='utf-8')
+        js_path = Path(opos.web.__file__).parent / "web_static" / "js-8.js"
+        cls.js8 = js_path.read_text(encoding="utf-8")
 
     def _handler(self, src, el):
         anchor = "G('" + el + "').addEventListener('keydown'"
         self.assertEqual(src.count(anchor), 1)
         i = src.find(anchor)
-        j = src.find('});', i)
+        j = src.find("});", i)
         self.assertNotEqual(j, -1)
-        return src[i:j+3]
+        return src[i : j + 3]
 
     def test_number_enter_moves_to_msg(self):
-        slice_ = self._handler(self.js8, 'number')
+        slice_ = self._handler(self.js8, "number")
         self.assertIn("'Enter'", slice_)
-        self.assertIn('isComposing', slice_)
-        self.assertIn('preventDefault()', slice_)
+        self.assertIn("isComposing", slice_)
+        self.assertIn("preventDefault()", slice_)
         self.assertIn("G('msg').focus()", slice_)
-        self.assertNotIn('go(', slice_)
-        self.assertNotIn('click()', slice_)
+        self.assertNotIn("go(", slice_)
+        self.assertNotIn("click()", slice_)
 
     def test_msg_enter_sends(self):
-        slice_ = self._handler(self.js8, 'msg')
+        slice_ = self._handler(self.js8, "msg")
         self.assertIn("'Enter'", slice_)
-        self.assertIn('isComposing', slice_)
-        self.assertIn('repeat', slice_)
-        self.assertIn('preventDefault()', slice_)
+        self.assertIn("isComposing", slice_)
+        self.assertIn("repeat", slice_)
+        self.assertIn("preventDefault()", slice_)
         self.assertIn("go('send')", slice_)
 
     def test_q_enter_asks(self):
-        slice_ = self._handler(self.js8, 'q')
+        slice_ = self._handler(self.js8, "q")
         self.assertIn("'Enter'", slice_)
-        self.assertIn('isComposing', slice_)
-        self.assertIn('repeat', slice_)
-        self.assertIn('preventDefault()', slice_)
+        self.assertIn("isComposing", slice_)
+        self.assertIn("repeat", slice_)
+        self.assertIn("preventDefault()", slice_)
         self.assertIn("G('askbtn').click()", slice_)
-        self.assertNotIn('helperCall', slice_)
+        self.assertNotIn("helperCall", slice_)
 
     def test_position(self):
         html = self.html
@@ -66,10 +67,10 @@ class TestEnterKeys(unittest.TestCase):
             prev = idx
 
     def test_lives_in_js8(self):
-        for el in ('number', 'msg', 'q'):
+        for el in ("number", "msg", "q"):
             self._handler(self.js8, el)
 
     def test_no_backslashes_added(self):
-        for el in ('number', 'msg', 'q'):
+        for el in ("number", "msg", "q"):
             slice_ = self._handler(self.js8, el)
             self.assertNotIn(chr(92), slice_)

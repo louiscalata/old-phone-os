@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Pointer ownership, cancellation and accessible names for the real top bar."""
+
 import json
 from pathlib import Path
 import shutil
@@ -150,8 +151,7 @@ console.log(JSON.stringify(out));
 class TopBarFixesRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        proc = subprocess.run(["node", "-e", HARNESS, str(STATIC)],
-                              capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(["node", "-e", HARNESS, str(STATIC)], capture_output=True, text=True, timeout=20)
         if proc.returncode:
             raise AssertionError(proc.stderr)
         cls.result = json.loads(proc.stdout)
@@ -275,9 +275,11 @@ class TopBarFixesRuntime(unittest.TestCase):
         self.assertEqual(state["width"], "55%")
 
     def test_meter_names_include_mode_simulation_and_pull_down_action(self):
-        expected = {"brightness": "Brightness 80 percent, pull down for details",
-                    "volume": "Simulated volume 60 percent, pull down for details",
-                    "battery": "61 percent, pull down for details"}
+        expected = {
+            "brightness": "Brightness 80 percent, pull down for details",
+            "volume": "Simulated volume 60 percent, pull down for details",
+            "battery": "61 percent, pull down for details",
+        }
         for mode, label in expected.items():
             with self.subTest(mode=mode):
                 self.assertEqual(self.result["labels"][mode]["label"], label)

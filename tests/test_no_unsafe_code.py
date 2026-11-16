@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """AST guard against unsafe calls and log content leaks."""
+
 import ast
 import pathlib
 import unittest
@@ -186,6 +187,7 @@ def _check_log_tree(tree: ast.AST, rel: str) -> list[str]:
 def _scan(check: object) -> list[str]:
     """Parse every file and apply one check function."""
     from collections.abc import Callable as _Cb
+
     found: list[str] = []
     paths = _py_files()
     if not paths:

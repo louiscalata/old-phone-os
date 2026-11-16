@@ -5,6 +5,7 @@ On the owner's Surface Duo (November 8, 2026, read over ssh) both panels were li
 read 0 and their `brightness` read 90 and 200 of 255, `bl_power` 0; the DSI connectors `card0-DSI-1` and `card0-DSI-2` in /sys/class/drm were connected,
 enabled and dpms On, and wlr-randr listed HWCOMPOSER-1 as Enabled. The check used actual_brightness, so it warned "power on but brightness 0" about a phone
 that was lit. It now trusts the requested level, bl_power and the display pipeline, and still prints every number. The fake phone is test_selftest's."""
+
 import sys
 import unittest
 from pathlib import Path
@@ -24,7 +25,12 @@ def read(path):
 
 class Backlight(TS.SelftestCase):
     def panel(self, name, requested, actual, power=0, maximum=255):
-        for k, v in (("bl_power", power), ("brightness", requested), ("actual_brightness", actual), ("max_brightness", maximum)):
+        for k, v in (
+            ("bl_power", power),
+            ("brightness", requested),
+            ("actual_brightness", actual),
+            ("max_brightness", maximum),
+        ):
             if v is None:
                 self.f.rm(BL + name + "/" + k)
             else:
@@ -83,7 +89,9 @@ class Backlight(TS.SelftestCase):
     def test_with_nothing_to_ask_a_requested_level_is_not_a_warning(self):
         self.phone()
         self.f.rm("sys/class/drm")
-        self.f.wlr(rc=1)  # the compositor cannot be queried: gfx.output says so, and the backlight has no second opinion
+        self.f.wlr(
+            rc=1
+        )  # the compositor cannot be queried: gfx.output says so, and the backlight has no second opinion
         r, status, ev = self.row()
         self.assertEqual(r.status("gfx.output"), "WARN")
         self.assertEqual(status, "PASS", ev)
@@ -196,7 +204,10 @@ class Backlight(TS.SelftestCase):
         before = self.f.snapshot()
         self.run_st()
         self.assertEqual(before, self.f.snapshot())
-        self.assertLessEqual({ln.split()[0] for ln in self.f.calls()}, {"systemctl", "journalctl", "wlr-randr", "ip", "nmcli", "timedatectl"})
+        self.assertLessEqual(
+            {ln.split()[0] for ln in self.f.calls()},
+            {"systemctl", "journalctl", "wlr-randr", "ip", "nmcli", "timedatectl"},
+        )
 
     def test_only_gfx_backlight_shows_just_that_line(self):
         self.phone()
@@ -208,14 +219,22 @@ class Docs(unittest.TestCase):
     def test_the_acceptance_doc_says_which_signals_are_trusted(self):
         row = next(ln for ln in read("docs/duo-acceptance.md").splitlines() if ln.startswith("| `gfx.backlight`"))
         flat = " ".join(row.split())
-        for phrase in ("`brightness`", "`actual_brightness`", "not trusted", "DSI", "`/sys/class/drm`", "requested", "`bl_power`"):
+        for phrase in (
+            "`brightness`",
+            "`actual_brightness`",
+            "not trusted",
+            "DSI",
+            "`/sys/class/drm`",
+            "requested",
+            "`bl_power`",
+        ):
             self.assertIn(phrase, flat)
 
     def test_the_check_does_not_run_anything(self):
         t = read("packaging/duo-os/opos-selftest")
         i = t.index("def check_backlight(c):")
         j = t.index("# ----", i)
-        self.assertNotIn("c.run(", t[t.index("def display_pipeline(c):"):j])
+        self.assertNotIn("c.run(", t[t.index("def display_pipeline(c):") : j])
 
 
 if __name__ == "__main__":

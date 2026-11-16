@@ -28,7 +28,7 @@ class DuoPushHealthTest(unittest.TestCase):
         # find status line index
         status_idx = None
         for i in range(self.install_index + 2, len(self.stripped)):
-            if '/.local/bin/opos"' in self.stripped[i] and 'status' in self.stripped[i]:
+            if '/.local/bin/opos"' in self.stripped[i] and "status" in self.stripped[i]:
                 status_idx = i
                 break
         self.assertIsNotNone(status_idx)

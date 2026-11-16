@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for Surface Duo RAM-boot reboot warning."""
+
 import argparse
 import io
 import tempfile
@@ -11,7 +12,7 @@ import opos.setup.cli
 
 EXPECTED = (
     "warning: Surface Duo detected. If this kernel was RAM-booted from a PC with fastboot boot, do not run reboot or systemctl reboot: the phone would start the stock kernel and be stranded.\n"
-    "To restart safely run reboot bootloader, then re-arm the misc brake and RAM-boot once from the PC. See docs/duo-usb-install.md, section \"Rebooting safely / recovering\"."
+    'To restart safely run reboot bootloader, then re-arm the misc brake and RAM-boot once from the PC. See docs/duo-usb-install.md, section "Rebooting safely / recovering".'
 )
 
 
@@ -38,7 +39,9 @@ class DuoRebootWarnTest(unittest.TestCase):
 
     def test_run_prints_warning_first(self):
         with tempfile.TemporaryDirectory() as cfg_dir, tempfile.TemporaryDirectory() as home_dir:
-            args = argparse.Namespace(config_dir=cfg_dir, defaults=True, dry_run=True, reconfigure=False, no_browser=True, port=None)
+            args = argparse.Namespace(
+                config_dir=cfg_dir, defaults=True, dry_run=True, reconfigure=False, no_browser=True, port=None
+            )
             out = io.StringIO()
             with patch("opos.setup.cli.reboot_warning", return_value="WARN-X") as mock_warn:
                 with patch("opos.setup.device.detect_device", side_effect=RuntimeError("x")):
@@ -49,7 +52,9 @@ class DuoRebootWarnTest(unittest.TestCase):
 
     def test_run_without_warning_preserves_error_output(self):
         with tempfile.TemporaryDirectory() as cfg_dir, tempfile.TemporaryDirectory() as home_dir:
-            args = argparse.Namespace(config_dir=cfg_dir, defaults=True, dry_run=True, reconfigure=False, no_browser=True, port=None)
+            args = argparse.Namespace(
+                config_dir=cfg_dir, defaults=True, dry_run=True, reconfigure=False, no_browser=True, port=None
+            )
             out = io.StringIO()
             with patch("opos.setup.cli.reboot_warning", return_value=None):
                 with patch("opos.setup.device.detect_device", side_effect=RuntimeError("x")):

@@ -14,20 +14,21 @@ def _run(args, extra_env):
     env["OPOS_APORTS_DIR"] = ""
     env["OPOS_QEMU_DEVICE"] = ""
     env.update(extra_env)
-    return subprocess.run(["/bin/sh", str(SCRIPT)] + args, check=False, capture_output=True,
-                          text=True, timeout=10, env=env)
+    return subprocess.run(
+        ["/bin/sh", str(SCRIPT)] + args, check=False, capture_output=True, text=True, timeout=10, env=env
+    )
 
 
 class TestQemuDemo(unittest.TestCase):
     def test_help_and_unknown_arguments(self):
         result = _run(["--help"], {})
-        self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "usage: qemu-demo.sh [--help]\n", ""))
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "usage: qemu-demo.sh [--help]\n", ""))
         for args in (["--run"], ["--unknown"], ["--help", "extra"]):
             with self.subTest(args=args):
                 result = _run(args, {})
-                self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                 (2, "", "usage: qemu-demo.sh [--help]\n"))
+                self.assertEqual(
+                    (result.returncode, result.stdout, result.stderr), (2, "", "usage: qemu-demo.sh [--help]\n")
+                )
 
     def test_plan_stages_locally_before_init_checksum_and_build(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -35,15 +36,23 @@ class TestQemuDemo(unittest.TestCase):
             self.assertEqual((result.returncode, result.stderr), (0, ""))
             commands = [line.split(". ", 1)[1] for line in result.stdout.splitlines()]
             self.assertEqual(len(commands), 11)
-            self.assertEqual(shlex.split(commands[0]), ["COPYFILE_DISABLE=1", "OPOS_LOCAL_SOURCE=1", "sh",
-                                                     "packaging/pmos/stage-aports.sh", directory])
+            self.assertEqual(
+                shlex.split(commands[0]),
+                ["COPYFILE_DISABLE=1", "OPOS_LOCAL_SOURCE=1", "sh", "packaging/pmos/stage-aports.sh", directory],
+            )
             self.assertEqual(shlex.split(commands[1]), ["pmbootstrap", "config", "aports", directory])
-            self.assertEqual(commands[2:9], [
-                "pmbootstrap config device qemu-aarch64", "pmbootstrap config ui opos",
-                "pmbootstrap init", "pmbootstrap checksum opos postmarketos-ui-opos",
-                "pmbootstrap build opos", "pmbootstrap build postmarketos-ui-opos",
-                "pmbootstrap install",
-            ])
+            self.assertEqual(
+                commands[2:9],
+                [
+                    "pmbootstrap config device qemu-aarch64",
+                    "pmbootstrap config ui opos",
+                    "pmbootstrap init",
+                    "pmbootstrap checksum opos postmarketos-ui-opos",
+                    "pmbootstrap build opos",
+                    "pmbootstrap build postmarketos-ui-opos",
+                    "pmbootstrap install",
+                ],
+            )
             self.assertNotIn("--src", result.stdout)
             self.assertEqual(commands[9], "pmbootstrap qemu --image-size=2G -m 2048 --no-gl")
 

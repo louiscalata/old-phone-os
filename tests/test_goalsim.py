@@ -84,6 +84,7 @@ class TestGoalSim(unittest.TestCase):
 
     def test_router_close_to_plan(self):
         from opos import power
+
         tasks = tuple(list(DEFAULT_TASKS) + [Task("alarms", Priority.USEFUL, 0.1)])
         result = simulate("router", level=40.0, health=0.6, goal_h=11.0, step_s=300.0, tasks=tasks)
         expected = power.plan(40, 11, tasks, 0.6).hours_left
@@ -92,11 +93,14 @@ class TestGoalSim(unittest.TestCase):
 
     def test_horizon_caps_interval_and_depletion(self):
         import opos.goalsim as goalsim
+
         cases = ((1.0, 0.0, 60.0), (2.0, 0.5, 90.0), (10.0, 8.5, 90.0))
         with unittest.mock.patch.object(goalsim, "total_drain", return_value=60.0):
             for initial, exp_level, exp_t in cases:
                 with self.subTest(level=initial):
-                    level, t_s, _, _, _ = goalsim._drain_loop((), 1.0, 30.0, initial, 0.0, 60.0, 0.025, None, None, set(), ())
+                    level, t_s, _, _, _ = goalsim._drain_loop(
+                        (), 1.0, 30.0, initial, 0.0, 60.0, 0.025, None, None, set(), ()
+                    )
                     self.assertAlmostEqual(level, exp_level)
                     self.assertAlmostEqual(t_s, exp_t)
             result = simulate("basic", level=2.0, health=1.0, tasks=(), step_s=60.0, max_h=0.025, goal_h=0.03)
@@ -303,7 +307,12 @@ class TestGoalSimModelSteps(unittest.TestCase):
         bad_single = "model-step"
         bad_a = "a"
         bad_b = "b"
-        for bad_steps in ([bad_single], [bad_a, bad_b], ["dim screen", bad_single], ["dim screen", bad_single, "batch sync"]):
+        for bad_steps in (
+            [bad_single],
+            [bad_a, bad_b],
+            ["dim screen", bad_single],
+            ["dim screen", bad_single, "batch sync"],
+        ):
             model_data = {"version": 1, "paused": [], "steps": bad_steps}
             fd, path = tempfile.mkstemp(suffix=".json")
             try:
@@ -414,6 +423,7 @@ class TestGoalSimRejectsSurplusArgs(unittest.TestCase):
 class TestGoalSimEolBrownout(unittest.TestCase):
     def test_eol_brownout_after_draining(self):
         import opos.goalsim as goalsim
+
         cutoff = 30.0
         with unittest.mock.patch.object(goalsim, "total_drain", return_value=12.0):
             with unittest.mock.patch.object(
@@ -431,6 +441,7 @@ class TestGoalSimEolBrownout(unittest.TestCase):
 
     def test_eol_low_battery_shuts_down(self):
         from opos.eol import CUTOFF_V
+
         level = CUTOFF_V
         first = simulate("basic", level=level, health=1.0, step_s=300.0, profile="eol")
         second = simulate("basic", level=level, health=1.0, step_s=300.0, profile="eol")
@@ -448,6 +459,7 @@ class TestGoalSimEolBrownout(unittest.TestCase):
 class TestGoalSimFloorOverrides(unittest.TestCase):
     def test_basic_and_router_record_stripped_essential(self):
         import opos.goalsim as goalsim
+
         custom = [
             Task("calls", Priority.ESSENTIAL, 0.1),
             Task("messages", Priority.ESSENTIAL, 0.1),
@@ -464,6 +476,7 @@ class TestGoalSimFloorOverrides(unittest.TestCase):
         class _FakeRuntime:
             def __init__(self, tasks=None):
                 self._tasks = tasks
+
             def step(self, t, lvl, health=None, temp_c=None, goal_hours=None):
                 return tick
 

@@ -71,7 +71,7 @@ class TestKioskWait(unittest.TestCase):
         loop = text.index("while ")
         self.assertLess(loop, text.index(exec_line))
         self.assertLess(text.index("urllib.request.urlopen"), text.index(exec_line))
-        self.assertRegex(text[loop:text.index(exec_line)], r'\[ "\$i" -(lt|ge) "\$wait" \]')
+        self.assertRegex(text[loop : text.index(exec_line)], r'\[ "\$i" -(lt|ge) "\$wait" \]')
         self.assertIn("i=$((i + 1))", text)
         self.assertIn("${OPOS_KIOSK_WAIT:-60}", text)
         self.assertIn("--kiosk", exec_line)
@@ -121,8 +121,9 @@ class TestKioskWait(unittest.TestCase):
         threading.Thread(target=late, daemon=True).start()
         stub = self._stub()
         start = time.monotonic()
-        r, took = self._run(OPOS_KIOSK_WAIT="15", OPOS_KIOSK_CHROMIUM="sh " + stub,
-                            OPOS_KIOSK_URL="http://127.0.0.1:%d/" % port)
+        r, took = self._run(
+            OPOS_KIOSK_WAIT="15", OPOS_KIOSK_CHROMIUM="sh " + stub, OPOS_KIOSK_URL="http://127.0.0.1:%d/" % port
+        )
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(hits, "script never reached the late server")
         self.assertGreaterEqual(hits[0] - start, 2)
@@ -137,8 +138,11 @@ class TestKioskWait(unittest.TestCase):
         srv = _serve(_Stall)
         self.addCleanup(self._stop, srv)
         stub = self._stub()
-        r, took = self._run(OPOS_KIOSK_WAIT="2", OPOS_KIOSK_CHROMIUM="sh " + stub,
-                            OPOS_KIOSK_URL="http://127.0.0.1:%d/" % srv.server_address[1])
+        r, took = self._run(
+            OPOS_KIOSK_WAIT="2",
+            OPOS_KIOSK_CHROMIUM="sh " + stub,
+            OPOS_KIOSK_URL="http://127.0.0.1:%d/" % srv.server_address[1],
+        )
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertLess(took, 10)
         self.assertTrue(os.path.exists(stub + ".ran"))

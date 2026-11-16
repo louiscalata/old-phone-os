@@ -18,9 +18,7 @@ def make_dash(history_len=60):
 
 
 def make_view(dash, level):
-    return dash.view(
-        level, Mode.NORMAL, False, 1.0, 43200.0, False, "rules"
-    )
+    return dash.view(level, Mode.NORMAL, False, 1.0, 43200.0, False, "rules")
 
 
 class TestDesign(unittest.TestCase):

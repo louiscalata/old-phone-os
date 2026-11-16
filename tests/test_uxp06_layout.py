@@ -33,10 +33,13 @@ class UXP06Layout(unittest.TestCase):
 
     def test_fixed_surfaces_use_safe_area(self):
         out = page("t" * 32, "n")
-        css = out[:out.index("</style>")]
+        css = out[: out.index("</style>")]
         # Each fixed surface gets its inset rule after its base rule, so it wins the cascade.
         for base, inset in (
-            ("#sb{position:fixed;top:0", "#sb{height:calc(28px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px)"),
+            (
+                "#sb{position:fixed;top:0",
+                "#sb{height:calc(28px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px)",
+            ),
             # UXP15 reserves 48px for the touch target, plus the safe-area inset.
             ("body{padding-top:48px}", "body{padding-top:calc(48px + env(safe-area-inset-top,0px))}"),
             ("#sheet{position:fixed;", "#sheet{padding-top:calc(16px + env(safe-area-inset-top,0px))"),
@@ -44,7 +47,10 @@ class UXP06Layout(unittest.TestCase):
             self.assertIn(base, css)
             self.assertIn(inset, css)
             self.assertLess(css.index(base), css.index(inset), inset)
-        self.assertIn("#lock{padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}", css)
+        self.assertIn(
+            "#lock{padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}",
+            css,
+        )
         self.assertIn("padding-left:max(12px,env(safe-area-inset-left,0px))", css)
 
     def test_form_factors_do_not_change_dom(self):
@@ -66,7 +72,7 @@ class UXP06Layout(unittest.TestCase):
         out = page("t" * 32, "n")
         self.assertEqual(out.count("location.reload"), baseline)
         for m in re.finditer(r"resize|orientationchange", out):
-            near = out[max(0, m.start() - 200):m.end() + 200]
+            near = out[max(0, m.start() - 200) : m.end() + 200]
             self.assertNotIn("reload", near)
 
 

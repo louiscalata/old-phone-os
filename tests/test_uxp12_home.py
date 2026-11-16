@@ -55,8 +55,12 @@ class UXP12Static(unittest.TestCase):
     def test_column_count_changes_per_device_type(self):
         css = _css()
         for ff in ("foldable", "slide"):
-            self.assertIn('html[data-ff="%s"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:' % ff, css)
-        self.assertIn("#phone[data-app=\"home\"] #apps-list:not([hidden]){display:grid;grid-template-columns:1fr;gap:8px}", css)
+            self.assertIn(
+                'html[data-ff="%s"] #phone[data-app] #apps-list:not([hidden]){grid-template-columns:' % ff, css
+            )
+        self.assertIn(
+            '#phone[data-app="home"] #apps-list:not([hidden]){display:grid;grid-template-columns:1fr;gap:8px}', css
+        )
 
     def test_focus_visible(self):
         # jaryo.css (inlined after phone-b.css) draws the one ring; phone-b.css's 2 px white ring was overridden in every
@@ -70,6 +74,7 @@ class UXP12Static(unittest.TestCase):
                     if s.endswith(":focus-visible"):
                         found[s] = d
             return found
+
         jaryo = rings((STATIC / "jaryo.css").read_text(encoding="utf-8"))
         own = rings(_css())
         for s in ("#home button:focus-visible", "#apps-list button:focus-visible", "#apps-close:focus-visible"):
@@ -169,8 +174,9 @@ class UXP12Runtime(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             h = Path(d) / "h.js"
             h.write_text(HARNESS, encoding="utf-8")
-            r = subprocess.run([NODE, str(h), str(STATIC / "phone-b.js"), mode, ff],
-                               capture_output=True, text=True, timeout=30)
+            r = subprocess.run(
+                [NODE, str(h), str(STATIC / "phone-b.js"), mode, ff], capture_output=True, text=True, timeout=30
+            )
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
 
@@ -216,11 +222,11 @@ class UXP12Runtime(unittest.TestCase):
             self.assertEqual(o[key], ["home", True, False, False, False, "allapps"], key)
 
     def test_letter_headings_preserve_navigation(self):
-        o = self.run_js('headings')
-        self.assertEqual(o['withHeading'], ['home', False, True, True, True, 'Phone'])
-        self.assertEqual(o['headingAllapps'], '1')
-        self.assertEqual(o['headingUnderShade'], o['withHeading'])
-        self.assertEqual(o['headingEscape'], ['home', True, False, False, False, 'allapps'])
+        o = self.run_js("headings")
+        self.assertEqual(o["withHeading"], ["home", False, True, True, True, "Phone"])
+        self.assertEqual(o["headingAllapps"], "1")
+        self.assertEqual(o["headingUnderShade"], o["withHeading"])
+        self.assertEqual(o["headingEscape"], ["home", True, False, False, False, "allapps"])
 
     def test_entries_open_and_scroll(self):
         o = self.run_js("contacts-on")

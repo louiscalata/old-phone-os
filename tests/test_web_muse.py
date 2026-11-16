@@ -53,14 +53,23 @@ class TestWebMuse(unittest.TestCase):
         thr = threading.Thread(target=server.serve_forever, daemon=True)
         thr.start()
         evt = threading.Event()
+
         def fake(*args, **kwargs):
             evt.wait(timeout=10)
             return "ok"
+
         result = {}
+
         def do_post():
-            req = urllib.request.Request(f"http://127.0.0.1:{port}/api", data=json.dumps({"action": "explain"}).encode(), headers={"Content-Type": "application/json", "X-OPOS-Token": token}, method="POST")
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api",
+                data=json.dumps({"action": "explain"}).encode(),
+                headers={"Content-Type": "application/json", "X-OPOS-Token": token},
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=5) as r:
                 result["status"] = r.status
+
         try:
             with patch.object(muse, "ask", side_effect=fake):
                 pt = threading.Thread(target=do_post, daemon=True)
@@ -91,7 +100,16 @@ class TestWebMuseHelperCall(unittest.TestCase):
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as r:
                 page = r.read().decode()
-            for needle in ["async function helperCall", "opos_helper_s", "Thinking... about", "Still thinking...", "helpercancel", "helperwait", "AbortController", "setInterval"]:
+            for needle in [
+                "async function helperCall",
+                "opos_helper_s",
+                "Thinking... about",
+                "Still thinking...",
+                "helpercancel",
+                "helperwait",
+                "AbortController",
+                "setInterval",
+            ]:
                 self.assertIn(needle, page)
             self.assertGreaterEqual(page.count("helperCall("), 4)
             self.assertEqual(page.count("Cancelled. Nothing changed on the phone."), 1)
@@ -111,7 +129,7 @@ class TestWebMuseHelperReset(unittest.TestCase):
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as r:
                 page = r.read().decode()
-            for needle in ['id="helperreset"', 'id="helperrestart"', 'function helperReset', 'Ready.']:
+            for needle in ['id="helperreset"', 'id="helperrestart"', "function helperReset", "Ready."]:
                 self.assertIn(needle, page)
         finally:
             server.shutdown()
@@ -130,7 +148,12 @@ class TestWebMuseHelperReset(unittest.TestCase):
             with unittest.mock.patch.dict(os.environ, {}, clear=False):
                 with unittest.mock.patch.object(web, "_restart_service") as mock_restart:
                     with unittest.mock.patch.object(srv, "_restart_service", mock_restart):
-                        req = urllib.request.Request(f"http://127.0.0.1:{port}/api", data=json.dumps({"action": "restart_helper"}).encode(), headers={"Content-Type": "application/json", "X-OPOS-Token": token}, method="POST")
+                        req = urllib.request.Request(
+                            f"http://127.0.0.1:{port}/api",
+                            data=json.dumps({"action": "restart_helper"}).encode(),
+                            headers={"Content-Type": "application/json", "X-OPOS-Token": token},
+                            method="POST",
+                        )
                         with urllib.request.urlopen(req, timeout=5) as r:
                             body = r.read().decode()
                         data = json.loads(body)
@@ -151,7 +174,12 @@ class TestWebMuseHelperReset(unittest.TestCase):
             with unittest.mock.patch.dict(os.environ, {"INVOCATION_ID": "test-id-123"}, clear=False):
                 with unittest.mock.patch.object(web, "_restart_service") as mock_restart:
                     with unittest.mock.patch.object(srv, "_restart_service", mock_restart):
-                        req = urllib.request.Request(f"http://127.0.0.1:{port}/api", data=json.dumps({"action": "restart_helper"}).encode(), headers={"Content-Type": "application/json", "X-OPOS-Token": token}, method="POST")
+                        req = urllib.request.Request(
+                            f"http://127.0.0.1:{port}/api",
+                            data=json.dumps({"action": "restart_helper"}).encode(),
+                            headers={"Content-Type": "application/json", "X-OPOS-Token": token},
+                            method="POST",
+                        )
                         with urllib.request.urlopen(req, timeout=5) as r:
                             body = r.read().decode()
                         data = json.loads(body)
@@ -174,7 +202,12 @@ class TestWebMuseHelperReset(unittest.TestCase):
             with unittest.mock.patch.dict(os.environ, {}, clear=False):
                 with unittest.mock.patch.object(web, "_restart_service") as mock_restart:
                     with unittest.mock.patch.object(srv, "_restart_service", mock_restart):
-                        req = urllib.request.Request(f"http://127.0.0.1:{port}/api", data=json.dumps({"action": "restart_helper"}).encode(), headers={"Content-Type": "application/json"}, method="POST")
+                        req = urllib.request.Request(
+                            f"http://127.0.0.1:{port}/api",
+                            data=json.dumps({"action": "restart_helper"}).encode(),
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
                         with self.assertRaises(urllib.error.HTTPError) as cm:
                             urllib.request.urlopen(req, timeout=5)
                         self.assertEqual(cm.exception.code, 403)
@@ -215,11 +248,14 @@ class TestLaneCoreRegressions(unittest.TestCase):
         facts = p.ask_facts()
         self.assertNotEqual(facts.get("mode"), "CRITICAL")
         seen = []
+
         def fake_ask(route, prompt, **kw):
             seen.append(prompt)
             return "Maps and photos backup rest so calls last."
+
         with patch.object(muse, "ask", side_effect=fake_ask):
             from opos import assist
+
             res = assist.answer("What is paused?", env={}, free=None, context=facts)
         self.assertTrue(res["ok"], res)
         self.assertEqual(len(seen), 1)

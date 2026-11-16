@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The D1-D12 on-device table stays NOT_RUN until a dated evidence link exists."""
+
 import re
 import unittest
 from pathlib import Path
@@ -9,14 +10,14 @@ HEADING = "## On-device checks"
 LINK = re.compile(r"\]\(https?://[^)\s]+\)")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 BANNED = ("imei", "imsi", "iccid", "msisdn")
-UNLINKED = "no pull request number yet"   # the only Evidence allowed without a link, and only for D12 (the hinge row)
+UNLINKED = "no pull request number yet"  # the only Evidence allowed without a link, and only for D12 (the hinge row)
 
 
 def section():
     text = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
     start = text.index(HEADING)
     end = text.find("\n## ", start + len(HEADING))
-    return text[start:end if end != -1 else len(text)]
+    return text[start : end if end != -1 else len(text)]
 
 
 def rows():
@@ -27,13 +28,15 @@ def rows():
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         if len(cells) != 5:
             continue
-        found.append({
-            "id": cells[0],
-            "check": cells[1],
-            "date": cells[2],
-            "result": cells[3],
-            "evidence": cells[4],
-        })
+        found.append(
+            {
+                "id": cells[0],
+                "check": cells[1],
+                "date": cells[2],
+                "result": cells[3],
+                "evidence": cells[4],
+            }
+        )
     return found
 
 
@@ -60,7 +63,11 @@ class DeviceLog(unittest.TestCase):
             self.assertEqual(row["date"], "", row["id"])
 
     def test_a_pass_without_a_date_or_a_link_is_rejected(self):
-        linked = {"date": "", "result": "PASS", "evidence": "[PR #1](https://github.com/louiscalata/old-phone-os/pull/1)"}
+        linked = {
+            "date": "",
+            "result": "PASS",
+            "evidence": "[PR #1](https://github.com/louiscalata/old-phone-os/pull/1)",
+        }
         dated = {"date": "2026-11-10", "result": "PASS", "evidence": "a note"}
         both = {"date": "2026-11-10", "result": "PASS", "evidence": "[log](https://example.com/log)"}
         self.assertFalse(pass_is_complete(linked))

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A live phone whose clock nobody set says so and claims no goal or arrival time against it."""
+
 import calendar
 import contextlib
 import io
@@ -23,7 +24,14 @@ def at(*ymdhms):
 
 
 def battery(level):
-    reading = {"level": level, "temp_c": 29.0, "charging": False, "source": "sysfs", "health": 1.0, "health_source": "sysfs"}
+    reading = {
+        "level": level,
+        "temp_c": 29.0,
+        "charging": False,
+        "source": "sysfs",
+        "health": 1.0,
+        "health_source": "sysfs",
+    }
     return lb.LiveBattery(reader=lambda: reading, clock=lambda: 0.0)
 
 
@@ -63,8 +71,10 @@ class LivePhoneClockTests(unittest.TestCase):
     def setUp(self):
         self.ok = True
         self.now = NOON
-        for p in (mock.patch.object(web, "_local_clock_s", side_effect=lambda: self.now),
-                  mock.patch.object(web, "clock_ok", side_effect=lambda *a, **k: self.ok)):
+        for p in (
+            mock.patch.object(web, "_local_clock_s", side_effect=lambda: self.now),
+            mock.patch.object(web, "clock_ok", side_effect=lambda *a, **k: self.ok),
+        ):
             p.start()
             self.addCleanup(p.stop)
 
@@ -77,7 +87,9 @@ class LivePhoneClockTests(unittest.TestCase):
     def test_a_trusted_clock_gives_the_arrival_time_as_before(self):
         s = self.phone(True).state()
         self.assertIs(s["battery"]["clock_ok"], True)
-        self.assertRegex(s["battery"]["goal_note"], r"^Won't last until 11 PM, calls and messages until ~\d{1,2}:\d{2} (AM|PM)$")
+        self.assertRegex(
+            s["battery"]["goal_note"], r"^Won't last until 11 PM, calls and messages until ~\d{1,2}:\d{2} (AM|PM)$"
+        )
         self.assertRegex(s["battery"]["calls_until"], r"^\d{1,2}:\d{2} (AM|PM)$")
         self.assertEqual(s["clock"], "12:00")
         self.assertIn("11 PM", s["lock_story"])
@@ -150,7 +162,9 @@ class LivePhoneClockTests(unittest.TestCase):
         for ok in (False, True):
             phone = self.phone(ok, visible=True)
             seen = []
-            with mock.patch.object(web.muse, "is_hard", side_effect=lambda goal, left: (seen.append(goal), real(goal, left))[1]):
+            with mock.patch.object(
+                web.muse, "is_hard", side_effect=lambda goal, left: (seen.append(goal), real(goal, left))[1]
+            ):
                 phone._helper_request()
             self.assertEqual(len(seen), 1)
             if ok:
@@ -219,17 +233,22 @@ class LivePhoneClockTests(unittest.TestCase):
         built = []
         server = mock.Mock()
         server.serve_forever.side_effect = lambda: None
+
         def make(port, phone, **kw):
             built.append(phone)
             return server
+
         err = io.StringIO()
         live = battery(50)  # built before LiveBattery is replaced below
-        with mock.patch.dict(os.environ, {"OPOS_BATTERY": "live", "OPOS_GLIMMER_ROUTING": "0"}), \
-                mock.patch.object(lb, "LiveBattery", return_value=live), \
-                mock.patch.object(web.setup_config, "load", return_value={"goal": goal}), \
-                mock.patch.object(web, "_install_helper_visible", return_value=False), \
-                mock.patch.object(web, "make_server", side_effect=make), \
-                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        with (
+            mock.patch.dict(os.environ, {"OPOS_BATTERY": "live", "OPOS_GLIMMER_ROUTING": "0"}),
+            mock.patch.object(lb, "LiveBattery", return_value=live),
+            mock.patch.object(web.setup_config, "load", return_value={"goal": goal}),
+            mock.patch.object(web, "_install_helper_visible", return_value=False),
+            mock.patch.object(web, "make_server", side_effect=make),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
             web.main(["--port", "0"])
         self.assertEqual(len(built), 1)
         return built[0], err.getvalue()

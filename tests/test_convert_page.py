@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Converter: fixed factors, a plain page, and a main page that does not grow."""
+
 import json
 import os
 import shutil
@@ -91,14 +92,21 @@ class ConverterPage(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        result = subprocess.run([node, str(Path(__file__).with_name("convert_page_test.js"))],
-                                input=json.dumps(convert_page._SCRIPT), text=True, capture_output=True, timeout=20)
+        result = subprocess.run(
+            [node, str(Path(__file__).with_name("convert_page_test.js"))],
+            input=json.dumps(convert_page._SCRIPT),
+            text=True,
+            capture_output=True,
+            timeout=20,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("converter script checks passed", result.stdout)
 
     def test_post_refuses_what_is_not_a_conversion(self):
         self.assertEqual(convert_page.post([]), (400, {"error": "bad request"}))
-        self.assertEqual(convert_page.post({"kind": "length", "value": "1", "src": [], "dst": "mi"}), (400, {"error": "unit"}))
+        self.assertEqual(
+            convert_page.post({"kind": "length", "value": "1", "src": [], "dst": "mi"}), (400, {"error": "unit"})
+        )
         status, body = convert_page.post({"kind": "length", "value": "1", "src": "m", "dst": "cm"})
         self.assertEqual((status, body["text"]), (200, "100"))
 
@@ -114,7 +122,9 @@ class ConverterPage(unittest.TestCase):
             kinds = json.loads(body)["kinds"]
             self.assertEqual([item["id"] for item in kinds], ["length", "mass", "volume", "temperature"])
             self.assertIn("US gal", [unit["title"] for unit in kinds[2]["units"]])
-            code, raw = post(server, "/api/convert", {"kind": "temperature", "value": "0", "src": "c", "dst": "f"}, token)
+            code, raw = post(
+                server, "/api/convert", {"kind": "temperature", "value": "0", "src": "c", "dst": "f"}, token
+            )
             self.assertEqual(code, 200, raw)
             self.assertEqual(json.loads(raw)["line"], "0 C = 32 F")
             code, raw = post(server, "/api/convert", {"kind": "length", "value": "-2", "src": "m", "dst": "ft"}, token)

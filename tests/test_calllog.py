@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local call storage and modem events, without sockets, models or a phone."""
+
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
@@ -27,7 +28,11 @@ class LocalCalls(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.enterContext(mock.patch.dict(os.environ, {"OPOS_STATE_DIR": self.tmp.name, "OPOS_APPS": "calls", "OPOS_CONFIG_DIR": self.tmp.name}))
+        self.enterContext(
+            mock.patch.dict(
+                os.environ, {"OPOS_STATE_DIR": self.tmp.name, "OPOS_APPS": "calls", "OPOS_CONFIG_DIR": self.tmp.name}
+            )
+        )
         calllog.reset()
         contacts_page.reset()
         self.addCleanup(calllog.reset)
@@ -49,7 +54,10 @@ class LocalCalls(unittest.TestCase):
         calllog.record(event(state="ended", duration=63.8))
         calllog.reset()
         row = calllog.snapshot()["calls"][0]
-        self.assertEqual((row["number"], row["name"], row["direction"], row["duration"], row["practice"]), (NUMBER, "Ana", "outgoing", 63.8, True))
+        self.assertEqual(
+            (row["number"], row["name"], row["direction"], row["duration"], row["practice"]),
+            (NUMBER, "Ana", "outgoing", 63.8, True),
+        )
         self.assertEqual(row["start_time"], "2026-11-11T10:00:00+00:00")
         self.assertEqual(row["state"], "ended")
         contacts_page.post({"action": "delete", "id": ident})
@@ -109,12 +117,15 @@ class LocalCalls(unittest.TestCase):
 
     def test_private_permissions_and_atomic_replacement_order(self):
         import opos.store as store
+
         original_replace = os.replace
         original_fsync = os.fsync
         order = []
+
         def synced(fd):
             original_fsync(fd)
             order.append("fsync")
+
         def replaced(src, dest):
             self.assertEqual(Path(src).name, ".calls.json.tmp")
             self.assertEqual(stat.S_IMODE(Path(src).stat().st_mode), 0o600)
@@ -122,7 +133,11 @@ class LocalCalls(unittest.TestCase):
             self.assertEqual(order[-1], "fsync")
             order.append("replace")
             return original_replace(src, dest)
-        with mock.patch.object(store.os, "replace", side_effect=replaced), mock.patch.object(store.os, "fsync", side_effect=synced):
+
+        with (
+            mock.patch.object(store.os, "replace", side_effect=replaced),
+            mock.patch.object(store.os, "fsync", side_effect=synced),
+        ):
             self.finish()
         self.assertEqual(order, ["fsync", "replace"] * 3)
         self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
@@ -140,8 +155,14 @@ class LocalCalls(unittest.TestCase):
         self.assertEqual(len(calllog.snapshot()["calls"]), 2)
 
     def test_corrupt_files_are_kept_private_and_recovery_notice_is_visible(self):
-        invalids = [b"not json", b"\xff", b'{"schema":0}', b'{"schema":1,"calls":{}}',
-                    b'{"schema":1,"calls":[{"number":"abc"}]}', b"x" * (calllog.MAX_JSON + 1)]
+        invalids = [
+            b"not json",
+            b"\xff",
+            b'{"schema":0}',
+            b'{"schema":1,"calls":{}}',
+            b'{"schema":1,"calls":[{"number":"abc"}]}',
+            b"x" * (calllog.MAX_JSON + 1),
+        ]
         for raw in invalids:
             with self.subTest(raw=raw[:40]):
                 self.path.write_bytes(raw)
@@ -158,7 +179,14 @@ class LocalCalls(unittest.TestCase):
     def test_invalid_row_and_duplicate_ids_recover_instead_of_silently_dropping_data(self):
         self.finish()
         valid = json.loads(self.path.read_text())
-        for field, value in (("practice", "false"), ("duration", -1), ("duration", 10**400), ("direction", "other"), ("start_time", "bad"), ("id", "../oops")):
+        for field, value in (
+            ("practice", "false"),
+            ("duration", -1),
+            ("duration", 10**400),
+            ("direction", "other"),
+            ("start_time", "bad"),
+            ("id", "../oops"),
+        ):
             data = json.loads(json.dumps(valid))
             data["calls"][0][field] = value
             self.path.write_text(json.dumps(data))
@@ -195,7 +223,17 @@ class LocalCalls(unittest.TestCase):
         self.assertEqual(calllog.snapshot()["calls"][0]["duration"], 5)
 
     def test_bad_events_are_rejected_and_no_files_are_written_while_switched_off(self):
-        for bad in (None, event(call_id="bad"), event(number="bad"), event(direction="missed"), event(practice="real"), event(at=float("nan")), event(at=True), event(duration=-1), event(answered=1)):
+        for bad in (
+            None,
+            event(call_id="bad"),
+            event(number="bad"),
+            event(direction="missed"),
+            event(practice="real"),
+            event(at=float("nan")),
+            event(at=True),
+            event(duration=-1),
+            event(answered=1),
+        ):
             with self.assertRaises(ValueError):
                 calllog.record(bad)
         for env in ({"OPOS_APPS": ""}, {"OPOS_APPS": "contacts"}):
@@ -216,7 +254,10 @@ class LocalCalls(unittest.TestCase):
     def test_simulated_modem_boundary_records_duration_and_does_not_log_sms(self):
         modem = ScreenModem(call_observer=calllog.record)
         essentials = Essentials(modem)
-        with mock.patch("opos.ui.time.monotonic", side_effect=[10, 75.25]), mock.patch("opos.ui.time.time", side_effect=[START, START + 1, START - 3600]):
+        with (
+            mock.patch("opos.ui.time.monotonic", side_effect=[10, 75.25]),
+            mock.patch("opos.ui.time.time", side_effect=[START, START + 1, START - 3600]),
+        ):
             essentials.call(NUMBER)
             essentials.end_call()
         essentials.send_message(NUMBER, "Example")
@@ -225,7 +266,9 @@ class LocalCalls(unittest.TestCase):
         self.assertEqual(row["duration"], 65.25)
         self.assertEqual(row["start_time"], "2026-11-11T10:00:00+00:00")
         self.assertEqual(len(calllog.snapshot()["calls"]), 1)
-        self.assertEqual(set(Modem.__dict__) & {"dial", "hang_up", "send_sms", "call_observer"}, {"dial", "hang_up", "send_sms"})
+        self.assertEqual(
+            set(Modem.__dict__) & {"dial", "hang_up", "send_sms", "call_observer"}, {"dial", "hang_up", "send_sms"}
+        )
 
     def test_simulated_incoming_answered_and_missed(self):
         modem = ScreenModem(call_observer=calllog.record)
@@ -243,6 +286,7 @@ class LocalCalls(unittest.TestCase):
             if event.state == "connected":
                 raise OSError("disk error")
             calllog.record(event)
+
         modem = ScreenModem(call_observer=observer)
         modem.receive_call(NUMBER)
         with self.assertLogs("opos.calls", level="WARNING"):

@@ -31,7 +31,7 @@ class TestSheetInert(unittest.TestCase):
     def test_close_restores_background_before_focus(self):
         start = self.html.find("function closeSheet(){")
         focus = self.html.find("meterEl.focus()", start)
-        snippet = self.html[start:focus + len("meterEl.focus()")]
+        snippet = self.html[start : focus + len("meterEl.focus()")]
         self.assertIn("setBehind(false)", snippet)
         self.assertLess(snippet.find("setBehind(false)"), snippet.find("meterEl.focus()"))
 

@@ -38,7 +38,15 @@ class WizardPageTests(unittest.TestCase):
             self.assertEqual(url, "http://127.0.0.1:")
 
     def test_seven_steps_and_headings_exist(self):
-        for heading in ("Device", "Services", "Daily goal", "Battery health", "Security", "AI coding tools", "Review and apply"):
+        for heading in (
+            "Device",
+            "Services",
+            "Daily goal",
+            "Battery health",
+            "Security",
+            "AI coding tools",
+            "Review and apply",
+        ):
             self.assertIn(heading, self.html)
         self.assertIn(">Back<", self.html)
         self.assertIn(">Next<", self.html)
@@ -207,7 +215,7 @@ class WizardPageTests(unittest.TestCase):
         # JRY32: the leading edition panel is a jaryo-step section (not a data-jstep) before the eight personal steps.
         self.assertEqual(parser.jaryo_sections, ["jaryo-edition", "j1", "j2", "j3", "j4", "j5", "j6", "j8", "j7"])
         self.assertIn('const steps=qa(".step:not(.jaryo-step)")', self.html)
-        self.assertIn('if(window.jaryoSetup)window.jaryoSetup.start()', self.html)
+        self.assertIn("if(window.jaryoSetup)window.jaryoSetup.start()", self.html)
         self.assertEqual(len(parser.apply_attrs), 1)
         self.assertEqual(parser.apply_attrs[0].get("type"), "button")
         self.assertEqual(parser.apply_texts, ["Apply"])
