@@ -569,6 +569,20 @@ class NoAnswerAboutTheLockHoldsTheShell(unittest.TestCase):
         sh.settle("lock", "complete")
         self.assertEqual(sh.page, "lock", "the unlock drag does nothing")
 
+    def test_the_converter_page_is_not_reachable_while_held_so_working_it_out_here_opens_nothing(self):
+        """The converter runs in the shell's own process, so the server's refusal while locked (403) is not what keeps a
+        locked phone out of it: the shell is. With a PIN lock, or without a verdict on one, the shell shows its lock page
+        and nothing else, and a server that enforces a lock sends the shell to the browser (status 11) before any page."""
+        sh = self.sh
+        sh.pages["convert"] = base.Recorder("convert")
+        with contextlib.redirect_stderr(io.StringIO()):
+            sh.polled(sh.seq.issue(), self.state(), None)
+        sh.go("convert")
+        self.assertEqual((sh.page, sh.held), ("lock", True))
+        self.assertEqual(
+            (sh.pages["convert"].entered, sh.pages["convert"].shown), (0, []), "the converter was not opened"
+        )
+
     def test_a_reply_to_an_action_is_not_drawn_while_held_and_the_screen_that_asked_is_still_told(self):
         sh, told = self.sh, []
         sh.polled(sh.seq.issue(), self.state(), False)

@@ -167,6 +167,9 @@ class Screens(unittest.TestCase):
             Thread=lambda target, daemon=None: types.SimpleNamespace(start=lambda: self.work.append(target))
         )
         self.shell = FakeShell()
+        # the converter tests below that use the server stand-in run with the in-process code withheld; the ones for the
+        # in-process path hand it in with local_converter()
+        self.screens.Converter.source = staticmethod(lambda: None)
 
     def flush(self):
         """The server answers every request made so far, in order."""
@@ -1006,6 +1009,190 @@ class Screens(unittest.TestCase):
         self.shell.core.answers = [
             {"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length", "src": "km", "dst": "mi"}
         ]
+        c.convert()
+        self.flush()
+        self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")
+
+    # --- Converter, in this process -------------------------------------------------------------------------------
+    def local_converter(self, amount="5"):
+        """A Converter that works conversions out in this process, with a server that cannot be reached at all."""
+
+        def down(name, data=None):
+            raise OSError("connection refused")
+
+        self.shell.core.app = down
+        c = self.page(self.screens.Converter)
+        c.source = self.screens.converter_source
+        c.enter()
+        self.flush()
+        for ch in amount:
+            c.key(ch)
+        return c
+
+    def test_the_converter_works_with_the_server_down_and_asks_it_nothing(self):
+        from opos import convert
+
+        c = self.local_converter("5")
+        self.assertEqual([k["id"] for k in c.kinds], [k["id"] for k in convert.snapshot()["kinds"]])
+        self.assertEqual((c.kind, c.src, c.dst), ("length", "km", "mi"))
+        self.assertEqual(c.note.get_label(), "", "no 'not available' while the server is down")
+        c.convert()
+        self.assertEqual((c.go.get_label(), c.go.sensitive), ("Converting", False))
+        self.flush()
+        want = convert.convert("length", "5", "km", "mi")
+        self.assertEqual((c.result.get_label(), c.line.get_label()), (want["text"], want["line"]))
+        self.assertEqual((c.go.get_label(), c.go.sensitive), ("Convert", True))
+        self.assertEqual(self.shell.core.sent, [], "the server was never asked")
+
+    def test_the_screen_gives_the_servers_answer_for_every_input_and_unit_pair(self):
+        """One table, one handler: for every measure, every ordered pair of units and a table of amounts (good, refused,
+        edge), what the screen shows equals what the server's /api/convert handler answers, word for word."""
+        from opos import convert, convert_page
+
+        amounts = [
+            "0",
+            "1",
+            "5",
+            "12.5",
+            "0.000001",
+            "999999999999",
+            "1000000000000",
+            "1000000000001",
+            "-1",
+            "-0",
+            "-273.15",
+            "-273.16",
+            "-300",
+            "-459.67",
+            "-459.68",
+            "00",
+            "1.",
+            ".5",
+            "+3",
+            "1e5",
+            "abc",
+            " 5",
+            "5 ",
+            "٣",
+            "9" * 41,
+        ]
+        seen = set()
+        for kind in convert.snapshot()["kinds"]:
+            ids = [u["id"] for u in kind["units"]]
+            for src in ids:
+                for dst in ids:
+                    if src == dst:
+                        continue
+                    for amount in amounts:
+                        c = self.local_converter("")
+                        c.kind, c.src, c.dst = kind["id"], src, dst
+                        c.entry.text = amount
+                        c.changed()
+                        c.convert()
+                        if not amount:
+                            continue
+                        self.flush()
+                        status, body = convert_page.post({"kind": kind["id"], "value": amount, "src": src, "dst": dst})
+                        if status == 200:
+                            self.assertEqual(
+                                (c.result.get_label(), c.line.get_label(), c.note.get_label()),
+                                (body["text"], body["line"], ""),
+                                (kind["id"], src, dst, amount),
+                            )
+                        else:
+                            seen.add(body["error"])
+                            self.assertEqual(
+                                (c.result.get_label(), c.line.get_label(), c.note.get_label()),
+                                ("", "", self.screens.Converter.refusal_words(body)),
+                                (kind["id"], src, dst, amount),
+                            )
+                        self.assertTrue(c.go.sensitive)
+        self.assertEqual(seen, {"value", "sign", "cold"}, "every refusal a typed amount can cause was in the table")
+        self.assertEqual(self.screens.Converter.refusal_words({"error": "value"}), "Enter a number.")
+        self.assertEqual(
+            self.screens.Converter.refusal_words({"error": "sign"}), "Length, mass and volume stay at zero or more."
+        )
+        self.assertEqual(self.screens.Converter.refusal_words({"error": "cold"}), "That is below absolute zero.")
+
+    def test_the_in_process_answer_is_the_handlers_answer_for_a_request_the_screen_could_not_send(self):
+        """The refusals the buttons cannot cause (an unknown unit or measure, a request that is not an object) come out
+        of the same handler with the same codes, so a screen given such a body says what the server's page would."""
+        from opos import convert_page
+
+        read, post = self.screens.converter_source()
+        for body in (
+            {"kind": "length", "value": "1", "src": "km", "dst": "zz"},
+            {"kind": "heat", "value": "1", "src": "c", "dst": "f"},
+            {},
+            {"kind": "length", "value": 5, "src": "km", "dst": "mi"},
+            {"kind": "length", "value": True, "src": "km", "dst": "mi"},
+        ):
+            self.assertEqual(post(body), convert_page.post(body))
+        c = self.page(self.screens.Converter)
+        c.source = self.screens.converter_source
+        self.assertEqual(c.fetch({"kind": "length", "value": "1", "src": "km", "dst": "zz"}), {"error": "unit"})
+        self.assertEqual(c.fetch({}), {"error": "kind"})
+        self.assertEqual(c.fetch(None), read())
+
+    def test_the_server_is_asked_only_when_the_converters_own_code_is_unavailable(self):
+        c = self.page(self.screens.Converter)
+        self.assertIsNone(c.source(), "this test class withholds it")
+        self.shell.core.answers = [self.KINDS]
+        c.enter()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("convert", None)])
+        c.source = self.screens.converter_source
+        c.refresh()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("convert", None)], "now it is worked out here")
+
+    def test_in_process_an_older_answer_is_still_never_drawn_over_a_newer_one(self):
+        c = self.local_converter("5")
+        c.convert()
+        old = self.work.pop(0)
+        c.busy = False  # as if that answer had been given up on; a newer request is then sent
+        c.set_busy(False)
+        c.key("0")  # 50 km
+        c.convert()
+        self.flush()
+        self.assertEqual(c.line.get_label(), "50 km = 31.0686 mile")
+        old()
+        self.assertEqual(
+            c.line.get_label(), "50 km = 31.0686 mile", "the answer for 5 km arrived late and is not drawn"
+        )
+
+    def test_in_process_one_conversion_is_asked_at_a_time_and_the_input_holds_while_it_is_on_its_way(self):
+        c = self.local_converter("5")
+        c.convert()
+        c.convert()
+        self.assertEqual(len(self.work), 1, "a second tap sends nothing")
+        c.key("9")
+        c.next_unit("src")
+        c.next_unit("dst")
+        c.swap()
+        c.next_kind()
+        self.assertEqual(c.inputs(), ("length", "5", "km", "mi"))
+        self.flush()
+        self.assertEqual(c.line.get_label(), "5 km = 3.10686 mile")
+        c.key("9")
+        self.assertEqual((c.result.get_label(), c.line.get_label()), ("", ""), "a later change clears the answer")
+
+    def test_in_process_a_refusal_is_said_in_the_converters_words_and_no_result_stays(self):
+        c = self.local_converter("5")
+        c.convert()
+        self.flush()
+        c.key("<")
+        c.key("-")
+        c.key("1")
+        c.convert()
+        self.flush()
+        self.assertEqual((c.result.get_label(), c.line.get_label()), ("", ""))
+        self.assertEqual(c.note.get_label(), "Length, mass and volume stay at zero or more.")
+        self.assertTrue(c.go.sensitive)
+
+    def test_the_home_preview_shows_the_last_answer_in_process(self):
+        c = self.local_converter("5")
+        self.assertEqual(c.preview({})[0], "No conversion yet.")
         c.convert()
         self.flush()
         self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")

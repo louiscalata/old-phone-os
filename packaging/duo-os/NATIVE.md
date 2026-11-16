@@ -22,7 +22,8 @@ handling and the frame pacing have not been run on the phone, and no image with 
 | `packaging/duo-os/opos-native` | the session launcher: keeps the shell running and hands over to the browser when it cannot |
 
 The rules for battery, calls, messages, alarms, notes and storage stay in the OPOS server. The shell draws what the server
-last said and asks it to act.
+last said and asks it to act. The Calculator and the Converter have no state to keep, so they are worked out in the shell
+itself (the Converter with the server's own converter code).
 
 ## How a start is chosen
 
@@ -74,16 +75,21 @@ redirect to another address is not followed, so the shell's token and the owner'
   back while the call is up. A failed poll keeps the last good state and says the connection is lost; it never shows an
   empty phone.
 - Notes opens only the note its last open or New note request asked for, matched by request number.
-- Converter (`OPOS_APPS` names `convert`) reads its measures and units from the server's `/api/convert` and sends each
-  conversion there, as the browser's `/convert` page does. The phone works nothing out: the answer shown is the
-  server's own text and line, and a refusal is said in the browser page's words ("Enter a number.", "Length, mass and
-  volume stay at zero or more.", "That is below absolute zero."). The amount is typed on the screen's own number pad;
-  Measure, From and To step through the server's units, and Swap exchanges From and To. One conversion is asked at a
+- Converter (`OPOS_APPS` names `convert`) works its measures and conversions out in the shell's own process, with the
+  code the server runs for `/api/convert` and the browser's `/convert` page (`opos.convert` and that page's own handler:
+  one table of factors, one set of refusals). It needs no server and keeps working while the server is down; only if that
+  code cannot be loaded does it ask the server's `/api/convert` instead. A conversion has no state, so this does not move
+  any of the server's rules into the shell, and the Calculator already works the same way. The answer shown is that
+  code's own text and line, and a refusal is said in the browser page's words ("Enter a number.", "Length, mass and
+  volume stay at zero or more.", "That is below absolute zero."). The shell never runs while the server has a PIN lock
+  (it hands over to the browser), so working a conversion out here opens nothing a lock keeps closed. The amount is typed
+  on the screen's own number pad;
+  Measure, From and To step through the converter's units, and Swap exchanges From and To. One conversion is asked at a
   time: Convert says "Converting" and a second tap sends nothing. While it is on its way the amount and the units cannot
   change, and an answer is drawn only when it is the answer to the last request, for the measure and units on screen;
   any later change clears it. A conversion changes nothing on the server, so its answer sets no floor and asks for no
-  refresh. A lost connection says "That conversion is not available.", never the error's own text. Nothing is stored:
-  the amount and the last answer live in the page while the shell runs.
+  refresh. A conversion that cannot be worked out says "That conversion is not available.", never an error's own text.
+  Nothing is stored: the amount and the last answer live in the page while the shell runs.
 - A change the owner asks for shows only when the server has confirmed it. A typed message, a new contact or a new alarm
   stays where it is until then; a refusal (an empty battery, a number the practice phone will not dial) is shown in the
   server's own words.
