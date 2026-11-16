@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Identity phases used by build-image.sh; accepts a scratch rootfs for offline tests."""
+
 import argparse
 import importlib.util
 import json
@@ -30,10 +31,18 @@ def watched(root):
     # All build destinations, including the exposure edits to upstream files and
     # dynamic masks for telnet units. /etc is small; unchanged base files stay out
     # of the manifest. No base file content is copied into this state inventory.
-    names = ["etc", "usr/libexec/opos", "usr/libexec/opos-updater", "usr/bin/opos-version",
-             "usr/lib/os-release.base", "usr/local/sbin/sfduo-composer-watchdog",
-             "lib/systemd/system", "usr/lib/systemd/system",
-             "var/lib/lxc/android/default.prop", "var/lib/lxc/android/rootfs/default.prop"]
+    names = [
+        "etc",
+        "usr/libexec/opos",
+        "usr/libexec/opos-updater",
+        "usr/bin/opos-version",
+        "usr/lib/os-release.base",
+        "usr/local/sbin/sfduo-composer-watchdog",
+        "lib/systemd/system",
+        "usr/lib/systemd/system",
+        "var/lib/lxc/android/default.prop",
+        "var/lib/lxc/android/rootfs/default.prop",
+    ]
     for p in identity.rooted(root, "usr/sbin").glob("opos-*"):
         names.append("usr/sbin/" + p.name)
     passwd = identity.rooted(root, "etc/passwd")
@@ -78,16 +87,31 @@ def prepare(a):
     if not fields.get("NAME") or fields.get("ID") == "opos" or not re.fullmatch(r"[a-z0-9._-]+", fields.get("ID", "")):
         raise ValueError("base os-release needs its upstream NAME and ID")
     before = watched(a.root)
-    data = {"format": 1, "version": version, "revision": a.revision, "build_id": a.revision[:12],
-            "home_url": home, "source_date_epoch": int(epoch),
-            "base": {"sha256": a.base_sha256 or identity.hash_file(a.base), "os_release": fields}}
+    data = {
+        "format": 1,
+        "version": version,
+        "revision": a.revision,
+        "build_id": a.revision[:12],
+        "home_url": home,
+        "source_date_epoch": int(epoch),
+        "base": {"sha256": a.base_sha256 or identity.hash_file(a.base), "os_release": fields},
+    }
     Path(a.state).write_bytes(identity.canonical({"manifest": data, "before": before, "previous": previous}))
     write(a.root, "usr/lib/os-release.base", original)
-    values = {"NAME": "Old Phone OS", "ID": "opos", "ID_LIKE": identity.ancestry(fields),
-              "VERSION": version, "VERSION_ID": version, "BUILD_ID": a.revision[:12],
-              "HOME_URL": home, "PRETTY_NAME": "Old Phone OS " + version}
+    values = {
+        "NAME": "Old Phone OS",
+        "ID": "opos",
+        "ID_LIKE": identity.ancestry(fields),
+        "VERSION": version,
+        "VERSION_ID": version,
+        "BUILD_ID": a.revision[:12],
+        "HOME_URL": home,
+        "PRETTY_NAME": "Old Phone OS " + version,
+    }
+
     def quote(value):
-        return '"' + re.sub(r'([\\"$`])', r'\\\1', value) + '"'
+        return '"' + re.sub(r'([\\"$`])', r"\\\1", value) + '"'
+
     release = "".join(k + "=" + (v if k == "ID" else quote(v)) + "\n" for k, v in values.items())
     write(a.root, "etc/os-release", release.encode("utf-8"))
     write(a.root, "etc/issue", ("Old Phone OS " + version + " \\n \\l\n").encode("utf-8"))
@@ -121,9 +145,13 @@ def baked_switches(root):
                     if len(words) == 1:
                         result[key] = words[0]
     # Record what is actually baked, including a rule retained in an OPOS base.
-    result["OPOS_NET_POLKIT"] = "1" if identity.rooted(root, "etc/polkit-1/rules.d/50-opos-network.rules").exists() else "0"
+    result["OPOS_NET_POLKIT"] = (
+        "1" if identity.rooted(root, "etc/polkit-1/rules.d/50-opos-network.rules").exists() else "0"
+    )
     usb = identity.rooted(root, "etc/opos/usb-shell.conf")
-    result["OPOS_DEV_USB_SHELL"] = "1" if usb.exists() and "enabled=1" in usb.read_text(encoding="utf-8").splitlines() else "0"
+    result["OPOS_DEV_USB_SHELL"] = (
+        "1" if usb.exists() and "enabled=1" in usb.read_text(encoding="utf-8").splitlines() else "0"
+    )
     result["OPOS_DEV_SSH_PUBKEY"] = "1" if os.environ.get("OPOS_DEV_SSH_PUBKEY") else "0"
     cfg = identity.rooted(root, "etc/opos/update.json")
     result["OPOS_UPDATE_URL"] = json.loads(cfg.read_bytes())["url"] if cfg.exists() else ""
@@ -136,19 +164,29 @@ def finish(a):
     state = json.loads(Path(a.state).read_bytes())
     after = watched(a.root)
     names = {name for name, f in after.items() if state["before"].get(name) != f}
-    names.update(name for name in state.get("previous", []) if identity.rooted(a.root, name, follow=False).exists()
-                 or identity.rooted(a.root, name, follow=False).is_symlink())
+    names.update(
+        name
+        for name in state.get("previous", [])
+        if identity.rooted(a.root, name, follow=False).exists()
+        or identity.rooted(a.root, name, follow=False).is_symlink()
+    )
     # Include every OPOS-installed file even if a previous OPOS base already had
     # identical bytes. Release files use their physical, immutable image paths.
     for start in ("opt/opos", "opt/opos-releases", "usr/libexec/opos", "usr/libexec/opos-updater", "etc/opos"):
         names.update(leaves(a.root, start))
     for name in after:
-        if (name.startswith("usr/sbin/opos-") or
-                any(part.startswith("opos") for part in name.split("/")[3:]) and name.startswith("etc/systemd/system/") or
-                name.startswith("etc/default/opos") or
-                name.startswith("etc/polkit-1/rules.d/50-opos-") or
-                name in ("etc/systemd/journald.conf.d/50-opos-persistent.conf",
-                         "etc/NetworkManager/conf.d/90-opos-wifi-compat.conf")):
+        if (
+            name.startswith("usr/sbin/opos-")
+            or any(part.startswith("opos") for part in name.split("/")[3:])
+            and name.startswith("etc/systemd/system/")
+            or name.startswith("etc/default/opos")
+            or name.startswith("etc/polkit-1/rules.d/50-opos-")
+            or name
+            in (
+                "etc/systemd/journald.conf.d/50-opos-persistent.conf",
+                "etc/NetworkManager/conf.d/90-opos-wifi-compat.conf",
+            )
+        ):
             names.add(name)
     names.update(identity.REQUIRED)
     names.add("usr/local/sbin/sfduo-composer-watchdog")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scan full git history for secrets without printing them."""
+
 import argparse
 import fnmatch
 import importlib.util
@@ -101,7 +102,20 @@ def main(argv: List[str] | None = None) -> int:
         base = os.path.dirname(os.path.abspath(__file__))
         patterns = [(f"guard{i}", p) for i, p in enumerate(load_private(base))]
         patterns += extra_patterns()
-        log = run_git(repo, "-c", "color.ui=false", "log", "--all", "-m", "-p", "--text", "--no-color", "--no-ext-diff", "--no-textconv", "--format=%x01C%x01%H%x09%an%x09%ae%x02%B%x01E%x01")
+        log = run_git(
+            repo,
+            "-c",
+            "color.ui=false",
+            "log",
+            "--all",
+            "-m",
+            "-p",
+            "--text",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--format=%x01C%x01%H%x09%an%x09%ae%x02%B%x01E%x01",
+        )
     except (SystemExit, Exception) as e:
         print(f"history scan: FAIL ({e})")
         return 1
@@ -154,7 +168,18 @@ def main(argv: List[str] | None = None) -> int:
                     findings.append(f"{commit} content {redact_path(path, patterns)}: {short(m.group(0))}")
                     break
     try:
-        names = run_git(repo, "-c", "color.ui=false", "log", "--all", "--no-color", "--no-ext-diff", "--no-textconv", "--name-only", "--format=%H")
+        names = run_git(
+            repo,
+            "-c",
+            "color.ui=false",
+            "log",
+            "--all",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "--format=%H",
+        )
     except Exception as e:
         print(f"history scan: FAIL ({e})")
         return 1

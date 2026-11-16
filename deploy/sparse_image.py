@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Stream raw ext4 to Android sparse format and verify its hash."""
+
 import hashlib
 import os
 import struct
 import sys
 
-_MAGIC = 0xed26ff3a
+_MAGIC = 0xED26FF3A
 _MAJOR = 1
 _MINOR = 0
 _FILE_HDR_SZ = 28
@@ -106,7 +107,11 @@ def convert(raw_path, sparse_path):
             out.write(_ZERO_FILL)
             total_chunks += 1
         out.seek(0)
-        out.write(struct.pack(_HDR_FMT, _MAGIC, _MAJOR, _MINOR, _FILE_HDR_SZ, _CHUNK_HDR_SZ, _BLK_SZ, total_blocks, total_chunks, 0))
+        out.write(
+            struct.pack(
+                _HDR_FMT, _MAGIC, _MAJOR, _MINOR, _FILE_HDR_SZ, _CHUNK_HDR_SZ, _BLK_SZ, total_blocks, total_chunks, 0
+            )
+        )
     return (total_blocks, total_chunks)
 
 
@@ -125,7 +130,14 @@ def check(raw_path, sparse_path):
         if len(hdr) != _FILE_HDR_SZ:
             raise ValueError("truncated header")
         magic, major, minor, fhs, chs, blk_sz, total_blks, total_chunks, _crc = struct.unpack(_HDR_FMT, hdr)
-        if magic != _MAGIC or major != _MAJOR or minor != _MINOR or fhs != _FILE_HDR_SZ or chs != _CHUNK_HDR_SZ or blk_sz != _BLK_SZ:
+        if (
+            magic != _MAGIC
+            or major != _MAJOR
+            or minor != _MINOR
+            or fhs != _FILE_HDR_SZ
+            or chs != _CHUNK_HDR_SZ
+            or blk_sz != _BLK_SZ
+        ):
             raise ValueError("unsupported header")
         expanded = 0
         for _ in range(total_chunks):

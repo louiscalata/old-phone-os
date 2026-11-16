@@ -19,6 +19,7 @@ It reads files only. It does not run systemd: the order systemd computes on the 
 model of systemd's rules, not systemd: DefaultDependencies= ordering against basic.target and shutdown.target is left
 out, and the order between the inherited targets is the summary in INHERITED_ORDER.
 """
+
 import argparse
 import re
 import shlex
@@ -62,7 +63,7 @@ INHERITED = {
     "phosh.service": "Phosh project: the port's phone shell; OPOS's fallback for one boot (Conflicts=, opos-fallback)",
     "item.service": "Droidian port (item): the port's own shell unit, replaced by OPOS (Conflicts=)",
     "sensorfwd.service": "Droidian port: the sensor service, shipped disabled; opos-sensorfwd-delayed.service starts it "
-                         "once and OPOS adds only the drop-in sensorfwd.service.d/70-opos-boot.conf",
+    "once and OPOS adds only the drop-in sensorfwd.service.d/70-opos-boot.conf",
     "timers.target": "systemd (Debian): the target that enabled timers are linked into (basic.target wants it)",
 }
 
@@ -85,10 +86,16 @@ CLASSES = (FATAL, DEGRADE)
 # fails and opos-fallback starts phosh for this boot, or the session runs with nothing to show). degrade: the
 # interface still comes up, without that one part.
 FAILURE_CLASS = {
-    "opos.service": (FATAL, "the session (opos-session, phoc, the kiosk): it restarts; at its start limit or exit 75 "
-                            "OnFailure= starts opos-fallback"),
-    "opos-server.service": (FATAL, "the page and every API: Restart=always; opos-kiosk waits for it, then starts "
-                                   "Chromium anyway, so the session stays up with nothing to show"),
+    "opos.service": (
+        FATAL,
+        "the session (opos-session, phoc, the kiosk): it restarts; at its start limit or exit 75 "
+        "OnFailure= starts opos-fallback",
+    ),
+    "opos-server.service": (
+        FATAL,
+        "the page and every API: Restart=always; opos-kiosk waits for it, then starts "
+        "Chromium anyway, so the session stays up with nothing to show",
+    ),
     "opos-update-boot.service": (DEGRADE, "the staged update is not applied; the installed release keeps running"),
     "opos-update-confirm.service": (DEGRADE, "a boot-applied update is not confirmed (docs/ota-update.md)"),
     "opos-update.path": (DEGRADE, "delivered updates are not noticed until the next boot"),
@@ -101,8 +108,11 @@ FAILURE_CLASS = {
     "opos-volumekey.service": (DEGRADE, "the volume keys do nothing; it restarts with the session"),
     "opos-osk.service": (DEGRADE, "no port keyboard; the in-page keyboard is the default anyway"),
     "opos-diag.service": (DEGRADE, "no /var/log/opos-boot-diag.txt for this boot; the journal remains"),
-    "opos-fallback.service": (DEGRADE, "runs only after the session failed; if it fails too, the screen stays on "
-                                       "the failed session (there is no second fallback)"),
+    "opos-fallback.service": (
+        DEGRADE,
+        "runs only after the session failed; if it fails too, the screen stays on "
+        "the failed session (there is no second fallback)",
+    ),
     "opos-sensorfwd-delayed.timer": (DEGRADE, "sensorfwd is not started this boot; nothing else waits for it"),
     "opos-sensorfwd-delayed.service": (DEGRADE, "sensorfwd is not started this boot; nothing else waits for it"),
 }
@@ -114,6 +124,7 @@ BUILD_CONDITIONAL = {"opos-clock-set.path": "OPOS_DEV_SSH_PUBKEY"}
 
 def _allowed(name, condition):
     return condition is None or (name in BUILD_CONDITIONAL and BUILD_CONDITIONAL[name] in condition)
+
 
 # The order the boot is written to have: (earlier, later). check_order() reports each pair the files do not give.
 BOOT_ORDER = (
@@ -147,10 +158,24 @@ LAYER_NODES = {
     "boot": "Boot chain: firmware, boot.img, RAM boot (PC session)",
 }
 LAYER_EDGES = (
-    ("apps", "shell"), ("shell", "server"), ("shell", "phoc"), ("kiosk", "server"), ("kiosk", "phoc"),
-    ("session", "phoc"), ("session", "server"), ("phoc", "vendor"), ("server", "services"), ("server", "profile"),
-    ("updater", "systemd"), ("session", "systemd"), ("server", "systemd"), ("services", "systemd"),
-    ("vendor", "kernel"), ("profile", "kernel"), ("systemd", "kernel"), ("kernel", "boot"),
+    ("apps", "shell"),
+    ("shell", "server"),
+    ("shell", "phoc"),
+    ("kiosk", "server"),
+    ("kiosk", "phoc"),
+    ("session", "phoc"),
+    ("session", "server"),
+    ("phoc", "vendor"),
+    ("server", "services"),
+    ("server", "profile"),
+    ("updater", "systemd"),
+    ("session", "systemd"),
+    ("server", "systemd"),
+    ("services", "systemd"),
+    ("vendor", "kernel"),
+    ("profile", "kernel"),
+    ("systemd", "kernel"),
+    ("kernel", "boot"),
 )
 
 
@@ -270,7 +295,7 @@ def _image_path(token):
 
 
 def _here_path(token):
-    return token[len("$here/"):] if token.startswith("$here/") else None
+    return token[len("$here/") :] if token.startswith("$here/") else None
 
 
 _WANTS = re.compile(r"^/etc/systemd/system/(" + UNIT_NAME + r")\.(?:wants|requires)/(" + UNIT_NAME + r")$")
@@ -420,8 +445,12 @@ class Graph:
                 self._edge(u.name, t)
         for l in self.links:
             u = units.get(l.unit)
-            if (l.target.endswith(".target") and u is not None
-                    and u.get("Unit", "DefaultDependencies") != ["no"] and l.target not in u.deps("After")):
+            if (
+                l.target.endswith(".target")
+                and u is not None
+                and u.get("Unit", "DefaultDependencies") != ["no"]
+                and l.target not in u.deps("After")
+            ):
                 self._edge(l.unit, l.target)
         for a, b in INHERITED_ORDER:
             self._edge(a, b)
@@ -603,7 +632,9 @@ def check_failure_classes(g):
         for k in ("Requires", "BindsTo", "Requisite"):
             for x in g.units[name].deps(k):
                 if FAILURE_CLASS.get(x, (None,))[0] == DEGRADE:
-                    problems.append(f"{name} ({FATAL}) has {k}={x}, a {DEGRADE} unit: its failure would take the session down")
+                    problems.append(
+                        f"{name} ({FATAL}) has {k}={x}, a {DEGRADE} unit: its failure would take the session down"
+                    )
     return problems
 
 
@@ -681,19 +712,28 @@ def check_enabled(g):
         if l.points_to != UNIT_DIR + l.unit:
             problems.append(f"build-image.sh links {l.target}.wants/{l.unit} to {l.points_to}")
         if l.target not in u.deps("WantedBy", "Install") + u.deps("RequiredBy", "Install"):
-            problems.append(f"build-image.sh links {l.target}.wants/{l.unit}, but its [Install] does not name {l.target}")
+            problems.append(
+                f"build-image.sh links {l.target}.wants/{l.unit}, but its [Install] does not name {l.target}"
+            )
     dev = g.reachable(dev=True)
     rel = g.reachable(dev=False)
     for name in sorted(g.units):
         if name not in dev:
-            problems.append(f"{name}: nothing starts it (no .wants link, Wants=, Requires=, BindsTo=, OnFailure=, path or "
-                            f"timer)")
-    dev_roots = {l.unit for l in g.links if l.condition is not None and (l.target, l.unit) not in
-                 {(m.target, m.unit) for m in g.links if m.condition is None}}
+            problems.append(
+                f"{name}: nothing starts it (no .wants link, Wants=, Requires=, BindsTo=, OnFailure=, path or timer)"
+            )
+    dev_roots = {
+        l.unit
+        for l in g.links
+        if l.condition is not None
+        and (l.target, l.unit) not in {(m.target, m.unit) for m in g.links if m.condition is None}
+    }
     conditional = {n for n in dev_roots if n not in rel}
     if set(BUILD_CONDITIONAL) != conditional:
-        problems.append(f"units enabled only under a build condition: {sorted(conditional)}, "
-                        f"BUILD_CONDITIONAL says {sorted(BUILD_CONDITIONAL)}")
+        problems.append(
+            f"units enabled only under a build condition: {sorted(conditional)}, "
+            f"BUILD_CONDITIONAL says {sorted(BUILD_CONDITIONAL)}"
+        )
     for name, var in BUILD_CONDITIONAL.items():
         for l in g.links:
             if l.unit == name and (l.condition is None or var not in l.condition):
@@ -701,8 +741,10 @@ def check_enabled(g):
     only_dev = (dev - rel) & set(g.units)
     from_dev = g.reachable(dev=True, roots=tuple(BUILD_CONDITIONAL)) & set(g.units)
     if not only_dev <= from_dev:
-        problems.append(f"units missing from an image without build inputs, and not in BUILD_CONDITIONAL: "
-                        f"{sorted(only_dev - from_dev)}")
+        problems.append(
+            f"units missing from an image without build inputs, and not in BUILD_CONDITIONAL: "
+            f"{sorted(only_dev - from_dev)}"
+        )
     return problems
 
 
@@ -738,7 +780,9 @@ def check_fallback(g):
     if "opos-fallback.service" not in u.deps("OnFailure"):
         problems.append("opos.service: OnFailure=opos-fallback.service is missing")
     if "75" not in " ".join(u.get("Service", "RestartPreventExitStatus")).split():
-        problems.append("opos.service: RestartPreventExitStatus= does not hold 75, so a kiosk give-up restarts the session")
+        problems.append(
+            "opos.service: RestartPreventExitStatus= does not hold 75, so a kiosk give-up restarts the session"
+        )
     if "75" in " ".join(u.get("Service", "SuccessExitStatus")).split():
         problems.append("opos.service: SuccessExitStatus= holds 75, so a give-up would end the unit without a failure")
     if not any("/usr/libexec/opos/opos-session" in v for v in u.get("Service", "ExecStart")):
@@ -859,8 +903,16 @@ def all_problems(root=REPO):
     except (OSError, ParseError) as e:
         return [f"cannot read the graph: {e}"]
     out = []
-    for check in (check_references, check_failure_classes, check_cycles, check_order, check_installed,
-                  check_enabled, check_entry_points, check_fallback):
+    for check in (
+        check_references,
+        check_failure_classes,
+        check_cycles,
+        check_order,
+        check_installed,
+        check_enabled,
+        check_entry_points,
+        check_fallback,
+    ):
         out += check(g)
     if not check_cycles(g):
         out += check_doc(g, root)
