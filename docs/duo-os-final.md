@@ -98,18 +98,19 @@ unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot preserve a root shel
 ## What is not known
 
 - **Nothing is measured about battery life or stability.** No drain curve, heat, standby or multi-day run exists for this image.
-  One finding to act on: the sysfs battery path never reads a temperature, so `temp_c` stays at OPOS's default 30.0 and the heat
-  rules do not see the phone's real heat. `battery.temp` in the selftest WARNs on exactly that.
+  The Duo gauge reader reads available sysfs temperature values. Missing readings can leave the runtime at its default
+  temperature, so source support does not establish that heat protection works on the phone. Device temperature verification
+  remains required; `battery.temp` warns when the default appears without a sysfs reading or when the values disagree.
 - **RAM-boot only.** The bootloader refuses boot-partition writes, so every boot comes from the PC. Nothing here makes it permanent.
 - **Never seen on the phone:** the keyboard under a finger and at the real 1392 x 900 window; the Network page against the phone's
   real NetworkManager, ModemManager and polkit (the password handshake is the main unknown, with `OPOS_NET_TTY=1` as the fallback);
   that Chromium on the phone honours `TZ`; that killing only Chromium after a zone change leaves phoc and the kiosk loop to bring
   the screen back; that the clock corrects itself once online; every output format the selftest reads (`wlr-randr`, `nmcli -t`,
   `journalctl`, `timedatectl`).
-- **The home page is larger on the Duo OS.** `web.page()` stays within the 100 KiB cap that `tests/test_uxp30_budget.py` holds it
-  to. With all three switches on the server also injects a Settings link for each of the Network page and the time zone, and the
-  keyboard's two tags: about 590 bytes, so the page the Duo is sent is about 102,900 bytes, roughly 500 bytes over 102,400.
-  `tests/test_duo_final.py` pins the injection at 650 bytes. Whether that is acceptable, or one link should go, is the owner's call.
+- **Page size depends on the source revision and enabled features.** The November 12 development record in
+  [ROADMAP.md](../ROADMAP.md) reports 101,895 bytes with volume and the existing switches enabled; this is a recorded local
+  result, not a phone-performance measurement. Older byte counts apply only to their named revisions.
+  [ui-byte-ledger.md](ui-byte-ledger.md) gives the current measurement command and the 102,000-byte gate.
 - **Over-the-air updates are built but not seen on the phone** ([ota-update.md](ota-update.md), [ota-release-howto.md](ota-release-howto.md)):
   the root updater, the `/update` page, the release tool and the USB push script are tested on a computer against stand-ins for systemd,
   runuser and the browser. An image built without `OPOS_UPDATE_SIGNERS` accepts no update, and the selftest's `ota.updater` says so (WARN).
@@ -136,9 +137,22 @@ done for this merge.
 For whoever holds the phone. Read-only unless a step says otherwise; replace `<phone>` and `<key>`. Keep the output: names,
 addresses and passwords appear in some of it.
 
-1. **Build and verify** (builder, root): `sudo sh packaging/duo-os/build-image.sh base-rootfs.img opos-os-rootfs.img HEAD`, with
-   `OPOS_DEV_SSH_PUBKEY=<file.pub>` for a dev image you can ssh into (add `OPOS_DEV_SPAN=1` to record a dev-span drop-in as well as the normal service span; `OPOS_DEV_SUDO=1` to give `droidian` passwordless sudo, for an image that is never carried or shared; and `OPOS_NET_POLKIT=1` only if step 5 shows NetworkManager
-   refusing); then `sudo sh packaging/duo-os/verify-image.sh opos-os-rootfs.img`. Expect `VERIFY: PASS` and, among the lines,
+1. **Build and verify** (Linux builder, root). Run from the OPOS checkout after replacing the quoted placeholders with absolute paths:
+
+   ```sh
+   sudo env OPOS_OWNER_SSH_PUBKEY="/absolute/path/to/owner.pub" \
+     sh packaging/duo-os/build-image.sh \
+     "/absolute/path/to/base-rootfs.img" \
+     "/absolute/path/to/new-opos-os-rootfs.img" HEAD
+
+   sudo sh packaging/duo-os/verify-image.sh \
+     "/absolute/path/to/new-opos-os-rootfs.img"
+   ```
+
+   A developer key is optional and does not replace the required owner recovery key. The output image must not already exist.
+   `OPOS_DEV_SSH_PUBKEY=<file.pub>` adds a developer key. With that key, `OPOS_DEV_SPAN=1` records a dev-span drop-in and
+   `OPOS_DEV_SUDO=1` gives `droidian` passwordless sudo for an image that is never carried or shared. `OPOS_NET_POLKIT=1`
+   installs the NetworkManager rule described above. Expect `VERIFY: PASS` and, among the lines,
    "the keyboard, the Network page and the first run answer together in one server from the image".
 2. **Boot** from the PC as before, wait five minutes (the boot dump is due 90 s after multi-user.target).
 3. **The suite, from the PC:** `pwsh -File deploy\duo-acceptance.ps1 -Host <phone> -Key <key> -OutDir <folder>`; on the phone,
