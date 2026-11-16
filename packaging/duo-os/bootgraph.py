@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The Duo image's service graph as data, read from the files that build it.
 
-Reads every *.service and *.path under packaging/duo-os/ and packaging/duo-os/updater/, the drop-ins build-image.sh
-installs from this folder, and the install, ln, rm and chmod lines of build-image.sh. From them it builds the ordering
-graph (After=, Before=, a path unit before the unit it starts, a target after the units it wants) and the pull-in graph
-(the .wants links, Wants=, Requires=, BindsTo=, OnFailure=, a path unit's Unit=). Two tables are declared here:
-INHERITED, the units OPOS depends on but does not ship, and FAILURE_CLASS, what a failure of each OPOS unit does.
+Reads every *.service, *.path and *.timer under packaging/duo-os/ and packaging/duo-os/updater/, the drop-ins
+build-image.sh installs from this folder, and the install, ln, rm and chmod lines of build-image.sh. From them it builds
+the ordering graph (After=, Before=, a path or timer unit before the unit it starts, a target after the units it wants)
+and the pull-in graph (the .wants links, Wants=, Requires=, BindsTo=, OnFailure=, a path or timer unit's Unit=). Two
+tables are declared here: INHERITED, the units OPOS depends on but does not ship, and FAILURE_CLASS, what a failure
+of each OPOS unit does.
 
     python3 packaging/duo-os/bootgraph.py --check     every check below; exit 1 and one line per problem
     python3 packaging/duo-os/bootgraph.py --print     the boot order, by level (units on one level may start together)
@@ -29,7 +30,10 @@ REPO = Path(__file__).resolve().parents[2]
 PKG_REL = Path("packaging") / "duo-os"
 DOC_REL = Path("docs") / "os-architecture.md"
 UNIT_DIR = "/etc/systemd/system/"
-UNIT_SUFFIXES = (".service", ".path")
+UNIT_SUFFIXES = (".service", ".path", ".timer")
+# A path or a timer unit starts one other unit: the one its [Path] or [Timer] Unit= names, else its own name as a
+# .service.
+TRIGGER_SECTIONS = {".path": "Path", ".timer": "Timer"}
 UNIT_NAME = r"[A-Za-z0-9_@:-]+(?:\.[A-Za-z0-9_-]+)*\.(?:service|target|socket|scope|path|timer|mount|slice)"
 DEP_KEYS = ("After", "Before", "Requires", "Requisite", "BindsTo", "Wants", "PartOf", "OnFailure", "Conflicts")
 INSTALL_KEYS = ("WantedBy", "RequiredBy")
@@ -57,6 +61,9 @@ INHERITED = {
     "android-service@hwcomposer.service": "Droidian/Halium: the vendor display composer inside the container",
     "phosh.service": "Phosh project: the port's phone shell; OPOS's fallback for one boot (Conflicts=, opos-fallback)",
     "item.service": "Droidian port (item): the port's own shell unit, replaced by OPOS (Conflicts=)",
+    "sensorfwd.service": "Droidian port: the sensor service, shipped disabled; opos-sensorfwd-delayed.service starts it "
+                         "once and OPOS adds only the drop-in sensorfwd.service.d/70-opos-boot.conf",
+    "timers.target": "systemd (Debian): the target that enabled timers are linked into (basic.target wants it)",
 }
 
 # Order between inherited units that the unit files rely on, summarized from systemd's standard targets
@@ -67,7 +74,9 @@ INHERITED_ORDER = (
 )
 # graphical.target, the default target, pulls in multi-user.target (systemd's own unit says so).
 DEFAULT_TARGET = "graphical.target"
-INHERITED_PULLS = (("graphical.target", "multi-user.target"),)
+# multi-user.target requires basic.target, which wants timers.target (basic.target is left out, as above; basic.target
+# is not ordered after timers.target, so no order is summarized for it).
+INHERITED_PULLS = (("graphical.target", "multi-user.target"), ("multi-user.target", "timers.target"))
 
 FATAL = "fatal-to-session"
 DEGRADE = "degrade"
@@ -94,6 +103,8 @@ FAILURE_CLASS = {
     "opos-diag.service": (DEGRADE, "no /var/log/opos-boot-diag.txt for this boot; the journal remains"),
     "opos-fallback.service": (DEGRADE, "runs only after the session failed; if it fails too, the screen stays on "
                                        "the failed session (there is no second fallback)"),
+    "opos-sensorfwd-delayed.timer": (DEGRADE, "sensorfwd is not started this boot; nothing else waits for it"),
+    "opos-sensorfwd-delayed.service": (DEGRADE, "sensorfwd is not started this boot; nothing else waits for it"),
 }
 
 # Units that build-image.sh installs or enables only when one build input is set, and that input. Every other unit is
@@ -145,6 +156,10 @@ LAYER_EDGES = (
 
 class ParseError(Exception):
     pass
+
+
+def is_trigger(name):
+    return Path(name).suffix in TRIGGER_SECTIONS
 
 
 @dataclass
@@ -393,14 +408,14 @@ class Graph:
         self.installs = build.installs
         self.links = list(build.links.values())
         self.order = {}  # node -> set of nodes ordered after it
-        self.trigger = set()  # (path unit, unit it starts)
+        self.trigger = set()  # (path or timer unit, unit it starts)
         for u in units.values():
             for x in u.deps("After"):
                 self._edge(x, u.name)
             for x in u.deps("Before"):
                 self._edge(u.name, x)
-            if u.name.endswith(".path"):
-                t = self.path_unit(u)
+            if is_trigger(u.name):
+                t = self.trigger_unit(u)
                 self.trigger.add((u.name, t))
                 self._edge(u.name, t)
         for l in self.links:
@@ -412,9 +427,10 @@ class Graph:
             self._edge(a, b)
 
     @staticmethod
-    def path_unit(u):
-        named = u.get("Path", "Unit")
-        return named[-1] if named else u.name[: -len(".path")] + ".service"
+    def trigger_unit(u):
+        suffix = Path(u.name).suffix
+        named = u.get(TRIGGER_SECTIONS[suffix], "Unit")
+        return named[-1] if named else u.name[: -len(suffix)] + ".service"
 
     def _edge(self, a, b):
         self.order.setdefault(a, set()).add(b)
@@ -452,8 +468,8 @@ class Graph:
             for k in ("Wants", "Requires", "BindsTo", "OnFailure"):
                 for x in u.deps(k):
                     edges.setdefault(u.name, set()).add(x)
-            if u.name.endswith(".path"):
-                edges.setdefault(u.name, set()).add(self.path_unit(u))
+            if is_trigger(u.name):
+                edges.setdefault(u.name, set()).add(self.trigger_unit(u))
         return edges
 
     def reachable(self, dev=True, roots=(DEFAULT_TARGET,)):
@@ -523,8 +539,8 @@ def references(g):
             out += [(u.name, x) for x in u.deps(k)]
         for k in INSTALL_KEYS:
             out += [(u.name, x) for x in u.deps(k, "Install")]
-        if u.name.endswith(".path"):
-            out.append((u.name, g.path_unit(u)))
+        if is_trigger(u.name):
+            out.append((u.name, g.trigger_unit(u)))
         for _, v in u.execs():
             out += [(u.name, x) for x in re.findall(r"(?<![\w/.-])" + UNIT_NAME + r"(?![\w.-])", v)]
     out += [("build-image.sh", l.target) for l in g.links]
@@ -670,7 +686,8 @@ def check_enabled(g):
     rel = g.reachable(dev=False)
     for name in sorted(g.units):
         if name not in dev:
-            problems.append(f"{name}: nothing starts it (no .wants link, Wants=, Requires=, BindsTo=, OnFailure= or path)")
+            problems.append(f"{name}: nothing starts it (no .wants link, Wants=, Requires=, BindsTo=, OnFailure=, path or "
+                            f"timer)")
     dev_roots = {l.unit for l in g.links if l.condition is not None and (l.target, l.unit) not in
                  {(m.target, m.unit) for m in g.links if m.condition is None}}
     conditional = {n for n in dev_roots if n not in rel}
@@ -694,7 +711,7 @@ def check_entry_points(g):
     src = g.root / "src"
     for name, found in sorted(entry_points(g).items()):
         u = g.units[name]
-        if not u.get("Service", "ExecStart") and not name.endswith(".path"):
+        if not u.get("Service", "ExecStart") and not is_trigger(name):
             problems.append(f"{name}: no ExecStart=")
         for ep in found:
             if ep.startswith("/"):
@@ -755,7 +772,7 @@ def _id(name):
 
 
 def boot_mermaid(g):
-    """Solid arrow: waits for (After=/Before=). Dotted: starts (a path unit's trigger, OnFailure=)."""
+    """Solid arrow: waits for (After=/Before=). Dotted: starts (a path or timer unit's trigger, OnFailure=)."""
     out = ["flowchart TD"]
     nodes = sorted(g.order)
     for n in nodes:

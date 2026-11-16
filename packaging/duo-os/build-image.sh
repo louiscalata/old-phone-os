@@ -167,6 +167,17 @@ printf '%s\n' '# The two-screen span for the native shell (PANE,HINGE in logical
     'OPOS_SPAN=675,42' > "$r/etc/default/opos-native"
 chmod 0644 "$r/etc/default/opos-native"
 # --- native shell: END
+# --- sensors: BEGIN (packaging/duo-os/README.md, "What is in the image")
+# sensorfwd (the port's sensor service) is started 120 s after boot by a timer, never at boot, because a sensor HAL start can stall the SoC
+# when it races other DSP clients. Restart is limited to 3 starts in 5 minutes. `touch /etc/opos/sensors-off` blocks future starts
+# only; a live stop also needs `systemctl disable --now opos-sensorfwd-delayed.timer` and `systemctl stop sensorfwd`. sensorfwd
+# itself stays disabled; only the timer is enabled.
+install -d -m 0755 "$r/etc/systemd/system/sensorfwd.service.d" "$r/etc/systemd/system/timers.target.wants"
+install -m 0644 "$here/opos-sensorfwd-boot.conf" "$r/etc/systemd/system/sensorfwd.service.d/70-opos-boot.conf"
+install -m 0644 "$here/opos-sensorfwd-delayed.service" "$r/etc/systemd/system/opos-sensorfwd-delayed.service"
+install -m 0644 "$here/opos-sensorfwd-delayed.timer" "$r/etc/systemd/system/opos-sensorfwd-delayed.timer"
+ln -sfn /etc/systemd/system/opos-sensorfwd-delayed.timer "$r/etc/systemd/system/timers.target.wants/opos-sensorfwd-delayed.timer"
+# --- sensors: END
 install -m 0755 "$here/opos-switch" "$r/usr/sbin/opos-switch"
 for u in opos-server.service opos.service opos-fallback.service; do
     install -m 0644 "$here/$u" "$r/etc/systemd/system/$u"

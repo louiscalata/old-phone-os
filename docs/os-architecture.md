@@ -53,7 +53,7 @@ flowchart TD
 | Vendor layer in `lxc@android.service` | Droidian/Halium port | the base rootfs | `opos.service` binds to `android-service@hwcomposer.service` and orders after it; `opos-diag` records its state. |
 | systemd, journald, logind, dbus, NetworkManager, ModemManager | Debian/Droidian | the base rootfs | Used as they are; no second supervisor. `INHERITED` in `bootgraph.py` lists every one OPOS names. |
 | Compositor (phoc) | Phosh project | the base rootfs | OPOS owns only how it starts: `packaging/duo-os/opos-session`, without phoc's shell mode. |
-| Session and service graph | OPOS | `packaging/duo-os/*.service`, `*.path`, `updater/` | `bootgraph.py --check` and `tests/test_boot_graph.py` (this page). |
+| Session and service graph | OPOS | `packaging/duo-os/*.service`, `*.path`, `*.timer`, `updater/` | `bootgraph.py --check` and `tests/test_boot_graph.py` (this page). |
 | Native shell and browser fallback | OPOS | `src/opos/native/`, `packaging/duo-os/opos-native`, `opos-kiosk` | The `OPOS_NATIVE_READY` handshake and the browser hand-over (`packaging/duo-os/NATIVE.md`). |
 | Policy server and apps | OPOS | `src/opos/` (`opos.web` on 127.0.0.1:8765) | The unit tests; the API is what the shell and the page call. |
 | Updater | OPOS | `packaging/duo-os/updater/`, `tools/opos-release.py` | Signed bundles, rollback (`docs/ota-update.md`). |
@@ -88,6 +88,8 @@ order before it (the test checks every pair), and "Class" is the unit's entry in
 | on demand | `opos-update.path` | degrade | - | a delivered update is not noticed until the next boot | the journal |
 | on demand | `opos-update.service` | degrade | `opos-update.path`, `opos-update-boot.service` | a delivered update waits | the journal |
 | dev only | `opos-clock-set.path`, `opos-clock-set.service` | degrade | - | a time file from the PC is not applied | the journal |
+| 120 s after boot | `opos-sensorfwd-delayed.timer` | degrade | - | `sensorfwd.service` is not started this boot; nothing else waits for it | the journal |
+| 120 s after boot | `opos-sensorfwd-delayed.service` | degrade | `opos-sensorfwd-delayed.timer` | `sensorfwd.service` (inherited, disabled) is not started this boot; nothing else waits for it | the journal |
 
 No step leaves a positive boot marker that names the image yet. A boot is judged today by `opos-selftest`, run by
 hand, and by reading the journal and the `opos-diag` dump.
@@ -105,6 +107,7 @@ level  unit                                   class             waits for
 0      lxc@android.service                    inherited         -
 0      network.target                         inherited         -
 0      opos-clock-set.path                    degrade           -
+0      opos-sensorfwd-delayed.timer           degrade           -
 0      opos-update.path                       degrade           -
 0      plymouth-quit-wait.service             inherited         -
 0      rc-local.service                       inherited         -
@@ -114,7 +117,9 @@ level  unit                                   class             waits for
 1      opos-brightness.service                degrade           local-fs.target
 1      opos-clock-set.service                 degrade           opos-clock-set.path
 1      opos-clock.service                     degrade           item-clock-seed.service, timekeeper.service
+1      opos-sensorfwd-delayed.service         degrade           opos-sensorfwd-delayed.timer
 1      opos-update-boot.service               degrade           local-fs.target
+1      timers.target                          inherited         opos-sensorfwd-delayed.timer
 2      opos-server.service                    fatal-to-session  lxc@android.service, network.target, opos-clock.service, opos-update-boot.service
 2      opos-update.service                    degrade           opos-update-boot.service, opos-update.path
 3      multi-user.target                      inherited         opos-clock-set.path, opos-server.service, opos-update.path
@@ -129,7 +134,7 @@ level  unit                                   class             waits for
 ```
 
 The boot graph, from `python3 packaging/duo-os/bootgraph.py --mermaid`. A solid arrow means "waits for" (`After=`,
-`Before=`, and a target after the units it wants); a dotted arrow means "starts" (a path unit's trigger, or
+`Before=`, and a target after the units it wants); a dotted arrow means "starts" (a path or timer unit's trigger, or
 `OnFailure=`). Dashed boxes are inherited units; thick boxes are fatal to the session.
 
 ```mermaid
@@ -151,6 +156,8 @@ flowchart TD
   opos_fallback_service["opos-fallback.service"]
   opos_osk_service["opos-osk.service"]
   opos_powerkey_service["opos-powerkey.service"]
+  opos_sensorfwd_delayed_service["opos-sensorfwd-delayed.service"]
+  opos_sensorfwd_delayed_timer["opos-sensorfwd-delayed.timer"]
   opos_server_service["opos-server.service"]
   opos_update_boot_service["opos-update-boot.service"]
   opos_update_confirm_service["opos-update-confirm.service"]
@@ -163,6 +170,7 @@ flowchart TD
   session_c1_scope["session-c1.scope"]
   systemd_user_sessions_service["systemd-user-sessions.service"]
   timekeeper_service["timekeeper.service"]
+  timers_target["timers.target"]
   graphical_target --> multi_user_target
   graphical_target --> opos_osk_service
   multi_user_target --> opos_clock_set_path
@@ -176,6 +184,7 @@ flowchart TD
   opos_fallback_service --> opos_powerkey_service
   opos_osk_service --> opos_service
   opos_powerkey_service --> opos_service
+  opos_sensorfwd_delayed_timer -. starts .-> opos_sensorfwd_delayed_service
   opos_server_service --> lxc_android_service
   opos_server_service --> network_target
   opos_server_service --> opos_clock_service
@@ -194,9 +203,10 @@ flowchart TD
   opos_update_path -. starts .-> opos_update_service
   opos_update_service --> opos_update_boot_service
   opos_volumekey_service --> opos_service
+  timers_target --> opos_sensorfwd_delayed_timer
   classDef inherited stroke-dasharray: 4 3
   classDef fatal stroke-width: 3px
-  class android_service_hwcomposer_service,dbus_socket,getty_tty1_service,graphical_target,item_clock_seed_service,local_fs_target,lxc_android_service,multi_user_target,network_target,plymouth_quit_wait_service,rc_local_service,session_c1_scope,systemd_user_sessions_service,timekeeper_service inherited
+  class android_service_hwcomposer_service,dbus_socket,getty_tty1_service,graphical_target,item_clock_seed_service,local_fs_target,lxc_android_service,multi_user_target,network_target,plymouth_quit_wait_service,rc_local_service,session_c1_scope,systemd_user_sessions_service,timekeeper_service,timers_target inherited
   class opos_server_service,opos_service fatal
 ```
 

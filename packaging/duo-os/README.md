@@ -67,6 +67,16 @@ is used until first-run setup is finished, whenever a PIN lock is on, and when t
 one). It has not been run on a phone. See
 [NATIVE.md](NATIVE.md).
 
+The port's sensor service, `sensorfwd.service`, ships disabled and stays disabled. `opos-sensorfwd-delayed.timer`, the only
+sensor unit the build enables, starts it once, 120 s after boot, through `opos-sensorfwd-delayed.service`. The drop-in
+`sensorfwd.service.d/70-opos-boot.conf` skips the start when `/etc/opos/sensors-off` exists (`sudo touch /etc/opos/sensors-off`)
+and allows 3 starts in 5 minutes (at most 2 restarts). The file blocks only future starts: it does not stop a sensorfwd
+that is already running. For a live stop also run `sudo systemctl disable --now opos-sensorfwd-delayed.timer` and
+`sudo systemctl stop sensorfwd`. No `sensors-off` file ships; the image is RAM-booted, so a file
+made on the phone is gone at the next boot. The PC session reports the same three files installed by hand on the owner's phone;
+that is not checked from this tree. Building them into an image, a cold boot with the timer and ten cold boots are **NOT_RUN**.
+`verify-image.sh` checks only that the files are present and wired as above, not that the phone boots.
+
 The base is the community Droidian port's release `item-duo1-20261025-port0.22.1` (Droidian next, adaptation
 0.22.1, kernel `4.14-190-microsoft-surfaceduo`), whose hash the owner's PC recomputed on 2026-11-12 from the file its build uses
 (`rootfs.img` SHA-256 `9299b2c0…e312`, equal to the publisher's saved, unsigned manifest; the publisher's release page was offline that day, so there is no independent comparison and no second copy). That base keeps what mainline Linux cannot yet do on this phone: the

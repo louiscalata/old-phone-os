@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The only sensor unit build-image.sh enables. It fires once, 120 s after boot, so boot, the Android container and the
+# displays settle before the sensor HAL starts. See packaging/duo-os/README.md, "What is in the image".
+[Unit]
+Description=OPOS: start the port's sensor service 120 s after boot
+
+[Timer]
+OnBootSec=120
+Unit=opos-sensorfwd-delayed.service
+
+[Install]
+WantedBy=timers.target

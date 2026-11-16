@@ -10,6 +10,13 @@ ROOT = Path(__file__).resolve().parent.parent
 OPOS_DEPENDS = {"python3", "modemmanager", "polkit", "dbus"}
 UI_DEPENDS = {"postmarketos-base-ui-cage", "opos", "chromium", "psmisc"}
 SERVICES = {"opos-server", "opos-firstboot"}
+# Duo image (Droidian) units added with the owner's approval: the sensors block of build-image.sh.
+DUO_UNITS = {
+    "opos-sensorfwd-delayed.timer",
+    "opos-sensorfwd-delayed.service",
+    "sensorfwd.service.d/70-opos-boot.conf",
+}
+DUO_HEADER = "| Duo image unit | Why it is there |"
 HEADLINE = "Focused package inputs; performance gains remain unmeasured."
 README_LINE = f"**{HEADLINE}** See [docs/lean.md](docs/lean.md)."
 RESULTS_HEADER = (
@@ -104,6 +111,22 @@ class TestLeanImage(unittest.TestCase):
             OPOS_DEPENDS | UI_DEPENDS | SERVICES,
             MESSAGE,
         )
+
+    def test_lean_doc_lists_the_duo_sensor_units_the_build_installs(self):
+        # The units the Duo build's sensors block installs are exactly the ones
+        # the doc lists, so a new unit there cannot skip the owner's approval.
+        build = (ROOT / "packaging/duo-os/build-image.sh").read_text(encoding="utf-8")
+        block = re.search(r"^# --- sensors: BEGIN.*?^# --- sensors: END", build,
+                          re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(block, MESSAGE)
+        installed = set(re.findall(r'^install -m \d+ \S+ "\$r/etc/systemd/system/([^"]+)"$',
+                                   block.group(0), re.MULTILINE))
+        self.assertEqual(installed, DUO_UNITS, MESSAGE)
+        text = (ROOT / "docs" / "lean.md").read_text(encoding="utf-8")
+        self.assertEqual(set(self.table_rows(text, DUO_HEADER)),
+                         {f"`{unit}`" for unit in DUO_UNITS}, MESSAGE)
+        for fact in ("2026-11-15", "stage 1", "/etc/opos/sensors-off"):
+            self.assertIn(fact, text, MESSAGE)
 
     def test_lean_doc_results_not_estimated(self):
         # Rows may only come from real tools/opos-bench.sh runs, never estimates.

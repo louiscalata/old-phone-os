@@ -508,7 +508,8 @@ class ImageIntegration(unittest.TestCase):
         shutil.copy(DUO / "opos-server.service", self.r / "etc/systemd/system/opos-server.service")
         n = self.r / "opt/opos/src/opos/native"
         n.mkdir(parents=True)
-        for name in ("shell.py", "screens.py", "logic.py", "netlogic.py", "layout.py", "ui.py", "posture.py", "blank.py", "displayconfig.py"):
+        for name in ("shell.py", "screens.py", "logic.py", "netlogic.py", "layout.py", "ui.py", "posture.py", "blank.py", "displayconfig.py",
+                     "hinge.py", "facing.py"):
             shutil.copy(SHELL.parent / name, n / name)
 
     def test_a_good_image_passes_every_native_check(self):
@@ -536,6 +537,15 @@ class ImageIntegration(unittest.TestCase):
         self.image()
         (self.r / "opt/opos/src/opos/native/netlogic.py").unlink()     # screens.py imports it: the shell would not start
         self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
+
+    def test_an_image_without_the_hinge_or_the_facing_reader_fails(self):
+        for name in ("hinge.py", "facing.py"):
+            with self.subTest(name=name):
+                shutil.rmtree(self.r)
+                (self.r / "usr/libexec/opos").mkdir(parents=True)
+                self.image()
+                (self.r / "opt/opos/src/opos/native" / name).unlink()     # the shell imports both
+                self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
 
     def test_the_assistants_screen_in_an_image_fails(self):
         self.image()

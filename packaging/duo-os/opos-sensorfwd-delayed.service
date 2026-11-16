@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Started only by opos-sensorfwd-delayed.timer; it has no [Install] section, so it cannot be enabled by itself.
+# With /etc/opos/sensors-off present this unit and sensorfwd's own drop-in both skip future starts. The file does not
+# stop a running sensorfwd: for a live stop also run `systemctl disable --now opos-sensorfwd-delayed.timer` and
+# `systemctl stop sensorfwd`.
+[Unit]
+Description=OPOS: start sensorfwd once, from opos-sensorfwd-delayed.timer
+ConditionPathExists=!/etc/opos/sensors-off
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start sensorfwd.service
