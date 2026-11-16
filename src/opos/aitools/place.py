@@ -5,7 +5,10 @@ import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from opos.aitools.catalog import Tool
+
 MODES = ("lite", "full")
+
+
 def normalize_arch(machine: str) -> str | None:
     """Normalize CPU architecture string."""
     v = machine.lower()
@@ -14,6 +17,8 @@ def normalize_arch(machine: str) -> str | None:
     if v in ("x86_64", "amd64"):
         return "x86_64"
     return None
+
+
 def choose_prefix(env: Mapping[str, str], home: Path, persistent_roots: Sequence[str] = ("/userdata",)) -> Path:
     """Choose storage prefix for tools."""
     p = env.get("OPOS_TOOLS_PREFIX")
@@ -24,6 +29,8 @@ def choose_prefix(env: Mapping[str, str], home: Path, persistent_roots: Sequence
         if rp.is_dir() and os.access(r, os.W_OK):
             return rp / "opos"
     return home / ".local" / "share" / "opos"
+
+
 def free_mb(path: Path) -> int:
     """Free space for path in MiB."""
     cur = path
@@ -33,6 +40,8 @@ def free_mb(path: Path) -> int:
             break
         cur = par
     return shutil.disk_usage(cur).free // (1024 * 1024)
+
+
 def volatile_warning(prefix: Path, mounts_file: Path = Path("/proc/mounts")) -> str | None:
     """Warn if prefix is on volatile filesystem."""
     try:
@@ -55,6 +64,8 @@ def volatile_warning(prefix: Path, mounts_file: Path = Path("/proc/mounts")) -> 
     if fstype_best in ("tmpfs", "ramfs", "overlay", "overlayfs"):
         return f"warning: {prefix} is on {fstype_best} and will be lost on reboot"
     return None
+
+
 def preflight(tool: Tool, prefix: Path, machine: str, free_mb_fn: Callable[[Path], int] = free_mb) -> list[str]:
     """Check arch and disk space for tool."""
     probs: list[str] = []

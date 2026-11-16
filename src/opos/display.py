@@ -5,6 +5,7 @@ The vendor curve maps an OS level (1-255) to a raw backlight value. Floor 3, cap
 Both panel nodes get the same number. A restore file is written for the lid helper.
 Not measured on a phone.
 """
+
 from __future__ import annotations
 
 import os

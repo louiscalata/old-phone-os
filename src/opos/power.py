@@ -11,6 +11,7 @@ SAVINGS_STEPS = (
 )
 KEEP = frozenset({"calls", "messages", "alarms"})
 
+
 @dataclass(frozen=True)
 class Plan:
     steps: tuple
@@ -19,6 +20,7 @@ class Plan:
     hours_left: float
     meets_goal: bool
     reason: str
+
 
 def feature_drain(steps=(), health=1.0):
     divisor = max(health, 0.1)
@@ -29,6 +31,7 @@ def feature_drain(steps=(), health=1.0):
                 factors[feat] *= factor
                 break
     return {f: FEATURE_COST[f] * factors[f] / divisor for f in FEATURE_COST}
+
 
 def total_drain(tasks, paused=(), steps=(), health=1.0, *, paused_set=None):
     tasks = tuple(tasks)
@@ -41,6 +44,7 @@ def total_drain(tasks, paused=(), steps=(), health=1.0, *, paused_set=None):
             continue
         drain += getattr(t, "cost", 0) / divisor
     return drain
+
 
 def steps_for_goal(level, goal_h, tasks, paused, health=1.0):
     tasks = tuple(tasks)
@@ -60,10 +64,11 @@ def steps_for_goal(level, goal_h, tasks, paused, health=1.0):
             return prefix
     return names
 
+
 def time_left_words(hours):
     if math.isinf(hours):
         return "Lasts all day"
-    if hours < 1/60:
+    if hours < 1 / 60:
         return "Almost empty"
     if hours < 1:
         m = round(hours * 60)
@@ -77,6 +82,7 @@ def time_left_words(hours):
         return f"About {h} h left"
     return f"About {h} h {m} min left"
 
+
 def plan(level, hours_to_goal, tasks, health=1.0, charging=False, in_use=None):
     tasks = tuple(tasks)
     if charging:
@@ -89,8 +95,10 @@ def plan(level, hours_to_goal, tasks, health=1.0, charging=False, in_use=None):
     steps_applied = []
     paused_names = []
     step_idx = 0
+
     def cur_drain():
         return total_drain(tasks, paused=tuple(paused_names), steps=tuple(steps_applied), health=health)
+
     while True:
         drain = cur_drain()
         hours_left_cur = float("inf") if drain <= 0 else level / drain
@@ -128,6 +136,7 @@ def plan(level, hours_to_goal, tasks, health=1.0, charging=False, in_use=None):
     reason = plan_reason(steps_applied, paused_names, meets_goal, in_use)
     return Plan(tuple(steps_applied), tuple(paused_names), drain_final, hours_left_final, meets_goal, reason)
 
+
 def plan_reason(steps, paused, meets_goal, in_use=None):
     """Words for a goal plan: its saving steps, its pauses and whether it reaches the goal."""
     if not steps and not paused:
@@ -145,23 +154,29 @@ def plan_reason(steps, paused, meets_goal, in_use=None):
         reason += ". Cannot reach the goal; calls and messages kept on"
     return reason
 
+
 def static_low_power(level, tasks, health=1.0):
     tasks = tuple(tasks)
     steps = ("dim screen", "batch sync")
     paused = tuple(
         t.name
         for t in tasks
-        if (getattr(t, "priority", None) == "OPTIONAL" or getattr(getattr(t, "priority", None), "name", None) == "OPTIONAL")
+        if (
+            getattr(t, "priority", None) == "OPTIONAL"
+            or getattr(getattr(t, "priority", None), "name", None) == "OPTIONAL"
+        )
     )
     drain = total_drain(tasks, paused=paused, steps=steps, health=health)
     hours_left = float("inf") if drain <= 0 else level / drain
     return Plan(steps, paused, drain, hours_left, False, "Basic low-power mode")
+
 
 def important_hours(plan_obj, level):
     d = plan_obj.drain_per_h
     if d <= 0:
         return float("inf")
     return level / d
+
 
 def minutes_gained(level, hours_to_goal, tasks, health=1.0, in_use=None):
     tasks = tuple(tasks)

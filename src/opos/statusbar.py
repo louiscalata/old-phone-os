@@ -5,6 +5,7 @@ web.Phone.state() calls apply() once, at the end: the logic lives here so web.py
 the status bar's network slot unless a call is on (then it says "In call"), and Home's card shows state["screen"], which is one line
 naming the other party while a call is on.
 """
+
 import html
 
 

@@ -14,6 +14,7 @@ them against the repository's own copies only.
 It opens files for reading only, under --root, and writes nothing. Without --profile the profile is the one
 opos.hw.detect picks.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -120,8 +121,11 @@ def _px(v) -> str:
 def _gauges(f: DeviceFacts):
     if f.fuel_gauge_driver is None or f.fuel_gauges is None:
         return None
-    return Fact((f.fuel_gauge_driver.value, f.fuel_gauges.value), f.fuel_gauge_driver.measured and f.fuel_gauges.measured,
-                f.fuel_gauges.source)
+    return Fact(
+        (f.fuel_gauge_driver.value, f.fuel_gauges.value),
+        f.fuel_gauge_driver.measured and f.fuel_gauges.measured,
+        f.fuel_gauges.source,
+    )
 
 
 def _gauge_count(read, declared) -> int:
@@ -130,22 +134,54 @@ def _gauge_count(read, declared) -> int:
 
 # name, where it is read, reader, the declared fact, how a declared value is shown, does the read value match it, how a read value is shown
 FACTS = (
-    ("model", "/proc/device-tree/model", read_model, lambda f: f.model, str,
-     lambda r, d: d.lower() in r.lower(), str),
-    ("compatible", "/proc/device-tree/compatible", read_compatible, lambda f: f.compatible, str,
-     lambda r, d: d in r, ",".join),
-    ("memory", "/proc/meminfo", read_memory, lambda f: None, str,
-     lambda r, d: False, lambda r: "%d kB" % r),
-    ("panels", "/sys/class/drm/*/modes", read_panels, lambda f: f.panels, str,
-     lambda r, d: r == d, str),
-    ("panel_px", "/sys/class/drm/*/modes", read_panel_px, lambda f: f.panel_px, _px,
-     lambda r, d: all(m == tuple(d) for m in r), lambda r: ",".join(_px(m) for m in r)),
-    ("lid", "/proc/bus/input/devices", read_input_names, lambda f: f.lid_name, lambda d: '"%s"' % d,
-     lambda r, d: d in r, lambda r: "%d input devices" % len(r)),
-    ("fuel_gauges", "/sys/class/power_supply/*", read_power_supplies, _gauges, lambda d: "%d named %s*" % (d[1], d[0]),
-     lambda r, d: _gauge_count(r, d) == d[1], lambda r: ",".join(r) or "none"),
-    ("backlights", "/sys/class/backlight/*", read_backlights, lambda f: f.backlights, str,
-     lambda r, d: len(r) == d, lambda r: ",".join(r) or "none"),
+    ("model", "/proc/device-tree/model", read_model, lambda f: f.model, str, lambda r, d: d.lower() in r.lower(), str),
+    (
+        "compatible",
+        "/proc/device-tree/compatible",
+        read_compatible,
+        lambda f: f.compatible,
+        str,
+        lambda r, d: d in r,
+        ",".join,
+    ),
+    ("memory", "/proc/meminfo", read_memory, lambda f: None, str, lambda r, d: False, lambda r: "%d kB" % r),
+    ("panels", "/sys/class/drm/*/modes", read_panels, lambda f: f.panels, str, lambda r, d: r == d, str),
+    (
+        "panel_px",
+        "/sys/class/drm/*/modes",
+        read_panel_px,
+        lambda f: f.panel_px,
+        _px,
+        lambda r, d: all(m == tuple(d) for m in r),
+        lambda r: ",".join(_px(m) for m in r),
+    ),
+    (
+        "lid",
+        "/proc/bus/input/devices",
+        read_input_names,
+        lambda f: f.lid_name,
+        lambda d: '"%s"' % d,
+        lambda r, d: d in r,
+        lambda r: "%d input devices" % len(r),
+    ),
+    (
+        "fuel_gauges",
+        "/sys/class/power_supply/*",
+        read_power_supplies,
+        _gauges,
+        lambda d: "%d named %s*" % (d[1], d[0]),
+        lambda r, d: _gauge_count(r, d) == d[1],
+        lambda r: ",".join(r) or "none",
+    ),
+    (
+        "backlights",
+        "/sys/class/backlight/*",
+        read_backlights,
+        lambda f: f.backlights,
+        str,
+        lambda r, d: len(r) == d,
+        lambda r: ",".join(r) or "none",
+    ),
 )
 FACT_NAMES = tuple(f[0] for f in FACTS)
 
@@ -174,16 +210,30 @@ def compare(facts: DeviceFacts | None, root: str) -> list[Reading]:
 
 def line(r: Reading) -> str:
     declared = "-" if r.declared is None else "%s (%s)" % (r.declared, "measured" if r.measured else "not yet measured")
-    return "%s %s declared=%s read=%s from %s" % (r.status, r.name, declared, "-" if r.read is None else r.read, r.where)
+    return "%s %s declared=%s read=%s from %s" % (
+        r.status,
+        r.name,
+        declared,
+        "-" if r.read is None else r.read,
+        r.where,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="python3 -m opos.hw.facts", description="Compare the declared hardware facts with what the kernel reports. Read-only.")
+    p = argparse.ArgumentParser(
+        prog="python3 -m opos.hw.facts",
+        description="Compare the declared hardware facts with what the kernel reports. Read-only.",
+    )
     p.add_argument("--root", default="/", help="the filesystem root to read (default /)")
-    p.add_argument("--profile", choices=store.builtin_names(), help="the profile to compare with (default: the one opos.hw.detect picks)")
+    p.add_argument(
+        "--profile",
+        choices=store.builtin_names(),
+        help="the profile to compare with (default: the one opos.hw.detect picks)",
+    )
     a = p.parse_args(argv)
     if a.profile is None:
         from opos.hw.detect import detect_or_generic
+
         profile = detect_or_generic(a.root)
     else:
         profile = store.builtin_profile(a.profile)

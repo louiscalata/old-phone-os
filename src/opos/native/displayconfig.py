@@ -12,6 +12,7 @@ so with no session bus the shell just says once that the screens will not blank 
 
 PowerSaveState is the pure part and needs no toolkit; gi is imported only inside own().
 """
+
 from __future__ import annotations
 
 import sys
@@ -32,6 +33,7 @@ def _say(line):
 
 class PowerSaveState:
     """The property's value, backed by a blanker. No toolkit."""
+
     NAME = "PowerSaveMode"
 
     def __init__(self, blanker):
@@ -55,7 +57,7 @@ class PowerSaveState:
             return False
         now = self.blanker.set_mode(value)
         if isinstance(now, bool) or not isinstance(now, int):
-            now = value     # a blanker that does not say: the request, as before
+            now = value  # a blanker that does not say: the request, as before
         changed = self.values[name] != now
         self.values[name] = now
         return changed
@@ -78,6 +80,7 @@ def own(blanker, say=_say):
 
     try:
         from gi.repository import Gio, GLib
+
         info = Gio.DBusNodeInfo.new_for_xml(XML)
         state = PowerSaveState(blanker)
 
@@ -92,10 +95,12 @@ def own(blanker, say=_say):
                     return False
                 if state.set(name, value):
                     iface, changed, gone = state.properties_changed_args()
-                    body = GLib.Variant("(sa{sv}as)", (iface, {k: GLib.Variant("i", v) for k, v in changed.items()}, gone))
+                    body = GLib.Variant(
+                        "(sa{sv}as)", (iface, {k: GLib.Variant("i", v) for k, v in changed.items()}, gone)
+                    )
                     conn.emit_signal(None, PATH, PROPERTIES, "PropertiesChanged", body)
                 return True
-            except Exception as err:      # a failure here must not take the shell down
+            except Exception as err:  # a failure here must not take the shell down
                 tell("PowerSaveMode could not be set: %r" % (err,))
                 return False
 
@@ -106,7 +111,9 @@ def own(blanker, say=_say):
                 tell("cannot serve %s: %r" % (PATH, err))
 
         def name_lost(_conn, name):
-            tell("cannot own %s (another program has it, or there is no session bus); the screens will not blank" % name)
+            tell(
+                "cannot own %s (another program has it, or there is no session bus); the screens will not blank" % name
+            )
 
         flags = Gio.BusNameOwnerFlags.DO_NOT_QUEUE | Gio.BusNameOwnerFlags.ALLOW_REPLACEMENT
         return Gio.bus_own_name(Gio.BusType.SESSION, IFACE, flags, bus_acquired, None, name_lost)

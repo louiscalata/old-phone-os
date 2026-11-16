@@ -13,6 +13,7 @@ is imported by opos.web, not here, so a runtime that ships without it serves wha
 The main page is at its size budget, so the Settings link is added to the finished page at serve time (link_bytes),
 the way opos.osk adds its keyboard: the very same bytes while the switch is off.
 """
+
 import math
 import os
 import re
@@ -24,10 +25,14 @@ from opos.span import apply as apply_span
 TITLE = "<title>Inference - OPOS</title>"  # the anchor the drop-in README names; the token meta goes in front of it
 ANCHOR = '<section aria-labelledby="set-about">'  # Settings > About: the link goes ahead of it, as the Network and Time zone links do
 # 48 px tall like every other touch target on the page; the color and border follow the page's theme.
-LINK = ('<section aria-labelledby="set-inference"><h3 id="set-inference">Inference</h3><a id="mon-link" href="/monitor" '
-        'style="display:inline-block;min-height:48px;line-height:48px;padding:0 16px;border:1px solid;color:inherit">'
-        'Inference page</a></section>')
-LIMIT_KEY = "monitor"  # the rate-limit bucket web._Limits keeps for GET /api/monitor (an absent key is refused, never allowed)
+LINK = (
+    '<section aria-labelledby="set-inference"><h3 id="set-inference">Inference</h3><a id="mon-link" href="/monitor" '
+    'style="display:inline-block;min-height:48px;line-height:48px;padding:0 16px;border:1px solid;color:inherit">'
+    "Inference page</a></section>"
+)
+LIMIT_KEY = (
+    "monitor"  # the rate-limit bucket web._Limits keeps for GET /api/monitor (an absent key is refused, never allowed)
+)
 # Where the battery's health came from (opos.hw.live_battery health_source). Only "sysfs" is a reading: the gauge's own full-charge
 # over design capacity. "charge-counter" is an estimate (counter / level / a design capacity from a model table or
 # OPOS_BATTERY_DESIGN_MAH, clamped to 0.1..1.0), "assumed" is a placeholder and "OPOS_BATTERY_HEALTH" is a number the owner typed.

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Command line interface for Old Phone OS Interface setup."""
+
 from __future__ import annotations
 import argparse
 import json
@@ -15,9 +16,10 @@ import opos.setup.device
 import opos.setup.server
 from opos.setup.services import ServiceError, checkout_root
 from opos.version import project_version
+
 RAM_BOOT_WARNING = (
     "warning: Surface Duo detected. If this kernel was RAM-booted from a PC with fastboot boot, do not run reboot or systemctl reboot: the phone would start the stock kernel and be stranded.\n"
-    "To restart safely run reboot bootloader, then re-arm the misc brake and RAM-boot once from the PC. See docs/duo-usb-install.md, section \"Rebooting safely / recovering\"."
+    'To restart safely run reboot bootloader, then re-arm the misc brake and RAM-boot once from the PC. See docs/duo-usb-install.md, section "Rebooting safely / recovering".'
 )
 
 
@@ -36,6 +38,8 @@ def reboot_warning(root: str = "/") -> str | None:
     if name == "Surface Duo":
         return RAM_BOOT_WARNING
     return None
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
     p = argparse.ArgumentParser(prog="opos")
@@ -47,7 +51,11 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-browser", action="store_true")
     r.add_argument("--port", type=int, default=None)
     r.add_argument("--config-dir", dest="config_dir", default=None)
-    r.add_argument("--defaults", action="store_true", help="apply the default settings without the browser wizard (for headless installs)")
+    r.add_argument(
+        "--defaults",
+        action="store_true",
+        help="apply the default settings without the browser wizard (for headless installs)",
+    )
     s = subs.add_parser("status")
     s.add_argument("--config-dir", dest="config_dir", default=None)
     u = subs.add_parser("uninstall")
@@ -55,7 +63,11 @@ def _build_parser() -> argparse.ArgumentParser:
     u.add_argument("--dry-run", action="store_true")
     u.add_argument("--config-dir", dest="config_dir", default=None)
     return p
-def _handle_run(args: argparse.Namespace, env: dict[str, str], platform: str, home: Path, out: TextIO, repo_root: Path | None = None) -> int:
+
+
+def _handle_run(
+    args: argparse.Namespace, env: dict[str, str], platform: str, home: Path, out: TextIO, repo_root: Path | None = None
+) -> int:
     """Handle run subcommand."""
     if repo_root is None:
         repo_root = checkout_root(Path(__file__))
@@ -82,15 +94,17 @@ def _handle_run(args: argparse.Namespace, env: dict[str, str], platform: str, ho
             for e in errors:
                 print(e, file=out)
             return 1
-        result = opos.setup.apply.apply(cfg, repo_root=repo_root, python=sys.executable, home=home, platform=platform, env=eff, dry_run=args.dry_run)
+        result = opos.setup.apply.apply(
+            cfg, repo_root=repo_root, python=sys.executable, home=home, platform=platform, env=eff, dry_run=args.dry_run
+        )
         steps = result.snapshot()
         failed = [s for s in steps if s["status"] == "failed"]
         for s in steps:
             if s["status"] != "failed" and s["detail"]:
-                print(f'step {s["label"]}: {s["detail"]}', file=out)
+                print(f"step {s['label']}: {s['detail']}", file=out)
         if failed:
             for s in failed:
-                print(f'step {s["label"]}: {s["detail"]}', file=out)
+                print(f"step {s['label']}: {s['detail']}", file=out)
             print("setup failed", file=out)
             return 1
         if args.dry_run:
@@ -143,6 +157,8 @@ def _handle_run(args: argparse.Namespace, env: dict[str, str], platform: str, ho
     print("Open it at http://127.0.0.1:8765/", file=out)
     print("Run 'opos run --reconfigure' to change preferences.", file=out)
     return 0
+
+
 def _handle_status(args: argparse.Namespace, env: dict[str, str], platform: str, out: TextIO) -> int:
     """Handle status subcommand."""
     eff = dict(env)
@@ -160,12 +176,14 @@ def _handle_status(args: argparse.Namespace, env: dict[str, str], platform: str,
     print(f"configured: {'yes' if configured else 'no'}", file=out)
     print(f"config: {cfg_path}", file=out)
     if configured and isinstance(cfg, dict):
+
         def fmt(v: object) -> str:
             if isinstance(v, (list, tuple, set)):
                 return ", ".join(str(x) for x in v)
             if isinstance(v, dict):
                 return ", ".join(str(k) for k in v.keys())
             return str(v)
+
         dev = None
         if "device_name" in cfg:
             dev = cfg["device_name"]
@@ -178,12 +196,19 @@ def _handle_status(args: argparse.Namespace, env: dict[str, str], platform: str,
         elif "name" in cfg:
             dev = cfg["name"]
         stored = cfg.get("device")
-        if isinstance(stored, dict) and (stored.get("source") == "stub" or stored.get("id") in ("generic-phone", "unknown")):
+        if isinstance(stored, dict) and (
+            stored.get("source") == "stub" or stored.get("id") in ("generic-phone", "unknown")
+        ):
             try:
                 found = opos.setup.device.detect_device("/")
             except Exception:
                 found = None
-            if isinstance(found, dict) and found.get("source") != "stub" and isinstance(found.get("name"), str) and found.get("name"):
+            if (
+                isinstance(found, dict)
+                and found.get("source") != "stub"
+                and isinstance(found.get("name"), str)
+                and found.get("name")
+            ):
                 dev = f"{found.get('name')} (detected)"
         if dev is not None:
             print(f"device_name: {fmt(dev)}", file=out)
@@ -265,13 +290,17 @@ def _handle_status(args: argparse.Namespace, env: dict[str, str], platform: str,
         running = False
     print(f"running: {'yes' if running else 'no'}", file=out)
     return 0
+
+
 def _handle_uninstall(args: argparse.Namespace, env: dict[str, str], platform: str, home: Path, out: TextIO) -> int:
     """Handle uninstall subcommand."""
     eff = dict(env)
     if args.config_dir is not None:
         eff["OPOS_CONFIG_DIR"] = args.config_dir
     try:
-        lines = opos.setup.apply.uninstall(home=home, platform=platform, env=eff, dry_run=args.dry_run, keep_config=args.keep_config)
+        lines = opos.setup.apply.uninstall(
+            home=home, platform=platform, env=eff, dry_run=args.dry_run, keep_config=args.keep_config
+        )
     except ServiceError as exc:
         msg = str(exc).strip() or "service removal failed: ServiceError"
         for line in getattr(exc, "actions", None) or []:
@@ -285,7 +314,16 @@ def _handle_uninstall(args: argparse.Namespace, env: dict[str, str], platform: s
     for line in lines:
         print(line, file=out)
     return 0
-def main(argv: list[str] | None = None, *, env: Mapping[str, str] | None = None, home: Path | None = None, platform: str | None = None, out: TextIO | None = None) -> int:
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    home: Path | None = None,
+    platform: str | None = None,
+    out: TextIO | None = None,
+) -> int:
     """Entry point for setup CLI."""
     env_dict = dict(os.environ) if env is None else dict(env)
     home_val = home if home is not None else Path.home()

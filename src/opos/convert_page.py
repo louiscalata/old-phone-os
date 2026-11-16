@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Converter. Length, mass, volume and temperature, on this phone. Nothing is stored."""
+
 from opos import appdoc, apps, convert
 
 _CSS = """
@@ -58,9 +59,21 @@ def post(data):
         return 400, {"error": code}
 
 
-apps.register(apps.App(
-    "convert", "Converter", "/convert",
-    "Length, mass, volume and temperature.",
-    "yes", "no", "none", "real", "converter", "USEFUL", 0,
-    render, convert.snapshot, post,
-))
+apps.register(
+    apps.App(
+        "convert",
+        "Converter",
+        "/convert",
+        "Length, mass, volume and temperature.",
+        "yes",
+        "no",
+        "none",
+        "real",
+        "converter",
+        "USEFUL",
+        0,
+        render,
+        convert.snapshot,
+        post,
+    )
+)

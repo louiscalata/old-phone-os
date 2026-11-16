@@ -5,6 +5,7 @@ Only OPOS_APPS=calls enables recording. Starts are saved immediately; connected
 and ended update the same row. An unfinished row has no known duration. There is
 no modem control here and no HTTP action that can insert a call or mark it real.
 """
+
 from datetime import datetime, timezone
 import math
 import os
@@ -52,7 +53,16 @@ def _seconds(value):
 
 
 def _valid(row):
-    if not isinstance(row, dict) or set(row) != {"id", "number", "name", "direction", "start_time", "duration", "practice", "state"}:
+    if not isinstance(row, dict) or set(row) != {
+        "id",
+        "number",
+        "name",
+        "direction",
+        "start_time",
+        "duration",
+        "practice",
+        "state",
+    }:
         return False
     try:
         if not isinstance(row["id"], str) or not _ID.fullmatch(row["id"]):
@@ -64,13 +74,16 @@ def _valid(row):
             return False
     except (TypeError, ValueError, OverflowError):
         return False
-    return (isinstance(row["name"], str) and len(row["name"]) <= 80
-            and row["direction"] in ("outgoing", "incoming", "missed")
-            and type(row["practice"]) is bool
-            and row["state"] in ("started", "connected", "ended")
-            and (row["duration"] is None or _seconds(row["duration"]))
-            and (row["state"] == "ended" or row["duration"] is None)
-            and (row["direction"] != "missed" or row["state"] == "ended"))
+    return (
+        isinstance(row["name"], str)
+        and len(row["name"]) <= 80
+        and row["direction"] in ("outgoing", "incoming", "missed")
+        and type(row["practice"]) is bool
+        and row["state"] in ("started", "connected", "ended")
+        and (row["duration"] is None or _seconds(row["duration"]))
+        and (row["state"] == "ended" or row["duration"] is None)
+        and (row["direction"] != "missed" or row["state"] == "ended")
+    )
 
 
 def _load():
@@ -87,8 +100,11 @@ def _load():
     else:
         data, note = saved.read_json("calls.json", {"calls": []})
     rows = data.get("calls")
-    if (not isinstance(rows, list) or not all(_valid(row) for row in rows)
-            or len({row["id"] for row in rows}) != len(rows)):
+    if (
+        not isinstance(rows, list)
+        or not all(_valid(row) for row in rows)
+        or len({row["id"] for row in rows}) != len(rows)
+    ):
         saved._quarantine(path)
         rows, note = [], saved.note_once("calls.json")
     _RECOVERED = note or _RECOVERED
@@ -103,11 +119,17 @@ def record(event):
     """
     if "calls" not in (apps.names_from() or []):
         return
-    if (not isinstance(event, CallEvent) or not isinstance(event.call_id, str)
-            or not _ID.fullmatch(event.call_id) or event.state not in ("started", "connected", "ended")
-            or event.direction not in ("outgoing", "incoming") or type(event.practice) is not bool
-            or (event.answered is not None and type(event.answered) is not bool)
-            or not _seconds(event.at) or (event.duration is not None and not _seconds(event.duration))):
+    if (
+        not isinstance(event, CallEvent)
+        or not isinstance(event.call_id, str)
+        or not _ID.fullmatch(event.call_id)
+        or event.state not in ("started", "connected", "ended")
+        or event.direction not in ("outgoing", "incoming")
+        or type(event.practice) is not bool
+        or (event.answered is not None and type(event.answered) is not bool)
+        or not _seconds(event.at)
+        or (event.duration is not None and not _seconds(event.duration))
+    ):
         raise ValueError("bad call event")
     number = normalize_number(event.number)
     with _LOCK:
@@ -117,13 +139,19 @@ def record(event):
             if row is not None:
                 return
             from opos.contacts_page import name_for
-            rows.append({
-                "id": event.call_id, "number": number,
-                "name": name_for(number, practice=event.practice),
-                "direction": event.direction,
-                "start_time": datetime.fromtimestamp(event.at, timezone.utc).isoformat(),
-                "duration": None, "practice": event.practice, "state": "started",
-            })
+
+            rows.append(
+                {
+                    "id": event.call_id,
+                    "number": number,
+                    "name": name_for(number, practice=event.practice),
+                    "direction": event.direction,
+                    "start_time": datetime.fromtimestamp(event.at, timezone.utc).isoformat(),
+                    "duration": None,
+                    "practice": event.practice,
+                    "state": "started",
+                }
+            )
         else:
             if row is None or row["state"] == "ended":
                 return
@@ -145,9 +173,12 @@ def snapshot():
     """missed_count counts retained missed calls; reading does not acknowledge them."""
     with _LOCK:
         rows = _load()
-        return {"ok": True, "calls": list(reversed(rows)),
-                "missed_count": sum(row["direction"] == "missed" for row in rows),
-                "recovered": _RECOVERED}
+        return {
+            "ok": True,
+            "calls": list(reversed(rows)),
+            "missed_count": sum(row["direction"] == "missed" for row in rows),
+            "recovered": _RECOVERED,
+        }
 
 
 def clear():

@@ -5,6 +5,7 @@ Without a file every start of the server draws a new token, so every page that i
 server is restarted by systemd (Restart=always), by an update, or by "Restart helper" would show a dead page until someone
 reloaded it. With a file the token is the same after a restart and an open page just goes on.
 """
+
 import os
 
 from opos import secure
@@ -62,5 +63,8 @@ def usable(path, err):
     try:
         ensure(path)
     except OSError as e:
-        print("opos: cannot make the token file (%s); this run keeps its token in memory only" % type(e).__name__, file=err)
+        print(
+            "opos: cannot make the token file (%s); this run keeps its token in memory only" % type(e).__name__,
+            file=err,
+        )
     return os.path.lexists(path)

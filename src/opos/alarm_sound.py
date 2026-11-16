@@ -13,6 +13,7 @@ missing paplay leaves the alarm on screen and raises nothing. This never sets a 
 role of alarm: that role crashes PulseAudio on this phone. Vibration stays off until a
 self-test file exists. None of this has been heard on a phone.
 """
+
 import subprocess
 import threading
 from pathlib import Path
@@ -85,8 +86,9 @@ class Player:
             if self.generation != since:
                 return None
             try:
-                self.proc = self._popen(list(command), stdin=subprocess.DEVNULL,
-                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.proc = self._popen(
+                    list(command), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
             except OSError:
                 self.missing = True
                 self.proc = None

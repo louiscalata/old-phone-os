@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """EOL evaluation helpers."""
+
 import random
 import sys
 from opos.eol import BURST_A, MIN_CALL_A
@@ -10,11 +11,22 @@ from opos.evaluate import EVAL_TASKS, rules_policy, static_low_power, router_pol
 from opos.eol import load_amps
 from opos.sim import DRAIN_PER_HOUR
 
-SERVICES = (("calls","calls","call",60), ("sms","messages","message",30), ("alarms","alarms","alarm",120), ("app","app in use","app",30))
-BACKGROUND = (("email","sync",15), ("photos backup","sync",10), ("maps","app",20))   # (task, burst key, period minutes)
+SERVICES = (
+    ("calls", "calls", "call", 60),
+    ("sms", "messages", "message", 30),
+    ("alarms", "alarms", "alarm", 120),
+    ("app", "app in use", "app", 30),
+)
+BACKGROUND = (
+    ("email", "sync", 15),
+    ("photos backup", "sync", 10),
+    ("maps", "app", 20),
+)  # (task, burst key, period minutes)
+
 
 def basic_policy(state, tasks, t_s=0.0):
     return Decision(Mode.NORMAL, tuple(t.name for t in tasks), (), "basic")
+
 
 def scenarios_eol(n, seed):
     rng = random.Random(seed)
@@ -26,6 +38,8 @@ def scenarios_eol(n, seed):
         temp_c = temps[i % 5]
         out.append({"level": level, "health": health, "temp_c": temp_c})
     return out
+
+
 def run_eol(policy, scenario, aware=False, tick_s=60.0, max_min=1440):
     sim = eol_sim(level=scenario["level"], temp_c=scenario["temp_c"], speed=1.0)
     sim.health = scenario["health"]
@@ -91,6 +105,8 @@ def run_eol(policy, scenario, aware=False, tick_s=60.0, max_min=1440):
         "graceful": graceful,
         "alive_h": end_h,
     }
+
+
 def benchmark_eol(policy_factory, aware=False, n=40, seed=0):
     scenarios = scenarios_eol(n, seed)
     count = len(scenarios)
@@ -120,6 +136,8 @@ def benchmark_eol(policy_factory, aware=False, n=40, seed=0):
         "shutdown_level": sum(levels) / len(levels) if levels else 0.0,
         "graceful_pct": 100.0 * gracefuls / count,
     }
+
+
 def report(n=40, seed=0):
     lines = []
     lines.append("policy  mode    calls_h sms_h alarms_h app_h alive_h brownouts% died_at%")
@@ -132,7 +150,7 @@ def report(n=40, seed=0):
     for name, factory in factories:
         for aware in (False, True):
             r = benchmark_eol(factory, aware, n, seed)
-            mode_str = 'after' if aware else 'before'
+            mode_str = "after" if aware else "before"
             line = f"{name:<7} {mode_str:<7} {r['calls']:7.2f} {r['sms']:5.2f} {r['alarms']:8.2f} {r['app']:5.2f} {r['alive']:7.2f} {r['brownout_pct']:10.0f} {r['shutdown_level']:8.1f}"
             lines.append(line)
     return lines
@@ -140,14 +158,18 @@ def report(n=40, seed=0):
 
 def main(argv):
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=40)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
-    print('worn battery, health 0.3-0.4, hours each service keeps working (before = plain phone, after = reserve and burst shaping)')
+    print(
+        "worn battery, health 0.3-0.4, hours each service keeps working (before = plain phone, after = reserve and burst shaping)"
+    )
     for line in report(args.n, args.seed):
         print(line)
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

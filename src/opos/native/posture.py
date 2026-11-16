@@ -20,6 +20,7 @@ reproduced from the Mac) and followed a fold from 0 to about 180.
 
 The device is only ever opened read-only and non-blocking; it is never grabbed and nothing is ever written to it.
 """
+
 from __future__ import annotations
 
 import os
@@ -33,12 +34,12 @@ from opos.hw import device as _device
 EV_SYN, SYN_REPORT, SYN_DROPPED = 0, 0, 3
 EV_SW = 5
 SW_LID = 0
-DROPPED = "dropped"                         # in lid_items: events were lost; read the switch again with EVIOCGSW
+DROPPED = "dropped"  # in lid_items: events were lost; read the switch again with EVIOCGSW
 LID_NAME = "Surface Duo Lid"
-EVENT_FORMAT = "@llHHi"                     # struct input_event: time (two longs), type, code, value
+EVENT_FORMAT = "@llHHi"  # struct input_event: time (two longs), type, code, value
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)  # 24 on aarch64
-SW_BYTES = 8                                # the switch bitmap read by EVIOCGSW; SW_MAX is 0x10, so 8 bytes is plenty
-EVIOCGSW_8 = (2 << 30) | (SW_BYTES << 16) | (ord("E") << 8) | 0x1b
+SW_BYTES = 8  # the switch bitmap read by EVIOCGSW; SW_MAX is 0x10, so 8 bytes is plenty
+EVIOCGSW_8 = (2 << 30) | (SW_BYTES << 16) | (ord("E") << 8) | 0x1B
 POLL_S = 1.0
 
 
@@ -50,7 +51,7 @@ def find_lid(sys_input="/sys/class/input"):
         return None
 
     def number(name, prefix):
-        tail = name[len(prefix):]
+        tail = name[len(prefix) :]
         return int(tail) if name.startswith(prefix) and tail.isdigit() else None
 
     for entry in sorted((e for e in entries if number(e, "input") is not None), key=lambda e: number(e, "input")):
@@ -63,7 +64,9 @@ def find_lid(sys_input="/sys/class/input"):
         if name != LID_NAME:
             continue
         try:
-            events = sorted((c for c in os.listdir(folder) if number(c, "event") is not None), key=lambda c: number(c, "event"))
+            events = sorted(
+                (c for c in os.listdir(folder) if number(c, "event") is not None), key=lambda c: number(c, "event")
+            )
         except OSError:
             continue
         if events:
@@ -81,8 +84,11 @@ def lid_changes(data):
     """Every lid event in data, in order: True when the lid closed, False when it opened. Other events are skipped,
     and so is a partial record at the end (split_events keeps it for the next read)."""
     whole, _rest = split_events(data)
-    return [value != 0 for _s, _us, kind, code, value in struct.iter_unpack(EVENT_FORMAT, whole)
-            if kind == EV_SW and code == SW_LID]
+    return [
+        value != 0
+        for _s, _us, kind, code, value in struct.iter_unpack(EVENT_FORMAT, whole)
+        if kind == EV_SW and code == SW_LID
+    ]
 
 
 def lid_items(data):
@@ -109,7 +115,8 @@ def lid_items(data):
 def lid_state(fd):
     """Whether the lid is closed now, read with the EVIOCGSW ioctl (which does not grab the device); None if that fails."""
     try:
-        import fcntl     # here, not at the top: the module must import on Windows, which has no fcntl
+        import fcntl  # here, not at the top: the module must import on Windows, which has no fcntl
+
         buf = bytearray(SW_BYTES)
         fcntl.ioctl(fd, EVIOCGSW_8, buf, True)
     except (ImportError, OSError, ValueError, TypeError):
@@ -121,7 +128,7 @@ def lid_state(fd):
 # leaves between the two panels). The zones and HYST below are the shell's own choice, not hardware facts.
 PANEL_WIDTH_PX, PANEL_HEIGHT_PX = _device.SURFACE_DUO.panel_px.value
 HINGE_COLUMN_PX = _device.SURFACE_DUO.output_px.value[0] - 2 * PANEL_WIDTH_PX
-HINGE_RANGE = (0, 360)      # degrees the hinge angle sensor reports (Android sensor type 36)
+HINGE_RANGE = (0, 360)  # degrees the hinge angle sensor reports (Android sensor type 36)
 # Hinge angle in degrees, as the phone's sensor service reports it: 0 closed, about 180 flat, 360 folded back on itself.
 # Each zone is held until the angle leaves it by HYST degrees, so a hand that wobbles on a border never flickers.
 ZONES = (("closed", 0, 15), ("book", 15, 170), ("flat", 170, 190), ("tent", 190, 345), ("back", 345, 361))
@@ -205,7 +212,7 @@ class LidWatcher:
     def __init__(self, on_change, on_missing, path=None, sys_input="/sys/class/input", poll_s=POLL_S):
         self.on_change, self.on_missing = on_change, on_missing
         self.path, self.sys_input, self.poll_s = path, sys_input, poll_s
-        self.closed = None          # the last state reported; None until one is known
+        self.closed = None  # the last state reported; None until one is known
         self._stop = threading.Event()
         self._missing_told = False
         self.thread = None
@@ -224,7 +231,7 @@ class LidWatcher:
     def _call(self, fn, *args):
         try:
             fn(*args)
-        except Exception as err:   # a callback's failure must not end the watcher with a traceback
+        except Exception as err:  # a callback's failure must not end the watcher with a traceback
             _say("a lid callback failed: %r" % (err,))
 
     def _missing(self, reason):
@@ -244,7 +251,9 @@ class LidWatcher:
             if not path:
                 self._missing('no input device named "%s"' % LID_NAME)
                 return
-            flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0) | getattr(os, "O_CLOEXEC", 0)
+            flags = (
+                os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0) | getattr(os, "O_CLOEXEC", 0)
+            )
             try:
                 fd = os.open(path, flags)
             except OSError as err:
@@ -254,7 +263,7 @@ class LidWatcher:
                 self._watch(fd, path)
             finally:
                 os.close(fd)
-        except Exception as err:    # never raise out of the thread
+        except Exception as err:  # never raise out of the thread
             self._missing("the lid watcher stopped: %r" % (err,))
 
     def _watch(self, fd, path):
@@ -276,7 +285,7 @@ class LidWatcher:
             except OSError as err:
                 self._missing("cannot read %s: %s" % (path, err.strerror or err))
                 return
-            if not data:            # nothing came (an input device does not do this; a plain file at its end does)
+            if not data:  # nothing came (an input device does not do this; a plain file at its end does)
                 self._stop.wait(self.poll_s)
                 continue
             whole, rest = split_events(rest + data)
@@ -297,7 +306,7 @@ class LidWatcher:
             for item in items:
                 self._report(item)
             return True
-        for item in items[:items.index(DROPPED)]:
+        for item in items[: items.index(DROPPED)]:
             self._report(item)
         state = lid_state(fd)
         if state is None:

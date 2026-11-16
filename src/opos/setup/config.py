@@ -231,7 +231,7 @@ def validate(cfg: object) -> list[str]:
                         else:
                             for prefix in prefixes:
                                 if spk.startswith(prefix):
-                                    rest = spk[len(prefix):]
+                                    rest = spk[len(prefix) :]
                                     break
                             if not rest.strip():
                                 errors.append("security.ssh_public_key must contain base64 field")

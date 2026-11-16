@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Shared clock trust rule for the server and the image self-test."""
+
 import time
 
 

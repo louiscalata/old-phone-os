@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Battery sysfs reader."""
+
 from __future__ import annotations
 
 import contextlib
@@ -88,13 +89,7 @@ def read_battery(root: str | Path = "/") -> dict:
                         en_full_sum += full
                         en_design_sum += efd
                         en_cnt += 1
-                    elif (
-                        cf is not None
-                        and cfd is not None
-                        and cf > 0
-                        and cfd > 0
-                        and cf <= cfd
-                    ):
+                    elif cf is not None and cfd is not None and cf > 0 and cfd > 0 and cf <= cfd:
                         health_ratios.append(float(cf / cfd))
                         ch_full_sum += cf
                         ch_design_sum += cfd
@@ -218,7 +213,13 @@ def read_battery(root: str | Path = "/") -> dict:
                     capacity_pct = min(pcts)
     except Exception:
         capacity_pct = None
-    return {"present": present, "status": status, "capacity_pct": capacity_pct, "health": health, "health_coverage": health_coverage}
+    return {
+        "present": present,
+        "status": status,
+        "capacity_pct": capacity_pct,
+        "health": health,
+        "health_coverage": health_coverage,
+    }
 
 
 def _net_ifaces(root_path: Path) -> list[str]:

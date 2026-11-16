@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Loopback web server for the Old Phone OS Interface first-run setup wizard."""
+
 from __future__ import annotations
 
 import argparse
@@ -30,7 +31,21 @@ from opos.setup.wizard_page import page
 class SetupContext:
     """Values the setup server needs from its launcher."""
 
-    def __init__(self, *, repo_root: Path, python: str, home: Path, platform: str, env: Mapping[str, str] | None = None, dry_run: bool = False, runner: Callable[..., Any] | None = None, health_check: Callable[..., Any] | None = None, tools_runner: Callable[..., Any] | None = None, app_port: int = 8765, root: str = "/") -> None:
+    def __init__(
+        self,
+        *,
+        repo_root: Path,
+        python: str,
+        home: Path,
+        platform: str,
+        env: Mapping[str, str] | None = None,
+        dry_run: bool = False,
+        runner: Callable[..., Any] | None = None,
+        health_check: Callable[..., Any] | None = None,
+        tools_runner: Callable[..., Any] | None = None,
+        app_port: int = 8765,
+        root: str = "/",
+    ) -> None:
         """Store the launcher-provided context."""
         self.repo_root = repo_root
         self.python = python
@@ -79,9 +94,11 @@ def make_server(port: int, ctx: SetupContext, host: str = "127.0.0.1") -> Thread
                 super().setup()
                 self._deadline = time.monotonic() + type(self).request_budget
                 self._shrink_timeout()
+
                 def _expire() -> None:
                     with contextlib.suppress(OSError):
                         self.connection.shutdown(socket.SHUT_RDWR)
+
                 self._budget_timer = threading.Timer(self._time_left(), _expire)
                 self._budget_timer.daemon = True
                 self._budget_timer.start()
@@ -176,9 +193,17 @@ def make_server(port: int, ctx: SetupContext, host: str = "127.0.0.1") -> Thread
             try:
                 from opos.aitools.wizard import public_state
 
-                payload["ai_tools"] = public_state(env=ctx.env or {}, home=ctx.home, machine=_platform_mod.machine(), platform=ctx.platform)
+                payload["ai_tools"] = public_state(
+                    env=ctx.env or {}, home=ctx.home, machine=_platform_mod.machine(), platform=ctx.platform
+                )
             except Exception:
-                payload["ai_tools"] = {"supported": False, "tools": [], "modes": ["lite", "full"], "default_mode": "lite", "error": "unavailable"}
+                payload["ai_tools"] = {
+                    "supported": False,
+                    "tools": [],
+                    "modes": ["lite", "full"],
+                    "default_mode": "lite",
+                    "error": "unavailable",
+                }
             return payload
 
         def _preferences(self) -> dict[str, Any]:
@@ -212,7 +237,20 @@ def make_server(port: int, ctx: SetupContext, host: str = "127.0.0.1") -> Thread
 
             def run() -> None:
                 """Run apply off the request thread."""
-                _apply.apply(cfg, repo_root=ctx.repo_root, python=ctx.python, home=ctx.home, platform=ctx.platform, env=ctx.env, port=ctx.app_port, dry_run=ctx.dry_run, runner=ctx.runner, health_check=ctx.health_check, tools_runner=ctx.tools_runner, progress=progress)
+                _apply.apply(
+                    cfg,
+                    repo_root=ctx.repo_root,
+                    python=ctx.python,
+                    home=ctx.home,
+                    platform=ctx.platform,
+                    env=ctx.env,
+                    port=ctx.app_port,
+                    dry_run=ctx.dry_run,
+                    runner=ctx.runner,
+                    health_check=ctx.health_check,
+                    tools_runner=ctx.tools_runner,
+                    progress=progress,
+                )
 
             threading.Thread(target=run, daemon=True).start()
             self._json(202, {"started": True})
@@ -252,7 +290,15 @@ def make_server(port: int, ctx: SetupContext, host: str = "127.0.0.1") -> Thread
             if not limiter.allow(self.client_address[0]):
                 self._json(429, {"error": "too many requests"})
                 return
-            if self.path not in ("/setup/api/device", "/setup/api/validate", "/setup/api/apply", "/setup/api/prefs", "/setup/api/prefs/skip", "/setup/api/prefs/skip-all", "/setup/api/prefs/finish"):
+            if self.path not in (
+                "/setup/api/device",
+                "/setup/api/validate",
+                "/setup/api/apply",
+                "/setup/api/prefs",
+                "/setup/api/prefs/skip",
+                "/setup/api/prefs/skip-all",
+                "/setup/api/prefs/finish",
+            ):
                 self._json(404, {"error": "not found"})
                 return
             try:
@@ -336,12 +382,21 @@ def main(argv: list[str] | None = None) -> int:
     env = dict(os.environ)
     if args.config_dir:
         env["OPOS_CONFIG_DIR"] = args.config_dir
-    ctx = SetupContext(repo_root=Path(__file__).resolve().parents[3], python=sys.executable, home=Path.home(), platform=sys.platform, env=env, dry_run=args.dry_run)
+    ctx = SetupContext(
+        repo_root=Path(__file__).resolve().parents[3],
+        python=sys.executable,
+        home=Path.home(),
+        platform=sys.platform,
+        env=env,
+        dry_run=args.dry_run,
+    )
     server = make_server(args.port, ctx)
     url = f"http://127.0.0.1:{int(server.server_address[1])}/"
     print(f"Setup wizard: {url}")
     print("No browser on this device? Run: opos run --defaults")
-    print(f"Or from your computer: ssh -L {int(server.server_address[1])}:127.0.0.1:{int(server.server_address[1])} <user>@<phone>, then open {url} there.")
+    print(
+        f"Or from your computer: ssh -L {int(server.server_address[1])}:127.0.0.1:{int(server.server_address[1])} <user>@<phone>, then open {url} there."
+    )
     if not args.no_browser:
         webbrowser.open(url)
     try:

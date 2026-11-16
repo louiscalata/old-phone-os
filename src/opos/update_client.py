@@ -35,6 +35,7 @@ first, then go back if that is wanted. The root updater is part of the image and
 client can run on an old updater, which reads any request file as "go back" whatever it holds; the cancel form is therefore
 offered only when state.json shows the updater that wrote it knows the form (it keeps a `floor`, which the older one does not).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -63,17 +64,21 @@ from opos.secure import clean_text
 MAX_BUNDLE = 256 * 1024 * 1024
 MAX_INDEX = 64 * 1024
 MAX_SMALL = 64 * 1024  # config.json, state.json, status.json
-MAX_SERIAL = 2 ** 31 - 1
+MAX_SERIAL = 2**31 - 1
 CHUNK = 64 * 1024
 BUNDLE_EXT = ".opos-update"
 ROLLBACK_REQUEST = "rollback.request"
-CANCEL_STAGED = b"cancel-staged"  # what rollback.request holds to cancel a staged update and nothing else (empty: go back)
+CANCEL_STAGED = (
+    b"cancel-staged"  # what rollback.request holds to cancel a staged update and nothing else (empty: go back)
+)
 STALL_S = 300.0  # a delivered bundle or request that root has not taken in this long: the updater is not running
 AUTO_FIRST_S = 120.0
 AUTO_EVERY_S = 6 * 3600.0
 NOT_AVAILABLE = "Updates are not available on this install."
 ONCE_ONLY = "This phone already went back once since its last update. Install an update before going back again."
-NOT_CONFIGURED = "No update source is set. OPOS contacts no server for updates until one is set in /etc/opos/update.json."
+NOT_CONFIGURED = (
+    "No update source is set. OPOS contacts no server for updates until one is set in /etc/opos/update.json."
+)
 _PHASES = ("idle", "verifying", "applying", "checking", "done", "rolled-back", "failed")
 _URL_OK = re.compile(r"[\x21-\x5b\x5d-\x7e]{1,2048}")  # printable ASCII; no space, control character or backslash
 _VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z._+~-]{0,63}")
@@ -82,8 +87,11 @@ _RELEASE = re.compile(r"[0-9A-Za-z][0-9A-Za-z._-]{0,79}")
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
 _NAME = re.compile(r"[0-9A-Za-z][0-9A-Za-z._-]{0,79}")
 # RFC 1918 built from numbers so no address literal sits in the source.
-_LAN4 = (ipaddress.ip_network((10 << 24, 8)), ipaddress.ip_network(((172 << 24) | (16 << 16), 12)),
-         ipaddress.ip_network(((192 << 24) | (168 << 16), 16)))
+_LAN4 = (
+    ipaddress.ip_network((10 << 24, 8)),
+    ipaddress.ip_network(((172 << 24) | (16 << 16), 12)),
+    ipaddress.ip_network(((192 << 24) | (168 << 16), 16)),
+)
 _ULA6 = ipaddress.ip_network("fc00::/7")
 _HEADERS = {"User-Agent": "opos-update/1", "Accept": "*/*", "Accept-Encoding": "identity"}
 _log = logging.getLogger("opos.update")
@@ -101,6 +109,7 @@ class UpdateError(Exception):
 
 class JobState(Enum):
     """Client work only; delivered says nothing about root's independent result."""
+
     IDLE = "idle"
     CHECKING = "checking"  # internal only: the legacy job stays unchanged during a check
     DOWNLOADING = "downloading"
@@ -111,6 +120,7 @@ class JobState(Enum):
 @dataclass(frozen=True)
 class Paths:
     """Where the client reads and writes. Tests pass temporary folders."""
+
     config: str = "/etc/opos/update.json"
     root: str = "/var/lib/opos-update"
     revision: str = "/opt/opos/REVISION"
@@ -131,6 +141,7 @@ class Paths:
 @dataclass(frozen=True)
 class Limits:
     """Caps and timeouts, injectable so tests need not move 256 MiB or wait minutes."""
+
     max_bundle: int = MAX_BUNDLE
     max_index: int = MAX_INDEX
     io_timeout: float = 15.0  # one socket operation
@@ -158,6 +169,7 @@ class Index:
 
 def _loads(raw: bytes):
     """Strict JSON: UTF-8, no NaN or Infinity, no duplicate keys."""
+
     def pairs(items):
         out = {}
         for k, v in items:
@@ -168,6 +180,7 @@ def _loads(raw: bytes):
 
     def bad(_c):
         raise ValueError("bad constant")
+
     try:
         return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=bad)
     except (UnicodeDecodeError, ValueError, RecursionError):
@@ -224,7 +237,9 @@ def check_url(url, allow_lan_http: bool = False) -> urllib.parse.SplitResult:
     if u.fragment:
         raise ValueError("the address must not have a # part")
     if u.scheme == "http" and not (allow_lan_http and lan_host(u.hostname)):
-        raise ValueError("plain http is allowed only for this phone or a private network, and only when allow_lan_http is true")
+        raise ValueError(
+            "plain http is allowed only for this phone or a private network, and only when allow_lan_http is true"
+        )
     return u
 
 
@@ -299,6 +314,7 @@ def parse_index(raw: bytes, base_url: str, allow_lan_http: bool = False, max_bun
 
 class _SameOrigin(urllib.request.HTTPRedirectHandler):
     """Follow a redirect only to the same scheme, host and port, and only to an address the policy allows."""
+
     max_redirections = 3
 
     def __init__(self, allow_lan_http: bool) -> None:
@@ -312,7 +328,9 @@ class _SameOrigin(urllib.request.HTTPRedirectHandler):
             same = False
         if not same:
             fp.close()
-            raise UpdateError("redirect", "The update server tried to send OPOS to another address, so OPOS stopped.", 502)
+            raise UpdateError(
+                "redirect", "The update server tried to send OPOS to another address, so OPOS stopped.", 502
+            )
         return super().redirect_request(req, fp, code, msg, headers, new.geturl())
 
 
@@ -375,7 +393,9 @@ class UpdateClient:
             "previous": len(previous) if isinstance(previous, list) else 0,
             "stepped_back": _int(d.get("stepped_back")),
             "staged": _int(staged.get("serial")) if isinstance(staged, dict) else None,
-            "cancels_staged": type(d.get("floor")) is int and d["floor"] >= 0,  # a proxy, not a handshake: an updater that keeps a floor reads `cancel-staged` (docs/ota-update.md, Client)
+            "cancels_staged": type(d.get("floor")) is int
+            and d["floor"]
+            >= 0,  # a proxy, not a handshake: an updater that keeps a floor reads `cancel-staged` (docs/ota-update.md, Client)
             "failed": failed,
             "floor": max(floor, max(failed, default=0)) if type(floor) is int and floor >= 0 else None,
         }
@@ -393,8 +413,13 @@ class UpdateClient:
         def text(k, n):
             v = d.get(k)
             return " ".join(clean_text(v, n).split()) if isinstance(v, str) else ""
-        return {"phase": phase if phase in _PHASES else "unknown", "message": text("message", 300),
-                "serial": _int(d.get("serial")), "time": text("time", 40) or None}
+
+        return {
+            "phase": phase if phase in _PHASES else "unknown",
+            "message": text("message", 300),
+            "serial": _int(d.get("serial")),
+            "time": text("time", 40) or None,
+        }
 
     def running(self) -> dict:
         """The version running now: state.json, /opt/opos/REVISION, then what was built into this tree."""
@@ -409,8 +434,12 @@ class UpdateClient:
         revision = revision or st.get("revision")
         if revision is None and _REVISION.fullmatch(notices.BUILD):
             revision = notices.BUILD
-        return {"version": st.get("version") or notices.VERSION, "revision": revision,
-                "serial": st.get("serial"), "release": st.get("release")}
+        return {
+            "version": st.get("version") or notices.VERSION,
+            "revision": revision,
+            "serial": st.get("serial"),
+            "release": st.get("release"),
+        }
 
     def pending(self) -> list[str]:
         """Bundles in the inbox that root has not picked up yet."""
@@ -429,7 +458,9 @@ class UpdateClient:
                 st = os.lstat(os.path.join(self.paths.inbox, n))
             except OSError:
                 continue
-            if now - max(st.st_mtime, st.st_ctime) > STALL_S:  # ctime: a rename or a copy that kept an old mtime still counts as new
+            if (
+                now - max(st.st_mtime, st.st_ctime) > STALL_S
+            ):  # ctime: a rename or a copy that kept an old mtime still counts as new
                 return True
         return False
 
@@ -442,7 +473,13 @@ class UpdateClient:
             return {"configured": False, "url": None, "auto_check": False, "allow_lan_http": False, "error": None}
         u = urllib.parse.urlsplit(cfg.url)  # shown without its query, which may carry a key
         shown = urllib.parse.urlunsplit((u.scheme, u.netloc, u.path, "", "")) + ("?..." if u.query else "")
-        return {"configured": True, "url": shown, "auto_check": cfg.auto_check, "allow_lan_http": cfg.allow_lan_http, "error": None}
+        return {
+            "configured": True,
+            "url": shown,
+            "auto_check": cfg.auto_check,
+            "allow_lan_http": cfg.allow_lan_http,
+            "error": None,
+        }
 
     def snapshot(self) -> dict:
         """Everything the page shows. Reads local files only; never touches the network."""
@@ -456,8 +493,13 @@ class UpdateClient:
         requested = avail and os.path.lexists(os.path.join(self.paths.inbox, ROLLBACK_REQUEST))
         earlier = bool(st and st["previous"] > 0)
         once = earlier and st["stepped_back"] is not None
-        staged = st["staged"] if st and st["cancels_staged"] else None  # an old updater would turn the cancel into a rollback
-        rollback = dict({"possible": (earlier and not once) or staged is not None, "requested": bool(requested)}, **({"once": True} if once else {}))
+        staged = (
+            st["staged"] if st and st["cancels_staged"] else None
+        )  # an old updater would turn the cancel into a rollback
+        rollback = dict(
+            {"possible": (earlier and not once) or staged is not None, "requested": bool(requested)},
+            **({"once": True} if once else {}),
+        )
         if staged is not None:
             rollback["staged"] = staged
         return {
@@ -478,8 +520,13 @@ class UpdateClient:
     def _opener(self, cfg: Config) -> urllib.request.OpenerDirector:
         """http and https only, certificates verified, no proxies, no file or ftp, redirects kept on one origin."""
         o = urllib.request.OpenerDirector()
-        for h in (urllib.request.HTTPHandler(), urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-                  _SameOrigin(cfg.allow_lan_http), urllib.request.HTTPDefaultErrorHandler(), urllib.request.HTTPErrorProcessor()):
+        for h in (
+            urllib.request.HTTPHandler(),
+            urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+            _SameOrigin(cfg.allow_lan_http),
+            urllib.request.HTTPDefaultErrorHandler(),
+            urllib.request.HTTPErrorProcessor(),
+        ):
             o.add_handler(h)
         return o
 
@@ -517,7 +564,9 @@ class UpdateClient:
         """Yield the body in pieces, never more than limit bytes in all and never past the deadline. The piece that would
         pass the limit is not yielded: `over` (default: the server sent more than OPOS accepts) is raised instead."""
         total = 0
-        read = getattr(resp, "read1", resp.read)  # read1 returns after one receive, so the deadline is checked on a slow trickle too
+        read = getattr(
+            resp, "read1", resp.read
+        )  # read1 returns after one receive, so the deadline is checked on a slow trickle too
         while True:
             try:
                 piece = read(min(CHUNK, limit + 1 - total))
@@ -557,7 +606,10 @@ class UpdateClient:
         if st["floor"] is None:
             return False, "OPOS cannot read which update is installed, so it will not download one."
         if serial <= st["floor"]:
-            return False, f"Update {serial} is not above {st['floor']}, the highest update that failed on this phone, so OPOS will not fetch it."
+            return (
+                False,
+                f"Update {serial} is not above {st['floor']}, the highest update that failed on this phone, so OPOS will not fetch it.",
+            )
         return True, f"Version {version} (update {serial}) is available."
 
     def _check_locked(self, cfg: Config) -> tuple[dict, Index]:
@@ -565,10 +617,29 @@ class UpdateClient:
         try:
             idx = self._fetch_index(cfg)
         except UpdateError as e:
-            self._transition("remember", check={"time": stamp, "ok": False, "newer": None, "serial": None, "version": None, "size": None, "message": e.message})
+            self._transition(
+                "remember",
+                check={
+                    "time": stamp,
+                    "ok": False,
+                    "newer": None,
+                    "serial": None,
+                    "version": None,
+                    "size": None,
+                    "message": e.message,
+                },
+            )
             raise
         newer, why = self._verdict(idx.serial, idx.version)
-        res = {"time": stamp, "ok": True, "newer": newer, "serial": idx.serial, "version": idx.version, "size": idx.size, "message": why}
+        res = {
+            "time": stamp,
+            "ok": True,
+            "newer": newer,
+            "serial": idx.serial,
+            "version": idx.version,
+            "size": idx.size,
+            "message": why,
+        }
         self._transition("remember", check=res)
         return res, idx
 
@@ -621,11 +692,18 @@ class UpdateClient:
             elif event == "download":
                 assert state == JobState.CHECKING
                 idx = kw["idx"]
-                self._job.update(kind="download", phase=JobState.DOWNLOADING.value, bytes=0,
-                                 total=idx.size, serial=idx.serial, message="Downloading.")
+                self._job.update(
+                    kind="download",
+                    phase=JobState.DOWNLOADING.value,
+                    bytes=0,
+                    total=idx.size,
+                    serial=idx.serial,
+                    message="Downloading.",
+                )
                 try:
-                    self._thread = threading.Thread(target=self._download_thread, args=(kw["cfg"], idx),
-                                                    daemon=True, name="opos-update-download")
+                    self._thread = threading.Thread(
+                        target=self._download_thread, args=(kw["cfg"], idx), daemon=True, name="opos-update-download"
+                    )
                     self._thread.start()
                 except BaseException:
                     self._job.update(phase=JobState.FAILED.value, message="The download failed.")
@@ -709,7 +787,11 @@ class UpdateClient:
                 os.unlink(part)  # a leftover is not counted against the room
             self._room(inbox, promised)
             try:
-                fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o660)
+                fd = os.open(
+                    part,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+                    0o660,
+                )
             except OSError:
                 raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
             done = False
@@ -718,13 +800,17 @@ class UpdateClient:
                     h = hashlib.sha256()
                     n = looked = 0
                     head = bytearray()
-                    over = UpdateError("mismatch", "The update is bigger than its list promised.", 502) if idx.size is not None else None
+                    over = (
+                        UpdateError("mismatch", "The update is bigger than its list promised.", 502)
+                        if idx.size is not None
+                        else None
+                    )
                     for piece in self._chunks(resp, promised if promised is not None else cap, deadline, over):
                         h.update(piece)
                         f.write(piece)
                         n += len(piece)
                         if len(head) < 512:
-                            head += piece[:512 - len(head)]
+                            head += piece[: 512 - len(head)]
                         self._transition("progress", bytes=n)
                         if n - looked >= self.limits.space_step:
                             looked = n
@@ -734,7 +820,9 @@ class UpdateClient:
                         raise UpdateError("mismatch", "The download stopped early or ran long.", 502)
                     if idx.sha256 is not None and h.hexdigest() != idx.sha256:
                         raise UpdateError("mismatch", "The download does not match the hash in the update list.", 502)
-                    if len(head) < 512 or head[257:262] != b"ustar":  # a cheap guard against an error page; root verifies
+                    if (
+                        len(head) < 512 or head[257:262] != b"ustar"
+                    ):  # a cheap guard against an error page; root verifies
                         raise UpdateError("not_bundle", "The download is not an update bundle.", 502)
                     f.flush()
                     os.fsync(f.fileno())
@@ -777,7 +865,9 @@ class UpdateClient:
             raise UpdateError("not_available", NOT_AVAILABLE, 404)
         st = self.read_state()
         if st is None:
-            raise UpdateError("no_rollback", "OPOS cannot read which versions are installed, so it will not ask for a rollback.", 409)
+            raise UpdateError(
+                "no_rollback", "OPOS cannot read which versions are installed, so it will not ask for a rollback.", 409
+            )
         cancel = st["staged"] is not None and st["cancels_staged"]
         if not cancel:
             if st["previous"] < 1:
@@ -829,14 +919,18 @@ class UpdateClient:
             return False
         return bool(self.available() and cfg is not None and cfg.auto_check)
 
-    def start_auto_check(self, first_delay: float = AUTO_FIRST_S, interval: float = AUTO_EVERY_S) -> threading.Thread | None:
+    def start_auto_check(
+        self, first_delay: float = AUTO_FIRST_S, interval: float = AUTO_EVERY_S
+    ) -> threading.Thread | None:
         """Start the only background work, and only when auto_check is true. It checks; it never downloads."""
         if not self.auto_check_enabled():
             return None
         if self._auto is not None and self._auto.is_alive():
             return self._auto
         self._stop.clear()
-        self._auto = threading.Thread(target=self._auto_loop, args=(first_delay, interval), daemon=True, name="opos-update-auto")
+        self._auto = threading.Thread(
+            target=self._auto_loop, args=(first_delay, interval), daemon=True, name="opos-update-auto"
+        )
         self._auto.start()
         return self._auto
 

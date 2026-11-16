@@ -5,6 +5,7 @@ The files are /fonts.css and /fonts/<file>. They are not inlined into page(). Th
 and a size-adjusted local face. The stacks in jaryo.css still name a system font, so the page is readable
 when the files are missing.
 """
+
 from pathlib import Path
 
 from opos import secure
@@ -19,7 +20,7 @@ def serve(handler, path):
     if path == "/fonts.css":
         body, ctype = (_STATIC / "fonts.css").read_bytes(), "text/css; charset=utf-8"
     elif path.startswith("/fonts/"):
-        name = path[len("/fonts/"):]
+        name = path[len("/fonts/") :]
         if not name or "/" in name or name.startswith("."):
             return False
         file = _DIR / name

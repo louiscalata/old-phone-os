@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Duo volume keys: simulated state only until OPOS has a media/ringer mixer."""
+
 from __future__ import annotations
 
 import os
@@ -85,10 +86,21 @@ class VolumeKey:
         # Autorepeats and unknown values never change volume or renew a press.
 
 
-def run(root="/", *, state_path=volume.STATE, controller=None, wait=select.select,
-        open_device=open_input, clock=time.monotonic, log=journal):
-    daemon = controller if controller is not None else VolumeKey(
-        lambda percent: volume.write_percent(state_path, percent), log)
+def run(
+    root="/",
+    *,
+    state_path=volume.STATE,
+    controller=None,
+    wait=select.select,
+    open_device=open_input,
+    clock=time.monotonic,
+    log=journal,
+):
+    daemon = (
+        controller
+        if controller is not None
+        else VolumeKey(lambda percent: volume.write_percent(state_path, percent), log)
+    )
     streams, buffers, retry_at = {}, {}, dict.fromkeys(DEVICES, 0.0)
     failed = set()
 
@@ -142,7 +154,7 @@ def run(root="/", *, state_path=volume.STATE, controller=None, wait=select.selec
                 data = buffers[source] + chunk
                 end = len(data) - len(data) % INPUT_EVENT.size
                 for offset in range(0, end, INPUT_EVENT.size):
-                    daemon.event(source, parse_event(data[offset:offset + INPUT_EVENT.size]))
+                    daemon.event(source, parse_event(data[offset : offset + INPUT_EVENT.size]))
                 buffers[source] = data[end:]
     except (OSError, ValueError):
         log("reader stopped; state or input unavailable")

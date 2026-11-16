@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Apply and uninstall orchestration for first-run wizard."""
+
 from __future__ import annotations
 import contextlib
 import json
@@ -16,41 +17,66 @@ from pathlib import Path
 from typing import Callable, Mapping
 from opos.setup.config import config_dir, config_path, ensure_token, save, token_path, validate
 from opos.setup.services import Runner, ServiceError, install_services, uninstall_services
+
 STEP_IDS = ("config", "token", "key", "services", "health", "tools")
-STEP_LABELS = {"config": "Save your preferences", "token": "Create the session token", "key": "Set aside your SSH key", "services": "Install the background service", "health": "Check that it is running", "tools": "Install AI coding tools"}
+STEP_LABELS = {
+    "config": "Save your preferences",
+    "token": "Create the session token",
+    "key": "Set aside your SSH key",
+    "services": "Install the background service",
+    "health": "Check that it is running",
+    "tools": "Install AI coding tools",
+}
+
+
 class StepState(str, Enum):
     """Step states, serialized using the existing status words."""
+
     PENDING = "pending"
     RUNNING = "running"
     OK = "ok"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
 class RunState(Enum):
     """Completion of the selected steps, independent of persisted core readiness."""
+
     RUNNING = "running"
     SUCCEEDED = "ok"
     FAILED = "failed"
+
+
 def derive_state(steps: list[dict[str, str]]) -> RunState:
     """Derive completion from one snapshot; skipped steps count as successful."""
     statuses = [StepState(s["status"]) for s in steps]
     if any(s in (StepState.PENDING, StepState.RUNNING) for s in statuses):
         return RunState.RUNNING
     return RunState.FAILED if StepState.FAILED in statuses else RunState.SUCCEEDED
+
+
 def _sanitize(detail: str) -> str:
     """Sanitize detail string."""
     return "".join(ch for ch in detail if ord(ch) >= 32 and ord(ch) != 127)[:300]
+
+
 class Progress:
     """Thread-safe progress tracker."""
+
     def __init__(self) -> None:
         """Initialize progress."""
         self._lock = threading.Lock()
-        self._steps: list[dict[str, str]] = [{"id": sid, "label": STEP_LABELS[sid], "status": StepState.PENDING.value, "detail": ""} for sid in STEP_IDS]
+        self._steps: list[dict[str, str]] = [
+            {"id": sid, "label": STEP_LABELS[sid], "status": StepState.PENDING.value, "detail": ""} for sid in STEP_IDS
+        ]
         self._index: dict[str, dict[str, str]] = {s["id"]: s for s in self._steps}
+
     def _get(self, step_id: str) -> dict[str, str]:
         """Get step or raise."""
         if step_id not in self._index:
             raise KeyError(step_id)
         return self._index[step_id]
+
     def _transition(self, step_id: str, state: StepState, detail: str = "") -> None:
         """Own step writes; terminal steps cannot reopen within a run."""
         clean = _sanitize(detail)
@@ -59,38 +85,52 @@ class Progress:
             current = StepState(rec["status"])
             # Config's second save can fail after its initial save succeeded.
             final_save_failure = step_id == "config" and current is StepState.OK and state is StepState.FAILED
-            if state is StepState.PENDING or (current not in (StepState.PENDING, StepState.RUNNING, state) and not final_save_failure):
+            if state is StepState.PENDING or (
+                current not in (StepState.PENDING, StepState.RUNNING, state) and not final_save_failure
+            ):
                 raise ValueError(f"invalid setup transition: {step_id} {current.value} -> {state.value}")
             rec.update(status=state.value, detail=clean)
+
     def start(self, step_id: str) -> None:
         """Mark step running."""
         self._transition(step_id, StepState.RUNNING)
+
     def finish(self, step_id: str, detail: str = "") -> None:
         """Mark step ok."""
         self._transition(step_id, StepState.OK, detail)
+
     def fail(self, step_id: str, detail: str) -> None:
         """Mark step failed."""
         self._transition(step_id, StepState.FAILED, detail)
+
     def skip(self, step_id: str, detail: str = "") -> None:
         """Mark step skipped."""
         self._transition(step_id, StepState.SKIPPED, detail)
+
     def snapshot(self) -> list[dict[str, str]]:
         """Return copy."""
         with self._lock:
             return [dict(s) for s in self._steps]
+
     def done(self) -> bool:
         """Return if finished."""
         return bool(self.result()["done"])
+
     def ok(self) -> bool:
         """Return overall success."""
         return bool(self.result()["ok"])
+
     def result(self) -> dict[str, object]:
         """Return the legacy payload with every field derived from the same copy."""
         steps = self.snapshot()
         state = derive_state(steps)
         done = state is not RunState.RUNNING
         return {"running": not done, "done": done, "ok": state is RunState.SUCCEEDED, "steps": steps}
-def http_health(port: int, timeout_s: float = 10.0, interval_s: float = 0.5, opener=None, token: str | None = None) -> tuple[bool, str]:
+
+
+def http_health(
+    port: int, timeout_s: float = 10.0, interval_s: float = 0.5, opener=None, token: str | None = None
+) -> tuple[bool, str]:
     """Poll health endpoint."""
     if opener is None:
         opener = urllib.request.urlopen
@@ -115,7 +155,23 @@ def http_health(port: int, timeout_s: float = 10.0, interval_s: float = 0.5, ope
             break
         time.sleep(interval_s)
     return False, f"no answer on port {port} after {timeout_s:g} s"
-def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str, env: Mapping[str, str] | None = None, port: int = 8765, dry_run: bool = False, runner: Runner | None = None, health_check: Callable[[int], tuple[bool, str]] | None = None, progress: Progress | None = None, tools_runner: Callable | None = None) -> Progress:
+
+
+def apply(
+    cfg: dict,
+    *,
+    repo_root: Path,
+    python: str,
+    home: Path,
+    platform: str,
+    env: Mapping[str, str] | None = None,
+    port: int = 8765,
+    dry_run: bool = False,
+    runner: Runner | None = None,
+    health_check: Callable[[int], tuple[bool, str]] | None = None,
+    progress: Progress | None = None,
+    tools_runner: Callable | None = None,
+) -> Progress:
     """Run setup steps."""
     prog = progress if progress is not None else Progress()
     failed = False
@@ -192,7 +248,10 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                                 with contextlib.suppress(Exception):
                                     tmp.unlink(missing_ok=True)
                             raise
-                        prog.finish("key", f"saved; to use it run: sudo deploy/harden-device.sh --apply --only ssh --add-key {shlex.quote(str(kpath))}")
+                        prog.finish(
+                            "key",
+                            f"saved; to use it run: sudo deploy/harden-device.sh --apply --only ssh --add-key {shlex.quote(str(kpath))}",
+                        )
                 except Exception as exc:
                     with contextlib.suppress(Exception):
                         if tmp is not None:  # type: ignore[possibly-undefined]
@@ -211,7 +270,17 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                     with contextlib.suppress(Exception):
                         os.chmod(logs, 0o700)
                 # The service keeps the model-route settings this setup run sees, so it uses the same route.
-                lines = install_services(repo_root, python, cdir, home, platform, port=port, dry_run=dry_run, runner=runner, env=env if env is not None else os.environ)
+                lines = install_services(
+                    repo_root,
+                    python,
+                    cdir,
+                    home,
+                    platform,
+                    port=port,
+                    dry_run=dry_run,
+                    runner=runner,
+                    env=env if env is not None else os.environ,
+                )
                 prog.finish("services", "; ".join(lines))
             except (ServiceError, ValueError, FileNotFoundError, OSError) as exc:
                 prog.fail("services", str(exc))
@@ -267,7 +336,17 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                         from opos.aitools.wizard import install_selected as tools_runner
                     _mode = _ai.get("mode", "lite")
                     _pm = _plat.machine()
-                    _lines = tools_runner(_tids, _mode, env=env or {}, home=home, machine=_pm, platform=platform, python=python, src_dir=repo_root / "src", dry_run=dry_run)
+                    _lines = tools_runner(
+                        _tids,
+                        _mode,
+                        env=env or {},
+                        home=home,
+                        machine=_pm,
+                        platform=platform,
+                        python=python,
+                        src_dir=repo_root / "src",
+                        dry_run=dry_run,
+                    )
                     prog.finish("tools", "; ".join(_lines))
                 except Exception as exc:
                     if exc.__class__.__name__ == "InstallError":
@@ -275,7 +354,18 @@ def apply(cfg: dict, *, repo_root: Path, python: str, home: Path, platform: str,
                     else:
                         prog.fail("tools", type(exc).__name__)
     return prog
-def uninstall(*, home: Path, platform: str, env: Mapping[str, str] | None = None, dry_run: bool = False, runner: Runner | None = None, keep_config: bool = False, tools_uninstaller: Callable | None = None) -> list[str]:
+
+
+def uninstall(
+    *,
+    home: Path,
+    platform: str,
+    env: Mapping[str, str] | None = None,
+    dry_run: bool = False,
+    runner: Runner | None = None,
+    keep_config: bool = False,
+    tools_uninstaller: Callable | None = None,
+) -> list[str]:
     """Remove services and config."""
     actions: list[str] = []
     try:
@@ -308,7 +398,13 @@ def uninstall(*, home: Path, platform: str, env: Mapping[str, str] | None = None
     base = config_dir(env, platform)
     if os.path.islink(base):
         return actions
-    candidates = [base / "config.json", base / "session.token", base / "authorized_key.pub", base / "drain-calibration.json", base / "logs"]
+    candidates = [
+        base / "config.json",
+        base / "session.token",
+        base / "authorized_key.pub",
+        base / "drain-calibration.json",
+        base / "logs",
+    ]
     for p in candidates:
         if not os.path.lexists(p):
             continue

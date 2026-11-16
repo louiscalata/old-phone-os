@@ -3,6 +3,7 @@
 
 A raised app handler becomes a short error page with Home. The front page and Phone are not part of that handler.
 """
+
 import re
 import secrets
 from html import escape
@@ -50,10 +51,14 @@ def _li(item):
     if summary and summary != card:
         extra = "<p>%s</p>" % escape(summary)
     if getattr(item, "path", ""):
-        link = '<a href="%s" data-card="%s">%s</a>' % (escape(item.path, quote=True), escape(card, quote=True), safe_title)
+        link = '<a href="%s" data-card="%s">%s</a>' % (
+            escape(item.path, quote=True),
+            escape(card, quote=True),
+            safe_title,
+        )
     else:
         link = "<p>%s</p>" % safe_title
-    return "<li>%s<p class=\"card\">%s</p>%s</li>" % (link, safe_card, extra)
+    return '<li>%s<p class="card">%s</p>%s</li>' % (link, safe_card, extra)
 
 
 def index_html(token, nonce, env=None):
@@ -63,7 +68,7 @@ def index_html(token, nonce, env=None):
         lis = "".join(_li(item) for item in items)
     else:
         lis = "<li><p>No extra apps are on.</p></li>"
-    thumb = "<h2>About these apps</h2><p id=\"card\">Each app works on this phone. Nothing here needs an account.</p>"
+    thumb = '<h2>About these apps</h2><p id="card">Each app works on this phone. Nothing here needs an account.</p>'
     script = """
 var list=document.getElementById('app-list');
 if(list)list.addEventListener('click',function(e){
@@ -72,7 +77,7 @@ var card=document.getElementById('card');
 if(a&&card)card.textContent=a.getAttribute('data-card')||'';
 });
 """
-    return appdoc.render("Apps", token, nonce, "<h1>Apps</h1><ul id=\"app-list\">%s</ul>" % lis, thumb, script)
+    return appdoc.render("Apps", token, nonce, '<h1>Apps</h1><ul id="app-list">%s</ul>' % lis, thumb, script)
 
 
 def _named(app):
@@ -240,5 +245,9 @@ def post(handler, path, data):
     if lockpin.is_locked():
         # An alarm stop or snooze is allowed while locked; its answer must not carry the alarm list.
         error = obj.get("error")
-        obj = locked_json(handler, app) if status == 200 else {"error": error if isinstance(error, str) else "bad request"}
+        obj = (
+            locked_json(handler, app)
+            if status == 200
+            else {"error": error if isinstance(error, str) else "bad request"}
+        )
     handler._json(obj, status)

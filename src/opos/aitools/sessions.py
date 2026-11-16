@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Session tracking and power-aware pausing."""
+
 from dataclasses import dataclass
 from pathlib import Path
 import contextlib
@@ -12,13 +13,19 @@ from opos.aitools import power
 from opos.aitools.installer import read_manifest
 from opos.battery import DrainEstimator, Sample, essentials_reserve
 from opos.governor import Priority, Task
+
 APP_TASK = "app in use"
 FULL_FLOOR_PERCENT = 20.0
+
+
 @dataclass(frozen=True)
 class Session:
     """Live tool session."""
+
     pid: int
     tool_id: str
+
+
 def _inside(candidate: str, base: Path) -> bool:
     """Check candidate inside base."""
     try:
@@ -29,6 +36,8 @@ def _inside(candidate: str, base: Path) -> bool:
             return True
         except ValueError:
             return False
+
+
 def _ppid_from_stat(text: str) -> int | None:
     """Parse ppid from stat."""
     r = text.rfind(")")
@@ -40,6 +49,8 @@ def _ppid_from_stat(text: str) -> int | None:
         return int(parts[1])
     except ValueError:
         return None
+
+
 def list_sessions(run_dir: Path, tools_root: Path, proc_root: Path = Path("/proc")) -> list[Session]:
     """Return live sessions and clean stale pid files."""
     if not run_dir.is_dir():
@@ -92,6 +103,8 @@ def list_sessions(run_dir: Path, tools_root: Path, proc_root: Path = Path("/proc
             continue
         out.append(Session(pid=int(pid_s), tool_id=tool_id))
     return out
+
+
 def descendants(pid: int, proc_root: Path = Path("/proc")) -> list[int]:
     """Return pid and its descendants."""
     ppid_map: dict[int, int] = {}
@@ -129,6 +142,8 @@ def descendants(pid: int, proc_root: Path = Path("/proc")) -> list[int]:
             if pp == cur and child not in seen:
                 stack.append(child)
     return res
+
+
 def should_run(mode: str, on_power: bool, level: float | None, reserve: float | None) -> bool:
     """Decide if session should run."""
     if on_power:
@@ -142,9 +157,21 @@ def should_run(mode: str, on_power: bool, level: float | None, reserve: float | 
         floor = need if need > FULL_FLOOR_PERCENT else FULL_FLOOR_PERCENT
         return level > floor
     return False
+
+
 class SessionGuard:
     """Pause and resume sessions on power changes."""
-    def __init__(self, run_dir: Path, tools_root: Path, *, proc_root: Path = Path("/proc"), kill: Callable[[int, int], None] | None = None, notify: Callable[[str], None] = lambda m: None, own_pid: int | None = None) -> None:
+
+    def __init__(
+        self,
+        run_dir: Path,
+        tools_root: Path,
+        *,
+        proc_root: Path = Path("/proc"),
+        kill: Callable[[int, int], None] | None = None,
+        notify: Callable[[str], None] = lambda m: None,
+        own_pid: int | None = None,
+    ) -> None:
         """Initialize guard."""
         if kill is None:
             kill = os.kill
@@ -156,10 +183,12 @@ class SessionGuard:
         self.own_pid = own_pid if own_pid is not None else os.getpid()
         self.suspended: dict[int, tuple[int, ...]] = {}
         self._last: list[Session] = []
+
     @property
     def session_count(self) -> int:
         """Number of valid sessions last seen."""
         return len(self._last)
+
     def resume_all(self) -> None:
         """Resume all suspended sessions."""
         for sess_pid, pids in list(self.suspended.items()):
@@ -174,6 +203,7 @@ class SessionGuard:
                 except PermissionError:
                     continue
         self.suspended.clear()
+
     def tick(self, mode: str, on_power: bool, level: float | None = None, reserve: float | None = None) -> list[str]:
         """Pause or resume sessions based on power."""
         sessions = list_sessions(self.run_dir, self.tools_root, self.proc_root)
@@ -219,9 +249,12 @@ class SessionGuard:
                 with contextlib.suppress(OSError):
                     self.notify(msg)
         return msgs
+
     def active(self) -> int:
         """Count non-suspended valid sessions."""
         return sum(1 for s in self._last if s.pid not in self.suspended)
+
+
 def with_session_task(tasks, active: bool) -> tuple:
     """Add app task when active."""
     if not active:
@@ -230,6 +263,8 @@ def with_session_task(tasks, active: bool) -> tuple:
         if getattr(t, "name", None) == APP_TASK:
             return tuple(tasks)
     return tuple(tasks) + (Task(APP_TASK, Priority.ESSENTIAL, 1.0),)
+
+
 def sync_dashboard(dash, active: bool) -> None:
     """Sync dashboard tasks with session state."""
     if active:
@@ -237,7 +272,18 @@ def sync_dashboard(dash, active: bool) -> None:
         dash.set_in_use(APP_TASK)
     elif getattr(dash, "in_use", None) == APP_TASK:
         dash.set_in_use(None)
-def main_guard(run_dir: Path, *, interval_s: float = 5.0, sleep=time.sleep, proc_root: Path = Path("/proc"), supply_dir: Path = power.SUPPLY_DIR, idle_exit_s: float = 60.0, kill: Callable[[int, int], None] | None = None) -> int:
+
+
+def main_guard(
+    run_dir: Path,
+    *,
+    interval_s: float = 5.0,
+    sleep=time.sleep,
+    proc_root: Path = Path("/proc"),
+    supply_dir: Path = power.SUPPLY_DIR,
+    idle_exit_s: float = 60.0,
+    kill: Callable[[int, int], None] | None = None,
+) -> int:
     """Run session guard until idle."""
     if kill is None:
         kill = os.kill
@@ -250,6 +296,7 @@ def main_guard(run_dir: Path, *, interval_s: float = 5.0, sleep=time.sleep, proc
         return 0
     try:
         import fcntl
+
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         with contextlib.suppress(OSError):
@@ -258,10 +305,13 @@ def main_guard(run_dir: Path, *, interval_s: float = 5.0, sleep=time.sleep, proc
     old_term = None
     try:
         import threading
+
         if threading.current_thread() is threading.main_thread():
             old_term = signal.getsignal(signal.SIGTERM)
+
             def _h(_a, _b):
                 raise SystemExit(0)
+
             signal.signal(signal.SIGTERM, _h)
     except Exception:
         old_term = None
@@ -326,6 +376,7 @@ def main_guard(run_dir: Path, *, interval_s: float = 5.0, sleep=time.sleep, proc
             guard.resume_all()
         with contextlib.suppress(Exception):
             import fcntl
+
             fcntl.flock(lock_file, fcntl.LOCK_UN)
         with contextlib.suppress(OSError):
             lock_file.close()

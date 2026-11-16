@@ -12,6 +12,7 @@ fixes either way. docs/jaryo-panes.md has the model.
 Like opos.osk this never touches web.page(), so the main page's size budget is untouched: pages pass their finished bytes through
 inject_bytes, which returns them unchanged while the flag is off.
 """
+
 import os
 import re
 from pathlib import Path
@@ -28,7 +29,14 @@ _WORDS = {"1", "on", "mirror", "invert", "theme", "pure"}
 # pair (primitives.css). "theme" paints both panes in the page's own Light/Dark/System tokens.
 SOFT = {"@K@": "#000", "@KI@": "#e6e2d9", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"}
 PURE = {"@K@": "#000", "@KI@": "#fff", "@KCS@": "dark", "@W@": "#fff", "@WI@": "#000", "@WCS@": "light"}
-THEME = {"@K@": "var(--jaryo-bg)", "@KI@": "var(--jaryo-fg)", "@KCS@": "normal", "@W@": "var(--jaryo-bg)", "@WI@": "var(--jaryo-fg)", "@WCS@": "normal"}
+THEME = {
+    "@K@": "var(--jaryo-bg)",
+    "@KI@": "var(--jaryo-fg)",
+    "@KCS@": "normal",
+    "@W@": "var(--jaryo-bg)",
+    "@WI@": "var(--jaryo-fg)",
+    "@WCS@": "normal",
+}
 
 
 def modes(env=None):
@@ -59,10 +67,12 @@ def css_text(span=None, env=None):
     except OSError:  # /etc/sudoers.d closed to this user: Python before 3.14 raises here, and the page must still get its style sheet
         dev_sudo = False
     if dev_sudo:
-        text += ('\nbody::after{content:"DEV: passwordless sudo for droidian";'
-                 'position:fixed;top:0;left:0;right:0;z-index:2147483647;'
-                 'background:#000;color:#fff;text-align:center;font: bold 16px sans-serif;'
-                 'padding:8px;pointer-events:none}')
+        text += (
+            '\nbody::after{content:"DEV: passwordless sudo for droidian";'
+            "position:fixed;top:0;left:0;right:0;z-index:2147483647;"
+            "background:#000;color:#fff;text-align:center;font: bold 16px sans-serif;"
+            "padding:8px;pointer-events:none}"
+        )
     return text
 
 
@@ -84,8 +94,7 @@ def asset(path, span=None, env=None):
 def tags(nonce):
     if not isinstance(nonce, str) or _NONCE_RE.fullmatch(nonce) is None:
         raise ValueError("bad nonce")
-    return (f'<link rel="stylesheet" href="/panes.css" nonce="{nonce}">'
-            f'<script src="/panes.js" nonce="{nonce}"></script>')
+    return f'<link rel="stylesheet" href="/panes.css" nonce="{nonce}"><script src="/panes.js" nonce="{nonce}"></script>'
 
 
 def inject(html, nonce, env=None):
@@ -95,9 +104,9 @@ def inject(html, nonce, env=None):
     t = tags(nonce)
     m = _HEAD_END.search(html)
     if m:
-        return html[:m.start()] + t + html[m.start():]
+        return html[: m.start()] + t + html[m.start() :]
     b = list(_BODY_END.finditer(html))
-    return html + t if not b else html[:b[-1].start()] + t + html[b[-1].start():]
+    return html + t if not b else html[: b[-1].start()] + t + html[b[-1].start() :]
 
 
 def inject_bytes(body, nonce, env=None):

@@ -12,6 +12,7 @@ from opos.power import static_low_power, plan, important_hours
 
 TAGLINE = "We're giving more capabilities and life to an old phone."
 
+
 def _play(emit, fast):
     emit(TAGLINE)
 
@@ -62,13 +63,13 @@ def _play(emit, fast):
     emit("== Battery falling ==")
     task_cost = {}
     for t in DEFAULT_TASKS:
-        name = getattr(t, 'name', None)
+        name = getattr(t, "name", None)
         if name is None:
             try:
                 name = t[0]
             except Exception:
                 continue
-        cost = getattr(t, 'cost', None)
+        cost = getattr(t, "cost", None)
         if cost is None:
             try:
                 cost = t[2]
@@ -77,7 +78,7 @@ def _play(emit, fast):
         task_cost[name] = cost
     sim = DrainSim(level=40.0, health=0.6, temp_c=30.0, speed=60.0)
     for _ in range(40):
-        mode_upper = str(getattr(tick.decision.mode, 'name', tick.decision.mode)).upper()
+        mode_upper = str(getattr(tick.decision.mode, "name", tick.decision.mode)).upper()
         allowed = tick.decision.allowed
         costs_list = [task_cost[n] for n in allowed if n in task_cost]
         sim.advance(10.0, mode_upper, costs_list)

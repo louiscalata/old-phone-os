@@ -34,6 +34,7 @@ The phone must never be left dark:
     a shell that was killed outright. That command tries for a few seconds and exits 1 when it could not light both
     panels; the kiosk then runs `--restore --for 120` in the background.
 """
+
 from __future__ import annotations
 
 import os
@@ -43,13 +44,13 @@ import tempfile
 import time
 
 PANELS = ("panel0-backlight", "panel1-backlight")
-DEFAULTS = (90, 200)        # what the two panels read on the phone measured; used when nothing better is known
+DEFAULTS = (90, 200)  # what the two panels read on the phone measured; used when nothing better is known
 SAVED_NAME = "opos-saved-brightness"
-LOWEST = 1                  # a restored value is at least this, so a restore never leaves a panel dark
-LONGEST = 6                 # digits: a saved value longer than this is not a brightness, and the file counts as malformed
-CLI_WAIT_S = 5.0            # how long `--restore` keeps trying while a panel cannot be written
-LATER_MAX_S = 600           # `--restore --for SECONDS` tries for at most this long
-LATER_STEP_S = 10.0         # and, after the first few tries, once every this many seconds
+LOWEST = 1  # a restored value is at least this, so a restore never leaves a panel dark
+LONGEST = 6  # digits: a saved value longer than this is not a brightness, and the file counts as malformed
+CLI_WAIT_S = 5.0  # how long `--restore` keeps trying while a panel cannot be written
+LATER_MAX_S = 600  # `--restore --for SECONDS` tries for at most this long
+LATER_STEP_S = 10.0  # and, after the first few tries, once every this many seconds
 
 
 def _say(line):
@@ -107,7 +108,7 @@ class Blanker:
         self.root, self.say = root, say
         self.run_dir = run_dir if run_dir is not None else runtime_dir()
         self.may_blank = may_blank or (lambda: True)
-        self.mode = 0       # the last accepted PowerSaveMode: 0 on, 1 to 3 off
+        self.mode = 0  # the last accepted PowerSaveMode: 0 on, 1 to 3 off
         self.failed = []
         self.blanks = 0
         self.on_restore = None
@@ -214,18 +215,20 @@ class Blanker:
         now = [self.read(p) for p in PANELS]
         if os.path.lexists(self.saved_path):
             if os.path.islink(self.saved_path) or not os.path.isfile(self.saved_path):
-                return False        # not a saved file this module wrote: never write through it, never darken on it
-            self.blanks += 1        # dark was asked for and is on file: deliberate, even when every panel reads 0 already
+                return False  # not a saved file this module wrote: never write through it, never darken on it
+            self.blanks += 1  # dark was asked for and is on file: deliberate, even when every panel reads 0 already
             return self._darken([p for p, v in zip(PANELS, now) if v])
         if not any(v for v in now if v is not None):
-            self.blanks += 1        # already dark, and dark is what was asked for
+            self.blanks += 1  # already dark, and dark is what was asked for
             return False
         keep = tuple(v if v else d for v, d in zip(now, DEFAULTS))
         try:
             if not self._save(keep):
                 return False
         except OSError as err:
-            self.say("cannot save the brightness in %s (%s); the screens stay lit" % (self.run_dir, err.strerror or err))
+            self.say(
+                "cannot save the brightness in %s (%s); the screens stay lit" % (self.run_dir, err.strerror or err)
+            )
             return False
         self.blanks += 1
         self._darken(PANELS)
@@ -256,13 +259,15 @@ class Blanker:
         now = [self.read(p) for p in PANELS]
         if not os.path.lexists(self.saved_path):
             try:
-                self._save(tuple(v if v else d for v, d in zip(now, DEFAULTS)))   # False: one appeared meanwhile; kept
+                self._save(tuple(v if v else d for v, d in zip(now, DEFAULTS)))  # False: one appeared meanwhile; kept
             except OSError as err:
-                self.say("cannot save the brightness in %s (%s); the screens stay lit" % (self.run_dir, err.strerror or err))
+                self.say(
+                    "cannot save the brightness in %s (%s); the screens stay lit" % (self.run_dir, err.strerror or err)
+                )
                 self.restore()
                 return False
         if os.path.islink(self.saved_path) or not os.path.isfile(self.saved_path):
-            self.restore()          # not a saved file this module wrote: never darken on it
+            self.restore()  # not a saved file this module wrote: never darken on it
             return False
         # Light first, darken after: when the panel that should be lit cannot be written, the other is left as it was,
         # so a failed switch from one screen to the other never leaves both dark.
@@ -303,7 +308,7 @@ class Blanker:
                 now = self.read(p)
                 if now == 0:
                     wrote = self._write(p, self.lit(p, d), failed) is True or wrote
-                elif now is None:   # it may be dark and cannot be checked: listed, so the CLI and the shell try again
+                elif now is None:  # it may be dark and cannot be checked: listed, so the CLI and the shell try again
                     if not os.path.isdir(self.panel_dir(p)):
                         failed.append("%s: missing" % p)
                         continue
@@ -363,14 +368,14 @@ def main(argv=None, make=None, sleep=time.sleep, wait_s=CLI_WAIT_S, clock=time.m
             left = deadline - clock()
             if left <= 0:
                 break
-            sleep(min(step, left))      # the last sleep is cut to the time left, so the bound is the bound
+            sleep(min(step, left))  # the last sleep is cut to the time left, so the bound is the bound
             step = min(step * 2, top)
             b.restore()
         waited = clock() - start
         if b.failed:
             _say("could not light both screens after %.0f s: %s" % (waited, "; ".join(b.failed)))
             return 1
-    except Exception as err:      # never let a restore end the caller's script with a traceback
+    except Exception as err:  # never let a restore end the caller's script with a traceback
         _say("restore failed: %r" % (err,))
         return 1
     return 0

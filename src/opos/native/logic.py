@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What the native screens work out for themselves, with no toolkit: typed text, sums, and the lines shown for an
 alarm, a timer and a call. Pure functions and two small classes, so they are tested anywhere."""
+
 from __future__ import annotations
 
 import re
@@ -44,7 +45,7 @@ def evaluate(expr):
         if ch.isdigit() or ch == ".":
             cur += ch
         elif ch == "-" and cur == "":
-            cur = "-"                                # a minus where a number is due belongs to the number
+            cur = "-"  # a minus where a number is due belongs to the number
         elif ch in OPS and cur not in ("", "-"):
             tokens += [_number(cur), ch]
             cur = ""
@@ -56,7 +57,7 @@ def evaluate(expr):
     with localcontext() as ctx:
         ctx.prec = 12
         try:
-            terms = [tokens[0]]                      # fold × and ÷ first, left to right
+            terms = [tokens[0]]  # fold × and ÷ first, left to right
             for op, value in zip(tokens[1::2], tokens[2::2]):
                 if op == "×":
                     terms[-1] = terms[-1] * value
@@ -100,7 +101,7 @@ class Calc:
             self.expr = answer
         elif key in OPS:
             if self.expr and self.expr[-1] in OPS and not (key == "-" and self.expr[-1] in "×÷"):
-                self.expr = self.expr[:-1] + key       # a second sign replaces the first
+                self.expr = self.expr[:-1] + key  # a second sign replaces the first
             elif self.expr or key == "-":
                 self.expr += key
         elif (key.isdigit() or key == ".") and len(self.expr) < 40:
@@ -139,7 +140,7 @@ def _when(text):
 
 
 def timer_left(fires_at, now):
-    """"4 min 05 s left" for a running timer, or "" when it is over or unreadable. now is an ISO time, as fires_at is."""
+    """ "4 min 05 s left" for a running timer, or "" when it is over or unreadable. now is an ISO time, as fires_at is."""
     try:
         left = int((_when(fires_at) - _when(now)).total_seconds())
     except (TypeError, ValueError):
@@ -176,13 +177,17 @@ LINK_WAITING = "Waiting for OPOS."
 LOCK_UNKNOWN = "OPOS has not said whether this phone has a PIN lock. Waiting for its answer."
 # Said on Phone when the answer to a call or a hang-up did not come: the request may or may not have reached the modem.
 CALL_UNSURE = "No answer about that call. OPOS is being asked whether it went out; Call comes back when it says."
-HANG_UP_UNSURE = "No answer about hanging up. The call may still be up; OPOS is being asked, and the button comes back when it says."
+HANG_UP_UNSURE = (
+    "No answer about hanging up. The call may still be up; OPOS is being asked, and the button comes back when it says."
+)
 
 # The OPOS server this shell draws: the phone's own, on loopback. OPOS_SERVER_URL may name another port there and
 # nothing else. It is not OPOS_LOCAL_URL: that name is the Helper's model server (opos.assist), which is another program.
 SERVER_URL = "http://127.0.0.1:8765"
-SERVER_URL_REFUSED = ("OPOS_SERVER_URL is not http://127.0.0.1:PORT (a port from 1 to 65535 and nothing after it), "
-                      "so it is not used; asking " + SERVER_URL)
+SERVER_URL_REFUSED = (
+    "OPOS_SERVER_URL is not http://127.0.0.1:PORT (a port from 1 to 65535 and nothing after it), "
+    "so it is not used; asking " + SERVER_URL
+)
 _SERVER_URL = re.compile(r"http://127\.0\.0\.1:([1-9][0-9]{0,4})/?", re.ASCII)
 
 
@@ -206,8 +211,12 @@ def same_server(base, url):
     """True when `url` is an address on the server at `base`: the same scheme, host and port, and no user name."""
     try:
         a, b = urllib.parse.urlsplit(base), urllib.parse.urlsplit(url)
-        return bool(b.scheme and b.hostname) and b.username is None and b.password is None \
+        return (
+            bool(b.scheme and b.hostname)
+            and b.username is None
+            and b.password is None
             and (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
+        )
     except (ValueError, TypeError, AttributeError):
         return False
 
@@ -440,7 +449,7 @@ class Pending:
     """
 
     def __init__(self):
-        self.what, self.after, self.lost = None, None, False    # lost: the reply did not come (failed, or never sent)
+        self.what, self.after, self.lost = None, None, False  # lost: the reply did not come (failed, or never sent)
 
     def start(self, what):
         if self.what is not None:
@@ -539,17 +548,17 @@ def needs_browser(snap):
 
 
 STORAGE_UNKNOWN = "Storage: unknown"
-_SIZES = ((10 ** 12, "TB"), (10 ** 9, "GB"), (10 ** 6, "MB"))     # decimal units, as phones and shops count them
+_SIZES = ((10**12, "TB"), (10**9, "GB"), (10**6, "MB"))  # decimal units, as phones and shops count them
 
 
 def size_words(n):
     """A count of bytes as one short size: "12.3 GB", "512.0 MB", "0 MB"; under 1 MB (not 0) is "under 1 MB"."""
     if n == 0:
         return "0 MB"
-    for i, (unit, word) in enumerate(_SIZES):     # the biggest unit n reaches
+    for i, (unit, word) in enumerate(_SIZES):  # the biggest unit n reaches
         if n >= unit:
             shown = round(n / unit, 1)
-            if shown >= 1000 and i:     # 999.96 GB would read "1000.0 GB": it reads "1.0 TB"
+            if shown >= 1000 and i:  # 999.96 GB would read "1000.0 GB": it reads "1.0 TB"
                 return "%.1f %s" % (round(n / _SIZES[i - 1][0], 1), _SIZES[i - 1][1])
             return "%.1f %s" % (shown, word)
     return "under 1 MB"

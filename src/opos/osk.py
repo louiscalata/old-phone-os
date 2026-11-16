@@ -12,11 +12,13 @@ The page itself is never changed (web.page does not know about this module), so 
 untouched: web.Handler passes the finished page through inject_bytes, which returns it unchanged while the keyboard is off.
 Any other full-page route that wants typing by touch passes its HTML through inject() the same way.
 """
+
 import os
 import re
 from pathlib import Path
 
 from opos import secure
+
 try:  # panes: the black/white two-pane surfaces ride on this module's injection (src/opos/panes.py); optional like the keyboard
     from opos import panes as _panes
 except ImportError:
@@ -31,7 +33,7 @@ HINGE_MAX = 200
 
 
 def mode(env=None):
-    """"web" for the in-page keyboard, "stevia" for the port's Wayland keyboard, "" for neither."""
+    """ "web" for the in-page keyboard, "stevia" for the port's Wayland keyboard, "" for neither."""
     v = (os.environ if env is None else env).get("OPOS_OSK", "").strip().lower()
     return "web" if v in ("1", "web") else "stevia" if v == "stevia" else ""
 
@@ -71,8 +73,10 @@ def tags(nonce, env=None):
     """The two tags that load the keyboard, carrying the page's CSP nonce."""
     if not isinstance(nonce, str) or _NONCE_RE.fullmatch(nonce) is None:
         raise ValueError("bad nonce")
-    return (f'<link rel="stylesheet" href="/osk.css" nonce="{nonce}">'
-            f'<script src="/osk.js" nonce="{nonce}" data-hinge="{hinge(env)}" defer></script>')
+    return (
+        f'<link rel="stylesheet" href="/osk.css" nonce="{nonce}">'
+        f'<script src="/osk.js" nonce="{nonce}" data-hinge="{hinge(env)}" defer></script>'
+    )
 
 
 def inject(html, nonce, env=None):
@@ -81,7 +85,7 @@ def inject(html, nonce, env=None):
         return html
     m = list(_BODY_END.finditer(html))  # not html.lower().rfind: lower() changes the length of some characters (U+0130)
     t = tags(nonce, env)
-    return html + t if not m else html[:m[-1].start()] + t + html[m[-1].start():]
+    return html + t if not m else html[: m[-1].start()] + t + html[m[-1].start() :]
 
 
 def inject_bytes(body, nonce, env=None):
@@ -97,7 +101,9 @@ def serve(handler, path, env=None):
     """Answer GET/HEAD for /osk.js and /osk.css on a web.Handler; False (nothing sent) for any other path or while off."""
     a = asset(path, env)
     if a is None:
-        return _panes is not None and _panes.serve(handler, path, env)  # panes: /panes.css and /panes.js, only while OPOS_PANES is set
+        return _panes is not None and _panes.serve(
+            handler, path, env
+        )  # panes: /panes.css and /panes.js, only while OPOS_PANES is set
     body, ctype = a
     handler.send_response(200)
     for k, v in secure.security_headers().items():

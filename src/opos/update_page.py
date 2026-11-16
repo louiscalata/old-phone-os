@@ -7,6 +7,7 @@ adds the buttons and a live refresh from /api/update. Text size and theme follow
 
 The main page reaches it with one link in Settings, About ("Updates"); a full-page navigation, and "Back to the phone" returns.
 """
+
 import json
 from html import escape
 from pathlib import Path
@@ -94,7 +95,13 @@ until=Date.now()+600000;tick();
 
 def _js():
     out = _JS
-    for key, value in (("ONCE", update_client.ONCE_ONLY), ("BACK", _BACK), ("STAGED", _STAGED), ("CANCEL", _CANCEL), ("LABELS", _LABELS)):
+    for key, value in (
+        ("ONCE", update_client.ONCE_ONLY),
+        ("BACK", _BACK),
+        ("STAGED", _STAGED),
+        ("CANCEL", _CANCEL),
+        ("LABELS", _LABELS),
+    ):
         out = out.replace("@@%s@@" % key, json.dumps(value))
     return out
 
@@ -107,11 +114,12 @@ def about(root="/"):
     facts = image_identity.facts(root)
     if facts is None:
         return '<section aria-labelledby="u-h-about"><h2 id="u-h-about">About</h2><p>OPOS image identity is unavailable on this install.</p></section>'
-    return ('<section aria-labelledby="u-h-about"><h2 id="u-h-about">About</h2>'
-            '<p>Old Phone OS {version}, based on {base}</p>'
-            '<dl><dt>Image revision</dt><dd>{revision}</dd><dt>Kernel release</dt><dd>{kernel}</dd></dl>'
-            '<p>The image identity describes the baked image. Running application updates are listed below.</p></section>').format(
-                **{k: _e(v) for k, v in facts.items()})
+    return (
+        '<section aria-labelledby="u-h-about"><h2 id="u-h-about">About</h2>'
+        "<p>Old Phone OS {version}, based on {base}</p>"
+        "<dl><dt>Image revision</dt><dd>{revision}</dd><dt>Kernel release</dt><dd>{kernel}</dd></dl>"
+        "<p>The image identity describes the baked image. Running application updates are listed below.</p></section>"
+    ).format(**{k: _e(v) for k, v in facts.items()})
 
 
 def page(token="", nonce="", snap=None):
@@ -138,7 +146,13 @@ def page(token="", nonce="", snap=None):
         rb_label, rb_why = asked, "Waiting for the updater."
     else:
         rb_label = asking
-        rb_why = "" if rb.get("possible") else update_client.ONCE_ONLY if rb.get("once") else "There is no earlier version to go back to."
+        rb_why = (
+            ""
+            if rb.get("possible")
+            else update_client.ONCE_ONLY
+            if rb.get("once")
+            else "There is no earlier version to go back to."
+        )
     staged = rb.get("staged")
     rb_intro = _STAGED.format(_e(staged)) if staged is not None else _BACK
     job_text = _e(job.get("message") if job.get("phase") in ("failed", "done") else "")

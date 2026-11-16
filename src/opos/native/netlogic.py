@@ -6,36 +6,44 @@ shown.
 The core (opos.net, through the server's net_* actions) makes every change; nothing here talks to a radio or to the
 core, and nothing here writes a file or a log.
 """
+
 from __future__ import annotations
 
 FALLBACK = "That did not go through."
 TOO_MANY = "Too many tries in a row. Wait a few seconds, then try again."
-NO_ANSWER = ("OPOS has not answered yet. The change may still be going on; the radios are read again to show what "
-             "happened.")
+NO_ANSWER = (
+    "OPOS has not answered yet. The change may still be going on; the radios are read again to show what happened."
+)
 SLOW = "OPOS did not answer in time. Try again in a moment."
-WIFI_UNKNOWN ="The Wi-Fi state is not known yet. Wait until the radios have been read, then try again."
+WIFI_UNKNOWN = "The Wi-Fi state is not known yet. Wait until the radios have been read, then try again."
 HIDDEN = "<password hidden>"
 NOT_IN_RANGE = "saved, not in range"
 OPEN_NOTE = "Open network: anyone nearby can read what you send over it."
 NEED_PW = "Type the network's password first, or tap Cancel."
 NEED_NAME = "Type the network's name first."
-DISCONNECT_MOVED = "The phone is now connected to another network, so nothing was disconnected. Check the list, then try again."
-DISCONNECT_UNKNOWN = ("Which network is connected is not known right now, so nothing was disconnected. Wait until the "
-                      "radios have been read, then try again.")
-DISCONNECT_CLOSED = ("The choice changed while the radios were read again, so nothing was disconnected. Choose the "
-                     "network, then try again.")
+DISCONNECT_MOVED = (
+    "The phone is now connected to another network, so nothing was disconnected. Check the list, then try again."
+)
+DISCONNECT_UNKNOWN = (
+    "Which network is connected is not known right now, so nothing was disconnected. Wait until the "
+    "radios have been read, then try again."
+)
+DISCONNECT_CLOSED = (
+    "The choice changed while the radios were read again, so nothing was disconnected. Choose the "
+    "network, then try again."
+)
 NAME_CHANGED = "The name changed, so the password typed for the old name was cleared. Type the password again."
 KEYS_WAIT = "Keys are not kept while OPOS is busy. Type the password once it answers."
 CHANGED = "This button just changed. Check what it says now, then tap again."
 LIST_CHANGED = "The list just changed. Check it, then tap the network again."
 REREAD = "Reading the radios again to show what the change did..."
-LIST_REREAD = "Reading the list again..."     # the only row while a new visit's first list has not come
+LIST_REREAD = "Reading the list again..."  # the only row while a new visit's first list has not come
 LIST_WAIT = "The list is being read again. Wait for it, then tap a network."
-NOT_SENT = "_not_sent"     # set on a reply put in place of one when the change was refused before anything ran
-DONE_STATES = ("disconnected", "off", "blocked", "absent")     # a Wi-Fi state in which no network is connected
+NOT_SENT = "_not_sent"  # set on a reply put in place of one when the change was refused before anything ran
+DONE_STATES = ("disconnected", "off", "blocked", "absent")  # a Wi-Fi state in which no network is connected
 STATUS_KEYS = ("wifi", "airplane", "bluetooth", "data")
-LIMIT = 64          # the longest Wi-Fi password there is (64 hex digits); opos.net.check_password refuses more
-SSID_MAX = 64       # the core refuses a longer name
+LIMIT = 64  # the longest Wi-Fi password there is (64 hex digits); opos.net.check_password refuses more
+SSID_MAX = 64  # the core refuses a longer name
 
 
 def _signal(value):
@@ -61,22 +69,40 @@ def rows(scan):
         ssid = n.get("ssid")
         if not isinstance(ssid, str) or not ssid or len(ssid) > SSID_MAX:
             continue
-        row = {"ssid": ssid, "signal": _signal(n.get("signal")), "secure": n.get("secure") is not False,
-               "known": n.get("known") is True, "supported": n.get("supported") is not False,
-               "active": n.get("active") is True, "visible": True,
-               "label": n.get("label") if isinstance(n.get("label"), str) and n.get("label") else None,
-               "security": n.get("security") if isinstance(n.get("security"), str) else ""}
+        row = {
+            "ssid": ssid,
+            "signal": _signal(n.get("signal")),
+            "secure": n.get("secure") is not False,
+            "known": n.get("known") is True,
+            "supported": n.get("supported") is not False,
+            "active": n.get("active") is True,
+            "visible": True,
+            "label": n.get("label") if isinstance(n.get("label"), str) and n.get("label") else None,
+            "security": n.get("security") if isinstance(n.get("security"), str) else "",
+        }
         old = best.get(ssid)
-        if old is None or (row["active"] and not old["active"]) or \
-                (row["active"] == old["active"] and (row["signal"] or 0) > (old["signal"] or 0)):
+        if (
+            old is None
+            or (row["active"] and not old["active"])
+            or (row["active"] == old["active"] and (row["signal"] or 0) > (old["signal"] or 0))
+        ):
             if old is not None and old["active"]:
                 row["active"] = True
             best[ssid] = row
     out = sorted(best.values(), key=lambda r: (not r["active"], -(r["signal"] or 0), r["ssid"].lower()))
     for name in saved or []:
         if isinstance(name, str) and name and len(name) <= SSID_MAX and name not in best:
-            best[name] = {"ssid": name, "signal": None, "secure": True, "known": True, "supported": True, "active": False,
-                          "visible": False, "label": NOT_IN_RANGE, "security": ""}
+            best[name] = {
+                "ssid": name,
+                "signal": None,
+                "secure": True,
+                "known": True,
+                "supported": True,
+                "active": False,
+                "visible": False,
+                "label": NOT_IN_RANGE,
+                "security": "",
+            }
             out.append(best[name])
     return out
 
@@ -89,9 +115,17 @@ def detail(row):
         return row["label"]
     if row.get("visible") is False:
         return NOT_IN_RANGE
-    how = ("connected" if row.get("active") else "saved" if row.get("known") else
-           "not supported yet" if row.get("supported") is False else
-           "open network" if row.get("secure") is False else "needs a password")
+    how = (
+        "connected"
+        if row.get("active")
+        else "saved"
+        if row.get("known")
+        else "not supported yet"
+        if row.get("supported") is False
+        else "open network"
+        if row.get("secure") is False
+        else "needs a password"
+    )
     sig = _signal(row.get("signal"))
     return how + ("" if sig is None else ", signal %d%%" % sig)
 
@@ -201,7 +235,7 @@ class Secret:
         return HIDDEN
 
     def __eq__(self, _other):
-        return NotImplemented   # no comparison can be used to guess it
+        return NotImplemented  # no comparison can be used to guess it
 
     __hash__ = object.__hash__
 
@@ -275,7 +309,7 @@ def friendly(result):
     if not isinstance(result, dict):
         return False, FALLBACK
     ok = result.get("ok") is True
-    for key in (("message", "error") if ok else ("error", "message")):
+    for key in ("message", "error") if ok else ("error", "message"):
         text = result.get(key)
         if isinstance(text, str) and text.strip():
             return ok, text.strip()
@@ -314,5 +348,5 @@ def failed(err, change):
         return {"ok": False, "error": NO_ANSWER if change else SLOW}
     got = {"ok": False, "error": FALLBACK}
     if isinstance(getattr(err, "reason", None), ConnectionRefusedError) or isinstance(err, ConnectionRefusedError):
-        got[NOT_SENT] = True    # nothing reached the server
+        got[NOT_SENT] = True  # nothing reached the server
     return got

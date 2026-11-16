@@ -5,12 +5,15 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+
 class CatalogError(ValueError):
     """Invalid catalog data."""
+
 
 @dataclass(frozen=True)
 class Tool:
     """Tool definition from catalog."""
+
     id: str
     name: str
     binary: str
@@ -30,18 +33,37 @@ class Tool:
     # Date (YYYY-MM-DD) the digest was measured.
     installer_sha256_checked: str = ""
 
+
 _ID_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 _BIN_RE = re.compile(r"^[a-z0-9._-]{1,32}$")
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 _WS_RE = re.compile(r"\s")
 _ARCHS_ALLOWED = {"aarch64", "x86_64"}
-_TOOL_KEYS = frozenset({"id", "name", "binary", "installer_url", "interpreter", "installer_args", "installer_env", "archs", "min_free_mb", "state_subdir", "run_env", "lite_env", "signin", "docs_url"})
+_TOOL_KEYS = frozenset(
+    {
+        "id",
+        "name",
+        "binary",
+        "installer_url",
+        "interpreter",
+        "installer_args",
+        "installer_env",
+        "archs",
+        "min_free_mb",
+        "state_subdir",
+        "run_env",
+        "lite_env",
+        "signin",
+        "docs_url",
+    }
+)
 # Optional in the file so a table without them still lists; the installer refuses a tool with no digest.
 _OPTIONAL_TOOL_KEYS = frozenset({"installer_sha256", "installer_sha256_checked"})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 _TOP_KEYS = frozenset({"version", "tools"})
 _FORBIDDEN_ENV = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+
 
 def _check_url(s: str) -> None:
     """Validate https url without whitespace."""
@@ -51,6 +73,7 @@ def _check_url(s: str) -> None:
         raise CatalogError("url must start with https://")
     if _WS_RE.search(s):
         raise CatalogError("url has whitespace")
+
 
 def _check_env(d: object) -> None:
     """Validate env mapping."""
@@ -67,6 +90,7 @@ def _check_env(d: object) -> None:
         if "\n" in v or "\r" in v or "\x00" in v:
             raise CatalogError(f"bad env value for {k!r}")
 
+
 def _is_date(text: str) -> bool:
     """Check a YYYY-MM-DD calendar date."""
     if not _DATE_RE.fullmatch(text):
@@ -77,9 +101,11 @@ def _is_date(text: str) -> bool:
         return False
     return True
 
+
 def default_path(repo_root: Path) -> Path:
     """Return default catalog path."""
     return repo_root / "deploy" / "ai-tools.json"
+
 
 def load(path: Path) -> tuple[Tool, ...]:
     """Load and validate catalog."""
@@ -175,8 +201,28 @@ def load(path: Path) -> tuple[Tool, ...]:
         checked = entry.get("installer_sha256_checked", "")
         if not isinstance(checked, str) or (checked and not _is_date(checked)):
             raise CatalogError(f"bad installer_sha256_checked for {tid!r}: use YYYY-MM-DD")
-        out.append(Tool(id=tid, name=name, binary=binary, installer_url=installer_url, interpreter=interpreter, installer_args=tuple(installer_args), installer_env=dict(installer_env), archs=tuple(archs), min_free_mb=min_free, state_subdir=state_subdir, run_env=dict(run_env), lite_env=dict(lite_env), signin=signin, docs_url=docs_url, installer_sha256=digest, installer_sha256_checked=checked))
+        out.append(
+            Tool(
+                id=tid,
+                name=name,
+                binary=binary,
+                installer_url=installer_url,
+                interpreter=interpreter,
+                installer_args=tuple(installer_args),
+                installer_env=dict(installer_env),
+                archs=tuple(archs),
+                min_free_mb=min_free,
+                state_subdir=state_subdir,
+                run_env=dict(run_env),
+                lite_env=dict(lite_env),
+                signin=signin,
+                docs_url=docs_url,
+                installer_sha256=digest,
+                installer_sha256_checked=checked,
+            )
+        )
     return tuple(out)
+
 
 def get(tools: tuple[Tool, ...], tool_id: str) -> Tool:
     """Return tool by id."""
@@ -185,6 +231,17 @@ def get(tools: tuple[Tool, ...], tool_id: str) -> Tool:
             return t
     raise CatalogError(f"unknown tool: {tool_id}")
 
+
 def public_view(tools: tuple[Tool, ...]) -> list[dict]:
     """Return wizard-safe view."""
-    return [{"id": t.id, "name": t.name, "min_free_mb": t.min_free_mb, "archs": list(t.archs), "signin": t.signin, "docs_url": t.docs_url} for t in tools]
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "min_free_mb": t.min_free_mb,
+            "archs": list(t.archs),
+            "signin": t.signin,
+            "docs_url": t.docs_url,
+        }
+        for t in tools
+    ]
