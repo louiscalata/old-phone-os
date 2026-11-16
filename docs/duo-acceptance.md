@@ -140,6 +140,19 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
   which it is: no change, rotates correctly, rotates wrongly. Then run `opos-selftest` again: it must still pass.
 - Observed: ____________________________________________  Date: ____-__-__  [ ] as expected  [ ] not
 
+### 4a. Hinge angle and back mode (native shell)
+
+- How: only when the sensor service is already running (`systemctl is-active sensorfwd` through ssh answers `active`;
+  starting it is the owner's decision, see [NATIVE.md](../packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)). Fold the
+  phone slowly from flat to nearly shut, then open it and fold it all the way back; folded back, turn the phone over so
+  the other screen faces you, and touch the dark screen. Read the shell's `opos shell: posture` lines from its log
+  (`journalctl -b | grep "opos shell: posture"` through ssh, if the session's output reaches the journal).
+- Expected: the log names book, flat, tent and back as the angle passes through them (closed only when the lid switch
+  says so); folded back, one screen is lit and the page is one screen wide; after a flip the lit screen changes within
+  about two seconds; a touch on the dark screen does nothing; unfolding the phone out of back mode, or closing and opening
+  the lid, lights both screens. Settings > Hinge shows the posture and the angle.
+- Observed: ____________________________________________  Date: ____-__-__  [ ] as expected  [ ] not
+
 ### 5. Fold-to-sleep
 
 - How: with the screens lit, fold the phone shut for ten seconds and open it again. If you can ssh in meanwhile (over Wi-Fi, or
@@ -202,7 +215,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 
 ### Sign-off
 
-Part 1: PASS / FAIL, with ____ WARN and ____ SKIP explained in the evidence folder.  Part 2: ____ of 10 as expected.
+Part 1: PASS / FAIL, with ____ WARN and ____ SKIP explained in the evidence folder.  Part 2: ____ of 11 as expected.
 Findings to keep (each with the check number): ______________________________________________________________
 
 ## Limits

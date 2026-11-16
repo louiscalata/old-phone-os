@@ -38,6 +38,12 @@ modules.
 - `home.py`: home-screen text and quiet-output checks.
 - `ui.py`: separate Tk demo and the in-memory `ScreenModem`.
 
+## Native shell
+
+- `native/`: the GTK 4 shell that replaces the browser on the Surface Duo image ([NATIVE.md](../packaging/duo-os/NATIVE.md)); it draws what the server last said and asks the server to act.
+- `native/posture.py`, `hinge.py`, `facing.py`: the posture from the lid switch and the hinge angle, a read-only D-Bus client of the phone's sensor service (sensorfw) with adaptive polling, and which screen faces you when the phone is folded back. The angle and the accelerometer come only from that service; nothing is written to the phone's sensors and nothing under `/sys/kernel/debug` is read.
+- `native/blank.py`, `displayconfig.py`: darkening and lighting the two panels for the lid and for back mode.
+
 ## Setup and install
 
 - `setup/`: CLI, configuration, preferences, device choices, wizard, loopback setup API, service management and self-tests.

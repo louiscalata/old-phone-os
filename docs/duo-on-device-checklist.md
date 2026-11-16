@@ -20,6 +20,11 @@ Do not record device identifiers, radio identifiers, or hardware addresses in th
 | Both panels use the same brightness, including after unfold | NOT_RUN |
 | Folding blanks softly and unfolding restores the screen | NOT_RUN |
 | Posture follows the hinge angle | NOT_RUN |
+| Folded back, only the screen that faces you is lit, and it follows a flip within about a second | NOT_RUN |
+| Folded back, touch on the dark screen is ignored | NOT_RUN |
+| Both screens light again when the lid opens after back mode | NOT_RUN |
+| Ten cold boots in a row with the sensor service started after boot, none stalls or resets the phone | NOT_RUN |
+| Idle CPU of the shell and the sensor service per 30 seconds, unfolded, folded back and lid closed, against the peer-measured figures in NATIVE.md | NOT_RUN |
 | Airplane mode turns the radios off and back on | NOT_RUN |
 | Restart Wi-Fi and restart modem recover a stuck radio | NOT_RUN |
 | Heat above the battery limit slows the phone and says so | NOT_RUN |
