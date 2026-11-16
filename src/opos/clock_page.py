@@ -28,12 +28,13 @@ html[data-bed=1] #editor,html[data-bed=1] #pivots,html[data-bed=1] #rows,html[da
 
 _LIST = """
 <h1>Clock</h1>
+<p class="note">Alarms show on screen only. No sound or vibration is played yet.</p>
 <div id="pivots" class="chips">
 <button id="p-alarms" type="button" aria-pressed="true">Alarms</button>
 <button id="p-timer" type="button" aria-pressed="false">Timer</button>
 <button id="p-watch" type="button" aria-pressed="false">Stopwatch</button>
 </div>
-<p id="warn" class="note" hidden>Clock not set: alarms will not ring until the time is known</p>
+<p id="warn" class="note" hidden>Clock not set: alarms will not show until the time is known</p>
 <p id="recovered" class="note" hidden></p>
 <ul id="rows"></ul>
 <div id="night" hidden><p id="night-time" class="big">--:--</p><p id="night-next"></p></div>
@@ -270,6 +271,6 @@ def _play(events):
 apps.register(apps.App(
     "clock", "Clock", "/clock",
     "Alarms, a timer, a stopwatch and a bedside clock.",
-    "yes", "no", "speaker, vibration", "real", "alarms", "ESSENTIAL", 0.1,
+    "yes", "no", "screen only (no sound yet)", "real", "alarms", "ESSENTIAL", 0.1,
     render, snapshot, post,
 ))

@@ -15,7 +15,7 @@ from opos import image_identity, secure, update_client
 
 _STATIC = Path(__file__).with_name("web_static")
 _BACK = "Asks the updater to return to the earlier version. The OPOS server restarts."
-_STAGED = "Update {} is staged and installs at the next restart. The button cancels it; what is installed stays as it is."  # {} is its serial
+_STAGED = "Update {} is staged and has not been applied. The button cancels it; what is installed stays as it is."  # {} is its serial
 _CANCEL = "This asks the updater to cancel the staged update."
 _LABELS = {"back": ("Request rollback", "Rollback requested"), "cancel": ("Cancel staged update", "Cancel requested")}
 
@@ -75,7 +75,7 @@ if(!armed)T('u-rb',LAB[rb.staged==null?'back':'cancel'][rb.requested?1:0]);
 T('u-rb-why',rb.requested?'Waiting for the updater.':rb.possible?'':rb.once?ONCE:'There is no earlier version to go back to.')}
 function N(v){T('u-note','');T('u-rb-note','');T(where,v)}
 function tick(){load().then(function(r){if(r.s===200){if(tn){N('');tn=false}show(r.j);if(!settled(r.j)&&Date.now()<until)again(1000)}
-else{N(msg(r));tn=true}},function(){N('OPOS is not answering. It may be restarting to finish an update. Trying again.');tn=true;if(Date.now()<until)again(3000)})}
+else{N(msg(r));tn=true}},function(){N('OPOS is not answering. Its server may be applying an update. Trying again.');tn=true;if(Date.now()<until)again(3000)})}
 function again(ms){clearTimeout(timer);timer=setTimeout(tick,ms)}
 function unlock(){if(last)show(last);else G('u-check').disabled=false}
 function go(a,m,w){where=w;N(m);G('u-check').disabled=true;
@@ -169,7 +169,7 @@ def page(token="", nonce="", snap=None):
 <section aria-labelledby="u-h-last"><h2 id="u-h-last">Last update</h2>
 <p>Phase: <span id="u-phase">{_e(st["phase"] if st else "none yet")}</span></p>
 <p id="u-msg" role="status" aria-live="polite">{_e(st["message"] if st else "No update has run on this phone yet.")}</p>
-<p id="u-stall" role="alert"{"" if s.get("stalled") else " hidden"}>The updater has not picked up what was delivered for several minutes, so it may not be running. Restart the phone to start it again.</p></section>
+<p id="u-stall" role="alert"{"" if s.get("stalled") else " hidden"}>The updater has not picked up what was delivered for several minutes, so it may not be running. Keep the phone on. Starting the updater again needs root on the phone (a development image with passwordless sudo). Over ssh from the PC: sudo systemctl reset-failed opos-update.path opos-update.service; sudo systemctl restart opos-update.path</p></section>
 <section aria-labelledby="u-h-rb"><h2 id="u-h-rb">Go back</h2>
 <p id="u-rb-intro">{rb_intro}</p>
 <p><button type="button" id="u-rb"{"" if rb.get("possible") and not rb.get("requested") else " disabled"}>{rb_label}</button></p>
