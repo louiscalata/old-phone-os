@@ -5,6 +5,7 @@
 Needs e2fsprogs debugfs (read-only, no -w) and OpenSSH ssh-keygen -Y.
 The owner supplies an existing Ed25519 key or agent-backed public key file.
 """
+
 import argparse
 import base64
 import importlib.util
@@ -51,13 +52,15 @@ def signature_format(raw):
         data = base64.b64decode(b"".join(lines[1:-1]), validate=True)
         if data[:10] != b"SSHSIG" + struct.pack(">I", 1):
             raise ValueError("unsupported SSH signature version")
+
         def take(buf):
             if len(buf) < 4:
                 raise ValueError("truncated SSH signature")
             n = struct.unpack(">I", buf[:4])[0]
             if n > len(buf) - 4:
                 raise ValueError("truncated SSH signature field")
-            return buf[4:4+n], buf[4+n:]
+            return buf[4 : 4 + n], buf[4 + n :]
+
         key, rest = take(data[10:])
         kind, public = take(key)
         public, tail = take(public)
@@ -69,21 +72,31 @@ def signature_format(raw):
         sig, rest = take(rest)
         kind, sig = take(sig)
         sig, tail = take(sig)
-        if (namespace != NAMESPACE.encode() or reserved or algorithm not in (b"sha256", b"sha512") or
-                kind != b"ssh-ed25519" or len(sig) != 64 or tail or rest):
+        if (
+            namespace != NAMESPACE.encode()
+            or reserved
+            or algorithm not in (b"sha256", b"sha512")
+            or kind != b"ssh-ed25519"
+            or len(sig) != 64
+            or tail
+            or rest
+        ):
             raise ValueError("wrong SSH signature namespace or structure")
     except (struct.error, TypeError) as exc:
         raise ValueError("malformed SSH signature") from exc
 
 
 def notes(m):
-    return ("Old Phone OS {version}\nImage revision: {revision}\nBase: {base}\n"
-            "Build time (SOURCE_DATE_EPOCH): {epoch}\n\nChanges: TODO\nKnown limitations: TODO\n"
-            "Real image build verification: NOT_RUN\nSurface Duo identity and manifest check: NOT_RUN\n"
-            "Surface Duo interface and fallback checks: NOT_RUN\n"
-            "Calls and messages remain simulated.\n"
-            "This folder is a full rootfs image release, not an OTA update bundle.\n").format(
-                version=m["version"], revision=m["revision"], base=m["base"]["os_release"]["NAME"], epoch=m["source_date_epoch"])
+    return (
+        "Old Phone OS {version}\nImage revision: {revision}\nBase: {base}\n"
+        "Build time (SOURCE_DATE_EPOCH): {epoch}\n\nChanges: TODO\nKnown limitations: TODO\n"
+        "Real image build verification: NOT_RUN\nSurface Duo identity and manifest check: NOT_RUN\n"
+        "Surface Duo interface and fallback checks: NOT_RUN\n"
+        "Calls and messages remain simulated.\n"
+        "This folder is a full rootfs image release, not an OTA update bundle.\n"
+    ).format(
+        version=m["version"], revision=m["revision"], base=m["base"]["os_release"]["NAME"], epoch=m["source_date_epoch"]
+    )
 
 
 def sums(folder):
@@ -98,8 +111,22 @@ def verify(folder, allowed_signers, debugfs="debugfs", keygen="ssh-keygen"):
         raise ValueError("release files must be regular files, not links")
     signature_format((folder / "SHA256SUMS.sig").read_bytes())
     signed = (folder / "SHA256SUMS").read_bytes()
-    run([keygen, "-Y", "verify", "-f", str(Path(allowed_signers).resolve()), "-I", PRINCIPAL,
-         "-n", NAMESPACE, "-s", str((folder / "SHA256SUMS.sig").resolve())], signed)
+    run(
+        [
+            keygen,
+            "-Y",
+            "verify",
+            "-f",
+            str(Path(allowed_signers).resolve()),
+            "-I",
+            PRINCIPAL,
+            "-n",
+            NAMESPACE,
+            "-s",
+            str((folder / "SHA256SUMS.sig").resolve()),
+        ],
+        signed,
+    )
     if signed != sums(folder):
         raise ValueError("release hashes differ from the signed SHA256SUMS")
     if (folder / "image.json").read_bytes() != extract(folder / "rootfs.img", debugfs):
@@ -139,7 +166,9 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="command", required=True)
     for command in ("build", "verify"):
         p = sub.add_parser(command)
-        p.add_argument("--allowed-signers", required=True, help="owner's public trust file: opos-release ssh-ed25519 AAAA...")
+        p.add_argument(
+            "--allowed-signers", required=True, help="owner's public trust file: opos-release ssh-ed25519 AAAA..."
+        )
         p.add_argument("--debugfs", default="debugfs", help="e2fsprogs read-only ext4 reader")
         p.add_argument("--ssh-keygen", default="ssh-keygen")
         if command == "build":

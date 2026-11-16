@@ -9,6 +9,7 @@ verifying run the OpenSSH `ssh-keygen -Y` commands, reading the source tree runs
   opos-release.py keygen-help [--pub FILE]
 
 `verify` is its own implementation of the checks the phone's updater must make; it shares no code with it."""
+
 import argparse
 import base64
 import calendar
@@ -51,7 +52,9 @@ OVERLAY_DEST = {
     "opos-diag.service": "etc/systemd/system/opos-diag.service",
 }
 SCOPES = ("app", "boot")
-PART = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._+-]{0,99}")  # the updater's component rule (it allows 128 characters, the tool stops at 100)
+PART = re.compile(
+    r"[A-Za-z0-9_][A-Za-z0-9._+-]{0,99}"
+)  # the updater's component rule (it allows 128 characters, the tool stops at 100)
 UNIT = re.compile(r"opos[A-Za-z0-9._+-]*\.service")
 HEX40, HEX64 = re.compile(r"[0-9a-f]{40}"), re.compile(r"[0-9a-f]{64}")
 STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
@@ -64,7 +67,10 @@ PRIVATE_MARKERS = (
     ("a PGP private key", re.compile(rb"-----BEGIN PGP PRIVATE " + rb"KEY BLOCK-----")),
     ("a PuTTY private key", re.compile(rb"PuTTY-User-Key-File-\d+:")),
     ("a PuTTY private key", re.compile(rb"Private-" + rb"Lines:")),
-    ("an OpenSSH private key without its armor", re.compile(rb"b3BlbnNzaC1rZXktdjE" + rb"A")),  # base64 of "openssh-key-v1"
+    (
+        "an OpenSSH private key without its armor",
+        re.compile(rb"b3BlbnNzaC1rZXktdjE" + rb"A"),
+    ),  # base64 of "openssh-key-v1"
     ("an SSH2 private key", re.compile(rb"---- BEGIN SSH2 ENCRYPTED PRIVATE " + rb"KEY ----")),
 )
 PUBKEY_TYPE = re.compile(r"(?:sk-)?(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp(?:256|384|521))(?:@openssh\.com)?")
@@ -102,7 +108,9 @@ def public_key_fields(data, name):
         data.decode("utf-8")
     except UnicodeDecodeError:
         raise bad
-    lines = [l for l in data.splitlines() if l.strip() and not l.lstrip().startswith(b"#")]  # bytes: ASCII line ends and blanks only
+    lines = [
+        l for l in data.splitlines() if l.strip() and not l.lstrip().startswith(b"#")
+    ]  # bytes: ASCII line ends and blanks only
     first = None
     for line in lines:
         fields = line.split(None, 2)  # type, blob, and the comment as one piece
@@ -112,9 +120,9 @@ def public_key_fields(data, name):
         except (IndexError, ValueError):
             raise bad
         parts, i = [], 0  # the blob is a run of length-prefixed strings: the type name, then the key's numbers
-        while i + 4 <= len(blob) and i + 4 + int.from_bytes(blob[i:i + 4], "big") <= len(blob):
-            n = int.from_bytes(blob[i:i + 4], "big")
-            parts.append(blob[i + 4:i + 4 + n])
+        while i + 4 <= len(blob) and i + 4 + int.from_bytes(blob[i : i + 4], "big") <= len(blob):
+            n = int.from_bytes(blob[i : i + 4], "big")
+            parts.append(blob[i + 4 : i + 4 + n])
             i += 4 + n
         if not PUBKEY_TYPE.fullmatch(kind) or i != len(blob) or len(parts) < 2 or parts[0] != kind.encode():
             raise bad
@@ -131,24 +139,38 @@ def classify(path):
     parts = path.split("/")
     for p in parts:
         if not PART.fullmatch(p) or p.endswith(".new") or p == "__pycache__" or p.endswith((".pyc", ".pyo")):
-            raise Refused("%s: component %r is not allowed (relative names only: letters, digits and . _ + -, no leading dot)" % (path, p))
+            raise Refused(
+                "%s: component %r is not allowed (relative names only: letters, digits and . _ + -, no leading dot)"
+                % (path, p)
+            )
     if path.startswith(APP):
         rest = parts[2:]
         if rest[:2] == ["src", "opos"] and len(rest) >= 3 or rest in (["LICENSE"], ["THIRD_PARTY.md"]):
             return "app"
-        raise Refused("%s: not part of the app tree (only src/opos/**, LICENSE and THIRD_PARTY.md go to /opt/opos; REVISION is written by the updater)" % path)
+        raise Refused(
+            "%s: not part of the app tree (only src/opos/**, LICENSE and THIRD_PARTY.md go to /opt/opos; REVISION is written by the updater)"
+            % path
+        )
     name, where = parts[-1], "/".join(parts[:-1])
     if where == "usr/libexec/opos":
         return "overlay"
     # opos-update* is the root updater's own: its units, its tools and its config are changed by a new image only.
     if not name.startswith("opos-update"):
-        if where == "usr/sbin" and name.startswith("opos-") or where == "etc/systemd/system" and UNIT.fullmatch(name) \
-                or where == "etc/default" and name.startswith("opos"):
+        if (
+            where == "usr/sbin"
+            and name.startswith("opos-")
+            or where == "etc/systemd/system"
+            and UNIT.fullmatch(name)
+            or where == "etc/default"
+            and name.startswith("opos")
+        ):
             return "overlay"
     if where == "etc/opos" and name not in ("update", "update.json", "base-version"):
         return "overlay"
-    raise Refused("%s: outside the allowlist (app tree, usr/libexec/opos/*, usr/sbin/opos-*, etc/systemd/system/opos*.service, "
-                  "etc/default/opos*, etc/opos/* except the updater's own files)" % path)
+    raise Refused(
+        "%s: outside the allowlist (app tree, usr/libexec/opos/*, usr/sbin/opos-*, etc/systemd/system/opos*.service, "
+        "etc/default/opos*, etc/opos/* except the updater's own files)" % path
+    )
 
 
 def overlay_mode(dest):
@@ -161,13 +183,17 @@ def parse_overlay(spec):
         raise Refused("--overlay %r: expected a file name in packaging/duo-os" % spec)
     dest = dest or OVERLAY_DEST.get(name)
     if not dest:
-        raise Refused("--overlay %s: no known destination; known: %s (or give NAME=DEST inside the allowlist)" % (name, ", ".join(sorted(OVERLAY_DEST))))
+        raise Refused(
+            "--overlay %s: no known destination; known: %s (or give NAME=DEST inside the allowlist)"
+            % (name, ", ".join(sorted(OVERLAY_DEST)))
+        )
     if classify(dest) != "overlay":
         raise Refused("--overlay %s: %s is in the app tree, which comes from src/" % (name, dest))
     return name, dest
 
 
 # ---- strict reading of a bundle (nothing here is shared with the on-device updater) ----
+
 
 def _int(v, what, lo, hi):
     if type(v) is not int or not lo <= v <= hi:
@@ -200,6 +226,7 @@ def parse_manifest(raw):
 
     def const(c):
         raise Refused("manifest: %s is not allowed" % c)
+
     try:
         return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=const)
     except (ValueError, RecursionError) as exc:
@@ -208,7 +235,12 @@ def parse_manifest(raw):
 
 def check_manifest(m):
     """Schema and allowlist checks on a parsed manifest; returns it."""
-    _keys(m, "manifest", ("format", "serial", "version", "revision", "created", "requires_base", "scope", "payload", "files"), ("notes",))
+    _keys(
+        m,
+        "manifest",
+        ("format", "serial", "version", "revision", "created", "requires_base", "scope", "payload", "files"),
+        ("notes",),
+    )
     if _int(m["format"], "format", 0, 10**6) != FORMAT:
         raise Refused("manifest: unsupported format %r" % m["format"])
     _int(m["serial"], "serial", 1, 10**9)
@@ -283,7 +315,10 @@ class Bundle:
         except (OSError, tarfile.TarError) as exc:
             raise Refused("not a plain tar bundle: %s" % exc)
         if tuple(m.name for m in members) != MEMBERS:
-            raise Refused("bundle members must be exactly %s, in that order; found %s" % (", ".join(MEMBERS), ", ".join(m.name for m in members) or "none"))
+            raise Refused(
+                "bundle members must be exactly %s, in that order; found %s"
+                % (", ".join(MEMBERS), ", ".join(m.name for m in members) or "none")
+            )
         for m, cap in zip(members, (MAX_MANIFEST, MAX_SIG, MAX_BUNDLE)):
             if m.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) or m.pax_headers or m.issparse():
                 raise Refused("%s: must be a plain regular file" % m.name)
@@ -316,7 +351,9 @@ class Bundle:
 def keygen_exe():
     exe = os.environ.get("OPOS_SSH_KEYGEN") or shutil.which("ssh-keygen")
     if not exe:
-        raise Refused("ssh-keygen not found: install the OpenSSH client (Windows: Settings > Optional features > OpenSSH Client), or set OPOS_SSH_KEYGEN")
+        raise Refused(
+            "ssh-keygen not found: install the OpenSSH client (Windows: Settings > Optional features > OpenSSH Client), or set OPOS_SSH_KEYGEN"
+        )
     return exe
 
 
@@ -328,11 +365,17 @@ def check_signature(manifest, sig, signers, identity):
     with tempfile.TemporaryDirectory() as td:
         sp = Path(td, "manifest.json.sig")
         sp.write_bytes(sig)
-        p = subprocess.run([keygen_exe(), "-Y", "verify", "-f", str(signers), "-I", identity, "-n", NAMESPACE, "-s", str(sp)],
-                           input=manifest, capture_output=True)
+        p = subprocess.run(
+            [keygen_exe(), "-Y", "verify", "-f", str(signers), "-I", identity, "-n", NAMESPACE, "-s", str(sp)],
+            input=manifest,
+            capture_output=True,
+        )
     out = (p.stdout + p.stderr).decode("utf-8", "replace").strip()
     if p.returncode or not out.startswith("Good"):
-        raise Refused("signature does not verify against %s for %s in namespace %s%s" % (signers, identity, NAMESPACE, ": " + out if out else ""))
+        raise Refused(
+            "signature does not verify against %s for %s in namespace %s%s"
+            % (signers, identity, NAMESPACE, ": " + out if out else "")
+        )
     return out
 
 
@@ -361,7 +404,9 @@ def check_payload(fh, m):
                 if f is None:
                     raise Refused("payload member %r is not in the manifest" % t.name)
                 if t.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) or t.pax_headers or t.issparse():
-                    raise Refused("%s: payload members must be plain regular files (no links, devices or directories)" % t.name)
+                    raise Refused(
+                        "%s: payload members must be plain regular files (no links, devices or directories)" % t.name
+                    )
                 if t.name in seen:
                     raise Refused("%s: appears twice in the payload" % t.name)
                 if t.mode != int(f["mode"], 8) or t.size != f["size"]:
@@ -413,11 +458,18 @@ def verify(path, signers, identity=IDENTITY, current=None, base=None):
 
 # ---- building ----
 
+
 def git(root, *args):
     # autocrlf off: a bundle must hold the committed bytes whatever the building PC's git is configured to do to line endings.
-    p = subprocess.run(["git", "-c", "safe.directory=" + Path(root).as_posix(), "-c", "core.autocrlf=false", "-C", str(root)] + list(args), capture_output=True)
+    p = subprocess.run(
+        ["git", "-c", "safe.directory=" + Path(root).as_posix(), "-c", "core.autocrlf=false", "-C", str(root)]
+        + list(args),
+        capture_output=True,
+    )
     if p.returncode:
-        raise Refused("git %s failed: %s" % (args[0], p.stderr.decode("utf-8", "replace").strip() or "exit %d" % p.returncode))
+        raise Refused(
+            "git %s failed: %s" % (args[0], p.stderr.decode("utf-8", "replace").strip() or "exit %d" % p.returncode)
+        )
     return p.stdout
 
 
@@ -436,7 +488,9 @@ def read_git(repo, ref, overlays):
             if t.isdir():
                 continue
             if not t.isreg():
-                raise Refused("%s: not a regular file in %s (links and special files are never shipped)" % (t.name, ref))
+                raise Refused(
+                    "%s: not a regular file in %s (links and special files are never shipped)" % (t.name, ref)
+                )
             src[t.name] = (tf.extractfile(t).read(), bool(t.mode & 0o111))
     return src, rev, stamp, top
 
@@ -445,6 +499,7 @@ def read_dir(root, overlays, revision, created):
     def is_exec(p, data):
         # Only scripts are executable, and a filesystem without permissions (Windows, drvfs) cannot say otherwise.
         return data.startswith(b"#!") and (os.name == "nt" or bool(p.stat().st_mode & 0o111))
+
     src = {}
 
     def take(p):
@@ -452,6 +507,7 @@ def read_dir(root, overlays, revision, created):
             raise Refused("%s: not a regular file (links and special files are never shipped)" % p)
         data = p.read_bytes()
         src[p.relative_to(root).as_posix()] = (data, is_exec(p, data))
+
     if not (root / "src").is_dir():
         raise Refused("%s has no src/ directory" % root)
     for dp, dns, fns in os.walk(root / "src"):
@@ -471,8 +527,15 @@ def read_dir(root, overlays, revision, created):
         if not HEX40.fullmatch(rev):
             raise Refused("revision %r is not a 40-hex commit" % rev)
         stamp = created or int(git(root, "log", "-1", "--format=%ct", rev).decode().strip())
-        if not revision and git(root, "status", "--porcelain", "--", "src", "LICENSE", "THIRD_PARTY.md", "packaging/duo-os").strip():
-            print("opos-release: warning: %s has changes that %s does not contain; the manifest's revision will not describe these files exactly" % (root, rev[:12]), file=sys.stderr)
+        if (
+            not revision
+            and git(root, "status", "--porcelain", "--", "src", "LICENSE", "THIRD_PARTY.md", "packaging/duo-os").strip()
+        ):
+            print(
+                "opos-release: warning: %s has changes that %s does not contain; the manifest's revision will not describe these files exactly"
+                % (root, rev[:12]),
+                file=sys.stderr,
+            )
     except Refused as exc:
         raise Refused("%s (give --revision and --created for a directory outside git)" % exc)
     return src, rev, stamp, root
@@ -518,10 +581,15 @@ def make_bundle(manifest, sig, payload, mtime):
 def sign(manifest, key):
     with tempfile.TemporaryDirectory() as td:
         Path(td, "manifest.json").write_bytes(manifest)
-        p = subprocess.run([keygen_exe(), "-Y", "sign", "-f", str(key), "-n", NAMESPACE, "manifest.json"], cwd=td, capture_output=True)
+        p = subprocess.run(
+            [keygen_exe(), "-Y", "sign", "-f", str(key), "-n", NAMESPACE, "manifest.json"], cwd=td, capture_output=True
+        )
         sigfile = Path(td, "manifest.json.sig")
         if p.returncode or not sigfile.is_file():
-            raise Refused("ssh-keygen could not sign with %s: %s" % (key, p.stderr.decode("utf-8", "replace").strip() or "exit %d" % p.returncode))
+            raise Refused(
+                "ssh-keygen could not sign with %s: %s"
+                % (key, p.stderr.decode("utf-8", "replace").strip() or "exit %d" % p.returncode)
+            )
         return sigfile.read_bytes()
 
 
@@ -545,7 +613,10 @@ def signers_for(a, key):
     except Refused:
         fields = None
     if fields is None:
-        print("opos-release: note: no public key beside the signing key; the signature was not checked after signing", file=sys.stderr)
+        print(
+            "opos-release: note: no public key beside the signing key; the signature was not checked after signing",
+            file=sys.stderr,
+        )
         yield None
         return
     with tempfile.TemporaryDirectory() as td:
@@ -556,7 +627,9 @@ def signers_for(a, key):
 
 def cmd_build(a):
     keygen_exe()
-    key = Path(os.path.abspath(Path(a.key).expanduser()))  # ssh-keygen runs in a scratch directory, so the path must not be relative
+    key = Path(
+        os.path.abspath(Path(a.key).expanduser())
+    )  # ssh-keygen runs in a scratch directory, so the path must not be relative
     if not key.is_file():
         raise Refused("--key %s: no such file" % key)
     if key.suffix == ".pub":  # the exemption below is for public keys only, so prove that this one is
@@ -578,7 +651,10 @@ def cmd_build(a):
     for rel in sorted(src):  # by content, whatever the file is called and wherever the signing key is
         why = private_key_marker(src[rel][0])
         if why:
-            raise Refused("%s contains %s; a bundle is public, so take the key out of the tree (and of its git history) before building" % (rel, why))
+            raise Refused(
+                "%s contains %s; a bundle is public, so take the key out of the tree (and of its git history) before building"
+                % (rel, why)
+            )
     entries = {}
     for rel, (data, exe) in src.items():
         if rel.startswith("packaging/"):
@@ -593,11 +669,21 @@ def cmd_build(a):
     if APP_MUST_HAVE not in entries:
         raise Refused("the source has no %s" % APP_MUST_HAVE.replace(APP, ""))
     payload = make_payload(entries, stamp)
-    manifest = {"format": FORMAT, "serial": a.serial, "version": a.version, "revision": rev, "created": stamp_text(stamp),
-                "requires_base": a.requires_base, "scope": a.scope,
-                "payload": {"sha256": sha256(payload), "size": len(payload)},
-                "files": [{"path": p, "sha256": sha256(d), "size": len(d), "mode": "%04o" % m} for p, (d, m) in sorted(entries.items())],
-                "notes": a.notes}
+    manifest = {
+        "format": FORMAT,
+        "serial": a.serial,
+        "version": a.version,
+        "revision": rev,
+        "created": stamp_text(stamp),
+        "requires_base": a.requires_base,
+        "scope": a.scope,
+        "payload": {"sha256": sha256(payload), "size": len(payload)},
+        "files": [
+            {"path": p, "sha256": sha256(d), "size": len(d), "mode": "%04o" % m}
+            for p, (d, m) in sorted(entries.items())
+        ],
+        "notes": a.notes,
+    }
     check_manifest(manifest)
     mbytes = (json.dumps(manifest, indent=2) + "\n").encode()
     bundle = make_bundle(mbytes, sign(mbytes, key), payload, stamp)
@@ -615,7 +701,10 @@ def cmd_build(a):
             except (ValueError, KeyError, TypeError):
                 last = None
             if type(last) is int and a.serial <= last:
-                raise Refused("%s already announces serial %d; this build is serial %d (serials only go up; --force to override)" % (latest, last, a.serial))
+                raise Refused(
+                    "%s already announces serial %d; this build is serial %d (serials only go up; --force to override)"
+                    % (latest, last, a.serial)
+                )
     out.mkdir(parents=True, exist_ok=True)
     tmp = out / (".opos-%d.opos-update.tmp" % a.serial)
     tmp.write_bytes(bundle)
@@ -638,8 +727,14 @@ def cmd_build(a):
         for name, data in zip(MEMBERS, (mbytes, bundle_member(bundle, 1), payload)):
             (d / name).write_bytes(data)
     print("built %s" % target)
-    print("  serial %d  version %s  scope %s  requires_base %d  revision %s  created %s" % (a.serial, a.version, a.scope, a.requires_base, rev[:12], manifest["created"]))
-    print("  %d files (%d overlay), %d bytes unpacked; bundle %d bytes" % (len(entries), len(overlays), sum(len(d) for d, _ in entries.values()), len(bundle)))
+    print(
+        "  serial %d  version %s  scope %s  requires_base %d  revision %s  created %s"
+        % (a.serial, a.version, a.scope, a.requires_base, rev[:12], manifest["created"])
+    )
+    print(
+        "  %d files (%d overlay), %d bytes unpacked; bundle %d bytes"
+        % (len(entries), len(overlays), sum(len(d) for d, _ in entries.values()), len(bundle))
+    )
     print("  sha256 %s" % sha256(bundle))
 
 
@@ -652,8 +747,14 @@ def cmd_verify(a):
     m, good = verify(a.bundle, a.allowed_signers, a.identity, a.current_serial, a.base)
     print("OK %s" % a.bundle)
     print("  %s" % good)
-    print("  serial %d  version %s  scope %s  requires_base %d  revision %s  created %s" % (m["serial"], m["version"], m["scope"], m["requires_base"], m["revision"][:12], m["created"]))
-    print("  %d files, %d bytes unpacked, payload sha256 %s" % (len(m["files"]), sum(f["size"] for f in m["files"]), m["payload"]["sha256"][:16]))
+    print(
+        "  serial %d  version %s  scope %s  requires_base %d  revision %s  created %s"
+        % (m["serial"], m["version"], m["scope"], m["requires_base"], m["revision"][:12], m["created"])
+    )
+    print(
+        "  %d files, %d bytes unpacked, payload sha256 %s"
+        % (len(m["files"]), sum(f["size"] for f in m["files"]), m["payload"]["sha256"][:16])
+    )
     if a.list:
         for f in m["files"]:
             print("  %s %s %9d  %s" % (f["mode"], f["sha256"][:12], f["size"], f["path"]))
@@ -676,8 +777,13 @@ def cmd_index(a):
             old = {}
         if not isinstance(old, dict):
             old = {}
-        if type(old.get("serial")) is int and (old["serial"] > doc["serial"] or old["serial"] == doc["serial"] and old.get("sha256") != digest):
-            raise Refused("%s announces serial %s; refusing to replace it with a different or older serial %d (--force to override)" % (out, old["serial"], doc["serial"]))
+        if type(old.get("serial")) is int and (
+            old["serial"] > doc["serial"] or old["serial"] == doc["serial"] and old.get("sha256") != digest
+        ):
+            raise Refused(
+                "%s announces serial %s; refusing to replace it with a different or older serial %d (--force to override)"
+                % (out, old["serial"], doc["serial"])
+            )
     tmp = out.with_name(out.name + ".tmp")
     tmp.write_text(json.dumps(doc, indent=2) + "\n")
     os.replace(tmp, out)
@@ -715,20 +821,42 @@ def parser():
     src.add_argument("--ref", default="HEAD", help="git ref to build (default HEAD)")
     src.add_argument("--dir", help="build from a directory instead (a checkout or an unpacked archive)")
     b.add_argument("--repo", help="git repository for --ref (default: the one holding this script)")
-    b.add_argument("--revision", help="with --dir: the 40-hex commit the files come from (default: git HEAD of the directory)")
+    b.add_argument(
+        "--revision", help="with --dir: the 40-hex commit the files come from (default: git HEAD of the directory)"
+    )
     b.add_argument("--serial", type=int, required=True, help="strictly increasing; never reused")
     b.add_argument("--version", required=True)
     b.add_argument("--requires-base", type=int, default=1)
     b.add_argument("--scope", choices=SCOPES, default="app")
-    b.add_argument("--overlay", action="append", default=[], metavar="NAME", help="packaging/duo-os file to ship (repeatable): " + ", ".join(sorted(OVERLAY_DEST)) + "; or NAME=DEST inside the allowlist")
+    b.add_argument(
+        "--overlay",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="packaging/duo-os file to ship (repeatable): "
+        + ", ".join(sorted(OVERLAY_DEST))
+        + "; or NAME=DEST inside the allowlist",
+    )
     b.add_argument("--notes", default="")
-    b.add_argument("--created", help="UTC time YYYY-MM-DDTHH:MM:SSZ (default: the commit's time, so rebuilds are identical)")
-    b.add_argument("--key", required=True, help="private key for ssh-keygen -Y sign (or its .pub to sign through ssh-agent)")
+    b.add_argument(
+        "--created", help="UTC time YYYY-MM-DDTHH:MM:SSZ (default: the commit's time, so rebuilds are identical)"
+    )
+    b.add_argument(
+        "--key", required=True, help="private key for ssh-keygen -Y sign (or its .pub to sign through ssh-agent)"
+    )
     b.add_argument("--allowed-signers", help="check the finished bundle against this file (default: the key's .pub)")
     b.add_argument("--identity", default=IDENTITY)
     b.add_argument("--out", default=".")
-    b.add_argument("--force", action="store_true", help="overwrite an existing bundle or build a serial that is not newer than latest.json")
-    b.add_argument("--keep-parts", action="store_true", help="also write manifest.json, manifest.json.sig and payload.tar.gz to opos-<serial>.parts/")
+    b.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite an existing bundle or build a serial that is not newer than latest.json",
+    )
+    b.add_argument(
+        "--keep-parts",
+        action="store_true",
+        help="also write manifest.json, manifest.json.sig and payload.tar.gz to opos-<serial>.parts/",
+    )
     b.set_defaults(fn=cmd_build)
     v = sub.add_parser("verify", help="check a bundle as the phone's updater must")
     v.add_argument("bundle")
@@ -759,7 +887,9 @@ def main(argv=None):
         sys.exit("opos-release: --identity %r is malformed" % a.identity)
     if a.cmd == "build":
         if a.serial < 1 or a.requires_base < 1:
-            sys.exit("opos-release: --serial and --requires-base must be at least 1 (serial 0 is the image's own release)")
+            sys.exit(
+                "opos-release: --serial and --requires-base must be at least 1 (serial 0 is the image's own release)"
+            )
         if not VERSION.fullmatch(a.version):
             sys.exit("opos-release: --version %r is malformed" % a.version)
     try:

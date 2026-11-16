@@ -17,6 +17,7 @@ Exit 0 only for exactly one positive line, alone on its line, and no negative ma
 negative marker, a wrong identity, a malformed marker or a repeated positive line; exit 3 for no positive line (the
 guest timed out or said nothing); exit 2 for bad arguments. One JSON line of evidence on stdout.
 Standard library only; it reads the log and the unit file and writes nothing."""
+
 import argparse
 import hashlib
 import json
@@ -48,7 +49,7 @@ def finish(code, word, **fields):
 
 def server_started_lines(unit_text):
     """The two console lines systemd prints when it has started opos-server.service, from the unit's Description=."""
-    desc = [ln[len("Description="):] for ln in unit_text.splitlines() if ln.startswith("Description=")]
+    desc = [ln[len("Description=") :] for ln in unit_text.splitlines() if ln.startswith("Description=")]
     if len(desc) != 1 or not desc[0].strip():
         raise ValueError("opos-server.service must have exactly one non-empty Description=")
     return ("[  OK  ] Started opos-server.service - %s." % desc[0], "[  OK  ] Started %s." % desc[0])
@@ -83,10 +84,21 @@ def judge(data, expect=None, started=None):
         return 1, "fail", dict(ev, reason="a marker line that is not exactly 'OPOS_BOOT_OK <identity> server=ok'")
     if started is not None:
         if not positive:
-            return 3, "timeout", dict(ev, reason="no 'Started opos-server.service' line: the guest timed out or said nothing")
+            return (
+                3,
+                "timeout",
+                dict(ev, reason="no 'Started opos-server.service' line: the guest timed out or said nothing"),
+            )
         if len(positive) > 1:
             return 1, "fail", dict(ev, reason="opos-server.service was started more than once: it restarted")
-        return 0, "pass", dict(ev, reason="systemd started opos-server.service once and no negative marker; the image identity is not checked")
+        return (
+            0,
+            "pass",
+            dict(
+                ev,
+                reason="systemd started opos-server.service once and no negative marker; the image identity is not checked",
+            ),
+        )
     if not markers:
         return 3, "timeout", dict(ev, reason="no OPOS_BOOT_OK line: the guest timed out or said nothing")
     if len(markers) > 1:
@@ -101,11 +113,15 @@ def main(argv=None):
     ap.add_argument("--log", required=True, help="the serial log QEMU wrote (-serial file:LOG)")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--accept", choices=("server-started",), help="take systemd's 'Started opos-server.service' line")
-    src.add_argument("--expect", help="require the documented marker for this SHA-256 of the image's /etc/opos/image.json")
+    src.add_argument(
+        "--expect", help="require the documented marker for this SHA-256 of the image's /etc/opos/image.json"
+    )
     a = ap.parse_args(argv)
     started = None
     if a.expect is not None and not IDENTITY.fullmatch(a.expect):
-        finish(2, "bad-arguments", reason="--expect must be 64 lowercase hex digits (the SHA-256 of /etc/opos/image.json)")
+        finish(
+            2, "bad-arguments", reason="--expect must be 64 lowercase hex digits (the SHA-256 of /etc/opos/image.json)"
+        )
     if a.accept == "server-started":
         try:
             with open(SERVER_UNIT, encoding="utf-8") as f:
@@ -118,8 +134,15 @@ def main(argv=None):
     except OSError as e:
         finish(2, "bad-arguments", reason="cannot read the log: %s" % e.strerror, log=a.log)
     code, word, ev = judge(data, a.expect, started)
-    finish(code, word, source=a.accept or "marker", expected=a.expect, log=a.log,
-           log_sha256=hashlib.sha256(data).hexdigest(), **ev)
+    finish(
+        code,
+        word,
+        source=a.accept or "marker",
+        expected=a.expect,
+        log=a.log,
+        log_sha256=hashlib.sha256(data).hexdigest(),
+        **ev,
+    )
 
 
 if __name__ == "__main__":
