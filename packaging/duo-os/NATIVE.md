@@ -280,14 +280,18 @@ Left for the owner, with no code here:
 The hinge angle and the accelerometer come from the phone's sensor service, sensorfw (`sensorfwd.service`, D-Bus name
 `com.nokia.SensorService` on the system bus), which reads Android's sensors through the container's sensors HAL.
 `hinge.py` asks it for a `hingesensor` session and an `accelerometersensor` session and reads them. It never starts,
-stops or configures the service and writes nothing to the phone's sensors; nothing in this repository starts the
-service. sensorfw drops a session that never connects to its data socket (`/var/run/sensord.sock`: the session id sent
+stops or configures the service and writes nothing to the phone's sensors. The image starts it, not `hinge.py`: the
+image build installs `opos-sensorfwd-delayed.timer` (stage 1), which starts `sensorfwd.service` once, 120 s after boot,
+unless `/etc/opos/sensors-off` exists. That file blocks future starts only; a live stop is
+`sudo systemctl disable --now opos-sensorfwd-delayed.timer`, then `sudo systemctl stop sensorfwd` (see
+[README.md](README.md)). sensorfw drops a session that never connects to its data socket (`/var/run/sensord.sock`: the session id sent
 as an int32, one byte read back) after about 10 seconds, and the angle then freezes, so the reader connects for each
 session. A started sensor reads 0 until its first report, so the first reading waits 0.8 s and a 0 before any real
 reading is not taken as an angle. When the service is not running or a read fails, the watcher says so once in the log,
 the shell keeps the lid-only behaviour above, and the watcher looks again every 5 s. Starting the service is the
-owner's decision: the PC session reported that a sensor-chip stall once reset this phone. Nothing here reads
-`/sys/kernel/debug`.
+owner's decision, and the owner approved the timer on 2026-11-15 for stage 1 only, because the PC session reported that
+a sensor-chip stall once reset this phone: the start is delayed, has the kill switch above and is capped at 3 starts in 5
+minutes. Nothing here reads `/sys/kernel/debug`.
 
 The angle is in degrees: 0 folded shut, about 180 flat, 360 folded back. `posture.py` names the zones closed below 15
 degrees, book 15 to 170, flat 170 to 190, tent 190 to 345, back from 345, and keeps a zone until the angle leaves it by
@@ -317,8 +321,8 @@ as an installed release (the shell only; the server untouched; some items were s
 change), the owner confirmed the back-mode layout, taps on the lit screen, the lit screen following a flip after about
 a second, and both screens lit again after the lid opened, and the shell's log showed all five postures in one fold
 test (closed from the lid, the other four from the angle). One phone, one session. **NOT_RUN**: a dark screen ignoring
-touch, the Settings Hinge line on the glass, a cold boot with the delayed sensor start that was installed by hand on
-that phone (it is not in this repository's image), ten cold boots, and any other phone.
+touch, the Settings Hinge line on the glass, a cold boot with `opos-sensorfwd-delayed.timer` (the image build installs
+it, but no image with it has run on a phone), ten cold boots, and any other phone.
 
 ## Assistants are deferred
 
