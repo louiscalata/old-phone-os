@@ -194,7 +194,7 @@ addresses and passwords appear in some of it.
     pkill -TERM -u droidian -f 'user-data-dir=.*opos-kiosk'`; within about 5 s the setup is back; Skip setup returns home with
     `"skipped": true`. Never blocks home: `rm ~/.config/opos/firstrun.json; chmod 500 ~/.config/opos`, restart Chromium as above, the
     home appears directly; then `chmod 700 ~/.config/opos`.
-11. **Reboot** from the PC; after 90 s `sed -n '/== radios/,/== power supplies/p' /var/log/opos-boot-diag.txt` (six `radios:` lines, no
+11. **RAM-boot again** from the PC (reboot bootloader path; never plain reboot); after 90 s `sed -n '/== radios/,/== power supplies/p' /var/log/opos-boot-diag.txt` (six `radios:` lines, no
     SSID, address or IMEI). The setup must not come back, the zone file is unchanged, the status bar keeps the zone, and
     `/usr/sbin/opos-selftest` has no FAIL. Note whether a saved Wi-Fi network survives the reboot (NetworkManager keeps it under
     `/etc/NetworkManager/system-connections` on the rootfs file, which lives on userdata).

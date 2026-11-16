@@ -161,7 +161,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 ### 7. Joining Wi-Fi
 
 - How: open Settings, then Network (when the image has it), pick a network, enter its password with the keyboard, join. Then run
-  `opos-selftest --only net --only clock`. Restart the phone and see whether it rejoins on its own.
+  `opos-selftest --only net --only clock`. RAM-boot the phone again from the PC (never a plain restart) and see whether it rejoins on its own.
 - Expected: it connects within about half a minute and says so; `net.wifi` shows the device connected; with internet, `clock.year`
   stops warning once network time arrives; a wrong password is reported, not retried forever. If `net.permissions` warned, the
   page is expected to say it may not change Wi-Fi: record the exact words.

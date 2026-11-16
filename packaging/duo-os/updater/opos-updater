@@ -1220,7 +1220,7 @@ class Updater:
             st['pending_boot'] = new
             self.save()
             self.step('pending')
-            self.status('done', 'update %d (%s) is staged and applies at the next boot' % (mf['serial'], mf['version']))
+            self.status('done', 'update %d (%s) is staged and applies the next time OPOS is started from the PC' % (mf['serial'], mf['version']))
             self.tidy()
             return 'staged'
         return self.go_live(new, [e for e in entries if e.kind == 'overlay'], restart=True, boot=False)
@@ -1604,7 +1604,7 @@ class Updater:
             except Reject as e:  # no room for the change and its rollback: do not start; it stays staged and is tried again at the next boot
                 self.log('staged update %d waits: %s' % (pb['serial'], e))
                 self.serial = pb['serial']
-                self.status('failed', 'staged update %d is kept for the next boot: %s' % (pb['serial'], e))
+                self.status('failed', 'staged update %d is kept for the next time OPOS is started from the PC: %s' % (pb['serial'], e))
                 return 3
             res = self.go_live(pb, [e for e in entries if e.kind == 'overlay'], restart=False, boot=True)
             return 0 if res == 'applied' else 3

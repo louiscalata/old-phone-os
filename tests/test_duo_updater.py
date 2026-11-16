@@ -1786,7 +1786,7 @@ class TestBoot(EnvCase):
         self.assertEqual(st['pending_boot']['serial'], 7)
         self.assertEqual(st['current']['serial'], 0)
         self.assertEqual(e.status()['phase'], 'done')
-        self.assertIn('next boot', e.status()['message'])
+        self.assertIn('applies the next time OPOS is started from the PC', e.status()['message'])
         self.assertTrue(os.path.isdir(os.path.join(e.releases, release_name(7))))
         self.assertEqual(e.marker(), 'build 0')
 
@@ -2514,7 +2514,7 @@ class TestSpace(EnvCase):
         e.boot = 'boot-2'
         self.free(2 * self.BIG - 1)
         self.assertEqual(e.updater().apply_pending_boot(), 3)
-        self.assertIn('kept for the next boot', e.status()['message'])
+        self.assertIn('kept for the next time OPOS is started from the PC', e.status()['message'])
         st = e.state()
         self.assertEqual((st['pending_boot']['serial'], st['failed'], st['current']['serial']), (7, [], 0))   # waits; is not burned
         self.assertEqual(rd(os.path.join(e.root, 'etc/opos/big.conf'), 'rb'), b'o' * self.BIG)
