@@ -1990,8 +1990,8 @@ class MainPageIsUntouched(Env):
     # Re-recorded for the public accuracy and hosted-demo privacy notices; page behavior is unchanged.
     # Re-recorded when the privacy notice went back to naming the Inference page; page behavior is unchanged.
     # Re-recorded when phone-b.css lost its focus ring that jaryo.css overrode in every state (the Duo image's page bytes).
-    MAIN_SHA256 = "1144b3fd9cd0687784970973768ab5215a94ad61bc48d6748c816642217d39a5"
-    DEMO_SHA256 = "f1551020644bca683ddacfba3c4cb84a6379642e51a6508f32e52c96b1a9b42c"
+    MAIN_SHA256 = "c96e306acfc631ede5369c306c1c19f3f042fd47b1511a62241723c10f49cf66"
+    DEMO_SHA256 = "f1edc0e09df54a39aebbc5b3ddfc96948ff4a8b7f95743a13eefad2410f74cf5"
     LINK = "<a id=upd href=/update>Updates</a>"
 
     def test_recorded_digests(self):

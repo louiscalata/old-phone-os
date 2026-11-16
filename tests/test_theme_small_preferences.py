@@ -106,9 +106,9 @@ class ThemePreferenceMarkupAndCSS(unittest.TestCase):
         sheet = list(rules((STATIC / "jaryo.css").read_text()))
         for explicit, system_dark, expected in [
             (None, False, ("#1a1a1a", "#f3f0e8", "light")),
-            (None, True, ("#e6e2d9", "#000", "dark")),
+            (None, True, ("#fff", "#000", "dark")),
             ("light", True, ("#1a1a1a", "#f3f0e8", "light")),
-            ("dark", False, ("#e6e2d9", "#000", "dark")),
+            ("dark", False, ("#fff", "#000", "dark")),
         ]:
             actual = {}
             for contexts, selector, declarations in sheet:
@@ -179,7 +179,7 @@ CHECKS.theme_small = async function() {
     await resize(width,width===390?844:720);
     for(const mode of ['light','dark','system']){
       await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:mode==='light'?'dark':'light'}]});
-      const dark=mode==='dark',fg=dark?'rgb(230, 226, 217)':'rgb(26, 26, 26)',bg=dark?'rgb(0, 0, 0)':'rgb(243, 240, 232)';
+      const dark=mode==='dark',fg=dark?'rgb(255, 255, 255)':'rgb(26, 26, 26)',bg=dark?'rgb(0, 0, 0)':'rgb(243, 240, 232)';
       await ev(`(function(){const b=document.getElementById('jaryo-theme'),want='Theme: ${mode[0].toUpperCase()+mode.slice(1)}';
         for(let i=0;i<3&&b.textContent!==want;i++)b.click();})()`);
       await ev("api({action:'visible',visible:true}).then(render)");

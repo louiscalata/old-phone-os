@@ -24,9 +24,9 @@ html:is(:not([data-ff]),[data-ff="tablet"],[data-ff="foldable"]) #home-favourite
 --jaryo-cond:'Inter Tight','Inter Tight Fallback','Arial Narrow','Roboto Condensed',sans-serif-condensed,sans-serif;
 --jaryo-body:'Inter Tight','Inter Tight Fallback',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
-@media(prefers-color-scheme:dark){html:not([data-theme]){--jaryo-fg:#e6e2d9;--jaryo-bg:#000;color-scheme:dark}}
+@media(prefers-color-scheme:dark){html:not([data-theme]){--jaryo-fg:#fff;--jaryo-bg:#000;color-scheme:dark}}
 html[data-theme="light"]{--jaryo-fg:#1a1a1a;--jaryo-bg:#f3f0e8;color-scheme:light}
-html[data-theme="dark"]{--jaryo-fg:#e6e2d9;--jaryo-bg:#000;color-scheme:dark}
+html[data-theme="dark"]{--jaryo-fg:#fff;--jaryo-bg:#000;color-scheme:dark}
 body{font-family:var(--jaryo-body);font-size:1rem;font-weight:400;line-height:1.45}
 h1,h2,.jaryo-head,#settings h2,#headline{font-family:var(--jaryo-serif);font-size:1.5rem;font-weight:700;line-height:1.15}
 .jaryo-head{margin:0 0 .5rem;text-align:left}

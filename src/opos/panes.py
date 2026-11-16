@@ -25,9 +25,9 @@ _HEAD_END = re.compile(r"</head\s*>", re.I)
 _BODY_END = re.compile(r"</body\s*>", re.I)
 # "touch" (docs/jaryo-panes.md section 7) is specified, not built: it is not a word, so it means off, until it is built.
 _WORDS = {"1", "on", "mirror", "invert", "theme", "pure"}
-# Surface constants: the two token pairs of jaryo.css (dark: #e6e2d9 on #000, light: #1a1a1a on #f3f0e8). "pure" is the strict AGIW
+# Surface constants: the two token pairs of jaryo.css (dark: #fff on #000, light: #1a1a1a on #f3f0e8). "pure" is the strict AGIW
 # pair (primitives.css). "theme" paints both panes in the page's own Light/Dark/System tokens.
-SOFT = {"@K@": "#000", "@KI@": "#e6e2d9", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"}
+SOFT = {"@K@": "#000", "@KI@": "#fff", "@KCS@": "dark", "@W@": "#f3f0e8", "@WI@": "#1a1a1a", "@WCS@": "light"}
 PURE = {"@K@": "#000", "@KI@": "#fff", "@KCS@": "dark", "@W@": "#fff", "@WI@": "#000", "@WCS@": "light"}
 THEME = {
     "@K@": "var(--jaryo-bg)",

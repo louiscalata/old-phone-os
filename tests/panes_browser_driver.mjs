@@ -104,7 +104,7 @@ const MEASURE = `(function(){
  function backdrop(e,cx){for(var n=e;n&&n.nodeType===1;n=n.parentElement){var b=rgb(getComputedStyle(n).backgroundColor);if(b&&b.a>0.99)return b}return cx<${P2}?L:R}
  function vis(e){var r=e.getBoundingClientRect(),cs=getComputedStyle(e);return r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none'&&e.getClientRects().length>0}
  var res={hinge:[],small:[],colors:{},bad:[],n:0,rects:[],off:[]};
- var OK={'rgb(0,0,0)':1,'rgb(230,226,217)':1,'rgb(243,240,232)':1,'rgb(26,26,26)':1,'transparent':1};
+ var OK={'rgb(0,0,0)':1,'rgb(255,255,255)':1,'rgb(243,240,232)':1,'rgb(26,26,26)':1,'transparent':1};
  function note(c,who,prop){if(!c)return;var k=c.a<0.01?'transparent':'rgb('+c.r+','+c.g+','+c.b+')';res.colors[k]=(res.colors[k]||0)+1;if(!OK[k])res.off.push(k+' '+prop+' '+who)}
  var all=document.querySelectorAll('body *, html');
  for(var i=0;i<all.length;i++){var e=all[i];if(e.closest('#demo')&&!e.closest('#demo[data-demo]'))continue;

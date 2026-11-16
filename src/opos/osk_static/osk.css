@@ -5,7 +5,7 @@
 position:fixed;left:0;right:0;bottom:0;z-index:2147483000;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px);
 color:var(--osk-fg);font:600 22px/1 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;
 -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
-@media (prefers-color-scheme:dark){#opos-osk{--osk-bg:var(--jaryo-bg,#000);--osk-fg:var(--jaryo-fg,#e6e2d9)}}
+@media (prefers-color-scheme:dark){#opos-osk{--osk-bg:var(--jaryo-bg,#000);--osk-fg:var(--jaryo-fg,#fff)}}
 #opos-osk[hidden]{display:none}
 #opos-osk,#opos-osk *{box-sizing:border-box}
 #opos-osk .osk-grid{display:grid;align-items:end}
