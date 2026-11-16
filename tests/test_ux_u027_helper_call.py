@@ -16,7 +16,7 @@ class TestHelperCallWording(unittest.TestCase):
         # W1-08: the owner never reads "OPOS". Every error this call can show says what happened in plain words.
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "src" / "opos" / "web.py").read_text(encoding="utf-8")
-        body = text[text.index("async function helperCall"):text.index("function helperReset")]
+        body = text[text.index("async function helperCall") : text.index("function helperReset")]
         errors = re.findall(r"error:'([^']*)'", body)
         self.assertEqual(len(errors), 4, errors)
         for e in errors:

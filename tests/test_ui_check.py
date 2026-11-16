@@ -79,11 +79,7 @@ class TestUICheckSource(unittest.TestCase):
             sub.mkdir()
             harness = sub / "f1108_harness.mjs"
             harness.write_text(
-                "import fs from \"fs\";\n"
-                + "import { fileURLToPath } from \"url\";\n"
-                + "// " + decl + "\n"
-                + body
-                + "\n",
+                'import fs from "fs";\n' + 'import { fileURLToPath } from "url";\n' + "// " + decl + "\n" + body + "\n",
                 encoding="utf-8",
             )
             proc = subprocess.run(

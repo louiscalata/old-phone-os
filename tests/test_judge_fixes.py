@@ -22,7 +22,8 @@ class TestJudgeSetupDryRun(unittest.TestCase):
             rc = cli.main(["run", "--dry-run"], env={}, out=out)
         self.assertEqual(rc, 0)
         self.assertEqual(
-            out.getvalue(), "Dry run finished. Nothing was configured or started.\n",
+            out.getvalue(),
+            "Dry run finished. Nothing was configured or started.\n",
         )
         server.assert_not_called()
         apply.assert_not_called()
@@ -40,7 +41,10 @@ class TestJudgeSetupDryRun(unittest.TestCase):
             ):
                 rc = cli.main(
                     ["run", "--defaults", "--dry-run", "--config-dir", str(config_dir)],
-                    env={}, home=home, platform="linux", out=out,
+                    env={},
+                    home=home,
+                    platform="linux",
+                    out=out,
                 )
             self.assertEqual(rc, 0, out.getvalue())
             self.assertEqual(

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The camera note is research only: no module, and the still is NOT_RUN."""
+
 import unittest
 from pathlib import Path
 

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """posture.py: finding the lid in a fake sysfs tree, reading its events, the posture name, and the watcher thread with a
 fake device (a temp file, or a pipe where select works on one). No toolkit and no real device."""
+
 import ast
 import contextlib
 import io
@@ -60,13 +61,20 @@ class FindLid(unittest.TestCase):
         self.assertEqual(posture.find_lid(self.tree({"input2": ("Surface Duo Lid", ["event2"])})), "/dev/input/event2")
 
     def test_the_wakeup_key_device_is_never_the_lid(self):
-        root = self.tree({"input1": ("Surface Duo Lid Wakeup\n", ["event1"]), "input7": ("Surface Duo Lid\n", ["event7"])})
+        root = self.tree(
+            {"input1": ("Surface Duo Lid Wakeup\n", ["event1"]), "input7": ("Surface Duo Lid\n", ["event7"])}
+        )
         self.assertEqual(posture.find_lid(root), "/dev/input/event7")
         self.assertIsNone(posture.find_lid(self.tree({"input1": ("Surface Duo Lid Wakeup\n", ["event1"])})))
 
     def test_near_names_do_not_match(self):
-        root = self.tree({"input1": ("surface duo lid\n", ["event1"]), "input2": (" Surface Duo Lid\n", ["event2"]),
-                          "input3": ("Surface Duo\n", ["event3"])})
+        root = self.tree(
+            {
+                "input1": ("surface duo lid\n", ["event1"]),
+                "input2": (" Surface Duo Lid\n", ["event2"]),
+                "input3": ("Surface Duo\n", ["event3"]),
+            }
+        )
         self.assertIsNone(posture.find_lid(root))
 
     def test_missing(self):
@@ -106,7 +114,9 @@ class Events(unittest.TestCase):
         whole, rest = posture.split_events(data)
         self.assertEqual((whole, rest), (lid(True) + SYN, lid(False)[:10]))
         self.assertEqual(posture.lid_changes(data), [True], "the partial one is not read")
-        self.assertEqual(posture.lid_changes(rest + lid(False)[10:]), [False], "the remainder and the next read make it whole")
+        self.assertEqual(
+            posture.lid_changes(rest + lid(False)[10:]), [False], "the remainder and the next read make it whole"
+        )
         self.assertEqual(posture.split_events(b""), (b"", b""))
         self.assertEqual(posture.split_events(b"abc"), (b"", b"abc"))
         self.assertEqual(posture.lid_changes(bytearray(lid(True))), [True])
@@ -115,15 +125,22 @@ class Events(unittest.TestCase):
         dropped = ev(0, 3, 0)
         D = posture.DROPPED
         self.assertEqual((posture.EV_SYN, posture.SYN_REPORT, posture.SYN_DROPPED), (0, 0, 3))
-        self.assertEqual(posture.lid_items(lid(True) + SYN + lid(False) + SYN), [True, False], "as lid_changes without a drop")
-        self.assertEqual(posture.lid_items(lid(True) + SYN + dropped + lid(False) + SYN + lid(True) + SYN), [True, D, True],
-                         "the events after the drop up to its SYN_REPORT are incomplete: skipped, and the state is read there")
-        self.assertEqual(posture.lid_items(lid(True) + SYN + dropped + lid(False)), [True, D], "no SYN_REPORT yet: read it now")
+        self.assertEqual(
+            posture.lid_items(lid(True) + SYN + lid(False) + SYN), [True, False], "as lid_changes without a drop"
+        )
+        self.assertEqual(
+            posture.lid_items(lid(True) + SYN + dropped + lid(False) + SYN + lid(True) + SYN),
+            [True, D, True],
+            "the events after the drop up to its SYN_REPORT are incomplete: skipped, and the state is read there",
+        )
+        self.assertEqual(
+            posture.lid_items(lid(True) + SYN + dropped + lid(False)), [True, D], "no SYN_REPORT yet: read it now"
+        )
         self.assertEqual(posture.lid_changes(dropped + lid(False) + SYN), [False], "lid_changes itself is unchanged")
 
     def test_the_ioctl_number_and_a_failing_ioctl(self):
-        self.assertEqual(posture.EVIOCGSW_8, (2 << 30) | (8 << 16) | (ord("E") << 8) | 0x1b)
-        with tempfile.TemporaryFile() as f:      # a plain file is no input device: the ioctl fails, or Windows has none
+        self.assertEqual(posture.EVIOCGSW_8, (2 << 30) | (8 << 16) | (ord("E") << 8) | 0x1B)
+        with tempfile.TemporaryFile() as f:  # a plain file is no input device: the ioctl fails, or Windows has none
             self.assertIsNone(posture.lid_state(f.fileno()))
 
 
@@ -147,13 +164,24 @@ class Posture(unittest.TestCase):
             self.assertEqual(posture.posture(True, angle=angle), "closed")
 
     def test_the_angle_tells_the_postures_apart(self):
-        for angle, name in ((15, "book"), (90, "book"), (169, "book"), (170, "flat"),
-                            (180, "flat"), (189, "flat"), (190, "tent"), (270, "tent"), (344, "tent"), (345, "back"), (360, "back")):
+        for angle, name in (
+            (15, "book"),
+            (90, "book"),
+            (169, "book"),
+            (170, "flat"),
+            (180, "flat"),
+            (189, "flat"),
+            (190, "tent"),
+            (270, "tent"),
+            (344, "tent"),
+            (345, "back"),
+            (360, "back"),
+        ):
             with self.subTest(angle=angle):
                 self.assertEqual(posture.posture(False, angle), name)
 
     def test_a_posture_is_held_a_few_degrees_past_its_border(self):
-        self.assertEqual(posture.posture(False, 165, "flat"), "flat")      # 170 is the border; HYST is 6
+        self.assertEqual(posture.posture(False, 165, "flat"), "flat")  # 170 is the border; HYST is 6
         self.assertEqual(posture.posture(False, 163, "flat"), "book")
         self.assertEqual(posture.posture(False, 195, "flat"), "flat")
         self.assertEqual(posture.posture(False, 197, "flat"), "tent")
@@ -164,11 +192,17 @@ class Posture(unittest.TestCase):
     def test_the_dossier_numbers_agree_with_the_screens_the_shell_is_given(self):
         self.assertEqual(posture.PANEL_WIDTH_PX * 2 + posture.HINGE_COLUMN_PX, 2784)
         self.assertEqual(posture.HINGE_RANGE, (0, 360))
-        self.assertEqual((posture.ZONES[0][1], posture.ZONES[-1][2]), (0, posture.HINGE_RANGE[1] + 1), "the zones cover the whole range")
+        self.assertEqual(
+            (posture.ZONES[0][1], posture.ZONES[-1][2]),
+            (0, posture.HINGE_RANGE[1] + 1),
+            "the zones cover the whole range",
+        )
         for (_n1, _l1, high), (_n2, low, _h2) in zip(posture.ZONES, posture.ZONES[1:]):
             self.assertEqual(high, low, "no gap between zones")
-        span = (Path(__file__).resolve().parents[1] / "packaging" / "duo-os" / "opos-native").read_text(encoding="utf-8")
-        self.assertIn("675,42", span)          # pane and gap in logical px, scale 2: 2 * 675 + 42 = 2784 / 2
+        span = (Path(__file__).resolve().parents[1] / "packaging" / "duo-os" / "opos-native").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("675,42", span)  # pane and gap in logical px, scale 2: 2 * 675 + 42 = 2784 / 2
         self.assertEqual(2 * (2 * 675 + 42), 2 * 1392)
         self.assertEqual(posture.HINGE_COLUMN_PX // 2, 42)
         self.assertEqual(posture.PANEL_WIDTH_PX // 2, 675)
@@ -203,7 +237,7 @@ class Watcher(unittest.TestCase):
         self.addCleanup(self.restore)
         self.initial = False
         posture.lid_state = lambda fd: self.initial
-        if sys.platform == "win32":     # select takes only sockets there; a file is always readable anyway
+        if sys.platform == "win32":  # select takes only sockets there; a file is always readable anyway
             posture._readable = lambda fd, timeout: True
 
     def restore(self):
@@ -242,10 +276,10 @@ class Watcher(unittest.TestCase):
         w = self.watcher(path).start()
         self.wait_for(self.changes, 1)
         self.assertEqual(self.changes, [False], "the start state, reported once")
-        self.feed(path, lid(False) + SYN + lid(False) + SYN)    # the same state again: not reported
+        self.feed(path, lid(False) + SYN + lid(False) + SYN)  # the same state again: not reported
         self.feed(path, lid(True) + SYN + lid(True) + SYN)
         self.wait_for(self.changes, 2)
-        self.feed(path, lid(True)[:7])                          # half a record, then the rest in a later read
+        self.feed(path, lid(True)[:7])  # half a record, then the rest in a later read
         time.sleep(0.2)
         self.feed(path, lid(True)[7:] + SYN + ev(1, 116, 1) + lid(False)[:5])
         time.sleep(0.2)
@@ -284,7 +318,7 @@ class Watcher(unittest.TestCase):
         path = self.device()
         self.watcher(path).start()
         self.wait_for(self.changes, 1)
-        self.initial = False                    # the lid is open now; the event that said so was dropped
+        self.initial = False  # the lid is open now; the event that said so was dropped
         self.feed(path, ev(0, 3, 0) + SYN)
         self.wait_for(self.changes, 2)
         self.assertEqual(self.changes, [True, False])
@@ -297,7 +331,7 @@ class Watcher(unittest.TestCase):
         path = self.device()
         w = self.watcher(path).start()
         self.wait_for(self.changes, 1)
-        self.initial = False                    # open now; the "opened" was lost in the overflow
+        self.initial = False  # open now; the "opened" was lost in the overflow
         self.feed(path, ev(0, 3, 0) + SYN + lid(True) + SYN)
         self.wait_for(self.changes, 2)
         time.sleep(0.2)
@@ -311,10 +345,14 @@ class Watcher(unittest.TestCase):
         w.closed = True
         self.initial = False
         self.assertTrue(w._take(7, [D, True]))
-        self.assertEqual((self.changes, reads, w.closed), ([False], [7], False), "one re-read, reported; the True ignored")
+        self.assertEqual(
+            (self.changes, reads, w.closed), ([False], [7], False), "one re-read, reported; the True ignored"
+        )
         self.changes.clear()
         self.assertTrue(w._take(7, [True, D, False, True]))
-        self.assertEqual((self.changes, w.closed), ([True, False], False), "items before the drop still count, in order")
+        self.assertEqual(
+            (self.changes, w.closed), ([True, False], False), "items before the drop still count, in order"
+        )
         self.changes.clear()
         self.assertTrue(w._take(7, [True, False]))
         self.assertEqual((self.changes, len(reads)), ([True, False], 2), "no drop: no re-read")
@@ -339,7 +377,7 @@ class Watcher(unittest.TestCase):
         first = self.watcher(path).start()
         self.wait_for(self.changes, 1)
         first.stop()
-        self.initial = True                     # it closed while nothing watched
+        self.initial = True  # it closed while nothing watched
         self.watcher(path).start()
         self.wait_for(self.changes, 2)
         self.assertEqual(self.changes, [False, True], "read with EVIOCGSW at the start, not remembered")
@@ -362,7 +400,7 @@ class Watcher(unittest.TestCase):
         self.assertIn("cannot open", self.missing[0])
 
     def test_stop_ends_the_thread_quickly(self):
-        w = posture.LidWatcher(self.changed, self.missing.append, path=self.device()).start()   # the real 1 s poll
+        w = posture.LidWatcher(self.changed, self.missing.append, path=self.device()).start()  # the real 1 s poll
         self.wait_for(self.changes, 1)
         began = time.monotonic()
         w.stop()
@@ -376,6 +414,7 @@ class Watcher(unittest.TestCase):
         def bad(closed):
             calls.append(closed)
             raise RuntimeError("boom")
+
         w = posture.LidWatcher(bad, self.missing.append, path=path, poll_s=0.05)
         self.addCleanup(w.stop)
         with contextlib.redirect_stderr(io.StringIO()):

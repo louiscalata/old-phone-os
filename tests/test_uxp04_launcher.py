@@ -26,14 +26,21 @@ class UXP04Launcher(unittest.TestCase):
         opens = re.findall(r'data-open="([^"]+)"', self.out)
         self.assertEqual(set(opens), {"phone", "messages", "helper", "settings"})
         self.assertEqual(len(opens), 4)
-        for name, label in [("phone", "Phone"), ("messages", "Messages"), ("helper", "Helper"), ("settings", "Settings")]:
+        for name, label in [
+            ("phone", "Phone"),
+            ("messages", "Messages"),
+            ("helper", "Helper"),
+            ("settings", "Settings"),
+        ]:
             # Jaryo gives Phone/Messages medium tiles and Helper a small tile.
-            size = {'phone': 'medium', 'messages': 'medium', 'helper': 'small'}.get(name)
+            size = {"phone": "medium", "messages": "medium", "helper": "small"}.get(name)
             # Canonical and setup-Wi-Fi markup order attributes differently.
             # Compare exact attributes and labels without prescribing their order.
-            tiles = [(attrs, text) for attrs, text in
-                     re.findall(r'<button\b([^>]*)>([^<]*)</button>', self.out)
-                     if f'data-open="{name}"' in attrs.split()]
+            tiles = [
+                (attrs, text)
+                for attrs, text in re.findall(r"<button\b([^>]*)>([^<]*)</button>", self.out)
+                if f'data-open="{name}"' in attrs.split()
+            ]
             self.assertEqual(len(tiles), 1)
             attrs, text = tiles[0]
             expected = ['type="button"', f'data-open="{name}"']
@@ -68,8 +75,7 @@ class UXP04Launcher(unittest.TestCase):
                     if not s.strip():
                         continue
                     # UXP31 hides Ask only after its replacement has been built.
-                    self.assertTrue(s.strip().startswith("#phone[data-app") or
-                                    s.strip() == "#ask[data-hs] #askbtn", s)
+                    self.assertTrue(s.strip().startswith("#phone[data-app") or s.strip() == "#ask[data-hs] #askbtn", s)
             # UXP21/22 use flex/grid without data-app; only hiding needs the guard.
         self.assertGreaterEqual(hiding, 5)
 
@@ -153,8 +159,9 @@ class UXP04Runtime(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             h = Path(d) / "h.js"
             h.write_text(HARNESS, encoding="utf-8")
-            r = subprocess.run([NODE, str(h), str(STATIC / "phone-b.js"), mode, search],
-                               capture_output=True, text=True, timeout=30)
+            r = subprocess.run(
+                [NODE, str(h), str(STATIC / "phone-b.js"), mode, search], capture_output=True, text=True, timeout=30
+            )
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
 

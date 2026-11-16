@@ -4,21 +4,34 @@
 The contradicting replies below are verbatim answers from Llama 3.2 1B on a Surface Duo
 (November 7, 2026) while it was charging with nothing paused.
 """
+
 import unittest
 from unittest import mock
 
 from opos import assist, muse
 
-CHARGING = {"paused": [], "allowed": ["calls", "messages", "email", "maps", "photos backup"],
-            "why_paused": "The battery is at 44% (98% health, about 42% usable) and it is charging; nothing is paused, so everything is on."}
-SAVER = {"paused": ["maps", "photos backup"], "allowed": ["calls", "messages", "email"],
-         "why_paused": "The battery is worn (60% health), so 60% charge is about 36% usable and it is not charging; to keep calls and messages working until 16:00, the phone paused maps and photos backup."}
-DUO_WHY = ("Tasks are paused because the battery level is low, indicating that the device is running on low power. "
-           "This means that the device is not performing any tasks, and the paused state is necessary to conserve power.")
-DUO_ASK = ("The maps are paused because the battery is at 44% (98% health, about 42% usable) and it is charging.\n\n"
-           "This is the reason why the maps are paused, as the phone is currently charging and the battery is low.")
-GLIMMER = ("Maps are paused to save power. The battery is worn at 60% health, so a 60% charge is only about 36% usable "
-           "and the phone is not charging. The phone paused maps and photos backup to keep calls and messages working until 16:00.")
+CHARGING = {
+    "paused": [],
+    "allowed": ["calls", "messages", "email", "maps", "photos backup"],
+    "why_paused": "The battery is at 44% (98% health, about 42% usable) and it is charging; nothing is paused, so everything is on.",
+}
+SAVER = {
+    "paused": ["maps", "photos backup"],
+    "allowed": ["calls", "messages", "email"],
+    "why_paused": "The battery is worn (60% health), so 60% charge is about 36% usable and it is not charging; to keep calls and messages working until 16:00, the phone paused maps and photos backup.",
+}
+DUO_WHY = (
+    "Tasks are paused because the battery level is low, indicating that the device is running on low power. "
+    "This means that the device is not performing any tasks, and the paused state is necessary to conserve power."
+)
+DUO_ASK = (
+    "The maps are paused because the battery is at 44% (98% health, about 42% usable) and it is charging.\n\n"
+    "This is the reason why the maps are paused, as the phone is currently charging and the battery is low."
+)
+GLIMMER = (
+    "Maps are paused to save power. The battery is worn at 60% health, so a 60% charge is only about 36% usable "
+    "and the phone is not charging. The phone paused maps and photos backup to keep calls and messages working until 16:00."
+)
 
 
 class ContradictsTests(unittest.TestCase):
@@ -63,8 +76,13 @@ class ExplainTests(unittest.TestCase):
 
 class AskTests(unittest.TestCase):
     def _answer(self, reply, facts, question="Tell me about maps."):
-        route = muse.Route("local", "Meta Llama 3.2 1B", "on this phone", "http://127.0.0.1:8080/v1", "llama-3.2-1b-instruct")
-        with mock.patch.object(assist, "ask_routes", return_value=[route]), mock.patch.object(muse, "ask", return_value=reply) as ask:
+        route = muse.Route(
+            "local", "Meta Llama 3.2 1B", "on this phone", "http://127.0.0.1:8080/v1", "llama-3.2-1b-instruct"
+        )
+        with (
+            mock.patch.object(assist, "ask_routes", return_value=[route]),
+            mock.patch.object(muse, "ask", return_value=reply) as ask,
+        ):
             return assist.answer(question, env={}, free=4096, context=facts), ask
 
     def test_duo_ask_reply_replaced_by_rules(self):
@@ -92,7 +110,9 @@ class AskTests(unittest.TestCase):
         self.assertTrue(out["text"].startswith("The phone is charging, so the battery is filling"))
         unplugged = dict(SAVER, time_left="About 3 h 10 min left", charging=False, goal="16:00", goal_met=False)
         out, _ = self._answer("x", unplugged, "When will it run out?")
-        self.assertTrue(out["text"].startswith("About 3 h 10 min left at the current rate. That falls short of your 16:00 goal"))
+        self.assertTrue(
+            out["text"].startswith("About 3 h 10 min left at the current rate. That falls short of your 16:00 goal")
+        )
         out, _ = self._answer("x", dict(unplugged, goal_met=True), "how long will it last")
         self.assertIn("That reaches your 16:00 goal.", out["text"])
 

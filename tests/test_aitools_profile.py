@@ -7,20 +7,28 @@ import tempfile
 import unittest
 from pathlib import Path
 from opos.aitools.launcher import BEGIN, END, add_profile_block, remove_profile_block, render_env
+
+
 def _block(env: Path) -> bytes:
     """Build expected block bytes."""
     q = shlex.quote(str(env))
     return f"{BEGIN}\nif [ -r {q} ]; then . {q}; else :; fi\n{END}\n".encode()
+
+
 def _write(p: Path, b: bytes) -> None:
     """Write bytes creating parents."""
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(b)
+
+
 def _shell_path(snippet: str, orig: str) -> str:
     """Run snippet in sh and return PATH."""
     script = snippet + 'printf "%s" "$PATH"'
     cp = subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True, env={"PATH": orig}, timeout=2)
     assert cp.returncode == 0
     return cp.stdout
+
+
 class TestProfileBlock(unittest.TestCase):
     def test_add_creates_missing_and_parents(self):
         """Missing file and parent dir created."""
@@ -31,6 +39,7 @@ class TestProfileBlock(unittest.TestCase):
             self.assertTrue(p.is_file())
             self.assertEqual(p.read_bytes(), _block(e))
             self.assertTrue(p.parent.is_dir())
+
     def test_add_idempotent(self):
         """Second add returns False and leaves file unchanged."""
         with tempfile.TemporaryDirectory() as td:
@@ -42,6 +51,7 @@ class TestProfileBlock(unittest.TestCase):
             self.assertEqual(p.read_bytes(), before)
             self.assertFalse(add_profile_block(p, Path("/fake/home/u/other.sh")))
             self.assertEqual(p.read_bytes(), before)
+
     def test_add_preserves_and_adds_newline(self):
         """Preserves existing content and inserts newline when needed."""
         cases = [
@@ -74,6 +84,7 @@ class TestProfileBlock(unittest.TestCase):
                         # file existed empty -> result is just block (no extra leading newline)
                         # if file did not exist, same result; both are valid
                         self.assertEqual(data, _block(e))
+
     def test_add_with_crlf_preserves_bytes(self):
         """CRLF content stays CRLF, block appended as LF."""
         with tempfile.TemporaryDirectory() as td:
@@ -88,6 +99,7 @@ class TestProfileBlock(unittest.TestCase):
                     add_profile_block(p, e)
                     data = p.read_bytes()
                     self.assertEqual(data, exp_prefix + _block(e))
+
     def test_remove_deletes_when_only_block(self):
         """File containing only block is deleted."""
         with tempfile.TemporaryDirectory() as td:
@@ -97,6 +109,7 @@ class TestProfileBlock(unittest.TestCase):
             self.assertTrue(p.exists())
             self.assertTrue(remove_profile_block(p))
             self.assertFalse(p.exists())
+
     def test_remove_preserves_before_and_after(self):
         """Bytes before and after block preserved exactly."""
         with tempfile.TemporaryDirectory() as td:
@@ -117,6 +130,7 @@ class TestProfileBlock(unittest.TestCase):
                         self.assertFalse(p.exists())
                     else:
                         self.assertEqual(p.read_bytes(), before + after)
+
     def test_remove_no_block_returns_false_untouched(self):
         """No BEGIN marker leaves file untouched."""
         with tempfile.TemporaryDirectory() as td:
@@ -127,6 +141,7 @@ class TestProfileBlock(unittest.TestCase):
             self.assertEqual(p.read_bytes(), orig)
             q = Path(td) / "missing"
             self.assertFalse(remove_profile_block(q))
+
     def test_remove_crlf_preserved(self):
         """CRLF before/after preserved byte for byte."""
         with tempfile.TemporaryDirectory() as td:
@@ -138,6 +153,7 @@ class TestProfileBlock(unittest.TestCase):
             _write(p, before + block + after)
             self.assertTrue(remove_profile_block(p))
             self.assertEqual(p.read_bytes(), before + after)
+
     def test_remove_twice_removes_both(self):
         """Two blocks both removed, middle kept."""
         with tempfile.TemporaryDirectory() as td:
@@ -150,6 +166,7 @@ class TestProfileBlock(unittest.TestCase):
             _write(p, before + block + mid + block + after)
             self.assertTrue(remove_profile_block(p))
             self.assertEqual(p.read_bytes(), before + mid + after)
+
     def test_remove_orphan_begin_without_end(self):
         """Orphan BEGIN leaves file unchanged."""
         with tempfile.TemporaryDirectory() as td:
@@ -168,6 +185,7 @@ class TestProfileBlock(unittest.TestCase):
                     self.assertEqual(p.read_bytes(), orig)
             q = Path(td) / "missing"
             self.assertFalse(remove_profile_block(q))
+
     def test_symlink_stays_symlink(self):
         """Symlink preserved and target changed."""
         with tempfile.TemporaryDirectory() as td:
@@ -198,6 +216,7 @@ class TestProfileBlock(unittest.TestCase):
             self.assertTrue(remove_profile_block(link2))
             self.assertTrue(link2.is_symlink())
             self.assertFalse(missing_target.exists())
+
     def test_two_complete_blocks_both_removed(self):
         """Two complete blocks both removed."""
         with tempfile.TemporaryDirectory() as td:
@@ -210,6 +229,7 @@ class TestProfileBlock(unittest.TestCase):
             _write(p, b"pre\n" + block + b"mid\n" + block + b"post\n")
             self.assertTrue(remove_profile_block(p))
             self.assertEqual(p.read_bytes(), b"pre\nmid\npost\n")
+
     @unittest.skipIf(sys.platform == "win32", "POSIX chmod modes not supported on Windows")
     def test_mode_600_preserved(self):
         """Mode 0o600 preserved after add and remove."""
@@ -225,6 +245,7 @@ class TestProfileBlock(unittest.TestCase):
             self.assertTrue(p.exists())
             self.assertEqual(p.stat().st_mode & 0o777, 0o600)
             self.assertEqual(p.read_bytes(), b"keep\n")
+
     def test_no_stray_temp_files(self):
         """No stray temp files left."""
         with tempfile.TemporaryDirectory() as td:
@@ -248,6 +269,7 @@ class TestProfileBlock(unittest.TestCase):
             for f in d.iterdir():
                 self.assertFalse("tmp" in f.name.lower())
             self.assertEqual(p.read_bytes(), b"keep\n")
+
     @unittest.skipIf(sys.platform == "win32", "POSIX shell quoting requires /bin/sh")
     def test_render_env_quoting_via_shell(self):
         """PATH with spaces and single quote correctly quoted."""
@@ -269,7 +291,7 @@ class TestProfileBlock(unittest.TestCase):
                 # second line is export with quoted dir plus :"$PATH"
                 lines = snippet.splitlines()
                 self.assertEqual(len(lines), 2)
-                self.assertEqual(lines[1], f"export PATH={shlex.quote(bin_path)}:\"$PATH\"")
+                self.assertEqual(lines[1], f'export PATH={shlex.quote(bin_path)}:"$PATH"')
 
     @unittest.skipIf(sys.platform == "win32", "POSIX shell quoting requires /bin/sh")
     def test_profile_sources_readable_env_and_tolerates_missing_env(self):
@@ -286,7 +308,13 @@ class TestProfileBlock(unittest.TestCase):
                 env.pop("F012_USER", None)
                 env.pop("F012_SENTINEL", None)
                 cp = subprocess.run(
-                    ["/bin/sh", "-ec", '. "$1"; printf "%s\\n" "$F012_USER"; printf "%s\\n" "$F012_SENTINEL"', "sh", str(profile)],
+                    [
+                        "/bin/sh",
+                        "-ec",
+                        '. "$1"; printf "%s\\n" "$F012_USER"; printf "%s\\n" "$F012_SENTINEL"',
+                        "sh",
+                        str(profile),
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=2,

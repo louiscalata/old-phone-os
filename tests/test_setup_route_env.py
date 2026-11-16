@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The installed service keeps the model-route settings the setup run saw."""
+
 from __future__ import annotations
 
 import copy
@@ -63,7 +64,7 @@ def _systemd_value(line: str) -> tuple[str, str]:
     is a literal percent sign (any other "%" would start a specifier).
     """
     assert line.startswith("Environment="), line
-    raw = line[len("Environment="):]
+    raw = line[len("Environment=") :]
     out = []
     i = 0
     quote = None
@@ -174,7 +175,10 @@ class SystemdUnitTests(unittest.TestCase):
         self.assertEqual(self.render(None), base)
         self.assertEqual(self.render({}), base)
         self.assertEqual(self.render({"PATH": "/usr/bin", **SECRETS}), base)
-        self.assertEqual(_service_env(base), {"PYTHONPATH": "/opt/owner/opos/src", "PYTHONDONTWRITEBYTECODE": "1", "OPOS_CONFIG_DIR": "/opt/owner/cfg"})
+        self.assertEqual(
+            _service_env(base),
+            {"PYTHONPATH": "/opt/owner/opos/src", "PYTHONDONTWRITEBYTECODE": "1", "OPOS_CONFIG_DIR": "/opt/owner/cfg"},
+        )
 
     def test_route_settings_written_to_service_section(self) -> None:
         unit = self.render({**ROUTE, **SECRETS})
@@ -199,14 +203,23 @@ class SystemdUnitTests(unittest.TestCase):
 
 class LaunchdPlistTests(unittest.TestCase):
     def render(self, env):
-        return render_launchd_plist(Path(MAC_HOME, "opos"), "/usr/bin/python3", Path(MAC_HOME, "Library", "Application Support", "opos"), env=env)
+        return render_launchd_plist(
+            Path(MAC_HOME, "opos"),
+            "/usr/bin/python3",
+            Path(MAC_HOME, "Library", "Application Support", "opos"),
+            env=env,
+        )
 
     def test_unset_renders_as_before(self) -> None:
-        base = render_launchd_plist(Path(MAC_HOME, "opos"), "/usr/bin/python3", Path(MAC_HOME, "Library", "Application Support", "opos"))
+        base = render_launchd_plist(
+            Path(MAC_HOME, "opos"), "/usr/bin/python3", Path(MAC_HOME, "Library", "Application Support", "opos")
+        )
         self.assertEqual(self.render(None), base)
         self.assertEqual(self.render({"PATH": "/usr/bin", **SECRETS}), base)
         data = plistlib.loads(base.encode())
-        self.assertEqual(set(data["EnvironmentVariables"]), {"PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "OPOS_CONFIG_DIR"})
+        self.assertEqual(
+            set(data["EnvironmentVariables"]), {"PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "OPOS_CONFIG_DIR"}
+        )
 
     def test_route_settings_written(self) -> None:
         text = self.render({**ROUTE, **SECRETS})
@@ -218,7 +231,7 @@ class LaunchdPlistTests(unittest.TestCase):
 
     def test_escaping(self) -> None:
         text = self.render({"OPOS_GLIMMER_URL": AWKWARD_URL})
-        self.assertIn("<string>http://127.0.0.1:1235/v1%2Fa\"b\\c&amp;&lt;d&gt;</string>", text)
+        self.assertIn('<string>http://127.0.0.1:1235/v1%2Fa"b\\c&amp;&lt;d&gt;</string>', text)
         self.assertEqual(plistlib.loads(text.encode())["EnvironmentVariables"]["OPOS_GLIMMER_URL"], AWKWARD_URL)
 
 
@@ -237,21 +250,41 @@ class InstallServicesTests(unittest.TestCase):
 
     def test_linux_unit_keeps_route_and_reports_what_it_left_out(self) -> None:
         env = {**ROUTE, "OPOS_LAN_URL": "http://8.8.8.8:1234/v1"}
-        actions = install_services(self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", runner=FakeRunner(), env=env)
+        actions = install_services(
+            self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", runner=FakeRunner(), env=env
+        )
         unit = (self.home / ".config" / "systemd" / "user" / UNIT_NAME).read_text(encoding="utf-8")
         written = _service_env(unit)
         self.assertEqual(written["OPOS_GLIMMER_URL"], ROUTE["OPOS_GLIMMER_URL"])
         self.assertNotIn("OPOS_LAN_URL", written)
-        self.assertEqual(actions[1], "not set in the service: OPOS_LAN_URL must be an http:// URL with a private IP address")
+        self.assertEqual(
+            actions[1], "not set in the service: OPOS_LAN_URL must be an http:// URL with a private IP address"
+        )
 
     def test_dry_run_reports_left_out_settings(self) -> None:
-        actions = install_services(self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", dry_run=True, runner=FakeRunner(), env={"OPOS_MUSE_TIMEOUT": "soon"})
+        actions = install_services(
+            self.repo,
+            "/usr/bin/python3",
+            self.cfg,
+            self.home,
+            "linux",
+            dry_run=True,
+            runner=FakeRunner(),
+            env={"OPOS_MUSE_TIMEOUT": "soon"},
+        )
         self.assertIn("not set in the service: OPOS_MUSE_TIMEOUT must be a positive number of seconds", actions)
         self.assertFalse((self.home / ".config").exists())
 
     def test_unset_reports_nothing_extra(self) -> None:
-        plain = install_services(self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", dry_run=True, runner=FakeRunner())
-        self.assertEqual(install_services(self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", dry_run=True, runner=FakeRunner(), env={}), plain)
+        plain = install_services(
+            self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", dry_run=True, runner=FakeRunner()
+        )
+        self.assertEqual(
+            install_services(
+                self.repo, "/usr/bin/python3", self.cfg, self.home, "linux", dry_run=True, runner=FakeRunner(), env={}
+            ),
+            plain,
+        )
         self.assertFalse(any("not set in the service" in line for line in plain))
 
 
@@ -268,11 +301,26 @@ class ApplyCarriesRouteTests(unittest.TestCase):
         self.repo = self.root / "repo"
         (self.repo / "deploy").mkdir(parents=True)
         (self.repo / "deploy" / UNIT_NAME).write_text(TEMPLATE, encoding="utf-8")
-        self.env = {"HOME": str(self.home), "XDG_CONFIG_HOME": str(self.root / "xdg"), "OPOS_CONFIG_DIR": str(self.root / "cfg"), **ROUTE, **SECRETS}
+        self.env = {
+            "HOME": str(self.home),
+            "XDG_CONFIG_HOME": str(self.root / "xdg"),
+            "OPOS_CONFIG_DIR": str(self.root / "cfg"),
+            **ROUTE,
+            **SECRETS,
+        }
 
     def run_apply(self, platform: str):
         cfg = copy.deepcopy(default_config())
-        return apply(cfg, repo_root=self.repo, python=sys.executable, home=self.home, platform=platform, env=self.env, runner=FakeRunner(), health_check=lambda port: (True, "ok"))
+        return apply(
+            cfg,
+            repo_root=self.repo,
+            python=sys.executable,
+            home=self.home,
+            platform=platform,
+            env=self.env,
+            runner=FakeRunner(),
+            health_check=lambda port: (True, "ok"),
+        )
 
     def test_linux_service_gets_route(self) -> None:
         progress = self.run_apply("linux")

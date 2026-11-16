@@ -38,7 +38,17 @@ class TestFirstboot(unittest.TestCase):
         marker_after_first = os.path.exists(os.path.join(self.state, "firstboot-done"))
         second = self.run_script()
         log_text = Path(self.log).read_text()
-        self.assertEqual((first.returncode, first.stdout, marker_after_first, second.returncode, second.stdout, log_text), (0, "kiosk: ON\n", True, 0, "first boot: already done\n", "-s /usr/share/wayland-sessions/cage-ui.desktop\n"))
+        self.assertEqual(
+            (first.returncode, first.stdout, marker_after_first, second.returncode, second.stdout, log_text),
+            (
+                0,
+                "kiosk: ON\n",
+                True,
+                0,
+                "first boot: already done\n",
+                "-s /usr/share/wayland-sessions/cage-ui.desktop\n",
+            ),
+        )
 
     def test_selection_failure(self):
         p = self.run_script(FAKE_EXIT="1")

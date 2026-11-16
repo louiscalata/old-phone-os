@@ -2,6 +2,7 @@
 import unittest
 import opos.web
 
+
 class TestHelperNewlines(unittest.TestCase):
     def test_helper_box_uses_js_newline(self):
         html = opos.web.page()

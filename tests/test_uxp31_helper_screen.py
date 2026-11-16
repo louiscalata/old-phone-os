@@ -136,15 +136,25 @@ class UXP31Static(unittest.TestCase):
     def test_builtin_text_and_quiet_words(self):
         out = page("t" * 32, "n")
         # Why? identifies rules text; the separate chat keeps its existing no-answer label.
-        self.assertIn("Rules text. The helper did not answer this request.",
-                      (STATIC / "js-5.js").read_text(encoding="utf-8"))
+        self.assertIn(
+            "Rules text. The helper did not answer this request.", (STATIC / "js-5.js").read_text(encoding="utf-8")
+        )
         self.assertIn(STD, out)
         self.assertIn(REST, out)
         self.assertNotIn("Standard answer", out)
         self.assertNotIn("Showing the standard answer", out)
         js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
-        mod = js[js.index("UXP31"):]
-        for t in ("'Send'", "'Cancel'", "'Retry'", "'Clear'", "Waiting...", "AbortController", "ASK_WAIT_MS=125000", "MAX=6"):
+        mod = js[js.index("UXP31") :]
+        for t in (
+            "'Send'",
+            "'Cancel'",
+            "'Retry'",
+            "'Clear'",
+            "Waiting...",
+            "AbortController",
+            "ASK_WAIT_MS=125000",
+            "MAX=6",
+        ):
             self.assertIn(t, mod)
         self.assertNotIn("innerHTML", mod)
         self.assertIn("'Something went wrong. Try again in a minute.'", mod)
@@ -168,7 +178,19 @@ class UXP31Static(unittest.TestCase):
 class UXP31HelperScreenJS(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        p = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phone-b.js"), WHY, json.dumps(assist.answer("what is paused?", env={}, free=0, context={"mode": "CRITICAL"}))], capture_output=True, text=True, timeout=60)
+        p = subprocess.run(
+            [
+                "node",
+                "-e",
+                HARNESS,
+                str(STATIC / "phone-b.js"),
+                WHY,
+                json.dumps(assist.answer("what is paused?", env={}, free=0, context={"mode": "CRITICAL"})),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         assert p.returncode == 0, p.stderr
         cls.r = json.loads(p.stdout.strip().splitlines()[-1])
 
@@ -245,7 +267,9 @@ class UXP31HelperScreenJS(unittest.TestCase):
     def test_simulation_disclosure_requires_explicit_server_signal(self):
         r = self.r["backends"]
         self.assertEqual(r["simulated"], "Practice only: this phone cannot make real calls or send real texts yet.")
-        self.assertEqual(r["helper"], "Answers are made on this phone when possible. Web search is off.")  # no "Demo phone." in front
+        self.assertEqual(
+            r["helper"], "Answers are made on this phone when possible. Web search is off."
+        )  # no "Demo phone." in front
         for key in ("absent", "external", "unknown"):
             self.assertEqual(r[key], "")
 
@@ -291,8 +315,7 @@ class UXP31HelperScreenJS(unittest.TestCase):
 
     def test_conversation_shows_hidden_hint_and_other_errors(self):
         r = self.r["errors"]
-        for state, message in [(r["hidden"], "Tap Show helper first"),
-                               (r["other"], "Try again later.")]:
+        for state, message in [(r["hidden"], "Tap Show helper first"), (r["other"], "Try again later.")]:
             self.assertIn(message, state["log"][-1])
             self.assertEqual(state["status"], message)
             self.assertFalse(state["sendDisabled"])
@@ -375,8 +398,10 @@ class UXP31HelperScreenJS(unittest.TestCase):
         # W2-16 / D11: a source is a line of text, never a link (a kiosk window opened by a link has no way back).
         r = self.r["sources"]
         self.assertIn("Wiki says hi", r["log"][-1])
-        self.assertEqual([p["t"] for p in r["parts"] if p["tag"] == "#TEXT"],
-                         ["Source: Battery, Wikipedia", "Source: Bad, Wikipedia"])
+        self.assertEqual(
+            [p["t"] for p in r["parts"] if p["tag"] == "#TEXT"],
+            ["Source: Battery, Wikipedia", "Source: Bad, Wikipedia"],
+        )
         self.assertNotIn("A", [p["tag"] for p in r["parts"]])
         self.assertEqual([(p["href"], p["target"], p["rel"]) for p in r["parts"]], [("", "", "")] * len(r["parts"]))
 

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fixture-only coverage for the portable guest benchmark."""
+
 import os
 from pathlib import Path
 import shutil
@@ -8,8 +9,17 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-KEYS = ["bench_version", "boot_to_login_s", "boot_to_login_src", "idle_ram_mb",
-        "idle_cpu_pct", "pkg_count", "pkg_manager", "enabled_services", "init"]
+KEYS = [
+    "bench_version",
+    "boot_to_login_s",
+    "boot_to_login_src",
+    "idle_ram_mb",
+    "idle_cpu_pct",
+    "pkg_count",
+    "pkg_manager",
+    "enabled_services",
+    "init",
+]
 USAGE = "usage: opos-bench.sh [--help]\n"
 
 
@@ -23,9 +33,13 @@ class OposBenchTest(unittest.TestCase):
         self.bin.mkdir()
         for tool in "awk sed ls sort wc cat sleep getconf".split():
             (self.bin / tool).symlink_to(shutil.which(tool))
-        self.env = {**os.environ, "PATH": str(self.bin),
-                    "OPOS_BENCH_ROOT": str(self.root),
-                    "OPOS_BENCH_SAMPLE": "0", "OPOS_BENCH_HZ": "100"}
+        self.env = {
+            **os.environ,
+            "PATH": str(self.bin),
+            "OPOS_BENCH_ROOT": str(self.root),
+            "OPOS_BENCH_SAMPLE": "0",
+            "OPOS_BENCH_HZ": "100",
+        }
         self.env.pop("OPOS_BENCH_STAT2", None)
         self.shell = shutil.which("sh")
 
@@ -41,29 +55,31 @@ class OposBenchTest(unittest.TestCase):
         path.chmod(0o755)
 
     def run_bench(self, *args):
-        return subprocess.run([self.shell, "tools/opos-bench.sh", *args],
-                              cwd=ROOT, env=self.env, capture_output=True,
-                              text=True, timeout=10)
+        return subprocess.run(
+            [self.shell, "tools/opos-bench.sh", *args],
+            cwd=ROOT,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     def test_help(self):
         result = self.run_bench("--help")
-        self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, USAGE, ""))
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, USAGE, ""))
 
     def test_bad_arg(self):
         for args in [("bad",), ("--help", "extra")]:
             with self.subTest(args=args):
                 result = self.run_bench(*args)
-                self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                 (2, "", USAGE))
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (2, "", USAGE))
 
     def test_bad_sample(self):
         for sample in ("abc", "", "-1", "61", "1.5"):
             with self.subTest(sample=sample):
                 self.env["OPOS_BENCH_SAMPLE"] = sample
                 result = self.run_bench()
-                self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                 (2, "", USAGE))
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (2, "", USAGE))
 
     def test_full_fixture(self):
         self.apk()
@@ -73,8 +89,7 @@ class OposBenchTest(unittest.TestCase):
         self.env["OPOS_BENCH_STAT2"] = str(stat2)
         self.write("proc/42/comm", "cage\n")
         self.write("proc/42/stat", "42 (cage) S " + "0 " * 18 + "1234 0\n")
-        for level, names in {"default": ("opos-server", "sshd"),
-                             "boot": ("sshd", "hwclock")}.items():
+        for level, names in {"default": ("opos-server", "sshd"), "boot": ("sshd", "hwclock")}.items():
             for name in names:
                 self.write(f"etc/runlevels/{level}/{name}", "")
         result = self.run_bench()
@@ -99,8 +114,7 @@ class OposBenchTest(unittest.TestCase):
 
     def process(self, pid, name, ticks, stat_name=None):
         self.write(f"proc/{pid}/comm", name + "\n")
-        self.write(f"proc/{pid}/stat",
-                   f"{pid} ({stat_name or name}) S " + "0 " * 18 + f"{ticks} 0\n")
+        self.write(f"proc/{pid}/stat", f"{pid} ({stat_name or name}) S " + "0 " * 18 + f"{ticks} 0\n")
 
     def test_boot_priority_and_smallest_starttime(self):
         self.process(1, "agetty", 100)
@@ -126,8 +140,7 @@ class OposBenchTest(unittest.TestCase):
 
     def test_cpu_unavailable_or_nonincreasing(self):
         self.write("proc/stat", "cpu  100 0 100 700 100 0 0 0\n")
-        for content in (None, "cpu  100 0 100 700 100 0 0 0\n",
-                        "cpu  0 0 0 1 0 0 0 0\n", "intr 123\n"):
+        for content in (None, "cpu  100 0 100 700 100 0 0 0\n", "cpu  0 0 0 1 0 0 0 0\n", "intr 123\n"):
             with self.subTest(content=content):
                 path = self.root / "second"
                 if content is not None:

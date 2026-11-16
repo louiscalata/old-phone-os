@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Version flag regression coverage for setup CLI."""
+
 from __future__ import annotations
 import contextlib
 import io

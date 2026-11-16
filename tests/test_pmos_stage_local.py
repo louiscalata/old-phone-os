@@ -26,9 +26,7 @@ class TestStageLocalSource(unittest.TestCase):
         for package in ("opos", "postmarketos-ui-opos"):
             (repo / "packaging/pmos" / package).mkdir(parents=True)
         (repo / "deploy").mkdir()
-        for name, data in (
-            ("opos-sysusers.conf", b"fixture users\n"),
-        ):
+        for name, data in (("opos-sysusers.conf", b"fixture users\n"),):
             (repo / "deploy" / name).write_bytes(data)
         (repo / "src/opos").mkdir(parents=True)
         (repo / "src/opos/__init__.py").write_bytes(b"fixture source bytes\n")
@@ -41,11 +39,9 @@ class TestStageLocalSource(unittest.TestCase):
             )
             for name in ("opos-sysusers.conf",)
         ]
-        checksum_text = "\n".join(
-            f"{digest}  {name}" for digest, name in auxiliary
-        )
+        checksum_text = "\n".join(f"{digest}  {name}" for digest, name in auxiliary)
         recipe = (
-            'pkgname=opos\npkgver=1.2.3\n'
+            "pkgname=opos\npkgver=1.2.3\n"
             f'_source_archive="{ARCHIVE}"\n'
             f'_source_root="{SOURCE_ROOT}"\n'
             'source="$_source_archive::https://example.invalid/$_source_archive '
@@ -70,8 +66,13 @@ class TestStageLocalSource(unittest.TestCase):
         if local:
             env["OPOS_LOCAL_SOURCE"] = "1"
         return subprocess.run(
-            ["sh", str(script), str(out)], cwd=repo, env=env,
-            capture_output=True, text=True, timeout=20, check=False,
+            ["sh", str(script), str(out)],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
         )
 
     def _assert_success(self, result):
@@ -80,9 +81,11 @@ class TestStageLocalSource(unittest.TestCase):
     def _snapshot(self, repo):
         return {
             path.relative_to(repo).as_posix(): (
-                path.read_bytes(), stat.S_IMODE(path.stat().st_mode),
+                path.read_bytes(),
+                stat.S_IMODE(path.stat().st_mode),
             )
-            for path in repo.rglob("*") if path.is_file()
+            for path in repo.rglob("*")
+            if path.is_file()
         }
 
     def _checksums(self, recipe):
@@ -98,11 +101,7 @@ class TestStageLocalSource(unittest.TestCase):
             members = archive.getmembers()
             self.assertTrue(members)
             self.assertTrue(
-                all(
-                    member.name == SOURCE_ROOT
-                    or member.name.startswith(SOURCE_ROOT + "/")
-                    for member in members
-                ),
+                all(member.name == SOURCE_ROOT or member.name.startswith(SOURCE_ROOT + "/") for member in members),
             )
             self.assertIsNotNone(
                 archive.getmember(SOURCE_ROOT + "/src/opos/__init__.py"),
@@ -163,8 +162,7 @@ class TestStageLocalSource(unittest.TestCase):
         with tarfile.open(out / "main/opos" / ARCHIVE, "r:gz") as archive:
             self.assertFalse(
                 any(
-                    "__pycache__" in member.name
-                    or member.name.endswith((".pyc", ".pyo"))
+                    "__pycache__" in member.name or member.name.endswith((".pyc", ".pyo"))
                     for member in archive.getmembers()
                 ),
             )

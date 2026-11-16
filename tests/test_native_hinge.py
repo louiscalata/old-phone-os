@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """hinge.py: the watcher with a stand-in for the sensor service (no bus, no toolkit), and the shell's use of it."""
+
 import ast
 import os
 import socket
@@ -55,6 +56,7 @@ class Watch(unittest.TestCase):
         def on_angle(a):
             with lock:
                 got.append(a)
+
         w = hinge.HingeWatcher(on_angle, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0, **kw).start()
         (wait_for or bus.done).wait(5)
         w.stop()
@@ -90,6 +92,7 @@ class Watch(unittest.TestCase):
         def boom(a):
             calls.append(a)
             raise ValueError("no")
+
         w = hinge.HingeWatcher(boom, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0).start()
         bus.done.wait(5)
         w.stop()
@@ -97,6 +100,7 @@ class Watch(unittest.TestCase):
 
     def test_the_first_reading_waits_for_the_sensor_to_settle(self):
         import time
+
         bus = FakeBus([120, 120])
         t0 = time.monotonic()
         w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0.3).start()
@@ -109,7 +113,9 @@ class Watch(unittest.TestCase):
     def test_a_zero_before_the_first_real_report_is_not_an_angle(self):
         bus = FakeBus([0, 0, 0, 120, 121, 0])
         got = self.run_watcher(bus)
-        self.assertEqual(got[:2], [120, 0], "the leading zeros say nothing; a later zero (a closing hinge) is a reading")
+        self.assertEqual(
+            got[:2], [120, 0], "the leading zeros say nothing; a later zero (a closing hinge) is a reading"
+        )
 
     def test_a_stopped_watcher_can_be_started_again_and_a_running_one_is_not_started_twice(self):
         bus = FakeBus([1] * 100000)
@@ -182,9 +188,11 @@ class Tilt(unittest.TestCase):
         def on_tilt(z):
             with lock:
                 tilts.append(z)
+
         kw.setdefault("tilt_min_s", 0)
-        w = hinge.HingeWatcher(on_angle, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0,
-                               on_tilt=on_tilt, **kw).start()
+        w = hinge.HingeWatcher(
+            on_angle, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0, on_tilt=on_tilt, **kw
+        ).start()
         (wait_for or bus.done).wait(5)
         w.stop()
         with lock:
@@ -203,12 +211,13 @@ class Tilt(unittest.TestCase):
 
     def test_at_most_five_reports_a_second(self):
         now = [0.0]
-        seq = list(range(0, 100000, 50))        # every reading moves by 50
+        seq = list(range(0, 100000, 50))  # every reading moves by 50
         bus = AccelBus([150] * 40, seq)
 
         def clock():
-            now[0] += 0.05                      # each reading is 50 ms after the last
+            now[0] += 0.05  # each reading is 50 ms after the last
             return now[0]
+
         _, tilts = self.run_watcher(bus, tilt_min_s=0.2, clock=clock)
         self.assertGreater(len(tilts), 2)
         self.assertLess(len(tilts), 40 / 3, "about one reading in four or five is said")
@@ -250,8 +259,10 @@ class Tilt(unittest.TestCase):
         def boom(z):
             calls.append(z)
             raise ValueError("no")
-        w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0,
-                               on_tilt=boom, tilt_min_s=0).start()
+
+        w = hinge.HingeWatcher(
+            lambda a: None, make_bus=lambda: bus, poll_s=0.001, retry_s=0.02, settle_s=0, on_tilt=boom, tilt_min_s=0
+        ).start()
         bus.done.wait(5)
         w.stop()
         self.assertEqual(calls[:3], [100, 200, 300])
@@ -276,6 +287,7 @@ class Rate(unittest.TestCase):
     def run_for(self, angles, wait=0.35, **kw):
         class Bus(FakeBus):
             calls = []
+
             def angle(self):
                 self.calls.append(("angle", time.monotonic()))
                 return self.angles[0] if len(self.angles) == 1 else self.angles.pop(0)
@@ -283,18 +295,22 @@ class Rate(unittest.TestCase):
             def tilt(self):
                 self.calls.append(("tilt", time.monotonic()))
                 return 500
+
             def open_accel(self):
                 pass
+
         bus = Bus(list(angles))
         bus.calls = []
-        w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, retry_s=0.05, **kw).start()
+        w = hinge.HingeWatcher(
+            lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, retry_s=0.05, **kw
+        ).start()
         time.sleep(wait)
         w.stop()
         return [k for k, _t in bus.calls]
 
     def test_a_still_hinge_below_300_is_asked_slowly(self):
         calls = self.run_for([170], poll_s=0.01, slow_poll_s=0.2, slow_tilt_s=0.3, calm_s=0.05)
-        self.assertLess(calls.count("angle"), 10, calls)       # fast would be about 35 in this window
+        self.assertLess(calls.count("angle"), 10, calls)  # fast would be about 35 in this window
         self.assertLessEqual(calls.count("tilt"), 5, calls)
 
     def test_a_hinge_at_300_or_more_is_asked_fast_even_when_still(self):
@@ -320,9 +336,11 @@ class Rate(unittest.TestCase):
 
             def close_accel(self):
                 self.accel_closed += 1
+
         bus = Bus()
-        w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, poll_s=0.01,
-                               retry_s=0.05).start()
+        w = hinge.HingeWatcher(
+            lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, poll_s=0.01, retry_s=0.05
+        ).start()
         time.sleep(0.15)
         w.set_paused(True)
         time.sleep(0.15)
@@ -337,7 +355,9 @@ class Rate(unittest.TestCase):
         w.stop()
 
     def test_a_moving_hinge_is_asked_fast(self):
-        calls = self.run_for([100 + 5 * i for i in range(40)], poll_s=0.01, slow_poll_s=0.5, slow_tilt_s=0.5, calm_s=5.0)
+        calls = self.run_for(
+            [100 + 5 * i for i in range(40)], poll_s=0.01, slow_poll_s=0.5, slow_tilt_s=0.5, calm_s=5.0
+        )
         self.assertGreater(calls.count("angle"), 12, calls)
 
     def test_fast_or_slow_is_decided_on_the_injected_clock(self):
@@ -356,7 +376,7 @@ class Rate(unittest.TestCase):
         w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, settle_s=0, poll_s=0.01, retry_s=0.05).start()
         self.assertTrue(bus.opened_event.wait(2))
         w.set_paused(True)
-        time.sleep(0.1)                         # the thread is now in its paused wait
+        time.sleep(0.1)  # the thread is now in its paused wait
         t0 = time.monotonic()
         w.stop()
         self.assertFalse(w.thread.is_alive(), "stop() returned with the thread still waiting to be resumed")
@@ -372,7 +392,7 @@ class Rate(unittest.TestCase):
 
         class Wake:
             def clear(self):
-                w.stop(wait=False)          # sets _stop and _wake; the set below is the one the clear wipes out
+                w.stop(wait=False)  # sets _stop and _wake; the set below is the one the clear wipes out
 
             def set(self):
                 pass
@@ -396,10 +416,13 @@ class NeverStartsTheService(unittest.TestCase):
             def call_sync(self, *args):
                 seen.append(args)
                 return type("R", (), {"unpack": lambda self: (True,)})()
+
         bus = hinge.SensorBus.__new__(hinge.SensorBus)
         bus.conn = Conn()
         bus.Gio = type("Gio", (), {"DBusCallFlags": type("F", (), {"NONE": "none", "NO_AUTO_START": "no-auto-start"})})
-        bus.GLib = type("G", (), {"Variant": staticmethod(lambda sig, args: (sig, args)), "VariantType": staticmethod(lambda s: s)})
+        bus.GLib = type(
+            "G", (), {"Variant": staticmethod(lambda sig, args: (sig, args)), "VariantType": staticmethod(lambda s: s)}
+        )
         self.assertTrue(bus.owned())
         bus._call(hinge.MANAGER, "local.SensorManager", "loadPlugin", None, "(b)")
         self.assertEqual([a[6] for a in seen], ["no-auto-start", "no-auto-start"])
@@ -413,13 +436,21 @@ class StillPhone(unittest.TestCase):
 
         class Bus(FakeBus):
             def tilt(self):
-                return -1000                # lying still, the same reading every time
+                return -1000  # lying still, the same reading every time
 
             def open_accel(self):
                 pass
+
         bus = Bus([100] * 100000)
-        w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, on_tilt=got.append, settle_s=0, poll_s=0.01, retry_s=0.05,
-                               tilt_min_s=0.01).start()
+        w = hinge.HingeWatcher(
+            lambda a: None,
+            make_bus=lambda: bus,
+            on_tilt=got.append,
+            settle_s=0,
+            poll_s=0.01,
+            retry_s=0.05,
+            tilt_min_s=0.01,
+        ).start()
         time.sleep(1.4)
         w.stop()
         self.assertGreaterEqual(len(got), 3, got)
@@ -432,10 +463,20 @@ class StillPhone(unittest.TestCase):
         class Bus:
             def tilt(self):
                 return z[0]
-        w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: None, on_tilt=got.append, clock=lambda: t[0], tilt_min_s=0.2)
+
+        w = hinge.HingeWatcher(
+            lambda a: None, make_bus=lambda: None, on_tilt=got.append, clock=lambda: t[0], tilt_min_s=0.2
+        )
         w._accel_open = True
-        for now, value, said in ((0.0, -1000, 1), (0.3, -1000, 1), (0.5, -1000, 2), (0.6, -1000, 2),
-                                 (0.65, -900, 2), (0.75, -900, 3), (0.8, -1000, 3)):
+        for now, value, said in (
+            (0.0, -1000, 1),
+            (0.3, -1000, 1),
+            (0.5, -1000, 2),
+            (0.6, -1000, 2),
+            (0.65, -900, 2),
+            (0.75, -900, 3),
+            (0.8, -1000, 3),
+        ):
             t[0], z[0] = now, value
             w._read_tilt(Bus(), fast=True)
             self.assertEqual(len(got), said, "at %.2f s" % now)
@@ -443,13 +484,14 @@ class StillPhone(unittest.TestCase):
 
     def test_a_flip_is_confirmed_by_facing_on_a_phone_that_then_lies_still(self):
         from opos.native import facing
+
         f = facing.Facing()
         clock = 0.0
         for z in [1000] * 3:
             f.update(z, clock)
             clock += 0.5
         self.assertEqual(f.current, "right")
-        for _ in range(4):                  # the heartbeat: a reading every 0.5 s, all the same
+        for _ in range(4):  # the heartbeat: a reading every 0.5 s, all the same
             f.update(-1000, clock)
             clock += 0.5
         self.assertEqual(f.current, "left")
@@ -459,7 +501,7 @@ class StillPhone(unittest.TestCase):
 
         class Bus(FakeBus):
             def angle(self):
-                return 0                    # a sensor that has not reported yet
+                return 0  # a sensor that has not reported yet
 
             def open_accel(self):
                 pass
@@ -469,9 +511,11 @@ class StillPhone(unittest.TestCase):
 
             def drain_accel(self):
                 drained.append(1)
+
         bus = Bus([0] * 100000)
-        w = hinge.HingeWatcher(lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, poll_s=0.01,
-                               retry_s=0.05).start()
+        w = hinge.HingeWatcher(
+            lambda a: None, make_bus=lambda: bus, on_tilt=lambda z: None, settle_s=0, poll_s=0.01, retry_s=0.05
+        ).start()
         time.sleep(0.3)
         w.stop()
         self.assertGreaterEqual(len(drained), 5)
@@ -490,11 +534,19 @@ class ShellUse(unittest.TestCase):
 
     def test_only_start_lid_starts_the_watcher_and_start_lid_is_not_run_by_the_checking_modes(self):
         self.assertIn("hinge.HingeWatcher", self.calls(self.method("start_lid")))
-        started = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)
-                   and any(c == "hinge.HingeWatcher" for c in self.calls(n))]
+        started = [
+            n.name
+            for n in ast.walk(self.tree)
+            if isinstance(n, ast.FunctionDef) and any(c == "hinge.HingeWatcher" for c in self.calls(n))
+        ]
         self.assertEqual(started, ["start_lid"])
         main = next(n for n in self.tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
-        gate = next(n for n in ast.walk(main) if isinstance(n, ast.If) and "win.start_lid" in [ast.unparse(c.func) for c in ast.walk(n) if isinstance(c, ast.Call)])
+        gate = next(
+            n
+            for n in ast.walk(main)
+            if isinstance(n, ast.If)
+            and "win.start_lid" in [ast.unparse(c.func) for c in ast.walk(n) if isinstance(c, ast.Call)]
+        )
         self.assertEqual(ast.unparse(gate.test).replace("(", "").replace(")", ""), "not probe and not shots")
 
     def test_the_lid_pauses_the_sensors_and_losing_the_lid_resumes_them(self):
@@ -542,6 +594,7 @@ class BusTalk(unittest.TestCase):
                 conn.sendall(ack)
             if close_after_ack:
                 conn.close()
+
         self.thread = threading.Thread(target=serve, daemon=True)
         self.thread.start()
         old = hinge.SOCKET
@@ -549,9 +602,13 @@ class BusTalk(unittest.TestCase):
         self.addCleanup(setattr, hinge, "SOCKET", old)
         bus = hinge.SensorBus.__new__(hinge.SensorBus)
         bus.session, bus.sock, bus.calls = None, None, []
-        bus.GLib = type("G", (), {"Variant": staticmethod(lambda sig, args: (sig, args)), "VariantType": staticmethod(lambda s: s)})
-        bus._call = lambda path_, iface, method, args, reply, name=hinge.NAME: bus.calls.append(method) or {
-            "loadPlugin": (True,), "requestSensor": (7,), "hinge": ((0, 123),)}.get(method, ())
+        bus.GLib = type(
+            "G", (), {"Variant": staticmethod(lambda sig, args: (sig, args)), "VariantType": staticmethod(lambda s: s)}
+        )
+        bus._call = lambda path_, iface, method, args, reply, name=hinge.NAME: (
+            bus.calls.append(method)
+            or {"loadPlugin": (True,), "requestSensor": (7,), "hinge": ((0, 123),)}.get(method, ())
+        )
         return bus
 
     def test_open_sends_the_session_id_and_reads_the_acknowledgement_before_starting(self):
@@ -608,6 +665,7 @@ class AccelTalk(unittest.TestCase):
                     conn.sendall(ack)
                 else:
                     conn.close()
+
         self.thread = threading.Thread(target=serve, daemon=True)
         self.thread.start()
         old = hinge.SOCKET
@@ -615,10 +673,16 @@ class AccelTalk(unittest.TestCase):
         self.addCleanup(setattr, hinge, "SOCKET", old)
         bus = hinge.SensorBus.__new__(hinge.SensorBus)
         bus.session, bus.sock, bus.calls = None, None, []
-        bus.GLib = type("G", (), {"Variant": staticmethod(lambda sig, args: (sig, args)), "VariantType": staticmethod(lambda s: s)})
+        bus.GLib = type(
+            "G", (), {"Variant": staticmethod(lambda sig, args: (sig, args)), "VariantType": staticmethod(lambda s: s)}
+        )
 
         def call(path_, iface, method, args, reply, name=hinge.NAME):
-            sensor = args[1][0] if args and method in ("loadPlugin", "requestSensor", "releaseSensor") else path_.rsplit("/", 1)[-1]
+            sensor = (
+                args[1][0]
+                if args and method in ("loadPlugin", "requestSensor", "releaseSensor")
+                else path_.rsplit("/", 1)[-1]
+            )
             bus.calls.append((sensor, method))
             if method == "loadPlugin":
                 return (accel_plugin if sensor == hinge.ACCEL else True,)
@@ -629,6 +693,7 @@ class AccelTalk(unittest.TestCase):
             if method == "xyz":
                 return (xyz,)
             return ()
+
         bus._call = call
         return bus
 
@@ -638,9 +703,17 @@ class AccelTalk(unittest.TestCase):
         bus.open_accel()
         self.thread.join(5)
         self.assertEqual([struct.unpack("@i", r)[0] for r in self.received], [7, 9])
-        self.assertEqual(bus.calls, [("hingesensor", "loadPlugin"), ("hingesensor", "requestSensor"),
-                                     ("hingesensor", "start"), (hinge.ACCEL, "loadPlugin"),
-                                     (hinge.ACCEL, "requestSensor"), (hinge.ACCEL, "start")])
+        self.assertEqual(
+            bus.calls,
+            [
+                ("hingesensor", "loadPlugin"),
+                ("hingesensor", "requestSensor"),
+                ("hingesensor", "start"),
+                (hinge.ACCEL, "loadPlugin"),
+                (hinge.ACCEL, "requestSensor"),
+                (hinge.ACCEL, "start"),
+            ],
+        )
         self.assertIsNot(bus.accel_sock, bus.sock)
         self.assertEqual(bus.tilt(), 1001)
         self.assertEqual(bus.angle(), 123)
@@ -695,6 +768,7 @@ class AccelTalk(unittest.TestCase):
                 bus.tilt()
         self.assertEqual(bus.angle(), 123, "the hinge socket is still fine")
         bus.close()
+
 
 if __name__ == "__main__":
     unittest.main()

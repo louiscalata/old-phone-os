@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Simulation status follows the active transport without serializing backend details."""
+
 import json
 import unittest
 

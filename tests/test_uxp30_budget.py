@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """UXP30: audit the effective inline CSS and the optional browser motion path."""
+
 import http.client
 import json
 import os
@@ -23,7 +24,14 @@ PAGE_BUDGET = 100 * 1024
 # on must both be at most 102,000 bytes. The 400 bytes under the 102,400 cap above are the reserve for what the server adds around
 # page(): the keyboard's and the panes' tags, the Settings links, and the first-run decoration.
 WAVE_GATE = 102000
-SWITCHES = {"OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1", "OPOS_MONITOR": "1", "OPOS_PANES": "1", "OPOS_SPAN": "675,42"}
+SWITCHES = {
+    "OPOS_OSK": "1",
+    "OPOS_NETWORK": "1",
+    "OPOS_FIRSTRUN": "1",
+    "OPOS_MONITOR": "1",
+    "OPOS_PANES": "1",
+    "OPOS_SPAN": "675,42",
+}
 # The unit and the two drop-ins the Duo image installs for opos-server.service (packaging/duo-os/build-image.sh).
 DUO_UNITS = ("opos-server.service", "opos-network.conf", "opos-apps.conf")
 
@@ -46,7 +54,9 @@ def served_home_page(switches):
     env.update(switches)
     with tempfile.TemporaryDirectory() as config, mock.patch.dict(os.environ, dict(env, OPOS_CONFIG_DIR=config)):
         undo = firstrun.install(web)
-        server = web.make_server(0, web.Phone(), span=web.parse_span(switches["OPOS_SPAN"]) if "OPOS_SPAN" in switches else None)
+        server = web.make_server(
+            0, web.Phone(), span=web.parse_span(switches["OPOS_SPAN"]) if "OPOS_SPAN" in switches else None
+        )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -67,50 +77,64 @@ def served_home_page(switches):
 
 def rules(css, context=()):
     """Walk nested at-rules without treating keyframes as ordinary selectors."""
-    css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
     pos = 0
     while pos < len(css):
-        start = css.find('{', pos)
+        start = css.find("{", pos)
         if start < 0:
             break
         selector = css[pos:start].strip()
         end, depth = start + 1, 1
         while depth:
             if end >= len(css):
-                raise AssertionError('Unbalanced CSS')
-            depth += (css[end] == '{') - (css[end] == '}')
+                raise AssertionError("Unbalanced CSS")
+            depth += (css[end] == "{") - (css[end] == "}")
             end += 1
-        body = css[start + 1:end - 1]
-        if selector.startswith('@'):
+        body = css[start + 1 : end - 1]
+        if selector.startswith("@"):
             yield from rules(body, context + (selector,))
         else:
             declarations = {}
-            for declaration in body.split(';'):
-                if ':' in declaration:
-                    name, value = declaration.split(':', 1)
+            for declaration in body.split(";"):
+                if ":" in declaration:
+                    name, value = declaration.split(":", 1)
                     declarations[name.strip()] = value.strip()
-            for name in selector.split(','):
+            for name in selector.split(","):
                 yield context, name.strip(), declarations
         pos = end
 
 
 def transition_properties(value):
     # Commas inside timing functions do not separate transitions.
-    value = re.sub(r'[\w-]+\([^)]*\)', 'TIMING', value)
-    for item in value.split(','):
-        tokens = [t for t in item.split() if not re.fullmatch(r'[.\d]+m?s', t)
-                  and t not in ('ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out',
-                                'step-start', 'step-end', 'TIMING', '!important')]
-        yield tokens[0] if tokens else 'all'
+    value = re.sub(r"[\w-]+\([^)]*\)", "TIMING", value)
+    for item in value.split(","):
+        tokens = [
+            t
+            for t in item.split()
+            if not re.fullmatch(r"[.\d]+m?s", t)
+            and t
+            not in (
+                "ease",
+                "linear",
+                "ease-in",
+                "ease-out",
+                "ease-in-out",
+                "step-start",
+                "step-end",
+                "TIMING",
+                "!important",
+            )
+        ]
+        yield tokens[0] if tokens else "all"
 
 
 class Budget(unittest.TestCase):
     def test_motion_css(self):
-        css = '\n'.join(re.findall(r'<style[^>]*>(.*?)</style>', page(), re.S))
+        css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", page(), re.S))
         effective, frames, animations = {}, {}, set()
         for context, selector, declarations in rules(css):
-            self.assertNotIn('will-change', declarations, selector)
-            if any(c.startswith('@keyframes') for c in context):
+            self.assertNotIn("will-change", declarations, selector)
+            if any(c.startswith("@keyframes") for c in context):
                 frames.setdefault(context[-1].split()[-1], set()).update(declarations)
                 continue
             # Shared source is immutable: audit the final declarations after the
@@ -118,57 +142,72 @@ class Budget(unittest.TestCase):
             effective.setdefault((context, selector), {}).update(declarations)
         count = 0
         for (context, selector), declarations in effective.items():
-            for name in ('transition', 'transition-property'):
+            for name in ("transition", "transition-property"):
                 if name in declarations:
                     count += 1
                     for prop in transition_properties(declarations[name]):
-                        self.assertIn(prop, ('transform', 'opacity', 'visibility', 'none'),
-                                      (context, selector, name, declarations[name]))
-            for name in ('animation', 'animation-name', 'animation-iteration-count'):
-                if name in declarations and declarations[name] != 'none':
+                        self.assertIn(
+                            prop,
+                            ("transform", "opacity", "visibility", "none"),
+                            (context, selector, name, declarations[name]),
+                        )
+            for name in ("animation", "animation-name", "animation-iteration-count"):
+                if name in declarations and declarations[name] != "none":
                     # Nothing animates at idle: a looping animation is a defect. (The charging pulse that used to be the
                     # fixture here was a dead rule, retired by B-03 of the interface plan.)
-                    self.assertNotIn('infinite', declarations[name], (context, selector, name))
-                    if name != 'animation-iteration-count':
-                        animations.update(item.strip().split()[0]
-                                          for item in declarations[name].split(','))
+                    self.assertNotIn("infinite", declarations[name], (context, selector, name))
+                    if name != "animation-iteration-count":
+                        animations.update(item.strip().split()[0] for item in declarations[name].split(","))
         self.assertGreater(count, 0)
-        self.assertNotIn('pulse', frames)
-        for name in animations:  # whatever animation may be added later: declared frames, and only transform and opacity
+        self.assertNotIn("pulse", frames)
+        for (
+            name
+        ) in animations:  # whatever animation may be added later: declared frames, and only transform and opacity
             self.assertIn(name, frames)
         for name, props in frames.items():
-            self.assertTrue(props <= {'transform', 'opacity'}, (name, props))
+            self.assertTrue(props <= {"transform", "opacity"}, (name, props))
 
     def test_sheet_keeps_base_transition(self):
         # An override here once dropped the base `visibility 0s .25s` delay.
-        css = (Path(__file__).parents[1] / 'src/opos/web_static/phone-a.css').read_text()
+        css = (Path(__file__).parents[1] / "src/opos/web_static/phone-a.css").read_text()
         for context, selector, declarations in rules(css):
-            if selector.startswith('#sheet'):
-                self.assertNotIn('transition', declarations, selector)
-        rendered_css = '\n'.join(re.findall(r'<style[^>]*>(.*?)</style>', page(), re.S))
+            if selector.startswith("#sheet"):
+                self.assertNotIn("transition", declarations, selector)
+        rendered_css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", page(), re.S))
         base = {}
         for context, selector, declarations in rules(rendered_css):
-            if not context and selector == '#sheet':
+            if not context and selector == "#sheet":
                 base.update(declarations)
-        self.assertRegex(base.get('transition', ''), r'\bvisibility\s+0s\s+\.25s\b')
+        self.assertRegex(base.get("transition", ""), r"\bvisibility\s+0s\s+\.25s\b")
 
     def test_keeps_uxp24_layout_rules(self):
         # A whole-file copy of phone-a.css once reverted these UXP24 rules.
-        css = (Path(__file__).parents[1] / 'src/opos/web_static/phone-a.css').read_text()
-        heights = [int(m) for context, selector, declarations in rules(css)
-                   if selector == 'summary' and not context
-                   for m in re.findall(r'^(\d+)px$', declarations.get('min-height', ''))]
+        css = (Path(__file__).parents[1] / "src/opos/web_static/phone-a.css").read_text()
+        heights = [
+            int(m)
+            for context, selector, declarations in rules(css)
+            if selector == "summary" and not context
+            for m in re.findall(r"^(\d+)px$", declarations.get("min-height", ""))
+        ]
         self.assertTrue(heights and max(heights) >= 48, heights)
-        self.assertTrue(any(selector == 'html:root[data-ff] #phone' and 'max-width:839px' in ''.join(context)
-                            and declarations.get('max-width') == 'none'
-                            for context, selector, declarations in rules(css)))
+        self.assertTrue(
+            any(
+                selector == "html:root[data-ff] #phone"
+                and "max-width:839px" in "".join(context)
+                and declarations.get("max-width") == "none"
+                for context, selector, declarations in rules(css)
+            )
+        )
 
     def test_reduced_motion(self):
         html = page()
-        compact = re.sub(r'\s+', '', html)
-        self.assertIn('@media(prefers-reduced-motion:reduce){*,*::before,*::after{'
-                      'transition-duration:.01ms!important;animation-duration:.01ms!important;'
-                      'animation-iteration-count:1!important;scroll-behavior:auto!important}}', compact)
+        compact = re.sub(r"\s+", "", html)
+        self.assertIn(
+            "@media(prefers-reduced-motion:reduce){*,*::before,*::after{"
+            "transition-duration:.01ms!important;animation-duration:.01ms!important;"
+            "animation-iteration-count:1!important;scroll-behavior:auto!important}}",
+            compact,
+        )
 
     def test_normal_served_demo_with_release_metadata_fits_page_budget(self):
         # The server generates a 43-character token and 22-character nonce.
@@ -179,11 +218,11 @@ class Budget(unittest.TestCase):
 
     def test_media_and_page_size(self):
         html = page()
-        self.assertNotRegex(html.lower(), r'\.gif\b|<(?:video|canvas)\b')
-        for data in re.findall(r'data:image[^\s\x22\x27<>)]*', html, re.I):
+        self.assertNotRegex(html.lower(), r"\.gif\b|<(?:video|canvas)\b")
+        for data in re.findall(r"data:image[^\s\x22\x27<>)]*", html, re.I):
             self.assertLessEqual(len(data), 20000)
-        size = len(html.encode('utf-8'))
-        message = f'page(): {size:,} bytes; PAGE_BUDGET: {PAGE_BUDGET:,} bytes'
+        size = len(html.encode("utf-8"))
+        message = f"page(): {size:,} bytes; PAGE_BUDGET: {PAGE_BUDGET:,} bytes"
         print(message)
         self.assertLessEqual(size, PAGE_BUDGET, message)
 
@@ -265,24 +304,29 @@ CHECKS.budget = async function() {
 
 class BudgetBrowser(unittest.TestCase):
     skip_reason = None
-    mode = 'port'
+    mode = "port"
     setUpClass = classmethod(acceptance.TestUxrAcceptance.setUpClass.__func__)
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
     tearDown = acceptance.TestUxrAcceptance.tearDown
 
     def test_reduced_motion(self):
-        driver = Path(self.run_dir) / 'budget.js'
+        driver = Path(self.run_dir) / "budget.js"
         source = acceptance.DRIVER.read_text()
-        self.assertIn('(async () => {', source)
-        driver.write_text(source.replace('(async () => {', CHECK + '\n(async () => {', 1))
-        target = str(self.port) if self.proc is not None else 'pipe'
+        self.assertIn("(async () => {", source)
+        driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
+        target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        result = subprocess.run([self.node, str(driver), target, self.url, 'budget', self.state],
-                                capture_output=True, text=True, timeout=40, env=env)
+        result = subprocess.run(
+            [self.node, str(driver), target, self.url, "budget", self.state],
+            capture_output=True,
+            text=True,
+            timeout=40,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1000:])
-        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])['violations'], [])
+        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

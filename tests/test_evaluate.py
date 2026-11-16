@@ -6,6 +6,7 @@ import unittest.mock
 from opos import evaluate
 from opos.governor import PowerState, Priority, Decision, Mode
 
+
 class TestEvaluate(unittest.TestCase):
     def test_scenarios_deterministic(self):
         a = evaluate.scenarios(5, 3)
@@ -41,11 +42,14 @@ class TestEvaluate(unittest.TestCase):
         call = "".join(["cal", "ls"])
         msg = "".join(["messa", "ges"])
         scen = {"level": 50, "health": 0.6, "temp_c": 25}
+
         def alarm_only(state, tasks, t_s=0.0):
             allowed = tuple(t.name for t in tasks if t.name != alarm)
             return Decision(Mode.SAVER, allowed, (alarm,), "test-alarm-only")
+
         def allow_all(state, tasks, t_s=0.0):
             return Decision(Mode.SAVER, tuple(t.name for t in tasks), (), "test-allow-all")
+
         state = PowerState(level=50, charging=False, health=0.6, temp_c=25)
         decision = alarm_only(state, evaluate.EVAL_TASKS)
         self.assertIn(call, decision.allowed)
@@ -58,6 +62,7 @@ class TestEvaluate(unittest.TestCase):
         res_ctl = evaluate.run(allow_all, scen, tick_s=60.0, max_min=1)
         self.assertEqual(res_ctl["starved"], 0)
         self.assertEqual(res_ctl["important_min"], 1.0)
+
 
 class TestEvaluateModel(unittest.TestCase):
     def setUp(self):
@@ -90,7 +95,11 @@ class TestEvaluateModel(unittest.TestCase):
             evaluate.model_policy(model_path=missing)
 
     def test_model_no_arg_honours_env_var(self):
-        model_data = {"version": 1, "allowed": ["calls", "messages", "app in use", "alarms", "photos backup"], "mode": "saver"}
+        model_data = {
+            "version": 1,
+            "allowed": ["calls", "messages", "app in use", "alarms", "photos backup"],
+            "mode": "saver",
+        }
         fd, path = tempfile.mkstemp(suffix=".json")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -104,7 +113,9 @@ class TestEvaluateModel(unittest.TestCase):
                 decision = pol(state, evaluate.EVAL_TASKS)
                 self.assertEqual(decision.reason, "model")
                 self.assertEqual(decision.allowed, tuple(model_data["allowed"]))
-                self.assertEqual(decision.deferred, tuple(t.name for t in evaluate.EVAL_TASKS if t.name not in model_data["allowed"]))
+                self.assertEqual(
+                    decision.deferred, tuple(t.name for t in evaluate.EVAL_TASKS if t.name not in model_data["allowed"])
+                )
                 self.assertEqual(decision.mode, Mode.SAVER)
         finally:
             try:
@@ -200,7 +211,13 @@ class TestEvaluateModel(unittest.TestCase):
             evaluate.benchmark(fac, n=2, seed=0)
 
     def test_model_env_var_identical_resolution(self):
-        model_data = {"version": 7, "allowed": ["calls", "messages", "app in use", "alarms"], "mode": "saver", "paused": [], "steps": []}
+        model_data = {
+            "version": 7,
+            "allowed": ["calls", "messages", "app in use", "alarms"],
+            "mode": "saver",
+            "paused": [],
+            "steps": [],
+        }
         fd, path = tempfile.mkstemp(suffix=".json")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -216,10 +233,17 @@ class TestEvaluateModel(unittest.TestCase):
                 decision = pol(state, evaluate.EVAL_TASKS)
                 self.assertEqual(decision.reason, "model")
                 from opos.goalsim import simulate
+
                 result = simulate("model", step_s=300.0)
                 self.assertEqual(result["model_version"], 7)
                 self.assertEqual(result["policy"], "model")
-                model_data2 = {"version": 8, "allowed": ["calls", "messages", "app in use", "alarms"], "mode": "saver", "paused": [], "steps": []}
+                model_data2 = {
+                    "version": 8,
+                    "allowed": ["calls", "messages", "app in use", "alarms"],
+                    "mode": "saver",
+                    "paused": [],
+                    "steps": [],
+                }
                 fd2, path2 = tempfile.mkstemp(suffix=".json")
                 try:
                     with os.fdopen(fd2, "w", encoding="utf-8") as f:
@@ -253,6 +277,7 @@ class TestEvaluateModel(unittest.TestCase):
 
     def test_goalsim_requires_paused_and_steps(self):
         from opos.goalsim import simulate
+
         bad_payloads = [
             {"version": 1},
             {"version": 1, "paused": []},
@@ -321,15 +346,33 @@ class TestEvaluateModel(unittest.TestCase):
                 os.unlink(path)
             except FileNotFoundError:
                 pass
+
         def bad_policy(state, tasks, t_s=0.0):
             allowed = tuple(t.name for t in tasks if t.name != "calls")
             deferred = ("calls",)
             return Decision(Mode.SAVER, allowed, deferred, "test-bad")
+
         res_bad = evaluate.run(bad_policy, {"level": 50, "health": 1.0, "temp_c": 25})
         self.assertGreater(res_bad["starved"], 0)
 
     def test_model_invalid_mode_rejected(self):
-        for bad_mode in ["perfomance", "saverx", 123, None, "normal", "critical", "NORMAL", "CRITICAL", "SAVER", "Performance", "PERFORMANCE", "", " ", " saver", "performance "]:
+        for bad_mode in [
+            "perfomance",
+            "saverx",
+            123,
+            None,
+            "normal",
+            "critical",
+            "NORMAL",
+            "CRITICAL",
+            "SAVER",
+            "Performance",
+            "PERFORMANCE",
+            "",
+            " ",
+            " saver",
+            "performance ",
+        ]:
             with self.subTest(mode=bad_mode):
                 model_data = {"version": 1, "allowed": [t.name for t in evaluate.EVAL_TASKS], "mode": bad_mode}
                 fd, path = tempfile.mkstemp(suffix=".json")
@@ -387,7 +430,24 @@ class TestEvaluateModel(unittest.TestCase):
                         os.unlink(path)
                     except FileNotFoundError:
                         pass
-        bad_modes = ["Saver", "SAVER", "Performance", "PERFORMANCE", "normal", "NORMAL", "critical", "CRITICAL", "ſaver", " saver", "saver ", "", 123, None, [], {}]
+        bad_modes = [
+            "Saver",
+            "SAVER",
+            "Performance",
+            "PERFORMANCE",
+            "normal",
+            "NORMAL",
+            "critical",
+            "CRITICAL",
+            "ſaver",
+            " saver",
+            "saver ",
+            "",
+            123,
+            None,
+            [],
+            {},
+        ]
         for bad_mode in bad_modes:
             with self.subTest(mode=bad_mode):
                 fd, path = tempfile.mkstemp(suffix=".json")
@@ -403,7 +463,13 @@ class TestEvaluateModel(unittest.TestCase):
                         pass
 
     def test_explicit_missing_path_wins_over_env_var(self):
-        model_data = {"version": 1, "allowed": ["calls", "messages", "app in use", "alarms"], "mode": "saver", "paused": [], "steps": []}
+        model_data = {
+            "version": 1,
+            "allowed": ["calls", "messages", "app in use", "alarms"],
+            "mode": "saver",
+            "paused": [],
+            "steps": [],
+        }
         fd, path = tempfile.mkstemp(suffix=".json")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -423,6 +489,7 @@ class TestEvaluateModel(unittest.TestCase):
                 self.assertEqual(decision.reason, "model")
                 self.assertEqual(decision.mode, Mode.SAVER)
                 from opos.goalsim import simulate
+
                 result = simulate("model", step_s=300.0)
                 self.assertEqual(result["policy"], "model")
                 self.assertEqual(result["model_version"], 1)
@@ -435,7 +502,13 @@ class TestEvaluateModel(unittest.TestCase):
                 with self.assertRaises(FileNotFoundError) as ctx:
                     simulate("model", step_s=300.0, model_path=missing)
                 self.assertIn("-missing-404.json", str(ctx.exception.filename) + str(ctx.exception))
-                other_data = {"version": 2, "allowed": ["calls", "messages", "app in use", "alarms"], "mode": "performance", "paused": [], "steps": []}
+                other_data = {
+                    "version": 2,
+                    "allowed": ["calls", "messages", "app in use", "alarms"],
+                    "mode": "performance",
+                    "paused": [],
+                    "steps": [],
+                }
                 fd2, path2 = tempfile.mkstemp(suffix=".json")
                 try:
                     with os.fdopen(fd2, "w", encoding="utf-8") as f:
@@ -538,7 +611,11 @@ class TestEvaluateModel(unittest.TestCase):
                         model_data = {"version": 1, "".join(["def", "erred"]): [name], "mode": "saver"}
                     else:
                         full = [t.name for t in evaluate.EVAL_TASKS]
-                        model_data = {"version": 1, "".join(["all", "owed"]): [n for n in full if n != name], "mode": "saver"}
+                        model_data = {
+                            "version": 1,
+                            "".join(["all", "owed"]): [n for n in full if n != name],
+                            "mode": "saver",
+                        }
                     fd, path = tempfile.mkstemp(suffix=".json")
                     try:
                         with os.fdopen(fd, "w", encoding="utf-8") as f:

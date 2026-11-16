@@ -3,6 +3,7 @@
 name honestly, keep real headings with focus on transition, and only claim the choices are
 applied once /setup/api/prefs/finish has succeeded (with a visible, focusable retry when it fails).
 """
+
 import json
 import re
 import shutil
@@ -12,11 +13,11 @@ from html.parser import HTMLParser
 
 from opos.setup import jaryo_steps, wizard_page
 
-NODE = shutil.which('node')
+NODE = shutil.which("node")
 
 
 def _script(page):
-    return re.search(r'<script[^>]*>(.*?)</script>', page, re.S)[1]
+    return re.search(r"<script[^>]*>(.*?)</script>", page, re.S)[1]
 
 
 class _Dom(HTMLParser):
@@ -29,145 +30,154 @@ class _Dom(HTMLParser):
         self.feed(page)
 
     def handle_starttag(self, tag, attrs):
-        self.nodes.append(dict(tag=tag, attrs=dict(attrs), parent=self.stack[-1] if self.stack else -1, text=''))
-        if tag not in ('meta', 'input', 'br', 'hr', 'link'):
+        self.nodes.append(dict(tag=tag, attrs=dict(attrs), parent=self.stack[-1] if self.stack else -1, text=""))
+        if tag not in ("meta", "input", "br", "hr", "link"):
             self.stack.append(len(self.nodes) - 1)
 
     def handle_endtag(self, tag):
         for i in range(len(self.stack) - 1, -1, -1):
-            if self.nodes[self.stack[i]]['tag'] == tag:
+            if self.nodes[self.stack[i]]["tag"] == tag:
                 del self.stack[i:]
                 break
 
     def handle_data(self, data):
         for i in self.stack:
-            self.nodes[i]['text'] += data
+            self.nodes[i]["text"] += data
 
     def by_id(self, element_id):
-        return next(i for i, n in enumerate(self.nodes) if n['attrs'].get('id') == element_id)
+        return next(i for i, n in enumerate(self.nodes) if n["attrs"].get("id") == element_id)
 
     def inside(self, index, ancestor):
-        p = self.nodes[index]['parent']
+        p = self.nodes[index]["parent"]
         while p >= 0:
             if p == ancestor:
                 return True
-            p = self.nodes[p]['parent']
+            p = self.nodes[p]["parent"]
         return False
 
     def descendants(self, ancestor, tag):
-        return [i for i, n in enumerate(self.nodes) if n['tag'] == tag and self.inside(i, ancestor)]
+        return [i for i, n in enumerate(self.nodes) if n["tag"] == tag and self.inside(i, ancestor)]
 
 
 class HeadingTests(unittest.TestCase):
     def setUp(self):
-        self.page = wizard_page.page('tok', 'nonce123')
+        self.page = wizard_page.page("tok", "nonce123")
         self.dom = _Dom(self.page)
 
     def test_every_personal_step_has_one_focusable_h3(self):
         for name, title in zip(jaryo_steps.OPTIONS, jaryo_steps.TITLES, strict=True):
             sid = jaryo_steps.IDS[name]
             section = self.dom.by_id(sid)
-            h3s = self.dom.descendants(section, 'h3')
-            self.assertEqual(len(h3s), 1, f'{sid} must have exactly one heading')
+            h3s = self.dom.descendants(section, "h3")
+            self.assertEqual(len(h3s), 1, f"{sid} must have exactly one heading")
             node = self.dom.nodes[h3s[0]]
-            self.assertEqual(node['attrs'].get('tabindex'), '-1', f'{sid} heading must be focusable by script')
-            self.assertEqual(node['text'].strip(), title)
+            self.assertEqual(node["attrs"].get("tabindex"), "-1", f"{sid} heading must be focusable by script")
+            self.assertEqual(node["text"].strip(), title)
 
     def test_choice_steps_keep_the_legend_and_put_the_heading_inside_it(self):
         for name, choices in jaryo_steps.OPTIONS.items():
             sid = jaryo_steps.IDS[name]
             section = self.dom.by_id(sid)
-            h3 = self.dom.descendants(section, 'h3')[0]
-            parent = self.dom.nodes[self.dom.nodes[h3]['parent']]
+            h3 = self.dom.descendants(section, "h3")[0]
+            parent = self.dom.nodes[self.dom.nodes[h3]["parent"]]
             if choices:
-                self.assertEqual(parent['tag'], 'legend', name)
-                self.assertNotIn('tabindex', parent['attrs'], 'focus goes to the heading, not the legend')
-                fieldset = self.dom.nodes[self.dom.nodes[self.dom.nodes[h3]['parent']]['parent']]
-                self.assertEqual(fieldset['tag'], 'fieldset', name)
-                self.assertEqual(fieldset['attrs'].get('aria-describedby'), 'jaryo-error', name)
-                self.assertEqual(len(self.dom.descendants(section, 'legend')), 1, name)
+                self.assertEqual(parent["tag"], "legend", name)
+                self.assertNotIn("tabindex", parent["attrs"], "focus goes to the heading, not the legend")
+                fieldset = self.dom.nodes[self.dom.nodes[self.dom.nodes[h3]["parent"]]["parent"]]
+                self.assertEqual(fieldset["tag"], "fieldset", name)
+                self.assertEqual(fieldset["attrs"].get("aria-describedby"), "jaryo-error", name)
+                self.assertEqual(len(self.dom.descendants(section, "legend")), 1, name)
             else:
-                self.assertEqual(parent['tag'], 'section', name)
-                self.assertEqual(parent['attrs'].get('id'), sid)
+                self.assertEqual(parent["tag"], "section", name)
+                self.assertEqual(parent["attrs"].get("id"), sid)
 
     def test_heading_inside_legend_inherits_legend_type(self):
-        self.assertEqual(self.page.count('#jaryo-setup legend h3{margin:0;font:inherit}'), 1)
+        self.assertEqual(self.page.count("#jaryo-setup legend h3{margin:0;font:inherit}"), 1)
         self.assertNotIn('<legend tabindex="-1">', self.page)
 
     def test_core_wizard_markup_untouched(self):
         self.assertEqual(self.page.count('class="step panel"'), 7)
-        self.assertIn('<legend>What kind of phone is this?</legend>', self.page)
-        for value in ('slab', 'foldable-book', 'dual-screen', 'slide-keyboard'):
+        self.assertIn("<legend>What kind of phone is this?</legend>", self.page)
+        for value in ("slab", "foldable-book", "dual-screen", "slide-keyboard"):
             self.assertIn(f'name="form_factor" value="{value}"', self.page)
-        self.assertEqual(self.page.count('<script'), 1)
+        self.assertEqual(self.page.count("<script"), 1)
         self.assertEqual(self.page.count('<script nonce="nonce123">'), 1)
 
 
 class ScriptTests(unittest.TestCase):
     def setUp(self):
-        self.page = wizard_page.page('tok', 'nonce123')
+        self.page = wizard_page.page("tok", "nonce123")
         self.script = _script(self.page)
         start = self.script.index("document.getElementById('jaryo-setup')")
         self.jaryo = self.script[start:]
 
     def test_finish_is_posted_and_is_the_only_applied_claim(self):
         self.assertIn("request('/setup/api/prefs/finish', {})", self.jaryo)
-        self.assertEqual(self.jaryo.count('Your choices are saved and applied.'), 1)
+        self.assertEqual(self.jaryo.count("Your choices are saved and applied."), 1)
         finish = self.jaryo.index("request('/setup/api/prefs/finish', {})")
-        self.assertIn('applied = true; complete();', self.jaryo[finish:])
-        self.assertNotIn('applied = true', self.jaryo[:finish])
+        self.assertIn("applied = true; complete();", self.jaryo[finish:])
+        self.assertNotIn("applied = true", self.jaryo[:finish])
 
     def test_finish_completes_only_on_server_confirmation(self):
-        self.assertIn('if (state.applied !== true) return false;', self.jaryo)
-        self.assertIn('if (!confirmed(data)) {', self.jaryo)
+        self.assertIn("if (state.applied !== true) return false;", self.jaryo)
+        self.assertIn("if (!confirmed(data)) {", self.jaryo)
         finish = self.jaryo.index("request('/setup/api/prefs/finish', {})")
-        self.assertLess(self.jaryo.index('if (!confirmed(data)) {'), self.jaryo.index('applied = true; complete();', finish))
+        self.assertLess(
+            self.jaryo.index("if (!confirmed(data)) {"), self.jaryo.index("applied = true; complete();", finish)
+        )
         self.assertIn("data.resume === null || data.resume === 'done'", self.jaryo)
 
     def test_unreadable_saved_state_no_longer_throws(self):
         self.assertNotIn("throw new Error('state')", self.jaryo)
-        self.assertIn('Some saved choices could not be read', self.jaryo)
+        self.assertIn("Some saved choices could not be read", self.jaryo)
 
     def test_finish_failure_has_its_own_message_and_retry_label(self):
-        self.assertIn('have not been applied yet', self.jaryo)
+        self.assertIn("have not been applied yet", self.jaryo)
         self.assertIn("'Try finishing again'", self.jaryo)
         self.assertIn("'Try loading choices again'", self.jaryo)
 
     def test_wifi_summary_texts(self):
-        self.assertIn('Set up later in Settings › Network', self.jaryo)
-        self.assertIn('saved as a preference only, not connected', self.jaryo)
-        self.assertNotRegex(self.jaryo, r'[Cc]onnected to')
+        self.assertIn("Set up later in Settings › Network", self.jaryo)
+        self.assertIn("saved as a preference only, not connected", self.jaryo)
+        self.assertNotRegex(self.jaryo, r"[Cc]onnected to")
 
     def test_no_innerhtml_or_eval(self):
-        self.assertNotIn('innerHTML', self.script)
-        self.assertNotIn('eval(', self.script)
-        self.assertNotIn('document.write', self.script)
+        self.assertNotIn("innerHTML", self.script)
+        self.assertNotIn("eval(", self.script)
+        self.assertNotIn("document.write", self.script)
 
     def test_core_wizard_script_preserved(self):
         for marker in (
-            'async function changeProfile(',
-            'if(n!==window._pn||sel.value!==v)return;',
+            "async function changeProfile(",
+            "if(n!==window._pn||sel.value!==v)return;",
             'new Error("The device did not load. Try again.")',
             'const FF=["slab","foldable-book","dual-screen","slide-keyboard"]',
-            'form_factor:getFF()',
+            "form_factor:getFF()",
             'const FIELDS={2:["goal-time"',
             '"/setup/api/validate"',
-            'if(window.jaryoSetup)window.jaryoSetup.start()',
+            "if(window.jaryoSetup)window.jaryoSetup.start()",
             'const steps=qa(".step:not(.jaryo-step)")',
         ):
             self.assertIn(marker, self.script, marker)
-        self.assertLess(self.script.index("document.getElementById('jaryo-setup')"), self.script.index('\nload();updMeter();'))
+        self.assertLess(
+            self.script.index("document.getElementById('jaryo-setup')"), self.script.index("\nload();updMeter();")
+        )
 
 
-@unittest.skipUnless(NODE, 'node not installed')
+@unittest.skipUnless(NODE, "node not installed")
 class RuntimeTests(unittest.TestCase):
     def test_recovery_wifi_focus_finish_and_queueing(self):
-        page = wizard_page.page('tok', 'nonce123')
-        payload = json.dumps({'nodes': _Dom(page).nodes, 'script': _script(page)})
-        result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', RUNTIME], input=payload, text=True,
-                                capture_output=True, timeout=60)
+        page = wizard_page.page("tok", "nonce123")
+        payload = json.dumps({"nodes": _Dom(page).nodes, "script": _script(page)})
+        result = subprocess.run(
+            [NODE, "--unhandled-rejections=strict", "-e", RUNTIME],
+            input=payload,
+            text=True,
+            capture_output=True,
+            timeout=60,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('scenarios ok: 19', result.stdout)
+        self.assertIn("scenarios ok: 19", result.stdout)
 
 
 RUNTIME = r"""
@@ -621,5 +631,5 @@ async function main() {
 }
 """
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

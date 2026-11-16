@@ -9,10 +9,16 @@ class TestIdkHint(unittest.TestCase):
         cases = ["I don't know.", "I don’t know.", "I do not know.", "I dont know...  "]
         for text in cases:
             with self.subTest(text=text, web=False):
-                self.assertEqual(_with_idk_hint(text, False), text + " Try asking about this phone, for example what is paused, or tick Search Wikipedia for general questions.")
+                self.assertEqual(
+                    _with_idk_hint(text, False),
+                    text
+                    + " Try asking about this phone, for example what is paused, or tick Search Wikipedia for general questions.",
+                )
         for text in cases:
             with self.subTest(text=text, web=True):
-                self.assertEqual(_with_idk_hint(text, True), text + " Try asking about this phone, for example what is paused.")
+                self.assertEqual(
+                    _with_idk_hint(text, True), text + " Try asking about this phone, for example what is paused."
+                )
         for web in (False, True):
             for text in ("Paris.", "I don't know. Try restarting."):
                 with self.subTest(text=text, web=web):

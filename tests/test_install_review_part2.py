@@ -32,10 +32,10 @@ class TestInstallReview(unittest.TestCase):
             trusted = bindir / "opos"
             rejected_marker = pathlib.Path(tmp) / "rejected_marker"
             trusted_marker = pathlib.Path(tmp) / "trusted_marker"
-            trusted.write_text("#!/bin/sh\ntouch \"$OPOS_TRUSTED_MARKER\"\nexit 42\n", encoding="utf-8")
+            trusted.write_text('#!/bin/sh\ntouch "$OPOS_TRUSTED_MARKER"\nexit 42\n', encoding="utf-8")
             trusted.chmod(trusted.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             rejected = bindir / "rejected"
-            rejected.write_text("#!/bin/sh\ntouch \"$OPOS_REJECTED_MARKER\"\nexit 0\n", encoding="utf-8")
+            rejected.write_text('#!/bin/sh\ntouch "$OPOS_REJECTED_MARKER"\nexit 0\n', encoding="utf-8")
             rejected.chmod(rejected.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home / "manifest").write_text(
                 key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n",
@@ -73,10 +73,10 @@ class TestInstallReview(unittest.TestCase):
             trusted = bindir / "opos"
             rejected_marker = pathlib.Path(tmp) / "rejected_marker"
             trusted_marker = pathlib.Path(tmp) / "trusted_marker"
-            trusted.write_text("#!/bin/sh\ntouch \"$OPOS_TRUSTED_MARKER\"\nexit 42\n", encoding="utf-8")
+            trusted.write_text('#!/bin/sh\ntouch "$OPOS_TRUSTED_MARKER"\nexit 42\n', encoding="utf-8")
             trusted.chmod(trusted.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             rejected = bindir / "rejected"
-            rejected.write_text("#!/bin/sh\ntouch \"$OPOS_REJECTED_MARKER\"\nexit 0\n", encoding="utf-8")
+            rejected.write_text('#!/bin/sh\ntouch "$OPOS_REJECTED_MARKER"\nexit 0\n', encoding="utf-8")
             rejected.chmod(rejected.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home / "manifest").write_text(
                 key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n",
@@ -128,8 +128,6 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("revert by hand", proc.stderr.lower())
             self.assertNotIn("would run " + str(rejected), proc.stdout + proc.stderr)
 
-
-
     def test_fallback_firewall_respects_recorded_state(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         cases = [
@@ -153,7 +151,7 @@ class TestInstallReview(unittest.TestCase):
                     ufw_log.write_text("", encoding="utf-8")
                     ufw = faked / "ufw"
                     ufw.write_text(
-                        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$UFW_LOG\"\nexit \"$UFW_STATUS\"\n",
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$UFW_LOG"\nexit "$UFW_STATUS"\n',
                         encoding="utf-8",
                     )
                     ufw.chmod(ufw.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -189,7 +187,11 @@ class TestInstallReview(unittest.TestCase):
                     if has_file:
                         if expected == "failed":
                             self.assertTrue(state.exists(), "state file must be retained for %s" % name)
-                            self.assertEqual(state.read_text(encoding="utf-8"), "inactive\n", "recorded state must be kept after failure")
+                            self.assertEqual(
+                                state.read_text(encoding="utf-8"),
+                                "inactive\n",
+                                "recorded state must be kept after failure",
+                            )
                             ufw_log.write_text("", encoding="utf-8")
                             env["UFW_STATUS"] = str(0)
                             proc2 = subprocess.run(
@@ -204,26 +206,25 @@ class TestInstallReview(unittest.TestCase):
                             self.assertIn(token2, proc2.stdout)
                             logged2 = ufw_log.read_text(encoding="utf-8").splitlines()
                             self.assertEqual(logged2, ["--force disable", "reload"])
-                            self.assertFalse(state.exists(), "state file must be removed after successful retry for %s" % name)
+                            self.assertFalse(
+                                state.exists(), "state file must be removed after successful retry for %s" % name
+                            )
                         else:
                             self.assertFalse(state.exists(), "state file must be removed for %s" % name)
 
-
-
-
     def _assert_sshd_staging_path_contract(self, install):
         self.assertIn("do_uninstall() {", install)
-        fragment = install[install.index("do_uninstall() {"):]
+        fragment = install[install.index("do_uninstall() {") :]
         dest = "/etc/ssh/" + "sshd_config"
         tmp_assign = re.search(r"_sshd_tmp=[^\n]*mktemp[^\n]*ssh", fragment)
         self.assertIsNotNone(tmp_assign, "_sshd_tmp must receive SSH-specific mktemp result")
-        after_tmp = fragment[tmp_assign.end():]
+        after_tmp = fragment[tmp_assign.end() :]
         copy_into = re.search(r"cp[^\n]*\$[{]?_sshd_tmp[}]?", after_tmp)
         self.assertIsNotNone(copy_into, "backup must be copied into $_sshd_tmp")
-        after_copy = after_tmp[copy_into.end():]
+        after_copy = after_tmp[copy_into.end() :]
         staged_validate = re.search(r"sshd[^\n]*-t[^\n]*-f\s*[\"']?\$[{]?_sshd_tmp[}]?", after_copy)
         self.assertIsNotNone(staged_validate, "sshd -t -f must validate $_sshd_tmp")
-        after_validate = after_copy[staged_validate.end():]
+        after_validate = after_copy[staged_validate.end() :]
         publish = re.search(r"mv\s+-f[^\n]*\$[{]?_sshd_tmp[}]?[^\n]*" + re.escape(dest), after_validate)
         self.assertIsNotNone(publish, "mv -f must publish $_sshd_tmp to destination")
 
@@ -250,7 +251,13 @@ class TestInstallReview(unittest.TestCase):
             keygen_env = dict(os.environ)
             if not keygen_env.get("USER"):
                 keygen_env["USER"] = "opos-test-user"
-            keygen_early = subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(hk_path), "-N", "", "-q"], capture_output=True, text=True, env=keygen_env, timeout=30)
+            keygen_early = subprocess.run(
+                ["ssh-keygen", "-t", "ed25519", "-f", str(hk_path), "-N", "", "-q"],
+                capture_output=True,
+                text=True,
+                env=keygen_env,
+                timeout=30,
+            )
             self.assertEqual(keygen_early.returncode, 0, keygen_early.stderr)
             hostkey_line = "".join(["Host", "Key", " ", str(hk_path), "\n"])
             original = base_original + hostkey_line.encode("utf-8")
@@ -270,13 +277,19 @@ class TestInstallReview(unittest.TestCase):
             stubdir.mkdir()
             cp_marker = tmp_path / "cp.invoked"
             cp_stub = stubdir / "cp"
-            cp_stub.write_text("#!/bin/sh\nsrc=\"\"\ndst=\"\"\nfor a in \"$@\"; do\ncase \"$a\" in -*) ;; *) src=\"$dst\"\ndst=\"$a\";; esac\ndone\ntouch \"$CP_MARKER\"\nhead -c 4 \"$src\" > \"$dst\"\nexit 1\n", encoding="utf-8")
+            cp_stub.write_text(
+                '#!/bin/sh\nsrc=""\ndst=""\nfor a in "$@"; do\ncase "$a" in -*) ;; *) src="$dst"\ndst="$a";; esac\ndone\ntouch "$CP_MARKER"\nhead -c 4 "$src" > "$dst"\nexit 1\n',
+                encoding="utf-8",
+            )
             cp_stub.chmod(cp_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             stat_stub = stubdir / "stat"
             stat_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"0 600\"\n", encoding="utf-8")
             stat_stub.chmod(stat_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             sshd_stub = stubdir / "sshd"
-            sshd_stub.write_text("#!/bin/sh\nlast=\"\"\nfor a in \"$@\"; do\nlast=\"$a\"\ndone\nif cmp \"$last\" \"$OPOS_EXPECTED\"; then\nexit 0\nelse\nexit 1\nfi\n", encoding="utf-8")
+            sshd_stub.write_text(
+                '#!/bin/sh\nlast=""\nfor a in "$@"; do\nlast="$a"\ndone\nif cmp "$last" "$OPOS_EXPECTED"; then\nexit 0\nelse\nexit 1\nfi\n',
+                encoding="utf-8",
+            )
             sshd_stub.chmod(sshd_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             ufw_stub = stubdir / "ufw"
             ufw_stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
@@ -286,7 +299,13 @@ class TestInstallReview(unittest.TestCase):
             ctl_stub.chmod(ctl_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             replaced = fragment.replace(dropin_literal, str(tmp_path / "no-dropin"))
             replaced = replaced.replace(dest_literal, str(dest))
-            preamble = "is_hardening_active() { return 1; }\n" + "canon_repo() { printf '%s' \"$1\"; }\n" + "print_hardening_instructions() { :; }\n" + "opos_owns_linger() { return 1; }\n" + "is_linger_enabled() { return 1; }\n"
+            preamble = (
+                "is_hardening_active() { return 1; }\n"
+                + "canon_repo() { printf '%s' \"$1\"; }\n"
+                + "print_hardening_instructions() { :; }\n"
+                + "opos_owns_linger() { return 1; }\n"
+                + "is_linger_enabled() { return 1; }\n"
+            )
             runner = tmp_path / "run.sh"
             runner.write_text(preamble + replaced, encoding="utf-8")
             env = dict(os.environ)
@@ -307,14 +326,18 @@ class TestInstallReview(unittest.TestCase):
             clean_path = os.pathsep.join([p for p in env["PATH"].split(os.pathsep) if p != str(stubdir)])
             real_env = dict(env)
             real_env["PATH"] = clean_path
-            valid = subprocess.run(["sshd", "-t", "-f", str(dest)], capture_output=True, text=True, env=real_env, timeout=30)
+            valid = subprocess.run(
+                ["sshd", "-t", "-f", str(dest)], capture_output=True, text=True, env=real_env, timeout=30
+            )
             self.assertEqual(valid.returncode, 0, valid.stderr)
             missing_path = tmp_path / "missing_host_key"
             missing_line = "".join(["Host", "Key", " ", str(missing_path), "\n"])
             missing_bytes = base_original + missing_line.encode("utf-8")
             missing_cfg = tmp_path / "missing_sshd_config"
             missing_cfg.write_bytes(missing_bytes)
-            missing_check = subprocess.run(["sshd", "-t", "-f", str(missing_cfg)], capture_output=True, text=True, env=real_env, timeout=30)
+            missing_check = subprocess.run(
+                ["sshd", "-t", "-f", str(missing_cfg)], capture_output=True, text=True, env=real_env, timeout=30
+            )
             self.assertNotEqual(missing_check.returncode, 0, "config without usable host keys must fail validation")
             bad = tmp_path / "invalid_sshd_config"
             bad_directive = "".join(["Bogus", "Directive", " ", "yes\n"])
@@ -322,7 +345,9 @@ class TestInstallReview(unittest.TestCase):
             bad_ref = tmp_path / "invalid_sshd_ref"
             bad_ref.write_bytes(bad.read_bytes())
             self.assertEqual(bad.read_bytes(), bad_ref.read_bytes())
-            invalid = subprocess.run(["sshd", "-t", "-f", str(bad)], capture_output=True, text=True, env=real_env, timeout=30)
+            invalid = subprocess.run(
+                ["sshd", "-t", "-f", str(bad)], capture_output=True, text=True, env=real_env, timeout=30
+            )
             self.assertNotEqual(invalid.returncode, 0, "invalid config must fail sshd validation")
         install = _read_install_sh()
         self.assertRegex(install, r"sshd_config|sshd-config|SSHD_CONFIG")
@@ -335,10 +360,12 @@ class TestInstallReview(unittest.TestCase):
         self._assert_sshd_staging_path_contract(install)
         direct = re.search(r"[;&\n]\s*cp\s+[^\n]*sshd_config", install)
         if direct is not None:
-            window = install[max(0, direct.start() - 400):direct.start()]
-            self.assertRegex(window, r"\.bak|\.orig|backup|mktemp|\.tmp",
-                             "direct copy over the active sshd config must keep a recoverable backup")
-
+            window = install[max(0, direct.start() - 400) : direct.start()]
+            self.assertRegex(
+                window,
+                r"\.bak|\.orig|backup|mktemp|\.tmp",
+                "direct copy over the active sshd config must keep a recoverable backup",
+            )
 
     def test_sshd_staging_path_contract_rejects_mismatches(self):
         original = _read_install_sh()
@@ -349,23 +376,31 @@ class TestInstallReview(unittest.TestCase):
         unrelated_dest = "/tmp/" + "unrelated-dest"
         val_match = re.search(r"sshd[^\n]*-t[^\n]*-f\s*[\"']?\$[{]?_sshd_tmp[}]?", original)
         self.assertIsNotNone(val_match)
-        val_token = re.search(r"\$[{]?_sshd_tmp[}]?", original[val_match.start():val_match.end()])
+        val_token = re.search(r"\$[{]?_sshd_tmp[}]?", original[val_match.start() : val_match.end()])
         self.assertIsNotNone(val_token)
-        val_mutant = original[:val_match.start() + val_token.start()] + unrelated_validate + original[val_match.start() + val_token.end():]
+        val_mutant = (
+            original[: val_match.start() + val_token.start()]
+            + unrelated_validate
+            + original[val_match.start() + val_token.end() :]
+        )
         self.assertNotEqual(val_mutant, original)
         with self.assertRaises(AssertionError):
             self._assert_sshd_staging_path_contract(val_mutant)
         pub_match = re.search(r"mv\s+-f[^\n]*\$[{]?_sshd_tmp[}]?[^\n]*" + re.escape(dest), original)
         self.assertIsNotNone(pub_match)
-        pub_token = re.search(r"\$[{]?_sshd_tmp[}]?", original[pub_match.start():pub_match.end()])
+        pub_token = re.search(r"\$[{]?_sshd_tmp[}]?", original[pub_match.start() : pub_match.end()])
         self.assertIsNotNone(pub_token)
-        src_mutant = original[:pub_match.start() + pub_token.start()] + unrelated_source + original[pub_match.start() + pub_token.end():]
+        src_mutant = (
+            original[: pub_match.start() + pub_token.start()]
+            + unrelated_source
+            + original[pub_match.start() + pub_token.end() :]
+        )
         self.assertNotEqual(src_mutant, original)
         with self.assertRaises(AssertionError):
             self._assert_sshd_staging_path_contract(src_mutant)
         dest_pos = original.find(dest, pub_match.start(), pub_match.end())
         self.assertNotEqual(dest_pos, -1)
-        dest_mutant = original[:dest_pos] + unrelated_dest + original[dest_pos + len(dest):]
+        dest_mutant = original[:dest_pos] + unrelated_dest + original[dest_pos + len(dest) :]
         self.assertNotEqual(dest_mutant, original)
         with self.assertRaises(AssertionError):
             self._assert_sshd_staging_path_contract(dest_mutant)
@@ -387,8 +422,14 @@ class TestInstallReview(unittest.TestCase):
         allow_line = "".join(["AllowUsers admin@", private_ip, "\n"])
         trailer = "".join(["PasswordAuthentication", " ", "no\n"])
         original = (port_line + permit_line + pubkey_line + allow_line + trailer).encode("utf-8")
-        preamble = "is_hardening_active() { return 1; }\n" + "canon_repo() { printf '%s' \"$1\"; }\n" + "print_hardening_instructions() { :; }\n" + "opos_owns_linger() { return 1; }\n" + "is_linger_enabled() { return 1; }\n"
-        record_body = "for a in \"$@\"; do\ncase \"$a\" in\nssh|sshd|ssh.service|sshd.service) has_ssh=1;;\nreload|restart|reload-or-restart|try-reload-or-restart) has_op=1;;\nesac\ndone\nif [ \"$has_ssh\" = 1 ] && [ \"$has_op\" = 1 ]; then\nprintf '%s\\n' \"$0 $*\" >> \"$EVENT_LOG\"\nexit 0\nfi\nexit 1\n"
+        preamble = (
+            "is_hardening_active() { return 1; }\n"
+            + "canon_repo() { printf '%s' \"$1\"; }\n"
+            + "print_hardening_instructions() { :; }\n"
+            + "opos_owns_linger() { return 1; }\n"
+            + "is_linger_enabled() { return 1; }\n"
+        )
+        record_body = 'for a in "$@"; do\ncase "$a" in\nssh|sshd|ssh.service|sshd.service) has_ssh=1;;\nreload|restart|reload-or-restart|try-reload-or-restart) has_op=1;;\nesac\ndone\nif [ "$has_ssh" = 1 ] && [ "$has_op" = 1 ]; then\nprintf \'%s\\n\' "$0 $*" >> "$EVENT_LOG"\nexit 0\nfi\nexit 1\n'
 
         def check_guarded(lines, succeeded):
             validations = [i for i, line in enumerate(lines) if line.startswith("validate")]
@@ -427,7 +468,9 @@ class TestInstallReview(unittest.TestCase):
                 stat_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"0 600\"\n", encoding="utf-8")
                 stat_stub.chmod(stat_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                 sshd_stub = stubdir / "sshd"
-                sshd_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"validate $*\" >> \"$EVENT_LOG\"\nexit \"$SSHD_STATUS\"\n", encoding="utf-8")
+                sshd_stub.write_text(
+                    '#!/bin/sh\nprintf \'%s\\n\' "validate $*" >> "$EVENT_LOG"\nexit "$SSHD_STATUS"\n', encoding="utf-8"
+                )
                 sshd_stub.chmod(sshd_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                 ctl_stub = stubdir / "systemctl"
                 ctl_stub.write_text("#!/bin/sh\nhas_ssh=0\nhas_op=0\n" + record_body, encoding="utf-8")
@@ -475,14 +518,14 @@ class TestInstallReview(unittest.TestCase):
         user = "admin"
         preamble = (
             "p() { printf '%s\\n' \"$ROOT$1\"; }\n"
-            "write_file() { dest=\"$(p \"$1\")\"; mkdir -p \"$(dirname \"$dest\")\"; cat > \"$dest\"; chmod \"$2\" \"$dest\"; }\n"
-            "have_cmd() { case \"$1\" in sshd|systemctl) return 0;; *) return 1;; esac; }\n"
-            "run() { if [ \"$1\" = \"sshd\" ]; then "
-            "if [ \"$#\" = 2 ] && [ \"$2\" = \"-t\" ] && [ -f \"$ROOT/etc/ssh/sshd_config.d/10-opos-hardening.conf\" ]; then "
-            "printf 'validate %s\\n' \"$*\" >> \"$EVENT_LOG\"; return \"$SSHD_STATUS\"; fi; return 1; fi; "
-            "if [ \"$1\" = \"systemctl\" ]; then printf 'reload %s\\n' \"$*\" >> \"$EVENT_LOG\"; return 0; fi; "
-            "if [ \"$1\" = \"passwd\" ]; then return 0; fi; return 0; }\n"
-            "systemctl() { if [ \"$1\" = \"cat\" ]; then return 0; fi; printf 'reload %s\\n' \"$*\" >> \"$EVENT_LOG\"; return 0; }\n"
+            'write_file() { dest="$(p "$1")"; mkdir -p "$(dirname "$dest")"; cat > "$dest"; chmod "$2" "$dest"; }\n'
+            'have_cmd() { case "$1" in sshd|systemctl) return 0;; *) return 1;; esac; }\n'
+            'run() { if [ "$1" = "sshd" ]; then '
+            'if [ "$#" = 2 ] && [ "$2" = "-t" ] && [ -f "$ROOT/etc/ssh/sshd_config.d/10-opos-hardening.conf" ]; then '
+            'printf \'validate %s\\n\' "$*" >> "$EVENT_LOG"; return "$SSHD_STATUS"; fi; return 1; fi; '
+            'if [ "$1" = "systemctl" ]; then printf \'reload %s\\n\' "$*" >> "$EVENT_LOG"; return 0; fi; '
+            'if [ "$1" = "passwd" ]; then return 0; fi; return 0; }\n'
+            'systemctl() { if [ "$1" = "cat" ]; then return 0; fi; printf \'reload %s\\n\' "$*" >> "$EVENT_LOG"; return 0; }\n'
             "die() { printf 'die: %s\\n' \"$*\" >&2; exit 1; }\n"
             "say() { :; }\n"
             "warn() { :; }\n"
@@ -541,7 +584,7 @@ class TestInstallReview(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _, mutated_ok = run_case(0, source=early)
             check(mutated_ok, True)
-        anchor = "die \"sshd config test failed, change reverted\""
+        anchor = 'die "sshd config test failed, change reverted"'
         late = text.replace(anchor, "run systemctl reload sshd\n      " + anchor, 1)
         self.assertNotEqual(late, text)
         with self.assertRaises(AssertionError):
@@ -576,9 +619,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(timeouts, "subprocess.run at line %d lacks timeout" % call.lineno)
             value = timeouts[0].value
             self.assertTrue(
-                isinstance(value, ast.Constant)
-                and isinstance(value.value, (int, float))
-                and value.value == 30,
+                isinstance(value, ast.Constant) and isinstance(value.value, (int, float)) and value.value == 30,
                 "subprocess.run at line %d must have timeout 30" % call.lineno,
             )
 

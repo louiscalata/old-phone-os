@@ -83,8 +83,7 @@ class UXP07Helper(unittest.TestCase):
         self.assertEqual(r["sources"], [])
         # Battery critical answers from rules without even invoking the offline transport.
         attempts.clear()
-        r = assist.answer("what is paused?", web=False, env={}, free=5000,
-                          context={"mode": "CRITICAL"}, opener=down)
+        r = assist.answer("what is paused?", web=False, env={}, free=5000, context={"mode": "CRITICAL"}, opener=down)
         self.assertEqual(attempts, [])
         self.assertEqual((r["engine"], r["where"]), ("rules", "on this phone"))
         self.assertTrue(r["text"].startswith("Battery is critical"))
@@ -101,7 +100,9 @@ class UXP07Helper(unittest.TestCase):
 @unittest.skipUnless(shutil.which("node"), "node not installed")
 class UXP07HelperJS(unittest.TestCase):
     def run_js(self, mode):
-        p = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phone-b.js"), mode], capture_output=True, text=True, timeout=30)
+        p = subprocess.run(
+            ["node", "-e", HARNESS, str(STATIC / "phone-b.js"), mode], capture_output=True, text=True, timeout=30
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         r = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertNotIn("error", r)

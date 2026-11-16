@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for loopback security helpers."""
+
 import io
 import unittest
 from opos import secure
@@ -118,7 +119,15 @@ class SecureTest(unittest.TestCase):
         self.assertNotIn("Content-Security-Policy", bare)
         with_csp = secure.security_headers("abc")
         self.assertIn("nonce-abc", with_csp["Content-Security-Policy"])
-        for key in ("X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Cross-Origin-Opener-Policy", "Cross-Origin-Resource-Policy", "Cache-Control", "Permissions-Policy"):
+        for key in (
+            "X-Content-Type-Options",
+            "X-Frame-Options",
+            "Referrer-Policy",
+            "Cross-Origin-Opener-Policy",
+            "Cross-Origin-Resource-Policy",
+            "Cache-Control",
+            "Permissions-Policy",
+        ):
             with self.subTest(key=key):
                 self.assertIn(key, with_csp)
 

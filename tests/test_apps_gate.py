@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """An app route answers only when OPOS_APPS names that app, and the home page gains one tag for the whole set."""
+
 import json
 import os
 import tempfile
@@ -85,8 +86,12 @@ class LockedConverter(unittest.TestCase):
     def test_locked_converter_reads_the_locked_body_and_refuses_a_conversion(self):
         self.addCleanup(lockpin.reset)
         lockpin.reset()
-        with tempfile.TemporaryDirectory() as tmp, running({"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp, "OPOS_CONFIG_DIR": tmp,
-                                                            "OPOS_APPS": "convert"}) as server:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            running(
+                {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp, "OPOS_CONFIG_DIR": tmp, "OPOS_APPS": "convert"}
+            ) as server,
+        ):
             token = server.RequestHandlerClass.token
             ask = {"kind": "length", "value": "1", "src": "km", "dst": "m"}
             for action in ({"action": "set", "pin": "1234"}, {"action": "unlock", "pin": "1234"}):

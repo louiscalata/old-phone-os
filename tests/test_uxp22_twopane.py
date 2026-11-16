@@ -70,7 +70,7 @@ class UXP22Static(unittest.TestCase):
 
     def test_inlined_in_page(self):
         out = page("t" * 32, "n")
-        style = out[:out.index("</style>")]
+        style = out[: out.index("</style>")]
         for rule in RULES:
             self.assertIn(rule, style)
 
@@ -80,8 +80,17 @@ class UXP22Static(unittest.TestCase):
         self.assertNotIn("960", js)
         # The Settings grid places existing children; the markup keeps the order the columns read in.
         html = (STATIC / "phone-b.html").read_text(encoding="utf-8")
-        order = [html.index(s) for s in ("<h2>Settings</h2>", '<fieldset id="ff">', 'id="ff-detected"', 'id="ff-saved"',
-                                          'aria-labelledby="set-display"', 'aria-labelledby="set-about"')]
+        order = [
+            html.index(s)
+            for s in (
+                "<h2>Settings</h2>",
+                '<fieldset id="ff">',
+                'id="ff-detected"',
+                'id="ff-saved"',
+                'aria-labelledby="set-display"',
+                'aria-labelledby="set-about"',
+            )
+        ]
         self.assertEqual(order, sorted(order))
         body4 = (STATIC / "body-4.html").read_text(encoding="utf-8")
         self.assertLess(body4.index('id="ask"'), body4.index('id="helper"'))
@@ -259,8 +268,14 @@ class UXP22Browser(unittest.TestCase):
             state.write_text(json.dumps(scenarios, default=str), encoding="utf-8")
             drv = Path(d) / "cdp.js"
             drv.write_text(CDP, encoding="utf-8")
-            p = subprocess.run([NODE, str(drv), chrome, html.as_uri(), str(state), str(HERE / "uxr_cdp.js")],
-                               check=False, capture_output=True, text=True, timeout=90, env=dict(os.environ, TMPDIR=d))
+            p = subprocess.run(
+                [NODE, str(drv), chrome, html.as_uri(), str(state), str(HERE / "uxr_cdp.js")],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                env=dict(os.environ, TMPDIR=d),
+            )
             if p.returncode:
                 raise AssertionError("CDP driver failed: " + p.stderr[-5000:])
             payload = json.loads(p.stdout.strip().splitlines()[-1])

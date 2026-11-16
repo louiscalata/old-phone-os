@@ -56,7 +56,7 @@ class TestInstallReview(unittest.TestCase):
 
     def test_cleanup_only_removes_direct_staging_directory(self):
         text = _read_install_sh()
-        m = re.search(r'cleanup\(\)\s*\{.*?\n\}', text, re.DOTALL)
+        m = re.search(r"cleanup\(\)\s*\{.*?\n\}", text, re.DOTALL)
         self.assertIsNotNone(m, "cleanup function not found")
         cleanup_def = m.group(0)
 
@@ -67,9 +67,7 @@ class TestInstallReview(unittest.TestCase):
             env["TMP_LAUNCHER"] = ""
             env["TMP_MANIFEST"] = ""
             script = f"{cleanup_def}\ncleanup\n"
-            return subprocess.run(
-                ["sh", "-c", script], capture_output=True, text=True, env=env, timeout=60
-            )
+            return subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env, timeout=60)
 
         with tempfile.TemporaryDirectory() as tmp:
             base = pathlib.Path(tmp)
@@ -217,7 +215,9 @@ class TestInstallReview(unittest.TestCase):
                 stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (etc_fixture / "sshd_config").write_text("Port 2222\n", encoding="utf-8")
-            expected_path = pathlib.Path(expected_template.replace("$OPOS_HOME", str(opos_home)).replace("${OPOS_HOME}", str(opos_home)))
+            expected_path = pathlib.Path(
+                expected_template.replace("$OPOS_HOME", str(opos_home)).replace("${OPOS_HOME}", str(opos_home))
+            )
             expected_content = marker + "\nPort 2222\n"
             expected_path.parent.mkdir(parents=True, exist_ok=True)
             expected_path.write_text(expected_content, encoding="utf-8")
@@ -228,7 +228,9 @@ class TestInstallReview(unittest.TestCase):
             opos_dropin.parent.mkdir(parents=True, exist_ok=True)
             opos_dropin.write_text(expected_content + admin_line, encoding="utf-8")
             dropin_before = opos_dropin.read_bytes()
-            preserved_path = pathlib.Path(preserved_template.replace("$OPOS_HOME", str(opos_home)).replace("${OPOS_HOME}", str(opos_home)))
+            preserved_path = pathlib.Path(
+                preserved_template.replace("$OPOS_HOME", str(opos_home)).replace("${OPOS_HOME}", str(opos_home))
+            )
             if preserved_path.is_file():
                 preserved_path.unlink()
             patched = text.replace(ssh_prefix, str(etc_fixture) + "/")
@@ -239,11 +241,11 @@ class TestInstallReview(unittest.TestCase):
             env["OPOS_HOME"] = str(opos_home)
             env["OPOS_BIN_DIR"] = str(bindir)
             env["PATH"] = str(faked) + os.pathsep + env.get("PATH", "")
-            proc = subprocess.run(["sh", str(script_path), "--uninstall"], capture_output=True, text=True, env=env, timeout=300)
+            proc = subprocess.run(
+                ["sh", str(script_path), "--uninstall"], capture_output=True, text=True, env=env, timeout=300
+            )
             self.assertTrue(opos_dropin.is_file(), "edited marked drop-in must be preserved")
             self.assertEqual(opos_dropin.read_bytes(), dropin_before)
             self.assertTrue(preserved_path.is_file(), "edited content must be preserved for recovery")
             self.assertEqual(preserved_path.read_bytes(), dropin_before)
             self.assertIn("".join(["sshd=", "failed"]), proc.stdout)
-
-

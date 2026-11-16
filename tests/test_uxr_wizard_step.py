@@ -13,7 +13,7 @@ class TestWizardStepText(unittest.TestCase):
         pos = self.html.find('id="stepno"')
         start = self.html.rfind("<", 0, pos)
         end = self.html.find(">", pos)
-        tag = self.html[start:end + 1]
+        tag = self.html[start : end + 1]
         self.assertIn('class="muted"', tag)
         self.assertNotIn("hidden", tag)
         err = self.html.find('id="error"')

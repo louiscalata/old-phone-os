@@ -23,6 +23,12 @@ class DuoInstallPathTest(unittest.TestCase):
             first_bytes = profile.read_bytes()
             second = subprocess.run(["/bin/sh", "-c", block], env=env, capture_output=True, text=True, check=True)
             second_bytes = profile.read_bytes()
-            self.assertEqual(first_bytes, b"# existing profile\n# added by Old Phone OS install\nexport PATH=\"" + bindir.encode() + b":$PATH\"\n")
+            self.assertEqual(
+                first_bytes,
+                b'# existing profile\n# added by Old Phone OS install\nexport PATH="' + bindir.encode() + b':$PATH"\n',
+            )
             self.assertEqual(second_bytes, first_bytes)
-            self.assertEqual((first.stdout, second.stdout), ("==> added " + bindir + " to PATH in " + home + "/.profile (open a new shell)\n", ""))
+            self.assertEqual(
+                (first.stdout, second.stdout),
+                ("==> added " + bindir + " to PATH in " + home + "/.profile (open a new shell)\n", ""),
+            )

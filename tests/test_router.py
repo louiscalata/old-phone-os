@@ -7,6 +7,7 @@ from opos.runtime import DEFAULT_TASKS, Runtime
 
 ALL_STEPS = tuple(s[0] for s in SAVINGS_STEPS)
 
+
 class TestRouter(unittest.TestCase):
     def test_essential_always_allowed(self):
         state = PowerState(level=0, charging=False, health=0.5, temp_c=50, goal_hours=1)
@@ -80,7 +81,9 @@ class TestRouter(unittest.TestCase):
                     checked += 1
                     with self.subTest(level=level, health=health, goal=goal):
                         dec = Router()(state, DEFAULT_TASKS)
-                        cost = sum(t.cost for t in DEFAULT_TASKS if t.name in dec.allowed and t.priority != Priority.ESSENTIAL)
+                        cost = sum(
+                            t.cost for t in DEFAULT_TASKS if t.name in dec.allowed and t.priority != Priority.ESSENTIAL
+                        )
                         self.assertLessEqual(GOAL_BASE_DRAIN + cost, budget + 1e-9)
                         # OPOS's own drain model agrees: with every saving step, the allowed set lasts to the goal.
                         drain = total_drain(DEFAULT_TASKS, paused=dec.deferred, steps=ALL_STEPS, health=health)
@@ -92,12 +95,22 @@ class TestRouter(unittest.TestCase):
 
     def test_goal_funding_order(self):
         from opos.router import fund
-        tasks = (Task("calls", Priority.ESSENTIAL, 0.5), Task("backup", Priority.OPTIONAL, 1),
-                 Task("zeta", Priority.USEFUL, 2), Task("alpha", Priority.USEFUL, 2), Task("maps", Priority.USEFUL, 3))
+
+        tasks = (
+            Task("calls", Priority.ESSENTIAL, 0.5),
+            Task("backup", Priority.OPTIONAL, 1),
+            Task("zeta", Priority.USEFUL, 2),
+            Task("alpha", Priority.USEFUL, 2),
+            Task("maps", Priority.USEFUL, 3),
+        )
+
         def allowed_with_spare(spare):
             goal = 2.0
-            state = PowerState(level=(GOAL_BASE_DRAIN + spare + 1e-9) * goal, charging=False, health=1.0, temp_c=25, goal_hours=goal)
+            state = PowerState(
+                level=(GOAL_BASE_DRAIN + spare + 1e-9) * goal, charging=False, health=1.0, temp_c=25, goal_hours=goal
+            )
             return [n for n, (ok, _) in fund(state, tasks).items() if ok and n != "calls"]
+
         # Useful before optional, then lower cost first, then name; each funded cost is subtracted.
         self.assertEqual(allowed_with_spare(2), ["alpha"])
         self.assertEqual(sorted(allowed_with_spare(4)), ["alpha", "zeta"])
@@ -107,11 +120,16 @@ class TestRouter(unittest.TestCase):
 
     def test_the_app_in_use_is_funded_first(self):
         from opos.router import fund
+
         tasks = DEFAULT_TASKS
+
         def verdicts(spare, first):
             goal = 2.0
-            state = PowerState(level=(GOAL_BASE_DRAIN + spare + 1e-9) * goal, charging=False, health=1.0, temp_c=25, goal_hours=goal)
+            state = PowerState(
+                level=(GOAL_BASE_DRAIN + spare + 1e-9) * goal, charging=False, health=1.0, temp_c=25, goal_hours=goal
+            )
             return {n: ok for n, (ok, _) in fund(state, tasks, first).items() if n not in ("calls", "messages")}
+
         # Without an app in use: email (2), then maps (4), then photos backup (6).
         self.assertEqual(verdicts(7, ()), {"email": True, "maps": True, "photos backup": False})
         # Photos backup in use is funded first; the 1 left funds nothing else.
@@ -170,6 +188,7 @@ class TestRouter(unittest.TestCase):
         dec = gov.decide(state, tasks)
         expected = router(state, tasks)
         self.assertEqual(dec, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

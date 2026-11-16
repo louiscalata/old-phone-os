@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """SECBASE: S110 removal keeps notices._build fail-open and prefs.save bytes/cleanup."""
+
 import builtins
 import json
 import os
@@ -26,8 +27,7 @@ def _build_with(failure=None, metadata=None, env="abcdef0"):
             return types.SimpleNamespace(_build_info=metadata)
         return real(name, globals, locals, fromlist, level)
 
-    with mock.patch.dict(os.environ, OPOS_BUILD=env), \
-            mock.patch("builtins.__import__", side_effect=fake):
+    with mock.patch.dict(os.environ, OPOS_BUILD=env), mock.patch("builtins.__import__", side_effect=fake):
         return notices._build()
 
 
@@ -63,16 +63,20 @@ class TestPrefsSave(unittest.TestCase):
 
     def test_vanished_temp_does_not_mask_original(self):
         boom = OSError("replace failed")
-        with mock.patch.object(prefs.os, "replace", side_effect=boom), \
-                mock.patch.object(prefs.os, "unlink", side_effect=FileNotFoundError("gone")):
+        with (
+            mock.patch.object(prefs.os, "replace", side_effect=boom),
+            mock.patch.object(prefs.os, "unlink", side_effect=FileNotFoundError("gone")),
+        ):
             with self.assertRaises(OSError) as cm:
                 prefs.save(dict(ok=True), self.path)
         self.assertIs(cm.exception, boom)
 
     def test_cleanup_programming_error_propagates(self):
         boom = OSError("replace failed")
-        with mock.patch.object(prefs.os, "replace", side_effect=boom), \
-                mock.patch.object(prefs.os, "unlink", side_effect=RuntimeError("cleanup bug")):
+        with (
+            mock.patch.object(prefs.os, "replace", side_effect=boom),
+            mock.patch.object(prefs.os, "unlink", side_effect=RuntimeError("cleanup bug")),
+        ):
             with self.assertRaisesRegex(RuntimeError, "^cleanup bug$") as cm:
                 prefs.save(dict(ok=True), self.path)
         self.assertIs(cm.exception.__context__, boom)
@@ -86,6 +90,7 @@ class TestPrefsSave(unittest.TestCase):
             if Path(p) == self.path:
                 raise exc
             return real(p, mode)
+
         return mock.patch.object(prefs.os, "chmod", side_effect=chmod), calls
 
     def test_final_chmod_oserror_is_best_effort(self):

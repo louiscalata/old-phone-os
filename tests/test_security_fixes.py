@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Offline regressions for inference transport, state access and body deadlines."""
+
 import contextlib
 import io
 import json
@@ -28,14 +29,18 @@ def response(req, body, code=200, location=None):
 def transport(reply, proxy=False):
     """Keep urllib routing real, replacing only the socket transport."""
     calls = []
+
     def open_http(_handler, _connection, req, **_kw):
         calls.append(req)
         return reply(req)
+
     env = {"http_proxy": "http://proxy.example:8080", "no_proxy": ""} if proxy else {}
-    with mock.patch.dict(os.environ, env, clear=True), \
-            mock.patch.object(urllib.request, "_opener", None), \
-            mock.patch.object(urllib.request, "proxy_bypass", return_value=False), \
-            mock.patch.object(urllib.request.HTTPHandler, "do_open", autospec=True, side_effect=open_http):
+    with (
+        mock.patch.dict(os.environ, env, clear=True),
+        mock.patch.object(urllib.request, "_opener", None),
+        mock.patch.object(urllib.request, "proxy_bypass", return_value=False),
+        mock.patch.object(urllib.request.HTTPHandler, "do_open", autospec=True, side_effect=open_http),
+    ):
         yield calls
 
 
@@ -62,10 +67,12 @@ class TestInferenceTransport(unittest.TestCase):
 
     def test_ask_blocks_redirect_without_a_local_answer_label(self):
         target = "http://redirect.example/result"
+
         def reply(req):
             if req.full_url == target:
                 return response(req, CHAT)
             return response(req, {}, 302, target)
+
         with transport(reply) as calls:
             result = assist.answer("What is paused?", env={})
         self.assertEqual([req.full_url for req in calls], ["http://127.0.0.1:1234/v1/chat/completions"])
@@ -75,10 +82,14 @@ class TestInferenceTransport(unittest.TestCase):
 
     def test_wikipedia_uses_the_no_redirect_proxy_free_transport(self):
         wiki = {"query": {"search": [{"title": "Battery", "snippet": "Stored energy"}]}}
+
         def reply(req, **kw):
             return response(req, wiki if req.host == "en.wikipedia.org" else CHAT)
-        with mock.patch.object(urllib.request, "urlopen", side_effect=AssertionError("default urlopen used")) as default, \
-                mock.patch.object(muse, "_open_no_redirect", side_effect=reply) as opener:
+
+        with (
+            mock.patch.object(urllib.request, "urlopen", side_effect=AssertionError("default urlopen used")) as default,
+            mock.patch.object(muse, "_open_no_redirect", side_effect=reply) as opener,
+        ):
             result = assist.answer("What is a battery?", web=True, env={})
         self.assertTrue(result["ok"])
         self.assertEqual(result["engine"], "Muse Glimmer")
@@ -89,10 +100,12 @@ class TestInferenceTransport(unittest.TestCase):
 
     def test_custom_opener_still_handles_search_and_inference(self):
         calls = []
+
         def opener(req, **kw):
             calls.append(req.full_url)
             body = {"query": {"search": []}} if req.host == "en.wikipedia.org" else CHAT
             return response(req, body)
+
         result = assist.answer("What is paused?", web=True, env={}, opener=opener)
         self.assertTrue(result["ok"])
         self.assertEqual(len(calls), 2)
@@ -177,17 +190,22 @@ class TestBodyDeadline(unittest.TestCase):
         h = handler("POST", token="t" * 43)
         h.headers["Content-Type"] = "application/json"
         h.headers["Content-Length"] = "5000"
+
         class Deadline:
             cancelled = False
             ticks = 0
+
             def cancel(self):
                 self.cancelled = True
+
             def advance(self):
                 self.ticks += 1
                 if self.ticks == 10 and not self.cancelled:
                     h._expire()
+
         h._timer = Deadline()
         reads = []
+
         class Trickle:
             def read(self, n):
                 reads.append(n)
@@ -198,6 +216,7 @@ class TestBodyDeadline(unittest.TestCase):
                     if h._expired:
                         raise OSError("connection closed at deadline")
                 return b"x" * n
+
         h.rfile = Trickle()
         h.do_POST()
         self.assertEqual(result(h), (413, {"error": "body too large"}))

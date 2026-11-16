@@ -12,6 +12,7 @@ tasks = (
     Task("alarms", Priority.ESSENTIAL, 0.1),
 )
 
+
 class TestReserve(unittest.TestCase):
     def setUp(self):
         self.decision = Decision(Mode.NORMAL, ("calls", "messages", "email", "app in use", "alarms"), (), "x")
@@ -56,6 +57,7 @@ class TestReserve(unittest.TestCase):
 
     def test_outer_band_retains_keep_regardless_of_priority(self):
         from opos.power import KEEP
+
         tasks_mixed = (
             Task("calls", Priority.USEFUL, 0.5),
             Task("messages", Priority.USEFUL, 0.2),
@@ -74,6 +76,7 @@ class TestReserve(unittest.TestCase):
 
     def test_outer_band_defers_optional_non_keep_while_retaining_keep(self):
         from opos.power import KEEP
+
         tasks_mixed = (
             Task("calls", Priority.USEFUL, 0.5),
             Task("messages", Priority.USEFUL, 0.2),
@@ -94,6 +97,7 @@ class TestReserve(unittest.TestCase):
 
     def test_outer_band_partition_and_deterministic_order(self):
         from opos.power import KEEP
+
         tasks_mixed = (
             Task("calls", Priority.USEFUL, 0.5),
             Task("messages", Priority.USEFUL, 0.2),
@@ -101,7 +105,9 @@ class TestReserve(unittest.TestCase):
             Task("app in use", Priority.ESSENTIAL, 1.0),
             Task("alarms", Priority.USEFUL, 0.1),
         )
-        decision = Decision(Mode.NORMAL, ("email", "calls", "app in use", "messages", "alarms"), ("prev-deferred",), "x")
+        decision = Decision(
+            Mode.NORMAL, ("email", "calls", "app in use", "messages", "alarms"), ("prev-deferred",), "x"
+        )
         level = reserve_level(30, 0.35) + 10
         new_dec = apply_reserve(decision, level, 30, 0.35, tasks_mixed)
         self.assertEqual(set(new_dec.allowed) | set(new_dec.deferred), set(decision.allowed) | set(decision.deferred))
@@ -114,6 +120,7 @@ class TestReserve(unittest.TestCase):
         self.assertEqual(new_dec.deferred, decision.deferred + tuple(removed))
         self.assertEqual(new_dec.mode, Mode.CRITICAL)
         self.assertEqual(new_dec.reason, WORN_REASON)
+
 
 if __name__ == "__main__":
     unittest.main()

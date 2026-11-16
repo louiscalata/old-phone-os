@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """F3017: device-type tiles in setup step 1."""
+
 import copy
 import json
 import re
@@ -124,15 +125,20 @@ class FormFactorTilesTest(unittest.TestCase):
 
     def test_script_collects_checked_radio_with_slab_default(self):
         js = _script(page("tok", "nonce1"))
-        self.assertIn('function getFF(){let r=q(\'input[name="form_factor"]:checked\');return r&&FF.includes(r.value)?r.value:"slab";}', js)
+        self.assertIn(
+            'function getFF(){let r=q(\'input[name="form_factor"]:checked\');return r&&FF.includes(r.value)?r.value:"slab";}',
+            js,
+        )
         self.assertIn("battery_health:d.battery_health,form_factor:getFF()}", js)
         self.assertIn("JSON.stringify({config:cfg})", js)
 
     def test_script_restores_saved_choice_without_selector_interpolation(self):
         js = _script(page("tok", "nonce1"))
-        self.assertIn('let w=FF.includes(v)?v:"slab";qa(\'input[name="form_factor"]\').forEach(e=>{e.checked=e.value===w;});', js)
+        self.assertIn(
+            'let w=FF.includes(v)?v:"slab";qa(\'input[name="form_factor"]\').forEach(e=>{e.checked=e.value===w;});', js
+        )
         self.assertIn('setFF(S.config&&S.config.device&&!S.first_run?S.config.device.form_factor:"slab");', js)
-        self.assertNotIn('[value="\'+', js.split("function setFF", 1)[1].split("}", 1)[0])
+        self.assertNotIn("[value=\"'+", js.split("function setFF", 1)[1].split("}", 1)[0])
         change = js.split("async function changeProfile", 1)[1].split("\n", 1)[0]
         self.assertNotIn("FF(", change)
 

@@ -26,7 +26,8 @@ def worn_level():
 
 def allow_all(rt):
     rt.governor.decide = lambda state, tasks: Decision(
-        Mode.NORMAL, tuple(t.name for t in tasks), (), "router: allow all")
+        Mode.NORMAL, tuple(t.name for t in tasks), (), "router: allow all"
+    )
 
 
 class TestRuntimeGoalReserve(unittest.TestCase):
@@ -93,9 +94,7 @@ class TestRuntimeGoalReserve(unittest.TestCase):
     def test_worn_near_reserve_bytes_preserved(self):
         rt = Runtime(tasks=TASKS)
         tick = rt.step(0.0, worn_level(), health=HEALTH, temp_c=TEMP)
-        self.assertEqual(
-            b",".join(n.encode() for n in tick.decision.allowed),
-            b"calls,messages,alarms")
+        self.assertEqual(b",".join(n.encode() for n in tick.decision.allowed), b"calls,messages,alarms")
         self.assertEqual(tick.decision.deferred, ("email", "maps", "photos backup"))
 
     def test_goal_hard_floor_without_drain(self):
@@ -106,7 +105,10 @@ class TestRuntimeGoalReserve(unittest.TestCase):
                     rt = Runtime(tasks=TASKS)
                     allow_all(rt)
                     rt.estimator.rate = lambda r=rate: r
-                    with patch("opos.runtime.rule_decide", return_value=Decision(Mode.NORMAL, tuple(t.name for t in TASKS), (), "router: allow all")):
+                    with patch(
+                        "opos.runtime.rule_decide",
+                        return_value=Decision(Mode.NORMAL, tuple(t.name for t in TASKS), (), "router: allow all"),
+                    ):
                         tick = rt.step(0.0, level, charging=False, health=1.0, temp_c=25.0, goal_hours=8.0)
                     self.assertEqual(tick.decision.allowed, ("calls", "messages", "alarms"))
                     self.assertEqual(tick.decision.deferred, ("email", "maps", "photos backup"))
@@ -118,7 +120,10 @@ class TestRuntimeGoalReserve(unittest.TestCase):
                 rt = Runtime(tasks=TASKS)
                 allow_all(rt)
                 rt.estimator.rate = lambda: 100.0
-                with patch("opos.runtime.rule_decide", return_value=Decision(Mode.NORMAL, tuple(t.name for t in TASKS), (), "router: allow all")):
+                with patch(
+                    "opos.runtime.rule_decide",
+                    return_value=Decision(Mode.NORMAL, tuple(t.name for t in TASKS), (), "router: allow all"),
+                ):
                     tick = rt.step(0.0, 90.0, charging=charging, health=1.0, temp_c=temp_c, goal_hours=goal_hours)
                 if goal_hours == 8.0 and temp_c == 25.0 and charging is False:
                     # The rate reserve is waived; only the goal plan's soft pauses remain.

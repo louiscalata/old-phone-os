@@ -5,6 +5,7 @@ packaging/duo-os/bootgraph.py turns the units OPOS ships into data: ordering, en
 class per unit. These tests check that data, and each mutation below is applied to a copy of the tree and must be
 caught. None of this runs systemd: whether systemd on the phone orders the units this way stays NOT_RUN
 (systemd-analyze verify and critical-chain on the booted image, PC session)."""
+
 import importlib.util
 import re
 import shutil
@@ -42,11 +43,23 @@ REQUIRED_ORDER = (
 )
 
 SHIPPED = {
-    "opos-brightness.service", "opos-clock-set.path", "opos-clock-set.service", "opos-clock.service",
-    "opos-diag.service", "opos-fallback.service", "opos-osk.service", "opos-powerkey.service",
-    "opos-server.service", "opos-volumekey.service", "opos.service", "opos-update-boot.service",
-    "opos-update-confirm.service", "opos-update.path", "opos-update.service",
-    "opos-sensorfwd-delayed.timer", "opos-sensorfwd-delayed.service",
+    "opos-brightness.service",
+    "opos-clock-set.path",
+    "opos-clock-set.service",
+    "opos-clock.service",
+    "opos-diag.service",
+    "opos-fallback.service",
+    "opos-osk.service",
+    "opos-powerkey.service",
+    "opos-server.service",
+    "opos-volumekey.service",
+    "opos.service",
+    "opos-update-boot.service",
+    "opos-update-confirm.service",
+    "opos-update.path",
+    "opos-update.service",
+    "opos-sensorfwd-delayed.timer",
+    "opos-sensorfwd-delayed.service",
 }
 
 
@@ -57,7 +70,9 @@ class BootGraphTest(unittest.TestCase):
 
     def test_every_unit_file_is_read(self):
         self.assertEqual(SHIPPED, set(self.g.units))
-        found = {p.name for d in (PKG, PKG / "updater") for p in d.iterdir() if p.suffix in (".service", ".path", ".timer")}
+        found = {
+            p.name for d in (PKG, PKG / "updater") for p in d.iterdir() if p.suffix in (".service", ".path", ".timer")
+        }
         self.assertEqual(found, set(self.g.units))
 
     def test_drop_ins_are_merged_into_the_server(self):
@@ -121,10 +136,19 @@ class BootGraphTest(unittest.TestCase):
 
     def test_all_checks_pass_and_cli(self):
         self.assertEqual([], bootgraph.all_problems(ROOT))
-        for args, needle in ((["--check"], "boot graph: OK"), (["--print"], "opos-server.service"),
-                             (["--mermaid"], "flowchart TD"), (["--layers"], "flowchart TD")):
-            p = subprocess.run([sys.executable, "-I", "-B", str(PKG / "bootgraph.py"), *args],
-                               capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+        for args, needle in (
+            (["--check"], "boot graph: OK"),
+            (["--print"], "opos-server.service"),
+            (["--mermaid"], "flowchart TD"),
+            (["--layers"], "flowchart TD"),
+        ):
+            p = subprocess.run(
+                [sys.executable, "-I", "-B", str(PKG / "bootgraph.py"), *args],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=60,
+            )
             self.assertEqual(0, p.returncode, p.stderr)
             self.assertIn(needle, p.stdout)
 
@@ -169,8 +193,7 @@ class MutationTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="opos-bootgraph-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         shutil.copytree(PKG, self.tmp / "packaging" / "duo-os")
-        shutil.copytree(ROOT / "src" / "opos", self.tmp / "src" / "opos",
-                        ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "src" / "opos", self.tmp / "src" / "opos", ignore=shutil.ignore_patterns("__pycache__"))
         (self.tmp / "docs").mkdir()
         shutil.copy2(DOC, self.tmp / "docs" / "os-architecture.md")
         self.assertEqual([], bootgraph.all_problems(self.tmp), "the copy must start clean")
@@ -200,90 +223,142 @@ class MutationTest(unittest.TestCase):
         self.edit("packaging/duo-os/opos-server.service", "[Service]", "After=opos.service\n\n[Service]")
         self.assertTrue(bootgraph.check_cycles(bootgraph.load(self.tmp)))
         self.assertCaught("ordering cycle: ")
-        self.assertTrue(any("opos-server.service" in p and "opos.service" in p
-                            for p in self.problems() if p.startswith("ordering cycle: ")))
+        self.assertTrue(
+            any(
+                "opos-server.service" in p and "opos.service" in p
+                for p in self.problems()
+                if p.startswith("ordering cycle: ")
+            )
+        )
 
     def test_3_entry_point_not_installed(self):
-        self.edit("packaging/duo-os/opos-diag.service", "ExecStart=/usr/libexec/opos/opos-diag",
-                  "ExecStart=/usr/libexec/opos/opos-diag-missing")
-        self.assertCaught("opos-diag.service: runs /usr/libexec/opos/opos-diag-missing, which build-image.sh does not install")
+        self.edit(
+            "packaging/duo-os/opos-diag.service",
+            "ExecStart=/usr/libexec/opos/opos-diag",
+            "ExecStart=/usr/libexec/opos/opos-diag-missing",
+        )
+        self.assertCaught(
+            "opos-diag.service: runs /usr/libexec/opos/opos-diag-missing, which build-image.sh does not install"
+        )
 
     def test_3b_python_module_missing(self):
         self.edit("packaging/duo-os/opos-volumekey.service", "-m opos.volumekey", "-m opos.volumekeys")
-        self.assertCaught("opos-volumekey.service: runs python3 -m opos.volumekeys, and src/opos/volumekeys.py does not exist")
+        self.assertCaught(
+            "opos-volumekey.service: runs python3 -m opos.volumekeys, and src/opos/volumekeys.py does not exist"
+        )
 
     def test_3c_entry_point_not_executable(self):
-        self.edit("packaging/duo-os/build-image.sh", 'install -m 0755 "$here/opos-diag" ', 'install -m 0644 "$here/opos-diag" ')
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'install -m 0755 "$here/opos-diag" ',
+            'install -m 0644 "$here/opos-diag" ',
+        )
         self.assertCaught("opos-diag.service: runs /usr/libexec/opos/opos-diag, installed with mode 0644, not 0755")
 
     def test_4_wants_link_deleted(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n', "")
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n',
+            "",
+        )
         self.assertCaught("opos-diag.service: nothing starts it")
-        self.assertCaught("opos-diag.service: [Install] WantedBy=multi-user.target but build-image.sh links no "
-                          "multi-user.target.wants/opos-diag.service")
+        self.assertCaught(
+            "opos-diag.service: [Install] WantedBy=multi-user.target but build-image.sh links no "
+            "multi-user.target.wants/opos-diag.service"
+        )
 
     def test_4b_server_link_deleted_is_caught_although_opos_wants_it(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'ln -sf /etc/systemd/system/opos-server.service "$r/etc/systemd/system/multi-user.target.wants/opos-server.service"\n', "")
-        self.assertCaught("opos-server.service: [Install] WantedBy=multi-user.target but build-image.sh links no "
-                          "multi-user.target.wants/opos-server.service")
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'ln -sf /etc/systemd/system/opos-server.service "$r/etc/systemd/system/multi-user.target.wants/opos-server.service"\n',
+            "",
+        )
+        self.assertCaught(
+            "opos-server.service: [Install] WantedBy=multi-user.target but build-image.sh links no "
+            "multi-user.target.wants/opos-server.service"
+        )
 
     def test_4c_looped_link_deleted(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  "for u in opos-update.path opos-update-boot.service opos-update-confirm.service; do\n    ln -sf",
-                  "for u in opos-update.path opos-update-confirm.service; do\n    ln -sf")
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            "for u in opos-update.path opos-update-boot.service opos-update-confirm.service; do\n    ln -sf",
+            "for u in opos-update.path opos-update-confirm.service; do\n    ln -sf",
+        )
         self.assertCaught("opos-update-boot.service: [Install] WantedBy=")
 
     def test_4d_unit_installed_under_an_undeclared_build_input(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"\n'
-                  'ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n',
-                  'if [ "${OPOS_SOMETHING:-0}" = 1 ]; then\n'
-                  '    install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"\n'
-                  '    ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n'
-                  'fi\n')
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"\n'
+            'ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n',
+            'if [ "${OPOS_SOMETHING:-0}" = 1 ]; then\n'
+            '    install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"\n'
+            '    ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n'
+            "fi\n",
+        )
         self.assertCaught("opos-diag.service: installed only when ")
         self.assertCaught("OPOS_SOMETHING")
 
     def test_4e_unit_file_not_installed(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"\n', "")
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'install -m 0644 "$here/opos-diag.service" "$r/etc/systemd/system/opos-diag.service"\n',
+            "",
+        )
         self.assertCaught("opos-diag.service: build-image.sh does not install it into /etc/systemd/system/")
 
     def test_4f_dev_link_moved_out_of_its_build_input(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then\n'
-                  '    ln -sf /etc/systemd/system/opos-clock-set.path',
-                  'ln -sf /etc/systemd/system/opos-clock-set.path')
-        self.edit("packaging/duo-os/build-image.sh",
-                  '/multi-user.target.wants/opos-clock-set.path"\n    echo "DEV IMAGE',
-                  '/multi-user.target.wants/opos-clock-set.path"\nif [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then\n    echo "DEV IMAGE')
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then\n    ln -sf /etc/systemd/system/opos-clock-set.path',
+            "ln -sf /etc/systemd/system/opos-clock-set.path",
+        )
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            '/multi-user.target.wants/opos-clock-set.path"\n    echo "DEV IMAGE',
+            '/multi-user.target.wants/opos-clock-set.path"\nif [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then\n    echo "DEV IMAGE',
+        )
         self.assertCaught("opos-clock-set.path: its link is not under OPOS_DEV_SSH_PUBKEY")
-        self.assertCaught("units enabled only under a build condition: [], BUILD_CONDITIONAL says ['opos-clock-set.path']")
+        self.assertCaught(
+            "units enabled only under a build condition: [], BUILD_CONDITIONAL says ['opos-clock-set.path']"
+        )
 
     def test_4g_unit_enabled_only_under_a_build_input_not_declared(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n',
-                  'if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then\n'
-                  '    ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n'
-                  'fi\n')
-        self.assertCaught("units enabled only under a build condition: ['opos-clock-set.path', 'opos-diag.service'], "
-                          "BUILD_CONDITIONAL says ['opos-clock-set.path']")
-        self.assertCaught("units missing from an image without build inputs, and not in BUILD_CONDITIONAL: "
-                          "['opos-diag.service']")
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            'ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n',
+            'if [ -n "${OPOS_DEV_SSH_PUBKEY:-}" ]; then\n'
+            '    ln -sf /etc/systemd/system/opos-diag.service "$r/etc/systemd/system/multi-user.target.wants/opos-diag.service"\n'
+            "fi\n",
+        )
+        self.assertCaught(
+            "units enabled only under a build condition: ['opos-clock-set.path', 'opos-diag.service'], "
+            "BUILD_CONDITIONAL says ['opos-clock-set.path']"
+        )
+        self.assertCaught(
+            "units missing from an image without build inputs, and not in BUILD_CONDITIONAL: ['opos-diag.service']"
+        )
 
     def test_5_unit_without_failure_class(self):
         (self.tmp / "packaging/duo-os/opos-extra.service").write_text(
-            "[Unit]\nDescription=x\n[Service]\nType=oneshot\nExecStart=/usr/libexec/opos/opos-diag\n", encoding="utf-8")
+            "[Unit]\nDescription=x\n[Service]\nType=oneshot\nExecStart=/usr/libexec/opos/opos-diag\n", encoding="utf-8"
+        )
         self.assertCaught("opos-extra.service: no entry in FAILURE_CLASS")
 
     def test_6_unknown_reference(self):
-        self.edit("packaging/duo-os/opos-server.service", "Wants=lxc@android.service", "Wants=lxc@android.service nowhere.service")
-        self.assertCaught("opos-server.service: nowhere.service is neither shipped in packaging/duo-os nor listed in INHERITED")
+        self.edit(
+            "packaging/duo-os/opos-server.service",
+            "Wants=lxc@android.service",
+            "Wants=lxc@android.service nowhere.service",
+        )
+        self.assertCaught(
+            "opos-server.service: nowhere.service is neither shipped in packaging/duo-os nor listed in INHERITED"
+        )
 
     def test_6b_inherited_entry_no_longer_referenced(self):
-        self.edit("packaging/duo-os/opos.service", "After=getty@tty1.service rc-local.service ", "After=getty@tty1.service ")
+        self.edit(
+            "packaging/duo-os/opos.service", "After=getty@tty1.service rc-local.service ", "After=getty@tty1.service "
+        )
         self.assertCaught("INHERITED lists rc-local.service, which nothing references any more")
 
     def test_7_mermaid_arrow_changed(self):
@@ -303,36 +378,56 @@ class MutationTest(unittest.TestCase):
             (self.tmp / "docs/os-architecture.md").write_text(text, encoding="utf-8")
 
     def test_8_timer_names_another_unit(self):
-        self.edit("packaging/duo-os/opos-sensorfwd-delayed.timer", "Unit=opos-sensorfwd-delayed.service",
-                  "Unit=opos-sensorfwd-later.service")
-        self.assertCaught("opos-sensorfwd-delayed.timer: opos-sensorfwd-later.service is neither shipped in "
-                          "packaging/duo-os nor listed in INHERITED")
+        self.edit(
+            "packaging/duo-os/opos-sensorfwd-delayed.timer",
+            "Unit=opos-sensorfwd-delayed.service",
+            "Unit=opos-sensorfwd-later.service",
+        )
+        self.assertCaught(
+            "opos-sensorfwd-delayed.timer: opos-sensorfwd-later.service is neither shipped in "
+            "packaging/duo-os nor listed in INHERITED"
+        )
         self.assertCaught("opos-sensorfwd-delayed.service: nothing starts it")
 
     def test_8b_timer_link_deleted(self):
-        self.edit("packaging/duo-os/build-image.sh",
-                  'ln -sfn /etc/systemd/system/opos-sensorfwd-delayed.timer '
-                  '"$r/etc/systemd/system/timers.target.wants/opos-sensorfwd-delayed.timer"\n', "")
-        self.assertCaught("opos-sensorfwd-delayed.timer: [Install] WantedBy=timers.target but build-image.sh links no "
-                          "timers.target.wants/opos-sensorfwd-delayed.timer")
+        self.edit(
+            "packaging/duo-os/build-image.sh",
+            "ln -sfn /etc/systemd/system/opos-sensorfwd-delayed.timer "
+            '"$r/etc/systemd/system/timers.target.wants/opos-sensorfwd-delayed.timer"\n',
+            "",
+        )
+        self.assertCaught(
+            "opos-sensorfwd-delayed.timer: [Install] WantedBy=timers.target but build-image.sh links no "
+            "timers.target.wants/opos-sensorfwd-delayed.timer"
+        )
         self.assertCaught("opos-sensorfwd-delayed.timer: nothing starts it")
         self.assertCaught("opos-sensorfwd-delayed.service: nothing starts it")
 
     def test_8c_timer_file_missing(self):
         (self.tmp / "packaging/duo-os/opos-sensorfwd-delayed.timer").unlink()
-        self.assertCaught("build-image.sh installs /etc/systemd/system/opos-sensorfwd-delayed.timer from "
-                          "opos-sensorfwd-delayed.timer, which does not exist")
-        self.assertCaught("build-image.sh links timers.target.wants/opos-sensorfwd-delayed.timer, which OPOS does not ship")
+        self.assertCaught(
+            "build-image.sh installs /etc/systemd/system/opos-sensorfwd-delayed.timer from "
+            "opos-sensorfwd-delayed.timer, which does not exist"
+        )
+        self.assertCaught(
+            "build-image.sh links timers.target.wants/opos-sensorfwd-delayed.timer, which OPOS does not ship"
+        )
         self.assertCaught("opos-sensorfwd-delayed.service: nothing starts it")
 
     def test_8d_timer_install_section_names_another_target(self):
-        self.edit("packaging/duo-os/opos-sensorfwd-delayed.timer", "WantedBy=timers.target", "WantedBy=multi-user.target")
-        self.assertCaught("build-image.sh links timers.target.wants/opos-sensorfwd-delayed.timer, but its [Install] "
-                          "does not name timers.target")
+        self.edit(
+            "packaging/duo-os/opos-sensorfwd-delayed.timer", "WantedBy=timers.target", "WantedBy=multi-user.target"
+        )
+        self.assertCaught(
+            "build-image.sh links timers.target.wants/opos-sensorfwd-delayed.timer, but its [Install] "
+            "does not name timers.target"
+        )
 
     def test_8e_doc_row_for_the_timer_deleted(self):
         text = (self.tmp / "docs/os-architecture.md").read_text(encoding="utf-8")
-        row = next(l for l in text.splitlines() if l.startswith("| 120 s after boot | `opos-sensorfwd-delayed.timer` |"))
+        row = next(
+            l for l in text.splitlines() if l.startswith("| 120 s after boot | `opos-sensorfwd-delayed.timer` |")
+        )
         self.edit("docs/os-architecture.md", row + "\n", "")
         self.assertCaught("boot table has no row for opos-sensorfwd-delayed.timer")
 
@@ -353,18 +448,28 @@ class MutationTest(unittest.TestCase):
         self.assertCaught("opos-fallback.service: does not start phosh.service")
 
     def test_fatal_unit_pulls_in_a_degrade_unit(self):
-        self.edit("packaging/duo-os/opos.service", "Wants=dbus.socket opos-server.service",
-                  "Wants=dbus.socket opos-server.service\nRequires=opos-diag.service")
+        self.edit(
+            "packaging/duo-os/opos.service",
+            "Wants=dbus.socket opos-server.service",
+            "Wants=dbus.socket opos-server.service\nRequires=opos-diag.service",
+        )
         self.assertCaught("opos.service (fatal-to-session) has Requires=opos-diag.service, a degrade unit")
 
     def test_doc_class_column_wrong(self):
-        self.edit("docs/os-architecture.md", "| `opos-diag.service` | degrade |", "| `opos-diag.service` | fatal-to-session |")
+        self.edit(
+            "docs/os-architecture.md", "| `opos-diag.service` | degrade |", "| `opos-diag.service` | fatal-to-session |"
+        )
         self.assertCaught("boot table says opos-diag.service is fatal-to-session, FAILURE_CLASS says degrade")
 
     def test_doc_waits_for_pair_wrong(self):
-        self.edit("docs/os-architecture.md", "| `opos-brightness.service` | degrade | `local-fs.target` |",
-                  "| `opos-brightness.service` | degrade | `opos.service` |")
-        self.assertCaught("boot table says opos-brightness.service waits for opos.service; the unit files do not order them")
+        self.edit(
+            "docs/os-architecture.md",
+            "| `opos-brightness.service` | degrade | `local-fs.target` |",
+            "| `opos-brightness.service` | degrade | `opos.service` |",
+        )
+        self.assertCaught(
+            "boot table says opos-brightness.service waits for opos.service; the unit files do not order them"
+        )
 
     def test_doc_row_deleted(self):
         text = (self.tmp / "docs/os-architecture.md").read_text(encoding="utf-8")
@@ -373,7 +478,9 @@ class MutationTest(unittest.TestCase):
         self.assertCaught("boot table has no row for opos-diag.service")
 
     def test_doc_print_block_stale(self):
-        self.edit("packaging/duo-os/opos-diag.service", "After=multi-user.target", "After=multi-user.target opos.service")
+        self.edit(
+            "packaging/duo-os/opos-diag.service", "After=multi-user.target", "After=multi-user.target opos.service"
+        )
         self.assertCaught("no text block equals bootgraph.py --print")
 
 

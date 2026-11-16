@@ -71,7 +71,11 @@ class SetupServerTests(unittest.TestCase):
             python=sys.executable,
             home=self.home,
             platform=sys.platform,
-            env={"OPOS_CONFIG_DIR": str(self.cfg_dir), "OPOS_TOOLS_PREFIX": str(self.tools_prefix), "OPOS_AI_TOOLS_TABLE": str(self.catalog_path)},
+            env={
+                "OPOS_CONFIG_DIR": str(self.cfg_dir),
+                "OPOS_TOOLS_PREFIX": str(self.tools_prefix),
+                "OPOS_AI_TOOLS_TABLE": str(self.catalog_path),
+            },
             dry_run=True,
             runner=self.runner,
             health_check=lambda: True,
@@ -161,7 +165,12 @@ class SetupServerTests(unittest.TestCase):
 
     def _post_for(self, port, token, path, payload, ctype="application/json", origin=None):
         body = json.dumps(payload).encode() if payload is not None else b"{}"
-        h = {"Host": f"127.0.0.1:{port}", "X-OPOS-Token": token, "Content-Type": ctype, "Content-Length": str(len(body))}
+        h = {
+            "Host": f"127.0.0.1:{port}",
+            "X-OPOS-Token": token,
+            "Content-Type": ctype,
+            "Content-Length": str(len(body)),
+        }
         if origin is None:
             h["Origin"] = f"http://127.0.0.1:{port}"
         else:
@@ -202,7 +211,9 @@ class SetupServerTests(unittest.TestCase):
         self.assertEqual(status, 403)
 
     def test_origin_required_for_post(self):
-        status, _, _ = self._post("/setup/api/validate", {"config": cfgmod.default_config()}, origin="http://evil.example")
+        status, _, _ = self._post(
+            "/setup/api/validate", {"config": cfgmod.default_config()}, origin="http://evil.example"
+        )
         self.assertEqual(status, 403)
         hdrs = {
             "Host": f"127.0.0.1:{self.port}",
@@ -292,6 +303,7 @@ class SetupServerTests(unittest.TestCase):
 
     def test_409_while_running(self):
         import opos.setup.server as srv
+
         target_mod = None
         orig = None
         is_func = False
@@ -305,6 +317,7 @@ class SetupServerTests(unittest.TestCase):
                 orig = a.apply
         if orig is None:
             import opos.setup.apply as am
+
             target_mod = am
             orig = am.apply
 
@@ -333,18 +346,33 @@ class SetupServerTests(unittest.TestCase):
                 target_mod.apply = orig
 
     def test_405_other_methods(self):
-        status, _, body = self._raw("PUT", "/setup/api/state", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token})
+        status, _, body = self._raw(
+            "PUT", "/setup/api/state", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token}
+        )
         self.assertEqual(status, 405)
-        status, _, body = self._raw("DELETE", "/setup/api/state", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token})
+        status, _, body = self._raw(
+            "DELETE", "/setup/api/state", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token}
+        )
         self.assertEqual(status, 405)
-        status, _, _ = self._raw("PUT", "/setup/api/validate", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token, "Origin": f"http://127.0.0.1:{self.port}", "Content-Type": "application/json"})
+        status, _, _ = self._raw(
+            "PUT",
+            "/setup/api/validate",
+            headers={
+                "Host": f"127.0.0.1:{self.port}",
+                "X-OPOS-Token": self.token,
+                "Origin": f"http://127.0.0.1:{self.port}",
+                "Content-Type": "application/json",
+            },
+        )
         self.assertEqual(status, 405)
 
     def test_404_unknown_path(self):
         status, _, body = self._get("/unknown/path")
         self.assertEqual(status, 404)
         self.assertIn("not found", json.loads(body)["error"])
-        status, _, body = self._raw("GET", "/setup/api/doesnotexist", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token})
+        status, _, body = self._raw(
+            "GET", "/setup/api/doesnotexist", headers={"Host": f"127.0.0.1:{self.port}", "X-OPOS-Token": self.token}
+        )
         self.assertEqual(status, 404)
 
     def test_oversized_body(self):
@@ -401,7 +429,18 @@ class SetupServerTests(unittest.TestCase):
         cat = self.tmp_path / "cat_linux_explicit.json"
         _write_catalog(cat)
         env = {"OPOS_CONFIG_DIR": str(self.cfg_dir), "OPOS_TOOLS_PREFIX": str(prefix), "OPOS_AI_TOOLS_TABLE": str(cat)}
-        ctx = SetupContext(repo_root=self.repo_root, python=sys.executable, home=self.home, platform="linux", env=env, dry_run=True, runner=self.runner, health_check=lambda: True, app_port=8765, root=str(self.tmp_path))
+        ctx = SetupContext(
+            repo_root=self.repo_root,
+            python=sys.executable,
+            home=self.home,
+            platform="linux",
+            env=env,
+            dry_run=True,
+            runner=self.runner,
+            health_check=lambda: True,
+            app_port=8765,
+            root=str(self.tmp_path),
+        )
         srv = make_server(0, ctx, host="127.0.0.1")
         thr = threading.Thread(target=srv.serve_forever, daemon=True)
         thr.start()
@@ -429,7 +468,18 @@ class SetupServerTests(unittest.TestCase):
         cat = self.tmp_path / "cat_win32.json"
         _write_catalog(cat)
         env = {"OPOS_CONFIG_DIR": str(self.cfg_dir), "OPOS_TOOLS_PREFIX": str(prefix), "OPOS_AI_TOOLS_TABLE": str(cat)}
-        ctx = SetupContext(repo_root=self.repo_root, python=sys.executable, home=self.home, platform="win32", env=env, dry_run=True, runner=self.runner, health_check=lambda: True, app_port=8765, root=str(self.tmp_path))
+        ctx = SetupContext(
+            repo_root=self.repo_root,
+            python=sys.executable,
+            home=self.home,
+            platform="win32",
+            env=env,
+            dry_run=True,
+            runner=self.runner,
+            health_check=lambda: True,
+            app_port=8765,
+            root=str(self.tmp_path),
+        )
         srv = make_server(0, ctx, host="127.0.0.1")
         thr = threading.Thread(target=srv.serve_forever, daemon=True)
         thr.start()
@@ -457,7 +507,18 @@ class SetupServerTests(unittest.TestCase):
         cat = self.tmp_path / "cat_ai_validate.json"
         _write_catalog(cat)
         env = {"OPOS_CONFIG_DIR": str(self.cfg_dir), "OPOS_TOOLS_PREFIX": str(prefix), "OPOS_AI_TOOLS_TABLE": str(cat)}
-        ctx = SetupContext(repo_root=self.repo_root, python=sys.executable, home=self.home, platform="linux", env=env, dry_run=True, runner=self.runner, health_check=lambda: True, app_port=8765, root=str(self.tmp_path))
+        ctx = SetupContext(
+            repo_root=self.repo_root,
+            python=sys.executable,
+            home=self.home,
+            platform="linux",
+            env=env,
+            dry_run=True,
+            runner=self.runner,
+            health_check=lambda: True,
+            app_port=8765,
+            root=str(self.tmp_path),
+        )
         srv = make_server(0, ctx, host="127.0.0.1")
         thr = threading.Thread(target=srv.serve_forever, daemon=True)
         thr.start()
@@ -486,6 +547,7 @@ class SetupServerTests(unittest.TestCase):
 
     def test_tools_runner_passed_to_apply(self):
         import opos.setup.apply as am
+
         recorded = {}
 
         orig = am.apply
@@ -513,8 +575,24 @@ class SetupServerTests(unittest.TestCase):
             prefix.mkdir(exist_ok=True)
             cat = self.tmp_path / "cat_runner.json"
             _write_catalog(cat)
-            env = {"OPOS_CONFIG_DIR": str(self.cfg_dir), "OPOS_TOOLS_PREFIX": str(prefix), "OPOS_AI_TOOLS_TABLE": str(cat)}
-            ctx = SetupContext(repo_root=self.repo_root, python=sys.executable, home=self.home, platform="linux", env=env, dry_run=True, runner=self.runner, health_check=lambda: True, tools_runner=stub, app_port=8765, root=str(self.tmp_path))
+            env = {
+                "OPOS_CONFIG_DIR": str(self.cfg_dir),
+                "OPOS_TOOLS_PREFIX": str(prefix),
+                "OPOS_AI_TOOLS_TABLE": str(cat),
+            }
+            ctx = SetupContext(
+                repo_root=self.repo_root,
+                python=sys.executable,
+                home=self.home,
+                platform="linux",
+                env=env,
+                dry_run=True,
+                runner=self.runner,
+                health_check=lambda: True,
+                tools_runner=stub,
+                app_port=8765,
+                root=str(self.tmp_path),
+            )
             srv = make_server(0, ctx, host="127.0.0.1")
             thr = threading.Thread(target=srv.serve_forever, daemon=True)
             thr.start()
@@ -536,7 +614,6 @@ class SetupServerTests(unittest.TestCase):
                 thr.join(timeout=1)
         finally:
             am.apply = orig
-
 
     def test_idle_connection_times_out_and_normal_request_ok(self):
         handler_cls = self.server.RequestHandlerClass
@@ -575,6 +652,7 @@ class SetupServerTests(unittest.TestCase):
                     sock = socket.create_connection(("127.0.0.1", self.port), timeout=2)
                     sock.settimeout(1)
                     stop = threading.Event()
+
                     def _sender(sock=sock, stop=stop):
                         end = time.monotonic() + 2
                         while time.monotonic() < end and not stop.is_set():
@@ -583,6 +661,7 @@ class SetupServerTests(unittest.TestCase):
                                 sock.sendall(b"a")
                             except Exception:
                                 break
+
                     thr = threading.Thread(target=_sender, daemon=True)
                     try:
                         sock.sendall(initial)
@@ -613,6 +692,7 @@ class SetupServerTests(unittest.TestCase):
 
     def test_setup_rejects_exhausted_slots_closes_request(self):
         from unittest import mock
+
         handler_cls = self.server.RequestHandlerClass
         slots = mock.Mock()
         slots.acquire.return_value = False
@@ -631,6 +711,7 @@ class SetupServerTests(unittest.TestCase):
 
     def test_expired_budget_closes_before_base_handler(self):
         from unittest import mock
+
         handler_cls = self.server.RequestHandlerClass
         inst = object.__new__(handler_cls)
         inst.connection = mock.Mock()
@@ -643,6 +724,7 @@ class SetupServerTests(unittest.TestCase):
         self.assertTrue(inst.close_connection)
         inst.connection.close.assert_called_once_with()
         base.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

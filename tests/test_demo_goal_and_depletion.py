@@ -11,11 +11,13 @@ class TestDemoGoalAndDepletion(unittest.TestCase):
         with mock.patch.object(setup_config, "load", return_value=None):
             with mock.patch.object(web, "_route_with_glimmer"):
                 captured = {}
+
                 def fake_make_server(port, phone, host="127.0.0.1", token=None):
                     captured["phone"] = phone
                     srv = mock.Mock()
                     srv.serve_forever = mock.Mock()
                     return srv
+
                 with mock.patch.object(web, "make_server", side_effect=fake_make_server):
                     web.main([])
                 phone = captured["phone"]
@@ -33,18 +35,26 @@ class TestDemoGoalAndDepletion(unittest.TestCase):
                 with mock.patch.object(setup_config, "load", return_value=cfg):
                     with mock.patch.object(web, "_route_with_glimmer"):
                         captured = {}
+
                         def fake_make_server(port, phone, host="127.0.0.1", token=None):
                             captured["phone"] = phone
-                            srv = mock.Mock(); srv.serve_forever = mock.Mock(); return srv
+                            srv = mock.Mock()
+                            srv.serve_forever = mock.Mock()
+                            return srv
+
                         with mock.patch.object(web, "make_server", side_effect=fake_make_server):
                             web.main([])
                         self.assertEqual(captured["phone"].dash.goal, exp_goal)
         with mock.patch.object(setup_config, "load", side_effect=setup_config.ConfigError("bad")):
             with mock.patch.object(web, "_route_with_glimmer"):
                 captured = {}
+
                 def fake_make_server(port, phone, host="127.0.0.1", token=None):
                     captured["phone"] = phone
-                    srv = mock.Mock(); srv.serve_forever = mock.Mock(); return srv
+                    srv = mock.Mock()
+                    srv.serve_forever = mock.Mock()
+                    return srv
+
                 with mock.patch.object(web, "make_server", side_effect=fake_make_server):
                     web.main([])
                 self.assertEqual(captured["phone"].dash.goal, "23:00")
@@ -79,17 +89,32 @@ class TestDemoGoalAndDepletion(unittest.TestCase):
                 self.assertTrue(helper["paused"])
                 why = helper["why_paused"]
                 self.assertIn("; to stretch the battery toward 23:00, the phone paused ", why)
-                self.assertTrue(why.endswith(", but at this rate the battery shows " + state["battery"]["time_left"].removeprefix("Rough estimate: ").lower() + "."))
+                self.assertTrue(
+                    why.endswith(
+                        ", but at this rate the battery shows "
+                        + state["battery"]["time_left"].removeprefix("Rough estimate: ").lower()
+                        + "."
+                    )
+                )
                 self.assertNotIn("working until", why)
 
     def test_why_paused_wording(self):
-        msg = web.why_paused(30.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="About 2 h 5 min left")
-        self.assertEqual(msg, "The battery is worn. It holds 60% of what it did when new, so 30% is really about 18% and it is not charging; to stretch the battery toward 16:00, the phone paused maps, but at this rate the battery shows about 2 h 5 min left.")
-        labelled = web.why_paused(30.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="Rough estimate: About 2 h 5 min left")
+        msg = web.why_paused(
+            30.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="About 2 h 5 min left"
+        )
+        self.assertEqual(
+            msg,
+            "The battery is worn. It holds 60% of what it did when new, so 30% is really about 18% and it is not charging; to stretch the battery toward 16:00, the phone paused maps, but at this rate the battery shows about 2 h 5 min left.",
+        )
+        labelled = web.why_paused(
+            30.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="Rough estimate: About 2 h 5 min left"
+        )
         self.assertEqual(labelled, msg)  # the label belongs to the panel; the sentence already says "at this rate"
-        for status, notice in (("error: battery empty, charge the phone to call", "Charge the phone to call"),
-                               ("error: battery empty, charge the phone to send", "Charge the phone to send"),
-                               ("call ended: battery empty", "Call ended. Charge the phone")):
+        for status, notice in (
+            ("error: battery empty, charge the phone to call", "Charge the phone to call"),
+            ("error: battery empty, charge the phone to send", "Charge the phone to send"),
+            ("call ended: battery empty", "Call ended. Charge the phone"),
+        ):
             self.assertEqual(web.notice_for(status, False), notice)
             self.assertIsNone(web._NOTICE_FORBIDDEN_RE.search(notice))
         empty = web.why_paused(1.0, 0.6, 30.0, False, ["maps"], "16:00", goal_met=False, time_left="Almost empty")
@@ -140,6 +165,7 @@ class TestDemoGoalAndDepletion(unittest.TestCase):
 
     def test_charging_keeps_call(self):
         import time as _time
+
         with mock.patch.object(web.assist, "free_mb", return_value=4096):
             with mock.patch.object(web.prefs, "load", side_effect=OSError):
                 phone = web.Phone()

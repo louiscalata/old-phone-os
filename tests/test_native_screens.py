@@ -3,6 +3,7 @@
 records what the screens ask the server and answers when the test says so. No display and no GTK are needed, so these
 run everywhere. What they pin: a draft, a contact, an alarm or a note changes on screen only when the server confirms,
 a late reply never puts a screen back, rows that read the same act on the newest id, and practice is said."""
+
 import importlib
 import os
 import sys
@@ -60,9 +61,11 @@ class Widget:
         self.css.discard(c)
 
     def __getattr__(self, name):
-        if name.startswith(("set_", "get_", "add_", "remove_", "connect", "attach", "insert", "reorder", "queue_", "can_")):
+        if name.startswith(
+            ("set_", "get_", "add_", "remove_", "connect", "attach", "insert", "reorder", "queue_", "can_")
+        ):
             return lambda *a, **k: Widget()
-        raise AttributeError(name)      # as a real widget: no attribute until someone sets one
+        raise AttributeError(name)  # as a real widget: no attribute until someone sets one
 
 
 class Kind(type):
@@ -149,6 +152,7 @@ class Screens(unittest.TestCase):
                 sys.modules.pop(n, None)
                 if m is not None:
                     sys.modules[n] = m
+
         self.addCleanup(restore)
         for n in names:
             sys.modules.pop(n, None)
@@ -158,8 +162,10 @@ class Screens(unittest.TestCase):
         gi.repository.GLib = types.SimpleNamespace(idle_add=lambda fn, *a: fn(*a))
         sys.modules["gi"], sys.modules["gi.repository"] = gi, gi.repository
         self.screens = importlib.import_module("opos.native.screens")
-        self.work = []       # requests to the apps, held until the test lets the server answer
-        self.screens.threading = types.SimpleNamespace(Thread=lambda target, daemon=None: types.SimpleNamespace(start=lambda: self.work.append(target)))
+        self.work = []  # requests to the apps, held until the test lets the server answer
+        self.screens.threading = types.SimpleNamespace(
+            Thread=lambda target, daemon=None: types.SimpleNamespace(start=lambda: self.work.append(target))
+        )
         self.shell = FakeShell()
 
     def flush(self):
@@ -192,8 +198,16 @@ class Screens(unittest.TestCase):
         self.assertFalse(m.send.sensitive, "and it cannot be sent twice")
         m.send_typed()
         self.assertEqual(len(self.shell.asked), 2, "the open and one send, not two")
-        self.shell.answer(1, {"battery": {}, "status": "sent", "notice": "Practice message. Nothing was sent.", "thread": ["You: hi"],
-                              "simulation": {"modem": True}})
+        self.shell.answer(
+            1,
+            {
+                "battery": {},
+                "status": "sent",
+                "notice": "Practice message. Nothing was sent.",
+                "thread": ["You: hi"],
+                "simulation": {"modem": True},
+            },
+        )
         self.assertEqual(m.typed.text, "")
         self.assertEqual(m.practice.get_label(), "Practice message. Nothing was sent.")
         self.assertEqual(m.thread.get_label(), "You: hi")
@@ -204,7 +218,14 @@ class Screens(unittest.TestCase):
         self.shell.answer(0, {"battery": {}, "thread": []})
         self.type_into(m, "hi")
         m.send_typed()
-        self.shell.answer(1, {"battery": {}, "status": "error: battery empty, charge the phone to send", "notice": "Charge the phone to send"})
+        self.shell.answer(
+            1,
+            {
+                "battery": {},
+                "status": "error: battery empty, charge the phone to send",
+                "notice": "Charge the phone to send",
+            },
+        )
         self.assertEqual(m.typed.text, "hi")
         self.assertEqual(m.practice.get_label(), "Charge the phone to send")
         self.assertTrue(m.send.sensitive, "and the owner can try again")
@@ -221,7 +242,11 @@ class Screens(unittest.TestCase):
 
     def test_the_heading_and_the_lines_always_belong_to_the_same_person(self):
         m = self.messages()
-        self.shell.snap = {"battery": {}, "contacts": [{"name": "Bob", "number": "+1 Bob"}], "thread": ["Alice: private text"]}
+        self.shell.snap = {
+            "battery": {},
+            "contacts": [{"name": "Bob", "number": "+1 Bob"}],
+            "thread": ["Alice: private text"],
+        }
         m.open_thread("+1 Bob")
         self.assertEqual(m.head.get_label(), "Bob")
         self.assertNotIn("Alice", m.thread.get_label(), "Alice's thread is still the server's open one")
@@ -256,8 +281,14 @@ class Screens(unittest.TestCase):
 
     def test_a_refused_call_shows_the_servers_words_and_a_real_call_is_not_called_practice(self):
         p = self.page(self.screens.Phone)
-        p.show({"battery": {}, "status": "error: this phone cannot call emergency numbers. Use another phone.",
-                "notice": "This phone cannot call emergency numbers. Use another phone.", "in_call": False})
+        p.show(
+            {
+                "battery": {},
+                "status": "error: this phone cannot call emergency numbers. Use another phone.",
+                "notice": "This phone cannot call emergency numbers. Use another phone.",
+                "in_call": False,
+            }
+        )
         self.assertIn("cannot call emergency numbers", p.status.get_label())
         p.show({"battery": {}, "in_call": True, "simulation": {"modem": False}})
         self.assertEqual(p.status.get_label(), "In call\n" + self.screens.EMERGENCY)
@@ -265,8 +296,14 @@ class Screens(unittest.TestCase):
     def test_home_says_practice_mode_and_previews_a_practice_call(self):
         self.page(self.screens.Phone)
         h = self.page(self.screens.Home)
-        h.show({"battery": {}, "home_note": "Practice mode: calls, texts and tasks are simulated.", "in_call": True,
-                "simulation": {"modem": True}})
+        h.show(
+            {
+                "battery": {},
+                "home_note": "Practice mode: calls, texts and tasks are simulated.",
+                "in_call": True,
+                "simulation": {"modem": True},
+            }
+        )
         self.assertEqual(h.v_note.get_label(), "Practice mode: calls, texts and tasks are simulated.")
         self.assertEqual(h.v_text.get_label(), "In a practice call", "not the raw word 'in call'")
 
@@ -280,7 +317,9 @@ class Screens(unittest.TestCase):
         self.assertEqual((p.go_call.get_label(), p.go_call.sensitive), ("Calling", False))
         self.shell.answer(0, {"battery": {}, "in_call": True, "status": "in call"})
         self.assertFalse(self.shell.snap["in_call"], "the late reply was not drawn")
-        self.assertEqual((p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "still waiting for the truth")
+        self.assertEqual(
+            (p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "still waiting for the truth"
+        )
         p.call_or_hang()
         self.assertEqual(len(self.shell.asked), 1, "a second tap sends nothing")
         self.shell.drawn(self.shell.seq.issue(), {"battery": {}, "in_call": True})
@@ -310,14 +349,16 @@ class Screens(unittest.TestCase):
         p = self.page(self.screens.Phone)
         p.dial("+15550100")
         p.call_or_hang()
-        before = self.shell.seq.issue()         # a poll asked before the failure was known
+        before = self.shell.seq.issue()  # a poll asked before the failure was known
         self.shell.answer(0, None)
         self.assertEqual((p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "not from the old snapshot")
         self.shell.drawn(before, {"battery": {}, "in_call": False})
-        self.assertEqual((p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "asked before: still waiting")
+        self.assertEqual(
+            (p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "asked before: still waiting"
+        )
         self.shell.drawn(self.shell.seq.issue(), {"battery": {}, "in_call": True})
         self.assertEqual((p.go_call.get_label(), p.go_call.sensitive), ("Hang up", True), "the call did go out")
-        p.call_or_hang()                        # hang up; that reply times out too, and the next poll says no call
+        p.call_or_hang()  # hang up; that reply times out too, and the next poll says no call
         self.shell.answer(1, None)
         self.assertFalse(p.go_call.sensitive)
         self.shell.drawn(self.shell.seq.issue(), {"battery": {}, "in_call": False})
@@ -326,11 +367,17 @@ class Screens(unittest.TestCase):
     def test_a_real_phone_says_emergency_calls_cannot_be_relied_on_and_practice_says_practice(self):
         p = self.page(self.screens.Phone)
         p.show({"battery": {}, "simulation": {"modem": False}})
-        self.assertEqual(p.status.get_label(), "OPOS cannot place an emergency call; keep another way to call for help.")
-        self.assertTrue(any(self.screens.EMERGENCY in r for r in self.screens.notices.RISKS), "the shared words, not a copy")
+        self.assertEqual(
+            p.status.get_label(), "OPOS cannot place an emergency call; keep another way to call for help."
+        )
+        self.assertTrue(
+            any(self.screens.EMERGENCY in r for r in self.screens.notices.RISKS), "the shared words, not a copy"
+        )
         self.assertNotIn("simulated", self.screens.EMERGENCY, "a real call is never called simulated")
         p.show({"battery": {}})
-        self.assertIn(self.screens.EMERGENCY, p.status.get_label(), "no simulation block: calls are not called practice")
+        self.assertIn(
+            self.screens.EMERGENCY, p.status.get_label(), "no simulation block: calls are not called practice"
+        )
         p.show({"battery": {}, "simulation": {"modem": True}})
         self.assertEqual(p.status.get_label(), "Practice only: this phone cannot make real calls yet.")
 
@@ -341,6 +388,7 @@ class Screens(unittest.TestCase):
         def recording(text="", *classes, **k):
             made.append(text)
             return real(text, *classes, **k)
+
         self.screens.label = recording
         try:
             self.page(self.screens.Settings)
@@ -352,10 +400,14 @@ class Screens(unittest.TestCase):
 
     def test_the_emergency_line_is_the_shared_sentence_and_a_reworded_notice_never_stops_the_shell(self):
         words = self.screens.emergency_words
-        self.assertEqual(words(("Emergency calling is not guaranteed. Keep another way to call for help.",)),
-                         "Emergency calling is not guaranteed. Keep another way to call for help.")
-        self.assertEqual(words(("Calls are simulated. OPOS cannot place an emergency call; keep another way.",)),
-                         "OPOS cannot place an emergency call; keep another way.")
+        self.assertEqual(
+            words(("Emergency calling is not guaranteed. Keep another way to call for help.",)),
+            "Emergency calling is not guaranteed. Keep another way to call for help.",
+        )
+        self.assertEqual(
+            words(("Calls are simulated. OPOS cannot place an emergency call; keep another way.",)),
+            "OPOS cannot place an emergency call; keep another way.",
+        )
         self.assertIn("emergency calls", words(("Nothing about it here.",)))
         self.assertIn("emergency calls", words(()))
 
@@ -364,25 +416,52 @@ class Screens(unittest.TestCase):
         base = ["lock", "home", "phone", "messages", "calc", "settings", "network"]
         self.assertEqual(names({}), base, "absent: no everyday apps")
         self.assertEqual(names({"OPOS_APPS": ""}), base, "empty: none")
-        self.assertEqual(names({"OPOS_APPS": "notes,clock"}), ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "network"])
-        self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"])
-        self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls,convert"}),
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls",
-                          "settings", "network"], "the Duo list: the converter has a native screen")
-        self.assertEqual(names({"OPOS_APPS": "convert"}), ["lock", "home", "phone", "messages", "calc", "convert", "settings", "network"],
-                         "only when OPOS_APPS names it")
+        self.assertEqual(
+            names({"OPOS_APPS": "notes,clock"}),
+            ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "network"],
+        )
+        self.assertEqual(
+            names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
+            ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"],
+        )
+        self.assertEqual(
+            names({"OPOS_APPS": "clock,contacts,notes,calc,calls,convert"}),
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "clock",
+                "contacts",
+                "notes",
+                "calc",
+                "convert",
+                "calls",
+                "settings",
+                "network",
+            ],
+            "the Duo list: the converter has a native screen",
+        )
+        self.assertEqual(
+            names({"OPOS_APPS": "convert"}),
+            ["lock", "home", "phone", "messages", "calc", "convert", "settings", "network"],
+            "only when OPOS_APPS names it",
+        )
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
 
     # --- two taps to delete, as the browser asks --------------------------------------------------------------------
     def test_an_alarm_is_removed_only_on_the_second_tap(self):
         c = self.page(self.screens.Clock)
-        two = [{"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True},
-               {"id": "a2", "hour": 8, "minute": 0, "days": [], "enabled": True}]
+        two = [
+            {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True},
+            {"id": "a2", "hour": 8, "minute": 0, "days": [], "enabled": True},
+        ]
         c.got({"alarms": two, "clock_ok": True})
         c.choose("a1")
         c.remove()
-        self.assertEqual((self.work, c.remove_button.get_label()), ([], "Delete this alarm?"), "the first tap only asks")
+        self.assertEqual(
+            (self.work, c.remove_button.get_label()), ([], "Delete this alarm?"), "the first tap only asks"
+        )
         c.got({"alarms": two, "clock_ok": True})
         self.assertEqual(c.remove_button.get_label(), "Delete this alarm?", "a refresh keeps the question")
         c.got({"alarms": two[1:], "clock_ok": True})
@@ -416,7 +495,9 @@ class Screens(unittest.TestCase):
         self.open_note(n)
         sent = len(self.shell.core.sent)
         n.delete()
-        self.assertEqual((len(self.shell.core.sent), self.work, n.delete_button.get_label()), (sent, [], "Delete this note?"))
+        self.assertEqual(
+            (len(self.shell.core.sent), self.work, n.delete_button.get_label()), (sent, [], "Delete this note?")
+        )
         n.delete()
         self.flush()
         self.assertEqual(self.shell.core.sent[-1], ("notes", {"action": "delete", "id": "n1"}))
@@ -432,8 +513,9 @@ class Screens(unittest.TestCase):
         self.assertEqual((c.add.get_label(), c.add.sensitive), ("Adding", False))
         self.flush()
         self.assertEqual((c.add.get_label(), c.add.sensitive, c.digits), ("Add alarm", True, ""))
-        self.assertEqual([d for _n, d in self.shell.core.sent].count(
-            {"action": "add", "hour": 7, "minute": 30, "days": []}), 1)
+        self.assertEqual(
+            [d for _n, d in self.shell.core.sent].count({"action": "add", "hour": 7, "minute": 30, "days": []}), 1
+        )
 
     def test_a_refusal_whose_body_cannot_be_read_still_ends_the_add(self):
         # The server refused (an HTTP error) and the connection dropped while its body was read. The answer must still
@@ -449,15 +531,18 @@ class Screens(unittest.TestCase):
         def refuse(name, data=None):
             self.shell.core.sent.append((name, data))
             raise Dropped("u", 500, "broken", {}, None)
+
         self.shell.core.app = refuse
         c.add_alarm()
-        while self.work:            # as a real worker thread: an exception ends the thread and nothing else
+        while self.work:  # as a real worker thread: an exception ends the thread and nothing else
             try:
                 self.work.pop(0)()
             except Exception:
                 pass
         self.assertFalse(c.adding, "the add ended")
-        self.assertEqual((c.add.get_label(), c.add.sensitive, c.digits), ("Add alarm", True, "0730"), "refused: the time stays")
+        self.assertEqual(
+            (c.add.get_label(), c.add.sensitive, c.digits), ("Add alarm", True, "0730"), "refused: the time stays"
+        )
         self.assertIn("did not go through", c.note.get_label())
         c.add_alarm()
         self.assertEqual(len(self.shell.core.sent) + len(self.work), 2, "a second tap sends again")
@@ -474,19 +559,27 @@ class Screens(unittest.TestCase):
         c.save()
         self.assertTrue(c.busy)
         self.assertFalse(c.save_button.sensitive)
-        c.deliver(c.seq.issue(), {"ok": True, "people": [], "practice": False})      # a refresh answered meanwhile: not this save
+        c.deliver(
+            c.seq.issue(), {"ok": True, "people": [], "practice": False}
+        )  # a refresh answered meanwhile: not this save
         self.assertEqual((c.entries["name"].text, c.entries["number"].text), ("Ann", "123"))
         self.assertTrue(c.busy)
         self.flush()
         self.assertFalse(c.busy, "the save's own answer came back")
-        self.assertEqual((c.entries["name"].text, c.entries["number"].text), ("Ann", "123"), "refused: the person is still there to fix")
+        self.assertEqual(
+            (c.entries["name"].text, c.entries["number"].text),
+            ("Ann", "123"),
+            "refused: the person is still there to fix",
+        )
         self.assertIn("needs a name", c.note.get_label())
 
     def test_a_saved_contact_clears_the_boxes_only_when_the_server_saved_it(self):
         c = self.page(self.screens.Contacts)
         for ch in "Ann":
             c.key(ch)
-        self.shell.core.answers = [{"ok": True, "people": [{"id": "a1", "name": "Ann", "numbers": []}], "practice": False}]
+        self.shell.core.answers = [
+            {"ok": True, "people": [{"id": "a1", "name": "Ann", "numbers": []}], "practice": False}
+        ]
         c.save()
         self.assertEqual(c.entries["name"].text, "Ann", "not until the server has answered")
         self.flush()
@@ -552,7 +645,9 @@ class Screens(unittest.TestCase):
         self.flush()
         self.assertEqual((n.ident, n.entry.text), ("n1", "hello"), "refused: the editor and the words are still there")
         self.assertFalse(n.busy)
-        self.shell.core.answers = [{"ok": True, "id": "n1", "saved": "Saved 10:05", "notes": [{"id": "n1", "title": "hello"}]}]
+        self.shell.core.answers = [
+            {"ok": True, "id": "n1", "saved": "Saved 10:05", "notes": [{"id": "n1", "title": "hello"}]}
+        ]
         n.close()
         self.flush()
         self.assertIsNone(n.ident)
@@ -562,8 +657,8 @@ class Screens(unittest.TestCase):
         n.paint({"notes": [{"id": "n1", "title": "a"}, {"id": "n2", "title": "b"}]})
         self.shell.core.answers = [{"ok": True, "id": "n1", "text": "old"}, {"ok": True, "id": "n2", "text": "new"}]
         n.open_note("n1")
-        n.open_note("n2")       # the owner tapped n1, then n2
-        self.work.pop(0)()      # n1's answer comes first
+        n.open_note("n2")  # the owner tapped n1, then n2
+        self.work.pop(0)()  # n1's answer comes first
         self.assertIsNone(n.ident)
         self.flush()
         self.assertEqual((n.ident, n.entry.text), ("n2", "new"))
@@ -573,11 +668,13 @@ class Screens(unittest.TestCase):
         text, but it is not the reply to the add: taking it would make Save write the new words into the old note."""
         n = self.page(self.screens.Notes)
         n.paint({"notes": [{"id": "n1", "title": "groceries"}]})
-        self.shell.core.answers = [{"ok": True, "id": "n1", "text": "milk", "notes": [{"id": "n1", "title": "groceries"}]},
-                                   {"ok": True, "id": "n7", "text": "", "notes": [{"id": "n1"}, {"id": "n7"}]}]
+        self.shell.core.answers = [
+            {"ok": True, "id": "n1", "text": "milk", "notes": [{"id": "n1", "title": "groceries"}]},
+            {"ok": True, "id": "n7", "text": "", "notes": [{"id": "n1"}, {"id": "n7"}]},
+        ]
         n.open_note("n1")
-        n.main_action()         # New note
-        self.work.pop(0)()      # the open answer arrives first
+        n.main_action()  # New note
+        self.work.pop(0)()  # the open answer arrives first
         self.assertIsNone(n.ident, "not the reply to the add")
         self.flush()
         self.assertEqual((n.ident, n.entry.text), ("n7", ""), "the new note is the one that opens")
@@ -624,11 +721,25 @@ class Screens(unittest.TestCase):
         self.assertEqual(n.data["notes"][0]["id"], "n9")
 
     # --- Converter ------------------------------------------------------------------------------------------------
-    KINDS = {"ok": True, "kinds": [
-        {"id": "length", "title": "Length", "src": "km", "dst": "mi",
-         "units": [{"id": "m", "title": "m"}, {"id": "km", "title": "km"}, {"id": "mi", "title": "mile"}]},
-        {"id": "temperature", "title": "Temperature", "src": "c", "dst": "f",
-         "units": [{"id": "c", "title": "C"}, {"id": "f", "title": "F"}, {"id": "k", "title": "K"}]}]}
+    KINDS = {
+        "ok": True,
+        "kinds": [
+            {
+                "id": "length",
+                "title": "Length",
+                "src": "km",
+                "dst": "mi",
+                "units": [{"id": "m", "title": "m"}, {"id": "km", "title": "km"}, {"id": "mi", "title": "mile"}],
+            },
+            {
+                "id": "temperature",
+                "title": "Temperature",
+                "src": "c",
+                "dst": "f",
+                "units": [{"id": "c", "title": "C"}, {"id": "f", "title": "F"}, {"id": "k", "title": "K"}],
+            },
+        ],
+    }
 
     def converter(self, amount="5"):
         c = self.page(self.screens.Converter)
@@ -643,37 +754,44 @@ class Screens(unittest.TestCase):
         c = self.converter("")
         self.assertEqual(self.shell.core.sent, [("convert", None)], "one read of the measures, nothing else")
         self.assertEqual((c.kind, c.src, c.dst), ("length", "km", "mi"))
-        self.assertEqual((c.measure.get_label(), c.from_b.get_label(), c.to_b.get_label()),
-                         ("Measure: Length", "From: km", "To: mile"))
+        self.assertEqual(
+            (c.measure.get_label(), c.from_b.get_label(), c.to_b.get_label()),
+            ("Measure: Length", "From: km", "To: mile"),
+        )
         self.assertEqual(c.result.get_label(), "", "nothing is worked out on the phone")
 
     def test_convert_sends_one_request_and_shows_the_servers_words(self):
         c = self.converter("5")
         self.assertEqual(c.amount.get_label(), "5")
-        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
-                                    "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length", "src": "km", "dst": "mi"}
+        ]
         c.convert()
         c.convert()
         self.assertEqual(len(self.work), 1, "one request in flight, not two")
         self.assertEqual((c.go.get_label(), c.go.sensitive), ("Converting", False))
         self.flush()
-        self.assertEqual(self.shell.core.sent[-1], ("convert", {"kind": "length", "value": "5", "src": "km", "dst": "mi"}))
+        self.assertEqual(
+            self.shell.core.sent[-1], ("convert", {"kind": "length", "value": "5", "src": "km", "dst": "mi"})
+        )
         self.assertEqual((c.result.get_label(), c.line.get_label()), ("3.10686", "5 km = 3.10686 mile"))
         self.assertEqual((c.go.get_label(), c.go.sensitive), ("Convert", True))
         self.assertEqual(len(self.shell.core.sent), 2, "a conversion asks for no refresh after it")
 
     def test_the_answer_shown_is_the_servers_text_not_one_the_phone_works_out(self):
         c = self.converter("5")
-        self.shell.core.answers = [{"ok": True, "text": "server says", "line": "server line", "kind": "length",
-                                    "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "server says", "line": "server line", "kind": "length", "src": "km", "dst": "mi"}
+        ]
         c.convert()
         self.flush()
         self.assertEqual((c.result.get_label(), c.line.get_label()), ("server says", "server line"))
 
     def test_an_answer_for_other_units_than_were_asked_is_not_drawn(self):
         c = self.converter("5")
-        self.shell.core.answers = [{"ok": True, "text": "8.04672", "line": "5 mile = 8.04672 km", "kind": "length",
-                                    "src": "mi", "dst": "km"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "8.04672", "line": "5 mile = 8.04672 km", "kind": "length", "src": "mi", "dst": "km"}
+        ]
         c.convert()
         self.flush()
         self.assertEqual(c.result.get_label(), "")
@@ -682,8 +800,9 @@ class Screens(unittest.TestCase):
 
     def test_a_refusal_is_said_in_the_converters_words_and_no_result_stays(self):
         c = self.converter("5")
-        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
-                                    "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length", "src": "km", "dst": "mi"}
+        ]
         c.convert()
         self.flush()
         c.key("<")
@@ -693,11 +812,14 @@ class Screens(unittest.TestCase):
         def refuse(name, data=None):
             self.shell.core.sent.append((name, data))
             raise urllib.error.HTTPError("u", 400, "bad", {}, __import__("io").BytesIO(b'{"error": "sign"}'))
+
         self.shell.core.app = refuse
         c.convert()
         self.flush()
         self.assertEqual(self.shell.core.sent[-1][1]["value"], "-1")
-        self.assertEqual((c.result.get_label(), c.line.get_label()), ("", ""), "the old answer is not left beside new input")
+        self.assertEqual(
+            (c.result.get_label(), c.line.get_label()), ("", ""), "the old answer is not left beside new input"
+        )
         self.assertEqual(c.note.get_label(), "Length, mass and volume stay at zero or more.")
         self.assertTrue(c.go.sensitive)
 
@@ -706,6 +828,7 @@ class Screens(unittest.TestCase):
 
         def fail(name, data=None):
             raise OSError("connection refused to 127.0.0.1:8765 token=abc")
+
         self.shell.core.app = fail
         c.convert()
         self.flush()
@@ -717,6 +840,7 @@ class Screens(unittest.TestCase):
 
         def gone(name, data=None):
             raise urllib.error.HTTPError("u", 404, "missing", {}, __import__("io").BytesIO(b"{}"))
+
         self.shell.core.app = gone
         c.enter()
         self.flush()
@@ -730,7 +854,9 @@ class Screens(unittest.TestCase):
         def no_thread(target, daemon=None):
             def start():
                 raise RuntimeError("can't start new thread")
+
             return types.SimpleNamespace(start=start)
+
         self.screens.threading = types.SimpleNamespace(Thread=no_thread)
         c.convert()
         self.assertFalse(c.busy)
@@ -739,8 +865,9 @@ class Screens(unittest.TestCase):
 
     def test_inputs_do_not_change_while_a_conversion_is_on_its_way(self):
         c = self.converter("5")
-        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
-                                    "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length", "src": "km", "dst": "mi"}
+        ]
         c.convert()
         c.key("9")
         c.next_unit("src")
@@ -752,11 +879,24 @@ class Screens(unittest.TestCase):
         self.assertEqual(c.result.get_label(), "3.10686")
 
     def test_any_change_to_the_input_clears_the_answer(self):
-        for change in (lambda c: c.key("0"), lambda c: c.next_unit("src"), lambda c: c.next_unit("dst"),
-                       lambda c: c.swap(), lambda c: c.next_kind()):
+        for change in (
+            lambda c: c.key("0"),
+            lambda c: c.next_unit("src"),
+            lambda c: c.next_unit("dst"),
+            lambda c: c.swap(),
+            lambda c: c.next_kind(),
+        ):
             c = self.converter("5")
-            self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
-                                        "src": "km", "dst": "mi"}]
+            self.shell.core.answers = [
+                {
+                    "ok": True,
+                    "text": "3.10686",
+                    "line": "5 km = 3.10686 mile",
+                    "kind": "length",
+                    "src": "km",
+                    "dst": "mi",
+                }
+            ]
             c.convert()
             self.flush()
             change(c)
@@ -773,7 +913,9 @@ class Screens(unittest.TestCase):
         c.swap()
         self.assertEqual((c.src, c.dst, c.from_b.get_label(), c.to_b.get_label()), ("m", "km", "From: m", "To: km"))
         c.next_kind()
-        self.assertEqual((c.kind, c.src, c.dst, c.measure.get_label()), ("temperature", "c", "f", "Measure: Temperature"))
+        self.assertEqual(
+            (c.kind, c.src, c.dst, c.measure.get_label()), ("temperature", "c", "f", "Measure: Temperature")
+        )
         c.next_kind()
         self.assertEqual(c.kind, "length")
 
@@ -781,34 +923,54 @@ class Screens(unittest.TestCase):
         c = self.page(self.screens.Converter)
         first, second = c.seq.issue(), c.seq.issue()
         c.deliver(second, self.KINDS)
-        c.deliver(first, {"ok": True, "kinds": [{"id": "mass", "title": "Mass", "src": "kg", "dst": "lb",
-                                                 "units": [{"id": "kg", "title": "kg"}, {"id": "lb", "title": "lb"}]}]})
+        c.deliver(
+            first,
+            {
+                "ok": True,
+                "kinds": [
+                    {
+                        "id": "mass",
+                        "title": "Mass",
+                        "src": "kg",
+                        "dst": "lb",
+                        "units": [{"id": "kg", "title": "kg"}, {"id": "lb", "title": "lb"}],
+                    }
+                ],
+            },
+        )
         self.assertEqual(c.kind, "length")
 
     def test_a_conversion_answer_sets_no_floor_and_is_not_the_pages_data(self):
         """A conversion changes nothing on the server: a read of the measures asked after it is still drawn, and its
         answer never becomes the measures."""
         c = self.converter("5")
-        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
-                                    "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length", "src": "km", "dst": "mi"}
+        ]
         c.convert()
         c.refresh()
         self.shell.core.answers.append(self.KINDS)
         self.flush()
         self.assertEqual(c.data, self.KINDS)
         self.assertEqual(c.result.get_label(), "3.10686")
-        c.deliver(c.seq.issue(), {"ok": True, "text": "1", "line": "nobody asked", "kind": "length", "src": "km", "dst": "mi"},
-                  None, True)
+        c.deliver(
+            c.seq.issue(),
+            {"ok": True, "text": "1", "line": "nobody asked", "kind": "length", "src": "km", "dst": "mi"},
+            None,
+            True,
+        )
         self.assertEqual(c.result.get_label(), "3.10686", "an answer nobody is waiting for is not drawn")
 
     def test_a_late_answer_to_an_earlier_request_is_not_drawn(self):
         c = self.converter("5")
         c.convert()
         old = self.work.pop(0)
-        c.busy = False      # as if that answer had been given up on; a newer request is then sent
+        c.busy = False  # as if that answer had been given up on; a newer request is then sent
         c.set_busy(False)
-        self.shell.core.answers = [{"ok": True, "text": "new", "line": "new line", "kind": "length", "src": "km", "dst": "mi"},
-                                   {"ok": True, "text": "old", "line": "old line", "kind": "length", "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "new", "line": "new line", "kind": "length", "src": "km", "dst": "mi"},
+            {"ok": True, "text": "old", "line": "old line", "kind": "length", "src": "km", "dst": "mi"},
+        ]
         c.convert()
         self.flush()
         old()
@@ -816,13 +978,23 @@ class Screens(unittest.TestCase):
 
     def test_measures_the_converter_cannot_use_are_not_offered(self):
         c = self.page(self.screens.Converter)
-        c.got({"ok": True, "kinds": ["x", {"id": "solo", "title": "Solo", "units": [{"id": "a", "title": "a"}]},
-                                     {"id": 3, "title": "Bad", "units": []}]})
+        c.got(
+            {
+                "ok": True,
+                "kinds": [
+                    "x",
+                    {"id": "solo", "title": "Solo", "units": [{"id": "a", "title": "a"}]},
+                    {"id": 3, "title": "Bad", "units": []},
+                ],
+            }
+        )
         self.assertEqual(c.kinds, [])
         self.assertEqual(c.note.get_label(), "That conversion is not available.")
         c.convert()
         self.flush()
-        self.assertEqual(self.shell.core.sent, [("convert", None)], "it reads the measures again, it sends no conversion")
+        self.assertEqual(
+            self.shell.core.sent, [("convert", None)], "it reads the measures again, it sends no conversion"
+        )
 
     def test_the_home_preview_shows_the_last_answer(self):
         c = self.page(self.screens.Converter)
@@ -831,8 +1003,9 @@ class Screens(unittest.TestCase):
         self.assertEqual(c.preview({})[0], "No conversion yet.")
         for ch in "5":
             c.key(ch)
-        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
-                                    "src": "km", "dst": "mi"}]
+        self.shell.core.answers = [
+            {"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length", "src": "km", "dst": "mi"}
+        ]
         c.convert()
         self.flush()
         self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")
@@ -844,6 +1017,7 @@ class Screens(unittest.TestCase):
         def usage(path):
             reads.append(path)
             return types.SimpleNamespace(total=52_100_000_000, used=0, free=12_300_000_000)
+
         self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
         s = self.page(self.screens.Settings)
         s.preview({})
@@ -854,13 +1028,18 @@ class Screens(unittest.TestCase):
         s.enter()
         self.assertEqual(s.storage.get_label(), "Storage: 12.3 GB free of 52.1 GB")
         self.assertEqual(len(reads), 1)
-        self.assertEqual(reads[0], os.path.expanduser("~") if os.path.isdir(os.path.expanduser("~")) else os.sep, "the owner's home folder is the one measured")
+        self.assertEqual(
+            reads[0],
+            os.path.expanduser("~") if os.path.isdir(os.path.expanduser("~")) else os.sep,
+            "the owner's home folder is the one measured",
+        )
         s.enter()
         self.assertEqual(len(reads), 2, "read again on each visit, once")
 
     def test_a_failing_storage_read_says_unknown(self):
         def usage(path):
             raise PermissionError("no")
+
         self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
         s = self.page(self.screens.Settings)
         s.enter()
@@ -906,6 +1085,7 @@ class ShellRules(unittest.TestCase):
                 sys.modules.pop(n, None)
                 if m is not None:
                     sys.modules[n] = m
+
         self.addCleanup(restore)
         for n in names:
             sys.modules.pop(n, None)
@@ -913,7 +1093,9 @@ class ShellRules(unittest.TestCase):
         gi.require_version = lambda *a: None
         gi.repository = Toolkit("gi.repository")
         self.timers = []
-        gi.repository.GLib = types.SimpleNamespace(idle_add=lambda fn, *a: fn(*a), timeout_add=lambda ms, fn, *a: self.timers.append((fn, a)))
+        gi.repository.GLib = types.SimpleNamespace(
+            idle_add=lambda fn, *a: fn(*a), timeout_add=lambda ms, fn, *a: self.timers.append((fn, a))
+        )
         sys.modules["gi"], sys.modules["gi.repository"] = gi, gi.repository
         self.shell_module = importlib.import_module("opos.native.shell")
         sh = self.sh = self.shell_module.Shell.__new__(self.shell_module.Shell)
@@ -927,7 +1109,7 @@ class ShellRules(unittest.TestCase):
         sh.get_application = lambda: types.SimpleNamespace(quit=lambda: setattr(sh, "quit_calls", sh.quit_calls + 1))
         sh.ready = logic.Ready(lambda: setattr(sh, "said_ready", True))
         sh.said_ready = False
-        sh.lock_check, sh.held = logic.LockCheck(), False     # the server said "no PIN lock" in every poll below
+        sh.lock_check, sh.held = logic.LockCheck(), False  # the server said "no PIN lock" in every poll below
         sh.get_mapped = lambda: True
         sh.get_frame_clock = lambda: None
 
@@ -938,16 +1120,16 @@ class ShellRules(unittest.TestCase):
         sh = self.sh
         poll, action = sh.seq.issue(), sh.seq.issue()
         sh.answered(action, self.state(in_call=True), None)
-        sh.polled(poll, self.state(in_call=False), False)      # the poll started before the call and landed after it
+        sh.polled(poll, self.state(in_call=False), False)  # the poll started before the call and landed after it
         self.assertTrue(sh.snap["in_call"])
         self.assertEqual(len(sh.pages["phone"].shown), 1)
 
     def test_a_poll_sent_before_an_action_reply_was_drawn_is_refused_even_with_a_newer_number(self):
         sh = self.sh
         action = sh.seq.issue()
-        poll = sh.seq.issue()                            # sent while the call was on its way
+        poll = sh.seq.issue()  # sent while the call was on its way
         sh.answered(action, self.state(in_call=True), None)
-        sh.polled(poll, self.state(in_call=False), False)      # answered by the server before it acted on the call
+        sh.polled(poll, self.state(in_call=False), False)  # answered by the server before it acted on the call
         self.assertTrue(sh.snap["in_call"])
         self.assertEqual(sh.snap_seq, action)
         sh.polled(sh.seq.issue(), self.state(in_call=True, status="later"), False)
@@ -970,7 +1152,9 @@ class ShellRules(unittest.TestCase):
         sh.polled(sh.seq.issue(), None, None)
         self.assertIs(sh.snap, good)
         self.assertEqual(sh.s_right.get_label(), logic.LINK_LOST)
-        self.assertEqual(sh.pages["lock"].lost_text, logic.LINK_LOST, "the lock screen has no top line, so it says so itself")
+        self.assertEqual(
+            sh.pages["lock"].lost_text, logic.LINK_LOST, "the lock screen has no top line, so it says so itself"
+        )
         self.assertEqual(len(sh.pages["phone"].shown), 1, "no page was told anything new")
         sh.polled(sh.seq.issue(), self.state(), False)
         self.assertEqual((sh.s_right.get_label(), sh.pages["lock"].lost_text), ("80%  ", ""))
@@ -991,7 +1175,7 @@ class ShellRules(unittest.TestCase):
         sh.warming = True
         sh.go("home")
         self.assertEqual((sh.page, sh.wanted, sh.pages["home"].entered), ("lock", "home", 0))
-        sh.go("clock")      # an alarm rings while the cover is up: the newest request is the one kept
+        sh.go("clock")  # an alarm rings while the cover is up: the newest request is the one kept
         self.assertEqual(sh.wanted, "clock")
         self.assertEqual(sh.pages["lock"].left, 0, "nothing is left under the cover")
         sh.warming = False
@@ -1008,7 +1192,9 @@ class ShellRules(unittest.TestCase):
         step, _args = self.timers[0]
         while step():
             pass
-        self.assertEqual(shown[-2:], ["lock", "home"], "the walk ends on the true page, then the waiting request is made")
+        self.assertEqual(
+            shown[-2:], ["lock", "home"], "the walk ends on the true page, then the waiting request is made"
+        )
         self.assertFalse(sh.warming)
         self.assertEqual(sh.page, "home")
         self.assertNotIn("SLIDE", " ".join(map(str, shown)))
@@ -1044,6 +1230,7 @@ class ShellRules(unittest.TestCase):
 
     def test_the_server_says_whether_it_has_a_pin_lock(self):
         import urllib.error
+
         core = self.shell_module.Core("http://127.0.0.1:1")
         core.token = "t"
         asked = []
@@ -1054,7 +1241,9 @@ class ShellRules(unittest.TestCase):
                 if isinstance(result, Exception):
                     raise result
                 return result
+
             return _open
+
         core._open = opener(object())
         self.assertTrue(core.lock_on(), "/api/lock answers only where OPOS_LOCK=1")
         self.assertEqual(asked[0], ("/api/lock", {"X-OPOS-Token": "t"}))
@@ -1062,7 +1251,7 @@ class ShellRules(unittest.TestCase):
         self.assertFalse(core.lock_on())
         core._open = opener(urllib.error.HTTPError("u", 500, "broken", {}, None))
         with self.assertRaises(urllib.error.HTTPError):
-            core.lock_on()      # unknown: the poll asks again rather than guessing
+            core.lock_on()  # unknown: the poll asks again rather than guessing
 
 
 if __name__ == "__main__":

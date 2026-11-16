@@ -4,6 +4,7 @@
 Every NOT_RUN statement in the source docs must have a check (or a "covered elsewhere" row) that quotes it, every
 quote must still be in its source, every check must say how to run, judge, stop and record it, and the steps that
 erase, reboot or change the phone's own connection must say so where they are written. No result is recorded here."""
+
 import re
 import unittest
 from pathlib import Path
@@ -22,9 +23,14 @@ REBOOTS = re.compile(r"reboot bootloader|fastboot boot\b")
 # A step that can end or change the phone's own Wi-Fi connection.
 WIFI = re.compile(r"(?i)\b(join|forget|disconnect|turn wi-fi off|wifi off|roam)\b")
 # What the repository refuses: private addresses, user paths and device identifiers.
-PRIVATE = (r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![\d.])",
-           r"(?<![\w.-])/home/[A-Za-z]", r"[A-Za-z]:\\{1,2}Users\\{1,2}", "/Users/[A-Za-z]",
-           r"(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b", r"(?<!\d)\d{15}(?!\d)")
+PRIVATE = (
+    r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![\d.])",
+    r"(?<![\w.-])/home/[A-Za-z]",
+    r"[A-Za-z]:\\{1,2}Users\\{1,2}",
+    "/Users/[A-Za-z]",
+    r"(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b",
+    r"(?<!\d)\d{15}(?!\d)",
+)
 
 
 def read(name):
@@ -60,13 +66,13 @@ def checks(text):
     out = []
     for cid, title in found:
         start = text.index("### %s. %s" % (cid, title))
-        nxt = re.search(r"^##", text[start + 4:], re.M)
-        out.append((cid, title, text[start:start + 4 + nxt.start()] if nxt else text[start:]))
+        nxt = re.search(r"^##", text[start + 4 :], re.M)
+        out.append((cid, title, text[start : start + 4 + nxt.start()] if nxt else text[start:]))
     return out
 
 
 def steps(body):
-    part = body[body.index("**Steps.**"):body.index("**Observe.**")]
+    part = body[body.index("**Steps.**") : body.index("**Observe.**")]
     return [line for line in part.splitlines() if re.match(r"\s*\d+\. ", line)]
 
 
@@ -82,8 +88,10 @@ class TestDeviceChecksRunbook(unittest.TestCase):
             phrases = [flat(c["phrase"]) for c in self.cites if c["file"] == name]
             for line, block in not_run_blocks(name):
                 with self.subTest(source="%s:%d" % (name, line)):
-                    self.assertTrue(any(p in block for p in phrases),
-                                    "no citation quotes the NOT_RUN block at %s:%d: %s" % (name, line, block[:160]))
+                    self.assertTrue(
+                        any(p in block for p in phrases),
+                        "no citation quotes the NOT_RUN block at %s:%d: %s" % (name, line, block[:160]),
+                    )
 
     def test_every_quote_is_still_in_its_source(self):
         self.assertGreater(len(self.cites), 20)
@@ -122,19 +130,26 @@ class TestDeviceChecksRunbook(unittest.TestCase):
                     self.assertIsNone(re.search(r"`(?:sudo )?(?:systemctl )?reboot`", line))
 
     def test_the_ground_rules_keep_the_phone_lit_and_recoverable(self):
-        rules = flat(self.text[self.text.index("## Ground rules"):self.text.index("## Recovery paths")])
-        for phrase in ("No step wipes, flashes or changes Wi-Fi unless it is marked and the owner says go",
-                       "Keep the USB cable in", "Never run `reboot` or `systemctl reboot`"):
+        rules = flat(self.text[self.text.index("## Ground rules") : self.text.index("## Recovery paths")])
+        for phrase in (
+            "No step wipes, flashes or changes Wi-Fi unless it is marked and the owner says go",
+            "Keep the USB cable in",
+            "Never run `reboot` or `systemctl reboot`",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, rules)
-        recovery = flat(self.text[self.text.index("## Recovery paths"):])
-        for phrase in ("python3 -m opos.native.blank --restore", "sudo touch /etc/opos/native-off",
-                       "nmcli radio wifi on", "reboot bootloader"):
+        recovery = flat(self.text[self.text.index("## Recovery paths") :])
+        for phrase in (
+            "python3 -m opos.native.blank --restore",
+            "sudo touch /etc/opos/native-off",
+            "nmcli radio wifi on",
+            "reboot bootloader",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, recovery)
 
     def test_the_results_table_has_one_row_per_check_and_records_no_pass(self):
-        table = self.text[self.text.index("## Results"):]
+        table = self.text[self.text.index("## Results") :]
         rows = re.findall(r"^\| (C\d{2}) \|(.*)\|$", table, re.M)
         self.assertEqual([r[0] for r in rows], [cid for cid, _, _ in self.checks])
         for cid, rest in rows:

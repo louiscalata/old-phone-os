@@ -4,7 +4,7 @@ from pathlib import Path
 
 from tests import portable
 
-SRC = 'src/opos/web_static/jaryo.js'
+SRC = "src/opos/web_static/jaryo.js"
 
 # Node vm harness: queued rAF, shell-dependent rectangles and recorded keyframes.
 # Reading offsetHeight throws: motion must not force synchronous layout.
@@ -54,139 +54,159 @@ out.styles=[tile,threads].map(e=>[e.style.opacity||'',e.style.transform||'',e.st
 out.restored={origin:threads.style.getPropertyValue('transform-origin'),originPriority:threads.style.getPropertyPriority('transform-origin'),margin:threads.style.getPropertyValue('margin'),marginPriority:threads.style.getPropertyPriority('margin'),position:threads.style.position,display:threads.style.display,inert:threads.inert};
 out.frames=log.map(a=>a.k);out.fills=log.map(a=>a.o.fill);out.count=log.length;
 console.log(JSON.stringify(out));
-""" % {'src': json.dumps(SRC)}
+""" % {"src": json.dumps(SRC)}
 
 
 def run(**cfg):
-    out = subprocess.check_output(['node', '-e', HARNESS, json.dumps(cfg)], text=True)
+    out = subprocess.check_output(["node", "-e", HARNESS, json.dumps(cfg)], text=True)
     return json.loads(out.strip().splitlines()[-1])
 
 
 class TestJaryoMotion(unittest.TestCase):
     def test_static(self):
         txt = Path(SRC).read_text()
-        for s in ('cubic-bezier(.2,.8,.2,1)', 'cubic-bezier(.4,0,1,1)', '240', '180', '120',
-                  'prefers-reduced-motion', "'jaryo_motion'", 'cancel()', 'requestAnimationFrame'):
+        for s in (
+            "cubic-bezier(.2,.8,.2,1)",
+            "cubic-bezier(.4,0,1,1)",
+            "240",
+            "180",
+            "120",
+            "prefers-reduced-motion",
+            "'jaryo_motion'",
+            "cancel()",
+            "requestAnimationFrame",
+        ):
             self.assertIn(s, txt)
-        self.assertNotIn('150', txt, 'reduced motion is 120 ms, not 150')
-        self.assertNotIn('offsetHeight', txt, 'no forced synchronous layout')
-        self.assertNotIn("fill:'forwards'", txt, 'finished/cancelled motion must not pin styles')
-        self.assertNotIn('No automatic openApp hook', txt)
-        forb = ['width', 'height', 'top', 'left', 'margin']
+        self.assertNotIn("150", txt, "reduced motion is 120 ms, not 150")
+        self.assertNotIn("offsetHeight", txt, "no forced synchronous layout")
+        self.assertNotIn("fill:'forwards'", txt, "finished/cancelled motion must not pin styles")
+        self.assertNotIn("No automatic openApp hook", txt)
+        forb = ["width", "height", "top", "left", "margin"]
         for line in txt.splitlines():
-            for stmt in line.split(';'):
+            for stmt in line.split(";"):
                 s = stmt.lower()
-                if 'animate' in s or 'keyframes' in s:
+                if "animate" in s or "keyframes" in s:
                     for w in forb:
-                        self.assertNotIn(w, s, f'Forbidden {w} in animate line')
+                        self.assertNotIn(w, s, f"Forbidden {w} in animate line")
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_open_back_focus_and_cancel(self):
         r = run()
-        self.assertEqual(r['motion'], 'full')
+        self.assertEqual(r["motion"], "full")
         # (a) state changes before motion; the return tile is remembered
-        self.assertEqual(r['appAtFirstAnimate'], 'messages')
-        self.assertEqual(r['lastTile'], 'messages')
-        self.assertEqual(r['openDur'], [240, 240])
+        self.assertEqual(r["appAtFirstAnimate"], "messages")
+        self.assertEqual(r["lastTile"], "messages")
+        self.assertEqual(r["openDur"], [240, 240])
         # (b) back lands focus on the Messages tile
-        self.assertEqual(r['app'], 'home')
-        self.assertEqual(r['focused'], 'home-messages')
+        self.assertEqual(r["app"], "home")
+        self.assertEqual(r["focused"], "home-messages")
         # (c) the in-flight open is cancelled and leaves no inline start state
-        self.assertEqual(r['firstStates'], ['idle', 'idle'])
-        self.assertEqual(r['running'], [['', ''], ['', '']])
-        self.assertEqual(r['styles'], [['', '', ''], ['', '', '']])
-        self.assertTrue(all(f == 'none' for f in r['fills']))
+        self.assertEqual(r["firstStates"], ["idle", "idle"])
+        self.assertEqual(r["running"], [["", ""], ["", ""]])
+        self.assertEqual(r["styles"], [["", "", ""], ["", "", ""]])
+        self.assertTrue(all(f == "none" for f in r["fills"]))
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_partial_failure_fails_open(self):
         # (d) the second animate() throws: the first is cancelled, nothing stays hidden
         r = run(fail=True)
-        self.assertEqual(r['app'], 'messages')
-        self.assertEqual(r['count'], 1)
-        self.assertEqual(r['firstStates'], ['idle'])
-        self.assertEqual([s[0] for s in r['styles']], ['', ''])
-        self.assertEqual([s[2] for s in r['styles']], ['', ''])
+        self.assertEqual(r["app"], "messages")
+        self.assertEqual(r["count"], 1)
+        self.assertEqual(r["firstStates"], ["idle"])
+        self.assertEqual([s[0] for s in r["styles"]], ["", ""])
+        self.assertEqual([s[2] for s in r["styles"]], ["", ""])
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_queued_open_back_invalidates_stale_batch(self):
         r = run(rapid=True)
-        self.assertEqual(r['synchronousOpen'], 'messages')
-        self.assertEqual(r['synchronousBack'], 'home')
-        self.assertEqual(r['count'], 2, 'only the latest navigation may animate')
-        self.assertEqual(r['app'], 'home')
+        self.assertEqual(r["synchronousOpen"], "messages")
+        self.assertEqual(r["synchronousBack"], "home")
+        self.assertEqual(r["count"], 2, "only the latest navigation may animate")
+        self.assertEqual(r["app"], "home")
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_back_moves_visible_outgoing_article_to_tile(self):
         r = run()
-        outgoing, incoming = r['reverse']
-        self.assertEqual(outgoing['el'], 'threads')
-        self.assertTrue(outgoing['visible'], 'shell-hidden article must remain visible during reverse FLIP')
-        self.assertTrue(outgoing['inert'], 'outgoing article must not intercept home interaction')
-        self.assertEqual(outgoing['k'][0]['transform'], 'none')
-        self.assertEqual(outgoing['k'][1]['transform'], 'translate(10px,20px) scale(0.25,0.08333333333333333)')
-        self.assertEqual(incoming['el'], 'home-messages')
-        self.assertEqual(incoming['k'], [{'opacity': 0}, {'opacity': 1}])
+        outgoing, incoming = r["reverse"]
+        self.assertEqual(outgoing["el"], "threads")
+        self.assertTrue(outgoing["visible"], "shell-hidden article must remain visible during reverse FLIP")
+        self.assertTrue(outgoing["inert"], "outgoing article must not intercept home interaction")
+        self.assertEqual(outgoing["k"][0]["transform"], "none")
+        self.assertEqual(outgoing["k"][1]["transform"], "translate(10px,20px) scale(0.25,0.08333333333333333)")
+        self.assertEqual(incoming["el"], "home-messages")
+        self.assertEqual(incoming["k"], [{"opacity": 0}, {"opacity": 1}])
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_keyframes_only_animate_transform_and_opacity(self):
-        for cfg in ({}, {'rapid': True}, {'reduce': True}, {'off': True}):
+        for cfg in ({}, {"rapid": True}, {"reduce": True}, {"off": True}):
             r = run(**cfg)
-            allowed = {'opacity'} if cfg.get('reduce') or cfg.get('off') else {'transform', 'opacity'}
-            for frames in r['frames']:
+            allowed = {"opacity"} if cfg.get("reduce") or cfg.get("off") else {"transform", "opacity"}
+            for frames in r["frames"]:
                 for frame in frames:
                     self.assertLessEqual(set(frame), allowed)
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_finish_and_interrupt_restore_prior_styles(self):
         for interrupt in (False, True):
             r = run(restore=True, interrupt=interrupt)
-            self.assertEqual(r['restored'], {'origin': '25% 75%', 'originPriority': 'important',
-                'margin': '7px', 'marginPriority': 'important', 'position': '', 'display': '', 'inert': False})
+            self.assertEqual(
+                r["restored"],
+                {
+                    "origin": "25% 75%",
+                    "originPriority": "important",
+                    "margin": "7px",
+                    "marginPriority": "important",
+                    "position": "",
+                    "display": "",
+                    "inert": False,
+                },
+            )
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_reverse_animation_failure_restores_visible_state(self):
         r = run(failBack=True)
-        self.assertEqual(r['app'], 'home')
-        self.assertEqual(r['focused'], 'home-messages')
-        self.assertEqual(r['count'], 3, 'one reverse animation starts before the second throws')
-        self.assertEqual(r['restored']['position'], '')
-        self.assertEqual(r['restored']['display'], '')
-        self.assertFalse(r['restored']['inert'])
-        self.assertEqual(r['styles'], [['', '', ''], ['', '', '']])
+        self.assertEqual(r["app"], "home")
+        self.assertEqual(r["focused"], "home-messages")
+        self.assertEqual(r["count"], 3, "one reverse animation starts before the second throws")
+        self.assertEqual(r["restored"]["position"], "")
+        self.assertEqual(r["restored"]["display"], "")
+        self.assertFalse(r["restored"]["inert"])
+        self.assertEqual(r["styles"], [["", "", ""], ["", "", ""]])
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_real_shell_reverse_geometry_and_rapid_navigation(self):
         from opos.web import Phone, page
         from tests.test_uxr_acceptance import find_chrome
 
-        chrome, node = find_chrome(), shutil.which('node')
+        chrome, node = find_chrome(), shutil.which("node")
         # Linux (CI) must have a browser: there a missing one fails. A developer machine without one (or one that opts
         # out with OPOS_TEST_CHROME pointing at a missing path) skips instead.
         if chrome is None and not portable.LINUX:
-            self.skipTest('no headless Chromium on this %s host (required on Linux)' % sys.platform)
-        self.assertIsNotNone(chrome, 'installed Chromium required for motion acceptance')
-        self.assertIsNotNone(node, 'installed Node required for motion acceptance')
-        with tempfile.TemporaryDirectory(prefix='jaryo-motion-page-') as folder:
-            html, state = Path(folder) / 'page.html', Path(folder) / 'state.json'
-            html.write_text(page(demo=True), encoding='utf-8')
-            state.write_text(json.dumps(Phone().state(), default=str), encoding='utf-8')
-            result = subprocess.run([node, 'tests/jaryo_motion_cdp.js', chrome,
-                                     html.as_uri(), str(state)], capture_output=True, text=True)
+            self.skipTest("no headless Chromium on this %s host (required on Linux)" % sys.platform)
+        self.assertIsNotNone(chrome, "installed Chromium required for motion acceptance")
+        self.assertIsNotNone(node, "installed Node required for motion acceptance")
+        with tempfile.TemporaryDirectory(prefix="jaryo-motion-page-") as folder:
+            html, state = Path(folder) / "page.html", Path(folder) / "state.json"
+            html.write_text(page(demo=True), encoding="utf-8")
+            state.write_text(json.dumps(Phone().state(), default=str), encoding="utf-8")
+            result = subprocess.run(
+                [node, "tests/jaryo_motion_cdp.js", chrome, html.as_uri(), str(state)], capture_output=True, text=True
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])['violations'], [])
+            self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 
-    @unittest.skipIf(shutil.which('node') is None, 'node missing')
+    @unittest.skipIf(shutil.which("node") is None, "node missing")
     def test_reduced_motion(self):
         # (e) media query → 120 ms crossfade, opacity only
         r = run(reduce=True)
-        self.assertEqual(r['motion'], 'reduced')
-        self.assertEqual(r['openDur'], [120, 120])
+        self.assertEqual(r["motion"], "reduced")
+        self.assertEqual(r["openDur"], [120, 120])
         # (f) stored preference alone also reduces
         r = run(off=True)
-        self.assertEqual(r['motion'], 'reduced')
-        self.assertEqual(r['openDur'], [120, 120])
-        self.assertEqual(r['focused'], 'home-messages')
+        self.assertEqual(r["motion"], "reduced")
+        self.assertEqual(r["openDur"], [120, 120])
+        self.assertEqual(r["focused"], "home-messages")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

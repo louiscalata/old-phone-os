@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run the served app/notice/Ask handlers in the existing Node DOM fixture."""
+
 import json
 import shutil
 import subprocess
@@ -9,9 +10,9 @@ from opos.public_demo import DemoPhone
 from tests.test_helper_enter_dispatch import HARNESS, ROOT
 
 
-PRELUDE = HARNESS.split('(async()=>{', 1)[0].replace(
-    'return{ids,doc,posts,flush,open,key,send,state}',
-    'return{ctx,ids,doc,posts,flush,open,key,send,state}')
+PRELUDE = HARNESS.split("(async()=>{", 1)[0].replace(
+    "return{ids,doc,posts,flush,open,key,send,state}", "return{ctx,ids,doc,posts,flush,open,key,send,state}"
+)
 SCENARIOS = r"""
 (async()=>{
  const out={},w=world(),ctx=w.ctx;
@@ -59,47 +60,59 @@ class StatusSource(unittest.TestCase):
     def test_phone_and_message_results_keep_their_origin(self):
         phone = DemoPhone()
         for action, args, app in (
-                ('call', ('+15550100',), 'phone'), ('hang_up', (), 'phone'),
-                ('receive', ('+15550100', 'Hello'), 'messages'),
-                ('send', ('+15550100', 'Hello'), 'messages'),
-                ('call', ('bad',), 'phone'),
-                ('receive', ('bad\nname', 'Hello'), 'messages')):
+            ("call", ("+15550100",), "phone"),
+            ("hang_up", (), "phone"),
+            ("receive", ("+15550100", "Hello"), "messages"),
+            ("send", ("+15550100", "Hello"), "messages"),
+            ("call", ("bad",), "phone"),
+            ("receive", ("bad\nname", "Hello"), "messages"),
+        ):
             with self.subTest(action=action, args=args):
                 getattr(phone, action)(*args)
-                self.assertEqual(phone.state()['notice_app'], app)
+                self.assertEqual(phone.state()["notice_app"], app)
 
 
-@unittest.skipUnless(shutil.which('node'), 'Node.js unavailable')
+@unittest.skipUnless(shutil.which("node"), "Node.js unavailable")
 class AppInteractions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        result = subprocess.run(['node', '-e', PRELUDE + SCENARIOS, str(ROOT)],
-                                capture_output=True, text=True, timeout=15)
+        result = subprocess.run(
+            ["node", "-e", PRELUDE + SCENARIOS, str(ROOT)], capture_output=True, text=True, timeout=15
+        )
         if result.returncode:
             raise AssertionError(result.stderr)
         cls.result = json.loads(result.stdout)
 
     def test_status_follows_its_app_across_navigation(self):
-        for key in ('callVisible', 'callHidden', 'messageVisible', 'settingsHidden', 'homeVisible',
-                    'helperHidden', 'returnVisible'):
+        for key in (
+            "callVisible",
+            "callHidden",
+            "messageVisible",
+            "settingsHidden",
+            "homeVisible",
+            "helperHidden",
+            "returnVisible",
+        ):
             self.assertTrue(self.result[key], key)
 
     def test_empty_incoming_text_is_guidance_without_request_or_notice(self):
-        self.assertEqual(self.result['empty'], {'requests': 0, 'renders': 0,
-                         'text': 'Type the incoming text first.', 'hidden': False})
-        self.assertEqual(self.result['valid'], {'requests': 1, 'renders': 1})
-        self.assertEqual(self.result['noErrorNotice'], 'No recent notices')
+        self.assertEqual(
+            self.result["empty"],
+            {"requests": 0, "renders": 0, "text": "Type the incoming text first.", "hidden": False},
+        )
+        self.assertEqual(self.result["valid"], {"requests": 1, "renders": 1})
+        self.assertEqual(self.result["noErrorNotice"], "No recent notices")
 
     def test_notices_use_the_simulator_clock_in_status_bar_format(self):
-        self.assertEqual(self.result['noticeClock'], '12:06')
+        self.assertEqual(self.result["noticeClock"], "12:06")
 
     def test_both_ask_views_clear_success_but_keep_errors_and_new_drafts(self):
-        for view in ('app', 'stacked'):
-            self.assertEqual(self.result[view + 'success'], '')
-            self.assertEqual(self.result[view + 'error'], 'Will calls last until 4 PM?')
-            self.assertEqual(self.result[view + 'declined'], 'Will calls last until 4 PM?')
-            self.assertEqual(self.result[view + 'edited'], 'Next question')
+        for view in ("app", "stacked"):
+            self.assertEqual(self.result[view + "success"], "")
+            self.assertEqual(self.result[view + "error"], "Will calls last until 4 PM?")
+            self.assertEqual(self.result[view + "declined"], "Will calls last until 4 PM?")
+            self.assertEqual(self.result[view + "edited"], "Next question")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

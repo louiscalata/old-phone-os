@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The OPOS OS clock: opos-clock against a fake root and a fake date, and the clock blocks of the image scripts."""
+
 import contextlib
 import io
 import os
@@ -78,8 +79,14 @@ class OposClockTests(unittest.TestCase):
         return [int(x) for x in (self.tmp / "sets").read_text().split()]
 
     def clock_env(self, wait="0", **extra_env):
-        return dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT=wait,
-                    PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"], **extra_env)
+        return dict(
+            os.environ,
+            FAKE=str(self.tmp),
+            OPOS_CLOCK_ROOT=str(self.root),
+            OPOS_CLOCK_WAIT=wait,
+            PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"],
+            **extra_env,
+        )
 
     def needs_gnu_tools(self, *args):
         """Skip, off Linux only, a run whose answer depends on GNU tools this host lacks.
@@ -99,7 +106,13 @@ class OposClockTests(unittest.TestCase):
 
     def run_clock(self, *args, wait="0", **extra_env):
         self.needs_gnu_tools(*args)
-        p = subprocess.run([SH, str(PKG / "opos-clock"), *args], env=self.clock_env(wait, **extra_env), capture_output=True, text=True, timeout=30)
+        p = subprocess.run(
+            [SH, str(PKG / "opos-clock"), *args],
+            env=self.clock_env(wait, **extra_env),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         return p.returncode, p.stdout + p.stderr
 
     def path(self, rel):
@@ -120,11 +133,22 @@ class OposClockTests(unittest.TestCase):
 
     def assert_readers(self, ok):
         from tests.test_selftest import ST
-        self.assertEqual(clock_ok(self.clock(), self.path("run/opos/clock-floor"),
-                                  self.path("run/systemd/timesync/synchronized"), self.path("opt/opos/CLOCK_FLOOR")), ok)
+
+        self.assertEqual(
+            clock_ok(
+                self.clock(),
+                self.path("run/opos/clock-floor"),
+                self.path("run/systemd/timesync/synchronized"),
+                self.path("opt/opos/CLOCK_FLOOR"),
+            ),
+            ok,
+        )
         ctx = ST.Ctx(root=str(self.root), now=self.clock())
-        with mock.patch.object(ST, "timezone", return_value=("UTC", "")), \
-                mock.patch.object(ST, "droid_home", return_value=""), contextlib.redirect_stdout(io.StringIO()):
+        with (
+            mock.patch.object(ST, "timezone", return_value=("UTC", "")),
+            mock.patch.object(ST, "droid_home", return_value=""),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             ST.check_clock(ctx)
         self.assertEqual(next(row[0] for row in ctx.rows if row[1] == "clock.year"), "PASS" if ok else "WARN")
 
@@ -155,7 +179,7 @@ class OposClockTests(unittest.TestCase):
         self.assertEqual(self.clock(), 0)
 
     def test_a_clock_past_the_floor_is_left_alone(self):
-        for value in (FLOOR, FLOOR + 1, FLOOR + 10 ** 6):
+        for value in (FLOOR, FLOOR + 1, FLOOR + 10**6):
             self.now(value)
             rc, out = self.run_clock("floor")
             self.assertEqual(rc, 0, out)
@@ -355,8 +379,17 @@ class OposClockTests(unittest.TestCase):
 
     def test_anything_but_digits_is_refused_and_never_echoed(self):
         self.now(FLOOR)
-        for content in ("secret-token", "0x6a0000000", "-1794093790", "1794093790.5", "17940937900000000", "1794 093790",
-                        "@1794093790", b"\xff\xfe\x00", "date -s now"):
+        for content in (
+            "secret-token",
+            "0x6a0000000",
+            "-1794093790",
+            "1794093790.5",
+            "17940937900000000",
+            "1794 093790",
+            "@1794093790",
+            b"\xff\xfe\x00",
+            "date -s now",
+        ):
             f = self.drop(content)
             rc, out = self.run_clock("set", str(f))
             self.assertEqual(rc, 1, (content, out))
@@ -388,8 +421,13 @@ class OposClockTests(unittest.TestCase):
 
     def test_a_writer_that_finishes_inside_the_wait_is_read(self):
         f = self.drop("")
-        env = dict(os.environ, FAKE=str(self.tmp), OPOS_CLOCK_ROOT=str(self.root), OPOS_CLOCK_WAIT="5",
-                   PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"])
+        env = dict(
+            os.environ,
+            FAKE=str(self.tmp),
+            OPOS_CLOCK_ROOT=str(self.root),
+            OPOS_CLOCK_WAIT="5",
+            PATH=str(self.tmp / "bin") + os.pathsep + os.environ["PATH"],
+        )
         self.needs_gnu_tools("set")
         p = subprocess.Popen([SH, str(PKG / "opos-clock"), "set", str(f)], env=env, stdout=subprocess.PIPE, text=True)
         time.sleep(0.3)
@@ -416,7 +454,10 @@ class OposClockTests(unittest.TestCase):
 
     def test_a_link_swapped_in_after_the_checks_is_not_read(self):
         self.swap_readers()
-        for content, what in (("424242", "a number echoed in the refusal"), ("%d" % (FLOOR + 9), "a time that sets the clock")):
+        for content, what in (
+            ("424242", "a number echoed in the refusal"),
+            ("%d" % (FLOOR + 9), "a time that sets the clock"),
+        ):
             self.now(FLOOR)
             target = self.drop(content, name="target")
             f = self.drop("%d\n" % (FLOOR + 1))
@@ -432,8 +473,14 @@ class OposClockTests(unittest.TestCase):
         self.swap_readers()
         f = self.drop("%d\n" % (FLOOR + 1))
         self.needs_gnu_tools("set")
-        p = subprocess.Popen([SH, str(PKG / "opos-clock"), "set", str(f)], env=self.clock_env(FAKE_SWAP=str(f), FAKE_FIFO="1"),
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        p = subprocess.Popen(
+            [SH, str(PKG / "opos-clock"), "set", str(f)],
+            env=self.clock_env(FAKE_SWAP=str(f), FAKE_FIFO="1"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
         try:
             out, _ = p.communicate(timeout=10)
         except subprocess.TimeoutExpired:
@@ -488,7 +535,9 @@ class ImageFilesTests(unittest.TestCase):
         self.assertRegex(unit, r"(?m)^WantedBy=multi-user\.target$")
         for line in re.findall(r"(?m)^Before=(.*)$", unit):
             for target in line.split():
-                self.assertNotRegex(target, r"sysinit|basic|time-set|time-sync|timesyncd|network", "a cycle on the port once")
+                self.assertNotRegex(
+                    target, r"sysinit|basic|time-set|time-sync|timesyncd|network", "a cycle on the port once"
+                )
         self.assertNotIn("Requires=", unit)
         self.assertNotIn("Conflicts=", unit)
 
@@ -508,9 +557,15 @@ class ImageFilesTests(unittest.TestCase):
 
     def test_the_readme_warns_of_a_stuck_guess_as_a_reading_and_says_how_to_recover(self):
         clock = " ".join(self.read("README.md").split("## The clock")[1].split("\n## ")[0].split())
-        bullet = clock[clock.index("A clean shutdown can make a wrong guess stick"):].split(" - ")[0]
+        bullet = clock[clock.index("A clean shutdown can make a wrong guess stick") :].split(" - ")[0]
         self.assertIn("reading of the two unit files, not measured", bullet)
-        for word in ("`timekeeper`", "`item-clock-seed`", "`ats_1`", "`/data/time/timekeep`", "`opos-clock` cannot undo"):
+        for word in (
+            "`timekeeper`",
+            "`item-clock-seed`",
+            "`ats_1`",
+            "`/data/time/timekeep`",
+            "`opos-clock` cannot undo",
+        ):
             self.assertIn(word, bullet)
         self.assertIn("sudo sh -c 'echo -1 > /data/time/timekeep'", bullet)
         self.assertIn("grep 'evidence: persist'", bullet)
@@ -547,18 +602,39 @@ class ImageBlocksTests(unittest.TestCase):
         shutil.rmtree(repo, ignore_errors=True)
         repo.mkdir()
         env = dict(os.environ, GIT_AUTHOR_DATE="%d +0000" % when, GIT_COMMITTER_DATE="%d +0000" % when)
-        for args in (["init", "-q"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
-                                      "commit", "-q", "--allow-empty", "-m", "x"]):
+        for args in (
+            ["init", "-q"],
+            [
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "x",
+            ],
+        ):
             subprocess.run([GIT, "-C", str(repo), *args], env=env, check=True, capture_output=True)
         return repo
 
     def rootfs(self, home="/srv/droidian"):
         r = self.tmp / "rootfs"
         shutil.rmtree(r, ignore_errors=True)
-        for d in ("etc/systemd/system/multi-user.target.wants", "etc/systemd/system/sysinit.target.wants", "opt/opos", "usr/libexec/opos"):
+        for d in (
+            "etc/systemd/system/multi-user.target.wants",
+            "etc/systemd/system/sysinit.target.wants",
+            "opt/opos",
+            "usr/libexec/opos",
+        ):
             (r / d).mkdir(parents=True)
         (r / "etc/passwd").write_text("root:x:0:0:root:/root:/bin/sh\ndroidian:x:32011:32011::%s:/bin/bash\n" % home)
-        (r / "etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service").symlink_to("/usr/lib/systemd/system/systemd-timesyncd.service")
+        (r / "etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service").symlink_to(
+            "/usr/lib/systemd/system/systemd-timesyncd.service"
+        )
         return r
 
     def build(self, r, repo, dev_key=None, ref="HEAD"):
@@ -568,8 +644,12 @@ class ImageBlocksTests(unittest.TestCase):
         env.pop("OPOS_DEV_SSH_PUBKEY", None)
         if dev_key:
             env["OPOS_DEV_SSH_PUBKEY"] = dev_key
-        prelude = ('r=%s; here=%s; ref=%s; src=%s\n'
-                   'g() { git -c safe.directory="$src" -C "$src" "$@"; }\n') % (r, PKG, ref, repo)
+        prelude = ('r=%s; here=%s; ref=%s; src=%s\ng() { git -c safe.directory="$src" -C "$src" "$@"; }\n') % (
+            r,
+            PKG,
+            ref,
+            repo,
+        )
         full = self.tmp / "build-run.sh"
         full.write_text(prelude + ". %s\n" % script)
         p = subprocess.run([SH, str(full)], env=env, capture_output=True, text=True, timeout=60)
@@ -578,8 +658,11 @@ class ImageBlocksTests(unittest.TestCase):
 
     def verify_run(self, r):
         script = self.tmp / "verify-run.sh"
-        script.write_text('fail=0; r=%s; w=$r/etc/systemd/system\n'
-                          'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\n' % (r, block("verify-image.sh", "clock")))
+        script.write_text(
+            "fail=0; r=%s; w=$r/etc/systemd/system\n"
+            'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\n'
+            % (r, block("verify-image.sh", "clock"))
+        )
         return subprocess.run([SH, str(script)], capture_output=True, text=True, timeout=60)
 
     def verify(self, r):
@@ -601,15 +684,38 @@ class ImageBlocksTests(unittest.TestCase):
         self.assertIn("clock floor %d" % when, out)
         self.assertTrue((r / "usr/libexec/opos/opos-clock").is_file())
         self.assertTrue(os.access(r / "usr/libexec/opos/opos-clock", os.X_OK))
-        self.assertEqual(os.readlink(r / "etc/systemd/system/multi-user.target.wants/opos-clock.service"), "/etc/systemd/system/opos-clock.service")
-        self.assertEqual((r / "etc/systemd/system/opos-clock.service").read_text(), (PKG / "opos-clock.service").read_text())
+        self.assertEqual(
+            os.readlink(r / "etc/systemd/system/multi-user.target.wants/opos-clock.service"),
+            "/etc/systemd/system/opos-clock.service",
+        )
+        self.assertEqual(
+            (r / "etc/systemd/system/opos-clock.service").read_text(), (PKG / "opos-clock.service").read_text()
+        )
 
     def test_an_annotated_tag_gives_its_commit_time(self):
         when = max(MIN, self.now_minus(7200))
         repo = self.repo(when)
-        subprocess.run([GIT, "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "tag.gpgsign=false",
-                        "tag", "-a", "-m", "release", "v1"], check=True, capture_output=True,
-                       env=dict(os.environ, GIT_COMMITTER_DATE="%d +0000" % (when + 5)))
+        subprocess.run(
+            [
+                GIT,
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "tag.gpgsign=false",
+                "tag",
+                "-a",
+                "-m",
+                "release",
+                "v1",
+            ],
+            check=True,
+            capture_output=True,
+            env=dict(os.environ, GIT_COMMITTER_DATE="%d +0000" % (when + 5)),
+        )
         r = self.rootfs()
         self.build(r, repo, ref="v1")
         self.assertEqual((r / "opt/opos/CLOCK_FLOOR").read_text(), "%d\n" % when)
@@ -629,7 +735,9 @@ class ImageBlocksTests(unittest.TestCase):
         self.assertNotIn("@DROP@", path + service)
         r = self.rootfs(home="/var/lib/droid")
         self.build(r, self.repo(max(MIN, self.now_minus(60))))
-        self.assertIn("PathChanged=/var/lib/droid/opos-set-time\n", (r / "etc/systemd/system/opos-clock-set.path").read_text())
+        self.assertIn(
+            "PathChanged=/var/lib/droid/opos-set-time\n", (r / "etc/systemd/system/opos-clock-set.path").read_text()
+        )
 
     def test_the_drop_is_enabled_only_in_a_dev_image(self):
         link = "etc/systemd/system/multi-user.target.wants/opos-clock-set.path"
@@ -646,13 +754,21 @@ class ImageBlocksTests(unittest.TestCase):
         r = self.rootfs()
         self.build(r, self.repo(max(MIN, self.now_minus(60))))
         # The manifest is the 'set --' lines that choose the paths plus the find line that lists them.
-        m = re.search(r'^set -- opt/opos/REVISION.*?^\( cd "\$r" && find .*\)$', (PKG / "build-image.sh").read_text(encoding="utf-8"), re.M | re.S)
+        m = re.search(
+            r'^set -- opt/opos/REVISION.*?^\( cd "\$r" && find .*\)$',
+            (PKG / "build-image.sh").read_text(encoding="utf-8"),
+            re.M | re.S,
+        )
         self.assertTrue(m, "the manifest lines of build-image.sh")
         # Not the whole image: find says so for the files this scratch tree lacks, and lists the rest.
-        p = subprocess.run([SH, "-c", 'r=%s; %s' % (r, m.group(0))], capture_output=True, text=True, timeout=60)
+        p = subprocess.run([SH, "-c", "r=%s; %s" % (r, m.group(0))], capture_output=True, text=True, timeout=60)
         listed = [line.split()[-1] for line in p.stdout.splitlines()]
-        for want in ("usr/libexec/opos/opos-clock", "etc/systemd/system/opos-clock.service", "etc/systemd/system/opos-clock-set.service",
-                     "etc/systemd/system/opos-clock-set.path"):
+        for want in (
+            "usr/libexec/opos/opos-clock",
+            "etc/systemd/system/opos-clock.service",
+            "etc/systemd/system/opos-clock-set.service",
+            "etc/systemd/system/opos-clock-set.path",
+        ):
             self.assertIn(want, listed, p.stdout + p.stderr)
 
     def test_the_verify_block_passes_what_the_build_block_makes(self):
@@ -675,13 +791,17 @@ class ImageBlocksTests(unittest.TestCase):
         floor.write_text("%d\n" % (MIN - 1))
         self.assertIn("FAIL clock floor recorded", self.verify_fail(r))
         floor.write_text("%d\n" % self.now_minus(60))
-        (r / "etc/systemd/system/opos-clock.service").write_text("[Unit]\nBefore=time-set.target\nAfter=timekeeper.service item-clock-seed.service\n")
+        (r / "etc/systemd/system/opos-clock.service").write_text(
+            "[Unit]\nBefore=time-set.target\nAfter=timekeeper.service item-clock-seed.service\n"
+        )
         self.assertIn("FAIL opos-clock has no Before= on sysinit", self.verify_fail(r))
         (r / "etc/systemd/system/opos-clock.service").write_text((PKG / "opos-clock.service").read_text())
         (r / "etc/systemd/system/systemd-timesyncd.service").symlink_to("/dev/null")
         self.assertIn("FAIL network time still takes over", self.verify_fail(r))
         (r / "etc/systemd/system/systemd-timesyncd.service").unlink()
-        (r / "etc/systemd/system/opos-clock-set.service").write_text("ExecStart=/usr/libexec/opos/opos-clock set @DROP@\n")
+        (r / "etc/systemd/system/opos-clock-set.service").write_text(
+            "ExecStart=/usr/libexec/opos/opos-clock set @DROP@\n"
+        )
         self.assertIn("FAIL the time-file drop is filled in", self.verify_fail(r))
 
     def test_a_dev_image_without_the_drop_enabled_fails_verification(self):

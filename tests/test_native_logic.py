@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What the native screens work out without a toolkit: typing, sums, and the lines for alarms, timers and calls."""
+
 import ast
 import types
 import unittest
@@ -33,8 +34,18 @@ class Typing(unittest.TestCase):
 
 class Sums(unittest.TestCase):
     def test_the_four_operations_and_their_order(self):
-        for expr, answer in (("2+3", "5"), ("2+3×4", "14"), ("10-4÷2", "8"), ("7÷2", "3.5"), ("0.1+0.2", "0.3"),
-                             ("-3+5", "2"), ("6×-2", "-12"), ("1÷3", "0.333333333333"), ("5-5", "0"), ("1000000×1000000", "1000000000000")):
+        for expr, answer in (
+            ("2+3", "5"),
+            ("2+3×4", "14"),
+            ("10-4÷2", "8"),
+            ("7÷2", "3.5"),
+            ("0.1+0.2", "0.3"),
+            ("-3+5", "2"),
+            ("6×-2", "-12"),
+            ("1÷3", "0.333333333333"),
+            ("5-5", "0"),
+            ("1000000×1000000", "1000000000000"),
+        ):
             with self.subTest(expr=expr):
                 self.assertEqual(logic.evaluate(expr), answer)
 
@@ -51,7 +62,7 @@ class Sums(unittest.TestCase):
         for key in "12+3=":
             c.press(key)
         self.assertEqual((c.expr, c.tape), ("15", ["12+3 = 15"]))
-        for key in ("×", "+", "2", "="):       # a second sign replaces the first; the answer carries on
+        for key in ("×", "+", "2", "="):  # a second sign replaces the first; the answer carries on
             c.press(key)
         self.assertEqual(c.expr, "17")
 
@@ -78,12 +89,16 @@ class Lines(unittest.TestCase):
         self.assertEqual(logic.clock_digits("2359"), (23, 59))
         for bad in ("", "7", "73", "2460", "1299", "ab30"):
             self.assertIsNone(logic.clock_digits(bad), bad)
-        self.assertEqual([logic.digits_shown(d) for d in ("", "7", "73", "730", "0730")], ["", "7", "73", "7:30", "07:30"])
+        self.assertEqual(
+            [logic.digits_shown(d) for d in ("", "7", "73", "730", "0730")], ["", "7", "73", "7:30", "07:30"]
+        )
 
     def test_an_alarm_reads_as_time_days_and_state(self):
         self.assertEqual(logic.alarm_line({"hour": 7, "minute": 5, "days": [], "enabled": True}), ("07:05", "Once  On"))
-        self.assertEqual(logic.alarm_line({"hour": 22, "minute": 0, "days": list(range(7)), "label": "Pills", "enabled": False}),
-                         ("22:00", "Every day  Pills  Off"))
+        self.assertEqual(
+            logic.alarm_line({"hour": 22, "minute": 0, "days": list(range(7)), "label": "Pills", "enabled": False}),
+            ("22:00", "Every day  Pills  Off"),
+        )
 
     def test_a_timer_counts_down_and_ends_quietly(self):
         self.assertEqual(logic.timer_left("2026-11-13T10:05:00+00:00", "2026-11-13T10:00:55+00:00"), "4 min 05 s left")
@@ -92,13 +107,23 @@ class Lines(unittest.TestCase):
         self.assertEqual(logic.timer_left(None, "nonsense"), "")
 
     def test_a_call_reads_as_who_then_what_happened(self):
-        title, detail = logic.call_line({"name": "Mom", "number": "+15550100", "direction": "missed", "start_time": "2026-11-13T10:00:00+00:00",
-                                         "duration": None, "practice": True})
+        title, detail = logic.call_line(
+            {
+                "name": "Mom",
+                "number": "+15550100",
+                "direction": "missed",
+                "start_time": "2026-11-13T10:00:00+00:00",
+                "duration": None,
+                "practice": True,
+            }
+        )
         self.assertEqual(title, "Mom")
         self.assertTrue(detail.startswith("Missed"))
         self.assertTrue(detail.endswith("Practice"))
-        self.assertEqual(logic.call_line({"number": "+15550142", "direction": "outgoing", "start_time": "bad", "duration": 125}),
-                         ("+15550142", "Outgoing  2 min"))
+        self.assertEqual(
+            logic.call_line({"number": "+15550142", "direction": "outgoing", "start_time": "bad", "duration": 125}),
+            ("+15550142", "Outgoing  2 min"),
+        )
 
 
 class Ordering(unittest.TestCase):
@@ -106,9 +131,11 @@ class Ordering(unittest.TestCase):
 
     def test_an_older_reply_is_dropped_once_a_newer_one_was_drawn(self):
         seq = logic.Sequence()
-        poll, action = seq.issue(), seq.issue()     # the poll was sent first and the action after it
+        poll, action = seq.issue(), seq.issue()  # the poll was sent first and the action after it
         self.assertTrue(seq.accept(action))
-        self.assertFalse(seq.accept(poll), "the poll's reply is older than the action's: it must not put the screen back")
+        self.assertFalse(
+            seq.accept(poll), "the poll's reply is older than the action's: it must not put the screen back"
+        )
         self.assertTrue(seq.accept(seq.issue()))
 
     def test_a_drawn_action_reply_sets_a_floor_under_everything_issued_before_it(self):
@@ -156,10 +183,18 @@ class Ordering(unittest.TestCase):
 class Rows(unittest.TestCase):
     def test_a_tap_goes_to_the_newest_handler_when_the_words_did_not_change(self):
         rows, hits = logic.RowSet(), []
-        self.assertTrue(rows.update([("Empty note", "", lambda: hits.append("old a")), ("Empty note", "", lambda: hits.append("old b"))]))
+        self.assertTrue(
+            rows.update(
+                [("Empty note", "", lambda: hits.append("old a")), ("Empty note", "", lambda: hits.append("old b"))]
+            )
+        )
         rows.click(1)
-        self.assertFalse(rows.update([("Empty note", "", lambda: hits.append("new a")), ("Empty note", "", lambda: hits.append("new b"))]),
-                         "the same words need no new buttons")
+        self.assertFalse(
+            rows.update(
+                [("Empty note", "", lambda: hits.append("new a")), ("Empty note", "", lambda: hits.append("new b"))]
+            ),
+            "the same words need no new buttons",
+        )
         rows.click(1)
         rows.click(0)
         self.assertEqual(hits, ["old b", "new b", "new a"], "the tap must not reach a row that no longer exists")
@@ -186,7 +221,7 @@ class Messages(unittest.TestCase):
         c = logic.Conversation()
         c.open("bob")
         c.opened("bob", ["Bob: hi"], issued=10)
-        c.snapshot(["Alice: private text"], seq=10)     # sent before the server answered the open
+        c.snapshot(["Alice: private text"], seq=10)  # sent before the server answered the open
         self.assertEqual(c.body(), "Bob: hi")
         c.snapshot(["Bob: hi", "Bob: there?"], seq=11)  # sent after: the server had Bob open by then
         self.assertEqual(c.body(), "Bob: hi\nBob: there?")
@@ -230,20 +265,29 @@ class Messages(unittest.TestCase):
         self.assertEqual(d.done(True, "OK"), "OK", "the owner typed OK too: that is still theirs to send")
 
     def test_the_servers_own_words_are_what_the_owner_reads(self):
-        self.assertEqual(logic.refusal({"status": "error: battery empty, charge the phone to send", "notice": "Charge the phone to send"}),
-                         "Charge the phone to send")
+        self.assertEqual(
+            logic.refusal(
+                {"status": "error: battery empty, charge the phone to send", "notice": "Charge the phone to send"}
+            ),
+            "Charge the phone to send",
+        )
         self.assertEqual(logic.refusal({"status": "error: weird", "notice": ""}), "That did not go through.")
         self.assertEqual(logic.refusal({"status": "sent"}), "")
         self.assertTrue(logic.sent({"status": "sent"}))
         self.assertFalse(logic.sent({"status": "error: number not valid"}))
 
     def test_practice_is_named_where_the_modem_is_a_practice_one(self):
-        practice, real = {"simulation": {"modem": True}, "in_call": True}, {"simulation": {"modem": False}, "in_call": True}
+        practice, real = (
+            {"simulation": {"modem": True}, "in_call": True},
+            {"simulation": {"modem": False}, "in_call": True},
+        )
         self.assertEqual(logic.call_words(practice), "In a practice call")
         self.assertEqual(logic.call_words(real), "In call")
         self.assertEqual(logic.call_words({"in_call": False}), "")
         self.assertEqual(logic.messages_line(practice), logic.PRACTICE_MESSAGES)
-        self.assertEqual(logic.messages_line(practice, "Practice message. Nothing was sent."), "Practice message. Nothing was sent.")
+        self.assertEqual(
+            logic.messages_line(practice, "Practice message. Nothing was sent."), "Practice message. Nothing was sent."
+        )
         self.assertEqual(logic.messages_line(real), "")
 
 
@@ -344,7 +388,7 @@ class Pending(unittest.TestCase):
         p.start("call")
         p.seen(6)
         self.assertEqual(p.what, "call", "before the reply, any state is older news")
-        p.answered(5, 6, 7, True)       # 6 was drawn instead of 5; 7 was issued already
+        p.answered(5, 6, 7, True)  # 6 was drawn instead of 5; 7 was issued already
         self.assertEqual(p.what, "call")
         p.seen(7)
         self.assertEqual(p.what, "call", "7 may have been asked before the reply came")
@@ -359,8 +403,12 @@ class Storage(unittest.TestCase):
         return types.SimpleNamespace(total=total, used=total - free, free=free)
 
     def test_one_factual_line(self):
-        self.assertEqual(logic.storage_line(self.usage(52_100_000_000, 12_300_000_000)), "Storage: 12.3 GB free of 52.1 GB")
-        self.assertEqual(logic.storage_line(self.usage(64_000_000_000, 512_000_000)), "Storage: 512.0 MB free of 64.0 GB")
+        self.assertEqual(
+            logic.storage_line(self.usage(52_100_000_000, 12_300_000_000)), "Storage: 12.3 GB free of 52.1 GB"
+        )
+        self.assertEqual(
+            logic.storage_line(self.usage(64_000_000_000, 512_000_000)), "Storage: 512.0 MB free of 64.0 GB"
+        )
 
     def test_sizes(self):
         self.assertEqual(logic.size_words(0), "0 MB")
@@ -368,30 +416,44 @@ class Storage(unittest.TestCase):
         self.assertEqual(logic.size_words(1_000_000), "1.0 MB")
         self.assertEqual(logic.size_words(999_960_000), "1.0 GB", "never 1000.0 MB")
         self.assertEqual(logic.size_words(999_940_000_000), "999.9 GB")
-        self.assertEqual(logic.size_words(2 ** 70), "1180591620.7 TB", "huge still reads as one number")
+        self.assertEqual(logic.size_words(2**70), "1180591620.7 TB", "huge still reads as one number")
 
     def test_an_empty_disk_and_a_full_one(self):
         self.assertEqual(logic.storage_line(self.usage(32_000_000_000, 0)), "Storage: 0 MB free of 32.0 GB")
-        self.assertEqual(logic.storage_line(self.usage(32_000_000_000, 32_000_000_000)), "Storage: 32.0 GB free of 32.0 GB")
+        self.assertEqual(
+            logic.storage_line(self.usage(32_000_000_000, 32_000_000_000)), "Storage: 32.0 GB free of 32.0 GB"
+        )
 
     def test_numbers_that_cannot_be_true_read_unknown(self):
-        for bad in (None, self.usage(0, 0), self.usage(-1, 0), self.usage(10, 20), self.usage(10, -1),
-                    types.SimpleNamespace(total="many", free=1), object()):
+        for bad in (
+            None,
+            self.usage(0, 0),
+            self.usage(-1, 0),
+            self.usage(10, 20),
+            self.usage(10, -1),
+            types.SimpleNamespace(total="many", free=1),
+            object(),
+        ):
             self.assertEqual(logic.storage_line(bad), "Storage: unknown", repr(bad))
 
     def test_a_failing_read_reads_unknown(self):
         def broken(path):
             raise OSError("no such folder")
+
         self.assertEqual(logic.read_storage("/nowhere", broken), "Storage: unknown")
 
         def not_a_path(path):
-            raise ValueError("embedded null byte")      # not an OSError: still unknown, never a traceback in Settings
+            raise ValueError("embedded null byte")  # not an OSError: still unknown, never a traceback in Settings
+
         self.assertEqual(logic.read_storage("/x", not_a_path), "Storage: unknown")
-        self.assertEqual(logic.read_storage("/x", lambda p: self.usage(2_000_000_000, 1_000_000_000)),
-                         "Storage: 1.0 GB free of 2.0 GB")
+        self.assertEqual(
+            logic.read_storage("/x", lambda p: self.usage(2_000_000_000, 1_000_000_000)),
+            "Storage: 1.0 GB free of 2.0 GB",
+        )
 
     def test_this_computer_gives_a_line(self):
         import shutil
+
         line = logic.read_storage("/", shutil.disk_usage)
         self.assertRegex(line, r"^Storage: (unknown|(0 MB|under 1 MB|[\d.]+ [MGT]B) free of [\d.]+ [MGT]B)$")
 

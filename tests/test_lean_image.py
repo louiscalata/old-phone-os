@@ -20,8 +20,7 @@ DUO_HEADER = "| Duo image unit | Why it is there |"
 HEADLINE = "Focused package inputs; performance gains remain unmeasured."
 README_LINE = f"**{HEADLINE}** See [docs/lean.md](docs/lean.md)."
 RESULTS_HEADER = (
-    "| date | target (QEMU/device) | boot_to_login_s | idle_ram_mb "
-    "| idle_cpu_pct | pkg_count | enabled_services |"
+    "| date | target (QEMU/device) | boot_to_login_s | idle_ram_mb | idle_cpu_pct | pkg_count | enabled_services |"
 )
 MESSAGE = (
     "adding a package or service breaks the no-bloatware headline: "
@@ -30,17 +29,14 @@ MESSAGE = (
 
 
 SUBPACKAGE_DEPENDS = {
-    "opos": ["openrc $pkgname=$pkgver-r$pkgrel",
-             "systemd $pkgname=$pkgver-r$pkgrel"],
+    "opos": ["openrc $pkgname=$pkgver-r$pkgrel", "systemd $pkgname=$pkgver-r$pkgrel"],
     "postmarketos-ui-opos": ["networkmanager-openrc openrc"],
 }
 
 
 class TestLeanImage(unittest.TestCase):
     def read_apkbuild(self, package):
-        return (ROOT / "packaging" / "pmos" / package / "APKBUILD").read_text(
-            encoding="utf-8"
-        )
+        return (ROOT / "packaging" / "pmos" / package / "APKBUILD").read_text(encoding="utf-8")
 
     def depends(self, package):
         # Top-level depends, which may span several lines.
@@ -68,22 +64,26 @@ class TestLeanImage(unittest.TestCase):
         self.assertIn('depends="systemd $pkgname=$pkgver-r$pkgrel"', body)
         for package in ("opos", "postmarketos-ui-opos"):
             self.assertNotIn("systemd", self.depends(package), MESSAGE)
-        options = re.search(r'^options="([^"\n]*)"',
-                            self.read_apkbuild("postmarketos-ui-opos"), re.MULTILINE)
+        options = re.search(r'^options="([^"\n]*)"', self.read_apkbuild("postmarketos-ui-opos"), re.MULTILINE)
         self.assertIsNotNone(options, MESSAGE)
         self.assertIn("pmb:default-openrc", options.group(1).split(), MESSAGE)
         self.assertNotIn("pmb:default-systemd", options.group(1).split(), MESSAGE)
         text = (ROOT / "docs/lean.md").read_text(encoding="utf-8")
-        for fact in ("## Optional init integration", "opos-systemd",
-                     "opos-server.service", "opos-firstboot.service",
-                     "source and staging checks", "systemd startup remain unverified",
-                     "state-validation helper"):
+        for fact in (
+            "## Optional init integration",
+            "opos-systemd",
+            "opos-server.service",
+            "opos-firstboot.service",
+            "source and staging checks",
+            "systemd startup remain unverified",
+            "state-validation helper",
+        ):
             self.assertIn(fact, text, MESSAGE)
 
     def test_ui_no_recommends(self):
         # Reject a later assignment overriding the empty recommendations list.
         assignments = re.findall(
-            r'^[ \t]*_pmb_recommends=.*$',
+            r"^[ \t]*_pmb_recommends=.*$",
             self.read_apkbuild("postmarketos-ui-opos"),
             re.MULTILINE,
         )
@@ -94,9 +94,9 @@ class TestLeanImage(unittest.TestCase):
         )
 
     def test_opos_init_scripts_exact(self):
-        scripts = set(re.findall(
-            r'"?\$(?:pkgdir|\{pkgdir\})"?/etc/init\.d/([A-Za-z0-9_-]+)', self.read_apkbuild("opos")
-        ))
+        scripts = set(
+            re.findall(r'"?\$(?:pkgdir|\{pkgdir\})"?/etc/init\.d/([A-Za-z0-9_-]+)', self.read_apkbuild("opos"))
+        )
         self.assertEqual(scripts, SERVICES, MESSAGE)
 
     def test_lean_doc_lists_essentials(self):
@@ -116,15 +116,14 @@ class TestLeanImage(unittest.TestCase):
         # The units the Duo build's sensors block installs are exactly the ones
         # the doc lists, so a new unit there cannot skip the owner's approval.
         build = (ROOT / "packaging/duo-os/build-image.sh").read_text(encoding="utf-8")
-        block = re.search(r"^# --- sensors: BEGIN.*?^# --- sensors: END", build,
-                          re.MULTILINE | re.DOTALL)
+        block = re.search(r"^# --- sensors: BEGIN.*?^# --- sensors: END", build, re.MULTILINE | re.DOTALL)
         self.assertIsNotNone(block, MESSAGE)
-        installed = set(re.findall(r'^install -m \d+ \S+ "\$r/etc/systemd/system/([^"]+)"$',
-                                   block.group(0), re.MULTILINE))
+        installed = set(
+            re.findall(r'^install -m \d+ \S+ "\$r/etc/systemd/system/([^"]+)"$', block.group(0), re.MULTILINE)
+        )
         self.assertEqual(installed, DUO_UNITS, MESSAGE)
         text = (ROOT / "docs" / "lean.md").read_text(encoding="utf-8")
-        self.assertEqual(set(self.table_rows(text, DUO_HEADER)),
-                         {f"`{unit}`" for unit in DUO_UNITS}, MESSAGE)
+        self.assertEqual(set(self.table_rows(text, DUO_HEADER)), {f"`{unit}`" for unit in DUO_UNITS}, MESSAGE)
         for fact in ("2026-11-15", "stage 1", "/etc/opos/sensors-off"):
             self.assertIn(fact, text, MESSAGE)
 
@@ -142,7 +141,7 @@ class TestLeanImage(unittest.TestCase):
         lines = text.splitlines()
         self.assertIn(header, lines, MESSAGE)
         rows = []
-        for line in lines[lines.index(header) + 2:]:
+        for line in lines[lines.index(header) + 2 :]:
             if not line.startswith("|"):
                 break
             rows.append(line.split("|")[1].strip())

@@ -2,6 +2,7 @@
 import unittest
 from opos.web import page
 
+
 class TestUxU010AnswerText(unittest.TestCase):
     def _ask_slice(self):
         h = page()
@@ -19,6 +20,7 @@ class TestUxU010AnswerText(unittest.TestCase):
 
     def test_ask_keeps_sources_loop(self):
         self.assertIn("r.sources||[]", self._ask_slice())
+
 
 if __name__ == "__main__":
     unittest.main()

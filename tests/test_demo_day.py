@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The README demo stays honest through the daily goal, without a server or model."""
+
 import json
 import math
 import threading
@@ -136,7 +137,7 @@ class TestDemoDay(unittest.TestCase):
         self.assertEqual(dash.hours_to_goal(6 * 3600), 16)
 
     def test_usable_percent_is_floored_in_sentence_and_fact(self):
-        self.assertIn("so 24% is really about 14%", web.why_paused(24.5, .6, 30, False, ["maps"]))
+        self.assertIn("so 24% is really about 14%", web.why_paused(24.5, 0.6, 30, False, ["maps"]))
         phone = web.Phone(visible=True)
         phone.set_battery(24.5)
         helper = phone.state()["helper"]
@@ -214,8 +215,7 @@ class TestDemoDay(unittest.TestCase):
         phone.open("+15550100")
         phone.send("+15550100", "The Governor model is fine")
         state = phone.state()
-        expected = ["Mom: Can my assistant pick up the new model AI kit?",
-                    "Me: The Governor model is fine"]
+        expected = ["Mom: Can my assistant pick up the new model AI kit?", "Me: The Governor model is fine"]
         self.assertEqual(state["thread"], expected)
         self.assertEqual(state["threads"][0]["last"], "The Governor model is fine")
         self.assertNotIn("helper", state)
@@ -229,9 +229,12 @@ class TestDemoDay(unittest.TestCase):
         phone = web.Phone(visible=False)
         governor = phone.runtime.governor
         governor.advisor = GlimmerAdvisor(
-            governor.advisor, route=muse.glimmer_route({}),
+            governor.advisor,
+            route=muse.glimmer_route({}),
             ask=lambda *args, **kwargs: reply,
-            spawn=lambda fn: fn(), clock=lambda: 0)
+            spawn=lambda fn: fn(),
+            clock=lambda: 0,
+        )
         phone.set_visible(True)
         phone.state()  # Fill the synchronous stub's cache; the next state applies it.
         return phone, phone.state()
@@ -272,8 +275,9 @@ class TestDemoDay(unittest.TestCase):
                 self.assertFalse(state["battery"]["goal_met"])
                 self.assertTrue(state["battery"]["paused"])
                 for row in state["battery"]["paused"]:
-                    self.assertEqual(row["reason"],
-                                     "Battery rules paused this because the battery won't last until 4 PM.")
+                    self.assertEqual(
+                        row["reason"], "Battery rules paused this because the battery won't last until 4 PM."
+                    )
                     self.assertNotIn("to help the battery last", row["reason"])
                     self.assertNotIn("16:00", row["reason"])
 
@@ -283,8 +287,10 @@ class TestDemoDay(unittest.TestCase):
         phone.dash.undo("photos backup")
         state = phone.state()
         self.assertFalse(state["battery"]["goal_met"])
-        self.assertEqual([(row["name"], row["reason"]) for row in state["battery"]["paused"]],
-                         [("maps", "Battery rules paused this because the battery won't last until 4 PM.")])
+        self.assertEqual(
+            [(row["name"], row["reason"]) for row in state["battery"]["paused"]],
+            [("maps", "Battery rules paused this because the battery won't last until 4 PM.")],
+        )
 
     def test_planned_pause_reason_follows_missed_goal_after_undo(self):
         # Here the planner, not the goal check, paused maps; Undo still makes the goal missed.
@@ -297,8 +303,9 @@ class TestDemoDay(unittest.TestCase):
                     phone.dash.undo("photos backup")
                     battery = phone.state()["battery"]
                     self.assertFalse(battery["goal_met"])
-                    self.assertEqual([(row["name"], row["reason"]) for row in battery["paused"]],
-                                     [("maps", WONT_LAST_4PM)])
+                    self.assertEqual(
+                        [(row["name"], row["reason"]) for row in battery["paused"]], [("maps", WONT_LAST_4PM)]
+                    )
 
     def test_reachable_goal_pause_reasons_use_twelve_hour_time(self):
         state = self.phone().state()
@@ -310,10 +317,22 @@ class TestDemoDay(unittest.TestCase):
 
     def test_goal_after_midnight_says_tomorrow_on_lock_screen_and_rows(self):
         self.assertEqual(_format_goal_12h("06:00 tomorrow"), "6 AM tomorrow")
-        cases = ((60, 0.6, False, "Worn battery. 3 tasks paused; 6 AM tomorrow unlikely.",
-                  "Battery rules paused this because the battery won't last until 6 AM tomorrow."),
-                 (100, 1.0, True, "3 tasks paused for 6 AM tomorrow.",
-                  "Battery rules paused this to help the battery last until 6 AM tomorrow."))
+        cases = (
+            (
+                60,
+                0.6,
+                False,
+                "Worn battery. 3 tasks paused; 6 AM tomorrow unlikely.",
+                "Battery rules paused this because the battery won't last until 6 AM tomorrow.",
+            ),
+            (
+                100,
+                1.0,
+                True,
+                "3 tasks paused for 6 AM tomorrow.",
+                "Battery rules paused this to help the battery last until 6 AM tomorrow.",
+            ),
+        )
         for level, health, met, story, reason in cases:
             with self.subTest(level=level, health=health):
                 phone = self.phone(goal="06:00")
@@ -349,8 +368,10 @@ class TestGoalSetAfterItsTime(unittest.TestCase):
 
     def assert_not_made(self, state, words):
         self.assertFalse(state["battery"]["goal_met"])
-        self.assertTrue(state["battery"]["goal_note"].startswith(
-            f"Won't last until {words}, calls and messages until ~"), state["battery"]["goal_note"])
+        self.assertTrue(
+            state["battery"]["goal_note"].startswith(f"Won't last until {words}, calls and messages until ~"),
+            state["battery"]["goal_note"],
+        )
 
     def test_saved_goal_before_noon_is_not_made_at_startup(self):
         cfg = setup_config.default_config()
@@ -360,9 +381,12 @@ class TestGoalSetAfterItsTime(unittest.TestCase):
         def fake_make_server(port, phone, host="127.0.0.1", token=None):
             captured["phone"] = phone
             return mock.Mock()
-        with mock.patch.object(setup_config, "load", return_value=cfg), \
-                mock.patch.object(web, "_route_with_glimmer"), \
-                mock.patch.object(web, "make_server", side_effect=fake_make_server):
+
+        with (
+            mock.patch.object(setup_config, "load", return_value=cfg),
+            mock.patch.object(web, "_route_with_glimmer"),
+            mock.patch.object(web, "make_server", side_effect=fake_make_server),
+        ):
             web.main([])
         phone = captured["phone"]
         self.assertEqual(phone.dash.hours_to_goal(phone.clock_s), 20)
@@ -376,7 +400,8 @@ class TestGoalSetAfterItsTime(unittest.TestCase):
             req = urllib.request.Request(
                 f"http://127.0.0.1:{server.server_address[1]}/api",
                 data=json.dumps({"action": "goal", "time": "06:30"}).encode(),
-                headers={"Content-Type": "application/json", "X-OPOS-Token": server.RequestHandlerClass.token})
+                headers={"Content-Type": "application/json", "X-OPOS-Token": server.RequestHandlerClass.token},
+            )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 state = json.load(resp)
         finally:

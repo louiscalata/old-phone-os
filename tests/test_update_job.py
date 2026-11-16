@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Update-job contracts and regressions, with in-memory transport and temporary files."""
+
 import contextlib
 import hashlib
 import io
@@ -20,16 +21,23 @@ class LocalJob(Env):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.paths = uc.Paths(config=os.path.join(self.tmp.name, "update.json"),
-                              root=os.path.join(self.tmp.name, "lib"),
-                              revision=os.path.join(self.tmp.name, "REVISION"))
+        self.paths = uc.Paths(
+            config=os.path.join(self.tmp.name, "update.json"),
+            root=os.path.join(self.tmp.name, "lib"),
+            revision=os.path.join(self.tmp.name, "REVISION"),
+        )
         os.makedirs(self.paths.inbox)
         self.url = "https://updates.example.org/latest.json"
         self.put(self.paths.config, {"url": self.url})
         self.state(2)
         self.bundle = tar_bundle(7)
-        self.index = {"serial": 7, "version": "0.7.0", "url": "opos-7.opos-update",
-                      "size": len(self.bundle), "sha256": hashlib.sha256(self.bundle).hexdigest()}
+        self.index = {
+            "serial": 7,
+            "version": "0.7.0",
+            "url": "opos-7.opos-update",
+            "size": len(self.bundle),
+            "sha256": hashlib.sha256(self.bundle).hexdigest(),
+        }
         self.opened = []
         self.c = uc.UpdateClient(self.paths, clock=lambda: 1700000000)
         for patch in no_network() + [mock.patch.object(self.c, "_open", side_effect=self.open)]:
@@ -56,8 +64,12 @@ class LocalJob(Env):
         h.path, h.command, h.request_version = "/api", "POST", "HTTP/1.1"
         h.requestline = "POST /api HTTP/1.1"
         h.port, h.token, h.updater = 8765, "a" * 43, self.c
-        h.headers = {"Host": "127.0.0.1:8765", "Content-Type": "application/json",
-                     "Content-Length": str(len(body)), "X-OPOS-Token": h.token}
+        h.headers = {
+            "Host": "127.0.0.1:8765",
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+            "X-OPOS-Token": h.token,
+        }
         h.limiter = web._Limits()
         h.rfile, h.wfile = io.BytesIO(body), io.BytesIO()
         h._admit_request = lambda: True
@@ -72,11 +84,22 @@ class Characterization(LocalJob):
 
     def test_initial_snapshot_fields_values_and_json_bytes(self):
         expected = {
-            "available": True, "message": None,
+            "available": True,
+            "message": None,
             "running": {"version": "0.1.0", "revision": "a" * 40, "serial": 2, "release": "2-aaaaaaaaaaaa"},
-            "source": {"configured": True, "url": self.url, "auto_check": False, "allow_lan_http": False, "error": None},
-            "check": None, "job": self.idle, "pending": [], "stalled": False,
-            "rollback": {"possible": False, "requested": False}, "status": None,
+            "source": {
+                "configured": True,
+                "url": self.url,
+                "auto_check": False,
+                "allow_lan_http": False,
+                "error": None,
+            },
+            "check": None,
+            "job": self.idle,
+            "pending": [],
+            "stalled": False,
+            "rollback": {"possible": False, "requested": False},
+            "status": None,
         }
         self.assertEqual(json.dumps(self.c.snapshot()).encode(), json.dumps(expected).encode())
         self.assertEqual(self.opened, [])
@@ -90,8 +113,15 @@ class Characterization(LocalJob):
         ):
             with self.subTest(current=current, failed=failed):
                 self.state(current, failed=failed)
-                expected = {"time": "2023-11-14 22:13:20Z", "ok": True, "newer": newer, "serial": 7,
-                            "version": "0.7.0", "size": len(self.bundle), "message": message}
+                expected = {
+                    "time": "2023-11-14 22:13:20Z",
+                    "ok": True,
+                    "newer": newer,
+                    "serial": 7,
+                    "version": "0.7.0",
+                    "size": len(self.bundle),
+                    "message": message,
+                }
                 self.assertEqual(json.dumps(self.c.check()), json.dumps(expected))
                 self.assertEqual(self.c.job(), self.idle)
         self.assertEqual(self.inbox(), [])
@@ -105,8 +135,10 @@ class Characterization(LocalJob):
             for action in (self.c.check, self.c.start_download):
                 with self.assertRaises(uc.UpdateError) as cm:
                     action()
-                self.assertEqual((cm.exception.code, cm.exception.status, str(cm.exception)),
-                                 ("busy", 409, "An update check or download is already running."))
+                self.assertEqual(
+                    (cm.exception.code, cm.exception.status, str(cm.exception)),
+                    ("busy", 409, "An update check or download is already running."),
+                )
             return fetch(cfg)
 
         with mock.patch.object(self.c, "_fetch_index", side_effect=checking):
@@ -114,12 +146,23 @@ class Characterization(LocalJob):
         self.assertEqual(self.c.job(), self.idle)
 
     def test_check_failure_payload_and_recovery_leave_job_unchanged(self):
-        with mock.patch.object(self.c, "_fetch_index", side_effect=uc.UpdateError("fetch", "The update server answered 404.", 502)):
+        with mock.patch.object(
+            self.c, "_fetch_index", side_effect=uc.UpdateError("fetch", "The update server answered 404.", 502)
+        ):
             status, body = self.post("update_check")
         self.assertEqual((status, body), (502, b'{"error": "The update server answered 404.", "code": "fetch"}'))
-        self.assertEqual(self.c.snapshot()["check"], {"time": "2023-11-14 22:13:20Z", "ok": False,
-                         "newer": None, "serial": None, "version": None, "size": None,
-                         "message": "The update server answered 404."})
+        self.assertEqual(
+            self.c.snapshot()["check"],
+            {
+                "time": "2023-11-14 22:13:20Z",
+                "ok": False,
+                "newer": None,
+                "serial": None,
+                "version": None,
+                "size": None,
+                "message": "The update server answered 404.",
+            },
+        )
         self.assertEqual(self.c.job(), self.idle)
         self.assertTrue(self.c.check()["newer"])
 
@@ -127,11 +170,21 @@ class Characterization(LocalJob):
         replace = os.replace
 
         def handoff(part, final):
-            self.assertEqual((os.path.basename(part), os.path.basename(final)),
-                             ("opos-7.opos-update.partial", "opos-7.opos-update"))
+            self.assertEqual(
+                (os.path.basename(part), os.path.basename(final)), ("opos-7.opos-update.partial", "opos-7.opos-update")
+            )
             self.assertEqual(self.c.pending(), [])
-            self.assertEqual(self.c.job(), {"kind": "download", "phase": "downloading", "bytes": len(self.bundle),
-                             "total": len(self.bundle), "serial": 7, "message": "Downloading."})
+            self.assertEqual(
+                self.c.job(),
+                {
+                    "kind": "download",
+                    "phase": "downloading",
+                    "bytes": len(self.bundle),
+                    "total": len(self.bundle),
+                    "serial": 7,
+                    "message": "Downloading.",
+                },
+            )
             for action in (self.c.check, self.c.start_download):
                 with self.assertRaises(uc.UpdateError) as cm:
                     action()
@@ -141,8 +194,17 @@ class Characterization(LocalJob):
         with mock.patch.object(uc.os, "replace", side_effect=handoff):
             self.c.start_download()
             self.assertTrue(self.c.wait(5))
-        self.assertEqual(self.c.job(), {"kind": "download", "phase": "done", "bytes": len(self.bundle),
-                         "total": len(self.bundle), "serial": 7, "message": "Downloaded. The updater applies it next."})
+        self.assertEqual(
+            self.c.job(),
+            {
+                "kind": "download",
+                "phase": "done",
+                "bytes": len(self.bundle),
+                "total": len(self.bundle),
+                "serial": 7,
+                "message": "Downloaded. The updater applies it next.",
+            },
+        )
         self.assertEqual(self.inbox(), ["opos-7.opos-update"])
         with open(os.path.join(self.paths.inbox, "opos-7.opos-update"), "rb") as f:
             self.assertEqual(f.read(), self.bundle)
@@ -155,8 +217,10 @@ class Characterization(LocalJob):
         self.assertTrue(self.c.wait(5))
         self.status(phase="failed", serial=7, message="Signature refused.")
         snap = self.c.snapshot()
-        self.assertEqual((snap["job"]["phase"], snap["status"]["phase"], snap["pending"], snap["stalled"]),
-                         ("done", "failed", ["opos-7.opos-update"], False))
+        self.assertEqual(
+            (snap["job"]["phase"], snap["status"]["phase"], snap["pending"], snap["stalled"]),
+            ("done", "failed", ["opos-7.opos-update"], False),
+        )
         st = os.stat(os.path.join(self.paths.inbox, "opos-7.opos-update"))
         self.c._clock = lambda: max(st.st_mtime, st.st_ctime) + 300
         self.assertFalse(self.c.snapshot()["stalled"])
@@ -166,11 +230,19 @@ class Characterization(LocalJob):
         self.assertEqual(self.c.snapshot()["job"]["phase"], "done")
 
     def test_failed_download_fields_and_retry(self):
-        with mock.patch.object(self.c, "download", side_effect=uc.UpdateError("space", "There is not enough free space for the update.")):
+        with mock.patch.object(
+            self.c, "download", side_effect=uc.UpdateError("space", "There is not enough free space for the update.")
+        ):
             self.c.start_download()
             self.assertTrue(self.c.wait(5))
-        failed = {"kind": "download", "phase": "failed", "bytes": 0, "total": len(self.bundle),
-                  "serial": 7, "message": "There is not enough free space for the update."}
+        failed = {
+            "kind": "download",
+            "phase": "failed",
+            "bytes": 0,
+            "total": len(self.bundle),
+            "serial": 7,
+            "message": "There is not enough free space for the update.",
+        }
         self.assertEqual(self.c.job(), failed)
         self.c.check()
         self.assertEqual(self.c.job(), failed)
@@ -182,8 +254,12 @@ class Characterization(LocalJob):
         for phase in ("idle", "verifying", "applying", "checking", "done", "rolled-back", "failed", "unexpected"):
             with self.subTest(phase=phase):
                 self.status(phase=phase, serial=7, message="Root status.")
-                expected = {"phase": phase if phase != "unexpected" else "unknown", "message": "Root status.",
-                            "serial": 7, "time": "2026-11-08T12:00:00Z"}
+                expected = {
+                    "phase": phase if phase != "unexpected" else "unknown",
+                    "message": "Root status.",
+                    "serial": 7,
+                    "time": "2026-11-08T12:00:00Z",
+                }
                 self.assertEqual(json.dumps(self.c.snapshot()["status"]), json.dumps(expected))
 
     def test_rollback_request_bytes_and_root_files_are_unchanged(self):
@@ -211,26 +287,38 @@ class Characterization(LocalJob):
         self.assertEqual(status, 200)
         self.assertEqual(body, json.dumps(dict(self.c.snapshot(), ok=True)).encode())
         self.state(7)
-        self.assertEqual(self.post("update_download"),
-                         (409, b'{"error": "You have the latest update.", "code": "no_update"}'))
-        self.assertEqual(self.post("update_rollback"),
-                         (409, b'{"error": "There is no earlier version to go back to.", "code": "no_rollback"}'))
+        self.assertEqual(
+            self.post("update_download"), (409, b'{"error": "You have the latest update.", "code": "no_update"}')
+        )
+        self.assertEqual(
+            self.post("update_rollback"),
+            (409, b'{"error": "There is no earlier version to go back to.", "code": "no_rollback"}'),
+        )
         os.unlink(self.paths.config)
-        self.assertEqual(self.post("update_check"),
-                         (409, json.dumps({"error": uc.NOT_CONFIGURED, "code": "not_configured"}).encode()))
+        self.assertEqual(
+            self.post("update_check"),
+            (409, json.dumps({"error": uc.NOT_CONFIGURED, "code": "not_configured"}).encode()),
+        )
         os.rmdir(self.paths.inbox)
         os.unlink(self.paths.state)
         os.rmdir(self.paths.root)
-        self.assertEqual(self.post("update_download"),
-                         (404, b'{"error": "Updates are not available on this install.", "code": "not_available"}'))
+        self.assertEqual(
+            self.post("update_download"),
+            (404, b'{"error": "Updates are not available on this install.", "code": "not_available"}'),
+        )
 
     def test_cli_startup_output_with_stubbed_server(self):
         server, out = mock.Mock(), io.StringIO()
         server.server_address = ("127.0.0.1", 43210)
-        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(web, "make_server", return_value=server), \
-                mock.patch.object(web, "Phone"), mock.patch.object(web, "_arm_configured_goal"), \
-                mock.patch.object(web, "_route_with_glimmer"), mock.patch.object(web.setup_config, "load", return_value=None), \
-                mock.patch("sys.stdout", out):
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(web, "make_server", return_value=server),
+            mock.patch.object(web, "Phone"),
+            mock.patch.object(web, "_arm_configured_goal"),
+            mock.patch.object(web, "_route_with_glimmer"),
+            mock.patch.object(web.setup_config, "load", return_value=None),
+            mock.patch("sys.stdout", out),
+        ):
             web.main(["--port", "0"])
         self.assertEqual(out.getvalue(), "OPOS desktop demo: http://127.0.0.1:43210/?demo=1 (Ctrl-C to stop)\n")
         server.RequestHandlerClass.updater.start_auto_check.assert_called_once_with()
@@ -240,8 +328,17 @@ class Regressions(LocalJob):
     def launch_failure(self, patch):
         with patch, self.assertRaisesRegex(RuntimeError, "cannot start worker"):
             self.c.start_download()
-        self.assertEqual(self.c.job(), {"kind": "download", "phase": "failed", "bytes": 0,
-                         "total": len(self.bundle), "serial": 7, "message": "The download failed."})
+        self.assertEqual(
+            self.c.job(),
+            {
+                "kind": "download",
+                "phase": "failed",
+                "bytes": 0,
+                "total": len(self.bundle),
+                "serial": 7,
+                "message": "The download failed.",
+            },
+        )
         self.assertTrue(self.c.wait(0))
         self.assertEqual(self.inbox(), [])
         self.assertTrue(self.c.check()["newer"])
@@ -253,11 +350,15 @@ class Regressions(LocalJob):
         self.launch_failure(mock.patch.object(uc.threading, "Thread", side_effect=RuntimeError("cannot start worker")))
 
     def test_thread_start_failure_is_terminal_and_retryable(self):
-        self.launch_failure(mock.patch.object(uc.threading.Thread, "start", side_effect=RuntimeError("cannot start worker")))
+        self.launch_failure(
+            mock.patch.object(uc.threading.Thread, "start", side_effect=RuntimeError("cannot start worker"))
+        )
 
     def test_launch_failure_keeps_http_500_but_clears_downloading(self):
-        with mock.patch.object(uc.threading.Thread, "start", side_effect=RuntimeError("cannot start worker")), \
-                self.assertLogs("opos.security", level="WARNING"):
+        with (
+            mock.patch.object(uc.threading.Thread, "start", side_effect=RuntimeError("cannot start worker")),
+            self.assertLogs("opos.security", level="WARNING"),
+        ):
             self.assertEqual(self.post("update_download"), (500, b'{"error": "internal error"}'))
         self.assertEqual(self.c.snapshot()["job"]["phase"], "failed")
 
@@ -271,7 +372,9 @@ class Regressions(LocalJob):
                 self.assertEqual(result["message"], message)
                 with self.assertRaises(uc.UpdateError) as cm:
                     self.c.start_download()
-                self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.message), ("no_update", 409, message))
+                self.assertEqual(
+                    (cm.exception.code, cm.exception.status, cm.exception.message), ("no_update", 409, message)
+                )
         self.assertEqual(self.opened, [self.url] * 4)
         self.assertEqual(self.inbox(), [])
 
@@ -315,9 +418,18 @@ class Boundaries(LocalJob):
 
     def test_floor_http_error_and_above_floor_delivery(self):
         self.state(2, floor=7)
-        self.assertEqual(self.post("update_download"), (409, json.dumps({
-            "error": "Update 7 is not above 7, the highest update that failed on this phone, so OPOS will not fetch it.",
-            "code": "no_update"}).encode()))
+        self.assertEqual(
+            self.post("update_download"),
+            (
+                409,
+                json.dumps(
+                    {
+                        "error": "Update 7 is not above 7, the highest update that failed on this phone, so OPOS will not fetch it.",
+                        "code": "no_update",
+                    }
+                ).encode(),
+            ),
+        )
         self.state(2, floor=6)
         self.c.start_download()
         self.assertTrue(self.c.wait(5))
@@ -349,8 +461,10 @@ class Boundaries(LocalJob):
         self.assertEqual(self.c.job()["phase"], "done")
 
     def test_generic_worker_failure_is_terminal_and_retryable(self):
-        with mock.patch.object(self.c, "download", side_effect=RuntimeError("private diagnostic")), \
-                self.assertLogs("opos.update", level="WARNING"):
+        with (
+            mock.patch.object(self.c, "download", side_effect=RuntimeError("private diagnostic")),
+            self.assertLogs("opos.update", level="WARNING"),
+        ):
             self.c.start_download()
             self.assertTrue(self.c.wait(5))
         self.assertEqual((self.c.job()["phase"], self.c.job()["message"]), ("failed", "The download failed."))
@@ -371,8 +485,10 @@ class Boundaries(LocalJob):
         class Interrupted(BaseException):
             pass
 
-        with mock.patch.object(self.c, "download", side_effect=Interrupted), \
-                mock.patch.object(threading, "excepthook") as hook:
+        with (
+            mock.patch.object(self.c, "download", side_effect=Interrupted),
+            mock.patch.object(threading, "excepthook") as hook,
+        ):
             self.c.start_download()
             self.assertTrue(self.c.wait(5))
         self.assertIs(hook.call_args.args[0].exc_type, Interrupted)

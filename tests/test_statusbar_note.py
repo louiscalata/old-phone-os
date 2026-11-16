@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The status bar says what is true (interface plan W1-05): a simulated battery, an unreadable one and a guessed clock are named."""
+
 from pathlib import Path
 import unittest
 from unittest import mock
@@ -10,7 +11,14 @@ from opos.web import Phone
 
 
 def reading(level=60, source="sysfs"):
-    return {"level": level, "temp_c": 29.0, "charging": False, "source": source, "health": 1.0, "health_source": "sysfs"}
+    return {
+        "level": level,
+        "temp_c": 29.0,
+        "charging": False,
+        "source": source,
+        "health": 1.0,
+        "health_source": "sysfs",
+    }
 
 
 def live(read):
@@ -57,10 +65,13 @@ class StateTests(unittest.TestCase):
     def test_only_the_helper_apps_own_box_still_says_which_engine_is_set(self):
         """W1-05: the bar says "Helper on" and About names no engine. The one place that still prints "Helper set to: <engine>" is the
         Helper app's own box (js-5.js), which the helper item (W1-08) rewrites; no other script, style sheet or page text may say it."""
-        root = Path(__file__).resolve().parents[1] / 'src' / 'opos'
-        holders = {p.name for p in [*(root / 'web_static').iterdir(), root / 'web.py'] if p.is_file()
-                   and 'Helper set to' in p.read_text(encoding='utf-8')}
-        self.assertLessEqual(holders, {'js-5.js'}, holders)
+        root = Path(__file__).resolve().parents[1] / "src" / "opos"
+        holders = {
+            p.name
+            for p in [*(root / "web_static").iterdir(), root / "web.py"]
+            if p.is_file() and "Helper set to" in p.read_text(encoding="utf-8")
+        }
+        self.assertLessEqual(holders, {"js-5.js"}, holders)
 
 
 if __name__ == "__main__":

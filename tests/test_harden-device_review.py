@@ -59,9 +59,7 @@ class HardenLegacyTestVarTest(unittest.TestCase):
 
     def test_no_legacy_warning_when_new_var_set(self):
         with tempfile.TemporaryDirectory() as tmp:
-            proc = _run_hardener(
-                {"TEST": "1", "OPOS_HARDEN_TEST": "1", "OPOS_ROOT": tmp}
-            )
+            proc = _run_hardener({"TEST": "1", "OPOS_HARDEN_TEST": "1", "OPOS_ROOT": tmp})
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         self.assertNotIn("is ignored", proc.stderr)
 
@@ -69,9 +67,7 @@ class HardenLegacyTestVarTest(unittest.TestCase):
 class HardenCheckPreservesTemporaryRootTest(unittest.TestCase):
     def test_legacy_test_check_preserves_temporary_root(self):
         with tempfile.TemporaryDirectory() as tmp:
-            proc = _run_hardener(
-                {"TEST": "1", "OPOS_ROOT": tmp}, ["--only", "no-such-step"]
-            )
+            proc = _run_hardener({"TEST": "1", "OPOS_ROOT": tmp}, ["--only", "no-such-step"])
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             self.assertIn("TEST is ignored", proc.stderr)
 
@@ -92,9 +88,7 @@ class HardenCheckPreservesTemporaryRootTest(unittest.TestCase):
                     handle.write(data)
                 os.chmod(full, 0o644)
             before, _ = _snapshot_root(tmp)
-            proc = _run_hardener(
-                {"OPOS_HARDEN_TEST": "1", "OPOS_ROOT": tmp}
-            )
+            proc = _run_hardener({"OPOS_HARDEN_TEST": "1", "OPOS_ROOT": tmp})
             self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
             after, found = _snapshot_root(tmp)
             self.assertEqual(after, before)
@@ -103,9 +97,7 @@ class HardenCheckPreservesTemporaryRootTest(unittest.TestCase):
     def test_run_hardener_uses_check_mode_and_temporary_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             with unittest.mock.patch.object(subprocess, "run") as mock_run:
-                mock_run.return_value = subprocess.CompletedProcess(
-                    args=[], returncode=0, stdout="", stderr=""
-                )
+                mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
                 _run_hardener({"OPOS_ROOT": tmp})
                 self.assertTrue(mock_run.called)
                 args, kwargs = mock_run.call_args
@@ -148,7 +140,7 @@ class HardenAmbiguousLegacyRejectionTest(unittest.TestCase):
             for name in mutators:
                 stub = os.path.join(bin_dir, name)
                 with open(stub, "w", encoding="utf-8") as handle:
-                    handle.write("#!/bin/sh\necho \"$0 $*\" >> \"$OPOS_MUTATION_LOG\"\nexit 0\n")
+                    handle.write('#!/bin/sh\necho "$0 $*" >> "$OPOS_MUTATION_LOG"\nexit 0\n')
                 os.chmod(stub, 0o755)
             proc = _run_apply_with_isolated_root(
                 {

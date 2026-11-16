@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Both Duo panels take one raw brightness from the vendor curve."""
+
 import tempfile
 import unittest
 from pathlib import Path

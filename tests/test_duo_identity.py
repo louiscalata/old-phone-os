@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Image identity against scratch roots and extracted shell blocks; no mount, root, phone or sockets."""
+
 import copy
 import hashlib
 import io
@@ -29,7 +30,9 @@ WIFI_COMPAT_BYTES = b"[connection]\nwifi-sec.pmf=1\n"
 
 def block(name, label):
     text = (DUO / name).read_text()
-    found = re.search(r"^# --- " + re.escape(label) + r": BEGIN[^\n]*\n(.*?)^# --- " + re.escape(label) + r": END", text, re.M | re.S)
+    found = re.search(
+        r"^# --- " + re.escape(label) + r": BEGIN[^\n]*\n(.*?)^# --- " + re.escape(label) + r": END", text, re.M | re.S
+    )
     assert found, label
     return found.group(1)
 
@@ -59,12 +62,27 @@ class BuildIdentity(unittest.TestCase):
         return p
 
     def shell(self, script, env=None):
-        assignments = {"r": self.root, "src": ROOT, "image": self.base, "base_sha": hashlib.sha256(self.base.read_bytes()).hexdigest(), "identity_state": self.state, "ref": "fixture"}
+        assignments = {
+            "r": self.root,
+            "src": ROOT,
+            "image": self.base,
+            "base_sha": hashlib.sha256(self.base.read_bytes()).hexdigest(),
+            "identity_state": self.state,
+            "ref": "fixture",
+        }
         prelude = "set -eu\n" + "\n".join(k + "=" + shlex.quote(str(v)) for k, v in assignments.items()) + "\n"
-        prelude += ('g() { case "$1" in show) cat "$src/pyproject.toml" ;; rev-parse) echo ' + REVISION +
-                    ' ;; log) [ "$*" = "log -1 --no-show-signature --format=%ct fixture" ] || exit 9; echo 1794000000 ;; *) exit 9 ;; esac; }\n')
-        return subprocess.run(["sh", "-c", prelude + script], env=self.env if env is None else env,
-                              capture_output=True, text=True, timeout=30)
+        prelude += (
+            'g() { case "$1" in show) cat "$src/pyproject.toml" ;; rev-parse) echo '
+            + REVISION
+            + ' ;; log) [ "$*" = "log -1 --no-show-signature --format=%ct fixture" ] || exit 9; echo 1794000000 ;; *) exit 9 ;; esac; }\n'
+        )
+        return subprocess.run(
+            ["sh", "-c", prelude + script],
+            env=self.env if env is None else env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
     def prepare(self):
         p = self.shell(block("build-image.sh", "identity epoch") + block("build-image.sh", "identity prepare"))
@@ -112,9 +130,12 @@ class BuildIdentity(unittest.TestCase):
         self.assertIn("Old Phone OS " + project_version(), (self.root / "etc/issue").read_text())
 
     def test_unchanged_powerkey_files_are_still_in_the_image_inventory(self):
-        paths = ("usr/libexec/opos/opos-unblank", "etc/systemd/system/opos-powerkey.service",
-                 "etc/systemd/system/opos.service.wants/opos-powerkey.service",
-                 "opt/opos-releases/0-" + REVISION[:12] + "/src/opos/powerkey.py")
+        paths = (
+            "usr/libexec/opos/opos-unblank",
+            "etc/systemd/system/opos-powerkey.service",
+            "etc/systemd/system/opos.service.wants/opos-powerkey.service",
+            "opt/opos-releases/0-" + REVISION[:12] + "/src/opos/powerkey.py",
+        )
         self.put(paths[0], (DUO / "opos-unblank").read_bytes()).chmod(0o755)
         self.put(paths[1], (DUO / "opos-powerkey.service").read_bytes())
         link = self.put(paths[2], b"")
@@ -136,6 +157,7 @@ class BuildIdentity(unittest.TestCase):
     def test_fresh_roots_with_identical_inputs_have_identical_manifests(self):
         first = self.build()
         import shutil
+
         shutil.rmtree(self.root)
         self.put("usr/lib/os-release", self.original)
         self.put("etc/passwd", b"droidian:x:32011:32011::/srv/droidian:/bin/sh\n")
@@ -217,6 +239,7 @@ class BuildIdentity(unittest.TestCase):
         self.prepare()
         self.installs()
         import shutil
+
         directory = self.root / "etc/systemd/system/opos-server.service.d"
         shutil.rmtree(directory)
         directory.symlink_to("/etc/opos/dropins")
@@ -227,13 +250,21 @@ class BuildIdentity(unittest.TestCase):
         self.put("etc/passwd", "droidian:x:32011:32011:Simul\u00e9:/srv/droidian:/bin/sh\n".encode("utf-8"))
         self.prepare()
         self.installs()
-        self.put("etc/systemd/system/opos-server.service.d/90-test.conf", 'Environment="OPOS_TEST=caf\u00e9"\n'.encode("utf-8"))
+        self.put(
+            "etc/systemd/system/opos-server.service.d/90-test.conf",
+            'Environment="OPOS_TEST=caf\u00e9"\n'.encode("utf-8"),
+        )
         self.put("etc/default/opos-osk", '# caf\u00e9\nOPOS_OSK="caf\u00e9"\n'.encode("utf-8"))
-        self.put("etc/opos/usb-shell.conf", '# caf\u00e9\nenabled=1\n'.encode("utf-8"))
+        self.put("etc/opos/usb-shell.conf", "# caf\u00e9\nenabled=1\n".encode("utf-8"))
         expected = self.finish()
         env = dict(self.env, LC_ALL="C", LANG="C")
-        p = subprocess.run([sys.executable, "-I", "-X", "utf8=0", "-c",
-                            "import locale; print(locale.getencoding())"], env=env, capture_output=True, text=True, timeout=30)
+        p = subprocess.run(
+            [sys.executable, "-I", "-X", "utf8=0", "-c", "import locale; print(locale.getencoding())"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertNotIn("utf", p.stdout.lower(), "test requires a non-UTF-8 locale")
         # -I ignores PYTHONUTF8; explicitly disable UTF-8 mode in both phases.
@@ -277,15 +308,24 @@ class BuildIdentity(unittest.TestCase):
 
     def wifi_verify(self, owner="0:0"):
         # Supply GNU stat's output portably, retaining the file's real mode.
-        stat = ('stat() { [ "$1" = -c ] && [ "$2" = "%u:%g %a" ] || return 2; '
-                + shlex.quote(sys.executable) + ' -I -B -c '
-                + shlex.quote('import os, stat, sys; s = os.stat(sys.argv[1]); print(sys.argv[2], format(stat.S_IMODE(s.st_mode), "o"))')
-                + ' "$3" ' + shlex.quote(owner) + '; }\n')
+        stat = (
+            'stat() { [ "$1" = -c ] && [ "$2" = "%u:%g %a" ] || return 2; '
+            + shlex.quote(sys.executable)
+            + " -I -B -c "
+            + shlex.quote(
+                'import os, stat, sys; s = os.stat(sys.argv[1]); print(sys.argv[2], format(stat.S_IMODE(s.st_mode), "o"))'
+            )
+            + ' "$3" '
+            + shlex.quote(owner)
+            + "; }\n"
+        )
         check = 'fail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
-        return self.shell(stat + check + block("verify-image.sh", "wifi compat") + '\nexit $fail\n')
+        return self.shell(stat + check + block("verify-image.sh", "wifi compat") + "\nexit $fail\n")
 
     def test_wifi_compat_build_writes_exact_bytes_in_dev_and_release_and_keeps_the_base_scan_setting(self):
-        scan = self.put("etc/NetworkManager/conf.d/99-wifi-disable-random-mac.conf", b"[device]\nwifi.scan-rand-mac-address=no\n")
+        scan = self.put(
+            "etc/NetworkManager/conf.d/99-wifi-disable-random-mac.conf", b"[device]\nwifi.scan-rand-mac-address=no\n"
+        )
         scan.chmod(0o600)
         for release in ("0", "1"):
             with self.subTest(release=release):
@@ -327,8 +367,13 @@ class BuildIdentity(unittest.TestCase):
                 self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
 
     def test_wifi_compat_verification_rejects_any_changed_bytes(self):
-        for data in (WIFI_COMPAT_BYTES + b"wifi.cloned-mac-address=permanent\n", WIFI_COMPAT_BYTES + b"\n",
-                     WIFI_COMPAT_BYTES.rstrip(b"\n"), WIFI_COMPAT_BYTES.replace(b"pmf=1", b"pmf=2"), b""):
+        for data in (
+            WIFI_COMPAT_BYTES + b"wifi.cloned-mac-address=permanent\n",
+            WIFI_COMPAT_BYTES + b"\n",
+            WIFI_COMPAT_BYTES.rstrip(b"\n"),
+            WIFI_COMPAT_BYTES.replace(b"pmf=1", b"pmf=2"),
+            b"",
+        ):
             with self.subTest(data=data):
                 self.put(WIFI_COMPAT, data).chmod(0o644)
                 p = self.wifi_verify()
@@ -387,7 +432,11 @@ class BuildIdentity(unittest.TestCase):
 
     def test_verify_shell_block_accepts_build_then_rejects_corruption(self):
         self.build()
-        prelude = 'identity_checker=' + shlex.quote(str(ROOT / "src/opos/image_identity.py")) + '\nfail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
+        prelude = (
+            "identity_checker="
+            + shlex.quote(str(ROOT / "src/opos/image_identity.py"))
+            + '\nfail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
+        )
         script = prelude + block("verify-image.sh", "identity") + "\nexit $fail\n"
         self.assertEqual(self.shell(script).returncode, 0)
         self.put("etc/issue", b"damaged\n")
@@ -422,10 +471,14 @@ class ReadersAndChecks(unittest.TestCase):
                     identity.verify(self.root)
 
     def test_rejects_incomplete_manifest_bad_identity_missing_base_and_path_tricks(self):
-        for mutate in (lambda m: m.update(files=[]), lambda m: m["files"].append(m["files"][0]),
-                       lambda m: m["files"][0].update(path="../escape"),
-                       lambda m: m["files"][0].update(path="/etc/issue"),
-                       lambda m: m.update(revision="bad"), lambda m: m.update(source_date_epoch=True)):
+        for mutate in (
+            lambda m: m.update(files=[]),
+            lambda m: m["files"].append(m["files"][0]),
+            lambda m: m["files"][0].update(path="../escape"),
+            lambda m: m["files"][0].update(path="/etc/issue"),
+            lambda m: m.update(revision="bad"),
+            lambda m: m.update(source_date_epoch=True),
+        ):
             m = copy.deepcopy(self.m)
             mutate(m)
             self.save(m)
@@ -453,7 +506,19 @@ class ReadersAndChecks(unittest.TestCase):
         self.assertIn(REVISION, html)
         self.assertIn("fixture-kernel", html)
         self.assertEqual(facts["version"], project_version())
-        p = subprocess.run([sys.executable, "-I", "-B", str(self.root / "usr/libexec/opos/image_identity.py"), "version", "--root", str(self.root)], capture_output=True, text=True)
+        p = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(self.root / "usr/libexec/opos/image_identity.py"),
+                "version",
+                "--root",
+                str(self.root),
+            ],
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("Old Phone OS " + project_version() + ", based on Droidian", p.stdout)
         self.assertIn(REVISION, p.stdout)
@@ -475,8 +540,23 @@ class ReadersAndChecks(unittest.TestCase):
             if damaged:
                 (self.root / "etc/issue").write_text("changed")
             before = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*"))
-            p = subprocess.run([sys.executable, "-I", "-B", str(DUO / "opos-selftest"), "--root", str(self.root),
-                                "--only", "identity", "--bin", str(self.root / "no-commands")], capture_output=True, text=True, timeout=30)
+            p = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    str(DUO / "opos-selftest"),
+                    "--root",
+                    str(self.root),
+                    "--only",
+                    "identity",
+                    "--bin",
+                    str(self.root / "no-commands"),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             self.assertEqual(p.returncode, int(damaged), p.stdout + p.stderr)
             self.assertIn(("FAIL" if damaged else "PASS") + "  identity.image", p.stdout)
             self.assertNotIn("server.http", p.stdout)
@@ -485,6 +565,7 @@ class ReadersAndChecks(unittest.TestCase):
     def test_one_runtime_version_source_and_identity_does_not_decorate_home(self):
         self.assertEqual(notices.VERSION, project_version())
         from opos import web
+
         source = Path(web.__file__).read_text()
         self.assertNotIn("image_identity", source)
         self.assertNotIn("u-h-about", web.page())
@@ -492,6 +573,7 @@ class ReadersAndChecks(unittest.TestCase):
     def test_ota_tree_reports_current_application_version_with_or_without_image_identity(self):
         from importlib import metadata
         from opos.setup import cli
+
         release = self.root / "opt/opos-releases/1-test"
         module = release / "src/opos/version.py"
         module.parent.mkdir(parents=True)
@@ -505,8 +587,10 @@ class ReadersAndChecks(unittest.TestCase):
                 if not has_identity:
                     (self.root / "etc/opos/image.json").unlink()
                     (self.root / "usr/libexec/opos/image_identity.py").unlink()
-                with mock.patch("opos.version.__file__", str(module)), mock.patch(
-                        "opos.version.metadata.version", side_effect=metadata.PackageNotFoundError):
+                with (
+                    mock.patch("opos.version.__file__", str(module)),
+                    mock.patch("opos.version.metadata.version", side_effect=metadata.PackageNotFoundError),
+                ):
                     self.assertEqual(project_version(), "0.2.0")
                     self.assertEqual(runpy.run_path(str(ROOT / "src/opos/notices.py"))["VERSION"], "0.2.0")
                     out = io.StringIO()
@@ -515,9 +599,13 @@ class ReadersAndChecks(unittest.TestCase):
                     self.assertEqual(exit_result.exception.code, 0)
                     self.assertEqual(out.getvalue(), "opos 0.2.0\n")
                     with mock.patch("opos.version.metadata.version", return_value="0.1.0"):
-                        self.assertEqual(project_version(), "0.2.0", "current release precedes older installed distribution metadata")
+                        self.assertEqual(
+                            project_version(), "0.2.0", "current release precedes older installed distribution metadata"
+                        )
                     manifest.write_text(json.dumps({"version": "0.3.0", "revision": "f" * 40}), encoding="utf-8")
-                    self.assertEqual(project_version(), "unknown", "mismatched release metadata must not label this application")
+                    self.assertEqual(
+                        project_version(), "unknown", "mismatched release metadata must not label this application"
+                    )
                     manifest.write_text(json.dumps({"version": "0.2.0", "revision": REVISION}), encoding="utf-8")
 
     def test_permission_denied_is_incomplete_coverage_only_for_unprivileged_opt_in(self):
@@ -527,11 +615,16 @@ class ReadersAndChecks(unittest.TestCase):
         self.m["files"].append(identity.record(self.root, "etc/opos/monitor.env"))
         self.save(self.m)
         original_hash = identity.hash_file
+
         def denied(path):
             if path.resolve() == private.resolve():
                 raise PermissionError("simulated root-owned mode-0600 file")
             return original_hash(path)
-        with mock.patch.object(identity, "hash_file", side_effect=denied), mock.patch.object(os, "geteuid", return_value=1000):
+
+        with (
+            mock.patch.object(identity, "hash_file", side_effect=denied),
+            mock.patch.object(os, "geteuid", return_value=1000),
+        ):
             with self.assertRaises(PermissionError):
                 identity.verify(self.root)
             unreadable = []
@@ -544,7 +637,9 @@ class ReadersAndChecks(unittest.TestCase):
                 identity.verify(self.root, unreadable=[])
         self.assertEqual(private.stat().st_mode & 0o777, 0o600)
 
-    @unittest.skipUnless(os.geteuid() == 0, "requires root to create a root-owned mode-0600 fixture and drop to an unprivileged UID")
+    @unittest.skipUnless(
+        os.geteuid() == 0, "requires root to create a root-owned mode-0600 fixture and drop to an unprivileged UID"
+    )
     def test_root_owned_private_file_root_verification_and_unprivileged_selftest(self):
         private = self.root / "etc/opos/monitor.env"
         private.write_bytes(b"# simulated private configuration\n")
@@ -554,12 +649,19 @@ class ReadersAndChecks(unittest.TestCase):
         self.save(self.m)
         self.assertEqual(identity.verify(self.root), self.m)
         self.root.chmod(0o755)
+
         def demote():
             os.setgroups([])
             os.setgid(65534)
             os.setuid(65534)
-        p = subprocess.run([sys.executable, "-I", "-B", str(DUO / "opos-selftest"), "--root", str(self.root),
-                            "--only", "identity"], preexec_fn=demote, capture_output=True, text=True, timeout=30)
+
+        p = subprocess.run(
+            [sys.executable, "-I", "-B", str(DUO / "opos-selftest"), "--root", str(self.root), "--only", "identity"],
+            preexec_fn=demote,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("WARN  identity.image", p.stdout)
         self.assertIn("incomplete coverage", p.stdout)
@@ -571,8 +673,11 @@ class ReadersAndChecks(unittest.TestCase):
 
     def test_identity_description_keeps_owner_claim_boundary(self):
         text = " ".join((ROOT / "docs/duo-os-identity.md").read_text(encoding="utf-8").split())
-        self.assertIn("Old Phone OS is an interface, and a work in progress as a Linux distribution, built on the community Droidian port, "
-                      "which supplies the kernel, drivers and system services.", text)
+        self.assertIn(
+            "Old Phone OS is an interface, and a work in progress as a Linux distribution, built on the community Droidian port, "
+            "which supplies the kernel, drivers and system services.",
+            text,
+        )
 
 
 class NoSocketIntegration(unittest.TestCase):
@@ -580,12 +685,16 @@ class NoSocketIntegration(unittest.TestCase):
         from opos import firstrun, web
         from tests.test_update_client import MainPageIsUntouched
         from tests.test_uxp30_budget import SWITCHES, WAVE_GATE
+
         # Run the existing digest assertion without Env.setUp's unrelated HTTP
         # source. No expected hash is changed and no socket is substituted.
         MainPageIsUntouched("test_recorded_digests").test_recorded_digests()
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_")}
         env.update(SWITCHES, OPOS_APPS="clock,contacts,notes,calc")
-        with tempfile.TemporaryDirectory() as cfg, mock.patch.dict(os.environ, dict(env, OPOS_CONFIG_DIR=cfg), clear=True):
+        with (
+            tempfile.TemporaryDirectory() as cfg,
+            mock.patch.dict(os.environ, dict(env, OPOS_CONFIG_DIR=cfg), clear=True),
+        ):
             undo = firstrun.install(web)
             try:
                 h = object.__new__(web.Handler)
@@ -604,7 +713,9 @@ class NoSocketIntegration(unittest.TestCase):
                 self.assertEqual(int(headers["Content-Length"]), len(body))
                 self.assertLessEqual(len(body), WAVE_GATE)
                 self.assertNotIn(b"u-h-about", body)
-                print("No-socket handler, all image switches including apps: %d bytes (gate %d)" % (len(body), WAVE_GATE))
+                print(
+                    "No-socket handler, all image switches including apps: %d bytes (gate %d)" % (len(body), WAVE_GATE)
+                )
             finally:
                 if undo:
                     undo()

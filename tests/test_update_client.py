@@ -3,6 +3,7 @@
 
 The update source is a real http.server on loopback; folders are temporary. Nothing here needs root, a phone or the internet.
 """
+
 import collections
 import hashlib
 import html.parser
@@ -40,6 +41,7 @@ def setUpModule():
         kw.pop("skip_host", None)
         kw.pop("skip_accept_encoding", None)
         return orig(self, method, url, body=body, headers=headers or {}, **kw)
+
     http.client.HTTPConnection.request = request
 
 
@@ -56,8 +58,11 @@ def tar_bundle(serial=7, fmt=tarfile.USTAR_FORMAT, pad=2048):
     """Three members named like a real bundle. The content is not meaningful: root verifies, the client does not."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w", format=fmt) as t:
-        for name, data in (("manifest.json", json.dumps({"format": 1, "serial": serial}).encode()),
-                           ("manifest.json.sig", b"sig"), ("payload.tar.gz", b"\0" * pad)):
+        for name, data in (
+            ("manifest.json", json.dumps({"format": 1, "serial": serial}).encode()),
+            ("manifest.json.sig", b"sig"),
+            ("payload.tar.gz", b"\0" * pad),
+        ):
             ti = tarfile.TarInfo(name)
             ti.size = len(data)
             ti.mtime = 1700000000.5 if fmt == tarfile.PAX_FORMAT else 1700000000
@@ -104,7 +109,9 @@ class Source:
 
         self.httpd = S(("127.0.0.1", 0), H)
         self.port = self.httpd.server_address[1]
-        threading.Thread(target=self.httpd.serve_forever, args=(0.01,), daemon=True).start()  # a short poll keeps shutdown quick
+        threading.Thread(
+            target=self.httpd.serve_forever, args=(0.01,), daemon=True
+        ).start()  # a short poll keeps shutdown quick
 
     def url(self, path="/latest.json"):
         return f"http://127.0.0.1:{self.port}{path}"
@@ -125,7 +132,9 @@ class Env(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         t = self.tmp.name
-        self.paths = uc.Paths(config=os.path.join(t, "update.json"), root=os.path.join(t, "lib"), revision=os.path.join(t, "REVISION"))
+        self.paths = uc.Paths(
+            config=os.path.join(t, "update.json"), root=os.path.join(t, "lib"), revision=os.path.join(t, "REVISION")
+        )
         os.makedirs(self.paths.inbox)
         self.src = Source()
         self.addCleanup(self.src.close)
@@ -139,14 +148,28 @@ class Env(unittest.TestCase):
 
     def state(self, serial=0, previous=(), failed=(), stepped_back=None, pending_boot=None, floor=0, **cur):
         """floor=None: the state file of an updater from before the floor existed (it does not know the cancel-staged request)."""
-        doc = {"base": 1, "current": {"serial": serial, "version": "0.1.0", "revision": "a" * 40, "release": f"{serial}-aaaaaaaaaaaa", **cur},
-               "previous": list(previous), "failed": list(failed), "pending_boot": pending_boot, "stepped_back": stepped_back}
+        doc = {
+            "base": 1,
+            "current": {
+                "serial": serial,
+                "version": "0.1.0",
+                "revision": "a" * 40,
+                "release": f"{serial}-aaaaaaaaaaaa",
+                **cur,
+            },
+            "previous": list(previous),
+            "failed": list(failed),
+            "pending_boot": pending_boot,
+            "stepped_back": stepped_back,
+        }
         if floor is not None:
             doc["floor"] = floor
         self.put(self.paths.state, doc)
 
     def status(self, **kw):
-        self.put(self.paths.status, {"phase": "idle", "message": "", "serial": None, "time": "2026-11-08T12:00:00Z", **kw})
+        self.put(
+            self.paths.status, {"phase": "idle", "message": "", "serial": None, "time": "2026-11-08T12:00:00Z", **kw}
+        )
 
     def client(self, **limits):
         return uc.UpdateClient(self.paths, uc.Limits(**limits))
@@ -169,26 +192,59 @@ class Env(unittest.TestCase):
 
 def no_network():
     """Any outbound connection or name lookup raises. Connections to loopback sockets of the test itself are the exception below."""
+
     def boom(*a, **k):
         raise AssertionError("network used")
-    return [mock.patch.object(socket.socket, "connect", boom), mock.patch.object(socket, "create_connection", boom),
-            mock.patch.object(socket, "getaddrinfo", boom), mock.patch.object(urllib.request.OpenerDirector, "open", boom),
-            mock.patch.object(urllib.request, "urlopen", boom), mock.patch.object(http.client.HTTPConnection, "connect", boom)]
+
+    return [
+        mock.patch.object(socket.socket, "connect", boom),
+        mock.patch.object(socket, "create_connection", boom),
+        mock.patch.object(socket, "getaddrinfo", boom),
+        mock.patch.object(urllib.request.OpenerDirector, "open", boom),
+        mock.patch.object(urllib.request, "urlopen", boom),
+        mock.patch.object(http.client.HTTPConnection, "connect", boom),
+    ]
 
 
 class AddressPolicy(unittest.TestCase):
     def test_https_anywhere_http_only_on_a_private_network_when_allowed(self):
         self.assertEqual(uc.check_url("https://updates.example.org/latest.json").scheme, "https")
-        for host in ("127.0.0.1", "127.1.2.3", "[::1]", "localhost", ip(10, 15, 19, 82), ip(172, 16, 0, 9), ip(172, 31, 255, 1), ip(192, 168, 1, 20), "[fd12:3456::1]"):
+        for host in (
+            "127.0.0.1",
+            "127.1.2.3",
+            "[::1]",
+            "localhost",
+            ip(10, 15, 19, 82),
+            ip(172, 16, 0, 9),
+            ip(172, 31, 255, 1),
+            ip(192, 168, 1, 20),
+            "[fd12:3456::1]",
+        ):
             with self.subTest(host=host):
                 self.assertEqual(uc.check_url(f"http://{host}:8080/latest.json", True).scheme, "http")
                 with self.assertRaises(ValueError):  # the flag is off by default
                     uc.check_url(f"http://{host}:8080/latest.json")
 
     def test_http_to_anything_else_is_refused_even_when_allowed(self):
-        for host in ("updates.example.org", "phone.local", "127.0.0.1.example.org", "localhost.example.org", "0x7f.1", "2130706433",
-                     ip(8, 8, 8, 8), ip(172, 32, 0, 1), ip(172, 15, 0, 1), ip(11, 0, 0, 1), ip(192, 169, 0, 1), ip(169, 254, 1, 1),
-                     ip(203, 0, 113, 9), "[2001:db8::1]", "[fe80::1]", "[::ffff:" + ip(8, 8, 8, 8) + "]", "localhost."):
+        for host in (
+            "updates.example.org",
+            "phone.local",
+            "127.0.0.1.example.org",
+            "localhost.example.org",
+            "0x7f.1",
+            "2130706433",
+            ip(8, 8, 8, 8),
+            ip(172, 32, 0, 1),
+            ip(172, 15, 0, 1),
+            ip(11, 0, 0, 1),
+            ip(192, 169, 0, 1),
+            ip(169, 254, 1, 1),
+            ip(203, 0, 113, 9),
+            "[2001:db8::1]",
+            "[fe80::1]",
+            "[::ffff:" + ip(8, 8, 8, 8) + "]",
+            "localhost.",
+        ):
             with self.subTest(host=host):
                 with self.assertRaises(ValueError):
                     uc.check_url(f"http://{host}/latest.json", True)
@@ -198,11 +254,29 @@ class AddressPolicy(unittest.TestCase):
         self.assertFalse(uc.lan_host("::ffff:" + ip(8, 8, 8, 8)))
 
     def test_other_schemes_credentials_and_odd_addresses_are_refused(self):
-        for url in ("ftp://updates.example.org/x", "file:///etc/passwd", "javascript:alert(1)", "//updates.example.org/x", "updates.example.org/x",
-                    "https://", "https:///x", "https://user@updates.example.org/x", "https://user:pw@updates.example.org/x",
-                    "https://updates.example.org/x#frag", "https://updates.example.org:0/x", "https://updates.example.org:99999/x",
-                    "https://updates.example.org/ x", "https://updates.example.org/\tx", "https://updates.example.org\\@evil.example/x",
-                    "https://updates.example.org/é", "", "https://" + "a" * 2100, None, 5, b"https://updates.example.org/"):
+        for url in (
+            "ftp://updates.example.org/x",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "//updates.example.org/x",
+            "updates.example.org/x",
+            "https://",
+            "https:///x",
+            "https://user@updates.example.org/x",
+            "https://user:pw@updates.example.org/x",
+            "https://updates.example.org/x#frag",
+            "https://updates.example.org:0/x",
+            "https://updates.example.org:99999/x",
+            "https://updates.example.org/ x",
+            "https://updates.example.org/\tx",
+            "https://updates.example.org\\@evil.example/x",
+            "https://updates.example.org/é",
+            "",
+            "https://" + "a" * 2100,
+            None,
+            5,
+            b"https://updates.example.org/",
+        ):
             with self.subTest(url=url):
                 with self.assertRaises(ValueError):
                     uc.check_url(url, True)
@@ -219,7 +293,10 @@ class ConfigFile(Env):
         self.put(self.paths.config, {"url": "https://updates.example.org/opos/latest.json"})
         cfg = uc.load_config(self.paths.config)
         self.assertEqual(cfg, uc.Config("https://updates.example.org/opos/latest.json", False, False))
-        self.put(self.paths.config, {"url": "http://127.0.0.1:1/latest.json", "auto_check": True, "allow_lan_http": True, "future_key": [1]})
+        self.put(
+            self.paths.config,
+            {"url": "http://127.0.0.1:1/latest.json", "auto_check": True, "allow_lan_http": True, "future_key": [1]},
+        )
         self.assertEqual(uc.load_config(self.paths.config), uc.Config("http://127.0.0.1:1/latest.json", True, True))
 
     def test_no_url_is_not_configured(self):
@@ -229,10 +306,20 @@ class ConfigFile(Env):
                 self.assertIsNone(uc.load_config(self.paths.config))
 
     def test_unusable_files_are_named_not_guessed(self):
-        bad = ["not json", "[]", '"x"', "{", '{"url": 5}', '{"url": "http://updates.example.org/latest.json"}',
-               '{"url": "http://127.0.0.1/latest.json"}', '{"url": "https://updates.example.org/x", "auto_check": "yes"}',
-               '{"url": "https://updates.example.org/x", "allow_lan_http": 1}', '{"url": "https://u.example.org/x", "url": "https://v.example.org/x"}',
-               '{"url": "https://u.example.org/x", "auto_check": NaN}', "﻿" + '{"url": "https://u.example.org/x"}']
+        bad = [
+            "not json",
+            "[]",
+            '"x"',
+            "{",
+            '{"url": 5}',
+            '{"url": "http://updates.example.org/latest.json"}',
+            '{"url": "http://127.0.0.1/latest.json"}',
+            '{"url": "https://updates.example.org/x", "auto_check": "yes"}',
+            '{"url": "https://updates.example.org/x", "allow_lan_http": 1}',
+            '{"url": "https://u.example.org/x", "url": "https://v.example.org/x"}',
+            '{"url": "https://u.example.org/x", "auto_check": NaN}',
+            "﻿" + '{"url": "https://u.example.org/x"}',
+        ]
         for text in bad:
             with self.subTest(text=text):
                 self.put(self.paths.config, text)
@@ -317,27 +404,86 @@ class IndexParsing(unittest.TestCase):
 
     def test_minimal_and_full(self):
         i = self.parse({"serial": 7, "version": "0.2.0", "url": "opos-7.opos-update"})
-        self.assertEqual((i.serial, i.version, i.url, i.sha256, i.size), (7, "0.2.0", "http://127.0.0.1:9/dir/opos-7.opos-update", None, None))
-        i = self.parse({"serial": 0, "version": "1", "url": "/b/x.opos-update", "sha256": "AB" * 32, "size": 4096, "notes": "ignored", "extra": {"a": 1}})
-        self.assertEqual((i.serial, i.url, i.sha256, i.size), (0, "http://127.0.0.1:9/b/x.opos-update", "ab" * 32, 4096))
+        self.assertEqual(
+            (i.serial, i.version, i.url, i.sha256, i.size),
+            (7, "0.2.0", "http://127.0.0.1:9/dir/opos-7.opos-update", None, None),
+        )
+        i = self.parse(
+            {
+                "serial": 0,
+                "version": "1",
+                "url": "/b/x.opos-update",
+                "sha256": "AB" * 32,
+                "size": 4096,
+                "notes": "ignored",
+                "extra": {"a": 1},
+            }
+        )
+        self.assertEqual(
+            (i.serial, i.url, i.sha256, i.size), (0, "http://127.0.0.1:9/b/x.opos-update", "ab" * 32, 4096)
+        )
 
     def test_absolute_url_on_the_same_origin_is_fine(self):
-        self.assertEqual(self.parse({"serial": 1, "version": "1", "url": "http://127.0.0.1:9/x"}).url, "http://127.0.0.1:9/x")
+        self.assertEqual(
+            self.parse({"serial": 1, "version": "1", "url": "http://127.0.0.1:9/x"}).url, "http://127.0.0.1:9/x"
+        )
 
     def test_malformed(self):
         ok = {"serial": 7, "version": "0.2.0", "url": "x"}
-        bad = [b"", b"nope", b"[]", b"7", b'"s"', b"\xff\xfe", b'{"serial": 7, "serial": 8, "version": "1", "url": "x"}',
-               b'{"serial": NaN, "version": "1", "url": "x"}', b'{"serial": Infinity, "version": "1", "url": "x"}']
+        bad = [
+            b"",
+            b"nope",
+            b"[]",
+            b"7",
+            b'"s"',
+            b"\xff\xfe",
+            b'{"serial": 7, "serial": 8, "version": "1", "url": "x"}',
+            b'{"serial": NaN, "version": "1", "url": "x"}',
+            b'{"serial": Infinity, "version": "1", "url": "x"}',
+        ]
         for raw in bad:
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 self.parse(raw)
-        mutate = [("serial", None), ("serial", True), ("serial", False), ("serial", 7.0), ("serial", "7"), ("serial", -1), ("serial", 2 ** 31), ("serial", [7]),
-                  ("version", None), ("version", 1), ("version", ""), ("version", "-1"), ("version", "a b"), ("version", "a" * 65), ("version", "1<script>"),
-                  ("url", None), ("url", 5), ("url", ""), ("url", "a b"), ("url", "x\n"), ("url", "https://updates.example.org/x"),
-                  ("url", "file:///etc/passwd"), ("url", "//127.0.0.1:10/x"), ("url", "http://127.0.0.1:10/x"), ("url", "http://localhost:9/x"),
-                  ("url", "ftp://127.0.0.1:9/x"), ("url", "x#frag"), ("url", "\\\\evil\\x"),
-                  ("sha256", 5), ("sha256", "abc"), ("sha256", "g" * 64), ("sha256", "a" * 65), ("size", 0), ("size", -5), ("size", 1.5), ("size", True), ("size", "9"),
-                  ("size", uc.MAX_BUNDLE + 1)]
+        mutate = [
+            ("serial", None),
+            ("serial", True),
+            ("serial", False),
+            ("serial", 7.0),
+            ("serial", "7"),
+            ("serial", -1),
+            ("serial", 2**31),
+            ("serial", [7]),
+            ("version", None),
+            ("version", 1),
+            ("version", ""),
+            ("version", "-1"),
+            ("version", "a b"),
+            ("version", "a" * 65),
+            ("version", "1<script>"),
+            ("url", None),
+            ("url", 5),
+            ("url", ""),
+            ("url", "a b"),
+            ("url", "x\n"),
+            ("url", "https://updates.example.org/x"),
+            ("url", "file:///etc/passwd"),
+            ("url", "//127.0.0.1:10/x"),
+            ("url", "http://127.0.0.1:10/x"),
+            ("url", "http://localhost:9/x"),
+            ("url", "ftp://127.0.0.1:9/x"),
+            ("url", "x#frag"),
+            ("url", "\\\\evil\\x"),
+            ("sha256", 5),
+            ("sha256", "abc"),
+            ("sha256", "g" * 64),
+            ("sha256", "a" * 65),
+            ("size", 0),
+            ("size", -5),
+            ("size", 1.5),
+            ("size", True),
+            ("size", "9"),
+            ("size", uc.MAX_BUNDLE + 1),
+        ]
         for key, value in mutate:
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 self.parse({**ok, key: value})
@@ -348,25 +494,43 @@ class IndexParsing(unittest.TestCase):
     def test_size_at_the_cap_is_fine_and_the_cap_is_256_mib(self):
         self.assertEqual(uc.MAX_BUNDLE, 256 * 1024 * 1024)
         self.assertEqual(uc.Limits().max_bundle, 256 * 1024 * 1024)
-        self.assertEqual(self.parse({"serial": 1, "version": "1", "url": "x", "size": uc.MAX_BUNDLE}).size, uc.MAX_BUNDLE)
+        self.assertEqual(
+            self.parse({"serial": 1, "version": "1", "url": "x", "size": uc.MAX_BUNDLE}).size, uc.MAX_BUNDLE
+        )
 
     def test_https_index_may_only_point_at_https(self):
         with self.assertRaises(ValueError):
-            uc.parse_index(b'{"serial": 1, "version": "1", "url": "http://updates.example.org/x"}', "https://updates.example.org/latest.json", True)
-        self.assertEqual(uc.parse_index(b'{"serial": 1, "version": "1", "url": "x"}', "https://updates.example.org/latest.json").url, "https://updates.example.org/x")
+            uc.parse_index(
+                b'{"serial": 1, "version": "1", "url": "http://updates.example.org/x"}',
+                "https://updates.example.org/latest.json",
+                True,
+            )
+        self.assertEqual(
+            uc.parse_index(b'{"serial": 1, "version": "1", "url": "x"}', "https://updates.example.org/latest.json").url,
+            "https://updates.example.org/x",
+        )
 
 
 class Check(Env):
     def test_newer_equal_older_failed(self):
         self.conf()
         c = self.client()
-        cases = [(0, 7, [], True), (6, 7, [], True), (7, 7, [], False), (9, 7, [], False), (0, 7, [7], False), (0, 7, [3], True)]
+        cases = [
+            (0, 7, [], True),
+            (6, 7, [], True),
+            (7, 7, [], False),
+            (9, 7, [], False),
+            (0, 7, [7], False),
+            (0, 7, [3], True),
+        ]
         for current, offered, failed, newer in cases:
             with self.subTest(current=current, offered=offered, failed=failed):
                 self.state(current, failed=failed)
                 self.publish(offered)
                 res = c.check()
-                self.assertEqual((res["ok"], res["newer"], res["serial"], res["version"]), (True, newer, offered, f"0.{offered}.0"))
+                self.assertEqual(
+                    (res["ok"], res["newer"], res["serial"], res["version"]), (True, newer, offered, f"0.{offered}.0")
+                )
                 self.assertTrue(res["message"])
         self.assertEqual(self.inbox(), [])  # a check never downloads
         self.assertNotIn("/opos-7.opos-update", self.src.hits)
@@ -407,7 +571,13 @@ class Check(Env):
         self.conf()
         self.state(0)
         c = self.client()
-        for body in (b"<html>captive portal</html>", b"[]", b"{}", json.dumps({"serial": "7", "version": "1", "url": "x"}).encode(), b""):
+        for body in (
+            b"<html>captive portal</html>",
+            b"[]",
+            b"{}",
+            json.dumps({"serial": "7", "version": "1", "url": "x"}).encode(),
+            b"",
+        ):
             with self.subTest(body=body):
                 self.src.add("/latest.json", body)
                 with self.assertRaises(uc.UpdateError) as cm:
@@ -432,6 +602,7 @@ class Check(Env):
             for _ in range(80):
                 h.wfile.write(b"400\r\n" + b" " * 1024 + b"\r\n")
             h.wfile.write(b"0\r\n\r\n")
+
         self.src.routes["/latest.json"] = lie
         with self.assertRaises(uc.UpdateError) as cm:
             c.check()
@@ -469,6 +640,7 @@ class Check(Env):
             h.send_header("Content-Length", "100")
             h.end_headers()
             self.src.release.wait(5)
+
         self.src.routes["/latest.json"] = stall
         t0 = time.monotonic()
         with self.assertRaises(uc.UpdateError) as cm:
@@ -482,14 +654,18 @@ class Check(Env):
         self.state(0)
         for bad in ("²", "³", "1¹"):
             with self.subTest(bad):
+
                 def lie(h, bad=bad):
                     h.send_response(200)
                     h.send_header("Content-Length", bad)
                     h.end_headers()
+
                 self.src.routes["/latest.json"] = lie
                 with self.assertRaises(uc.UpdateError) as cm:
                     self.client().check()
-                self.assertEqual((cm.exception.code, cm.exception.message), ("fetch", "The update server sent a bad length."))
+                self.assertEqual(
+                    (cm.exception.code, cm.exception.message), ("fetch", "The update server sent a bad length.")
+                )
 
     def test_a_trickle_hits_the_deadline_not_just_the_socket_timeout(self):
         self.conf()
@@ -507,6 +683,7 @@ class Check(Env):
                     h.wfile.flush()
                 except OSError:
                     return
+
         self.src.routes["/latest.json"] = drip
         t0 = time.monotonic()
         with self.assertRaises(uc.UpdateError) as cm:
@@ -525,6 +702,7 @@ class Check(Env):
             h.send_response(404)
             h.send_header("Content-Length", "0")
             h.end_headers()
+
         self.src.routes["/latest.json"] = hold
         c = self.client()
         t = threading.Thread(target=lambda: self.assertRaises(uc.UpdateError, c.check))
@@ -561,8 +739,14 @@ class Redirects(Env):
         other = Source()
         self.addCleanup(other.close)
         other.add("/latest.json", self.src.routes["/latest.json"][2])
-        for target in (f"http://localhost:{self.src.port}/latest.json", other.url(), "file:///etc/passwd", "ftp://127.0.0.1/x",
-                       "https://updates.example.org/latest.json", f"http://127.0.0.1.example.org:{self.src.port}/x"):
+        for target in (
+            f"http://localhost:{self.src.port}/latest.json",
+            other.url(),
+            "file:///etc/passwd",
+            "ftp://127.0.0.1/x",
+            "https://updates.example.org/latest.json",
+            f"http://127.0.0.1.example.org:{self.src.port}/x",
+        ):
             self.src.add("/hop.json", b"", status=301, Location=target)
             self.put(self.paths.config, {"url": self.src.url("/hop.json"), "allow_lan_http": True})
             with self.subTest(target=target), self.assertRaises(uc.UpdateError) as cm:
@@ -595,8 +779,28 @@ class Redirects(Env):
 class Tls(Env):
     def test_a_self_signed_certificate_is_not_accepted(self):
         d = self.tmp.name
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", os.path.join(d, "k.pem"), "-out", os.path.join(d, "c.pem"),
-                        "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1"], check=True, capture_output=True)
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                os.path.join(d, "k.pem"),
+                "-out",
+                os.path.join(d, "c.pem"),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+                "-addext",
+                "subjectAltName=IP:127.0.0.1",
+            ],
+            check=True,
+            capture_output=True,
+        )
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(os.path.join(d, "c.pem"), os.path.join(d, "k.pem"))
         self.src.httpd.socket = ctx.wrap_socket(self.src.httpd.socket, server_side=True)
@@ -656,6 +860,7 @@ class Download(Env):
             started.set()
             gate.wait(10)
             h.wfile.write(b[50000:])
+
         self.src.routes["/opos-7.opos-update"] = slow
         c = self.client()
         self.assertEqual(c.start_download()["phase"], "downloading")
@@ -674,8 +879,10 @@ class Download(Env):
         self.publish(7)
         order = []
         real_fsync, real_replace = os.fsync, os.replace
-        with mock.patch("os.fsync", lambda fd: (order.append("fsync"), real_fsync(fd))[1]), \
-                mock.patch("os.replace", lambda a, b: (order.append("replace"), real_replace(a, b))[1]):
+        with (
+            mock.patch("os.fsync", lambda fd: (order.append("fsync"), real_fsync(fd))[1]),
+            mock.patch("os.replace", lambda a, b: (order.append("replace"), real_replace(a, b))[1]),
+        ):
             self.run_job()
         self.assertEqual(order[:2], ["fsync", "replace"])
 
@@ -690,6 +897,7 @@ class Download(Env):
             h.wfile.write(b[:10000])
             h.wfile.flush()
             h.close_connection = True
+
         self.src.routes["/opos-7.opos-update"] = cut
         c = self.run_job()
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
@@ -713,6 +921,7 @@ class Download(Env):
             h.send_header("Transfer-Encoding", "chunked")
             h.end_headers()
             h.wfile.write(b"%x\r\n%s\r\n0\r\n\r\n" % (len(b), b))
+
         self.src.routes["/opos-7.opos-update"] = chunked
         idx = json.loads(self.src.routes["/latest.json"][2])
         self.src.add("/latest.json", json.dumps({**idx, "size": len(b) + 1}).encode())
@@ -736,6 +945,7 @@ class Download(Env):
             for _ in range(200):
                 h.wfile.write(b"400\r\n" + b"x" * 1024 + b"\r\n")
             h.wfile.write(b"0\r\n\r\n")
+
         self.src.routes["/opos-7.opos-update"] = endless
         c = self.run_job(max_bundle=8192)
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
@@ -801,7 +1011,9 @@ class Download(Env):
 
     def test_not_enough_space_is_refused_up_front(self):
         self.publish(7)
-        with mock.patch("shutil.disk_usage", return_value=collections.namedtuple("usage", "total used free")(100, 99, 1)):
+        with mock.patch(
+            "shutil.disk_usage", return_value=collections.namedtuple("usage", "total used free")(100, 99, 1)
+        ):
             c = self.run_job()
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
         self.assertIn("free space", c.job()["message"])
@@ -815,16 +1027,18 @@ class Download(Env):
 
     def chunked(self, body, path="/opos-7.opos-update", piece=1024):
         """Serve `body` with Transfer-Encoding: chunked, so there is no Content-Length."""
+
         def serve(h):
             h.send_response(200)
             h.send_header("Transfer-Encoding", "chunked")
             h.end_headers()
             try:
                 for i in range(0, len(body), piece):
-                    h.wfile.write(b"%x\r\n%s\r\n" % (len(body[i:i + piece]), body[i:i + piece]))
+                    h.wfile.write(b"%x\r\n%s\r\n" % (len(body[i : i + piece]), body[i : i + piece]))
                 h.wfile.write(b"0\r\n\r\n")
             except OSError:
                 pass  # the client hung up, which is what it should do
+
         self.src.routes[path] = serve
 
     def test_a_response_with_no_length_still_keeps_the_headroom_while_it_streams(self):
@@ -835,7 +1049,9 @@ class Download(Env):
             c = self.run_job(headroom=100000, space_step=8192)
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
         self.assertIn("free space", c.job()["message"])
-        self.assertLess(c.job()["bytes"], 150000 + 8192 + uc.CHUNK, "it stopped when the headroom was reached, not at the end")
+        self.assertLess(
+            c.job()["bytes"], 150000 + 8192 + uc.CHUNK, "it stopped when the headroom was reached, not at the end"
+        )
 
     def test_the_production_limits_look_at_the_free_space_every_mib_while_a_bundle_streams_in(self):
         """Every test above passes a small space_step, so a production default that was huge (or never reached) kept them all green.
@@ -846,14 +1062,20 @@ class Download(Env):
         body = tar_bundle(7, pad=5 << 20)
         self.publish(7, body, size=False, sha=False)
         self.chunked(body, piece=1 << 16)
-        with self.disk(limits.headroom + 9 * (1 << 18)):  # 2.25 MiB may be written; the looks at 1 and 2 MiB pass, the one at 3 MiB stops it
+        with self.disk(
+            limits.headroom + 9 * (1 << 18)
+        ):  # 2.25 MiB may be written; the looks at 1 and 2 MiB pass, the one at 3 MiB stops it
             c = uc.UpdateClient(self.paths, limits)
             c.start_download()
             self.assertTrue(c.wait(30))
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
         self.assertIn("free space", c.job()["message"])
         self.assertGreaterEqual(c.job()["bytes"], 3 << 20)
-        self.assertLess(c.job()["bytes"], (3 << 20) + 3 * uc.CHUNK, "it stopped at the look after 3 MiB, not at the end of the 5 MiB")
+        self.assertLess(
+            c.job()["bytes"],
+            (3 << 20) + 3 * uc.CHUNK,
+            "it stopped at the look after 3 MiB, not at the end of the 5 MiB",
+        )
 
     def test_a_response_with_no_length_is_refused_before_a_byte_when_there_is_no_headroom(self):
         body = tar_bundle(7)
@@ -863,7 +1085,9 @@ class Download(Env):
             c = self.run_job(headroom=100000)
         self.assertEqual((c.job()["phase"], c.job()["bytes"], self.inbox()), ("failed", 0, []))
         self.assertIn("free space", c.job()["message"])
-        with self.disk(100000):  # exactly the headroom is enough for a bundle of unknown length that then turns out small
+        with self.disk(
+            100000
+        ):  # exactly the headroom is enough for a bundle of unknown length that then turns out small
             c = self.run_job(headroom=100000)
         self.assertEqual((c.job()["phase"], self.inbox()), ("done", ["opos-7.opos-update"]))
 
@@ -895,7 +1119,9 @@ class Download(Env):
         self.publish(7, body)
         with open(os.path.join(self.paths.inbox, "opos-7.opos-update.partial"), "wb") as f:
             f.write(b"x" * 100000)
-        with self.disk(len(body) + 1000 + 50000):  # room for the bundle and the headroom, but only once the 100 KB leftover is gone
+        with self.disk(
+            len(body) + 1000 + 50000
+        ):  # room for the bundle and the headroom, but only once the 100 KB leftover is gone
             c = self.run_job(headroom=1000)
         self.assertEqual((c.job()["phase"], self.inbox()), ("done", ["opos-7.opos-update"]))
 
@@ -936,10 +1162,11 @@ class Download(Env):
                 if self.src.release.wait(0.02):
                     return
                 try:
-                    h.wfile.write(b[i:i + 1])
+                    h.wfile.write(b[i : i + 1])
                     h.wfile.flush()
                 except OSError:
                     return
+
         self.src.routes["/opos-7.opos-update"] = drip
         c = self.run_job(bundle_deadline=0.3, io_timeout=2)
         self.assertEqual((c.job()["phase"], self.inbox()), ("failed", []))
@@ -977,7 +1204,9 @@ class RollbackRequest(Env):
         c = self.client()
         with self.assertRaises(uc.UpdateError) as cm:
             c.request_rollback()
-        self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.message), ("no_rollback", 409, uc.ONCE_ONLY))
+        self.assertEqual(
+            (cm.exception.code, cm.exception.status, cm.exception.message), ("no_rollback", 409, uc.ONCE_ONLY)
+        )
         self.assertEqual(self.inbox(), [])
         self.assertEqual(c.snapshot()["rollback"], {"possible": False, "requested": False, "once": True})
         self.state(1, previous=["0-aaaaaaaaaaaa"], stepped_back=None)  # an update was applied since: the marker is gone
@@ -1008,7 +1237,9 @@ class RollbackRequest(Env):
         c = self.client()
         self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 3})
         self.assertEqual(c.request_rollback(), {"requested": True, "already": False, "cancel": True})
-        self.assertEqual((self.request_text(), self.inbox()), (b"cancel-staged", ["rollback.request"]), "no .partial is left behind")
+        self.assertEqual(
+            (self.request_text(), self.inbox()), (b"cancel-staged", ["rollback.request"]), "no .partial is left behind"
+        )
         self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": True, "staged": 3})
         self.assertEqual(c.request_rollback(), {"requested": True, "already": True, "cancel": True})
         self.assertEqual(self.request_text(), b"cancel-staged")
@@ -1023,6 +1254,7 @@ class RollbackRequest(Env):
             with open(a, "rb") as f:
                 seen.append((os.path.basename(a), f.read(), os.path.lexists(b)))
             return real(a, b)
+
         with mock.patch("os.replace", replace):
             self.client().request_rollback()
         self.assertEqual(seen, [("rollback.request.partial", b"cancel-staged", False)])
@@ -1085,7 +1317,10 @@ class RollbackRequest(Env):
                 self.assertNotIn("staged", c.snapshot()["rollback"])
 
     def test_with_nothing_staged_the_old_rules_stand(self):
-        for kw, code in (({"previous": []}, "no_rollback"), ({"previous": ["0-aaaaaaaaaaaa"], "stepped_back": 2}, "no_rollback")):
+        for kw, code in (
+            ({"previous": []}, "no_rollback"),
+            ({"previous": ["0-aaaaaaaaaaaa"], "stepped_back": 2}, "no_rollback"),
+        ):
             with self.subTest(kw):
                 self.state(1, **kw)
                 with self.assertRaises(uc.UpdateError) as cm:
@@ -1121,7 +1356,10 @@ class StatusAndVersion(Env):
         c = self.client()
         self.assertIsNone(c.read_status())
         self.status(phase="applying", message="Step 2 of 4\n\x1b[31m done‮", serial=7)
-        self.assertEqual(c.read_status(), {"phase": "applying", "message": "Step 2 of 4 [31m done", "serial": 7, "time": "2026-11-08T12:00:00Z"})
+        self.assertEqual(
+            c.read_status(),
+            {"phase": "applying", "message": "Step 2 of 4 [31m done", "serial": 7, "time": "2026-11-08T12:00:00Z"},
+        )
         for phase in uc._PHASES:
             self.status(phase=phase)
             self.assertEqual(c.read_status()["phase"], phase)
@@ -1141,14 +1379,18 @@ class StatusAndVersion(Env):
     def test_running_version_comes_from_state_then_revision_file_then_the_build(self):
         c = self.client()
         with mock.patch.object(notices, "BUILD", notices.UNPUBLISHED_BUILD):
-            self.assertEqual(c.running(), {"version": notices.VERSION, "revision": None, "serial": None, "release": None})
+            self.assertEqual(
+                c.running(), {"version": notices.VERSION, "revision": None, "serial": None, "release": None}
+            )
         with mock.patch.object(notices, "BUILD", "abcdef1234567"[:12]):
             self.assertEqual(c.running()["revision"], "abcdef123456")
         with open(self.paths.revision, "w") as f:
             f.write("1" * 40 + "\n")
         self.assertEqual(c.running()["revision"], "1" * 40)
         self.state(5, version="0.9.1", revision="2" * 40, release="5-222222222222")
-        self.assertEqual(c.running(), {"version": "0.9.1", "revision": "1" * 40, "serial": 5, "release": "5-222222222222"})
+        self.assertEqual(
+            c.running(), {"version": "0.9.1", "revision": "1" * 40, "serial": 5, "release": "5-222222222222"}
+        )
         os.unlink(self.paths.revision)
         self.assertEqual(c.running()["revision"], "2" * 40)
         self.state(5, version="<b>x</b>", revision="not hex")
@@ -1161,7 +1403,10 @@ class StatusAndVersion(Env):
         self.status(phase="done", serial=3, message="Updated.")
         snap = self.client().snapshot()
         json.dumps(snap)
-        self.assertEqual(set(snap), {"available", "message", "running", "source", "check", "job", "pending", "stalled", "rollback", "status"})
+        self.assertEqual(
+            set(snap),
+            {"available", "message", "running", "source", "check", "job", "pending", "stalled", "rollback", "status"},
+        )
         self.assertTrue(snap["available"])
         self.assertIsNone(snap["message"])
         self.assertEqual(snap["status"]["message"], "Updated.")
@@ -1173,7 +1418,9 @@ class StatusAndVersion(Env):
         snap = c.snapshot()
         self.assertFalse(snap["available"])
         self.assertEqual(snap["message"], "Updates are not available on this install.")
-        self.assertEqual((snap["status"], snap["pending"], snap["rollback"]), (None, [], {"possible": False, "requested": False}))
+        self.assertEqual(
+            (snap["status"], snap["pending"], snap["rollback"]), (None, [], {"possible": False, "requested": False})
+        )
         for call in (c.check, c.start_download, c.request_rollback):
             with self.assertRaises(uc.UpdateError) as cm:
                 call()
@@ -1276,19 +1523,36 @@ class Stalled(Env):
 
 class Page(unittest.TestCase):
     def snap(self, **kw):
-        base = {"available": True, "message": None, "running": {"version": "0.1.0", "revision": "ab" * 20, "serial": 0, "release": "0-abababababab"},
-                "source": {"configured": True, "url": "https://updates.example.org/latest.json", "auto_check": False, "allow_lan_http": False, "error": None},
-                "check": None, "job": {"kind": None, "phase": "idle", "bytes": 0, "total": None, "serial": None, "message": ""},
-                "pending": [], "rollback": {"possible": True, "requested": False}, "status": {"phase": "idle", "message": "", "serial": None, "time": None}}
+        base = {
+            "available": True,
+            "message": None,
+            "running": {"version": "0.1.0", "revision": "ab" * 20, "serial": 0, "release": "0-abababababab"},
+            "source": {
+                "configured": True,
+                "url": "https://updates.example.org/latest.json",
+                "auto_check": False,
+                "allow_lan_http": False,
+                "error": None,
+            },
+            "check": None,
+            "job": {"kind": None, "phase": "idle", "bytes": 0, "total": None, "serial": None, "message": ""},
+            "pending": [],
+            "rollback": {"possible": True, "requested": False},
+            "status": {"phase": "idle", "message": "", "serial": None, "time": None},
+        }
         base.update(kw)
         return base
 
     def test_once_only_rollback_is_explained_not_called_missing(self):
-        h = update_page.page("t" * 43, "n" * 22, self.snap(rollback={"possible": False, "requested": False, "once": True}))
+        h = update_page.page(
+            "t" * 43, "n" * 22, self.snap(rollback={"possible": False, "requested": False, "once": True})
+        )
         self.assertIn(uc.ONCE_ONLY, h.split('<p id="u-rb-why">', 1)[1].split("</p>", 1)[0])
         self.assertIn('id="u-rb" disabled', h)
         h = update_page.page("t" * 43, "n" * 22, self.snap(rollback={"possible": False, "requested": False}))
-        self.assertIn("There is no earlier version to go back to.", h.split('<p id="u-rb-why">', 1)[1].split("</p>", 1)[0])
+        self.assertIn(
+            "There is no earlier version to go back to.", h.split('<p id="u-rb-why">', 1)[1].split("</p>", 1)[0]
+        )
         script = h.split("</main>", 1)[1]
         self.assertIn("rb.once?ONCE:", script)
         self.assertIn("var ONCE=" + json.dumps(uc.ONCE_ONLY) + ",", script)
@@ -1296,22 +1560,37 @@ class Page(unittest.TestCase):
 
     def test_a_staged_update_is_explained_and_can_be_cancelled_from_the_page(self):
         plain = update_page.page("t" * 43, "n" * 22, self.snap())
-        self.assertIn("Asks the updater to return to the earlier version.", plain.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0])
+        self.assertIn(
+            "Asks the updater to return to the earlier version.",
+            plain.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0],
+        )
         self.assertIn(">Request rollback</button>", plain)
         staged = {"possible": True, "requested": False, "staged": 3}
         h = update_page.page("t" * 43, "n" * 22, self.snap(rollback=staged))
-        self.assertEqual(h.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0],
-                         "Update 3 is staged and has not been applied. The button cancels it; what is installed stays as it is.")
+        self.assertEqual(
+            h.split('<p id="u-rb-intro">', 1)[1].split("</p>", 1)[0],
+            "Update 3 is staged and has not been applied. The button cancels it; what is installed stays as it is.",
+        )
         self.assertIn(">Cancel staged update</button>", h)
         self.assertNotIn('id="u-rb" disabled', h)
-        self.assertIn(">Cancel requested</button>", update_page.page("t", "n", self.snap(rollback=dict(staged, requested=True))))
+        self.assertIn(
+            ">Cancel requested</button>", update_page.page("t", "n", self.snap(rollback=dict(staged, requested=True)))
+        )
         script = h.split("</main>", 1)[1]
         self.assertNotIn("@@", script)
-        for needle in ("STAGED=" + json.dumps(update_page._STAGED), "CANCEL=" + json.dumps(update_page._CANCEL), "BACK=" + json.dumps(update_page._BACK),
-                       "LAB=" + json.dumps(update_page._LABELS), "rb.staged==null?BACK:STAGED.replace('{}',String(rb.staged))",
-                       "last.rollback.staged!=null?CANCEL:", "LAB[rb.staged==null?'back':'cancel'][rb.requested?1:0]"):
+        for needle in (
+            "STAGED=" + json.dumps(update_page._STAGED),
+            "CANCEL=" + json.dumps(update_page._CANCEL),
+            "BACK=" + json.dumps(update_page._BACK),
+            "LAB=" + json.dumps(update_page._LABELS),
+            "rb.staged==null?BACK:STAGED.replace('{}',String(rb.staged))",
+            "last.rollback.staged!=null?CANCEL:",
+            "LAB[rb.staged==null?'back':'cancel'][rb.requested?1:0]",
+        ):
             self.assertIn(needle, script)
-        evil = update_page.page("t", "n", self.snap(rollback={"possible": True, "requested": False, "staged": "<img src=x>"}))
+        evil = update_page.page(
+            "t", "n", self.snap(rollback={"possible": True, "requested": False, "staged": "<img src=x>"})
+        )
         self.assertNotIn("<img", evil)
 
     def test_a_stalled_updater_is_said_out_loud(self):
@@ -1322,11 +1601,39 @@ class Page(unittest.TestCase):
         self.assertIn("H('u-stall',!s.stalled)", quiet)
 
     def test_facts_are_in_the_html(self):
-        h = update_page.page("t" * 43, "n" * 22, self.snap(check={"time": "2026-11-08 12:00:00Z", "ok": True, "newer": True, "serial": 7, "version": "0.7.0",
-                                                                    "size": 10, "message": "Version 0.7.0 (update 7) is available."},
-                                                          status={"phase": "rolled-back", "message": "Update 6 failed its health check.", "serial": 6, "time": None}))
-        for needle in ("Software updates", "0.1.0", "abababababab", "https://updates.example.org/latest.json", "Check for updates", "Download and apply",
-                       "Request rollback", "Version 0.7.0 (update 7) is available.", "rolled-back", "Update 6 failed its health check."):
+        h = update_page.page(
+            "t" * 43,
+            "n" * 22,
+            self.snap(
+                check={
+                    "time": "2026-11-08 12:00:00Z",
+                    "ok": True,
+                    "newer": True,
+                    "serial": 7,
+                    "version": "0.7.0",
+                    "size": 10,
+                    "message": "Version 0.7.0 (update 7) is available.",
+                },
+                status={
+                    "phase": "rolled-back",
+                    "message": "Update 6 failed its health check.",
+                    "serial": 6,
+                    "time": None,
+                },
+            ),
+        )
+        for needle in (
+            "Software updates",
+            "0.1.0",
+            "abababababab",
+            "https://updates.example.org/latest.json",
+            "Check for updates",
+            "Download and apply",
+            "Request rollback",
+            "Version 0.7.0 (update 7) is available.",
+            "rolled-back",
+            "Update 6 failed its health check.",
+        ):
             self.assertIn(needle, h)
         self.assertNotIn("ab" * 20, h)  # twelve characters of the revision
         self.assertNotIn('id="u-go" hidden', h)
@@ -1334,12 +1641,32 @@ class Page(unittest.TestCase):
 
     def test_download_button_is_hidden_until_a_newer_update_is_known(self):
         self.assertIn('id="u-go" hidden', update_page.page("t", "n", self.snap()))
-        h = update_page.page("t", "n", self.snap(check={"time": "x", "ok": True, "newer": False, "serial": 0, "version": "0.1.0", "size": None, "message": "You have the latest update."}))
+        h = update_page.page(
+            "t",
+            "n",
+            self.snap(
+                check={
+                    "time": "x",
+                    "ok": True,
+                    "newer": False,
+                    "serial": 0,
+                    "version": "0.1.0",
+                    "size": None,
+                    "message": "You have the latest update.",
+                }
+            ),
+        )
         self.assertIn('id="u-go" hidden', h)
         self.assertIn("You have the latest update.", h)
 
     def test_unconfigured_says_nothing_is_contacted_and_disables_check(self):
-        h = update_page.page("t", "n", self.snap(source={"configured": False, "url": None, "auto_check": False, "allow_lan_http": False, "error": None}))
+        h = update_page.page(
+            "t",
+            "n",
+            self.snap(
+                source={"configured": False, "url": None, "auto_check": False, "allow_lan_http": False, "error": None}
+            ),
+        )
         self.assertIn("Not set. OPOS contacts no server for updates.", h)
         self.assertRegex(h, r'id="u-check" disabled')
 
@@ -1352,13 +1679,27 @@ class Page(unittest.TestCase):
         self.assertIn('id="u-live" hidden', update_page.page())
 
     def test_everything_dynamic_is_escaped(self):
-        evil = '</script><img src=x onerror=alert(1)>"\''
-        h = update_page.page(evil, "n", self.snap(
-            running={"version": evil, "revision": evil, "serial": evil, "release": None},
-            source={"configured": True, "url": evil, "auto_check": True, "allow_lan_http": False, "error": None},
-            check={"time": evil, "ok": True, "newer": True, "serial": 1, "version": "1", "size": None, "message": evil},
-            job={"kind": "download", "phase": "failed", "bytes": 0, "total": None, "serial": 1, "message": evil},
-            pending=[evil], status={"phase": evil, "message": evil, "serial": None, "time": None}))
+        evil = "</script><img src=x onerror=alert(1)>\"'"
+        h = update_page.page(
+            evil,
+            "n",
+            self.snap(
+                running={"version": evil, "revision": evil, "serial": evil, "release": None},
+                source={"configured": True, "url": evil, "auto_check": True, "allow_lan_http": False, "error": None},
+                check={
+                    "time": evil,
+                    "ok": True,
+                    "newer": True,
+                    "serial": 1,
+                    "version": "1",
+                    "size": None,
+                    "message": evil,
+                },
+                job={"kind": "download", "phase": "failed", "bytes": 0, "total": None, "serial": 1, "message": evil},
+                pending=[evil],
+                status={"phase": evil, "message": evil, "serial": None, "time": None},
+            ),
+        )
         self.assertNotIn("<img", h)
         self.assertEqual(h.count("</script>"), 1)  # only the page's own
         self.assertNotIn("onerror=alert(1)>", h.replace("&gt;", ""))
@@ -1393,9 +1734,10 @@ class Page(unittest.TestCase):
                 if tag == "section":
                     s.labelled.append(a.get("aria-labelledby"))
                 self.assertNotIn("tabindex", a)
+
         p = P()
         p.feed(h)
-        self.assertTrue(h.startswith("<!doctype html><html lang=\"en\">"))
+        self.assertTrue(h.startswith('<!doctype html><html lang="en">'))
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(p.tags.count("h1"), 1)
         self.assertEqual(p.tags.count("main"), 1)
@@ -1411,14 +1753,20 @@ class Page(unittest.TestCase):
         self.assertRegex(h, r'<progress[^>]*aria-label="Download progress"')
         self.assertIn("<noscript>", h)
         # keyboard: only native buttons and one link carry actions, and every focus ring comes from the shared stylesheet
-        self.assertNotIn("role=\"button\"", h)
+        self.assertNotIn('role="button"', h)
         self.assertIn(":focus-visible", h)
 
     def test_it_reuses_the_main_pages_tokens(self):
         h = update_page.page("t", "n", self.snap())
         css = (update_page._STATIC / "jaryo.css").read_text(encoding="utf-8")
         self.assertIn(css, h)
-        for token in ("--jaryo-fg", "--jaryo-bg", "--jaryo-serif", "prefers-color-scheme:dark", 'html[data-theme="dark"]'):
+        for token in (
+            "--jaryo-fg",
+            "--jaryo-bg",
+            "--jaryo-serif",
+            "prefers-color-scheme:dark",
+            'html[data-theme="dark"]',
+        ):
             self.assertIn(token, h)
         self.assertIn('html[data-text="xl"]{font-size:150%}', h)  # same text sizes as phone-b.css
         main_css = (update_page._STATIC / "phone-b.css").read_text(encoding="utf-8")
@@ -1476,7 +1824,9 @@ class Routes(Env):
     def test_page_and_api_refuse_a_foreign_host(self):
         run = self.serve()
         for path in ("/update", "/api/update"):
-            s, _, _ = webclient.request(run.port, "GET", path, headers={"Host": "evil.example", "X-OPOS-Token": run.token})
+            s, _, _ = webclient.request(
+                run.port, "GET", path, headers={"Host": "evil.example", "X-OPOS-Token": run.token}
+            )
             self.assertEqual(s, 403, path)
 
     def test_get_api_update_needs_the_token(self):
@@ -1505,6 +1855,7 @@ class Routes(Env):
             hdr = {**base, **over}
             hdr = {k: v for k, v in hdr.items() if v is not None}
             return webclient.request(run.port, "POST", "/api", body=body, headers=hdr)[0]
+
         self.assertEqual(go(**{"X-OPOS-Token": None}), 403)
         self.assertEqual(go(**{"X-OPOS-Token": "x" * 43}), 403)
         self.assertEqual(go(Origin="http://evil.example"), 403)
@@ -1512,7 +1863,9 @@ class Routes(Env):
         self.assertEqual(go(**{"Content-Type": "text/plain"}), 415)
         self.assertEqual(go(**{"Content-Type": None}), 415)
         self.assertEqual(self.src.hits, [])
-        self.assertEqual(go(Origin=f"http://127.0.0.1:{run.port}"), 502)  # allowed through: the empty source answers 404
+        self.assertEqual(
+            go(Origin=f"http://127.0.0.1:{run.port}"), 502
+        )  # allowed through: the empty source answers 404
 
     def test_update_actions_take_no_arguments(self):
         self.conf()
@@ -1597,6 +1950,7 @@ class Routes(Env):
             if host in ("127.0.0.1", "localhost"):
                 return real_gai(host, *a, **k)
             raise AssertionError(f"name lookup {host!r}")
+
         with mock.patch.object(socket.socket, "connect", connect), mock.patch.object(socket, "getaddrinfo", gai):
             self.assertEqual(webclient.request(run.port, "GET", "/update")[0], 200)
             self.assertEqual(self.get_json(run)[0], 200)
@@ -1614,7 +1968,9 @@ class Routes(Env):
         self.assertFalse(json.loads(self.get_json(run)[2])["available"])
         for action in ("update_check", "update_download", "update_rollback"):
             s, _, j = self.post(run, action)
-            self.assertEqual((s, j["code"], j["error"]), (404, "not_available", "Updates are not available on this install."))
+            self.assertEqual(
+                (s, j["code"], j["error"]), (404, "not_available", "Updates are not available on this install.")
+            )
 
 
 class MainPageIsUntouched(Env):
@@ -1636,14 +1992,18 @@ class MainPageIsUntouched(Env):
     # Re-recorded when phone-b.css lost its focus ring that jaryo.css overrode in every state (the Duo image's page bytes).
     MAIN_SHA256 = "1144b3fd9cd0687784970973768ab5215a94ad61bc48d6748c816642217d39a5"
     DEMO_SHA256 = "f1551020644bca683ddacfba3c4cb84a6379642e51a6508f32e52c96b1a9b42c"
-    LINK = '<a id=upd href=/update>Updates</a>'
+    LINK = "<a id=upd href=/update>Updates</a>"
 
     def test_recorded_digests(self):
         page = webclient.web.page
         with mock.patch("opos.notices.BUILD", "f" * 12):
             main = page("t" * 43, "n" * 22).encode("utf-8")
             demo = page("t" * 43, "n" * 22, demo=True).encode("utf-8")
-        self.assertEqual(hashlib.sha256(main).hexdigest(), self.MAIN_SHA256, "the main page changed; if that is intended, record the new digest")
+        self.assertEqual(
+            hashlib.sha256(main).hexdigest(),
+            self.MAIN_SHA256,
+            "the main page changed; if that is intended, record the new digest",
+        )
         self.assertEqual(hashlib.sha256(demo).hexdigest(), self.DEMO_SHA256)
 
     def test_it_knows_nothing_about_updates_but_one_link(self):
@@ -1655,10 +2015,12 @@ class MainPageIsUntouched(Env):
 
     def test_the_link_is_in_settings_about_and_leads_back_from_the_page(self):
         text = webclient.web.page("t" * 43, "n" * 22)
-        settings = text[text.index('<section id="settings"'):]
-        settings = settings[:settings.index("</section></section>")]
+        settings = text[text.index('<section id="settings"') :]
+        settings = settings[: settings.index("</section></section>")]
         self.assertIn('<h3 id="set-about">About</h3>' + self.LINK + '<p id="about">', settings)
-        self.assertRegex(text, r"#upd\{[^}]*display:block[^}]*line-height:48px[^}]*\}")  # a 48 px touch target, like the buttons
+        self.assertRegex(
+            text, r"#upd\{[^}]*display:block[^}]*line-height:48px[^}]*\}"
+        )  # a 48 px touch target, like the buttons
         # a plain full-page navigation: no script handles it, no attribute that would make it open elsewhere
         self.assertNotRegex(self.LINK, r"target=|onclick|download|rel=")
         snap = {"available": False, "message": "x"}
@@ -1671,6 +2033,7 @@ class MainPageIsUntouched(Env):
 
     def test_the_public_demo_has_no_link_to_a_page_it_does_not_serve(self):
         from opos import public_demo
+
         for demo in (False, True):
             self.assertNotIn("/update", public_demo.landing("t" * 43, "n" * 22, demo=demo))
 
@@ -1683,7 +2046,9 @@ class MainPageIsUntouched(Env):
             with webclient.Running(updater=self.client()) as run:
                 s, h, b = webclient.request(run.port, "GET", "/")
                 self.assertEqual(s, 200)
-                self.assertEqual(b, fonts.inject(webclient.web.page(run.token, csp_nonce(h)).encode(), csp_nonce(h)), have_updates)
+                self.assertEqual(
+                    b, fonts.inject(webclient.web.page(run.token, csp_nonce(h)).encode(), csp_nonce(h)), have_updates
+                )
 
     def test_state_and_demo_actions_are_unchanged(self):
         run = webclient.Running(updater=self.client())
@@ -1694,7 +2059,12 @@ class MainPageIsUntouched(Env):
             state = json.loads(b)
             self.assertNotIn("update", json.dumps(sorted(state)).lower())
             self.assertIn("battery", state)
-            for action, fields in (("battery", {"level": 55}), ("charge", {"on": True}), ("sim", {"running": False}), ("visible", {"visible": True})):
+            for action, fields in (
+                ("battery", {"level": 55}),
+                ("charge", {"on": True}),
+                ("sim", {"running": False}),
+                ("visible", {"visible": True}),
+            ):
                 s, _, j = webclient.post_action(run.port, action, tok, **fields)
                 self.assertEqual(s, 200, action)
                 self.assertNotIn("error", j)
@@ -1706,7 +2076,9 @@ class MainPageIsUntouched(Env):
         with run:
             self.assertEqual(webclient.request(run.port, "GET", "/favicon.ico")[0], 200)
             for path in ("/updates", "/update/", "/update.json", "/api/updates", "/static/x"):
-                self.assertEqual(webclient.request(run.port, "GET", path, headers={"X-OPOS-Token": run.token})[0], 404, path)
+                self.assertEqual(
+                    webclient.request(run.port, "GET", path, headers={"X-OPOS-Token": run.token})[0], 404, path
+                )
 
     def test_handler_without_an_updater_serves_no_update_routes(self):
         server = webclient.web.make_server(0, webclient.web.Phone())
@@ -1752,6 +2124,7 @@ class MainStartsAutoCheck(unittest.TestCase):
             srv.serve_forever = lambda: None
             made.append(srv)
             return srv
+
         with mock.patch.object(webclient.web, "make_server", spy), mock.patch("sys.stdout", out):
             webclient.web.main(["--port", "0"])
         self.addCleanup(made[0].server_close)
@@ -1773,11 +2146,18 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
     form (the updater review fixes, finding 11) and is skipped, saying so, while the updater in this tree does not."""
 
     def test_a_staged_boot_update_is_cancelled_with_no_earlier_release(self):
-        updater = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packaging", "duo-os", "updater", "opos-updater")
+        updater = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "packaging",
+            "duo-os",
+            "updater",
+            "opos-updater",
+        )
         with open(updater, encoding="utf-8") as f:
             if "cancel-staged" not in f.read():
                 self.skipTest("the updater in this tree has no cancel-staged request yet")
         import importlib
+
         rt = importlib.import_module("tests.test_ota_roundtrip")  # skips itself away from Linux
         if not rt.KEYGEN:
             self.skipTest("ssh-keygen is not installed")
@@ -1816,8 +2196,13 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
 class Defaults(unittest.TestCase):
     def test_production_paths(self):
         p = uc.Paths()
-        self.assertEqual((p.config, p.root, p.revision), ("/etc/opos/update.json", "/var/lib/opos-update", "/opt/opos/REVISION"))
-        self.assertEqual((p.inbox, p.state, p.status), ("/var/lib/opos-update/inbox", "/var/lib/opos-update/state.json", "/var/lib/opos-update/status.json"))
+        self.assertEqual(
+            (p.config, p.root, p.revision), ("/etc/opos/update.json", "/var/lib/opos-update", "/opt/opos/REVISION")
+        )
+        self.assertEqual(
+            (p.inbox, p.state, p.status),
+            ("/var/lib/opos-update/inbox", "/var/lib/opos-update/state.json", "/var/lib/opos-update/status.json"),
+        )
 
     def test_the_spec_says_the_cancel_gate_is_a_proxy_and_why_that_is_safe(self):
         """The client offers the cancel because state.json has a `floor`: an inference about the updater, not a handshake (a review
@@ -1826,13 +2211,27 @@ class Defaults(unittest.TestCase):
         with open(os.path.join(root, "docs", "ota-update.md"), encoding="utf-8") as f:
             doc = f.read()
         start = doc.index('the button becomes "Cancel staged update"')
-        bullet = doc[start:doc.index("\n\n", start)]  # the UI bullet of the Client section
-        for needle in ("proxy", "not a handshake", "`floor`", "`cancel-staged`", 'wrong "no"', 'wrong "yes"', "`stepped_back`", "CancelStagedWithTheRealUpdater"):
+        bullet = doc[start : doc.index("\n\n", start)]  # the UI bullet of the Client section
+        for needle in (
+            "proxy",
+            "not a handshake",
+            "`floor`",
+            "`cancel-staged`",
+            'wrong "no"',
+            'wrong "yes"',
+            "`stepped_back`",
+            "CancelStagedWithTheRealUpdater",
+        ):
             self.assertIn(needle, bullet)
 
     def test_error_text_never_carries_a_path_or_a_traceback(self):
-        for e in (uc.UpdateError("x", "m"), uc._net_error(OSError("[Errno 111] Connection refused: /var/lib/opos-update")),
-                  uc._net_error(ssl.SSLCertVerificationError("bad")), uc._net_error(TimeoutError("t")), uc._net_error(http.client.BadStatusLine("x"))):
+        for e in (
+            uc.UpdateError("x", "m"),
+            uc._net_error(OSError("[Errno 111] Connection refused: /var/lib/opos-update")),
+            uc._net_error(ssl.SSLCertVerificationError("bad")),
+            uc._net_error(TimeoutError("t")),
+            uc._net_error(http.client.BadStatusLine("x")),
+        ):
             self.assertNotIn("/var/lib", e.message)
             self.assertNotIn("Errno", e.message)
 

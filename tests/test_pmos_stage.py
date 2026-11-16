@@ -30,4 +30,13 @@ class TestStage(unittest.TestCase):
             for path in sorted(out.rglob("*")):
                 if path.is_file():
                     found[path.relative_to(out).as_posix()] = path.read_text()
-            self.assertEqual(found, {"main/opos/APKBUILD": "fixture", "main/opos/.marker": "hidden", "main/opos/opos-sysusers.conf": "users", "main/postmarketos-ui-opos/APKBUILD": "fixture", "main/postmarketos-ui-opos/.marker": "hidden"})
+            self.assertEqual(
+                found,
+                {
+                    "main/opos/APKBUILD": "fixture",
+                    "main/opos/.marker": "hidden",
+                    "main/opos/opos-sysusers.conf": "users",
+                    "main/postmarketos-ui-opos/APKBUILD": "fixture",
+                    "main/postmarketos-ui-opos/.marker": "hidden",
+                },
+            )

@@ -15,6 +15,7 @@ from opos import tokenfile
 from opos.web import Phone, make_server
 import opos.web
 
+
 class TestWebTokenFile(unittest.TestCase):
     def test_token_validation(self):
         with self.assertRaisesRegex(ValueError, "bad token"):
@@ -50,12 +51,26 @@ class TestWebTokenFile(unittest.TestCase):
                     self.assertIn(f'content="{E}"', body)
                     payload = json.dumps({"action": "in_use", "name": "maps"})
                     conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-                    conn2.request("POST", "/api", body=payload, headers={"Host": f"127.0.0.1:{port}", "X-OPOS-Token": E, "Content-Type": "application/json"})
+                    conn2.request(
+                        "POST",
+                        "/api",
+                        body=payload,
+                        headers={"Host": f"127.0.0.1:{port}", "X-OPOS-Token": E, "Content-Type": "application/json"},
+                    )
                     r2 = conn2.getresponse()
                     self.assertEqual(r2.status, 200)
                     r2.read()
                     conn3 = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-                    conn3.request("POST", "/api", body=payload, headers={"Host": f"127.0.0.1:{port}", "X-OPOS-Token": chr(98) * 32, "Content-Type": "application/json"})
+                    conn3.request(
+                        "POST",
+                        "/api",
+                        body=payload,
+                        headers={
+                            "Host": f"127.0.0.1:{port}",
+                            "X-OPOS-Token": chr(98) * 32,
+                            "Content-Type": "application/json",
+                        },
+                    )
                     r3 = conn3.getresponse()
                     self.assertEqual(r3.status, 403)
                     r3.read()
@@ -140,7 +155,11 @@ class TestWebTokenFile(unittest.TestCase):
             for how in ("missing directory", "disk full"):
                 with self.subTest(how=how):
                     path = os.path.join(d, "no-such-directory", "token")
-                    patch = unittest.mock.patch("opos.tokenfile.ensure", side_effect=OSError(errno.ENOSPC, "full")) if how == "disk full" else contextlib.nullcontext()
+                    patch = (
+                        unittest.mock.patch("opos.tokenfile.ensure", side_effect=OSError(errno.ENOSPC, "full"))
+                        if how == "disk full"
+                        else contextlib.nullcontext()
+                    )
                     err = io.StringIO()
                     with patch, unittest.mock.patch("opos.web.make_server") as mk:
                         mk.return_value.serve_forever = unittest.mock.Mock()
@@ -148,7 +167,10 @@ class TestWebTokenFile(unittest.TestCase):
                             opos.web.main(["--token-file", path])
                     self.assertTrue(mk.called, "the server started")
                     self.assertIsNone(mk.call_args.kwargs["token"], "make_server draws a token for this run")
-                    self.assertRegex(err.getvalue(), r"^opos: cannot make the token file \(\w+\); this run keeps its token in memory only\n")
+                    self.assertRegex(
+                        err.getvalue(),
+                        r"^opos: cannot make the token file \(\w+\); this run keeps its token in memory only\n",
+                    )
                     self.assertNotIn("cannot read session token", err.getvalue())
                     self.assertEqual(os.listdir(d), [], "nothing was made")
 
@@ -305,7 +327,10 @@ class TestTokenFileModule(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             err = io.StringIO()
             self.assertFalse(tokenfile.usable(os.path.join(d, "nope", "token"), err))
-            self.assertEqual(err.getvalue(), "opos: cannot make the token file (FileNotFoundError); this run keeps its token in memory only\n")
+            self.assertEqual(
+                err.getvalue(),
+                "opos: cannot make the token file (FileNotFoundError); this run keeps its token in memory only\n",
+            )
             made = os.path.join(d, "token")
             err = io.StringIO()
             self.assertTrue(tokenfile.usable(made, err))
@@ -328,7 +353,11 @@ class TestServerUnit(unittest.TestCase):
         execs = [x for x in ls if x.startswith("ExecStart=")]
         self.assertEqual(len(execs), 1)
         self.assertIn(" -m opos.web ", execs[0])
-        self.assertEqual(execs[0].split()[-2:], ["--token-file", "%S/opos/token"], "%S is /var/lib for a system unit, where StateDirectory=opos lives")
+        self.assertEqual(
+            execs[0].split()[-2:],
+            ["--token-file", "%S/opos/token"],
+            "%S is /var/lib for a system unit, where StateDirectory=opos lives",
+        )
         self.assertLess(ls.index("[Service]"), ls.index("StateDirectory=opos"))
         self.assertLess(ls.index("StateDirectory=opos"), ls.index(execs[0]))
         self.assertLess(ls.index(execs[0]), ls.index("[Install]"))

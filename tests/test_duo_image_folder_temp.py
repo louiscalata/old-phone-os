@@ -7,6 +7,7 @@ staged copies of the multi-GB rootfs live under -LogDir) that sits under a temp 
 phone, and the install docs say where to keep the images instead. The text tests read the files; the PowerShell test
 runs the folder check itself with pwsh or powershell when one is installed, and skips otherwise.
 """
+
 import json
 import unittest
 from pathlib import Path
@@ -42,16 +43,18 @@ class BootScriptNamesATempImageFolder(unittest.TestCase):
     def test_the_warning_comes_before_the_dry_run_stop_and_names_storage_sense(self):
         c = code()
         warn = c.index("Get-TempFolder $ImageDir")
-        self.assertLess(c.index("$log = Join-Path $LogDir 'boot-chain.log'"), warn)   # Log can write to the file
-        self.assertLess(warn, c.index("if (-not $Yes) {"))                          # the dry run shows it too
-        message = c[warn:c.index("if (-not $Yes) {")]
+        self.assertLess(c.index("$log = Join-Path $LogDir 'boot-chain.log'"), warn)  # Log can write to the file
+        self.assertLess(warn, c.index("if (-not $Yes) {"))  # the dry run shows it too
+        message = c[warn : c.index("if (-not $Yes) {")]
         self.assertIn("Storage Sense", message)
         self.assertIn("opos-duo-images", message)
         # The fake-phone tests count "staged " in the log; the warning must not add to that count.
         self.assertNotIn("staged ", message)
 
 
-TEMP_CHECK = AST + r"""
+TEMP_CHECK = (
+    AST
+    + r"""
 . ([scriptblock]::Create((FunctionText 'Get-TempFolder')))
 $t = [System.IO.Path]::GetTempPath()
 $sep = [System.IO.Path]::DirectorySeparatorChar
@@ -68,6 +71,7 @@ $out = [ordered]@{}
 foreach ($k in $cases.Keys) { $out[$k] = [bool](Get-TempFolder $cases[$k]) }
 [pscustomobject]@{ got = $out; tempPath = $t; home = $home_ } | ConvertTo-Json -Compress -Depth 4
 """
+)
 
 
 @unittest.skipUnless(powershell(), "needs pwsh or powershell to run the folder check")

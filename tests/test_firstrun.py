@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """First run on the Duo OS: the flag, the clock sentence, the setup and time zone pages, skipping, and "never block home"."""
+
 import http.client
 import inspect
 import json
@@ -42,7 +43,7 @@ class ClockCheck(unittest.TestCase):
             self.assertTrue(clockcheck.clock_plausible())
 
     def test_nonsense_is_not_plausible_and_does_not_raise(self):
-        for bad in (float("nan"), float("inf"), -float("inf"), "x", [], 10 ** 30, -10 ** 30):
+        for bad in (float("nan"), float("inf"), -float("inf"), "x", [], 10**30, -(10**30)):
             with self.subTest(now=bad):
                 self.assertFalse(clockcheck.clock_plausible(bad))
 
@@ -77,6 +78,7 @@ class ClockSentence(unittest.TestCase):
 
 class ClockSentenceOnTheImage(unittest.TestCase):
     """The setup's sentence follows the same rule as web.clock_ok: the image's floor, or a boot-time guess without network time."""
+
     FLOOR = 1798761600  # 2027-01-01 00:00:00 UTC
 
     def setUp(self):
@@ -131,7 +133,7 @@ class ClockSentenceOnTheImage(unittest.TestCase):
     def test_an_unreadable_clock_keeps_its_sentence_on_the_image(self):
         self.guess.write_text("", encoding="utf-8")
         self.floor.write_text(f"{self.FLOOR}\n", encoding="utf-8")
-        for bad in (float("nan"), float("inf"), "x", 10 ** 30):
+        for bad in (float("nan"), float("inf"), "x", 10**30):
             with self.subTest(now=bad):
                 info = self.info(bad)
                 self.assertFalse(info["plausible"])
@@ -148,8 +150,13 @@ class ClockSentenceOnTheImage(unittest.TestCase):
         self.assertEqual({"plausible", "year", "text", "note"}, set(info))
 
     def test_it_agrees_with_the_servers_clock_ok(self):
-        cases = [(g, s, f, now) for g in (False, True) for s in (False, True) for f in (None, str(self.FLOOR), "junk")
-                 for now in (0, self.FLOOR - 1, self.FLOOR, self.FLOOR + 1)]
+        cases = [
+            (g, s, f, now)
+            for g in (False, True)
+            for s in (False, True)
+            for f in (None, str(self.FLOOR), "junk")
+            for now in (0, self.FLOOR - 1, self.FLOOR, self.FLOOR + 1)
+        ]
         for g, s, f, now in cases:
             with self.subTest(guess=g, synced=s, floor=f, now=now):
                 for p, on in ((self.guess, g), (self.synced, s)):
@@ -250,7 +257,10 @@ class Answers(Env):
 
     def test_nothing_given_nothing_changed(self):
         self.assertEqual(({}, []), firstrun.apply_answers({}, self.phone, self.lock))
-        self.assertEqual(({}, []), firstrun.apply_answers({"zone": None, "goal": None, "helper": None, "junk": 1}, self.phone, self.lock))
+        self.assertEqual(
+            ({}, []),
+            firstrun.apply_answers({"zone": None, "goal": None, "helper": None, "junk": 1}, self.phone, self.lock),
+        )
         self.assertFalse(os.path.exists(self.cfg))
 
     def test_goal_is_saved_in_the_setup_config_and_applied_to_the_running_phone(self):
@@ -275,7 +285,9 @@ class Answers(Env):
         # The same rule as the goal action in the shade (web.apply_phone_action): a guessed clock (the image's floor, or
         # before 2026) must not decide whether the goal was set inside its own grace window.
         self.phone.clock_ok = False
-        self.phone.clock_s = 18 * 3600  # two hours after a 16:00 goal: inside the grace window if this clock were believed
+        self.phone.clock_s = (
+            18 * 3600
+        )  # two hours after a 16:00 goal: inside the grace window if this clock were believed
         firstrun.apply_answers({"goal": {"enabled": True, "time": "16:00"}}, self.phone, self.lock)
         self.assertEqual("16:00", self.phone.dash.goal)
         self.assertTrue(self.phone.dash._goal_armed)
@@ -285,7 +297,13 @@ class Answers(Env):
 
     def test_an_existing_config_keeps_everything_but_the_goal(self):
         cfg = setup_config.default_config()
-        cfg["device"] = {"id": "my-phone", "name": "My phone", "source": "manual", "battery_health": 0.8, "form_factor": "slab"}
+        cfg["device"] = {
+            "id": "my-phone",
+            "name": "My phone",
+            "source": "manual",
+            "battery_health": 0.8,
+            "form_factor": "slab",
+        }
         cfg["battery_mode"] = "worn"
         setup_config.save(cfg, setup_config.config_path())
         firstrun.apply_answers({"goal": {"enabled": True, "time": "21:15"}}, self.phone, self.lock)
@@ -302,10 +320,22 @@ class Answers(Env):
         self.assertEqual("20:00", setup_config.load(setup_config.config_path())["goal"]["time"])
 
     def test_bad_goals_are_refused_and_nothing_is_written(self):
-        for bad in ("23:00", {"enabled": True}, {"time": "23:00"}, {"enabled": "yes", "time": "23:00"}, {"enabled": 1, "time": "23:00"},
-                    {"enabled": True, "time": "24:00"}, {"enabled": True, "time": "7:00"}, {"enabled": True, "time": "23:60"},
-                    {"enabled": True, "time": "23:00\n"}, {"enabled": True, "time": " 23:00"}, {"enabled": True, "time": 2300},
-                    {"enabled": True, "time": "23:00; id"}, [], 5):
+        for bad in (
+            "23:00",
+            {"enabled": True},
+            {"time": "23:00"},
+            {"enabled": "yes", "time": "23:00"},
+            {"enabled": 1, "time": "23:00"},
+            {"enabled": True, "time": "24:00"},
+            {"enabled": True, "time": "7:00"},
+            {"enabled": True, "time": "23:60"},
+            {"enabled": True, "time": "23:00\n"},
+            {"enabled": True, "time": " 23:00"},
+            {"enabled": True, "time": 2300},
+            {"enabled": True, "time": "23:00; id"},
+            [],
+            5,
+        ):
             with self.subTest(goal=bad):
                 self.assertEqual(({}, ["daily goal"]), firstrun.apply_answers({"goal": bad}, self.phone, self.lock))
         self.assertFalse(self.cfgfile("config.json").exists())
@@ -335,14 +365,26 @@ class Answers(Env):
         self.assertEqual(tzmod.tz_value("Asia/Kolkata"), os.environ["TZ"])
 
     def test_malicious_or_unknown_zones_are_refused_and_nothing_is_saved_or_exported(self):
-        for bad in ("../../etc/passwd", "Mars/Base", "UTC; id", "$(id)", "Europe/Berlin\nUTC", "", 5, ["UTC"], {"a": 1}):
+        for bad in (
+            "../../etc/passwd",
+            "Mars/Base",
+            "UTC; id",
+            "$(id)",
+            "Europe/Berlin\nUTC",
+            "",
+            5,
+            ["UTC"],
+            {"a": 1},
+        ):
             with self.subTest(zone=bad):
                 self.assertEqual(({}, ["time zone"]), firstrun.apply_answers({"zone": bad}, self.phone, self.lock))
         self.assertFalse(self.cfgfile("timezone").exists())
         self.assertNotIn("TZ", os.environ)
 
     def test_one_bad_answer_does_not_stop_the_others(self):
-        saved, errors = firstrun.apply_answers({"zone": "nope", "goal": {"enabled": True, "time": "22:00"}, "helper": "on"}, self.phone, self.lock)
+        saved, errors = firstrun.apply_answers(
+            {"zone": "nope", "goal": {"enabled": True, "time": "22:00"}, "helper": "on"}, self.phone, self.lock
+        )
         self.assertEqual(["time zone"], errors)
         self.assertEqual({"goal", "helper"}, set(saved))
 
@@ -359,6 +401,7 @@ class KioskRestart(Env):
         def run(argv, **kw):
             seen.append((argv, kw))
             return mock.Mock(returncode=0)
+
         self.assertTrue(firstrun.restart_kiosk({"HOME": PHONE_HOME}, run=run))
         argv, kw = seen[0]
         self.assertIsInstance(argv, list)
@@ -371,7 +414,9 @@ class KioskRestart(Env):
 
     def test_regex_characters_in_home_are_escaped(self):
         seen = []
-        firstrun.restart_kiosk({"HOME": "/" + "home/a.b+c(d)"}, run=lambda argv, **kw: seen.append(argv) or mock.Mock(returncode=1))
+        firstrun.restart_kiosk(
+            {"HOME": "/" + "home/a.b+c(d)"}, run=lambda argv, **kw: seen.append(argv) or mock.Mock(returncode=1)
+        )
         self.assertIn("/" + "home/a\\.b\\+c\\(d\\)/\\.cache/opos-kiosk", seen[0][-1])
 
     @unittest.skipUnless(shutil.which("pkill") and hasattr(os, "getuid"), "needs pkill")
@@ -380,11 +425,25 @@ class KioskRestart(Env):
         sleeper = "import time; time.sleep(60)"
 
         def start(profile):
-            p = subprocess.Popen([sys.executable, "-c", sleeper, "--user-data-dir=" + os.path.join(home, *profile), "http://127.0.0.1:8765/"])
+            p = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    sleeper,
+                    "--user-data-dir=" + os.path.join(home, *profile),
+                    "http://127.0.0.1:8765/",
+                ]
+            )
             self.addCleanup(p.wait)  # cleanups run last-in first-out: kill, then wait
             self.addCleanup(p.kill)
             return p
-        kiosk, other, longer, lookalike = start((".cache", "opos-kiosk")), start((".cache", "other")), start((".cache", "opos-kiosk-2")), start((".cache", "opos-kioskX"))
+
+        kiosk, other, longer, lookalike = (
+            start((".cache", "opos-kiosk")),
+            start((".cache", "other")),
+            start((".cache", "opos-kiosk-2")),
+            start((".cache", "opos-kioskX")),
+        )
         time.sleep(0.5)  # let them start
         self.assertTrue(firstrun.restart_kiosk({"HOME": home}))
         self.assertEqual(-15, kiosk.wait(10))  # SIGTERM
@@ -398,10 +457,12 @@ class KioskRestart(Env):
 
         def missing(argv, **kw):
             raise FileNotFoundError("pkill")
+
         self.assertFalse(firstrun.restart_kiosk({"HOME": "/h"}, run=missing))
 
         def slow(argv, **kw):
             raise subprocess.TimeoutExpired(argv, 5)
+
         self.assertFalse(firstrun.restart_kiosk({"HOME": "/h"}, run=slow))
 
     def test_restart_only_when_the_screen_runs_another_zone(self):
@@ -430,7 +491,7 @@ class Settings(Env):
         self.assertGreater(out.index('id="tz-link"'), out.index('id="settings"'))
         self.assertRegex(out, r'<a id="tz-link" href="/timezone"[^>]*>Time zone: default \(')
         tzmod.save_setting("Asia/Kolkata")
-        self.assertIn('>Time zone: Asia/Kolkata</a>', firstrun.decorate(self.PAGE))
+        self.assertIn(">Time zone: Asia/Kolkata</a>", firstrun.decorate(self.PAGE))
 
     def test_it_costs_a_few_hundred_bytes_and_only_here(self):
         extra = len(firstrun.decorate(self.PAGE).encode()) - len(self.PAGE.encode())
@@ -529,6 +590,7 @@ class On(Http):
 
     def test_the_hooked_page_still_takes_the_two_screen_span(self):
         from opos import span as span_mod
+
         out = web.page("t", "n", span=span_mod.parse("675,42"))
         self.assertIn("--pane:675px;--hinge:42px", out)
         self.assertIn('id="tz-link"', out)
@@ -574,9 +636,13 @@ class On(Http):
 
     def test_nothing_unauthenticated_can_defer_the_setup(self):
         origin = {"Origin": "http://evil.example"}
-        for name, extra, want in (("no token", {"X-OPOS-Token": None}, 403), ("wrong token", {"X-OPOS-Token": "nope"}, 403),
-                                  ("foreign origin", origin, 403), ("wrong type", {"Content-Type": "text/plain"}, 415),
-                                  ("foreign host", {"Host": "evil.example"}, 403)):
+        for name, extra, want in (
+            ("no token", {"X-OPOS-Token": None}, 403),
+            ("wrong token", {"X-OPOS-Token": "nope"}, 403),
+            ("foreign origin", origin, 403),
+            ("wrong type", {"Content-Type": "text/plain"}, 415),
+            ("foreign host", {"Host": "evil.example"}, 403),
+        ):
             with self.subTest(name):
                 self.assertEqual(want, self.post("/api/firstrun", {"action": "later"}, **extra)[0])
                 self.assertFalse(firstrun._later)
@@ -592,26 +658,45 @@ class On(Http):
 
     def test_rejected_posts_do_not_spend_the_budget_of_an_authentic_one(self):
         from opos import secure
-        self.server.RequestHandlerClass.limiter._buckets["post"] = secure.RateLimiter(0.0, 5)  # no refill: every charge counts
+
+        self.server.RequestHandlerClass.limiter._buckets["post"] = secure.RateLimiter(
+            0.0, 5
+        )  # no refill: every charge counts
         body = json.dumps({"zone": "UTC"}).encode()
         base = {"Content-Type": "application/json", "X-OPOS-Token": self.token}
-        rejected = ({"Origin": "http://evil.example"}, {"Content-Type": "text/plain"}, {"X-OPOS-Token": "wrong"}, {"X-OPOS-Token": None})
+        rejected = (
+            {"Origin": "http://evil.example"},
+            {"Content-Type": "text/plain"},
+            {"X-OPOS-Token": "wrong"},
+            {"X-OPOS-Token": None},
+        )
         for i in range(40):
             extra = rejected[i % len(rejected)]
             h = {k: v for k, v in {**base, **extra}.items() if v is not None}
             self.assertIn(self.req("POST", "/api/timezone", body=body, headers=h)[0], (403, 415))
         for i in range(5):
-            self.assertEqual(200, self.post("/api/timezone", {"zone": "UTC"}, Origin=f"http://127.0.0.1:{self.port}")[0], "authentic request %d" % i)
-        self.assertEqual(429, self.post("/api/timezone", {"zone": "UTC"})[0], "the limit still applies to authentic requests")
+            self.assertEqual(
+                200,
+                self.post("/api/timezone", {"zone": "UTC"}, Origin=f"http://127.0.0.1:{self.port}")[0],
+                "authentic request %d" % i,
+            )
+        self.assertEqual(
+            429, self.post("/api/timezone", {"zone": "UTC"})[0], "the limit still applies to authentic requests"
+        )
 
     def test_an_authentic_api_request_after_a_flood_of_rejected_ones_is_not_429(self):
         # the shape of the report: rejected POSTs to /api/timezone, then the owner's own /api request
         from opos import secure
+
         self.server.RequestHandlerClass.limiter._buckets["post"] = secure.RateLimiter(0.0, 3)
         for _ in range(30):
             self.assertEqual(403, self.post("/api/timezone", {"zone": "UTC"}, Origin="http://evil.example")[0])
-        s, h, b = self.req("POST", "/api", body=json.dumps({"action": "battery", "level": 55}).encode(),
-                           headers={"Content-Type": "application/json", "X-OPOS-Token": self.token})
+        s, h, b = self.req(
+            "POST",
+            "/api",
+            body=json.dumps({"action": "battery", "level": 55}).encode(),
+            headers={"Content-Type": "application/json", "X-OPOS-Token": self.token},
+        )
         self.assertNotEqual(429, s)
 
     def test_a_wrong_host_is_not_redirected(self):
@@ -650,16 +735,23 @@ class On(Http):
             self.assertEqual(text.count("<script"), text.count(f'<script nonce="{nonce}">'))
             self.assertEqual(text.count("<style"), text.count(f'<style nonce="{nonce}">'))
             self.assertNotRegex(text, r"\son(click|load|error)=")
-            self.assertEqual(f"'nonce-{nonce}'", re.search(r"script-src ([^;]+)", h["content-security-policy"]).group(1))
+            self.assertEqual(
+                f"'nonce-{nonce}'", re.search(r"script-src ([^;]+)", h["content-security-policy"]).group(1)
+            )
             self.assertEqual("no-store", h["cache-control"])
 
     def test_each_page_load_has_its_own_nonce(self):
-        n = [re.search(r"nonce-([^']+)", self.req("GET", "/firstrun")[1]["content-security-policy"]).group(1) for _ in range(2)]
+        n = [
+            re.search(r"nonce-([^']+)", self.req("GET", "/firstrun")[1]["content-security-policy"]).group(1)
+            for _ in range(2)
+        ]
         self.assertNotEqual(n[0], n[1])
 
     def test_pages_refuse_a_foreign_host(self):
         for path in ("/firstrun", "/timezone", "/api/firstrun", "/api/timezone"):
-            self.assertEqual(403, self.req("GET", path, headers={"Host": "evil.example", "X-OPOS-Token": self.token})[0], path)
+            self.assertEqual(
+                403, self.req("GET", path, headers={"Host": "evil.example", "X-OPOS-Token": self.token})[0], path
+            )
 
     def test_the_apis_need_the_token(self):
         for path in ("/api/firstrun", "/api/timezone"):
@@ -696,8 +788,12 @@ class On(Http):
         body = json.dumps({"zone": "UTC"}).encode()
         base = {"Content-Type": "application/json", "X-OPOS-Token": self.token}
         cases = [
-            ({"X-OPOS-Token": None}, 403), ({"X-OPOS-Token": "wrong"}, 403), ({"Origin": "http://evil.example"}, 403),
-            ({"Content-Type": "text/plain"}, 415), ({"Content-Type": None}, 415), ({"Host": "evil.example"}, 403),
+            ({"X-OPOS-Token": None}, 403),
+            ({"X-OPOS-Token": "wrong"}, 403),
+            ({"Origin": "http://evil.example"}, 403),
+            ({"Content-Type": "text/plain"}, 415),
+            ({"Content-Type": None}, 415),
+            ({"Host": "evil.example"}, 403),
         ]
         for extra, want in cases:
             h = {k: v for k, v in {**base, **extra}.items() if v is not None}
@@ -723,10 +819,27 @@ class On(Http):
             sched.assert_not_called()
 
     def test_hostile_zone_names_are_refused_before_anything_happens(self):
-        with mock.patch.object(firstrun, "schedule_restart") as sched, mock.patch.object(subprocess, "run") as run, \
-                mock.patch.object(subprocess, "Popen") as popen, mock.patch.object(os, "system") as system:
-            for bad in ("../../etc/passwd", "UTC; touch /tmp/pwned", "$(id)", "`id`", "Europe/Berlin\nUTC", "", None, 5, ["UTC"], {"zone": "UTC"},
-                        "A" * 70, "Europe/Berlin\x00", "/usr/share/zoneinfo/UTC"):
+        with (
+            mock.patch.object(firstrun, "schedule_restart") as sched,
+            mock.patch.object(subprocess, "run") as run,
+            mock.patch.object(subprocess, "Popen") as popen,
+            mock.patch.object(os, "system") as system,
+        ):
+            for bad in (
+                "../../etc/passwd",
+                "UTC; touch /tmp/pwned",
+                "$(id)",
+                "`id`",
+                "Europe/Berlin\nUTC",
+                "",
+                None,
+                5,
+                ["UTC"],
+                {"zone": "UTC"},
+                "A" * 70,
+                "Europe/Berlin\x00",
+                "/usr/share/zoneinfo/UTC",
+            ):
                 with self.subTest(zone=bad):
                     s, j = self.jpost("/api/timezone", {"zone": bad, "client_tz": "UTC"})
                     self.assertEqual((400, {"error": "unknown time zone"}), (s, j))
@@ -745,12 +858,26 @@ class On(Http):
         self.assertFalse(firstrun.done())
 
     def test_finishing_saves_everything_and_the_phone_follows(self):
-        body = {"action": "finish", "zone": "Asia/Kolkata", "goal": {"enabled": True, "time": "22:30"}, "helper": "on", "client_tz": "Asia/Kolkata"}
+        body = {
+            "action": "finish",
+            "zone": "Asia/Kolkata",
+            "goal": {"enabled": True, "time": "22:30"},
+            "helper": "on",
+            "client_tz": "Asia/Kolkata",
+        }
         with mock.patch.object(firstrun, "schedule_restart") as sched:
             s, j = self.jpost("/api/firstrun", body)
         self.assertEqual(200, s)
-        self.assertEqual({"ok": True, "done": True, "errors": [], "restart": False,
-                          "saved": {"timezone": "Asia/Kolkata", "goal": {"enabled": True, "time": "22:30"}, "helper": "on"}}, j)
+        self.assertEqual(
+            {
+                "ok": True,
+                "done": True,
+                "errors": [],
+                "restart": False,
+                "saved": {"timezone": "Asia/Kolkata", "goal": {"enabled": True, "time": "22:30"}, "helper": "on"},
+            },
+            j,
+        )
         sched.assert_not_called()
         self.assertTrue(firstrun.done())
         self.assertFalse(json.loads(self.cfgfile("firstrun.json").read_text())["skipped"])
@@ -769,12 +896,17 @@ class On(Http):
 
     def test_finishing_without_a_zone_never_restarts_the_screen(self):
         with mock.patch.object(firstrun, "schedule_restart") as sched:
-            s, j = self.jpost("/api/firstrun", {"action": "finish", "goal": {"enabled": True, "time": "22:00"}, "client_tz": "UTC"})
+            s, j = self.jpost(
+                "/api/firstrun", {"action": "finish", "goal": {"enabled": True, "time": "22:00"}, "client_tz": "UTC"}
+            )
         self.assertEqual((200, False), (s, j["restart"]))
         sched.assert_not_called()
 
     def test_finishing_with_bad_values_reports_them_and_still_leaves_setup(self):
-        s, j = self.jpost("/api/firstrun", {"action": "finish", "zone": "nope", "goal": {"enabled": True, "time": "99:99"}, "helper": "maybe"})
+        s, j = self.jpost(
+            "/api/firstrun",
+            {"action": "finish", "zone": "nope", "goal": {"enabled": True, "time": "99:99"}, "helper": "maybe"},
+        )
         self.assertEqual(200, s)
         self.assertFalse(j["ok"])
         self.assertEqual(["time zone", "daily goal", "helper"], j["errors"])
@@ -824,7 +956,7 @@ class Pages(unittest.TestCase):
 
     def test_the_token_is_escaped(self):
         page = firstrun_page.firstrun_page('a"><script>x</script>', "nonce")
-        self.assertNotIn('<script>x</script>', page)
+        self.assertNotIn("<script>x</script>", page)
 
     def test_the_text_stays_off_the_hinge(self):
         css = firstrun_page.CSS
@@ -897,7 +1029,9 @@ class Wiring(unittest.TestCase):
         self.assertIn("track firstboot", src)
         self.assertLess(src.index("_firstrun.install"), src.index("phone = Phone("))
         self.assertLess(src.index("_firstrun.install"), src.index("LiveBattery("))
-        self.assertIn("except Exception", src[src.index("_firstrun.install"):src.index("phone = Phone(")])  # first run can never stop the server starting
+        self.assertIn(
+            "except Exception", src[src.index("_firstrun.install") : src.index("phone = Phone(")]
+        )  # first run can never stop the server starting
 
 
 if __name__ == "__main__":

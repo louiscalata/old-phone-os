@@ -2,6 +2,7 @@
 import unittest
 from opos.sim import DrainSim, DRAIN_PER_HOUR
 
+
 class TestDrainSim(unittest.TestCase):
     def test_normal_advance(self):
         sim = DrainSim(level=40, health=1.0, speed=3600)
@@ -54,6 +55,7 @@ class TestDrainSim(unittest.TestCase):
         self.assertEqual(DRAIN_PER_HOUR["NORMAL"], 12.0)
         self.assertEqual(DRAIN_PER_HOUR["SAVER"], 5.0)
         self.assertEqual(DRAIN_PER_HOUR["CRITICAL"], 2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

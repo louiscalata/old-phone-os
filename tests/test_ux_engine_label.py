@@ -37,9 +37,11 @@ class TestEngineLabel(unittest.TestCase):
     def _selected(self, question, env, free):
         # Mocked inference: the first route answer() tries is the selected one.
         tried = []
+
         def fake_ask(route, prompt, **kw):
             tried.append(route)
             return "ok"
+
         with patch("opos.assist.muse.ask", side_effect=fake_ask):
             r = assist.answer(question, env=env, free=free)
         self.assertTrue(r["ok"])
@@ -57,13 +59,17 @@ class TestEngineLabel(unittest.TestCase):
     def test_lan_and_local_short_ask_uses_local(self):
         # Synthetic RFC1918 example; route selection makes no network request.
         host = ".".join(str(octet) for octet in (192, 168, 0, 10))
-        self._check_label_matches_ask({"OPOS_LAN_URL": f"http://{host}:1234/v1"}, 2000, "Meta Llama 3.2 1B, on this phone")
+        self._check_label_matches_ask(
+            {"OPOS_LAN_URL": f"http://{host}:1234/v1"}, 2000, "Meta Llama 3.2 1B, on this phone"
+        )
 
     def test_lan_only_when_local_unavailable(self):
         host = ".".join(str(octet) for octet in (192, 168, 0, 10))
         for free in (None, 1000):
             with self.subTest(free=free):
-                self._check_label_matches_ask({"OPOS_LAN_URL": f"http://{host}:1234/v1"}, free, "Muse Glimmer, on a computer you own")
+                self._check_label_matches_ask(
+                    {"OPOS_LAN_URL": f"http://{host}:1234/v1"}, free, "Muse Glimmer, on a computer you own"
+                )
 
     def test_local_only(self):
         self._check_label_matches_ask({}, 5000, "Meta Llama 3.2 3B, on this phone")
@@ -80,10 +86,16 @@ class TestEngineLabel(unittest.TestCase):
 
     def test_malformed_lan_url_does_not_crash_state(self):
         for url in ("http://[invalid", "http://[::1", "http://host:notaport/v1"):
-            with self.subTest(url=url), patch.dict(os.environ, {"OPOS_LAN_URL": url}, clear=False), patch("opos.assist.free_mb", return_value=2000):
+            with (
+                self.subTest(url=url),
+                patch.dict(os.environ, {"OPOS_LAN_URL": url}, clear=False),
+                patch("opos.assist.free_mb", return_value=2000),
+            ):
                 self.assertIsNone(assist.lan_route(os.environ))
                 self.assertEqual(Phone(visible=True).state()["helper"]["engine"], "Meta Llama 3.2 1B, on this phone")
-                self.assertEqual(self._selected("What is paused?", os.environ, 2000), "Meta Llama 3.2 1B, on this phone")
+                self.assertEqual(
+                    self._selected("What is paused?", os.environ, 2000), "Meta Llama 3.2 1B, on this phone"
+                )
 
     def test_explain_route_keeps_lan_precedence(self):
         # Ask labels follow short Ask routing; Explain keeps its LAN-first route.
@@ -93,6 +105,7 @@ class TestEngineLabel(unittest.TestCase):
             muse.label(assist.explain_route(env=env, free=2000)),
             "Muse Glimmer, on a computer you own",
         )
+
 
 if __name__ == "__main__":
     unittest.main()

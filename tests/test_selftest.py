@@ -5,6 +5,7 @@ The fake phone is a temporary directory shaped like /proc, /sys, /etc, /var and 
 wlr-randr, ip, nmcli and timedatectl in a bin directory that the script is told to use (--root, --bin, --url, --now are
 its test seams). Nothing here touches a phone.
 """
+
 import ast
 import contextlib
 import hashlib
@@ -91,12 +92,15 @@ UsePAM yes
 X11Forwarding yes
 Subsystem\tsftp\t/usr/lib/openssh/sftp-server
 """
-SSHD_DROPIN = """# password only from the USB link
+SSHD_DROPIN = (
+    """# password only from the USB link
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 Match Address %s
     PasswordAuthentication yes
-""" % USB_NET
+"""
+    % USB_NET
+)
 
 
 def load():
@@ -127,6 +131,7 @@ class Fake:
         self.build()
         if identity:
             from tests.duo_identity_fixture import add_identity
+
             add_identity(self.root)
         else:
             self.put("etc/os-release", 'NAME="Droidian"\nID=droidian\nID_LIKE=debian\n')
@@ -188,14 +193,26 @@ class Fake:
     def battery(self, name, cap, status="Discharging", temp=None, typ="Battery", present="1", online=None):
         d = self.root / "sys/class/power_supply" / name
         d.mkdir(parents=True, exist_ok=True)
-        for k, v in (("type", typ), ("capacity", cap), ("status", status), ("present", present), ("temp", temp), ("online", online)):
+        for k, v in (
+            ("type", typ),
+            ("capacity", cap),
+            ("status", status),
+            ("present", present),
+            ("temp", temp),
+            ("online", online),
+        ):
             if v is not None:
                 (d / k).write_text("%s\n" % v)
 
     def backlight(self, name, bl_power=0, brightness=102):
         d = self.root / "sys/class/backlight" / name
         d.mkdir(parents=True, exist_ok=True)
-        for k, v in (("bl_power", bl_power), ("brightness", brightness), ("actual_brightness", brightness), ("max_brightness", 255)):
+        for k, v in (
+            ("bl_power", bl_power),
+            ("brightness", brightness),
+            ("actual_brightness", brightness),
+            ("max_brightness", 255),
+        ):
             if v is not None:
                 (d / k).write_text("%s\n" % v)
 
@@ -211,15 +228,30 @@ class Fake:
 
     def build(self):
         self.put("etc/opos/build-mode", "release\n")
-        for u in ("lxc@android.service", "android-service@hwcomposer.service", "opos-server.service", "opos.service", "NetworkManager.service", "sfduo-usb.service"):
+        for u in (
+            "lxc@android.service",
+            "android-service@hwcomposer.service",
+            "opos-server.service",
+            "opos.service",
+            "NetworkManager.service",
+            "sfduo-usb.service",
+        ):
             self.unit(u)
         for u in ("phosh.service", "item.service"):
             self.unit(u, "inactive", "dead")
         self.unit("opos-fallback.service", "inactive", "dead", ExecMainStartTimestampMonotonic="0")
-        self.proc(100, ["/usr/bin/phoc", "-v", "-C", "/usr/share/phosh/phoc.ini", "-E", "/usr/libexec/opos/opos-kiosk"], "phoc")
+        self.proc(
+            100,
+            ["/usr/bin/phoc", "-v", "-C", "/usr/share/phosh/phoc.ini", "-E", "/usr/libexec/opos/opos-kiosk"],
+            "phoc",
+        )
         self.proc(110, ["/vendor/bin/hw/android.hardware.graphics.composer@2.4-service"], "android.hardwar", uid=1000)
-        self.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", "--enable-wayland-ime", self.url], "chromium",
-                  env={"XDG_RUNTIME_DIR": "/run/user/%d" % self.uid, "WAYLAND_DISPLAY": "wayland-0", "HOME": "/phone-home"})
+        self.proc(
+            200,
+            ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", "--enable-wayland-ime", self.url],
+            "chromium",
+            env={"XDG_RUNTIME_DIR": "/run/user/%d" % self.uid, "WAYLAND_DISPLAY": "wayland-0", "HOME": "/phone-home"},
+        )
         self.proc(201, ["/usr/lib/chromium/chromium", "--type=gpu-process", "--ozone-platform=wayland"], "chromium")
         self.proc(202, ["/usr/lib/chromium/chromium", "--type=renderer"], "chromium")
         # A server that can sound an alarm: paplay on its PATH and the session's PulseAudio socket through XDG_RUNTIME_DIR. The image's own
@@ -227,10 +259,17 @@ class Fake:
         self.proc(300, SERVER_ARGV, "python3", env=dict(SERVER_ENV, XDG_RUNTIME_DIR="/run/user/%d" % self.uid))
         self.put("usr/bin/paplay", "#!/bin/sh\nexit 0\n", mode=0o755)
         self.pulse("run/user/%d/pulse/native" % self.uid)
-        for mod in ("osk", "net_page", "firstrun", "timezone"):  # the image was built with the keyboard, the Network page and the first run
+        for mod in (
+            "osk",
+            "net_page",
+            "firstrun",
+            "timezone",
+        ):  # the image was built with the keyboard, the Network page and the first run
             self.put("opt/opos/src/opos/%s.py" % mod, "# the module\n")
         self.put("proc/uptime", "1234.50 4000.00\n")
-        self.put("proc/meminfo", "MemTotal:        5800000 kB\nMemFree:          900000 kB\nMemAvailable:    3000000 kB\n")
+        self.put(
+            "proc/meminfo", "MemTotal:        5800000 kB\nMemFree:          900000 kB\nMemAvailable:    3000000 kB\n"
+        )
         self.backlight("panel0-backlight")
         self.backlight("panel1-backlight")
         self.backlight("backlight", bl_power=None, brightness=2048)
@@ -240,17 +279,37 @@ class Fake:
         self.wlr()
         self.put("sys/class/net/usb0/operstate", "up\n")
         self.put("sys/class/net/usb0/carrier", "1\n")
-        self.answer("ip", "5: usb0    inet %s brd 198.51.100.255 scope global usb0\\       valid_lft forever preferred_lft forever\n" % USB_ADDR)
+        self.answer(
+            "ip",
+            "5: usb0    inet %s brd 198.51.100.255 scope global usb0\\       valid_lft forever preferred_lft forever\n"
+            % USB_ADDR,
+        )
         self.answer("timedatectl", "Timezone=Europe/Paris\nNTPSynchronized=yes\n")
-        self.answer("nmcli-permissions", "".join("org.freedesktop.NetworkManager.%s:yes\n" % a for a in ("enable-disable-wifi", "network-control", "settings.modify.system", "wifi.scan", "reload")))
+        self.answer(
+            "nmcli-permissions",
+            "".join(
+                "org.freedesktop.NetworkManager.%s:yes\n" % a
+                for a in ("enable-disable-wifi", "network-control", "settings.modify.system", "wifi.scan", "reload")
+            ),
+        )
         self.answer("nmcli", "wlan0:wifi:connected\nwlan0-p2p:wifi-p2p:disconnected\nlo:loopback:unmanaged\n")
-        self.put("etc/systemd/journald.conf.d/50-opos-persistent.conf", "[Journal]\nStorage=persistent\nSystemMaxUse=200M\n")
+        self.put(
+            "etc/systemd/journald.conf.d/50-opos-persistent.conf", "[Journal]\nStorage=persistent\nSystemMaxUse=200M\n"
+        )
         self.put("var/log/journal/0123abcd/system.journal", "x" * 2048)
-        self.put("var/log/opos-boot-diag.txt", "== 2026-11-06T21:19:00+01:00  up 93.52s  kernel 4.14  opos 0123456789ab\n== system state: running\n== failed units\n")  # as opos-diag writes it
+        self.put(
+            "var/log/opos-boot-diag.txt",
+            "== 2026-11-06T21:19:00+01:00  up 93.52s  kernel 4.14  opos 0123456789ab\n== system state: running\n== failed units\n",
+        )  # as opos-diag writes it
         self.put("opt/opos/REVISION", "0123456789abcdef0123456789abcdef01234567\n")
-        self.put("etc/passwd", "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\n")
+        self.put(
+            "etc/passwd", "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\n"
+        )
         self.put("etc/ssh/sshd_config", SSHD)
-        self.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\n")
+        self.put(
+            "etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+            "PasswordAuthentication no\nKbdInteractiveAuthentication no\n",
+        )
         self.put("etc/ssh/sshd_config.d/10-sfduo.conf", "PermitRootLogin prohibit-password\n")
         self.put("usr/libexec/opos/opos-kiosk", KIOSK)
 
@@ -289,7 +348,12 @@ while :; do
 done
 """
 SERVER_ARGV = ["/usr/bin/python3", "-m", "opos.web", "--port", "8765", "--live-battery"]
-SERVER_ENV = {"OPOS_ON_PHONE": "1", "OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"}  # what the image's units give the server
+SERVER_ENV = {
+    "OPOS_ON_PHONE": "1",
+    "OPOS_OSK": "1",
+    "OPOS_NETWORK": "1",
+    "OPOS_FIRSTRUN": "1",
+}  # what the image's units give the server
 LINE = re.compile(r"^(PASS|FAIL|WARN|SKIP)\s{2}(\S+)\s+(.*)$")
 
 
@@ -314,8 +378,14 @@ class Result:
 
 class Handler(BaseHTTPRequestHandler):
     """A stand-in OPOS server; class attributes decide its answers."""
+
     page = '<html><head><meta name="opos-token" content="tok123"><title>x</title></head><body>OPOS</body></html>'
-    state = {"battery": {"percent": 82}, "charging": False, "temp_c": 31.0, "battery_source": {"source": "sysfs", "health_source": "sysfs"}}
+    state = {
+        "battery": {"percent": 82},
+        "charging": False,
+        "temp_c": 31.0,
+        "battery_source": {"source": "sysfs", "health_source": "sysfs"},
+    }
     gate = True
     osk = False
     network = False
@@ -344,7 +414,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            links = ('<a href="/network">Wi-Fi and radios</a>' if self.network else "") + ('<a href="/timezone">Time zone</a>' if self.firstrun else "")
+            links = ('<a href="/network">Wi-Fi and radios</a>' if self.network else "") + (
+                '<a href="/timezone">Time zone</a>' if self.firstrun else ""
+            )
             return self.send(200, self.page.replace("</body>", links + self.tag() + "</body>"), "text/html")
         if self.osk and self.path in ("/osk.js", "/osk.css"):
             return self.send(200, "x = 1;", "text/javascript")
@@ -356,11 +428,32 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("X-OPOS-Token") != "tok123":
                 return self.send(403, '{"error":"forbidden"}')
             if self.path == "/api/firstrun":
-                return self.send(200, json.dumps({"pending": self.pending, "clock": {"plausible": True}, "goal": {}, "helper": "off", "timezone": {"saved": self.zone_saved}}))
+                return self.send(
+                    200,
+                    json.dumps(
+                        {
+                            "pending": self.pending,
+                            "clock": {"plausible": True},
+                            "goal": {},
+                            "helper": "off",
+                            "timezone": {"saved": self.zone_saved},
+                        }
+                    ),
+                )
             if self.tz_raw is not None:
                 return self.send(self.tz_status, self.tz_raw)
-            return self.send(self.tz_status, json.dumps({"zones": self.tz_zones, "source": self.tz_source, "saved": self.zone_saved,
-                                                         "active": self.zone_active or "", "clock": {}}))
+            return self.send(
+                self.tz_status,
+                json.dumps(
+                    {
+                        "zones": self.tz_zones,
+                        "source": self.tz_source,
+                        "saved": self.zone_saved,
+                        "active": self.zone_active or "",
+                        "clock": {},
+                    }
+                ),
+            )
         if self.path == "/api/state":
             if self.gate and self.headers.get("X-OPOS-Token") != "tok123":
                 return self.send(403, '{"error":"forbidden"}')
@@ -384,7 +477,9 @@ def handler_with(**kw):
     return type("H", (Handler,), kw)
 
 
-MERGED = handler_with(osk=True, network=True, firstrun=True)  # the stand-in for a server started by the merged image's units
+MERGED = handler_with(
+    osk=True, network=True, firstrun=True
+)  # the stand-in for a server started by the merged image's units
 
 
 class SelftestCase(unittest.TestCase):
@@ -423,8 +518,11 @@ class IdentityCompatibility(unittest.TestCase):
         self.assertEqual(f.calls(), [])
 
     def test_advertised_identity_fails_if_helper_or_manifest_or_both_are_missing(self):
-        for missing in (("usr/libexec/opos/image_identity.py",), ("etc/opos/image.json",),
-                        ("usr/libexec/opos/image_identity.py", "etc/opos/image.json", "usr/bin/opos-version")):
+        for missing in (
+            ("usr/libexec/opos/image_identity.py",),
+            ("etc/opos/image.json",),
+            ("usr/libexec/opos/image_identity.py", "etc/opos/image.json", "usr/bin/opos-version"),
+        ):
             with self.subTest(missing=missing):
                 f = self.fixture()
                 for name in missing:
@@ -446,6 +544,7 @@ class IdentityCompatibility(unittest.TestCase):
     @unittest.skipIf(os.geteuid() == 0, "requires an unprivileged UID to exercise filesystem permission denial")
     def test_unreadable_private_file_warns_and_readable_hash_mismatch_still_fails(self):
         from opos import image_identity
+
         f = self.fixture()
         private = f.put("etc/opos/monitor.env", "# simulated private configuration\n", mode=0o600)
         manifest = f.root / "etc/opos/image.json"
@@ -476,12 +575,52 @@ class HealthyPhone(SelftestCase):
         self.assertEqual(r.by("FAIL"), [], r.text)
         self.assertEqual(r.by("WARN"), [], r.text)
         self.assertEqual(r.by("SKIP"), ["clock.kiosk-tz", "kiosk.restarts", "ota.updater"], r.text)
-        for cid in ("svc.lxc-android", "svc.hwcomposer", "svc.opos-server", "svc.opos", "svc.phosh-off", "svc.item-off", "svc.fallback", "svc.system",
-                    "phoc.process", "phoc.no-shell-mode", "gfx.composer", "gfx.output", "gfx.backlight", "kiosk.chromium", "kiosk.gpu",
-                    "server.http", "server.state", "server.token-gate", "battery.sysfs", "battery.api-match", "battery.temp",
-                    "clock.year", "clock.timezone", "log.journal", "log.diag", "log.opos-errors", "res.disk", "res.mem",
-                    "net.usb", "ssh.auth", "net.manager", "net.wifi", "dev.build-mode", "dev.ssh-key", "dev.devtools", "dev.time-drop", "dev.span", "dev.sudo",
-                    "osk.keyboard", "net.page", "net.permissions", "firstrun.flag", "firstrun.routes", "alarm.sound"):
+        for cid in (
+            "svc.lxc-android",
+            "svc.hwcomposer",
+            "svc.opos-server",
+            "svc.opos",
+            "svc.phosh-off",
+            "svc.item-off",
+            "svc.fallback",
+            "svc.system",
+            "phoc.process",
+            "phoc.no-shell-mode",
+            "gfx.composer",
+            "gfx.output",
+            "gfx.backlight",
+            "kiosk.chromium",
+            "kiosk.gpu",
+            "server.http",
+            "server.state",
+            "server.token-gate",
+            "battery.sysfs",
+            "battery.api-match",
+            "battery.temp",
+            "clock.year",
+            "clock.timezone",
+            "log.journal",
+            "log.diag",
+            "log.opos-errors",
+            "res.disk",
+            "res.mem",
+            "net.usb",
+            "ssh.auth",
+            "net.manager",
+            "net.wifi",
+            "dev.build-mode",
+            "dev.ssh-key",
+            "dev.devtools",
+            "dev.time-drop",
+            "dev.span",
+            "dev.sudo",
+            "osk.keyboard",
+            "net.page",
+            "net.permissions",
+            "firstrun.flag",
+            "firstrun.routes",
+            "alarm.sound",
+        ):
             self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
 
     def test_output_format_is_one_line_per_check_with_a_summary(self):
@@ -524,7 +663,10 @@ class HealthyPhone(SelftestCase):
         self.f.kill(200)
         self.f.put("run/user/32011/wayland-1", "")
         self.run_st()
-        self.assertEqual((self.f.tmp / "wlr-env.log").read_text().strip(), "XDG_RUNTIME_DIR=/run/user/32011 WAYLAND_DISPLAY=wayland-1")
+        self.assertEqual(
+            (self.f.tmp / "wlr-env.log").read_text().strip(),
+            "XDG_RUNTIME_DIR=/run/user/32011 WAYLAND_DISPLAY=wayland-1",
+        )
 
     def test_it_writes_nothing_and_asks_only_for_status(self):
         before = self.f.snapshot()
@@ -537,26 +679,64 @@ class HealthyPhone(SelftestCase):
                 verbs.add(next(p for p in parts[1:] if not p.startswith("-")))
             else:
                 verbs.add(parts[0])
-        self.assertLessEqual(verbs, {"show", "is-system-running", "list-units", "journalctl", "wlr-randr", "ip", "nmcli", "timedatectl"})
+        self.assertLessEqual(
+            verbs, {"show", "is-system-running", "list-units", "journalctl", "wlr-randr", "ip", "nmcli", "timedatectl"}
+        )
         for ln in self.f.calls():
-            self.assertNotRegex(ln, r"--rotate|--vacuum|--flush|--sync|restart|stop |start |enable|disable|--off|--on\b")
+            self.assertNotRegex(
+                ln, r"--rotate|--vacuum|--flush|--sync|restart|stop |start |enable|disable|--off|--on\b"
+            )
 
     def test_a_clean_run_in_a_subprocess_exits_zero(self):
-        p = subprocess.run([sys.executable, "-I", "-B", str(SELFTEST), "--root", str(self.f.root), "--bin", str(self.f.bin), "--url", self.url, "--now", str(NOW)],
-                           capture_output=True, text=True, timeout=60)
+        p = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(SELFTEST),
+                "--root",
+                str(self.f.root),
+                "--bin",
+                str(self.f.bin),
+                "--url",
+                self.url,
+                "--now",
+                str(NOW),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("0 FAIL", p.stdout)
 
     def test_exit_status_of_the_process_follows_the_fail_lines(self):
-        base = [sys.executable, "-I", "-B", str(SELFTEST), "--root", str(self.f.root), "--bin", str(self.f.bin), "--url", self.url, "--now", str(NOW)]
+        base = [
+            sys.executable,
+            "-I",
+            "-B",
+            str(SELFTEST),
+            "--root",
+            str(self.f.root),
+            "--bin",
+            str(self.f.bin),
+            "--url",
+            self.url,
+            "--now",
+            str(NOW),
+        ]
         self.f.unit("opos.service", "failed", "failed")
         p = subprocess.run(base, capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertRegex(p.stdout, r"(?m)^FAIL  svc\.opos ")
         self.assertRegex(p.stdout.splitlines()[-1], r"^SELFTEST: \d+ PASS, \d+ WARN, \d+ SKIP, 1 FAIL$")
-        self.assertEqual(subprocess.run(base + ["--only", "nothing.here"], capture_output=True, text=True, timeout=60).returncode, 2)
+        self.assertEqual(
+            subprocess.run(base + ["--only", "nothing.here"], capture_output=True, text=True, timeout=60).returncode, 2
+        )
         self.assertEqual(subprocess.run(base + ["--bogus"], capture_output=True, text=True, timeout=60).returncode, 2)
-        self.assertEqual(subprocess.run(base + ["--only", "svc.phosh"], capture_output=True, text=True, timeout=60).returncode, 0)
+        self.assertEqual(
+            subprocess.run(base + ["--only", "svc.phosh"], capture_output=True, text=True, timeout=60).returncode, 0
+        )
 
     def test_help_names_the_seams_and_says_read_only(self):
         buf = io.StringIO()
@@ -569,8 +749,12 @@ class HealthyPhone(SelftestCase):
 
 class Services(SelftestCase):
     def test_required_units_must_be_active(self):
-        for cid, unit in (("svc.lxc-android", "lxc@android.service"), ("svc.hwcomposer", "android-service@hwcomposer.service"),
-                          ("svc.opos-server", "opos-server.service"), ("svc.opos", "opos.service")):
+        for cid, unit in (
+            ("svc.lxc-android", "lxc@android.service"),
+            ("svc.hwcomposer", "android-service@hwcomposer.service"),
+            ("svc.opos-server", "opos-server.service"),
+            ("svc.opos", "opos.service"),
+        ):
             with self.subTest(unit):
                 self.f.unit(unit, "failed", "failed")
                 r = self.run_st()
@@ -604,7 +788,9 @@ class Services(SelftestCase):
 
     def test_degraded_system_lists_failed_units(self):
         (self.f.states / "_system").write_text("degraded\n")
-        (self.f.states / "_failed").write_text("bluebinder.service loaded failed failed Bluebinder\nofono.service loaded failed failed ofono\n")
+        (self.f.states / "_failed").write_text(
+            "bluebinder.service loaded failed failed Bluebinder\nofono.service loaded failed failed ofono\n"
+        )
         r = self.run_st()
         self.assertEqual(r.status("svc.system"), "WARN")
         self.assertIn("bluebinder.service, ofono.service", r.ev("svc.system"))
@@ -630,7 +816,12 @@ class Compositor(SelftestCase):
         self.assertEqual(r.status("gfx.output"), "SKIP")
 
     def test_shell_mode_in_any_spelling_fails(self):
-        for argv in (["/usr/bin/phoc", "-S", "-E", "/x"], ["/usr/bin/phoc", "-vS"], ["/usr/bin/phoc", "--shell"], ["/usr/bin/phoc", "-C", "/c.ini", "-SE", "/x"]):
+        for argv in (
+            ["/usr/bin/phoc", "-S", "-E", "/x"],
+            ["/usr/bin/phoc", "-vS"],
+            ["/usr/bin/phoc", "--shell"],
+            ["/usr/bin/phoc", "-C", "/c.ini", "-SE", "/x"],
+        ):
             with self.subTest(argv):
                 self.f.proc(100, argv, "phoc")
                 r = self.run_st()
@@ -655,7 +846,9 @@ class Compositor(SelftestCase):
         self.f.kill(110)
         self.assertEqual(self.run_st().status("gfx.composer"), "FAIL")
         self.f.proc(110, ["/bin/sh", "/usr/local/sbin/sfduo-composer-watchdog"], "sh")
-        self.assertEqual(self.run_st().status("gfx.composer"), "FAIL", "a script that merely names the composer is not the composer")
+        self.assertEqual(
+            self.run_st().status("gfx.composer"), "FAIL", "a script that merely names the composer is not the composer"
+        )
 
     def test_disabled_output_fails_and_wrong_geometry_warns(self):
         self.f.wlr(enabled="no")
@@ -700,7 +893,9 @@ class Kiosk(SelftestCase):
             self.f.kill(pid)
         self.f.proc(210, ["/usr/bin/python3", "-m", "opos.native.shell"], "python3")
         r = self.run_st()
-        self.assertEqual((r.status("kiosk.native"), r.status("kiosk.chromium"), r.status("kiosk.gpu")), ("PASS", "SKIP", "SKIP"))
+        self.assertEqual(
+            (r.status("kiosk.native"), r.status("kiosk.chromium"), r.status("kiosk.gpu")), ("PASS", "SKIP", "SKIP")
+        )
         self.assertIn("pid 210", r.ev("kiosk.native"))
         self.assertEqual(r.status("kiosk.native-restarts"), "PASS")
 
@@ -708,7 +903,9 @@ class Kiosk(SelftestCase):
         for pid in (200, 201, 202):
             self.f.kill(pid)
         self.f.proc(210, ["/usr/bin/python3", "-m", "opos.native.shell"], "python3")
-        self.f.journal("opos-native", "the shell ended with status 1 after 4s (quick ends in a row: 1); starting it again in 2s\n")
+        self.f.journal(
+            "opos-native", "the shell ended with status 1 after 4s (quick ends in a row: 1); starting it again in 2s\n"
+        )
         r = self.run_st()
         self.assertEqual(r.status("kiosk.native-restarts"), "WARN")
         self.assertIn("ended 1 time", r.ev("kiosk.native-restarts"))
@@ -749,9 +946,11 @@ class Kiosk(SelftestCase):
         self.assertEqual(self.run_st().status("kiosk.gpu"), "WARN")
 
     def test_kiosk_restarts_are_counted_when_the_script_logs_them(self):
-        self.f.put("usr/libexec/opos/opos-kiosk", KIOSK + "log() { logger -t opos-kiosk \"$*\"; }\n")
+        self.f.put("usr/libexec/opos/opos-kiosk", KIOSK + 'log() { logger -t opos-kiosk "$*"; }\n')
         self.assertEqual(self.run_st().status("kiosk.restarts"), "PASS")
-        self.f.journal("opos-kiosk", "chromium exited with status 0 after 3s (quick exits in a row: 1); starting it again in 2s\n")
+        self.f.journal(
+            "opos-kiosk", "chromium exited with status 0 after 3s (quick exits in a row: 1); starting it again in 2s\n"
+        )
         r = self.run_st()
         self.assertEqual(r.status("kiosk.restarts"), "WARN")
         self.assertIn("exited 1 time", r.ev("kiosk.restarts"))
@@ -784,7 +983,9 @@ class Server(unittest.TestCase):
         self.assertIn("not on the live battery", r.ev("server.state"))
 
     def test_wrong_types_fail(self):
-        r = self.check(handler_with(state={"battery": {"percent": "50"}, "charging": "no", "temp_c": None, "battery_source": {}}))
+        r = self.check(
+            handler_with(state={"battery": {"percent": "50"}, "charging": "no", "temp_c": None, "battery_source": {}})
+        )
         self.assertEqual(r.status("server.state"), "FAIL")
         for w in ("battery.percent", "charging", "temp_c"):
             self.assertIn(w, r.ev("server.state"))
@@ -806,6 +1007,7 @@ class Server(unittest.TestCase):
         class Boom(Handler):
             def do_GET(self):
                 self.send(500, "{}")
+
         r = self.check(Boom)
         self.assertEqual(r.status("server.http"), "FAIL")
         self.assertIn("500", r.ev("server.http"))
@@ -920,18 +1122,28 @@ class Logs(SelftestCase):
         self.assertEqual(r.status("log.diag"), "SKIP")
         self.assertIn("90 s", r.ev("log.diag"))
         self.f.put("proc/uptime", "250.0 100.0\n")
-        self.assertEqual(self.run_st().status("log.diag"), "SKIP", "the dump is due about 90 s after multi-user.target, not after boot")
+        self.assertEqual(
+            self.run_st().status("log.diag"),
+            "SKIP",
+            "the dump is due about 90 s after multi-user.target, not after boot",
+        )
         self.f.put("proc/uptime", "400.0 100.0\n")
         self.assertEqual(self.run_st().status("log.diag"), "FAIL")
 
     def test_a_dump_from_an_earlier_boot_is_not_this_boots_evidence(self):
         self.f.put("proc/uptime", "400.0 100.0\n")
         for up in ("5000s", "5000.12s"):  # opos-diag writes the second form, from /proc/uptime
-            self.f.put("var/log/opos-boot-diag.txt", "== 2026-11-05T09:00:00+00:00  up %s  kernel 4.14  opos abc\n== system state: running\n" % up)
+            self.f.put(
+                "var/log/opos-boot-diag.txt",
+                "== 2026-11-05T09:00:00+00:00  up %s  kernel 4.14  opos abc\n== system state: running\n" % up,
+            )
             r = self.run_st()
             self.assertEqual(r.status("log.diag"), "WARN", up)
             self.assertIn("earlier boot", r.ev("log.diag"))
-        self.f.put("var/log/opos-boot-diag.txt", "== 2026-11-05T09:00:00+00:00  up 93.52s  kernel 4.14  opos abc\n== system state: running\n")
+        self.f.put(
+            "var/log/opos-boot-diag.txt",
+            "== 2026-11-05T09:00:00+00:00  up 93.52s  kernel 4.14  opos abc\n== system state: running\n",
+        )
         self.assertEqual(self.run_st().status("log.diag"), "PASS", "a dump 93 s into this boot is this boot's")
 
     def test_diag_evidence_includes_its_system_state(self):
@@ -962,7 +1174,9 @@ class Resources(SelftestCase):
         real = os.statvfs
         try:
             for free, want in ((10, "FAIL"), (100, "WARN"), (2000, "PASS")):
-                os.statvfs = lambda p, free=free: types.SimpleNamespace(f_bavail=free * 256, f_frsize=4096, f_blocks=10000 * 256)
+                os.statvfs = lambda p, free=free: types.SimpleNamespace(
+                    f_bavail=free * 256, f_frsize=4096, f_blocks=10000 * 256
+                )
                 self.assertEqual(self.run_st().status("res.disk"), want, free)
         finally:
             os.statvfs = real
@@ -997,7 +1211,9 @@ class Network(SelftestCase):
         self.assertEqual(r.status("net.usb"), "PASS", r.ev("net.usb"))
         self.f.rm("sys/class/net/usb0")
         r = self.run_st()
-        self.assertEqual(r.status("net.usb"), "WARN", "no gadget service and no interface: the phone may be reached over Wi-Fi")
+        self.assertEqual(
+            r.status("net.usb"), "WARN", "no gadget service and no interface: the phone may be reached over Wi-Fi"
+        )
         self.assertIn("not installed", r.ev("net.usb"))
 
     def test_network_manager_down_fails_and_absent_skips(self):
@@ -1035,30 +1251,58 @@ class Ssh(SelftestCase):
         self.f.put("etc/ssh/sshd_config", "PasswordAuthentication yes\n" + SSHD)
         self.assertEqual(self.run_st().status("ssh.auth"), "FAIL", "the main file's line comes before the Include")
         self.f.put("etc/ssh/sshd_config", SSHD + "PasswordAuthentication yes\n")
-        self.assertEqual(self.run_st().status("ssh.auth"), "PASS", "the drop-in's no came first, so the later yes does not count")
+        self.assertEqual(
+            self.run_st().status("ssh.auth"), "PASS", "the drop-in's no came first, so the later yes does not count"
+        )
 
     def test_keyboard_interactive_empty_passwords_and_root_login_fail(self):
-        for extra in ("KbdInteractiveAuthentication yes\n", "PermitEmptyPasswords yes\n", "PermitRootLogin yes\n", "PubkeyAuthentication no\n"):
+        for extra in (
+            "KbdInteractiveAuthentication yes\n",
+            "PermitEmptyPasswords yes\n",
+            "PermitRootLogin yes\n",
+            "PubkeyAuthentication no\n",
+        ):
             with self.subTest(extra):
                 self.f.put("etc/ssh/sshd_config", extra + SSHD)
                 self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
 
     def test_a_password_exception_for_the_whole_internet_warns(self):
-        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch all\n  PasswordAuthentication yes\n")
+        self.f.put(
+            "etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+            "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch all\n  PasswordAuthentication yes\n",
+        )
         r = self.run_st()
         self.assertEqual(r.status("ssh.auth"), "FAIL")
         self.assertIn("password-enabled Match blocks", r.ev("ssh.auth"))
-        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf", "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address 8.8.8.0/24\n  PasswordAuthentication yes\n")
+        self.f.put(
+            "etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+            "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address 8.8.8.0/24\n  PasswordAuthentication yes\n",
+        )
         self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
 
     def test_a_list_of_addresses_is_private_only_when_every_entry_is(self):
-        a, b, w = "10." + "0.1.0/24", "192." + "168.7.0/24", "8.8.8.0/24"  # written in parts so the repository holds no private address
-        for cond, want in ((a + ",0.0.0.0/0", "FAIL"), ("0.0.0.0/0," + a, "FAIL"), (a + "," + w, "FAIL"), (w + "," + a, "FAIL"),
-                           (a + "," + b, "FAIL"), (a + ",!10." + "0.1.9", "FAIL"), (a + ",not-an-address", "FAIL"), ("10." + "0.0.0/8", "FAIL"),
-                           ("!10." + "0.1.9", "FAIL")):
+        a, b, w = (
+            "10." + "0.1.0/24",
+            "192." + "168.7.0/24",
+            "8.8.8.0/24",
+        )  # written in parts so the repository holds no private address
+        for cond, want in (
+            (a + ",0.0.0.0/0", "FAIL"),
+            ("0.0.0.0/0," + a, "FAIL"),
+            (a + "," + w, "FAIL"),
+            (w + "," + a, "FAIL"),
+            (a + "," + b, "FAIL"),
+            (a + ",!10." + "0.1.9", "FAIL"),
+            (a + ",not-an-address", "FAIL"),
+            ("10." + "0.0.0/8", "FAIL"),
+            ("!10." + "0.1.9", "FAIL"),
+        ):
             with self.subTest(cond):
-                self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
-                           "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s\n  PasswordAuthentication yes\n" % cond)
+                self.f.put(
+                    "etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+                    "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s\n  PasswordAuthentication yes\n"
+                    % cond,
+                )
                 self.assertEqual(self.run_st().status("ssh.auth"), want)
 
     def test_an_unreadable_config_fails(self):
@@ -1082,8 +1326,10 @@ class Ssh(SelftestCase):
         self.assertIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
 
     def test_an_include_in_a_match_block_of_a_dropin_and_a_glob(self):
-        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
-                   "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch User droidian\n    Include /etc/ssh/extra.d/*.conf\n")
+        self.f.put(
+            "etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+            "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch User droidian\n    Include /etc/ssh/extra.d/*.conf\n",
+        )
         self.f.put("etc/ssh/extra.d/a.conf", "# nothing\n")
         self.f.put("etc/ssh/extra.d/b.conf", "KbdInteractiveAuthentication yes\n")
         r = self.run_st()
@@ -1092,11 +1338,18 @@ class Ssh(SelftestCase):
 
     def test_a_match_line_in_an_included_file_ends_with_that_file(self):
         # the included file opens its own block; the lines after the Include are back in the including file's block
-        self.f.put("etc/ssh/sshd_config", SSHD + "Match User droidian\n    Include /etc/ssh/inc.conf\n    PasswordAuthentication yes\n")
+        self.f.put(
+            "etc/ssh/sshd_config",
+            SSHD + "Match User droidian\n    Include /etc/ssh/inc.conf\n    PasswordAuthentication yes\n",
+        )
         self.f.put("etc/ssh/inc.conf", "Match Address %s\n    PermitEmptyPasswords no\n" % USB_NET)
         r = self.run_st()
         self.assertEqual(r.status("ssh.auth"), "FAIL", r.ev("ssh.auth"))
-        self.assertIn("User droidian", r.ev("ssh.auth"), "the later yes belongs to Match User, not to the Address block of the included file")
+        self.assertIn(
+            "User droidian",
+            r.ev("ssh.auth"),
+            "the later yes belongs to Match User, not to the Address block of the included file",
+        )
         self.assertNotIn("passwords allowed only for: Address " + USB_NET, r.ev("ssh.auth"))
 
     def test_a_global_include_still_sets_global_values_and_a_loop_ends(self):
@@ -1107,8 +1360,11 @@ class Ssh(SelftestCase):
     def test_a_list_with_a_public_entry_after_a_private_one_is_not_private(self):
         # Match Address takes a list; looking only at the first entry would call this private
         a = "10." + "0.1.0/24"
-        self.f.put("etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
-                   "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s,8.8.8.0/24\n  PasswordAuthentication yes\n" % a)
+        self.f.put(
+            "etc/ssh/sshd_config.d/10-item-password-usb-only.conf",
+            "PasswordAuthentication no\nKbdInteractiveAuthentication no\nMatch Address %s,8.8.8.0/24\n  PasswordAuthentication yes\n"
+            % a,
+        )
         self.assertEqual(self.run_st().status("ssh.auth"), "FAIL")
 
 
@@ -1152,14 +1408,22 @@ class NoLink(MERGED):
     """A server whose Settings has no link to /network."""
 
     def send(self, code, body, ctype="application/json"):
-        super().send(code, body.replace('<a href="/network">Wi-Fi and radios</a>', "") if isinstance(body, str) else body, ctype)
+        super().send(
+            code, body.replace('<a href="/network">Wi-Fi and radios</a>', "") if isinstance(body, str) else body, ctype
+        )
 
 
 class NoKeyboardOnPages(MERGED):
     """A server that adds the keyboard to the home page only, not to /network."""
 
     def send(self, code, body, ctype="application/json"):
-        super().send(code, body.replace('<script src="/osk.js" defer></script>', "") if self.path != "/" and isinstance(body, str) else body, ctype)
+        super().send(
+            code,
+            body.replace('<script src="/osk.js" defer></script>', "")
+            if self.path != "/" and isinstance(body, str)
+            else body,
+            ctype,
+        )
 
 
 class PieceCase(SelftestCase):
@@ -1200,7 +1464,9 @@ class Keyboard(PieceCase):
         self.assertEqual(r.rc, 1)
         self.server(OPOS_OSK="off")
         r = self.run_st()
-        self.assertEqual(r.status("osk.keyboard"), "WARN", "switched off by the owner: allowed, but nothing can be typed by touch")
+        self.assertEqual(
+            r.status("osk.keyboard"), "WARN", "switched off by the owner: allowed, but nothing can be typed by touch"
+        )
         self.assertIn("by touch", r.ev("osk.keyboard"))
 
     def test_a_commented_setting_does_not_count(self):
@@ -1285,7 +1551,10 @@ class NetworkPage(PieceCase):
 
     def test_permissions(self):
         f = self.f
-        f.answer("nmcli-permissions", "org.freedesktop.NetworkManager.wifi.scan:auth\norg.freedesktop.NetworkManager.network-control:yes\n")
+        f.answer(
+            "nmcli-permissions",
+            "org.freedesktop.NetworkManager.wifi.scan:auth\norg.freedesktop.NetworkManager.network-control:yes\n",
+        )
         r = f.run()
         self.assertEqual(r.status("net.permissions"), "FAIL")
         self.assertIn("wifi.scan=auth", r.ev("net.permissions"))
@@ -1297,7 +1566,9 @@ class NetworkPage(PieceCase):
 
     def test_a_unit_edited_but_not_restarted_is_a_warning(self):
         self.server(OPOS_OSK="1")
-        self.f.put("etc/systemd/system/opos-server.service.d/20-opos-network.conf", "[Service]\nEnvironment=OPOS_NETWORK=1\n")
+        self.f.put(
+            "etc/systemd/system/opos-server.service.d/20-opos-network.conf", "[Service]\nEnvironment=OPOS_NETWORK=1\n"
+        )
         self.assertEqual(self.run_st().status("net.page"), "WARN")
 
 
@@ -1305,7 +1576,9 @@ class FirstRun(PieceCase):
     def test_the_merged_image_runs_the_first_run_and_the_time_zone_page(self):
         r = self.run_st()
         self.assertEqual((r.status("firstrun.flag"), r.status("firstrun.routes")), ("PASS", "PASS"), r.text)
-        self.assertIn("GET /firstrun -> 200, /timezone -> 200, /api/firstrun -> 200 (no token -> 403)", r.ev("firstrun.routes"))
+        self.assertIn(
+            "GET /firstrun -> 200, /timezone -> 200, /api/firstrun -> 200 (no token -> 403)", r.ev("firstrun.routes")
+        )
         self.assertIn("Settings links to /timezone: yes", r.ev("firstrun.routes"))
         self.assertIn("first run done", r.ev("firstrun.routes"))
 
@@ -1318,7 +1591,10 @@ class FirstRun(PieceCase):
         self.f.rm("opt/opos/src/opos/firstrun.py")
         self.server()
         r = self.run_st()
-        self.assertEqual((r.status("firstrun.flag"), r.status("firstrun.routes"), r.status("clock.kiosk-tz")), ("SKIP", "SKIP", "SKIP"))
+        self.assertEqual(
+            (r.status("firstrun.flag"), r.status("firstrun.routes"), r.status("clock.kiosk-tz")),
+            ("SKIP", "SKIP", "SKIP"),
+        )
         self.f.put("opt/opos/src/opos/firstrun.py", "# the module\n")
         r = self.run_st()
         self.assertEqual((r.status("firstrun.flag"), r.status("firstrun.routes")), ("FAIL", "SKIP"))
@@ -1333,16 +1609,29 @@ class FirstRun(PieceCase):
 
     def test_a_failing_timezone_api_fails_the_check_on_its_own(self):
         """The setup page loads /api/firstrun and /api/timezone together, so it cannot open without both. Everything else here is fine."""
-        bad = {"a 500": dict(tz_status=500, tz_raw='{"error":"boom"}'), "a 404": dict(tz_status=404, tz_raw="{}"),
-               "invalid JSON": dict(tz_raw="<html>oops</html>"), "an empty body": dict(tz_raw=""), "a JSON list": dict(tz_raw="[]"),
-               "no zones": dict(tz_zones=[]), "zones that are not names": dict(tz_zones=[1, 2]), "an unknown source": dict(tz_source="guess"),
-               "a missing key": dict(tz_raw=json.dumps({"zones": ["UTC"], "source": "system", "saved": None, "clock": {}}))}
+        bad = {
+            "a 500": dict(tz_status=500, tz_raw='{"error":"boom"}'),
+            "a 404": dict(tz_status=404, tz_raw="{}"),
+            "invalid JSON": dict(tz_raw="<html>oops</html>"),
+            "an empty body": dict(tz_raw=""),
+            "a JSON list": dict(tz_raw="[]"),
+            "no zones": dict(tz_zones=[]),
+            "zones that are not names": dict(tz_zones=[1, 2]),
+            "an unknown source": dict(tz_source="guess"),
+            "a missing key": dict(
+                tz_raw=json.dumps({"zones": ["UTC"], "source": "system", "saved": None, "clock": {}})
+            ),
+        }
         for name, attrs in bad.items():
             with self.subTest(name):
                 r = self.on(handler_with(osk=True, network=True, firstrun=True, **attrs), **SERVER_ENV).run()
                 self.assertEqual(r.status("firstrun.routes"), "FAIL", r.ev("firstrun.routes"))
                 self.assertIn("/api/timezone ->", r.ev("firstrun.routes"))
-                self.assertIn("GET /firstrun -> 200, /timezone -> 200, /api/firstrun -> 200 (no token -> 403)", r.ev("firstrun.routes"), "the other routes were fine")
+                self.assertIn(
+                    "GET /firstrun -> 200, /timezone -> 200, /api/firstrun -> 200 (no token -> 403)",
+                    r.ev("firstrun.routes"),
+                    "the other routes were fine",
+                )
                 self.assertEqual(r.rc, 1)
         r = self.on(handler_with(osk=True, network=True, firstrun=True, tz_status=500, tz_raw="{}"), **SERVER_ENV).run()
         self.assertIn("/api/timezone -> 500", r.ev("firstrun.routes"))
@@ -1350,16 +1639,27 @@ class FirstRun(PieceCase):
         self.assertIn("/api/timezone -> 200 (not JSON in the shape the setup page needs)", r.ev("firstrun.routes"))
 
     def test_a_builtin_zone_list_and_a_saved_zone_are_good_answers(self):
-        r = self.on(handler_with(osk=True, network=True, firstrun=True, tz_source="builtin", zone_saved="UTC", zone_active="UTC"), **SERVER_ENV).run()
+        r = self.on(
+            handler_with(
+                osk=True, network=True, firstrun=True, tz_source="builtin", zone_saved="UTC", zone_active="UTC"
+            ),
+            **SERVER_ENV,
+        ).run()
         self.assertEqual(r.status("firstrun.routes"), "PASS", r.ev("firstrun.routes"))
         self.assertIn("/api/timezone -> 200;", r.ev("firstrun.routes"))
 
     def test_the_server_must_have_applied_the_saved_zone(self):
-        f = self.on(handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Europe/Paris"), **SERVER_ENV)
+        f = self.on(
+            handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Europe/Paris"),
+            **SERVER_ENV,
+        )
         r = f.run()
         self.assertEqual(r.status("firstrun.routes"), "WARN")
         self.assertIn("zone saved Asia/Tokyo, server uses Europe/Paris", r.ev("firstrun.routes"))
-        f = self.on(handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Asia/Tokyo"), **SERVER_ENV)
+        f = self.on(
+            handler_with(osk=True, network=True, firstrun=True, zone_saved="Asia/Tokyo", zone_active="Asia/Tokyo"),
+            **SERVER_ENV,
+        )
         self.assertEqual(f.run().status("firstrun.routes"), "PASS")
 
     def test_the_kiosk_chromium_must_run_in_the_saved_zone(self):
@@ -1367,11 +1667,19 @@ class FirstRun(PieceCase):
         r = self.run_st()
         self.assertEqual(r.status("clock.kiosk-tz"), "WARN")
         self.assertIn("TZ=unset", r.ev("clock.kiosk-tz"))
-        self.f.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", self.url], "chromium",
-                    env={"XDG_RUNTIME_DIR": "/run/user/32011", "WAYLAND_DISPLAY": "wayland-0", "TZ": "Europe/Paris"})
+        self.f.proc(
+            200,
+            ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", self.url],
+            "chromium",
+            env={"XDG_RUNTIME_DIR": "/run/user/32011", "WAYLAND_DISPLAY": "wayland-0", "TZ": "Europe/Paris"},
+        )
         self.assertEqual(self.run_st().status("clock.kiosk-tz"), "WARN")
-        self.f.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", self.url], "chromium",
-                    env={"XDG_RUNTIME_DIR": "/run/user/32011", "WAYLAND_DISPLAY": "wayland-0", "TZ": "Asia/Tokyo"})
+        self.f.proc(
+            200,
+            ["/usr/lib/chromium/chromium", "--kiosk", "--ozone-platform=wayland", self.url],
+            "chromium",
+            env={"XDG_RUNTIME_DIR": "/run/user/32011", "WAYLAND_DISPLAY": "wayland-0", "TZ": "Asia/Tokyo"},
+        )
         r = self.run_st()
         self.assertEqual(r.status("clock.kiosk-tz"), "PASS")
         self.assertEqual(r.status("clock.timezone"), "PASS")
@@ -1406,7 +1714,9 @@ class AlarmSound(PieceCase):
 
     def test_it_plays_nothing_starts_nothing_and_changes_nothing(self):
         before = self.f.snapshot()
-        with mock.patch.object(ST, "CHECKS", (ST.check_alarm_sound,)):  # --only filters lines, not checks, so run this one alone
+        with mock.patch.object(
+            ST, "CHECKS", (ST.check_alarm_sound,)
+        ):  # --only filters lines, not checks, so run this one alone
             r = self.run_st("--only", "alarm")
         self.assertEqual(sorted(r.rows), ["alarm.sound"])
         self.assertEqual(r.status("alarm.sound"), "PASS", r.text)
@@ -1447,7 +1757,10 @@ class AlarmSound(PieceCase):
         self.assertIn("/run/user/32011/pulse/native is not a socket", r.ev("alarm.sound"))
 
     def test_the_socket_is_the_one_for_the_uid_the_server_runs_as(self):
-        self.f.put("etc/passwd", "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\nother:x:4000:4000::/o:/bin/sh\n")
+        self.f.put(
+            "etc/passwd",
+            "root:x:0:0:root:/root:/bin/bash\ndroidian:x:32011:32011:Droidian:/phone-home:/bin/bash\nother:x:4000:4000::/o:/bin/sh\n",
+        )
         self.f.proc(300, SERVER_ARGV, "python3", uid=4000, env=dict(SERVER_ENV))
         r = self.run_st()
         self.assertEqual(r.status("alarm.sound"), "WARN")
@@ -1467,7 +1780,12 @@ class AlarmSound(PieceCase):
 
     def test_pulse_server_names_the_socket(self):
         self.f.pulse("srv/pulse/native")
-        for value in ("unix:/srv/pulse/native", "/srv/pulse/native", "{0123abcd}unix:/srv/pulse/native", "tcp:localhost unix:/srv/pulse/native"):
+        for value in (
+            "unix:/srv/pulse/native",
+            "/srv/pulse/native",
+            "{0123abcd}unix:/srv/pulse/native",
+            "tcp:localhost unix:/srv/pulse/native",
+        ):
             with self.subTest(value):
                 self.server(**dict(SERVER_ENV, PULSE_SERVER=value))
                 r = self.run_st()
@@ -1491,11 +1809,17 @@ class AlarmSound(PieceCase):
         self.assertEqual(r.status("alarm.sound"), "WARN", r.ev("alarm.sound"))
         self.assertIn("droidian (uid 32011)", r.ev("alarm.sound"))
         self.assertIn("sets no XDG_RUNTIME_DIR or PULSE_SERVER", r.ev("alarm.sound"))
-        self.f.put("etc/systemd/system/opos-server.service.d/40-sound.conf", "[Service]\nEnvironment=XDG_RUNTIME_DIR=/run/user/32011\n")
+        self.f.put(
+            "etc/systemd/system/opos-server.service.d/40-sound.conf",
+            "[Service]\nEnvironment=XDG_RUNTIME_DIR=/run/user/32011\n",
+        )
         self.assertEqual(self.run_st("--only", "alarm").status("alarm.sound"), "PASS", "a drop-in that sets it is read")
 
     def test_a_unit_edited_but_not_restarted_warns(self):
-        self.f.put("etc/systemd/system/opos-server.service", "[Service]\nUser=droidian\nEnvironment=OPOS_ON_PHONE=1 XDG_RUNTIME_DIR=/run/user/32011\n")
+        self.f.put(
+            "etc/systemd/system/opos-server.service",
+            "[Service]\nUser=droidian\nEnvironment=OPOS_ON_PHONE=1 XDG_RUNTIME_DIR=/run/user/32011\n",
+        )
         self.server(**SERVER_ENV)
         r = self.run_st()
         self.assertEqual(r.status("alarm.sound"), "WARN")
@@ -1503,8 +1827,10 @@ class AlarmSound(PieceCase):
 
     def test_an_environment_file_overrides_the_environment_lines(self):
         """As in systemd, whatever the order of the lines; no server runs, so the files are what the check reads."""
-        self.f.put("etc/systemd/system/opos-server.service",
-                   "[Service]\nUser=droidian\nEnvironmentFile=-/etc/opos/server.env\nEnvironment=OPOS_ON_PHONE=1 XDG_RUNTIME_DIR=/run/user/1\n")
+        self.f.put(
+            "etc/systemd/system/opos-server.service",
+            "[Service]\nUser=droidian\nEnvironmentFile=-/etc/opos/server.env\nEnvironment=OPOS_ON_PHONE=1 XDG_RUNTIME_DIR=/run/user/1\n",
+        )
         self.f.put("etc/opos/server.env", "XDG_RUNTIME_DIR=/run/user/32011\n")
         self.f.kill(300)
         r = self.run_st("--only", "alarm")
@@ -1526,7 +1852,11 @@ class AlarmSound(PieceCase):
         self.assertEqual(r.status("alarm.sound"), "SKIP")
         self.assertIn("not the phone", r.ev("alarm.sound"))
         self.f.kill(300)
-        self.assertEqual(self.run_st("--only", "alarm").status("alarm.sound"), "SKIP", "no server and no unit: nothing says this is the phone")
+        self.assertEqual(
+            self.run_st("--only", "alarm").status("alarm.sound"),
+            "SKIP",
+            "no server and no unit: nothing says this is the phone",
+        )
 
     def test_it_is_documented(self):
         doc = (ROOT / "docs/duo-acceptance.md").read_text(encoding="utf-8")
@@ -1546,7 +1876,9 @@ class DevMarkers(SelftestCase):
         self.assertEqual(r.rc, 0, "a dev image is a warning, not a failure")
 
     def test_devtools_port_and_time_drop_warn(self):
-        self.f.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", "--remote-debugging-port=9222", self.url], "chromium")
+        self.f.proc(
+            200, ["/usr/lib/chromium/chromium", "--kiosk", "--remote-debugging-port=9222", self.url], "chromium"
+        )
         self.assertEqual(self.run_st().status("dev.devtools"), "WARN")
         self.f.proc(200, ["/usr/lib/chromium/chromium", "--kiosk", self.url], "chromium")
         self.f.put("etc/default/opos-kiosk", "OPOS_KIOSK_DEBUG_PORT=9222\n")
@@ -1574,7 +1906,16 @@ class Robustness(SelftestCase):
         self.assertIn(r.status("gfx.output"), ("PASS", "WARN"))
 
     def test_a_battery_that_is_not_an_object_is_a_failure_of_the_server_check_not_a_crash(self):
-        with serve(handler_with(state={"battery": "82", "charging": False, "temp_c": 31.0, "battery_source": {"source": "sysfs", "health_source": "sysfs"}})) as url:
+        with serve(
+            handler_with(
+                state={
+                    "battery": "82",
+                    "charging": False,
+                    "temp_c": 31.0,
+                    "battery_source": {"source": "sysfs", "health_source": "sysfs"},
+                }
+            )
+        ) as url:
             f = Fake(url)
             self.addCleanup(f.cleanup)
             r = f.run()
@@ -1587,21 +1928,45 @@ class ReadOnlyByConstruction(unittest.TestCase):
         return ST.Ctx(bins=[])
 
     def test_the_allow_list_refuses_anything_that_could_change_the_phone(self):
-        for cmd in (["systemctl", "restart", "opos"], ["systemctl", "start", "x"], ["systemctl", "daemon-reload"], ["systemctl"],
-                    ["journalctl", "--rotate"], ["journalctl", "--vacuum-size=1M"], ["journalctl", "--flush"],
-                    ["wlr-randr", "--output", "HWCOMPOSER-1", "--off"], ["wlr-randr", "--on"], ["timedatectl", "set-time", "2026-01-01"],
-                    ["ip", "addr", "add", "x", "dev", "usb0"], ["ip", "link", "set", "usb0", "down"], ["nmcli", "connection", "up", "x"],
-                    ["nmcli", "device", "wifi", "connect", "x"], ["rm", "-rf", "/"], ["sh", "-c", "true"], ["sudo", "true"], ["chvt", "7"]):
+        for cmd in (
+            ["systemctl", "restart", "opos"],
+            ["systemctl", "start", "x"],
+            ["systemctl", "daemon-reload"],
+            ["systemctl"],
+            ["journalctl", "--rotate"],
+            ["journalctl", "--vacuum-size=1M"],
+            ["journalctl", "--flush"],
+            ["wlr-randr", "--output", "HWCOMPOSER-1", "--off"],
+            ["wlr-randr", "--on"],
+            ["timedatectl", "set-time", "2026-01-01"],
+            ["ip", "addr", "add", "x", "dev", "usb0"],
+            ["ip", "link", "set", "usb0", "down"],
+            ["nmcli", "connection", "up", "x"],
+            ["nmcli", "device", "wifi", "connect", "x"],
+            ["rm", "-rf", "/"],
+            ["sh", "-c", "true"],
+            ["sudo", "true"],
+            ["chvt", "7"],
+        ):
             with self.subTest(cmd), self.assertRaises(ST.Refused):
                 self.ctx().run(cmd)
 
     def test_the_allow_list_accepts_the_status_queries_it_uses(self):
-        for cmd in (["systemctl", "show", "--property=ActiveState", "x.service"], ["systemctl", "is-system-running"],
-                    ["systemctl", "list-units", "--failed", "--no-legend", "--plain"], ["journalctl", "-b", "-p", "err", "-u", "opos.service", "--no-pager"],
-                    ["timedatectl", "show", "-p", "Timezone"], ["ip", "-4", "-o", "addr", "show", "dev", "usb0"], ["wlr-randr"],
-                    ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"], ["nmcli", "-t", "general", "permissions"]):
+        for cmd in (
+            ["systemctl", "show", "--property=ActiveState", "x.service"],
+            ["systemctl", "is-system-running"],
+            ["systemctl", "list-units", "--failed", "--no-legend", "--plain"],
+            ["journalctl", "-b", "-p", "err", "-u", "opos.service", "--no-pager"],
+            ["timedatectl", "show", "-p", "Timezone"],
+            ["ip", "-4", "-o", "addr", "show", "dev", "usb0"],
+            ["wlr-randr"],
+            ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"],
+            ["nmcli", "-t", "general", "permissions"],
+        ):
             with self.subTest(cmd):
-                self.assertFalse(self.ctx().run(cmd).found)  # no bin directories: refused is an exception, found-nothing is Res()
+                self.assertFalse(
+                    self.ctx().run(cmd).found
+                )  # no bin directories: refused is an exception, found-nothing is Res()
 
     def test_the_source_has_no_way_to_write(self):
         tree = ast.parse(SELFTEST.read_text(encoding="utf-8"))
@@ -1611,13 +1976,39 @@ class ReadOnlyByConstruction(unittest.TestCase):
                 f = n.func
                 name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
                 if name == "open":
-                    modes = [a.value for a in n.args[1:2] if isinstance(a, ast.Constant)] + [k.value.value for k in n.keywords if k.arg == "mode" and isinstance(k.value, ast.Constant)]
+                    modes = [a.value for a in n.args[1:2] if isinstance(a, ast.Constant)] + [
+                        k.value.value for k in n.keywords if k.arg == "mode" and isinstance(k.value, ast.Constant)
+                    ]
                     if any(set(str(m)) & set("wax+") for m in modes):
                         bad.append("open for writing at line %d" % n.lineno)
                 if name == "replace" and getattr(getattr(f, "value", None), "id", "") in ("os", "shutil"):
                     bad.append("os.replace() at line %d" % n.lineno)
-                if name in ("write_text", "write_bytes", "remove", "unlink", "rename", "rmdir", "mkdir", "makedirs", "chmod", "chown",
-                            "symlink", "link", "truncate", "system", "popen", "rmtree", "move", "copy", "copyfile", "mkfifo", "setuid", "kill", "killpg", "utime"):
+                if name in (
+                    "write_text",
+                    "write_bytes",
+                    "remove",
+                    "unlink",
+                    "rename",
+                    "rmdir",
+                    "mkdir",
+                    "makedirs",
+                    "chmod",
+                    "chown",
+                    "symlink",
+                    "link",
+                    "truncate",
+                    "system",
+                    "popen",
+                    "rmtree",
+                    "move",
+                    "copy",
+                    "copyfile",
+                    "mkfifo",
+                    "setuid",
+                    "kill",
+                    "killpg",
+                    "utime",
+                ):
                     bad.append("%s() at line %d" % (name, n.lineno))
         self.assertEqual(bad, [])
 
@@ -1635,11 +2026,18 @@ class ReadOnlyByConstruction(unittest.TestCase):
         tree = ast.parse(SELFTEST.read_text(encoding="utf-8"))
         names = set()
         for n in ast.walk(tree):
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Attribute) and n.func.value.attr == "environ":
+            if (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and isinstance(n.func.value, ast.Attribute)
+                and n.func.value.attr == "environ"
+            ):
                 names.update(a.value for a in n.args[:1] if isinstance(a, ast.Constant))
             if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Attribute) and n.value.attr == "environ":
                 names.add(getattr(n.slice, "value", "?"))
-        self.assertLessEqual(names, {"PATH"}, "production runs take their roots from arguments only: %s" % sorted(names))
+        self.assertLessEqual(
+            names, {"PATH"}, "production runs take their roots from arguments only: %s" % sorted(names)
+        )
 
     def test_an_internal_error_is_a_failure_not_a_pass(self):
         f = Fake()
@@ -1662,7 +2060,15 @@ class RealServer(unittest.TestCase):
         sys.path.insert(0, str(ROOT / "src"))
         from opos import web
         from opos.hw.live_battery import LiveBattery
-        reading = {"level": 82.0, "temp_c": None, "charging": False, "source": "sysfs", "health": 0.9, "health_source": "sysfs"}
+
+        reading = {
+            "level": 82.0,
+            "temp_c": None,
+            "charging": False,
+            "source": "sysfs",
+            "health": 0.9,
+            "health_source": "sysfs",
+        }
         cls.web = web
         cls.srv = web.make_server(0, web.Phone(live_battery=LiveBattery(reader=lambda: dict(reading))))
         threading.Thread(target=cls.srv.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
@@ -1677,7 +2083,14 @@ class RealServer(unittest.TestCase):
         f = Fake(self.url)
         self.addCleanup(f.cleanup)
         r = f.run("--only", "server", "--only", "battery")
-        for cid in ("server.http", "server.state", "server.token-gate", "battery.sysfs", "battery.api-match", "battery.temp"):
+        for cid in (
+            "server.http",
+            "server.state",
+            "server.token-gate",
+            "battery.sysfs",
+            "battery.api-match",
+            "battery.temp",
+        ):
             self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows.get(cid)))
         self.assertIn("battery 82%", r.ev("server.state"))
         self.assertIn("source sysfs", r.ev("server.state"))
@@ -1714,14 +2127,16 @@ class ImageWiring(unittest.TestCase):
         self.assertEqual(lines[0], "#!/usr/bin/python3 -IB")
         self.assertEqual(lines[1], "# SPDX-License-Identifier: GPL-3.0-or-later")
         self.assertNotIn(b"\r", SELFTEST.read_bytes())
-        r = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-s", "packaging/duo-os/opos-selftest"], capture_output=True, text=True)
+        r = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-s", "packaging/duo-os/opos-selftest"], capture_output=True, text=True
+        )
         if r.returncode == 0 and r.stdout.strip():
             self.assertTrue(r.stdout.startswith("100755"), "commit it executable: git update-index --chmod=+x")
 
     def test_build_block_installs_the_script_and_a_wrapper(self):
         b = self.block(BUILD)
         self.assertIn('install -m 0755 "$here/opos-selftest" "$r/usr/libexec/opos/opos-selftest"', b)
-        self.assertIn('$r/usr/sbin/opos-selftest', b)
+        self.assertIn("$r/usr/sbin/opos-selftest", b)
         with tempfile.TemporaryDirectory() as d:
             here = Path(d) / "here"
             here.mkdir()
@@ -1729,7 +2144,7 @@ class ImageWiring(unittest.TestCase):
             r = Path(d) / "r"
             (r / "usr/libexec/opos").mkdir(parents=True)
             (r / "usr/sbin").mkdir(parents=True)
-            p = subprocess.run(["sh", "-eu", "-c", 'r=%s; here=%s\n%s' % (r, here, b)], capture_output=True, text=True)
+            p = subprocess.run(["sh", "-eu", "-c", "r=%s; here=%s\n%s" % (r, here, b)], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             wrapper = (r / "usr/sbin/opos-selftest").read_text()
             self.assertIn('exec /usr/libexec/opos/opos-selftest "$@"', wrapper)
@@ -1750,7 +2165,10 @@ class ImageWiring(unittest.TestCase):
         self.assertIn("--help", v)
         self.assertIn('check "', v)
         self.assertIn("py ", v)
-        self.assertGreater(VERIFY.read_text(encoding="utf-8").index("# --- qa: BEGIN"), VERIFY.read_text(encoding="utf-8").index("py()"))
+        self.assertGreater(
+            VERIFY.read_text(encoding="utf-8").index("# --- qa: BEGIN"),
+            VERIFY.read_text(encoding="utf-8").index("py()"),
+        )
 
 
 class Acceptance(unittest.TestCase):
@@ -1778,9 +2196,21 @@ class Acceptance(unittest.TestCase):
         self.assertRegex(p, r"\[Parameter\(Mandatory = \$true\)\][^\n]*\$PhoneHost")
 
     def test_nothing_personal_is_written_into_it(self):
-        for pat in (r"[A-Za-z]:\\", r"/home/", r"/Users/", r"\\Users\\", r"(?<![\d.])\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?![\d.])", r"BEGIN [A-Z ]*PRIVATE", r"ssh-(ed25519|rsa) AAAA"):
+        for pat in (
+            r"[A-Za-z]:\\",
+            r"/home/",
+            r"/Users/",
+            r"\\Users\\",
+            r"(?<![\d.])\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?![\d.])",
+            r"BEGIN [A-Z ]*PRIVATE",
+            r"ssh-(ed25519|rsa) AAAA",
+        ):
             with self.subTest(pat):
-                hits = [h for h in re.findall(pat, self.text) if h != "127.0.0.1"] if "\\d" in pat else re.findall(pat, self.text)
+                hits = (
+                    [h for h in re.findall(pat, self.text) if h != "127.0.0.1"]
+                    if "\\d" in pat
+                    else re.findall(pat, self.text)
+                )
                 self.assertEqual(hits, [])
         for ln in re.findall(r"https?://[^\s'\"<>]+", self.text):
             self.assertRegex(ln, r"^https?://(127\.0\.0\.1|\$)", ln)
@@ -1790,30 +2220,81 @@ class Acceptance(unittest.TestCase):
         self.assertIsNotNone(m, "the remote commands must live in one $Remote table")
         cmds = dict(re.findall(r"^\s*(\w+)\s*=\s*'([^']*)'\s*$", m.group(1), re.M))
         self.assertGreaterEqual(len(cmds), 3)
-        allowed = [r"/usr/sbin/opos-selftest", r"cat /opt/opos/REVISION", r"cat /var/log/opos-boot-diag\.txt", r"test -r /var/log/opos-boot-diag\.txt"]
+        allowed = [
+            r"/usr/sbin/opos-selftest",
+            r"cat /opt/opos/REVISION",
+            r"cat /var/log/opos-boot-diag\.txt",
+            r"test -r /var/log/opos-boot-diag\.txt",
+        ]
         for k, v in cmds.items():
-            self.assertTrue(any(re.fullmatch(a, v) for a in allowed), "%s = %r is not an allowed read-only command" % (k, v))
+            self.assertTrue(
+                any(re.fullmatch(a, v) for a in allowed), "%s = %r is not an allowed read-only command" % (k, v)
+            )
             self.assertIsNone(re.search(r"[;&|<>`$()\n]", v), v)
-        self.assertEqual(len(re.findall(r"=\s*'", m.group(1))), len(cmds), "every entry in $Remote must be a plain quoted string")
+        self.assertEqual(
+            len(re.findall(r"=\s*'", m.group(1))), len(cmds), "every entry in $Remote must be a plain quoted string"
+        )
         calls = re.findall(r"(?<!function )Invoke-Ssh\b[^\n]*", self.code)
         self.assertGreaterEqual(len(calls), 4)
         for c in calls:
             self.assertRegex(c, r"Invoke-Ssh\s+\$Remote\.\w+", c)
-        for w in (r"\bscp\b", r"\bsftp\b", r"\brsync\b", r"\bsudo\b", r"\bsu\b", r"\brm\b", r"\bmv\b", r"\btee\b", r"\bdd\b", r"\bkill\b", r"\bsystemctl\b", r"\bchmod\b",
-                  r"\breboot\b", r"\bapt\b", r"\bwget\b", r"\bcurl\b", r"Invoke-Expression", r"\biex\b"):
+        for w in (
+            r"\bscp\b",
+            r"\bsftp\b",
+            r"\brsync\b",
+            r"\bsudo\b",
+            r"\bsu\b",
+            r"\brm\b",
+            r"\bmv\b",
+            r"\btee\b",
+            r"\bdd\b",
+            r"\bkill\b",
+            r"\bsystemctl\b",
+            r"\bchmod\b",
+            r"\breboot\b",
+            r"\bapt\b",
+            r"\bwget\b",
+            r"\bcurl\b",
+            r"Invoke-Expression",
+            r"\biex\b",
+        ):
             self.assertIsNone(re.search(w, self.code), "forbidden in the PC script: " + w)
 
     def test_ssh_options_make_it_non_interactive_and_key_only(self):
-        for w in ("BatchMode=yes", "PasswordAuthentication=no", "ConnectTimeout=", "StrictHostKeyChecking=accept-new", "UserKnownHostsFile="):
+        for w in (
+            "BatchMode=yes",
+            "PasswordAuthentication=no",
+            "ConnectTimeout=",
+            "StrictHostKeyChecking=accept-new",
+            "UserKnownHostsFile=",
+        ):
             self.assertIn(w, self.code)
 
     def test_the_screenshot_path_is_a_tunnel_to_the_loopback_devtools_port(self):
-        for w in ("'-N'", "'-L'", "ExitOnForwardFailure=yes", "ClientWebSocket", "Page.captureScreenshot", "/json/list", "89504E470D0A1A0A", "[Convert]::FromBase64String"):
+        for w in (
+            "'-N'",
+            "'-L'",
+            "ExitOnForwardFailure=yes",
+            "ClientWebSocket",
+            "Page.captureScreenshot",
+            "/json/list",
+            "89504E470D0A1A0A",
+            "[Convert]::FromBase64String",
+        ):
             self.assertIn(w, self.code)
         self.assertRegex(self.code, r"127\.0\.0\.1:\$\{?\w+\}?:127\.0\.0\.1:\$\{?\w+\}?")
 
     def test_it_writes_a_report_with_hashes_and_exits_nonzero_on_failure(self):
-        for w in ("report.md", "Get-FileHash", "SHA256", "/opt/opos/REVISION", "opos-boot-diag.txt", "SHA256SUMS", "exit 1", "exit 2"):
+        for w in (
+            "report.md",
+            "Get-FileHash",
+            "SHA256",
+            "/opt/opos/REVISION",
+            "opos-boot-diag.txt",
+            "SHA256SUMS",
+            "exit 1",
+            "exit 2",
+        ):
             self.assertIn(w, self.code + self.text)
 
     def test_braces_and_quotes_balance(self):
@@ -1833,7 +2314,7 @@ class Acceptance(unittest.TestCase):
                 continue
             if ch == "'":
                 i += 1
-                while i < len(s) and not (s[i] == "'" and s[i + 1:i + 2] != "'"):
+                while i < len(s) and not (s[i] == "'" and s[i + 1 : i + 2] != "'"):
                     i += 2 if s[i] == "'" else 1
                 i += 1
                 continue
@@ -1857,10 +2338,17 @@ class Acceptance(unittest.TestCase):
             self.skipTest("pwsh is not installed here; the lexical checks above stand in")
         with tempfile.TemporaryDirectory() as d:
             probe = Path(d) / "parse.ps1"
-            probe.write_text("param($p)\n$t=$null;$e=$null\n[void][System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$t,[ref]$e)\nif($e.Count){$e|ForEach-Object{$_.Message};exit 1}\n", encoding="ascii")
-            r = subprocess.run([exe, "-NoProfile", "-NonInteractive", "-File", str(probe), str(PS1)], capture_output=True, text=True, timeout=120)
+            probe.write_text(
+                "param($p)\n$t=$null;$e=$null\n[void][System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$t,[ref]$e)\nif($e.Count){$e|ForEach-Object{$_.Message};exit 1}\n",
+                encoding="ascii",
+            )
+            r = subprocess.run(
+                [exe, "-NoProfile", "-NonInteractive", "-File", str(probe), str(PS1)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-
 
 
 SELFTEST_OUT = (
@@ -1868,13 +2356,24 @@ SELFTEST_OUT = (
     "PASS  svc.opos               opos.service is active (running)\n"
     "WARN  clock.timezone         timezone is UTC, the default | the lock screen clock shows UTC\n"
     "SKIP  ota.updater            no /var/lib/opos-update\n"
-    "SELFTEST: 1 PASS, 1 WARN, 1 SKIP, 0 FAIL\n")
+    "SELFTEST: 1 PASS, 1 WARN, 1 SKIP, 0 FAIL\n"
+)
 REV = "0123456789abcdef0123456789abcdef01234567"
 
 
 def _assert_read_only_key_ssh(test, calls, key):
     remote = [c[-1] for c in calls if "-N" not in c]
-    test.assertEqual(sorted(set(remote)), sorted(["/usr/sbin/opos-selftest", "cat /opt/opos/REVISION", "test -r /var/log/opos-boot-diag.txt", "cat /var/log/opos-boot-diag.txt"]))
+    test.assertEqual(
+        sorted(set(remote)),
+        sorted(
+            [
+                "/usr/sbin/opos-selftest",
+                "cat /opt/opos/REVISION",
+                "test -r /var/log/opos-boot-diag.txt",
+                "cat /var/log/opos-boot-diag.txt",
+            ]
+        ),
+    )
     tunnels = [c for c in calls if "-N" in c]
     test.assertEqual(len(tunnels), 1)
     spec = tunnels[0][tunnels[0].index("-L") + 1]
@@ -1890,12 +2389,26 @@ def _assert_read_only_key_ssh(test, calls, key):
 class ReadOnlySshAssertions(unittest.TestCase):
     def test_path_data_is_allowed_but_transfer_commands_are_rejected(self):
         key = Path("fixture-key")
-        base = ["-o", "BatchMode=yes", "-o", "PasswordAuthentication=no",
-                "-o", "UserKnownHostsFile=/tmp/scp-allowed-evidence/known_hosts",
-                "-i", str(key), "droidian@phone.test"]
-        calls = [base + [command] for command in (
-            "/usr/sbin/opos-selftest", "cat /opt/opos/REVISION",
-            "test -r /var/log/opos-boot-diag.txt", "cat /var/log/opos-boot-diag.txt")]
+        base = [
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "PasswordAuthentication=no",
+            "-o",
+            "UserKnownHostsFile=/tmp/scp-allowed-evidence/known_hosts",
+            "-i",
+            str(key),
+            "droidian@phone.test",
+        ]
+        calls = [
+            base + [command]
+            for command in (
+                "/usr/sbin/opos-selftest",
+                "cat /opt/opos/REVISION",
+                "test -r /var/log/opos-boot-diag.txt",
+                "cat /var/log/opos-boot-diag.txt",
+            )
+        ]
         calls.append(["-N", "-L", "127.0.0.1:12345:127.0.0.1:9222"] + base)
         _assert_read_only_key_ssh(self, calls, key)
         for command in ("scp", "scp file target", "/usr/bin/scp file target"):
@@ -1928,19 +2441,58 @@ class AcceptanceRun(unittest.TestCase):
         self.sc = self.tmp / "scenario.json"
         self.out = self.tmp / "evidence"
 
-    def scenario(self, selftest=(SELFTEST_OUT, 0), diag="== boot diag\n", devtools=True, viewport=None, ssh_fail=None, no_selftest=False):
-        cmds = {"cat /opt/opos/REVISION": {"out": REV + "\n", "rc": 0},
-                "test -r /var/log/opos-boot-diag.txt": {"out": "", "rc": 0 if diag is not None else 1},
-                "cat /var/log/opos-boot-diag.txt": {"out": diag or "", "rc": 0}}
+    def scenario(
+        self,
+        selftest=(SELFTEST_OUT, 0),
+        diag="== boot diag\n",
+        devtools=True,
+        viewport=None,
+        ssh_fail=None,
+        no_selftest=False,
+    ):
+        cmds = {
+            "cat /opt/opos/REVISION": {"out": REV + "\n", "rc": 0},
+            "test -r /var/log/opos-boot-diag.txt": {"out": "", "rc": 0 if diag is not None else 1},
+            "cat /var/log/opos-boot-diag.txt": {"out": diag or "", "rc": 0},
+        }
         if not no_selftest:
             cmds["/usr/sbin/opos-selftest"] = {"out": selftest[0], "rc": selftest[1]}
-        self.sc.write_text(json.dumps({"commands": cmds, "devtools": devtools, "png": [1392, 900], "ssh_fail": ssh_fail, "page_url": "http://127.0.0.1:8765/",
-                                       "viewport": viewport or {"w": 1392, "h": 900, "dpr": 2, "url": "http://127.0.0.1:8765/"}}), encoding="utf-8")
+        self.sc.write_text(
+            json.dumps(
+                {
+                    "commands": cmds,
+                    "devtools": devtools,
+                    "png": [1392, 900],
+                    "ssh_fail": ssh_fail,
+                    "page_url": "http://127.0.0.1:8765/",
+                    "viewport": viewport or {"w": 1392, "h": 900, "dpr": 2, "url": "http://127.0.0.1:8765/"},
+                }
+            ),
+            encoding="utf-8",
+        )
 
     def run_ps1(self, *args, host="phone.test"):
         env = dict(os.environ, OPOS_FAKE_SSH=str(self.sc))
-        p = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(PS1), "-Host", host, "-SshPath", str(self.shim), "-OutDir", str(self.out), *args],
-                           capture_output=True, text=True, timeout=180, env=env)
+        p = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(PS1),
+                "-Host",
+                host,
+                "-SshPath",
+                str(self.shim),
+                "-OutDir",
+                str(self.out),
+                *args,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=env,
+        )
         runs = sorted(self.out.glob("duo-acceptance-*")) if self.out.exists() else []
         return p, (runs[-1] if runs else None)
 
@@ -1953,12 +2505,27 @@ class AcceptanceRun(unittest.TestCase):
         p, run = self.run_ps1("-Key", str(self.fake))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         names = sorted(f.name for f in run.iterdir())
-        self.assertEqual(names, ["SHA256SUMS", "opos-boot-diag.txt", "page.png", "report.md", "revision.txt", "selftest.txt", "viewport.json"])
+        self.assertEqual(
+            names,
+            [
+                "SHA256SUMS",
+                "opos-boot-diag.txt",
+                "page.png",
+                "report.md",
+                "revision.txt",
+                "selftest.txt",
+                "viewport.json",
+            ],
+        )
         report = (run / "report.md").read_text(encoding="utf-8")
         self.assertIn("Result: **PASS** (", report)
         self.assertIn("- Image revision (/opt/opos/REVISION): " + REV, report)
         self.assertIn("| PASS | svc.opos | opos.service is active (running) |", report)
-        self.assertIn("timezone is UTC, the default \\| the lock screen clock shows UTC", report, "a pipe in evidence must not break the table")
+        self.assertIn(
+            "timezone is UTC, the default \\| the lock screen clock shows UTC",
+            report,
+            "a pipe in evidence must not break the table",
+        )
         self.assertIn("| PASS | pc.screenshot | page.png, 1392x900 px", report)
         self.assertIn("| PASS | pc.viewport |", report)
         self.assertIn("2026-11-06T21:20:00Z", report)
@@ -1982,12 +2549,22 @@ class AcceptanceRun(unittest.TestCase):
         p, run = self.run_ps1("-Key", str(self.fake))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         calls = self.calls()
-        self.assertTrue(any(arg.startswith("UserKnownHostsFile=") and "scp-allowed-evidence" in arg
-                            for call in calls for arg in call))
+        self.assertTrue(
+            any(
+                arg.startswith("UserKnownHostsFile=") and "scp-allowed-evidence" in arg
+                for call in calls
+                for arg in call
+            )
+        )
         _assert_read_only_key_ssh(self, calls, self.fake)
 
     def test_a_fail_line_fails_the_run_and_says_so_in_the_report(self):
-        self.scenario(selftest=("# opos-selftest 1  2026-11-06T21:20:00Z  host=p  uptime=9s  opos=x  read-only\nFAIL  svc.opos               opos.service is failed (failed)\nSELFTEST: 0 PASS, 0 WARN, 0 SKIP, 1 FAIL\n", 1))
+        self.scenario(
+            selftest=(
+                "# opos-selftest 1  2026-11-06T21:20:00Z  host=p  uptime=9s  opos=x  read-only\nFAIL  svc.opos               opos.service is failed (failed)\nSELFTEST: 0 PASS, 0 WARN, 0 SKIP, 1 FAIL\n",
+                1,
+            )
+        )
         p, run = self.run_ps1()
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         report = (run / "report.md").read_text(encoding="utf-8")
@@ -2009,8 +2586,10 @@ class AcceptanceRun(unittest.TestCase):
         self.assertEqual(len(self.calls()), 1, "it gives up after the first refusal")
 
     def test_text_from_the_phone_cannot_add_rows_or_markup_to_the_report(self):
-        hostile = SELFTEST_OUT.replace("SKIP  ota.updater            no /var/lib/opos-update\n",
-                                       "SKIP  ota.updater            x \x1b[31m<img src=x> y\n")
+        hostile = SELFTEST_OUT.replace(
+            "SKIP  ota.updater            no /var/lib/opos-update\n",
+            "SKIP  ota.updater            x \x1b[31m<img src=x> y\n",
+        )
         self.scenario(selftest=(hostile, 0))
         p, run = self.run_ps1("-Key", str(self.fake))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -2028,7 +2607,10 @@ class AcceptanceRun(unittest.TestCase):
         self.scenario(no_selftest=True)
         p, run = self.run_ps1()
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
-        self.assertIn("| FAIL | pc.selftest | /usr/sbin/opos-selftest is not on the phone", (run / "report.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "| FAIL | pc.selftest | /usr/sbin/opos-selftest is not on the phone",
+            (run / "report.md").read_text(encoding="utf-8"),
+        )
 
     def test_no_devtools_port_skips_the_screenshot_unless_it_is_required(self):
         self.scenario(devtools=False)

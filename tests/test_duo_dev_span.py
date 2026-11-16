@@ -6,6 +6,7 @@ drop-in without changing that normal setting. It works only together with
 `OPOS_DEV_SSH_PUBKEY` and writes the systemd drop-in `opos-server.service.d/30-opos-dev-span.conf`; `verify-image.sh` checks the drop-in. The
 blocks of both scripts are run here against a scratch root file system, the way the clock and OTA blocks are; no image, mount or qemu is involved.
 The verify block's check that "the image's python3 builds the page" runs this builder's python3 on the repository's own sources."""
+
 import os
 import re
 import shutil
@@ -51,13 +52,17 @@ class StaticPins(unittest.TestCase):
             with self.subTest(spec=spec):
                 self.assertTrue(block(*spec).strip())
 
-    def test_the_check_runs_before_the_output_is_touched_and_the_writer_sits_after_the_dev_key_and_before_the_updater(self):
+    def test_the_check_runs_before_the_output_is_touched_and_the_writer_sits_after_the_dev_key_and_before_the_updater(
+        self,
+    ):
         t = read("packaging/duo-os/build-image.sh")
         self.assertLess(t.index("# --- dev span: CHECK END"), t.index('cp --sparse=always "$base" "$image"'))
         self.assertLess(t.index("# --- dev span: CHECK END"), t.index("mount -o loop"))
         self.assertLess(t.index("OPOS_KIOSK_DEBUG_PORT=9222"), t.index("# --- dev span: BEGIN"))
         self.assertLess(t.index("# --- dev span: END"), t.index("# ---- BEGIN OPOS OTA updates"))
-        self.assertLess(t.index("install -d \"$r/etc/systemd/system/opos-server.service.d\""), t.index("# --- dev span: BEGIN"))
+        self.assertLess(
+            t.index('install -d "$r/etc/systemd/system/opos-server.service.d"'), t.index("# --- dev span: BEGIN")
+        )
 
     def test_the_unit_keeps_mains_span_setting_independent_of_the_dev_knob(self):
         unit = read("packaging/duo-os/opos-server.service")
@@ -66,9 +71,17 @@ class StaticPins(unittest.TestCase):
 
     def test_one_drop_in_name_everywhere(self):
         name = "30-opos-dev-span.conf"
-        for path in ("packaging/duo-os/build-image.sh", "packaging/duo-os/verify-image.sh", "packaging/duo-os/README.md", "docs/duo-os-final.md"):
+        for path in (
+            "packaging/duo-os/build-image.sh",
+            "packaging/duo-os/verify-image.sh",
+            "packaging/duo-os/README.md",
+            "docs/duo-os-final.md",
+        ):
             self.assertIn(name, read(path), path)
-        self.assertRegex(read("packaging/duo-os/build-image.sh"), r"(?m)^rm -f \"\$r/etc/systemd/system/opos-server\.service\.d/30-opos-dev-span\.conf\"$")
+        self.assertRegex(
+            read("packaging/duo-os/build-image.sh"),
+            r"(?m)^rm -f \"\$r/etc/systemd/system/opos-server\.service\.d/30-opos-dev-span\.conf\"$",
+        )
 
     def test_the_knob_is_documented_where_the_other_switches_are(self):
         readme = read("packaging/duo-os/README.md")
@@ -112,7 +125,14 @@ class BuildBlocks(unittest.TestCase):
         return subprocess.run([SH, str(script)], env=env, capture_output=True, text=True, timeout=60)
 
     def test_the_check_accepts_unset_empty_zero_and_one_with_a_key(self):
-        for span, key in ((None, None), ("", None), ("0", None), (None, "/dev/null"), ("0", "/dev/null"), ("1", "/dev/null")):
+        for span, key in (
+            (None, None),
+            ("", None),
+            ("0", None),
+            (None, "/dev/null"),
+            ("0", "/dev/null"),
+            ("1", "/dev/null"),
+        ):
             with self.subTest(span=span, key=key):
                 p = self.run_block(CHECK_BLOCK, span, key)
                 self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -153,7 +173,14 @@ class BuildBlocks(unittest.TestCase):
         self.assertEqual(after - before, {DROPIN})
 
     def test_no_drop_in_without_the_knob_or_without_the_key(self):
-        for span, key in ((None, None), (None, "/dev/null"), ("", "/dev/null"), ("0", "/dev/null"), ("1", None), ("1", "")):
+        for span, key in (
+            (None, None),
+            (None, "/dev/null"),
+            ("", "/dev/null"),
+            ("0", "/dev/null"),
+            ("1", None),
+            ("1", ""),
+        ):
             with self.subTest(span=span, key=key):
                 p = self.run_block(WRITE_BLOCK, span, key)
                 self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -211,15 +238,23 @@ class VerifyBlock(unittest.TestCase):
 
     def run_verify(self, py=None, expect=None):
         script = self.tmp / "verify.sh"
-        stat = "" if os.geteuid() == 0 else 'stat() { if [ "$1 $2" = "-c %u:%g" ]; then echo 0:0; else command stat "$@"; fi; }\n'
+        stat = (
+            ""
+            if os.geteuid() == 0
+            else 'stat() { if [ "$1 $2" = "-c %u:%g" ]; then echo 0:0; else command stat "$@"; fi; }\n'
+        )
         py = py or 'py() { PYTHONPATH="%s/src" PYTHONDONTWRITEBYTECODE=1 PYTHONSAFEPATH=1 "%s" "$@"; }' % (ROOT, PY)
-        script.write_text('fail=0; r=%s; here=%s; w=$r/etc/systemd/system; chome=/home/droidian; work=%s; smoke_pid=\n'
-                          'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\n%s\n%s\nexit $fail\n'
-                          % (self.r, PKG, self.tmp / "work", stat, py, block(*VERIFY_BLOCK)))
+        script.write_text(
+            "fail=0; r=%s; here=%s; w=$r/etc/systemd/system; chome=/home/droidian; work=%s; smoke_pid=\n"
+            'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\n%s\n%s\nexit $fail\n'
+            % (self.r, PKG, self.tmp / "work", stat, py, block(*VERIFY_BLOCK))
+        )
         env = {k: v for k, v in os.environ.items() if k != "OPOS_DEV_SPAN"}
         if expect is not None:
             env["OPOS_DEV_SPAN"] = expect
-        env["PATH"] = portable.with_gnu_tools(env.get("PATH", "/usr/bin:/bin"), self.tmp / "gnu", ("stat",))  # Linux: unchanged
+        env["PATH"] = portable.with_gnu_tools(
+            env.get("PATH", "/usr/bin:/bin"), self.tmp / "gnu", ("stat",)
+        )  # Linux: unchanged
         return subprocess.run([SH, str(script)], env=env, capture_output=True, text=True, timeout=120)
 
     def assert_clean(self, p):
@@ -249,8 +284,13 @@ class VerifyBlock(unittest.TestCase):
         self.assertIn("FAIL DEV span: the drop-in is a plain", p.stdout)
 
     def test_a_drop_in_that_says_anything_else_fails(self):
-        for body in ("[Service]\nEnvironment=OPOS_SPAN=700,42\n", "[Service]\nEnvironment=OPOS_SPAN=675,42\nEnvironment=OPOS_OSK=off\n",
-                     "[Service]\nEnvironment=OPOS_SPAN=off\n", "[Unit]\nDescription=x\n[Service]\nEnvironment=OPOS_SPAN=675,42\n", ""):
+        for body in (
+            "[Service]\nEnvironment=OPOS_SPAN=700,42\n",
+            "[Service]\nEnvironment=OPOS_SPAN=675,42\nEnvironment=OPOS_OSK=off\n",
+            "[Service]\nEnvironment=OPOS_SPAN=off\n",
+            "[Unit]\nDescription=x\n[Service]\nEnvironment=OPOS_SPAN=675,42\n",
+            "",
+        ):
             with self.subTest(body=body):
                 self.dev_image()
                 (self.r / DROPIN).write_text(body, encoding="utf-8")
@@ -274,7 +314,9 @@ class VerifyBlock(unittest.TestCase):
 
     def test_a_second_setting_of_the_span_in_another_drop_in_fails(self):
         self.dev_image()
-        (self.r / "etc/systemd/system/opos-server.service.d/99-other.conf").write_text("[Service]\nEnvironment=OPOS_SPAN=675,42\n", encoding="utf-8")
+        (self.r / "etc/systemd/system/opos-server.service.d/99-other.conf").write_text(
+            "[Service]\nEnvironment=OPOS_SPAN=675,42\n", encoding="utf-8"
+        )
         p = self.run_verify()
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("FAIL DEV span: the drop-in is a plain", p.stdout)
@@ -288,14 +330,19 @@ class VerifyBlock(unittest.TestCase):
 
     def test_a_unit_with_a_different_span_fails_every_image(self):
         unit = self.r / "etc/systemd/system/opos-server.service"
-        unit.write_text(unit.read_text(encoding="utf-8").replace("Environment=OPOS_SPAN=675,42", "Environment=OPOS_SPAN=700,42"), encoding="utf-8")
+        unit.write_text(
+            unit.read_text(encoding="utf-8").replace("Environment=OPOS_SPAN=675,42", "Environment=OPOS_SPAN=700,42"),
+            encoding="utf-8",
+        )
         p = self.run_verify()
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("FAIL opos-server.service keeps the main span setting", p.stdout)
 
     def test_the_unit_with_the_main_span_removed_fails(self):
         unit = self.r / "etc/systemd/system/opos-server.service"
-        unit.write_text(unit.read_text(encoding="utf-8").replace("Environment=OPOS_SPAN=675,42\n", ""), encoding="utf-8")
+        unit.write_text(
+            unit.read_text(encoding="utf-8").replace("Environment=OPOS_SPAN=675,42\n", ""), encoding="utf-8"
+        )
         p = self.run_verify()
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("FAIL opos-server.service keeps the main span setting", p.stdout)

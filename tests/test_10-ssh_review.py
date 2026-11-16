@@ -26,71 +26,73 @@ def _load_step_ssh_body():
             end = j
             break
     assert end is not None, "step_ssh() closing brace not found"
-    body = "\n".join(lines[start:end + 1])
+    body = "\n".join(lines[start : end + 1])
     kept = [ln for ln in body.splitlines() if not ln.lstrip().startswith("#")]
     return "\n".join(kept)
 
 
 def _step_ssh_preamble():
-    return "\n".join([
-        "p() {",
-        "  printf '%s\\n' \"$ROOT$1\"",
-        "}",
-        "write_file() {",
-        "  mkdir -p \"$(dirname \"$(p \"$1\")\")\"",
-        "  cat > \"$(p \"$1\")\"",
-        "  chmod \"$2\" \"$(p \"$1\")\"",
-        "}",
-        "have_cmd() {",
-        "  if [ \"${1:-}\" = \"sshd\" ]; then",
-        "    return 0",
-        "  fi",
-        "  if [ \"${1:-}\" = \"systemctl\" ]; then",
-        "    return 0",
-        "  fi",
-        "  return 1",
-        "}",
-        "run() {",
-        "  if [ \"${1:-}\" = \"sshd\" ]; then",
-        "    if [ \"${2:-}\" = \"-T\" ]; then",
-        "      printf 'probe\\n' >> \"$EVENT_LOG\"",
-        "      printf '%s\\n' 'passwordauthentication no'",
-        "      printf '%s\\n' 'kbdinteractiveauthentication no'",
-        "      printf '%s\\n' 'pubkeyauthentication yes'",
-        "      printf '%s\\n' 'authenticationmethods publickey'",
-        "      printf '%s\\n' \"$USEDNS_LINES\"",
-        "      return 0",
-        "    fi",
-        "    return 0",
-        "  fi",
-        "  if [ \"${1:-}\" = \"systemctl\" ]; then",
-        "    printf 'reload\\n' >> \"$EVENT_LOG\"",
-        "    return 0",
-        "  fi",
-        "  if [ \"${1:-}\" = \"passwd\" ]; then",
-        "    printf 'passwd\\n' >> \"$EVENT_LOG\"",
-        "    return 0",
-        "  fi",
-        "  return 0",
-        "}",
-        "systemctl() {",
-        "  if [ \"${1:-}\" = \"cat\" ]; then",
-        "    return 0",
-        "  fi",
-        "  printf 'reload\\n' >> \"$EVENT_LOG\"",
-        "  return 0",
-        "}",
-        "die() {",
-        "  printf '%s\\n' \"$*\" >&2",
-        "  exit 1",
-        "}",
-        "say() {",
-        "  return 0",
-        "}",
-        "warn() {",
-        "  return 0",
-        "}",
-    ])
+    return "\n".join(
+        [
+            "p() {",
+            "  printf '%s\\n' \"$ROOT$1\"",
+            "}",
+            "write_file() {",
+            '  mkdir -p "$(dirname "$(p "$1")")"',
+            '  cat > "$(p "$1")"',
+            '  chmod "$2" "$(p "$1")"',
+            "}",
+            "have_cmd() {",
+            '  if [ "${1:-}" = "sshd" ]; then',
+            "    return 0",
+            "  fi",
+            '  if [ "${1:-}" = "systemctl" ]; then',
+            "    return 0",
+            "  fi",
+            "  return 1",
+            "}",
+            "run() {",
+            '  if [ "${1:-}" = "sshd" ]; then',
+            '    if [ "${2:-}" = "-T" ]; then',
+            "      printf 'probe\\n' >> \"$EVENT_LOG\"",
+            "      printf '%s\\n' 'passwordauthentication no'",
+            "      printf '%s\\n' 'kbdinteractiveauthentication no'",
+            "      printf '%s\\n' 'pubkeyauthentication yes'",
+            "      printf '%s\\n' 'authenticationmethods publickey'",
+            "      printf '%s\\n' \"$USEDNS_LINES\"",
+            "      return 0",
+            "    fi",
+            "    return 0",
+            "  fi",
+            '  if [ "${1:-}" = "systemctl" ]; then',
+            "    printf 'reload\\n' >> \"$EVENT_LOG\"",
+            "    return 0",
+            "  fi",
+            '  if [ "${1:-}" = "passwd" ]; then',
+            "    printf 'passwd\\n' >> \"$EVENT_LOG\"",
+            "    return 0",
+            "  fi",
+            "  return 0",
+            "}",
+            "systemctl() {",
+            '  if [ "${1:-}" = "cat" ]; then',
+            "    return 0",
+            "  fi",
+            "  printf 'reload\\n' >> \"$EVENT_LOG\"",
+            "  return 0",
+            "}",
+            "die() {",
+            "  printf '%s\\n' \"$*\" >&2",
+            "  exit 1",
+            "}",
+            "say() {",
+            "  return 0",
+            "}",
+            "warn() {",
+            "  return 0",
+            "}",
+        ]
+    )
 
 
 def _load_ssh_key_ok():
@@ -109,7 +111,7 @@ def _load_ssh_key_ok():
             end = j
             break
     assert end is not None, "ssh_key_ok() closing brace not found"
-    body = "\n".join(lines[start:end + 1])
+    body = "\n".join(lines[start : end + 1])
     kept = [ln for ln in body.splitlines() if not ln.lstrip().startswith("#")]
     return "\n".join(kept)
 
@@ -131,94 +133,96 @@ def _conf_rel():
 
 
 def _bash_prelude():
-    return "\n".join([
-        "say() {",
-        "  printf '[harden] %s\\n' \"$1\"",
-        "}",
-        "warn() {",
-        "  printf '[harden] WARN: %s\\n' \"$1\" >&2",
-        "}",
-        "die() {",
-        "  warn \"$1\"",
-        "  exit 1",
-        "}",
-        "p() {",
-        "  printf '%s\\n' \"$ROOT$1\"",
-        "}",
-        "backup() {",
-        "  [ \"$APPLY\" = \"1\" ] || return 0",
-        "  if [ -e \"$(p \"$1\")\" ]; then",
-        "    mkdir -p \"$(dirname \"$BACKUP_DIR$1\")\"",
-        "    cp -p \"$(p \"$1\")\" \"$BACKUP_DIR$1\"",
-        "    printf 'restore %s\\n' \"$1\" >> \"$MANIFEST\"",
-        "  else",
-        "    printf 'created %s\\n' \"$1\" >> \"$MANIFEST\"",
-        "  fi",
-        "}",
-        "write_file() {",
-        "  if [ \"$APPLY\" != \"1\" ]; then",
-        "    say \"would write $1 ($2)\"",
-        "    return 0",
-        "  fi",
-        "  backup \"$1\"",
-        "  mkdir -p \"$(dirname \"$(p \"$1\")\")\"",
-        "  tmp=\"$(p \"$1\").tmp.$$\"",
-        "  cat > \"$tmp\"",
-        "  chmod \"$2\" \"$tmp\"",
-        "  mv \"$tmp\" \"$(p \"$1\")\"",
-        "}",
-        "run() {",
-        "  if [ \"$APPLY\" != \"1\" ]; then",
-        "    say \"would run: $*\"",
-        "    return 0",
-        "  fi",
-        "  if [ \"$TEST\" = \"1\" ]; then",
-        "    say \"skip (test root): $*\"",
-        "    return 0",
-        "  fi",
-        "  \"$@\"",
-        "}",
-        "have_cmd() {",
-        "  return 0",
-        "}",
-        "sshd() {",
-        "  printf 'sshd %s\\n' \"$*\" >> \"$ORDER_LOG\"",
-        "  if [ \"${1:-}\" = \"-t\" ]; then",
-        "    return 0",
-        "  fi",
-        "  local has_c=\"0\"",
-        "  local a=\"\"",
-        "  for a in \"$@\"; do",
-        "    if [ \"$a\" = \"-C\" ]; then",
-        "      has_c=\"1\"",
-        "    fi",
-        "  done",
-        "  if [ \"$has_c\" = \"1\" ]; then",
-        "    if [ \"${CTX_FAIL:-0}\" = \"1\" ]; then",
-        "      return 1",
-        "    fi",
-        "    printf '%s\\n' 'PasswordAuthentication no'",
-        "    printf '%s\\n' 'KbdInteractiveAuthentication no'",
-        "    printf '%s\\n' 'PubkeyAuthentication yes'",
-        "    printf '%s\\n' 'AuthenticationMethods publickey'",
-        "    return 0",
-        "  fi",
-        "  printf '%s\\n' 'UseDNS no'",
-        "  return 0",
-        "}",
-        "systemctl() {",
-        "  printf 'systemctl %s\\n' \"$*\" >> \"$ORDER_LOG\"",
-        "  return 0",
-        "}",
-        "passwd() {",
-        "  printf 'passwd %s\\n' \"$*\" >> \"$ORDER_LOG\"",
-        "  return 0",
-        "}",
-        "chown() {",
-        "  printf 'chown %s\\n' \"$*\" >> \"$ORDER_LOG\"",
-        "  return 0",
-        "}",
-    ])
+    return "\n".join(
+        [
+            "say() {",
+            "  printf '[harden] %s\\n' \"$1\"",
+            "}",
+            "warn() {",
+            "  printf '[harden] WARN: %s\\n' \"$1\" >&2",
+            "}",
+            "die() {",
+            '  warn "$1"',
+            "  exit 1",
+            "}",
+            "p() {",
+            "  printf '%s\\n' \"$ROOT$1\"",
+            "}",
+            "backup() {",
+            '  [ "$APPLY" = "1" ] || return 0',
+            '  if [ -e "$(p "$1")" ]; then',
+            '    mkdir -p "$(dirname "$BACKUP_DIR$1")"',
+            '    cp -p "$(p "$1")" "$BACKUP_DIR$1"',
+            '    printf \'restore %s\\n\' "$1" >> "$MANIFEST"',
+            "  else",
+            '    printf \'created %s\\n\' "$1" >> "$MANIFEST"',
+            "  fi",
+            "}",
+            "write_file() {",
+            '  if [ "$APPLY" != "1" ]; then',
+            '    say "would write $1 ($2)"',
+            "    return 0",
+            "  fi",
+            '  backup "$1"',
+            '  mkdir -p "$(dirname "$(p "$1")")"',
+            '  tmp="$(p "$1").tmp.$$"',
+            '  cat > "$tmp"',
+            '  chmod "$2" "$tmp"',
+            '  mv "$tmp" "$(p "$1")"',
+            "}",
+            "run() {",
+            '  if [ "$APPLY" != "1" ]; then',
+            '    say "would run: $*"',
+            "    return 0",
+            "  fi",
+            '  if [ "$TEST" = "1" ]; then',
+            '    say "skip (test root): $*"',
+            "    return 0",
+            "  fi",
+            '  "$@"',
+            "}",
+            "have_cmd() {",
+            "  return 0",
+            "}",
+            "sshd() {",
+            '  printf \'sshd %s\\n\' "$*" >> "$ORDER_LOG"',
+            '  if [ "${1:-}" = "-t" ]; then',
+            "    return 0",
+            "  fi",
+            '  local has_c="0"',
+            '  local a=""',
+            '  for a in "$@"; do',
+            '    if [ "$a" = "-C" ]; then',
+            '      has_c="1"',
+            "    fi",
+            "  done",
+            '  if [ "$has_c" = "1" ]; then',
+            '    if [ "${CTX_FAIL:-0}" = "1" ]; then',
+            "      return 1",
+            "    fi",
+            "    printf '%s\\n' 'PasswordAuthentication no'",
+            "    printf '%s\\n' 'KbdInteractiveAuthentication no'",
+            "    printf '%s\\n' 'PubkeyAuthentication yes'",
+            "    printf '%s\\n' 'AuthenticationMethods publickey'",
+            "    return 0",
+            "  fi",
+            "  printf '%s\\n' 'UseDNS no'",
+            "  return 0",
+            "}",
+            "systemctl() {",
+            '  printf \'systemctl %s\\n\' "$*" >> "$ORDER_LOG"',
+            "  return 0",
+            "}",
+            "passwd() {",
+            '  printf \'passwd %s\\n\' "$*" >> "$ORDER_LOG"',
+            "  return 0",
+            "}",
+            "chown() {",
+            '  printf \'chown %s\\n\' "$*" >> "$ORDER_LOG"',
+            "  return 0",
+            "}",
+        ]
+    )
 
 
 def _run_once(body, ctx_fail, with_backup):
@@ -227,7 +231,11 @@ def _run_once(body, ctx_fail, with_backup):
     conf = _conf_rel()
     user = "opostest"
     want = b"backup-before\n"
-    with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bdir, tempfile.TemporaryDirectory() as tdir:
+    with (
+        tempfile.TemporaryDirectory() as root,
+        tempfile.TemporaryDirectory() as bdir,
+        tempfile.TemporaryDirectory() as tdir,
+    ):
         sep = chr(47)
         home = sep + "home"
         auth_rel = home + sep + user + sep + ".ssh" + sep + "authorized_keys"
@@ -266,7 +274,9 @@ def _run_once(body, ctx_fail, with_backup):
         env["CTX_FAIL"] = "1" if ctx_fail else "0"
         env.pop("ADD_KEY", None)
         try:
-            proc = subprocess.run(["bash", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+            proc = subprocess.run(
+                ["bash", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10
+            )
         except subprocess.TimeoutExpired as exc:
             raise AssertionError("step_ssh test script timed out after 10 seconds") from exc
         with open(order, "r", encoding="utf-8") as f:
@@ -324,7 +334,16 @@ class SSHReviewTests(unittest.TestCase):
 
     def test_step_ssh_preamble_defines_stubs(self):
         pre = _step_ssh_preamble()
-        for sig in ["p() {", "write_file() {", "have_cmd() {", "run() {", "systemctl() {", "die() {", "say() {", "warn() {"]:
+        for sig in [
+            "p() {",
+            "write_file() {",
+            "have_cmd() {",
+            "run() {",
+            "systemctl() {",
+            "die() {",
+            "say() {",
+            "warn() {",
+        ]:
             self.assertIn(sig, pre)
             self.assertEqual(pre.count(sig), 1)
         self.assertIn("probe", pre)
@@ -332,10 +351,7 @@ class SSHReviewTests(unittest.TestCase):
 
     def test_p028_contextual_probe_rollback_and_order(self):
         body = self.body
-        probe_lines = [
-            ln for ln in body.splitlines()
-            if "sshd" in ln and "-T" in ln and "-C" in ln and "run" in ln
-        ]
+        probe_lines = [ln for ln in body.splitlines() if "sshd" in ln and "-T" in ln and "-C" in ln and "run" in ln]
         self.assertTrue(probe_lines, "contextual sshd -T -C probe not found")
         probe = "\n".join(probe_lines)
         self.assertIn("host=$caddr", probe)
@@ -344,11 +360,11 @@ class SSHReviewTests(unittest.TestCase):
 
     def test_r019_behavioral_checks_reject_mutations(self):
         _check_all(self.body)
-        restore_mut = self.body.replace('cp -p "$BACKUP_DIR$conf" "$(p "$conf")"', ':')
+        restore_mut = self.body.replace('cp -p "$BACKUP_DIR$conf" "$(p "$conf")"', ":")
         assert restore_mut != self.body
         with self.assertRaises(AssertionError):
             _check_restore_with_backup(restore_mut)
-        remove_mut = self.body.replace('rm -f "$(p "$conf")"', ':')
+        remove_mut = self.body.replace('rm -f "$(p "$conf")"', ":")
         assert remove_mut != self.body
         with self.assertRaises(AssertionError):
             _check_remove_without_backup(remove_mut)
@@ -376,7 +392,7 @@ class SSHReviewTests(unittest.TestCase):
         _check_restore_with_backup(self.body)
         pre = _bash_prelude()
         self.assertEqual(pre.count('backup "$1"'), 1)
-        mut = pre.replace('backup "$1"', ':')
+        mut = pre.replace('backup "$1"', ":")
         with mock.patch.dict(globals(), {"_bash_prelude": lambda: mut}):
             with self.assertRaises(AssertionError):
                 _check_restore_with_backup(self.body)
@@ -384,20 +400,12 @@ class SSHReviewTests(unittest.TestCase):
     def test_p028_usedns_guard_acceptance_and_rollback(self):
         body = self.body
         lines = body.splitlines()
-        free_idx = next(
-            i for i, ln in enumerate(lines) if "if ! dns_eff=" in ln
-        )
-        end_idx = next(
-            i for i, ln in enumerate(lines)
-            if i > free_idx and "if ! eff=" in ln
-        )
+        free_idx = next(i for i, ln in enumerate(lines) if "if ! dns_eff=" in ln)
+        end_idx = next(i for i, ln in enumerate(lines) if i > free_idx and "if ! eff=" in ln)
         self.assertLess(free_idx, end_idx)
         guard = "\n".join(lines[free_idx:end_idx])
         self.assertIn("dns_eff", guard)
-        ctx_idx = next(
-            i for i, ln in enumerate(lines)
-            if "sshd" in ln and "-T" in ln and "-C" in ln and "run" in ln
-        )
+        ctx_idx = next(i for i, ln in enumerate(lines) if "sshd" in ln and "-T" in ln and "-C" in ln and "run" in ln)
         self.assertLessEqual(end_idx, ctx_idx)
         self.assertLess(free_idx, ctx_idx)
         reload_pos = body.lower().index("reload", body.index(lines[ctx_idx]))
@@ -435,26 +443,28 @@ class SSHReviewTests(unittest.TestCase):
                             os.makedirs(os.path.dirname(bpath), exist_ok=True)
                             with open(bpath, "wb") as f:
                                 f.write(sent)
-                        pre = "\n".join([
-                            "set -u",
-                            'ROOT="$ROOT"',
-                            'BACKUP_DIR="$BACKUP_DIR"',
-                            'conf="$CONF"',
-                            "p() {",
-                            "  printf '%s\\n' \"$ROOT$1\"",
-                            "}",
-                            "die() {",
-                            "  printf '%s\\n' \"$*\" >&2",
-                            "  exit 1",
-                            "}",
-                            "run() {",
-                            '  if [ "$RUN_STATUS" != "0" ]; then',
-                            "    return 1",
-                            "  fi",
-                            '  printf \'%s\\n\' "$USEDNS_OUTPUT"',
-                            "  return 0",
-                            "}",
-                        ])
+                        pre = "\n".join(
+                            [
+                                "set -u",
+                                'ROOT="$ROOT"',
+                                'BACKUP_DIR="$BACKUP_DIR"',
+                                'conf="$CONF"',
+                                "p() {",
+                                "  printf '%s\\n' \"$ROOT$1\"",
+                                "}",
+                                "die() {",
+                                "  printf '%s\\n' \"$*\" >&2",
+                                "  exit 1",
+                                "}",
+                                "run() {",
+                                '  if [ "$RUN_STATUS" != "0" ]; then',
+                                "    return 1",
+                                "  fi",
+                                "  printf '%s\\n' \"$USEDNS_OUTPUT\"",
+                                "  return 0",
+                                "}",
+                            ]
+                        )
                         script = pre + "\n" + guard + "\n" + "printf 'CONTINUED\\n'\n"
                         env = dict(os.environ)
                         env["ROOT"] = root

@@ -41,18 +41,27 @@ class TestInstallReview(unittest.TestCase):
         def make_verified(home, bindir):
             venv_python = home / "venv" / "bin" / "python"
             venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_python.write_text("#!/bin/sh\nprintf '%s\n' \"$0 $*\" >> \"$OPOS_CALL_LOG\"\ntouch \"$OPOS_RECOVERY_MARKER\"\nexit 42\n", encoding="utf-8")
+            venv_python.write_text(
+                '#!/bin/sh\nprintf \'%s\n\' "$0 $*" >> "$OPOS_CALL_LOG"\ntouch "$OPOS_RECOVERY_MARKER"\nexit 42\n',
+                encoding="utf-8",
+            )
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             launcher = bindir / "opos"
-            launcher.write_text("#!/bin/sh\nprintf '%s\n' \"$0 $*\" >> \"$OPOS_CALL_LOG\"\nexit 0\n", encoding="utf-8")
+            launcher.write_text('#!/bin/sh\nprintf \'%s\n\' "$0 $*" >> "$OPOS_CALL_LOG"\nexit 0\n', encoding="utf-8")
             launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             extra = home / "venv" / "lib" / "extra.dat"
             extra.parent.mkdir(parents=True, exist_ok=True)
             extra.write_text("extra", encoding="utf-8")
             (home / "manifest").write_text(
-                "launcher=" + str(bindir / "opos") + "\n"
-                + "venv=" + str(home / "venv") + "\n"
-                + "repo=" + str(root) + "\n",
+                "launcher="
+                + str(bindir / "opos")
+                + "\n"
+                + "venv="
+                + str(home / "venv")
+                + "\n"
+                + "repo="
+                + str(root)
+                + "\n",
                 encoding="utf-8",
             )
             return venv_python
@@ -97,14 +106,18 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(launcher.exists(), "launcher must remain in dry-run")
             self.assertEqual(launcher.read_bytes(), launcher_before, "launcher must remain unchanged")
             self.assertEqual(_snapshot(home, bindir), before, "dry-run must not add, remove, or modify files")
-            self.assertEqual((home / "manifest").read_text(encoding="utf-8"), manifest_before, "manifest must remain unchanged")
+            self.assertEqual(
+                (home / "manifest").read_text(encoding="utf-8"), manifest_before, "manifest must remain unchanged"
+            )
             self.assertTrue(sentinel_home.exists())
             self.assertEqual(sentinel_home.read_text(encoding="utf-8"), content)
             self.assertTrue(sentinel_bin.exists())
             self.assertEqual(sentinel_bin.read_text(encoding="utf-8"), content)
             self.assertFalse((home / ".recovery_invoked").exists(), "recovery must not be invoked in dry-run")
             call_log = home.parent / "calls.log"
-            self.assertFalse(call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run")
+            self.assertFalse(
+                call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run"
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             home = pathlib.Path(tmp) / "home"
@@ -117,16 +130,30 @@ class TestInstallReview(unittest.TestCase):
             sentinel_home.write_text(content, encoding="utf-8")
             sentinel_bin.write_text(content, encoding="utf-8")
             launcher = bindir / "opos"
-            launcher_before = "".join(["#!/bin/sh\n", "printf '%s\\n' \"$0 $*\" >> \"$OPOS_CALL_LOG\"\n", "exit 0\n"]).encode("utf-8")
+            launcher_before = "".join(
+                ["#!/bin/sh\n", 'printf \'%s\\n\' "$0 $*" >> "$OPOS_CALL_LOG"\n', "exit 0\n"]
+            ).encode("utf-8")
             launcher.write_bytes(launcher_before)
             launcher.chmod(0o755)
             venv_python = home / "venv" / "bin" / "python"
             venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_before = "".join(["#!/bin/sh\n", "printf '%s\\n' \"$0 $*\" >> \"$OPOS_CALL_LOG\"\n", "exit 0\n"]).encode("utf-8")
+            venv_before = "".join(["#!/bin/sh\n", 'printf \'%s\\n\' "$0 $*" >> "$OPOS_CALL_LOG"\n', "exit 0\n"]).encode(
+                "utf-8"
+            )
             venv_python.write_bytes(venv_before)
             venv_python.chmod(0o755)
             noroot = "".join([str(pathlib.Path(tmp)), "/noroot"])
-            manifest_before = ("".join(["launch", "er="]) + str(launcher) + "\n" + "".join(["ve", "nv="]) + str(home / "venv") + "\n" + "".join(["re", "po="]) + noroot + "\n").encode("utf-8")
+            manifest_before = (
+                "".join(["launch", "er="])
+                + str(launcher)
+                + "\n"
+                + "".join(["ve", "nv="])
+                + str(home / "venv")
+                + "\n"
+                + "".join(["re", "po="])
+                + noroot
+                + "\n"
+            ).encode("utf-8")
             (home / "manifest").write_bytes(manifest_before)
             self.assertTrue(os.access(launcher, os.X_OK), "launcher spy must be executable")
             self.assertTrue(os.access(venv_python, os.X_OK), "venv spy must be executable")
@@ -149,7 +176,9 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(sentinel_bin.read_text(encoding="utf-8"), content)
             self.assertFalse((home / ".recovery_invoked").exists(), "recovery must not be invoked in dry-run")
             call_log = home.parent / "calls.log"
-            self.assertFalse(call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run")
+            self.assertFalse(
+                call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run"
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             home = pathlib.Path(tmp) / "home"
@@ -170,7 +199,9 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(sentinel_bin.read_text(encoding="utf-8"), content)
             self.assertFalse((home / ".recovery_invoked").exists(), "recovery must not be invoked in dry-run")
             call_log = home.parent / "calls.log"
-            self.assertFalse(call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run")
+            self.assertFalse(
+                call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run"
+            )
 
     def test_dry_run_preserves_tree_shape_modes_and_link_targets(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -240,9 +271,15 @@ class TestInstallReview(unittest.TestCase):
             link_content = "".join(["lin", "k-target-bytes"])
             link_probe.write_text(link_content, encoding="utf-8")
             (home / "manifest").write_text(
-                "launcher=" + str(bindir / "opos") + "\n"
-                + "venv=" + str(home / "venv") + "\n"
-                + "repo=" + str(root) + "\n",
+                "launcher="
+                + str(bindir / "opos")
+                + "\n"
+                + "venv="
+                + str(home / "venv")
+                + "\n"
+                + "repo="
+                + str(root)
+                + "\n",
                 encoding="utf-8",
             )
             before = _strong_snapshot(home, bindir)
@@ -253,7 +290,9 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(after, before, "dry-run must not remove dirs, chmod, or swap files for symlinks")
             self.assertTrue(doomed_dir.is_dir() and not doomed_dir.is_symlink())
             self.assertTrue((doomed_dir / "inner.dat").is_file())
-            self.assertTrue(empty_dir.is_dir() and not empty_dir.is_symlink(), "dry-run must preserve empty directories")
+            self.assertTrue(
+                empty_dir.is_dir() and not empty_dir.is_symlink(), "dry-run must preserve empty directories"
+            )
             self.assertEqual(list(empty_dir.iterdir()), [], "empty directory must remain empty")
             self.assertEqual(stat.S_IMODE(os.lstat(mode_probe).st_mode), mode_before)
             self.assertFalse(os.path.islink(link_probe))
@@ -263,7 +302,7 @@ class TestInstallReview(unittest.TestCase):
         text = _read_install_sh()
         start = text.index('_sshd="skipped"')
         end_candidates = []
-        for marker_name in ['if [ -f "$OPOS_HOME/firewall.state" ]', 'command -v ufw']:
+        for marker_name in ['if [ -f "$OPOS_HOME/firewall.state" ]', "command -v ufw"]:
             try:
                 end_candidates.append(text.index(marker_name, start))
             except ValueError:
@@ -300,9 +339,17 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse((opos_home / "sshd_dropin").exists())
             snippet_repl = snippet.replace("/etc/ssh/", str(etc_fixture) + "/")
             script_path = tmp_path / "run.sh"
-            script_content = "set -eu\nOPOS_HOME=\"" + str(opos_home) + "\"\nexport OPOS_HOME\n" + snippet_repl + "\nprintf \"sshd=%s\\n\" \"$_sshd\"\n"
+            script_content = (
+                'set -eu\nOPOS_HOME="'
+                + str(opos_home)
+                + '"\nexport OPOS_HOME\n'
+                + snippet_repl
+                + '\nprintf "sshd=%s\\n" "$_sshd"\n'
+            )
             script_path.write_text(script_content, encoding="utf-8")
-            proc = subprocess.run(["sh", str(script_path)], capture_output=True, text=True, env=dict(os.environ, OPOS_HOME=str(opos_home)))
+            proc = subprocess.run(
+                ["sh", str(script_path)], capture_output=True, text=True, env=dict(os.environ, OPOS_HOME=str(opos_home))
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             preserved_path = pathlib.Path(preserved_template.replace("$OPOS_HOME", str(opos_home)))
             self.assertTrue(preserved_path.is_file(), "missing expected must preserve active drop-in")

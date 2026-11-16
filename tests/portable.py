@@ -4,6 +4,7 @@
 The image scripts under packaging/duo-os/ run on the phone and on a Linux builder, so they use GNU tools. CI runs on
 Ubuntu, where nothing here changes anything: every helper is a no-op on Linux and every skip condition is false there.
 """
+
 import functools
 import os
 import shutil
@@ -37,7 +38,9 @@ def needs_gnu(*tools):
     It never skips on Linux: there a missing GNU tool is a real failure the test must report.
     """
     return LINUX or gnu(*tools), "the image script under test needs GNU %s (Linux); this host has %s" % (
-        ", ".join(tools), sys.platform)
+        ", ".join(tools),
+        sys.platform,
+    )
 
 
 SED_SHIM = """#!/bin/sh

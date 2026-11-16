@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Pin published simulation figures; OPOS_SLOW_TESTS=1 also runs full reports."""
+
 import contextlib
 import io
 import os
@@ -14,33 +15,55 @@ from opos.evaluate import router_policy, rules_policy, static_low_power
 ROOT = Path(__file__).resolve().parents[1]
 PHONES = 40
 HEADER = "policy  mode    calls_h sms_h alarms_h app_h alive_h brownouts% died_at%"
-EOL_ORDER = tuple((policy, mode) for policy in ("basic", "static", "rules", "router")
-                  for mode in ("before", "after"))
+EOL_ORDER = tuple((policy, mode) for policy in ("basic", "static", "rules", "router") for mode in ("before", "after"))
 EOL_COLUMNS = ("calls", "sms", "alarms", "app", "alive", "brownout_pct", "shutdown_level")
-FACTORIES = {"basic": lambda: evaleol.basic_policy, "static": lambda: static_low_power,
-             "rules": lambda: rules_policy, "router": lambda: router_policy()}
+FACTORIES = {
+    "basic": lambda: evaleol.basic_policy,
+    "static": lambda: static_low_power,
+    "rules": lambda: rules_policy,
+    "router": lambda: router_policy(),
+}
 CHEAP_BEFORE = ("basic", "static", "rules")
 # These two profile runs take most of the time; the opt-in slow class checks them.
 SLOW_PROFILE_PAIRS = frozenset({("worn", "router"), ("eol", "router")})
 TWO_DECIMALS = r"(?<![\w.])\d+\.\d{2}(?!\w|\.\d)"
 NUMBER = r"(?<![\w.])\d+(?:\.\d+)?(?!\w|\.\d)"
 # The README profile table: one row per profile, in this order, with these columns.
-README_PROFILES = (("Fresh battery", "fresh"), ("Worn battery", "worn"), ("Cold", "cold"),
-                   ("Hot", "hot"), ("Low start", "lowstart"), ("End of life", "eol"))
-README_COLUMNS = (("router", "important_min"), ("rules", "important_min"),
-                  ("router", "useful_min"), ("rules", "useful_min"))
-README_HEADER = ("| Profile | Important minutes, router | Important minutes, rules "
-                 "| Useful minutes, router | Useful minutes, rules |")
+README_PROFILES = (
+    ("Fresh battery", "fresh"),
+    ("Worn battery", "worn"),
+    ("Cold", "cold"),
+    ("Hot", "hot"),
+    ("Low start", "lowstart"),
+    ("End of life", "eol"),
+)
+README_COLUMNS = (
+    ("router", "important_min"),
+    ("rules", "important_min"),
+    ("router", "useful_min"),
+    ("rules", "useful_min"),
+)
+README_HEADER = (
+    "| Profile | Important minutes, router | Important minutes, rules "
+    "| Useful minutes, router | Useful minutes, rules |"
+)
 README_ROW = r"\| ([^|\n]+?) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \|"
 README_CELL = r"(?<=\| )\d+(?= \|)"
-README_TRADE_OFF = ("The router buys important minutes by giving up useful minutes in every profile: "
-                    "it allows email and maps for fewer minutes than the fixed rules everywhere, "
-                    "far fewer with a worn battery, and none with a low start or an end-of-life battery.")
+README_TRADE_OFF = (
+    "The router buys important minutes by giving up useful minutes in every profile: "
+    "it allows email and maps for fewer minutes than the fixed rules everywhere, "
+    "far fewer with a worn battery, and none with a low start or an end-of-life battery."
+)
 # Each expression captures one particular occurrence, including repeated values.
 META_FIELDS = (
     ("fresh", "rules", "important_min", r"fresh battery: rules (\d+)(?!\w|\.\d) important"),
     ("fresh", "router", "important_min", r"fresh battery: rules \d+ important, router (\d+)(?!\w|\.\d)"),
-    ("fresh", "static", "important_min", r"fresh battery: rules \d+ important, router \d+, static low-power (\d+)(?!\w|\.\d)"),
+    (
+        "fresh",
+        "static",
+        "important_min",
+        r"fresh battery: rules \d+ important, router \d+, static low-power (\d+)(?!\w|\.\d)",
+    ),
     ("worn", "rules", "important_min", r"Worn battery: rules (\d+)(?!\w|\.\d)"),
     ("worn", "router", "important_min", r"Worn battery: rules \d+, router (\d+)(?!\w|\.\d)"),
     ("worn", "static", "important_min", r"Worn battery: rules \d+, router \d+, static (\d+)(?!\w|\.\d)"),
@@ -68,8 +91,10 @@ META_FIELDS = (
     ("eol", "rules", "useful_min", r", end of life \d+ vs (\d+)(?!\w|\.\d)"),
 )
 # One sentence claims zero counts for router and rules in every simulator profile.
-META_ZERO_CLAIM = (r"The recorded runs report (\d+)(?!\w|\.\d) brownouts and (\d+)(?!\w|\.\d) "
-                   r"missing_kept counts for router and rules in every profile")
+META_ZERO_CLAIM = (
+    r"The recorded runs report (\d+)(?!\w|\.\d) brownouts and (\d+)(?!\w|\.\d) "
+    r"missing_kept counts for router and rules in every profile"
+)
 META_ZERO_METRICS = ((1, "brownout"), (2, "missing_kept"))
 
 
@@ -81,8 +106,9 @@ def one_match(pattern, text, label):
 
 
 def readme_section(text):
-    return one_match(r"^## Simulation results[^\S\n]*\n([\s\S]*?)(?=^## |\Z)",
-                     text, "README Simulation results").group(1)
+    return one_match(r"^## Simulation results[^\S\n]*\n([\s\S]*?)(?=^## |\Z)", text, "README Simulation results").group(
+        1
+    )
 
 
 def meta_line(text, prefix):
@@ -96,22 +122,28 @@ def table_lines(text):
         raise ValueError("worn table: expected report header and eight rows")
     for line, key in zip(lines[1:], EOL_ORDER):
         fields = line.split()
-        if (len(fields) != 9 or tuple(fields[:2]) != key
-                or not all(re.fullmatch(r"\d+(?:\.\d+)?", value) for value in fields[2:])):
+        if (
+            len(fields) != 9
+            or tuple(fields[:2]) != key
+            or not all(re.fullmatch(r"\d+(?:\.\d+)?", value) for value in fields[2:])
+        ):
             raise ValueError(f"worn table: malformed or out-of-order {key} row: {line!r}")
     return lines
 
 
 def table_results(text):
-    return {key: dict(zip(EOL_COLUMNS, map(float, line.split()[2:])))
-            for key, line in zip(EOL_ORDER, table_lines(text)[1:])}
+    return {
+        key: dict(zip(EOL_COLUMNS, map(float, line.split()[2:]))) for key, line in zip(EOL_ORDER, table_lines(text)[1:])
+    }
 
 
 def format_eol_row(name, mode, r):
     # Keep the display contract of evaleol.report(), including rounding and padding.
-    return (f"{name:<7} {mode:<7} {r['calls']:7.2f} {r['sms']:5.2f} "
-            f"{r['alarms']:8.2f} {r['app']:5.2f} {r['alive']:7.2f} "
-            f"{r['brownout_pct']:10.0f} {r['shutdown_level']:8.1f}")
+    return (
+        f"{name:<7} {mode:<7} {r['calls']:7.2f} {r['sms']:5.2f} "
+        f"{r['alarms']:8.2f} {r['app']:5.2f} {r['alive']:7.2f} "
+        f"{r['brownout_pct']:10.0f} {r['shutdown_level']:8.1f}"
+    )
 
 
 def table_mismatches(text, report_lines, exact=False):
@@ -130,8 +162,7 @@ def hours_mismatches(text, results, document):
     try:
         if document == "README":
             scope = readme_section(text)
-            order = (("router", "before"), ("router", "after"),
-                     ("rules", "before"), ("rules", "after"))
+            order = (("router", "before"), ("router", "after"), ("rules", "before"), ("rules", "after"))
         elif document == "META":
             scope = meta_line(text, "Worn-battery hours")
             order = EOL_ORDER
@@ -149,8 +180,10 @@ def hours_mismatches(text, results, document):
 
 def meta_profile_values(text):
     line = meta_line(text, "Measured in simulation")
-    values = {(profile, policy, metric): one_match(pattern, line, f"META {profile}/{policy}/{metric}").group(1)
-              for profile, policy, metric, pattern in META_FIELDS}
+    values = {
+        (profile, policy, metric): one_match(pattern, line, f"META {profile}/{policy}/{metric}").group(1)
+        for profile, policy, metric, pattern in META_FIELDS
+    }
     claim = one_match(META_ZERO_CLAIM, line, "META zero brownouts and missing_kept")
     for group, metric in META_ZERO_METRICS:
         for profile in profiles.PROFILES:
@@ -183,8 +216,11 @@ def readme_table_values(text):
     lines = readme_section(text).splitlines()
     if lines.count(README_HEADER) != 1:
         raise ValueError("README minutes: expected one profile table header")
-    rows = [line for line in lines if line.startswith("|") and line != README_HEADER
-            and not re.fullmatch(r"\|(?:-+\|)+", line)]
+    rows = [
+        line
+        for line in lines
+        if line.startswith("|") and line != README_HEADER and not re.fullmatch(r"\|(?:-+\|)+", line)
+    ]
     if len(rows) != len(README_PROFILES):
         raise ValueError(f"README minutes: expected {len(README_PROFILES)} profile rows, found {rows!r}")
     values = {}
@@ -252,9 +288,11 @@ def brownout_sentence_mismatches(text, results, levels, phones=PHONES):
     if len(after) != 1 or not levels:
         return ["brownout sentence: after rows disagree or no per-phone cut-out charges"]
     died = [row["shutdown_level"] for row in before]
-    expected = (f"Before, all {phones} simulated worn phones (100%) cut out suddenly, at an average of about "
-                f"{min(died):.0f}-{max(died):.0f}% charge depending on the policy (individual phones "
-                f"anywhere from {min(levels):.0f}% to {max(levels):.0f}%); after, {after.pop():.0f}%.")
+    expected = (
+        f"Before, all {phones} simulated worn phones (100%) cut out suddenly, at an average of about "
+        f"{min(died):.0f}-{max(died):.0f}% charge depending on the policy (individual phones "
+        f"anywhere from {min(levels):.0f}% to {max(levels):.0f}%); after, {after.pop():.0f}%."
+    )
     return [] if actual == expected else [f"brownout sentence: {actual!r} != {expected!r}"]
 
 
@@ -264,18 +302,23 @@ def digit_mutations(text, matches, group=0):
         start, end = match.span(group)
         digit = next(i for i in range(start, end) if text[i].isdigit())
         replacement = str((int(text[digit]) + 1) % 10)
-        yield start, text[:digit] + replacement + text[digit + 1:]
+        yield start, text[:digit] + replacement + text[digit + 1 :]
 
 
 def profile_results(pairs):
-    return {(profile, policy): profiles.benchmark(FACTORIES[policy], profile, n=PHONES, seed=100)
-            for profile, policy in pairs}
+    return {
+        (profile, policy): profiles.benchmark(FACTORIES[policy], profile, n=PHONES, seed=100)
+        for profile, policy in pairs
+    }
 
 
 def fast_profile_pairs():
-    return [(profile, policy) for profile in profiles.PROFILES
-            for policy in ("rules", "static", "router")
-            if (profile, policy) not in SLOW_PROFILE_PAIRS]
+    return [
+        (profile, policy)
+        for profile in profiles.PROFILES
+        for policy in ("rules", "static", "router")
+        if (profile, policy) not in SLOW_PROFILE_PAIRS
+    ]
 
 
 @contextlib.contextmanager
@@ -304,8 +347,10 @@ class TestPublishedNumbers(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
         cls.meta = (ROOT / "docs/META.md").read_text(encoding="utf-8")
         with recorded_eol_runs() as runs:
-            cls.before_rows = [format_eol_row(name, "before", evaleol.benchmark_eol(FACTORIES[name], False, PHONES, 0))
-                               for name in CHEAP_BEFORE]
+            cls.before_rows = [
+                format_eol_row(name, "before", evaleol.benchmark_eol(FACTORIES[name], False, PHONES, 0))
+                for name in CHEAP_BEFORE
+            ]
         # Router before phones are checked by the opt-in full report.
         cls.before_levels = cut_out_levels(runs)
         # Serial on purpose: a process pool needs POSIX semaphores, which sandboxes may block.
@@ -317,8 +362,7 @@ class TestPublishedNumbers(unittest.TestCase):
     def test_fast_profiles_match_published_minutes(self):
         for name, text in (("README", self.readme), ("META", self.meta)):
             with self.subTest(document=name):
-                self.assertEqual(profile_mismatches(text, self.profile_results, name,
-                                                    exclude=SLOW_PROFILE_PAIRS), [])
+                self.assertEqual(profile_mismatches(text, self.profile_results, name, exclude=SLOW_PROFILE_PAIRS), [])
 
     def test_published_figure_without_result_is_a_mismatch(self):
         complete = meta_profile_results(self.meta)
@@ -362,7 +406,9 @@ class TestPublishedNumbers(unittest.TestCase):
         values = {key: int(value) for key, value in readme_table_values(self.readme).items()}
         for _, profile in README_PROFILES:
             with self.subTest(profile=profile):
-                self.assertGreater(values[profile, "router", "important_min"], values[profile, "rules", "important_min"])
+                self.assertGreater(
+                    values[profile, "router", "important_min"], values[profile, "rules", "important_min"]
+                )
                 self.assertLess(values[profile, "router", "useful_min"], values[profile, "rules", "useful_min"])
         self.assertEqual((values["lowstart", "router", "useful_min"], values["eol", "router", "useful_min"]), (0, 0))
         self.assertLess(4 * values["worn", "router", "useful_min"], values["worn", "rules", "useful_min"])
@@ -374,8 +420,7 @@ class TestPublishedNumbers(unittest.TestCase):
 
     def test_profile_minutes_follow_cli_precision(self):
         # Exercise the real CLI renderer at the half-minute rounding boundary.
-        result = {"important_min": 337.475, "useful_min": 0,
-                  "missing_kept": 0, "brownout": 0}
+        result = {"important_min": 337.475, "useful_min": 0, "missing_kept": 0, "brownout": 0}
         output = io.StringIO()
         with patch.object(profiles, "benchmark", return_value=result), contextlib.redirect_stdout(output):
             self.assertEqual(profiles.main(["--n", "1"]), 0)
@@ -390,18 +435,42 @@ class TestPublishedNumbers(unittest.TestCase):
         minutes = meta_profile_results(self.meta)
         levels = self.before_levels
         cases = [
-            ("table", "~~~\n" + "\n".join(rows) + "\n~~~", NUMBER,
-             lambda text: table_mismatches(text, rows, exact=True)),
-            ("README hours", "## Simulation results\n" + readme_section(self.readme), TWO_DECIMALS,
-             lambda text: hours_mismatches(text, hours, "README")),
-            ("META hours", meta_line(self.meta, "Worn-battery hours"), TWO_DECIMALS,
-             lambda text: hours_mismatches(text, hours, "META")),
-            ("worn summary", meta_line(self.doc, "Average hours of working calls"), TWO_DECIMALS,
-             lambda text: hours_mismatches(text, hours, "worn summary")),
-            ("README minutes", "## Simulation results\n" + readme_section(self.readme), README_CELL,
-             lambda text: profile_mismatches(text, minutes, "README")),
-            ("brownout sentence", meta_line(self.doc, "How to read it"), NUMBER,
-             lambda text: brownout_sentence_mismatches(text, hours, levels)),
+            (
+                "table",
+                "~~~\n" + "\n".join(rows) + "\n~~~",
+                NUMBER,
+                lambda text: table_mismatches(text, rows, exact=True),
+            ),
+            (
+                "README hours",
+                "## Simulation results\n" + readme_section(self.readme),
+                TWO_DECIMALS,
+                lambda text: hours_mismatches(text, hours, "README"),
+            ),
+            (
+                "META hours",
+                meta_line(self.meta, "Worn-battery hours"),
+                TWO_DECIMALS,
+                lambda text: hours_mismatches(text, hours, "META"),
+            ),
+            (
+                "worn summary",
+                meta_line(self.doc, "Average hours of working calls"),
+                TWO_DECIMALS,
+                lambda text: hours_mismatches(text, hours, "worn summary"),
+            ),
+            (
+                "README minutes",
+                "## Simulation results\n" + readme_section(self.readme),
+                README_CELL,
+                lambda text: profile_mismatches(text, minutes, "README"),
+            ),
+            (
+                "brownout sentence",
+                meta_line(self.doc, "How to read it"),
+                NUMBER,
+                lambda text: brownout_sentence_mismatches(text, hours, levels),
+            ),
         ]
         for label, text, pattern, check in cases:
             self.assertEqual(check(text), [], label)

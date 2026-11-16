@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for guard/historyscan.py using throwaway git repos."""
+
 import os
 import shutil
 import subprocess
@@ -163,7 +164,11 @@ class HistoryScanTest(unittest.TestCase):
 
     def test_bad_repo_fails_closed(self) -> None:
         """Bad repo exits nonzero with FAIL and no traceback."""
-        r = subprocess.run(["python3", str(_root() / "guard" / "historyscan.py"), "--repo", "/nonexistent-x"], capture_output=True, text=True)
+        r = subprocess.run(
+            ["python3", str(_root() / "guard" / "historyscan.py"), "--repo", "/nonexistent-x"],
+            capture_output=True,
+            text=True,
+        )
         out = r.stdout + r.stderr
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("FAIL", out)
@@ -276,7 +281,9 @@ class HistoryScanTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp2:
                 wt = os.path.join(tmp2, "wt")
                 _git(tmp, "worktree", "add", wt)
-                r = subprocess.run(["python3", str(_root() / "guard" / "historyscan.py"), "--repo", wt], capture_output=True, text=True)
+                r = subprocess.run(
+                    ["python3", str(_root() / "guard" / "historyscan.py"), "--repo", wt], capture_output=True, text=True
+                )
                 out = r.stdout + r.stderr
                 self.assertEqual(r.returncode, 0)
                 self.assertIn("PASS", out)

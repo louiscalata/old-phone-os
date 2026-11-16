@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Web security tests part 1."""
+
 import http.client
 import json
 import re
@@ -14,6 +15,8 @@ from src.opos.essentials import Message
 from tests import webclient
 
 _orig_request = http.client.HTTPConnection.request
+
+
 def _compat(self, method, url, body=None, headers=None, **kw):
     """Strip newer skip flags on old Pythons."""
     kw.pop("skip_host", None)
@@ -21,6 +24,8 @@ def _compat(self, method, url, body=None, headers=None, **kw):
     if headers is None:
         headers = {}
     return _orig_request(self, method, url, body=body, headers=headers, **kw)
+
+
 http.client.HTTPConnection.request = _compat  # type: ignore[method-assign]
 
 
@@ -97,14 +102,26 @@ class TestWebSecurity(unittest.TestCase):
 
     def test_path_traversal(self) -> None:
         """Traversal paths are rejected."""
-        paths = ["/../../etc/passwd", "/%2e%2e/%2e%2e/etc/passwd", "/static/../../README.md", "//etc/passwd", "/api/../api/state/.."]
+        paths = [
+            "/../../etc/passwd",
+            "/%2e%2e/%2e%2e/etc/passwd",
+            "/static/../../README.md",
+            "//etc/passwd",
+            "/api/../api/state/..",
+        ]
         for p in paths:
             s, _, b = webclient.request(self.port, "GET", p)
             self.assertIn(s, (403, 404))
             _safe(s, {}, b)
             self.assertNotIn(b"root:", b)
             self.assertNotIn(b"Old Phone OS", b)
-        s, _, b = webclient.request(self.port, "POST", "/api/../x", body=b"{}", headers={"Content-Type": "application/json", "X-OPOS-Token": self.tok})
+        s, _, b = webclient.request(
+            self.port,
+            "POST",
+            "/api/../x",
+            body=b"{}",
+            headers={"Content-Type": "application/json", "X-OPOS-Token": self.tok},
+        )
         self.assertIn(s, (403, 404))
         _safe(s, {}, b)
         self.assertNotIn(b"root:", b)
@@ -154,7 +171,10 @@ class TestWebSecurity(unittest.TestCase):
 
     def test_rejected_post_with_body_gets_403(self) -> None:
         """Rejected POST with body still returns 403."""
-        data = b"POST /api HTTP/1.1\r\nHost: evil.example\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n" + b"x" * 20
+        data = (
+            b"POST /api HTTP/1.1\r\nHost: evil.example\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n"
+            + b"x" * 20
+        )
         resp = webclient.raw(self.port, data)
         self.assertTrue(resp.startswith(b"HTTP/1."))
         self.assertIn(b" 403 ", resp.split(b"\r\n", 1)[0])
@@ -163,11 +183,15 @@ class TestWebSecurity(unittest.TestCase):
         """Foreign origins are rejected."""
         raw = json.dumps({"action": "tick"}).encode()
         base = {"Host": f"127.0.0.1:{self.port}", "Content-Type": "application/json", "X-OPOS-Token": self.tok}
-        s, _, _ = webclient.request(self.port, "POST", "/api", body=raw, headers={**base, "Origin": "http://evil.example"})
+        s, _, _ = webclient.request(
+            self.port, "POST", "/api", body=raw, headers={**base, "Origin": "http://evil.example"}
+        )
         self.assertEqual(s, 403)
         s, _, _ = webclient.request(self.port, "POST", "/api", body=raw, headers={**base, "Origin": "null"})
         self.assertEqual(s, 403)
-        s, _, _ = webclient.request(self.port, "POST", "/api", body=raw, headers={**base, "Origin": f"http://127.0.0.1:{self.port}"})
+        s, _, _ = webclient.request(
+            self.port, "POST", "/api", body=raw, headers={**base, "Origin": f"http://127.0.0.1:{self.port}"}
+        )
         self.assertEqual(s, 200)
 
     def test_wrong_content_type(self) -> None:
@@ -207,7 +231,10 @@ class TestWebSecurity(unittest.TestCase):
 
     def _raw_post(self, extra: bytes, body: bytes = b"{}") -> bytes:
         """Send a hand-written POST with given headers."""
-        req = b"POST /api HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: application/json\r\nX-OPOS-Token: %s\r\n%s\r\n%s" % (self.port, self.tok.encode(), extra, body)
+        req = (
+            b"POST /api HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Type: application/json\r\nX-OPOS-Token: %s\r\n%s\r\n%s"
+            % (self.port, self.tok.encode(), extra, body)
+        )
         return webclient.raw(self.port, req)
 
     def test_hostile_length(self) -> None:
@@ -291,23 +318,28 @@ class TestWebSecurity(unittest.TestCase):
 
 class TestWebHardening(unittest.TestCase):
     """Part 2 hardened web checks."""
+
     def setUp(self) -> None:
         """Start one server for the test."""
         self._run = webclient.Running()
         self._run.__enter__()
         self.port: int = self._run.port
         self.tok: str = webclient.fetch_token(self.port)
+
     def tearDown(self) -> None:
         """Stop the server."""
         self._run.__exit__(None, None, None)
+
     def _root(self) -> tuple[int, dict, bytes]:
         """Fetch GET / once."""
         return webclient.request(self.port, "GET", "/")
+
     def _std(self, h: dict) -> None:
         """Check base headers present."""
         self.assertEqual(h.get("x-content-type-options"), "nosniff")
         self.assertEqual(h.get("cache-control"), "no-store")
         self.assertEqual(h.get("x-frame-options"), "DENY")
+
     def test_headers_root(self) -> None:
         """Root sends CSP and nonce headers."""
         s, h, b = self._root()
@@ -324,7 +356,7 @@ class TestWebHardening(unittest.TestCase):
         m = re.search(r"nonce-([A-Za-z0-9_\-]+)", csp)
         self.assertIsNotNone(m)
         nonce = m.group(1)  # type: ignore[union-attr]
-        tags = re.findall(rb'<(?:script|style)\b[^>]*>', b)
+        tags = re.findall(rb"<(?:script|style)\b[^>]*>", b)
         self.assertTrue(tags)
         for t in tags:
             mm = re.search(rb'nonce="([^"]+)"', t)
@@ -343,6 +375,7 @@ class TestWebHardening(unittest.TestCase):
             self.assertNotEqual(t1, t2)
         finally:
             other.__exit__(None, None, None)
+
     def test_headers_json_404_405(self) -> None:
         """JSON, 404 and 405 carry base headers."""
         s, h, _ = webclient.request(self.port, "GET", "/api/state", headers={"X-OPOS-Token": self.tok})
@@ -354,17 +387,20 @@ class TestWebHardening(unittest.TestCase):
         s, h, _ = webclient.request(self.port, "PUT", "/")
         self.assertEqual(s, 405)
         self._std(h)
+
     def test_html_static_safe(self) -> None:
         """Page has no inline handlers or remote URLs."""
         _, _, b = self._root()
         self.assertIsNone(re.search(rb"\son[a-z]+=", b))
         self.assertNotIn(b"javascript:", b.lower())
-        self.assertIsNone(re.search(rb'''(?:src|href)\s*=\s*["']https?://''', b.lower()))
+        self.assertIsNone(re.search(rb"""(?:src|href)\s*=\s*["']https?://""", b.lower()))
+
     def test_why_handler_uses_answer(self) -> None:
         """Why handler writes to answer box."""
         _, _, b = self._root()
         self.assertIn(b"getElementById('answer')", b)
         self.assertNotIn(b"getElementById('why').textContent=r.text", b)
+
     def test_bind_validation(self) -> None:
         """Non-loopback binds are rejected."""
         for host in ("0.0.0.0", "", "192.0.2.1"):
@@ -373,12 +409,14 @@ class TestWebHardening(unittest.TestCase):
         # The server is IPv4 only and the Host/Origin checks know no [::1], so ::1 is refused up front.
         with self.assertRaises(ValueError):
             web.make_server(0, web.Phone(), host="::1")
+
     def test_loopback_address(self) -> None:
         """Server binds loopback only."""
         self.assertEqual(self._run.server.server_address[0], "127.0.0.1")
+
     def test_xss_stored_not_rendered(self) -> None:
         """Injected text round-trips in JSON not HTML."""
-        evil = '<img src=x onerror=alert(1)><script>alert(2)</script>"\''
+        evil = "<img src=x onerror=alert(1)><script>alert(2)</script>\"'"
         s, _, _ = webclient.post_action(self.port, "receive", self.tok, number="+15551230000", text=evil)
         self.assertEqual(s, 200)
         _, _, b = webclient.request(self.port, "GET", "/api/state", headers={"X-OPOS-Token": self.tok})
@@ -389,9 +427,10 @@ class TestWebHardening(unittest.TestCase):
         self.assertNotIn(evil.encode(), html)
         i = html.find(b"esc")
         self.assertGreaterEqual(i, 0)
-        snippet = html[i:i + 3000]
+        snippet = html[i : i + 3000]
         for e in (b"&amp;", b"&lt;", b"&gt;", b"&quot;", b"&#39;"):
             self.assertIn(e, snippet)
+
     def _all_str(self, o: object) -> list[str]:
         """Collect all strings in JSON value."""
         out: list[str] = []
@@ -404,11 +443,15 @@ class TestWebHardening(unittest.TestCase):
             for v in o:
                 out += self._all_str(v)
         return out
+
     def test_real_device_block(self) -> None:
         """Real device subclass blocks receive only."""
+
         class RealPhone(web.Phone):
             """Device-like phone."""
+
             pass
+
         run = webclient.Running(phone=RealPhone())
         run.__enter__()
         try:
@@ -421,11 +464,15 @@ class TestWebHardening(unittest.TestCase):
             self.assertEqual(s, 200)
         finally:
             run.__exit__(None, None, None)
+
     def test_f038_device_rejections_have_no_side_effects(self) -> None:
         """Rejected device sends leave modem and message state unchanged."""
+
         class RealPhone(web.Phone):
             """Device-like phone."""
+
             pass
+
         run = webclient.Running(phone=RealPhone())
         run.__enter__()
         try:
@@ -446,18 +493,22 @@ class TestWebHardening(unittest.TestCase):
             outbox_before = deepcopy(phone.essentials.outbox)
             events_before = list(phone.modem.events)
             status_before = phone.status
+
             def _clean() -> None:
                 self.assertEqual(list(phone.modem.events), events_before)
                 self.assertEqual(list(phone.essentials.log), log_before)
                 self.assertEqual(list(phone.essentials.outbox), outbox_before)
                 self.assertEqual(phone.status, status_before)
+
             def _hardened(h: dict) -> None:
                 self.assertEqual(h.get("x-content-type-options"), "nosniff")
                 self.assertEqual(h.get("x-frame-options"), "DENY")
                 self.assertEqual(h.get("cache-control"), "no-store")
+
             def _send(h: dict, obj: dict) -> tuple[int, dict, bytes]:
                 raw = json.dumps(obj).encode()
                 return webclient.request(run.port, "POST", "/api", body=raw, headers=h)
+
             bad = tok[:-1] + ("A" if tok[-1:] != "A" else "B")
             no_tok = {"Host": base["Host"], "Content-Type": base["Content-Type"]}
             empty_tok = dict(base)
@@ -496,11 +547,13 @@ class TestWebHardening(unittest.TestCase):
             self.assertIsNotNone(limiter)
             for target in ("post", "send"):
                 orig = limiter.allow
+
                 def _allow(*a: object, **kw: object) -> bool:
                     for v in list(a) + list(kw.values()):
                         if target in str(v):
                             return False
                     return True
+
                 limiter.allow = _allow  # type: ignore[method-assign]
                 try:
                     with self.subTest(f"rate {target}"):
@@ -527,6 +580,7 @@ class TestWebHardening(unittest.TestCase):
             self.assertEqual(list(phone.essentials.outbox), outbox_before)
         finally:
             run.__exit__(None, None, None)
+
     def test_rate_limits(self) -> None:
         """POST bursts hit 429, GET still works."""
         hit = False
@@ -551,6 +605,7 @@ class TestWebHardening(unittest.TestCase):
             self.assertTrue(seen)
         finally:
             run.__exit__(None, None, None)
+
     def test_string_bounds(self) -> None:
         """Overlong fields are rejected."""
         s, _, _ = webclient.post_action(self.port, "receive", self.tok, number="1" * 65, text="hi")
@@ -559,22 +614,26 @@ class TestWebHardening(unittest.TestCase):
         self.assertEqual(s, 400)
         s, _, _ = webclient.post_action(self.port, "receive", self.tok, number="+15550000", text="x" * 1000)
         self.assertEqual(s, 200)
+
     def test_in_use_rejects_bad_shape(self) -> None:
         """Non-string in_use name is rejected without a crash."""
         s, _, _ = webclient.post_action(self.port, "in_use", self.tok, name=5)
         self.assertEqual(s, 400)
         s, _, _ = webclient.request(self.port, "GET", "/api/state", headers={"X-OPOS-Token": self.tok})
         self.assertEqual(s, 200)
+
     def test_slow_client(self) -> None:
         """Partial request is dropped, server survives."""
         part = b"POST /api HTTP/1.1\r\nHost: 127.0.0.1:" + str(self.port).encode() + b"\r\n"
         s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
         s.settimeout(15)
         out: list[int] = []
+
         def _probe() -> None:
             """Fetch root on second connection."""
             r, _, _ = webclient.request(self.port, "GET", "/")
             out.append(r)
+
         t = threading.Thread(target=_probe, daemon=True)
         try:
             s.sendall(part)
@@ -595,6 +654,7 @@ class TestWebHardening(unittest.TestCase):
             except OSError:
                 pass
             t.join(timeout=5)
+
     def test_log_no_secrets(self) -> None:
         """Rejected token log hides secrets."""
         bad = "bad-token-abc123"
@@ -611,6 +671,7 @@ class TestWebHardening(unittest.TestCase):
 
 class TestWebSlowDoS(unittest.TestCase):
     """Slow-client and connection-cap checks."""
+
     def test_drip_closed_by_deadline(self) -> None:
         """Slow drip is closed within the deadline."""
         with webclient.Running() as run:
@@ -651,6 +712,7 @@ class TestWebSlowDoS(unittest.TestCase):
             self.assertTrue(closed)
             st, _, _ = webclient.request(port, "GET", "/")
             self.assertEqual(st, 200)
+
     def test_max_conns(self) -> None:
         """Third idle connection is refused at cap."""
         old = web._Server.MAX_CONNS
@@ -690,6 +752,7 @@ class TestWebSlowDoS(unittest.TestCase):
                 self.assertEqual(st, 200)
         finally:
             web._Server.MAX_CONNS = old
+
     def test_queue_size(self) -> None:
         """Listen queue size is configured on class."""
         self.assertEqual(web._Server.request_queue_size, 16)
@@ -697,6 +760,7 @@ class TestWebSlowDoS(unittest.TestCase):
 
 class TestWebLockFree(unittest.TestCase):
     """Slow-reader must not hold the lock."""
+
     def test_lock_free_writes(self) -> None:
         """Blocked writer does not stall other requests."""
         with webclient.Running() as run:
@@ -708,7 +772,10 @@ class TestWebLockFree(unittest.TestCase):
             try:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
                 s.settimeout(5)
-                s.sendall(b"GET /api/state HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nX-OPOS-Token: %s\r\nConnection: close\r\n\r\n" % (port, run.token.encode()))
+                s.sendall(
+                    b"GET /api/state HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nX-OPOS-Token: %s\r\nConnection: close\r\n\r\n"
+                    % (port, run.token.encode())
+                )
                 head = b""
                 while b"\r\n\r\n" not in head:
                     ch = s.recv(4096)
@@ -790,6 +857,7 @@ class TestDeadlineShutdown(unittest.TestCase):
                 mf = sock.makefile("rb")
                 t0 = time.monotonic()
                 result: dict = {}
+
                 def reader() -> None:
                     try:
                         result["data"] = mf.readline()
@@ -798,6 +866,7 @@ class TestDeadlineShutdown(unittest.TestCase):
                         result["err"] = e
                         result["data"] = None
                     result["dt"] = time.monotonic() - t0
+
                 th = threading.Thread(target=reader, daemon=True)
                 th.start()
                 for _ in range(8):

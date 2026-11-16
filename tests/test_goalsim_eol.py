@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from opos.goalsim import simulate
 
+
 class TestGoalsimEol(unittest.TestCase):
     def test_profile_none_returns_none(self):
         for p in ("basic", "router"):
@@ -43,10 +44,15 @@ class TestGoalsimEol(unittest.TestCase):
         for drain in (0, 40, 80):
             with self.subTest(drain=drain):
                 tick = SimpleNamespace(decision=SimpleNamespace(deferred=()), steps=())
-                with patch("opos.goalsim.total_drain", return_value=drain), patch("opos.goalsim.Runtime.step", return_value=tick), patch("opos.reserve.max_safe_amps", return_value=0.5), patch("opos.goalsim.should_shutdown", return_value=False):
-                    r = simulate("router", level=80.0, profile="eol", tasks=(), step_s=60.0, max_h=1/60)
+                with (
+                    patch("opos.goalsim.total_drain", return_value=drain),
+                    patch("opos.goalsim.Runtime.step", return_value=tick),
+                    patch("opos.reserve.max_safe_amps", return_value=0.5),
+                    patch("opos.goalsim.should_shutdown", return_value=False),
+                ):
+                    r = simulate("router", level=80.0, profile="eol", tasks=(), step_s=60.0, max_h=1 / 60)
                 if drain == 0:
-                    self.assertEqual(r["hours"], 1/60)
+                    self.assertEqual(r["hours"], 1 / 60)
                     self.assertIsNone(r["shutdown_level"])
                 else:
                     self.assertEqual(r["hours"], 0)

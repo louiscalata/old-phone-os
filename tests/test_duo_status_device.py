@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Status prefers detected device over saved stub."""
+
 from __future__ import annotations
 import io
 import unittest
@@ -18,7 +19,9 @@ class StatusDeviceTest(unittest.TestCase):
         with patch("opos.setup.config.load", return_value=_cfg(device)):
             with patch("opos.setup.config.config_path", return_value=Path("/tmp/opos-missing-config.json")):
                 with patch("opos.setup.apply.http_health", return_value=(False, "down")):
-                    with patch("opos.setup.device.detect_device", return_value=detected, side_effect=side_effect) as det:
+                    with patch(
+                        "opos.setup.device.detect_device", return_value=detected, side_effect=side_effect
+                    ) as det:
                         rc = cli_main(["status"], env={}, platform="linux", out=out)
         return rc, out.getvalue(), det
 

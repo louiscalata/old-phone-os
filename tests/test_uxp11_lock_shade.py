@@ -10,7 +10,8 @@ from tests.test_uxp03_shade import HARNESS as BASE, JS, NODE
 HARNESS = BASE.split("const hook=c.oposHooks[0],out={};", 1)[0]
 HARNESS = HARNESS.replace(
     "set textContent(value){this.text=value;this.children=[]}",
-    "set textContent(value){this.writes=(this.writes||0)+1;this.text=value;this.children=[]}")
+    "set textContent(value){this.writes=(this.writes||0)+1;this.text=value;this.children=[]}",
+)
 HARNESS = HARNESS.replace(
     "c.window=c;",
     """
@@ -24,10 +25,12 @@ get('lock').hidden=true;
 c.location={search:''};
 c.document.addEventListener=function(){};
 get('time-left').scrollIntoView=function(){calls.push('battery')};
-c.window=c;""")
+c.window=c;""",
+)
 HARNESS = HARNESS.replace(
     "c.oposUI=Object.assign(c.oposUI||{},{lock(){calls.push('lock')},openApp(name){calls.push(name)}});",
-    "c.oposUI.openApp=function(name){calls.push(name)};")
+    "c.oposUI.openApp=function(name){calls.push(name)};",
+)
 HARNESS += r"""
 const out={},render=s=>c.oposHooks.forEach(f=>f(s));
 render({notice:'secret demo text',helper_visible:false,battery:{percent:42}});
@@ -81,80 +84,89 @@ out.emptyLock=get('lock-notice').textContent;
 console.log(JSON.stringify(out));
 """
 HARNESS = HARNESS.replace(
-    "createElement:()=>new Element()",
-    "createElement:tag=>{const e=new Element();e.tag=tag;return e}")
+    "createElement:()=>new Element()", "createElement:tag=>{const e=new Element();e.tag=tag;return e}"
+)
 
 
 class TestPrivateLockShade(unittest.TestCase):
     def run_js(self):
         if not NODE:
-            self.skipTest('node not installed')
+            self.skipTest("node not installed")
         result = subprocess.run(
-            [NODE, '--unhandled-rejections=strict', '-e', HARNESS, str(JS)],
-            capture_output=True, text=True, timeout=30)
+            [NODE, "--unhandled-rejections=strict", "-e", HARNESS, str(JS)], capture_output=True, text=True, timeout=30
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
     def test_private_lock_and_shade(self):
         out = self.run_js()
-        self.assertTrue(out['locked'])
+        self.assertTrue(out["locked"])
         # The lock line is the newest notice itself (interface plan W1-06): the server's notices are fixed phrases ("In call",
         # "Call ended", "New message"), never a message body or a number, so "New notice" told the owner nothing for no gain.
-        self.assertEqual(out['lock'], 'secret demo text')
-        self.assertIn('secret demo text', out['shade'])
-        self.assertEqual(out['emptyLock'], '')
-        self.assertEqual(out['unlocked'], [True, False])
-        self.assertEqual(out['close'], ['button', 'Close', ['battery', 'close']])
-        self.assertEqual(out['battery'], 'Battery: 42%')
-        self.assertEqual(out['call'], [['phone'], True, False])
+        self.assertEqual(out["lock"], "secret demo text")
+        self.assertIn("secret demo text", out["shade"])
+        self.assertEqual(out["emptyLock"], "")
+        self.assertEqual(out["unlocked"], [True, False])
+        self.assertEqual(out["close"], ["button", "Close", ["battery", "close"]])
+        self.assertEqual(out["battery"], "Battery: 42%")
+        self.assertEqual(out["call"], [["phone"], True, False])
 
     def test_unchanged_poll_preserves_dismiss_button_and_live_region(self):
         out = self.run_js()
-        self.assertTrue(out['sameDismiss'])
-        self.assertTrue(out['sameStatusWrites'])  # an unchanged poll does not touch the lock line
+        self.assertTrue(out["sameDismiss"])
+        self.assertTrue(out["sameStatusWrites"])  # an unchanged poll does not touch the lock line
         # The lock line is the newest notice (W1-06), so a different notice is one more write, and only that.
-        self.assertFalse(out['addStatusWrites'])
-        self.assertEqual(out['lockAfterSecond'], 'second')
+        self.assertFalse(out["addStatusWrites"])
+        self.assertEqual(out["lockAfterSecond"], "second")
 
     def test_lock_status_tracks_pending_notices(self):
         out = self.run_js()
-        self.assertEqual(out['pendingLock'], 'secret demo text')  # the newest notice still pending after 'second' was dismissed
-        self.assertEqual(out['dismissedLock'], '')
-        self.assertEqual(out['emptyShade'], 'No recent notices')
-        self.assertEqual(out['dismissedPollLock'], '')
+        self.assertEqual(
+            out["pendingLock"], "secret demo text"
+        )  # the newest notice still pending after 'second' was dismissed
+        self.assertEqual(out["dismissedLock"], "")
+        self.assertEqual(out["emptyShade"], "No recent notices")
+        self.assertEqual(out["dismissedPollLock"], "")
 
     def test_notice_structure_and_dismiss(self):
         out = self.run_js()
-        item = out['item']
-        self.assertEqual([e[0] for e in item], ['b', 'time', 'span', 'button'])
-        self.assertEqual(item[0][1], 'Notice')
-        self.assertRegex(item[1][1], r'\d{2}:\d{2}')
-        self.assertIn('datetime', item[1][2])
-        self.assertEqual(item[3][1:], ['Dismiss', {'aria-label': 'Dismiss notice'}])
-        self.assertEqual(out['dismissType'], 'button')
-        self.assertEqual(out['remaining'], ['secret demo text'])
-        self.assertEqual(out['afterPoll'], ['secret demo text'])
+        item = out["item"]
+        self.assertEqual([e[0] for e in item], ["b", "time", "span", "button"])
+        self.assertEqual(item[0][1], "Notice")
+        self.assertRegex(item[1][1], r"\d{2}:\d{2}")
+        self.assertIn("datetime", item[1][2])
+        self.assertEqual(item[3][1:], ["Dismiss", {"aria-label": "Dismiss notice"}])
+        self.assertEqual(out["dismissType"], "button")
+        self.assertEqual(out["remaining"], ["secret demo text"])
+        self.assertEqual(out["afterPoll"], ["secret demo text"])
 
     def test_a_notice_is_stamped_with_the_pages_own_clock(self):
         """The Shade's Recent notices use the one clock rule (W1-04): a browser clock before 2026 stamps "--:--", never a guessed time."""
         if not NODE:
-            self.skipTest('node not installed')
+            self.skipTest("node not installed")
         stamps = {}
         for year in (2026, 1970):
             harness = HARNESS.replace(
                 "setInterval(){},navigator:{onLine:true},",
-                "setInterval(){},navigator:{onLine:true},Date:class extends Date{constructor(){super(%d,10,3,16,0)}}," % year, 1)
-            self.assertIn('Date:class extends Date', harness)
-            result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', harness, str(JS)],
-                                    capture_output=True, text=True, timeout=30)
+                "setInterval(){},navigator:{onLine:true},Date:class extends Date{constructor(){super(%d,10,3,16,0)}},"
+                % year,
+                1,
+            )
+            self.assertIn("Date:class extends Date", harness)
+            result = subprocess.run(
+                [NODE, "--unhandled-rejections=strict", "-e", harness, str(JS)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
-            stamps[year] = json.loads(result.stdout)['item'][1][1]
-        self.assertEqual(stamps, {2026: '16:00', 1970: '--:--'})
+            stamps[year] = json.loads(result.stdout)["item"][1][1]
+        self.assertEqual(stamps, {2026: "16:00", 1970: "--:--"})
 
     def test_the_battery_reads_the_same_on_the_lock_and_in_the_shade(self):
         """Both draw pct(): the rounded level, or "—" / "unknown" for anything that is not a finite number."""
         if not NODE:
-            self.skipTest('node not installed')
+            self.skipTest("node not installed")
         tail = r"""
 const out={},render=s=>c.oposHooks.forEach(f=>f(s));
 for(const [k,v] of Object.entries({r:41.6,nan:NaN,inf:Infinity,text:'12',nul:null}))
@@ -163,33 +175,35 @@ render({});out.none=[get('lock-batt').textContent,get('qs-batt').textContent];
 console.log(JSON.stringify(out));
 """
         harness = HARNESS.split("const out={},render=", 1)[0] + tail
-        result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', harness, str(JS)],
-                                capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            [NODE, "--unhandled-rejections=strict", "-e", harness, str(JS)], capture_output=True, text=True, timeout=30
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         out = json.loads(result.stdout)
-        self.assertEqual(out['r'], ['42%', 'Battery: 42%'])
-        for key in ('nan', 'inf', 'text', 'nul', 'none'):
-            self.assertEqual(out[key], ['—', 'Battery: unknown'], key)
+        self.assertEqual(out["r"], ["42%", "Battery: 42%"])
+        for key in ("nan", "inf", "text", "nul", "none"):
+            self.assertEqual(out[key], ["—", "Battery: unknown"], key)
 
     def test_helper_state_and_unavailable(self):
         out = self.run_js()
-        self.assertEqual(out['off'], ['Helper: Off', 'false'])
-        self.assertEqual(out['on'], ['Helper: On', 'true'])
-        self.assertEqual(out['unavailable'], [
-            [True, 'true', 'Helper: Off unavailable'],
-            [True, 'true', 'Battery: unknown unavailable']])
+        self.assertEqual(out["off"], ["Helper: Off", "false"])
+        self.assertEqual(out["on"], ["Helper: On", "true"])
+        self.assertEqual(
+            out["unavailable"],
+            [[True, "true", "Helper: Off unavailable"], [True, "true", "Battery: unknown unavailable"]],
+        )
 
     def test_accessible_markup_and_sizes(self):
         html = page()
         self.assertRegex(html, r'<div id="lock-notice"[^>]*role="status"[^>]*aria-live="polite"')
-        css = JS.with_suffix('.css').read_text()
-        rule = re.search(r'#qs button\{([^}]+)\}', css).group(1)
-        self.assertGreaterEqual(int(re.search(r'min-height:(\d+)px', rule).group(1)), 48)
-        self.assertRegex(css, r'#qs\{[^}]*gap:8px')
-        self.assertRegex(css, r'#qs-notices li\{[^}]*gap:8px')
-        self.assertRegex(css, r'#lock-time\{[^}]*font-size:[\d.]+rem')
-        self.assertRegex(css, r'#lock-time\{[^}]*overflow-wrap:anywhere')
+        css = JS.with_suffix(".css").read_text()
+        rule = re.search(r"#qs button\{([^}]+)\}", css).group(1)
+        self.assertGreaterEqual(int(re.search(r"min-height:(\d+)px", rule).group(1)), 48)
+        self.assertRegex(css, r"#qs\{[^}]*gap:8px")
+        self.assertRegex(css, r"#qs-notices li\{[^}]*gap:8px")
+        self.assertRegex(css, r"#lock-time\{[^}]*font-size:[\d.]+rem")
+        self.assertRegex(css, r"#lock-time\{[^}]*overflow-wrap:anywhere")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

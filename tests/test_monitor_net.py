@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Address rules and the fetcher. The fetcher tests talk only to a throwaway server on 127.0.0.1."""
+
 import ipaddress
 import json
 import socket
@@ -33,17 +34,42 @@ needs_loopback = unittest.skipUnless(LOOPBACK, "cannot bind 127.0.0.1 here")
 
 class ParseRemoteTests(unittest.TestCase):
     def test_accepts_host_and_port_only(self):
-        for url, label in (("http://" + ip4(192, 168, 1, 5) + ":8765", ip4(192, 168, 1, 5) + ":8765"), ("http://" + ip4(10, 0, 0, 2), ip4(10, 0, 0, 2) + ":80"),
-                           ("https://monitor.local:9443/", "monitor.local:9443"), ("http://[fd00::1]:8765", "[fd00::1]:8765"),
-                           ("  http://127.0.0.1:18766  ", "127.0.0.1:18766")):
+        for url, label in (
+            ("http://" + ip4(192, 168, 1, 5) + ":8765", ip4(192, 168, 1, 5) + ":8765"),
+            ("http://" + ip4(10, 0, 0, 2), ip4(10, 0, 0, 2) + ":80"),
+            ("https://monitor.local:9443/", "monitor.local:9443"),
+            ("http://[fd00::1]:8765", "[fd00::1]:8765"),
+            ("  http://127.0.0.1:18766  ", "127.0.0.1:18766"),
+        ):
             self.assertEqual(monitor.parse_remote(url).label, label, url)
 
     def test_rejects_everything_else(self):
-        for url in (None, "", "   ", 7, "ftp://" + ip4(10, 0, 0, 1), ip4(10, 0, 0, 1) + ":8765", "//" + ip4(10, 0, 0, 1), "http://", "http://user@" + ip4(10, 0, 0, 1),
-                    "http://user:pw@" + ip4(10, 0, 0, 1), "http://" + ip4(10, 0, 0, 1) + "/api/snapshot", "http://" + ip4(10, 0, 0, 1) + "/x/", "http://" + ip4(10, 0, 0, 1) + "?a=1",
-                    "http://" + ip4(10, 0, 0, 1) + "/?", "http://" + ip4(10, 0, 0, 1) + "#frag", "http://" + ip4(10, 0, 0, 1) + ":99999", "http://" + ip4(10, 0, 0, 1) + ":abc",
-                    "http://" + ip4(10, 0, 0, 1) + "\\evil", "http://" + ip4(10, 0, 0, 1) + ":80@evil.example", "http://café.example", "http://a" * 60,
-                    "http://" + ip4(10, 0, 0, 1) + "\n", "javascript:alert(1)", "file:///etc/passwd"):
+        for url in (
+            None,
+            "",
+            "   ",
+            7,
+            "ftp://" + ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 1) + ":8765",
+            "//" + ip4(10, 0, 0, 1),
+            "http://",
+            "http://user@" + ip4(10, 0, 0, 1),
+            "http://user:pw@" + ip4(10, 0, 0, 1),
+            "http://" + ip4(10, 0, 0, 1) + "/api/snapshot",
+            "http://" + ip4(10, 0, 0, 1) + "/x/",
+            "http://" + ip4(10, 0, 0, 1) + "?a=1",
+            "http://" + ip4(10, 0, 0, 1) + "/?",
+            "http://" + ip4(10, 0, 0, 1) + "#frag",
+            "http://" + ip4(10, 0, 0, 1) + ":99999",
+            "http://" + ip4(10, 0, 0, 1) + ":abc",
+            "http://" + ip4(10, 0, 0, 1) + "\\evil",
+            "http://" + ip4(10, 0, 0, 1) + ":80@evil.example",
+            "http://café.example",
+            "http://a" * 60,
+            "http://" + ip4(10, 0, 0, 1) + "\n",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+        ):
             with self.assertRaises(monitor.RemoteConfigError, msg=repr(url)):
                 monitor.parse_remote(url)
 
@@ -61,18 +87,48 @@ class AddressTests(unittest.TestCase):
         return monitor.address_allowed(ipaddress.ip_address(text))
 
     def test_private_loopback_link_local_and_ula_are_allowed(self):
-        for ip in ("127.0.0.1", "127.9.9.9", "::1", ip4(10, 15, 19, 82), ip4(172, 16, 0, 1), ip4(172, 31, 255, 255), ip4(192, 168, 0, 7),
-                   "169.254.1.1", "fe80::1", "fd12:3456::1", "fc00::1", "::ffff:" + ip4(192, 168, 1, 1), "::ffff:127.0.0.1"):
+        for ip in (
+            "127.0.0.1",
+            "127.9.9.9",
+            "::1",
+            ip4(10, 15, 19, 82),
+            ip4(172, 16, 0, 1),
+            ip4(172, 31, 255, 255),
+            ip4(192, 168, 0, 7),
+            "169.254.1.1",
+            "fe80::1",
+            "fd12:3456::1",
+            "fc00::1",
+            "::ffff:" + ip4(192, 168, 1, 1),
+            "::ffff:127.0.0.1",
+        ):
             self.assertTrue(self.allowed(ip), ip)
 
     def test_public_and_odd_addresses_are_refused(self):
-        for ip in ("8.8.8.8", "1.1.1.1", "172.32.0.1", "172.15.255.255", "192.169.0.1", "11.0.0.1", "100.64.0.1",
-                   "0.0.0.0", "::", "224.0.0.1", "ff02::1", "2001:4860:4860::8888", "::ffff:8.8.8.8", "198.18.0.1"):
+        for ip in (
+            "8.8.8.8",
+            "1.1.1.1",
+            "172.32.0.1",
+            "172.15.255.255",
+            "192.169.0.1",
+            "11.0.0.1",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::",
+            "224.0.0.1",
+            "ff02::1",
+            "2001:4860:4860::8888",
+            "::ffff:8.8.8.8",
+            "198.18.0.1",
+        ):
             self.assertFalse(self.allowed(ip), ip)
 
     def test_every_resolved_address_must_pass(self):
         def resolver(address_list):
-            return lambda host, port, type=0: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port)) for a in address_list]
+            return lambda host, port, type=0: [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port)) for a in address_list
+            ]
+
         self.assertEqual(len(monitor.resolve_allowed("h", 80, resolver([ip4(10, 0, 0, 1), ip4(192, 168, 0, 2)]))), 2)
         with self.assertRaises(monitor.FetchError) as raised:
             monitor.resolve_allowed("h", 80, resolver([ip4(10, 0, 0, 1), "8.8.8.8"]))
@@ -83,6 +139,7 @@ class AddressTests(unittest.TestCase):
 
         def failing(host, port, type=0):
             raise socket.gaierror("nope")
+
         with self.assertRaises(monitor.FetchError) as raised:
             monitor.resolve_allowed("h", 80, failing)
         self.assertEqual(raised.exception.code, "unreachable")
@@ -90,6 +147,7 @@ class AddressTests(unittest.TestCase):
     def test_a_scoped_link_local_address_is_read_without_its_scope(self):
         def resolver(host, port, type=0):
             return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1%usb0", port, 0, 3))]
+
         self.assertEqual(monitor.resolve_allowed("h", 80, resolver)[0][1][0], "fe80::1%usb0")
 
 
@@ -137,6 +195,7 @@ def json_reply(payload, status=200, kind="application/json"):
         handler.send_header("Content-Length", str(len(body)))
         handler.end_headers()
         handler.wfile.write(body)
+
     return behave
 
 
@@ -175,16 +234,25 @@ class FetchTests(unittest.TestCase):
             handler.send_response(302)
             handler.send_header("Location", "http://127.0.0.1:1/elsewhere")
             handler.end_headers()
+
         server, remote = self.run_case(behave)
         self.assertEqual(self.code_of(remote), "redirect")
         self.assertEqual(len(server.requests), 1)
 
     def test_errors_wrong_types_and_bad_json_are_named(self):
-        cases = ((json_reply({}, status=404), "status"), (json_reply({}, status=500), "status"),
-                 (json_reply(b"<html>", kind="text/html"), "type"), (json_reply(b"{}", kind="text/plain"), "type"),
-                 (json_reply(b"not json"), "not-json"), (json_reply(b'{"a": NaN}'), "not-json"),
-                 (json_reply(b'{"a": Infinity}'), "not-json"), (json_reply(b"[1, 2]"), "invalid"),
-                 (json_reply(b'"text"'), "invalid"), (json_reply(b"[" * 100000), "not-json"), (json_reply(b"\xff\xfe"), "not-json"))
+        cases = (
+            (json_reply({}, status=404), "status"),
+            (json_reply({}, status=500), "status"),
+            (json_reply(b"<html>", kind="text/html"), "type"),
+            (json_reply(b"{}", kind="text/plain"), "type"),
+            (json_reply(b"not json"), "not-json"),
+            (json_reply(b'{"a": NaN}'), "not-json"),
+            (json_reply(b'{"a": Infinity}'), "not-json"),
+            (json_reply(b"[1, 2]"), "invalid"),
+            (json_reply(b'"text"'), "invalid"),
+            (json_reply(b"[" * 100000), "not-json"),
+            (json_reply(b"\xff\xfe"), "not-json"),
+        )
         for behave, code in cases:
             server, remote = self.run_case(behave)
             self.assertEqual(self.code_of(remote), code)
@@ -203,6 +271,7 @@ class FetchTests(unittest.TestCase):
             handler.send_header("Content-Type", "application/json")
             handler.end_headers()
             handler.wfile.write(big)
+
         _server, remote = self.run_case(no_length)
         self.assertEqual(self.code_of(remote), "too-large")
 
@@ -214,44 +283,64 @@ class FetchTests(unittest.TestCase):
     def test_a_silent_server_times_out(self):
         def silent(handler):
             time.sleep(1.5)
+
         _server, remote = self.run_case(silent)
         with mock.patch.object(monitor, "READ_TIMEOUT", 0.3):
             self.assertEqual(self.code_of(remote), "timeout")
 
     def test_a_non_ascii_digit_in_content_length_is_not_a_crash(self):
         def odd(handler):
-            handler.wfile.write(b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: \xb2\r\n\r\n{\"ok\": 1}")
+            handler.wfile.write(
+                b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: \xb2\r\n\r\n{"ok": 1}'
+            )
             handler.close_connection = True
+
         _server, remote = self.run_case(odd)
         self.assertEqual(monitor.fetch_snapshot(remote), {"ok": 1})
 
     def test_a_content_length_of_thousands_of_digits_is_too_large_not_a_crash(self):
         for digits in ("0" * 4400 + "2", "9" * 5000, "9" * 8, "1" + "0" * 6):
+
             def huge(handler, digits=digits):
-                handler.wfile.write(("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + digits + "\r\n\r\n{}").encode())
+                handler.wfile.write(
+                    (
+                        "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + digits + "\r\n\r\n{}"
+                    ).encode()
+                )
                 handler.close_connection = True
+
             _server, remote = self.run_case(huge)
             if len(digits.lstrip("0")) <= 4:
                 self.assertEqual(monitor.fetch_snapshot(remote), {})
             else:
                 self.assertEqual(self.code_of(remote), "too-large", digits[:12])
         for digits in ("0000000000002", "2"):
+
             def small(handler, digits=digits):
-                handler.wfile.write(("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + digits + "\r\n\r\n{}").encode())
+                handler.wfile.write(
+                    (
+                        "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + digits + "\r\n\r\n{}"
+                    ).encode()
+                )
                 handler.close_connection = True
+
             _server, remote = self.run_case(small)
             self.assertEqual(monitor.fetch_snapshot(remote), {}, digits)
 
     def test_a_reply_that_is_not_http_is_invalid_not_unreachable(self):
         for junk in (b"garbage\r\n\r\n", b"HTTP/9.9 200\r\n\r\n", b"\x00\x01\x02\r\n"):
+
             def say(handler, junk=junk):
                 handler.wfile.write(junk)
                 handler.close_connection = True
+
             _server, remote = self.run_case(say)
             self.assertIn(self.code_of(remote), ("invalid", "unreachable"), junk)
+
         def garbled(handler):
             handler.wfile.write(b"garbage\r\n\r\n")
             handler.close_connection = True
+
         _server, remote = self.run_case(garbled)
         self.assertEqual(self.code_of(remote), "invalid")
 
@@ -265,7 +354,11 @@ class FetchTests(unittest.TestCase):
             raise ConnectionRefusedError()
 
         def resolver(host, port, type=0):
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 1)), (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 2))]
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 1)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 2)),
+            ]
+
         with mock.patch.object(monitor._Pinned, "connect", connect):
             with self.assertRaises(monitor.FetchError) as raised:
                 monitor.fetch_snapshot(monitor.parse_remote("https://h.invalid:8443"), resolver=resolver)
@@ -275,6 +368,7 @@ class FetchTests(unittest.TestCase):
     def test_a_certificate_the_phone_does_not_trust_is_named_not_called_unreachable(self):
         def refuse(self_, *args):
             raise ssl.SSLCertVerificationError(1, "certificate verify failed")
+
         with mock.patch.object(monitor._Pinned, "connect", refuse):
             self.assertEqual(self.code_of(monitor.parse_remote("https://" + ip4(127, 0, 0, 1) + ":9")), "certificate")
         word, text = monitor.FETCH_WORDS["certificate"]
@@ -291,6 +385,7 @@ class FetchTests(unittest.TestCase):
     def test_a_public_address_is_refused_before_any_connection(self):
         def resolver(host, port, type=0):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+
         with mock.patch.object(monitor, "_Pinned") as pinned:
             with self.assertRaises(monitor.FetchError) as raised:
                 monitor.fetch_snapshot(monitor.parse_remote("http://example.invalid:8765"), resolver=resolver)
@@ -309,6 +404,7 @@ class FetchTests(unittest.TestCase):
 
         def resolver(host, port, type=0):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip4(10, 1, 2, 3), port))]
+
         with mock.patch.object(monitor, "_Pinned", spy):
             with self.assertRaises(Boom):
                 monitor.fetch_snapshot(monitor.parse_remote("http://rebind.example:8765"), resolver=resolver)
@@ -362,7 +458,12 @@ DRIPS = {
     "a complete document that never ends": lambda h: keep_writing(h, JSON_HEAD + b'{"a": 1}', b" "),
     "header drip": lambda h: keep_writing(h, b"HTTP/1.0 200 OK\r\nX-A: ", b"y"),
     "1xx flood": lambda h: keep_writing(h, b"", b"HTTP/1.1 100 Continue\r\n\r\n", pause=0.001),
-    "trailer flood": lambda h: keep_writing(h, b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n", b"X-T: 1\r\n", pause=0.002),
+    "trailer flood": lambda h: keep_writing(
+        h,
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n",
+        b"X-T: 1\r\n",
+        pause=0.002,
+    ),
 }
 
 
@@ -387,7 +488,9 @@ class DeadlineTests(unittest.TestCase):
             self.addCleanup(server.close)
             code, seconds = self.timed(server.remote())
             # Newer Pythons end an endless run of 1xx lines or trailers themselves (invalid); older ones need the watchdog.
-            self.assertIn(code, ("timeout", "invalid") if name in ("1xx flood", "trailer flood") else ("timeout",), name)
+            self.assertIn(
+                code, ("timeout", "invalid") if name in ("1xx flood", "trailer flood") else ("timeout",), name
+            )
             self.assertLess(seconds, self.TOTAL + 1.0, f"{name} took {seconds:.2f} s")
             if code == "timeout":
                 self.assertGreater(seconds, self.TOTAL - 0.2, f"{name} ended early: {seconds:.2f} s")
@@ -402,7 +505,10 @@ class DeadlineTests(unittest.TestCase):
                 self.skipTest(f"cannot bind loopback: {error}")
             self.addCleanup(server.close)
             started = time.monotonic()
-            with mock.patch.object(monitor, "TOTAL_DEADLINE", self.TOTAL), mock.patch.object(monitor, "READ_TIMEOUT", 3.0):
+            with (
+                mock.patch.object(monitor, "TOTAL_DEADLINE", self.TOTAL),
+                mock.patch.object(monitor, "READ_TIMEOUT", 3.0),
+            ):
                 with self.assertRaises(monitor.FetchError) as raised:
                     monitor.fetch_snapshot(server.remote(), clock=lambda: 100.0)
             self.assertEqual(raised.exception.code, "timeout", name)
@@ -427,17 +533,21 @@ class DeadlineTests(unittest.TestCase):
 
         def resolver(host, port, type=0):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", hold.port))] * 4
+
         started = time.monotonic()
         with mock.patch.object(monitor, "TOTAL_DEADLINE", self.TOTAL), mock.patch.object(monitor, "READ_TIMEOUT", 0.5):
             with self.assertRaises(monitor.FetchError) as raised:
                 monitor.fetch_snapshot(monitor.parse_remote(f"http://h.invalid:{hold.port}"), resolver=resolver)
         self.assertEqual(raised.exception.code, "timeout")
-        self.assertLess(time.monotonic() - started, self.TOTAL + 0.7, "four silent addresses must not take four read timeouts")
+        self.assertLess(
+            time.monotonic() - started, self.TOTAL + 0.7, "four silent addresses must not take four read timeouts"
+        )
 
     def test_a_name_lookup_that_hangs_is_cut(self):
         def resolver(host, port, type=0):
             time.sleep(3)
             return []
+
         started = time.monotonic()
         with mock.patch.object(monitor, "DNS_DEADLINE", 0.3):
             with self.assertRaises(monitor.FetchError) as raised:
@@ -462,6 +572,7 @@ class DeadlineTests(unittest.TestCase):
             def __init__(self, *args, **kwargs):
                 seen.append(kwargs.get("connect_timeout"))
                 super().__init__(*args, **kwargs)
+
         with mock.patch.object(monitor, "_Pinned", Spy), mock.patch.object(monitor, "TOTAL_DEADLINE", 0.5):
             with self.assertRaises(monitor.FetchError):
                 monitor.fetch_snapshot(monitor.parse_remote("http://127.0.0.1:9"))
@@ -480,6 +591,7 @@ class PinnedConnectTests(unittest.TestCase):
         def resolver(host, port, type=0):
             self.assertEqual(host, "pinned.invalid")
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
         remote = monitor.parse_remote(f"http://pinned.invalid:{server.port}")
         self.assertEqual(monitor.fetch_snapshot(remote, resolver=resolver), {"ok": 1})
         self.assertEqual(server.requests[0]["headers"]["Host"], f"pinned.invalid:{server.port}")
@@ -498,31 +610,48 @@ class ProbeLocalTests(unittest.TestCase):
         return result
 
     def test_listed_models_empty_lists_and_bad_ids(self):
-        self.assertEqual(self.probe(json_reply({"data": [{"id": "llama-3.2-1b-instruct"}, {"id": "b"}]})), ("model", ["llama-3.2-1b-instruct", "b"]))
+        self.assertEqual(
+            self.probe(json_reply({"data": [{"id": "llama-3.2-1b-instruct"}, {"id": "b"}]})),
+            ("model", ["llama-3.2-1b-instruct", "b"]),
+        )
         self.assertEqual(self.probe(json_reply({"data": []})), ("empty", []))
-        self.assertEqual(self.probe(json_reply({"data": [{"id": "<img src=x>"}, {"id": 5}, "x", None]})), ("unknown", []))
+        self.assertEqual(
+            self.probe(json_reply({"data": [{"id": "<img src=x>"}, {"id": 5}, "x", None]})), ("unknown", [])
+        )
         self.assertEqual(self.probe(json_reply({"data": [{"id": "<x>"}, {"id": "good"}]})), ("model", ["good"]))
         ids = self.probe(json_reply({"data": [{"id": f"m{i}"} for i in range(40)]}))[1]
         self.assertEqual(len(ids), monitor.MAX_MODELS + 1, "eight names and the marker")
 
     def test_anything_unreadable_is_unknown_never_no_model(self):
-        for behave in (json_reply({}, status=404), json_reply({}, status=500), json_reply(b"nope"), json_reply(b'{"data": NaN}'),
-                       json_reply(b"[]"), json_reply({"data": "x"}), json_reply({"models": []}), json_reply(b"[" * 100000),
-                       json_reply(b'{"data": [], "pad": "' + b"x" * (monitor.MAX_BYTES + 5) + b'"}')):
+        for behave in (
+            json_reply({}, status=404),
+            json_reply({}, status=500),
+            json_reply(b"nope"),
+            json_reply(b'{"data": NaN}'),
+            json_reply(b"[]"),
+            json_reply({"data": "x"}),
+            json_reply({"models": []}),
+            json_reply(b"[" * 100000),
+            json_reply(b'{"data": [], "pad": "' + b"x" * (monitor.MAX_BYTES + 5) + b'"}'),
+        ):
             self.assertEqual(self.probe(behave), ("unknown", []))
 
     def test_a_server_that_does_not_answer_in_time_is_unknown(self):
         def silent(handler):
             time.sleep(1.5)
+
         with mock.patch.object(monitor, "LOCAL_TIMEOUT", 0.3):
             self.assertEqual(self.probe(silent), ("unknown", []))
 
-
     def test_a_probe_that_never_finishes_is_unknown_within_its_own_deadline(self):
         cases = dict(DRIPS)
-        cases["a body that is promised and never comes"] = lambda h: keep_writing(h, b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: 300000\r\n\r\n", b"x", pause=0.2)
+        cases["a body that is promised and never comes"] = lambda h: keep_writing(
+            h, b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: 300000\r\n\r\n", b"x", pause=0.2
+        )
         # A complete, valid, model-listing body that is never closed must not become "model": the cut ends it.
-        cases["a valid list that is never closed"] = lambda h: keep_writing(h, JSON_HEAD + b'{"data": [{"id": "m"}]}', b" ")
+        cases["a valid list that is never closed"] = lambda h: keep_writing(
+            h, JSON_HEAD + b'{"data": [{"id": "m"}]}', b" "
+        )
         for name, behave in cases.items():
             try:
                 server = Recorder(behave)
@@ -575,22 +704,30 @@ class LocalhostProbeTests(unittest.TestCase):
     def test_no_loopback_address_is_unknown_and_nothing_is_dialled(self):
         def never(*args, **kwargs):
             raise AssertionError("must not connect")
+
         with mock.patch.object(monitor, "_Pinned", never):
             with self.addresses():
                 self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
 
     def test_localhost_is_never_looked_up(self):
         """R3-5/R3-12: the name has a fixed meaning (RFC 6761), so the probe cannot be starved of lookup slots."""
+
         def never(*args, **kwargs):
             raise AssertionError("must not resolve")
+
         with mock.patch.object(monitor.socket, "getaddrinfo", never):
-            self.assertEqual(monitor._loopback_addresses("localhost", 80),
-                             [(socket.AF_INET, ("127.0.0.1", 80)), (socket.AF_INET6, ("::1", 80, 0, 0))])
+            self.assertEqual(
+                monitor._loopback_addresses("localhost", 80),
+                [(socket.AF_INET, ("127.0.0.1", 80)), (socket.AF_INET6, ("::1", 80, 0, 0))],
+            )
             self.assertEqual(monitor._loopback_addresses("::1", 80), [(socket.AF_INET6, ("::1", 80, 0, 0))])
             self.assertEqual(monitor._loopback_addresses("127.0.0.2", 80), [(socket.AF_INET, ("127.0.0.2", 80))])
             self.assertEqual(monitor._loopback_addresses("8.8.8.8", 80), [])
 
-    @unittest.skipIf(sys.platform == "win32", "Windows takes about 2 s to report a refused loopback connection, longer than the 1 s probe timeout")
+    @unittest.skipIf(
+        sys.platform == "win32",
+        "Windows takes about 2 s to report a refused loopback connection, longer than the 1 s probe timeout",
+    )
     def test_slots_taken_by_name_lookups_do_not_affect_the_probe(self):
         taken = [monitor._LOOKUPS.acquire(blocking=False) for _ in range(monitor.MAX_LOOKUPS)]
         self.addCleanup(lambda: [monitor._LOOKUPS.release() for ok in taken if ok])
@@ -609,12 +746,18 @@ class LocalhostProbeTests(unittest.TestCase):
 
             def close(self):
                 pass
+
         with mock.patch.object(monitor.socket, "socket", Fake), self.addresses(1, 2):
             self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
 
     def test_an_address_that_cannot_be_used_is_skipped_not_decisive(self):
         """R3-4/R3-10: an unusable ::1 must neither stop the probe nor count as a refusal."""
-        for error in (OSError(65, "No route to host"), OSError(51, "Network is unreachable"), OSError(99, "Cannot assign")):
+        for error in (
+            OSError(65, "No route to host"),
+            OSError(51, "Network is unreachable"),
+            OSError(99, "Cannot assign"),
+        ):
+
             class Fake:
                 def __init__(self, *args):
                     pass
@@ -627,6 +770,7 @@ class LocalhostProbeTests(unittest.TestCase):
 
                 def close(self):
                     pass
+
             with mock.patch.object(monitor.socket, "socket", Fake), self.addresses(1, 2):
                 self.assertEqual(monitor.probe_local(self.env), ("unknown", []), repr(error))
 
@@ -644,6 +788,7 @@ class LocalhostProbeTests(unittest.TestCase):
 
             def close(self):
                 pass
+
         with mock.patch.object(monitor.socket, "socket", Mixed), self.addresses(1, 2):
             # One refusal and one unusable address: not every address refused, so "none" would be a guess.
             self.assertEqual(monitor.probe_local(self.env), ("unknown", []))
@@ -651,6 +796,7 @@ class LocalhostProbeTests(unittest.TestCase):
         class Refusing(Mixed):
             def connect(self, _address):
                 raise ConnectionRefusedError()
+
         with mock.patch.object(monitor.socket, "socket", Refusing), self.addresses(1, 2):
             self.assertEqual(monitor.probe_local(self.env), ("none", []))
 
@@ -663,9 +809,12 @@ class LocalhostProbeTests(unittest.TestCase):
             if args and args[0] == socket.AF_INET6 and not kwargs:
                 raise OSError(97, "Address family not supported")
             return real(*args, **kwargs)
+
         found = [(socket.AF_INET6, ("::1", server.port, 0, 0)), (socket.AF_INET, ("127.0.0.1", server.port))]
-        with mock.patch.object(monitor.socket, "socket", Picky), \
-                mock.patch.object(monitor, "_loopback_addresses", lambda host, port: found):
+        with (
+            mock.patch.object(monitor.socket, "socket", Picky),
+            mock.patch.object(monitor, "_loopback_addresses", lambda host, port: found),
+        ):
             self.assertEqual(monitor.probe_local(self.env), ("model", ["m1"]))
 
     def test_the_first_address_that_answers_decides(self):
@@ -690,6 +839,7 @@ class WorkerStartFailureTests(unittest.TestCase):
 
             def start(self):
                 raise RuntimeError("can't start new thread")
+
         with mock.patch.object(monitor.threading, "Thread", Broken):
             for _ in range(monitor.MAX_LOOKUPS + 2):
                 with self.assertRaises(RuntimeError):
@@ -727,10 +877,13 @@ class AbortEventTests(unittest.TestCase):
 
             def close(self):
                 pass
+
         context = mock.Mock()
         context.wrap_socket.return_value = Wrapped()
-        with mock.patch.object(socket.socket, "connect", connect), \
-                mock.patch.object(monitor.ssl, "create_default_context", lambda: context):
+        with (
+            mock.patch.object(socket.socket, "connect", connect),
+            mock.patch.object(monitor.ssl, "create_default_context", lambda: context),
+        ):
             conn = monitor._Pinned(socket.AF_INET, ("127.0.0.1", 9), "h", 9, True, abort=abort)
             with self.assertRaises(OSError):
                 conn.connect()
@@ -754,6 +907,7 @@ class AbortWiringTests(unittest.TestCase):
             def __init__(self, *args, **kwargs):
                 seen.append(kwargs.get("abort"))
                 super().__init__(*args, **kwargs)
+
         return seen, Spy
 
     @needs_loopback
@@ -761,10 +915,17 @@ class AbortWiringTests(unittest.TestCase):
         hold = Hold()
         self.addCleanup(hold.close)
         seen, spy = self.spy()
-        with mock.patch.object(monitor, "_Pinned", spy), mock.patch.object(monitor, "LOCAL_TOTAL", 0.3), \
-                mock.patch.object(monitor, "LOCAL_TIMEOUT", 3.0), \
-                mock.patch.object(monitor, "_loopback_addresses", lambda host, port: [(socket.AF_INET, ("127.0.0.1", hold.port))]):
-            self.assertEqual(monitor.probe_local({"OPOS_LOCAL_URL": f"http://localhost:{hold.port}/v1"}), ("unknown", []))
+        with (
+            mock.patch.object(monitor, "_Pinned", spy),
+            mock.patch.object(monitor, "LOCAL_TOTAL", 0.3),
+            mock.patch.object(monitor, "LOCAL_TIMEOUT", 3.0),
+            mock.patch.object(
+                monitor, "_loopback_addresses", lambda host, port: [(socket.AF_INET, ("127.0.0.1", hold.port))]
+            ),
+        ):
+            self.assertEqual(
+                monitor.probe_local({"OPOS_LOCAL_URL": f"http://localhost:{hold.port}/v1"}), ("unknown", [])
+            )
         self.assertEqual(len(seen), 1)
         self.assertIsInstance(seen[0], threading.Event)
         self.assertTrue(seen[0].is_set(), "the event handed to the connection must be the one the watchdog sets")
@@ -777,8 +938,12 @@ class AbortWiringTests(unittest.TestCase):
 
         def resolver(host, port, type=0):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", hold.port))]
-        with mock.patch.object(monitor, "_Pinned", spy), mock.patch.object(monitor, "TOTAL_DEADLINE", 0.4), \
-                mock.patch.object(monitor, "READ_TIMEOUT", 3.0):
+
+        with (
+            mock.patch.object(monitor, "_Pinned", spy),
+            mock.patch.object(monitor, "TOTAL_DEADLINE", 0.4),
+            mock.patch.object(monitor, "READ_TIMEOUT", 3.0),
+        ):
             with self.assertRaises(monitor.FetchError) as raised:
                 monitor.fetch_snapshot(monitor.parse_remote(f"http://h.invalid:{hold.port}"), resolver=resolver)
         self.assertEqual(raised.exception.code, "timeout")
@@ -794,6 +959,7 @@ class LookupCapTests(unittest.TestCase):
         def stall(*args, **kwargs):
             release.wait(10)
             return []
+
         with mock.patch.object(monitor, "_LOOKUPS", threading.BoundedSemaphore(2)):
             for _ in range(2):
                 with self.assertRaises(monitor.FetchError) as raised:
@@ -809,11 +975,14 @@ class LookupCapTests(unittest.TestCase):
             self.assertEqual(threading.active_count(), before, "no thread is started past the cap")
             release.set()
             time.sleep(0.3)
-            self.assertEqual(monitor._resolve_bounded("h", 1, lambda *a, **k: [("x",)], 1.0), [("x",)], "slots are given back")
+            self.assertEqual(
+                monitor._resolve_bounded("h", 1, lambda *a, **k: [("x",)], 1.0), [("x",)], "slots are given back"
+            )
 
     def test_a_finished_lookup_gives_its_slot_back_even_when_it_raises(self):
         def broken(*args, **kwargs):
             raise socket.gaierror("no")
+
         with mock.patch.object(monitor, "_LOOKUPS", threading.BoundedSemaphore(1)):
             for _ in range(5):
                 with self.assertRaises(monitor.FetchError) as raised:
@@ -832,6 +1001,7 @@ class CertificateDateTests(unittest.TestCase):
 
         def resolver(host, port, type=0):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 1 + i)) for i in range(len(errors))]
+
         with mock.patch.object(monitor._Pinned, "connect", connect):
             with self.assertRaises(monitor.FetchError) as raised:
                 monitor.fetch_snapshot(monitor.parse_remote("https://h.invalid:8443"), resolver=resolver)
@@ -843,12 +1013,18 @@ class CertificateDateTests(unittest.TestCase):
         return error
 
     def test_a_date_problem_has_its_own_word_and_a_wrong_chain_keeps_the_old_one(self):
-        self.assertEqual(self.fetch([self.cert(9)]), "certificate-date", "not yet valid: what a phone with a 1970 clock sees")
+        self.assertEqual(
+            self.fetch([self.cert(9)]), "certificate-date", "not yet valid: what a phone with a 1970 clock sees"
+        )
         self.assertEqual(self.fetch([self.cert(10)]), "certificate-date", "expired")
         self.assertEqual(self.fetch([self.cert(18)]), "certificate", "self-signed")
         self.assertEqual(self.fetch([self.cert(20)]), "certificate")
         self.assertEqual(self.fetch([self.cert(None)]), "certificate")
-        self.assertEqual(self.fetch([self.cert(9), ConnectionRefusedError()]), "certificate-date", "kept across a later silent address")
+        self.assertEqual(
+            self.fetch([self.cert(9), ConnectionRefusedError()]),
+            "certificate-date",
+            "kept across a later silent address",
+        )
         # R3-14: an untrusted chain on any address wins; fixing the clock would not help it.
         self.assertEqual(self.fetch([self.cert(18), self.cert(10)]), "certificate")
         self.assertEqual(self.fetch([self.cert(10), self.cert(18)]), "certificate")
@@ -874,7 +1050,11 @@ class BootClockTests(unittest.TestCase):
         def fake(clock_id):
             calls.append(clock_id)
             return 1234.5
-        with mock.patch.object(monitor.time, "CLOCK_BOOTTIME", 7, create=True), mock.patch.object(monitor.time, "clock_gettime", fake, create=True):
+
+        with (
+            mock.patch.object(monitor.time, "CLOCK_BOOTTIME", 7, create=True),
+            mock.patch.object(monitor.time, "clock_gettime", fake, create=True),
+        ):
             self.assertEqual(monitor.boot_clock(), 1234.5)
         self.assertEqual(calls, [7])
 

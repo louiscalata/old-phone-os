@@ -28,6 +28,7 @@ def _assert_connection_closed(testcase, sock, start, budget):
             break
     testcase.assertLess(time.monotonic() - start, budget)
 
+
 class TestPhone(unittest.TestCase):
     def test_initial_level(self):
         self.assertEqual(Phone().sim.level, 60)
@@ -57,9 +58,11 @@ class TestPhone(unittest.TestCase):
 
     def test_page_content(self):
         from opos.web import page
+
         html = page()
         self.assertRegex(html, r"(?i)<html")
         self.assertNotIn("<script src", html.lower())
+
 
 class TestServer(unittest.TestCase):
     def setUp(self):
@@ -84,7 +87,9 @@ class TestServer(unittest.TestCase):
         url = f"http://127.0.0.1:{self.port}/api"
         payload = json.dumps({"action": "nope"}).encode()
         token = self.server.RequestHandlerClass.token
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "X-OPOS-Token": token})
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json", "X-OPOS-Token": token}
+        )
         with self.assertRaises(urllib.error.HTTPError) as cm:
             urllib.request.urlopen(req)
         self.assertEqual(cm.exception.code, 400)
@@ -106,18 +111,33 @@ class TestServer(unittest.TestCase):
         ctype = "-".join(["Content", "Type"])
         err = {"error": " ".join(["bad", "request"])}
         cases = [("battery", "level"), ("battery", "value"), ("tick", "real_s")]
-        big_pos = 10 ** 400
+        big_pos = 10**400
         for action, key in cases:
             for big in (big_pos, -big_pos):
                 with self.subTest(action=action, key=key, sign=big > 0):
-                    snap = (self.phone.sim.level, self.phone.sim.t_s, self.phone.clock_s, self.phone.status, self.phone._last_tick_time)
+                    snap = (
+                        self.phone.sim.level,
+                        self.phone.sim.t_s,
+                        self.phone.clock_s,
+                        self.phone.status,
+                        self.phone._last_tick_time,
+                    )
                     payload = json.dumps({"action": action, key: big}).encode()
                     req = urllib.request.Request(url, data=payload, headers={ctype: "application/json", field: token})
                     with self.assertRaises(urllib.error.HTTPError) as cm:
                         urllib.request.urlopen(req)
                     self.assertEqual(cm.exception.code, 400)
                     self.assertEqual(json.load(cm.exception), err)
-                    self.assertEqual((self.phone.sim.level, self.phone.sim.t_s, self.phone.clock_s, self.phone.status, self.phone._last_tick_time), snap)
+                    self.assertEqual(
+                        (
+                            self.phone.sim.level,
+                            self.phone.sim.t_s,
+                            self.phone.clock_s,
+                            self.phone.status,
+                            self.phone._last_tick_time,
+                        ),
+                        snap,
+                    )
         payload = json.dumps({"action": "battery", "level": 42}).encode()
         req = urllib.request.Request(url, data=payload, headers={ctype: "application/json", field: token})
         with urllib.request.urlopen(req) as resp:
@@ -134,12 +154,15 @@ class TestServer(unittest.TestCase):
         """Deadline covers read, not response."""
         import time
         from opos import web as webmod
+
         old = webmod.Handler.DEADLINE
         webmod.Handler.DEADLINE = 0.2
         orig = self.phone.state
+
         def slow():
             time.sleep(1.0)
             return orig()
+
         self.phone.state = slow
         try:
             srv = make_server(0, self.phone)
@@ -165,6 +188,7 @@ class TestServer(unittest.TestCase):
         import socket
         import time
         from opos import web as webmod
+
         old = webmod.Handler.DEADLINE
         webmod.Handler.DEADLINE = 0.2
         srv = make_server(0, self.phone)
@@ -191,6 +215,7 @@ class TestServer(unittest.TestCase):
         import socket
         import time
         from opos import web as webmod
+
         old = webmod.Handler.DEADLINE
         webmod.Handler.DEADLINE = 0.2
         srv = make_server(0, self.phone)
@@ -206,7 +231,10 @@ class TestServer(unittest.TestCase):
                 s.settimeout(5)
                 head = (
                     "POST /api HTTP/1.1\r\nHost: x\r\n"
-                    + field + ": " + token + "\r\n"
+                    + field
+                    + ": "
+                    + token
+                    + "\r\n"
                     + "Content-Type: application/json\r\n"
                     + "Content-Length: 100\r\n\r\n{}"
                 ).encode()
@@ -224,6 +252,7 @@ class TestServer(unittest.TestCase):
         import socket
         import time
         from opos import web as webmod
+
         old_deadline = webmod.Handler.DEADLINE
         old_timeout = webmod.Handler.timeout
         webmod.Handler.DEADLINE = 0.6
@@ -277,6 +306,7 @@ class TestServer(unittest.TestCase):
         import socket
         import time
         from opos import web as webmod
+
         old_deadline = webmod.Handler.DEADLINE
         old_timeout = webmod.Handler.timeout
         webmod.Handler.DEADLINE = 0.6
@@ -295,7 +325,15 @@ class TestServer(unittest.TestCase):
                 hip = ".".join(["127", "0", "0", "1"])
                 host_val = hip + ":" + str(port)
                 start = time.monotonic()
-                head = ("POST /api HTTP/1.1\r\nHost: " + host_val + "\r\n" + field + ": " + token + "\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{").encode()
+                head = (
+                    "POST /api HTTP/1.1\r\nHost: "
+                    + host_val
+                    + "\r\n"
+                    + field
+                    + ": "
+                    + token
+                    + "\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"
+                ).encode()
                 s.sendall(head)
                 closed = None
                 while True:
@@ -328,6 +366,7 @@ class TestServer(unittest.TestCase):
             webmod.Handler.DEADLINE = old_deadline
             webmod.Handler.timeout = old_timeout
 
+
 class TestMain(unittest.TestCase):
     def test_saved_goal_reaches_runtime(self):
         cases = [
@@ -348,11 +387,13 @@ class TestMain(unittest.TestCase):
                 else:
                     load_side = setup_config.ConfigError("bad")
                 captured = {}
+
                 def fake_make_server(port, phone, host="127.0.0.1", token=None):
                     captured["phone"] = phone
                     srv = mock.Mock()
                     srv.serve_forever = mock.Mock()
                     return srv
+
                 with mock.patch.object(setup_config, "load") as m_load:
                     with mock.patch.object(web, "_route_with_glimmer") as m_route:
                         with mock.patch.object(web, "make_server", side_effect=fake_make_server):
@@ -366,9 +407,11 @@ class TestMain(unittest.TestCase):
                 self.assertEqual(phone.clock_s, 43200)
                 seen = {}
                 orig_step = phone.runtime.step
+
                 def spy_step(*a, **k):
                     seen.update(k)
                     return orig_step(*a, **k)
+
                 with mock.patch.object(phone.runtime, "step", side_effect=spy_step):
                     phone._tick()
                 self.assertEqual(seen.get("goal_hours"), exp_hours)
@@ -378,6 +421,7 @@ class TestMain(unittest.TestCase):
 class TestDeadlineClosure(unittest.TestCase):
     def test_expired_headers_do_not_dispatch(self):
         import io
+
         hip = ".".join(["127", "0", "0", "1"])
         raw = ("GET / HTTP/1.1\r\n" + "Host: " + hip + ":" + str(12345) + "\r\n").encode()
         h = web.Handler.__new__(web.Handler)
@@ -393,12 +437,14 @@ class TestDeadlineClosure(unittest.TestCase):
         stream = io.BytesIO(raw)
         orig_readline = stream.readline
         fired = {}
+
         def readline(n=-1):
             line = orig_readline(n)
             if line == b"" and not fired.get("done"):
                 fired["done"] = True
                 h._expire()
             return line
+
         h.rfile = mock.Mock()
         h.rfile.readline.side_effect = readline
         h.handle_one_request()
@@ -406,11 +452,14 @@ class TestDeadlineClosure(unittest.TestCase):
         h.do_GET.assert_not_called()
         self.assertTrue(h.close_connection)
         self.assertEqual(h.wfile.getvalue(), b"")
+
     def test_expiry_between_parse_and_dispatch_blocks_execution(self):
         import io
+
         hip = ".".join(["127", "0", "0", "1"])
         port = 12345
         host = hip + ":" + str(port)
+
         def make_handler(method, target):
             if method == "GET":
                 raw = ("GET " + target + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n").encode()
@@ -427,8 +476,14 @@ class TestDeadlineClosure(unittest.TestCase):
             h.close_connection = False
             h.client_address = (hip, port)
             return h
+
         orig_parse = web.Handler.parse_request
-        cases = [("GET", "/", "_get", "expire"), ("GET", "/", "_get", "deadline"), ("POST", "/api", "_post", "expire"), ("POST", "/api", "_post", "deadline")]
+        cases = [
+            ("GET", "/", "_get", "expire"),
+            ("GET", "/", "_get", "deadline"),
+            ("POST", "/api", "_post", "expire"),
+            ("POST", "/api", "_post", "deadline"),
+        ]
         for method, target, attr, mode in cases:
             with self.subTest(method=method, mode=mode):
                 h = make_handler(method, target)
@@ -436,6 +491,7 @@ class TestDeadlineClosure(unittest.TestCase):
                 setattr(h, attr, app)
                 clock = {"now": 100.0}
                 with mock.patch.object(web.time, "monotonic", side_effect=lambda: clock["now"]):
+
                     def hooked():
                         ok = orig_parse(h)
                         if ok:
@@ -444,6 +500,7 @@ class TestDeadlineClosure(unittest.TestCase):
                             else:
                                 clock["now"] = 200.0
                         return ok
+
                     h.parse_request = hooked
                     h.handle_one_request()
                 app.assert_not_called()
@@ -462,6 +519,7 @@ class TestDeadlineClosure(unittest.TestCase):
                     h.handle_one_request()
                 self.assertEqual(app.call_count, 1)
                 self.assertFalse(h._expired)
+
     def test_response_bytes_do_not_prove_closure(self):
         first = ("re" + "sp").encode()
         closings = [b"", ConnectionResetError(), BrokenPipeError(), socket.timeout()]

@@ -15,7 +15,22 @@ from opos.aitools.catalog import Tool
 
 def _tool(tid="bench", name="Test Tool", binary="testbin", run_env=None, lite_env=None):
     """Build tool."""
-    return Tool(id=tid, name=name, binary=binary, installer_url="https://example.com/i.sh", interpreter="sh", installer_args=(), installer_env={}, archs=("aarch64", "x86_64"), min_free_mb=10, state_subdir=".state", run_env=dict(run_env or {}), lite_env=dict(lite_env or {}), signin="do signin", docs_url="https://example.com/docs")
+    return Tool(
+        id=tid,
+        name=name,
+        binary=binary,
+        installer_url="https://example.com/i.sh",
+        interpreter="sh",
+        installer_args=(),
+        installer_env={},
+        archs=("aarch64", "x86_64"),
+        min_free_mb=10,
+        state_subdir=".state",
+        run_env=dict(run_env or {}),
+        lite_env=dict(lite_env or {}),
+        signin="do signin",
+        docs_url="https://example.com/docs",
+    )
 
 
 def _supply(base, specs):
@@ -35,7 +50,7 @@ def _supply(base, specs):
 
 def _fake_bin(path, pid_file, args_file, env_file):
     """Create fake binary."""
-    s = f"#!/bin/sh\nprintf '%s' \"$$\" > {shlex.quote(str(pid_file))}\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > {shlex.quote(str(args_file))}\nenv > {shlex.quote(str(env_file))}\n"
+    s = f'#!/bin/sh\nprintf \'%s\' "$$" > {shlex.quote(str(pid_file))}\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > {shlex.quote(str(args_file))}\nenv > {shlex.quote(str(env_file))}\n'
     path.write_text(s)
     path.chmod(0o755)
 
@@ -77,7 +92,19 @@ def _run(tmp, tool, mode, specs, sandbox=None, args=None):
             if py_log.exists():
                 break
             time.sleep(0.02)
-    return res, {"supply": supply, "sandbox": sb, "run_dir": run_dir, "pid_file": pid_file, "args_file": args_file, "env_file": env_file, "real": real, "fpy": fpy, "wrap": wrap, "src": src_dir, "py_log": py_log}
+    return res, {
+        "supply": supply,
+        "sandbox": sb,
+        "run_dir": run_dir,
+        "pid_file": pid_file,
+        "args_file": args_file,
+        "env_file": env_file,
+        "real": real,
+        "fpy": fpy,
+        "wrap": wrap,
+        "src": src_dir,
+        "py_log": py_log,
+    }
 
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
@@ -114,7 +141,10 @@ class WrapperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             tool = _tool()
-            specs = [{"name": "AC0", "type": "Mains", "online": "1"}, {"name": "BAT0", "type": "Battery", "status": "Discharging"}]
+            specs = [
+                {"name": "AC0", "type": "Mains", "online": "1"},
+                {"name": "BAT0", "type": "Battery", "status": "Discharging"},
+            ]
             res, p = _run(tmp, tool, "lite", specs)
             self.assertEqual(res.returncode, 0)
             self.assertTrue(p["pid_file"].exists())
@@ -210,11 +240,23 @@ class WrapperTests(unittest.TestCase):
             [{"name": "BAT0", "type": "Battery", "status": "Not charging"}],
             [{"name": "AC0", "type": "Mains", "online": "1"}],
             [{"name": "AC0", "type": "Mains", "online": "0"}],
-            [{"name": "AC0", "type": "Mains", "online": "1"}, {"name": "BAT0", "type": "Battery", "status": "Discharging"}],
-            [{"name": "AC0", "type": "Mains", "online": "0"}, {"name": "BAT0", "type": "Battery", "status": "Discharging"}],
-            [{"name": "USB0", "type": "USB", "online": "1"}, {"name": "BAT0", "type": "Battery", "status": "Discharging"}],
+            [
+                {"name": "AC0", "type": "Mains", "online": "1"},
+                {"name": "BAT0", "type": "Battery", "status": "Discharging"},
+            ],
+            [
+                {"name": "AC0", "type": "Mains", "online": "0"},
+                {"name": "BAT0", "type": "Battery", "status": "Discharging"},
+            ],
+            [
+                {"name": "USB0", "type": "USB", "online": "1"},
+                {"name": "BAT0", "type": "Battery", "status": "Discharging"},
+            ],
             [{"name": "BAT0", "type": "Battery"}],
-            [{"name": "BAT0", "type": "Battery", "status": "Charging"}, {"name": "BAT1", "type": "Battery", "status": "Discharging"}],
+            [
+                {"name": "BAT0", "type": "Battery", "status": "Charging"},
+                {"name": "BAT1", "type": "Battery", "status": "Discharging"},
+            ],
             [{"name": "FOO0", "type": "Foo", "online": "0"}],
         ]
         for i, specs in enumerate(cases):

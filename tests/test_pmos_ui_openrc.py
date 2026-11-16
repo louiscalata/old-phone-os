@@ -19,7 +19,7 @@ class TestPmosUiOpenrc(unittest.TestCase):
 
     def test_apkbuild_openrc_function(self):
         text = APKBUILD.read_text(encoding="utf-8")
-        self.assertIsNotNone(re.search(r'_openrc\(\)\s*\{', text))
+        self.assertIsNotNone(re.search(r"_openrc\(\)\s*\{", text))
         self.assertIsNotNone(re.search(r'install_if="\$pkgname=\$pkgver-r\$pkgrel openrc"', text))
         self.assertIsNotNone(re.search(r'install="\$subpkgname\.post-install"', text))
         self.assertIsNotNone(re.search(r'depends="networkmanager-openrc openrc"', text))
@@ -36,7 +36,7 @@ class TestPmosUiOpenrc(unittest.TestCase):
         ifquery.write_text("#!/bin/sh\nexit " + str(ifquery_code) + "\n", encoding="utf-8")
         os.chmod(ifquery, 0o755)
         rc_update = bindir / "rc-update"
-        rc_update.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\n", encoding="utf-8")
+        rc_update.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\n', encoding="utf-8")
         os.chmod(rc_update, 0o755)
         return bindir
 

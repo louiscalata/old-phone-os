@@ -6,15 +6,33 @@ from pathlib import Path
 from opos.aitools import catalog
 from opos.aitools.catalog import CatalogError
 
+
 def _tool(**over) -> dict:
     """Base valid tool dict."""
-    base = {"id": "test-tool", "name": "Test Tool", "binary": "testbin", "installer_url": "https://example.com/install.sh", "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": ["aarch64"], "min_free_mb": 100, "state_subdir": ".test", "run_env": {}, "lite_env": {}, "signin": "Run testbin and sign in.", "docs_url": "https://example.com/docs"}
+    base = {
+        "id": "test-tool",
+        "name": "Test Tool",
+        "binary": "testbin",
+        "installer_url": "https://example.com/install.sh",
+        "interpreter": "sh",
+        "installer_args": [],
+        "installer_env": {},
+        "archs": ["aarch64"],
+        "min_free_mb": 100,
+        "state_subdir": ".test",
+        "run_env": {},
+        "lite_env": {},
+        "signin": "Run testbin and sign in.",
+        "docs_url": "https://example.com/docs",
+    }
     base.update(over)
     return base
+
 
 def _catalog(tools) -> dict:
     """Wrap tools in top level."""
     return {"version": 1, "tools": tools}
+
 
 def _load(data) -> tuple:
     """Write data as json and load."""
@@ -23,6 +41,7 @@ def _load(data) -> tuple:
         p.write_text(json.dumps(data), encoding="utf-8")
         return catalog.load(p)
 
+
 def _load_text(text: str):
     """Write raw text and load."""
     with tempfile.TemporaryDirectory() as td:
@@ -30,15 +49,19 @@ def _load_text(text: str):
         p.write_text(text, encoding="utf-8")
         return catalog.load(p)
 
+
 class TestDefaultPath(unittest.TestCase):
     """Default path resolution."""
+
     def test_default_path(self):
         """Returns repo_root/deploy/ai-tools.json."""
         r = Path("/home/u/repo")
         self.assertEqual(catalog.default_path(r), r / "deploy" / "ai-tools.json")
 
+
 class TestLoadSuccess(unittest.TestCase):
     """Valid loads."""
+
     def test_load_minimal(self):
         """Valid file returns tools."""
         t = _load(_catalog([_tool()]))
@@ -48,7 +71,9 @@ class TestLoadSuccess(unittest.TestCase):
 
     def test_load_preserves_types(self):
         """Tuples and dicts are copied."""
-        tool = _tool(installer_args=["a", "b"], installer_env={"FOO": "1"}, archs=["aarch64", "x86_64"], run_env={"BAR": "2"})
+        tool = _tool(
+            installer_args=["a", "b"], installer_env={"FOO": "1"}, archs=["aarch64", "x86_64"], run_env={"BAR": "2"}
+        )
         loaded = _load(_catalog([tool]))[0]
         self.assertEqual(loaded.installer_args, ("a", "b"))
         self.assertEqual(loaded.installer_env, {"FOO": "1"})
@@ -67,8 +92,10 @@ class TestLoadSuccess(unittest.TestCase):
         out = _load(d)
         self.assertEqual({x.id for x in out}, {"a", "b"})
 
+
 class TestLoadFailures(unittest.TestCase):
     """Error paths."""
+
     def test_missing_file(self):
         """Missing file raises CatalogError."""
         with tempfile.TemporaryDirectory() as td:
@@ -137,7 +164,7 @@ class TestLoadFailures(unittest.TestCase):
 
     def test_bad_id(self):
         """Invalid ids rejected."""
-        bad = ["", "A", "a_b", "a b", "a/b", "a" * 33, "UPPER", "a." ]
+        bad = ["", "A", "a_b", "a b", "a/b", "a" * 33, "UPPER", "a."]
         for bid in bad:
             with self.subTest(bid=bid):
                 with self.assertRaises(CatalogError):
@@ -287,8 +314,10 @@ class TestLoadFailures(unittest.TestCase):
         ok = _load(_catalog([_tool(installer_env={"A": "1", "A1_B2": "x"})]))
         self.assertEqual(ok[0].installer_env["A"], "1")
 
+
 class TestGetAndView(unittest.TestCase):
     """get and public_view."""
+
     def test_get_found(self):
         """Get returns correct tool."""
         tools = _load(_catalog([_tool(id="alpha", name="Alpha"), _tool(id="beta", binary="b2")]))
@@ -318,8 +347,10 @@ class TestGetAndView(unittest.TestCase):
         v[0]["archs"].append("aarch64")
         self.assertEqual(tools[0].archs, ("x86_64",))
 
+
 class TestRealCatalog(unittest.TestCase):
     """Real deploy file."""
+
     def test_real_catalog_valid(self):
         """Real file is valid and meets invariants."""
         p = Path(__file__).resolve().parents[1] / "deploy" / "ai-tools.json"

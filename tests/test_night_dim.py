@@ -4,6 +4,7 @@
 In the demo the status bar reads "Demo time HH:MM" (tests/test_demo_clock_label.py);
 dimming reads the simulated clock and leaves that label alone.
 """
+
 import json
 from pathlib import Path
 import shutil
@@ -101,8 +102,7 @@ console.log(JSON.stringify(out));
 class NightDimRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        proc = subprocess.run(["node", "-e", HARNESS, str(STATIC)],
-                              capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(["node", "-e", HARNESS, str(STATIC)], capture_output=True, text=True, timeout=20)
         if proc.returncode:
             raise AssertionError(proc.stderr)
         cls.result = json.loads(proc.stdout)
@@ -153,8 +153,10 @@ class NightDimRuntime(unittest.TestCase):
             self.assertEqual(self.result[key]["store"]["opos_bright"], "90")
 
     def test_top_bar_volume_and_battery_keep_their_values_when_dimmed(self):
-        for key, width, label in (("volume", "60%", "Simulated volume 60 percent, pull down for details"),
-                                  ("battery", "61%", "61 percent, pull down for details")):
+        for key, width, label in (
+            ("volume", "60%", "Simulated volume 60 percent, pull down for details"),
+            ("battery", "61%", "61 percent, pull down for details"),
+        ):
             with self.subTest(mode=key):
                 state = self.result[key]
                 self.assertEqual((state["width"], state["label"]), (width, label))
@@ -167,9 +169,13 @@ class NightDimRuntime(unittest.TestCase):
         self.assert_brightness(state, 85)
 
     def test_demo_clock_controls_both_status_bar_and_dimming(self):
-        for key, time, effective in (("demoNight", "22:00", 40), ("demoQueryNight", "22:00", 40),
-                                     ("demoWallTick", "22:00", 40),
-                                     ("demoPreDawn", "06:59", 40), ("demoDawn", "07:00", 85)):
+        for key, time, effective in (
+            ("demoNight", "22:00", 40),
+            ("demoQueryNight", "22:00", 40),
+            ("demoWallTick", "22:00", 40),
+            ("demoPreDawn", "06:59", 40),
+            ("demoDawn", "07:00", 85),
+        ):
             with self.subTest(state=key):
                 state = self.result[key]
                 self.assertEqual(state["time"], "Demo time " + time)

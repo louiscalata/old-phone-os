@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Regressions for the Grok phone-state review; no model or server needed."""
+
 import json
 import unittest
 from unittest import mock
@@ -21,14 +22,13 @@ class TestGrokStateFixes(unittest.TestCase):
 
     def screen_paused(self, state):
         prefix = "Paused to save power: "
-        return {name for line in state["screen"] if line.startswith(prefix)
-                for name in line[len(prefix):].split(", ")}
+        return {name for line in state["screen"] if line.startswith(prefix) for name in line[len(prefix) :].split(", ")}
 
     def add_glimmer(self, phone, names):
         ask = mock.Mock(return_value=json.dumps({"defer": names}))
         phone.runtime.governor.advisor = GlimmerAdvisor(
-            phone.runtime.governor.advisor, route=object(), ask=ask,
-            spawn=lambda fn: fn())
+            phone.runtime.governor.advisor, route=object(), ask=ask, spawn=lambda fn: fn()
+        )
         phone.state()  # Fill the cache; the next state applies the reply.
         return ask
 
@@ -45,8 +45,7 @@ class TestGrokStateFixes(unittest.TestCase):
                 self.assertNotIn("tomorrow", state["helper"]["why_paused"])
 
     def test_a_past_goal_says_tomorrow(self):
-        for goal, clock, hours in (("06:00", 15 * 3600, 15.0),
-                                   ("11:00", 20 * 3600, 15.0)):
+        for goal, clock, hours in (("06:00", 15 * 3600, 15.0), ("11:00", 20 * 3600, 15.0)):
             with self.subTest(goal=goal, clock=clock):
                 phone = self.phone(goal)
                 phone.clock_s = clock
@@ -83,7 +82,9 @@ class TestGrokStateFixes(unittest.TestCase):
         self.assertIn("nothing is paused", helper["why_paused"])
         self.assertIn("at this rate", helper["why_paused"])
         self.assertTrue(helper["time_left"].startswith(ROUGH))  # the demo's figure is the model's
-        self.assertIn(helper["time_left"][len(ROUGH):].lower(), helper["why_paused"])  # the sentence says "at this rate", not "rough estimate"
+        self.assertIn(
+            helper["time_left"][len(ROUGH) :].lower(), helper["why_paused"]
+        )  # the sentence says "at this rate", not "rough estimate"
         self.assertNotIn("rough estimate", helper["why_paused"])
 
     def test_c_undo_updates_home_and_decision(self):
@@ -136,7 +137,7 @@ class TestGrokStateFixes(unittest.TestCase):
         self.assertIn("so 24% is really about 14%", helper["why_paused"])
 
     def test_d_direct_sentence_truncates_usable(self):
-        self.assertIn("so 24% is really about 14%", why_paused(24.5, .6, 30, False, []))
+        self.assertIn("so 24% is really about 14%", why_paused(24.5, 0.6, 30, False, []))
 
     def test_e_stopped_empty_battery_ends_call_immediately(self):
         phone = self.phone()
@@ -154,14 +155,14 @@ class TestGrokStateFixes(unittest.TestCase):
         phone = self.phone()
         phone.call("5551234")
         phone.charging = True
-        for level in (0, .5):
+        for level in (0, 0.5):
             with self.subTest(level=level):
                 phone.set_battery(level)
                 self.assertTrue(phone._in_call)
                 self.assertTrue(phone.essentials.in_call)
 
     def test_f_displayed_empty_refuses_call(self):
-        for level in (0, .49, .5):
+        for level in (0, 0.49, 0.5):
             with self.subTest(level=level):
                 phone = self.phone()
                 phone.set_battery(level)
@@ -174,7 +175,7 @@ class TestGrokStateFixes(unittest.TestCase):
                 self.assertFalse(phone.essentials.in_call)
 
     def test_f_displayed_empty_refuses_message(self):
-        for level in (0, .49, .5):
+        for level in (0, 0.49, 0.5):
             with self.subTest(level=level):
                 phone = self.phone()
                 phone.set_battery(level)
@@ -185,7 +186,7 @@ class TestGrokStateFixes(unittest.TestCase):
     def test_f_displayed_empty_tick_ends_call(self):
         phone = self.phone()
         phone.call("5551234")
-        phone.sim.level = .5
+        phone.sim.level = 0.5
         # Keep the exact half-percent boundary rather than draining below it.
         with mock.patch.object(phone.sim, "advance"):
             phone.tick()
@@ -196,14 +197,14 @@ class TestGrokStateFixes(unittest.TestCase):
     def test_f_displayed_empty_setter_ends_call(self):
         phone = self.phone()
         phone.call("5551234")
-        phone.set_battery(.5)
+        phone.set_battery(0.5)
         self.assertFalse(phone._in_call)
         self.assertFalse(phone.essentials.in_call)
         self.assertEqual(phone.status, "call ended: battery empty")
 
     def test_f_displayed_nonempty_allows_call_and_message(self):
         phone = self.phone()
-        phone.set_battery(.51)
+        phone.set_battery(0.51)
         self.assertEqual(phone.state()["battery"]["percent"], 1)
         phone.call("5551234")
         self.assertEqual(phone.status, "in call")

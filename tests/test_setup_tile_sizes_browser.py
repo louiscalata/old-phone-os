@@ -6,6 +6,7 @@ running service commands. Preference endpoints, durable storage, the served
 wizard and the kiosk/state/rendering are real, under an isolated temporary
 configuration. No model request, screenshot or physical device is involved.
 """
+
 import json
 import os
 import shutil
@@ -161,19 +162,24 @@ class SetupTileSizesBrowser(unittest.TestCase):
 
     def setUp(self):
         self.chrome = browser.find_chrome()
-        self.node = shutil.which('node')
+        self.node = shutil.which("node")
         if not self.chrome or not self.node:
-            self.skipTest('installed Chromium and Node required')
-        self.tmp = tempfile.TemporaryDirectory(prefix='opos-tile-browser-')
+            self.skipTest("installed Chromium and Node required")
+        self.tmp = tempfile.TemporaryDirectory(prefix="opos-tile-browser-")
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.cfg = self.root / 'cfg'
-        self.home = self.root / 'home'
+        self.cfg = self.root / "cfg"
+        self.home = self.root / "home"
         self.home.mkdir()
-        self.env = dict(HOME=str(self.home), XDG_CONFIG_HOME=str(self.root / 'xdg'),
-                        OPOS_CONFIG_DIR=str(self.cfg), OPOS_GLIMMER_ROUTING='0',
-                        PATH='/opt/homebrew/bin:/Library/Developer/CommandLineTools/usr/bin:/usr/bin:/bin',
-                        TMPDIR=str(self.root), LANG='en_US.UTF-8')
+        self.env = dict(
+            HOME=str(self.home),
+            XDG_CONFIG_HOME=str(self.root / "xdg"),
+            OPOS_CONFIG_DIR=str(self.cfg),
+            OPOS_GLIMMER_ROUTING="0",
+            PATH="/opt/homebrew/bin:/Library/Developer/CommandLineTools/usr/bin:/usr/bin:/bin",
+            TMPDIR=str(self.root),
+            LANG="en_US.UTF-8",
+        )
         self.environment = mock.patch.dict(os.environ, self.env, clear=True)
         self.environment.start()
         self.addCleanup(self.environment.stop)
@@ -181,19 +187,25 @@ class SetupTileSizesBrowser(unittest.TestCase):
 
         def fake_apply(cfg, **kw):
             self.apply_calls += 1
-            for step in kw['progress'].snapshot():
-                kw['progress'].skip(step['id'], 'Test-only backend; no services installed')
+            for step in kw["progress"].snapshot():
+                kw["progress"].skip(step["id"], "Test-only backend; no services installed")
 
-        self.apply_patch = mock.patch.object(setup_server._apply, 'apply', side_effect=fake_apply)
+        self.apply_patch = mock.patch.object(setup_server._apply, "apply", side_effect=fake_apply)
         self.apply_patch.start()
         self.addCleanup(self.apply_patch.stop)
-        self.ctx = setup_server.SetupContext(repo_root=Path(__file__).resolve().parents[1],
-            python=sys.executable, home=self.home, platform=sys.platform, env=self.env,
-            dry_run=True, root=str(self.root))
+        self.ctx = setup_server.SetupContext(
+            repo_root=Path(__file__).resolve().parents[1],
+            python=sys.executable,
+            home=self.home,
+            platform=sys.platform,
+            env=self.env,
+            dry_run=True,
+            root=str(self.root),
+        )
         self.servers = []
         self.addCleanup(self.close_servers)
         self.setup = self.start_server(setup_server.make_server(0, self.ctx))
-        self.driver = self.root / 'tile-browser.js'
+        self.driver = self.root / "tile-browser.js"
         self.driver.write_text(DRIVER)
         self.proc, self.cdp_port = browser._launch(self.chrome, str(self.root))
         self.addCleanup(self.close_browser)
@@ -210,7 +222,7 @@ class SetupTileSizesBrowser(unittest.TestCase):
         srv.shutdown()
         srv.server_close()
         pair[1].join(timeout=2)
-        self.assertFalse(pair[1].is_alive(), 'Owned fixture server did not exit')
+        self.assertFalse(pair[1].is_alive(), "Owned fixture server did not exit")
         self.servers.remove(pair)
 
     def close_servers(self):
@@ -218,81 +230,85 @@ class SetupTileSizesBrowser(unittest.TestCase):
             srv.shutdown()
             srv.server_close()
             thread.join(timeout=2)
-            self.assertFalse(thread.is_alive(), 'Owned fixture server did not exit')
+            self.assertFalse(thread.is_alive(), "Owned fixture server did not exit")
             with socket.socket() as sock:
                 sock.settimeout(0.2)
-                self.assertNotEqual(sock.connect_ex(srv.server_address), 0,
-                                    'Owned fixture port remained open')
+                self.assertNotEqual(sock.connect_ex(srv.server_address), 0, "Owned fixture port remained open")
 
     def close_browser(self):
         browser._kill(self.proc)
-        self.assertIsNotNone(self.proc.poll(), 'Owned Chromium process was not reaped')
+        self.assertIsNotNone(self.proc.poll(), "Owned Chromium process was not reaped")
 
     def run_browser(self, srv, mode):
-        url = f'http://127.0.0.1:{srv.server_address[1]}/'
-        result = subprocess.run([self.node, str(self.driver), str(self.cdp_port), url, mode],
-                                text=True, capture_output=True, timeout=32,
-                                env=dict(os.environ, TMPDIR=str(self.root)))
+        url = f"http://127.0.0.1:{srv.server_address[1]}/"
+        result = subprocess.run(
+            [self.node, str(self.driver), str(self.cdp_port), url, mode],
+            text=True,
+            capture_output=True,
+            timeout=32,
+            env=dict(os.environ, TMPDIR=str(self.root)),
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-4000:])
         value = json.loads(result.stdout.strip().splitlines()[-1])
         self.evidence.append(value)
         return value
 
     def test_sizes_save_restart_finish_and_render_without_hiding_apps(self):
-        expected = dict(phone='wide', messages='small', helper='medium', settings='wide')
-        self.run_browser(self.setup, 'edit')
+        expected = dict(phone="wide", messages="small", helper="medium", settings="wide")
+        self.run_browser(self.setup, "edit")
         state = prefs.load()
-        self.assertEqual(state['answers']['layout']['sizes'], expected)
-        self.assertNotIn('settings', state['answers']['layout']['favourites'])
-        self.assertFalse(state['applied'])
+        self.assertEqual(state["answers"]["layout"]["sizes"], expected)
+        self.assertNotIn("settings", state["answers"]["layout"]["favourites"])
+        self.assertFalse(state["applied"])
         self.assertEqual(prefs.prefs_path().stat().st_mode & 0o777, 0o600)
         port = self.setup.server_address[1]
         self.stop_server(self.setup)
         self.setup = self.start_server(setup_server.make_server(port, self.ctx))
-        self.run_browser(self.setup, 'resume-finish')
-        self.assertTrue(prefs.load()['applied'])
-        self.assertEqual(prefs.effective()['layout']['sizes'], expected)
-        self.assertEqual(self.apply_calls, 1, 'Resume unexpectedly reran installation')
+        self.run_browser(self.setup, "resume-finish")
+        self.assertTrue(prefs.load()["applied"])
+        self.assertEqual(prefs.effective()["layout"]["sizes"], expected)
+        self.assertEqual(self.apply_calls, 1, "Resume unexpectedly reran installation")
         kiosk = self.start_server(web.make_server(0, web.Phone(visible=False)))
-        self.run_browser(kiosk, 'kiosk')
+        self.run_browser(kiosk, "kiosk")
         port = kiosk.server_address[1]
         self.stop_server(kiosk)
         kiosk = self.start_server(web.make_server(port, web.Phone(visible=False)))
-        self.run_browser(kiosk, 'kiosk-restarted')
-        self.run_browser(kiosk, 'kiosk-override')
-        self.assertEqual(prefs.effective()['layout']['sizes'], expected,
-                         'Client preference must not rewrite installer choices')
-        print('TILE_BROWSER_EVIDENCE ' + json.dumps(self.evidence, sort_keys=True))
+        self.run_browser(kiosk, "kiosk-restarted")
+        self.run_browser(kiosk, "kiosk-override")
+        self.assertEqual(
+            prefs.effective()["layout"]["sizes"], expected, "Client preference must not rewrite installer choices"
+        )
+        print("TILE_BROWSER_EVIDENCE " + json.dumps(self.evidence, sort_keys=True))
 
     def test_older_layout_and_skip_keep_default_sizes(self):
-        prefs.answer('theme', 'light')
-        prefs.answer('layout', {'favourites': ['phone']})
-        self.run_browser(self.setup, 'old-skip')
+        prefs.answer("theme", "light")
+        prefs.answer("layout", {"favourites": ["phone"]})
+        self.run_browser(self.setup, "old-skip")
         state = prefs.load()
-        self.assertTrue(state['applied'])
-        self.assertNotIn('layout', state['answers'])
-        self.assertIn('layout', state['skipped'])
-        self.assertEqual(prefs.effective()['layout']['sizes'], {})
+        self.assertTrue(state["applied"])
+        self.assertNotIn("layout", state["answers"])
+        self.assertIn("layout", state["skipped"])
+        self.assertEqual(prefs.effective()["layout"]["sizes"], {})
         self.assertEqual(self.apply_calls, 1)
         kiosk = self.start_server(web.make_server(0, web.Phone(visible=False)))
-        self.run_browser(kiosk, 'kiosk-defaults')
-        print('TILE_BROWSER_EVIDENCE ' + json.dumps(self.evidence, sort_keys=True))
+        self.run_browser(kiosk, "kiosk-defaults")
+        print("TILE_BROWSER_EVIDENCE " + json.dumps(self.evidence, sort_keys=True))
 
     def test_legacy_allapps_size_survives_visible_control_save_and_restart(self):
-        prefs.answer('theme', 'light')
-        prefs.answer('layout', {'favourites': ['phone'], 'sizes': {'allapps': 'wide'}})
-        expected = dict(allapps='wide', phone='wide', messages='medium', helper='small', settings='small')
-        self.run_browser(self.setup, 'legacy-save')
-        self.assertEqual(prefs.load()['answers']['layout']['sizes'], expected)
+        prefs.answer("theme", "light")
+        prefs.answer("layout", {"favourites": ["phone"], "sizes": {"allapps": "wide"}})
+        expected = dict(allapps="wide", phone="wide", messages="medium", helper="small", settings="small")
+        self.run_browser(self.setup, "legacy-save")
+        self.assertEqual(prefs.load()["answers"]["layout"]["sizes"], expected)
         port = self.setup.server_address[1]
         self.stop_server(self.setup)
         self.setup = self.start_server(setup_server.make_server(port, self.ctx))
-        self.run_browser(self.setup, 'legacy-resume')
-        self.assertEqual(prefs.load()['answers']['layout']['sizes'], expected)
-        self.assertEqual(self.apply_calls, 1, 'Resume unexpectedly reran installation')
-        self.assertFalse(prefs.load()['applied'])
-        print('TILE_BROWSER_EVIDENCE ' + json.dumps(self.evidence, sort_keys=True))
+        self.run_browser(self.setup, "legacy-resume")
+        self.assertEqual(prefs.load()["answers"]["layout"]["sizes"], expected)
+        self.assertEqual(self.apply_calls, 1, "Resume unexpectedly reran installation")
+        self.assertFalse(prefs.load()["applied"])
+        print("TILE_BROWSER_EVIDENCE " + json.dumps(self.evidence, sort_keys=True))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

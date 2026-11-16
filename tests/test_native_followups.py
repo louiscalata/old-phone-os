@@ -8,6 +8,7 @@
 - a state is drawn only together with the server's answer to "is there a PIN lock?": no answer is never read as "no";
 - a lid watcher that stopped is looked for again, and nothing in that can leave a screen dark.
 """
+
 import contextlib
 import gc
 import http.server
@@ -34,7 +35,7 @@ from tests.test_native_shell import Fake, StandInShell
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE = ROOT / "src" / "opos" / "native"
 DEFAULT = "http://127.0.0.1:8765"
-DOC_HOST = "192.0.2.7"      # a documentation address (RFC 5737): never a real machine
+DOC_HOST = "192.0.2.7"  # a documentation address (RFC 5737): never a real machine
 
 
 def stand_in_shell(case, env=None):
@@ -47,6 +48,7 @@ def stand_in_shell(case, env=None):
             sys.modules.pop(n, None)
             if m is not None:
                 sys.modules[n] = m
+
     case.addCleanup(restore)
     for n in names:
         sys.modules.pop(n, None)
@@ -54,8 +56,9 @@ def stand_in_shell(case, env=None):
     gi.require_version = lambda *a: None
     gi.repository = base.Toolkit("gi.repository")
     case.timers = []
-    gi.repository.GLib = types.SimpleNamespace(idle_add=lambda fn, *a: fn(*a),
-                                               timeout_add=lambda ms, fn, *a: case.timers.append((fn, a)))
+    gi.repository.GLib = types.SimpleNamespace(
+        idle_add=lambda fn, *a: fn(*a), timeout_add=lambda ms, fn, *a: case.timers.append((fn, a))
+    )
     sys.modules["gi"], sys.modules["gi.repository"] = gi, gi.repository
     with mock.patch.dict(os.environ, env or {}, clear=env is not None):
         return importlib.import_module("opos.native.shell")
@@ -63,15 +66,47 @@ def stand_in_shell(case, env=None):
 
 # --- the server's address ---------------------------------------------------------------------------------------------
 class TheServersAddress(unittest.TestCase):
-    BAD = ("https://127.0.0.1:8765", "http://localhost:8765", "http://127.0.0.1", "http://127.0.0.1:", "http://127.0.0.1:0",
-           "http://127.0.0.1:65536", "http://127.0.0.1:08765", "http://127.0.0.1:8765/v1", "http://127.0.0.1:8765/?x=1",
-           "http://127.0.0.1:8765#x", "http://user@127.0.0.1:8765", "http://user:word@127.0.0.1:8765",
-           "http://127.0.0.1:8765@example.org", "http://127.0.0.1.example.org:8765", "http://127.0.0.2:8765",
-           "http://[::1]:8765", "http://0.0.0.0:8765", "http://2130706433:8765", "http://0x7f.0.0.1:8765",
-           "http://127.1:8765", "http://%s:8765" % DOC_HOST, "http://example.org:8765", "HTTP://127.0.0.1:8765",
-           " http://127.0.0.1:8765", "http://127.0.0.1:8765 ", "http://127.0.0.1:8765\n", "http://127.0.0.1:8765\r\nHost: x",
-           "http://127.0.0.1:８７６５", "http://127.0.0.1:87٦٥", "//127.0.0.1:8765", "127.0.0.1:8765",
-           "file:///etc/passwd", "unix:/run/opos.sock", "8765", "0", "off", 8765, b"http://127.0.0.1:8765", ["http://127.0.0.1:8765"])
+    BAD = (
+        "https://127.0.0.1:8765",
+        "http://localhost:8765",
+        "http://127.0.0.1",
+        "http://127.0.0.1:",
+        "http://127.0.0.1:0",
+        "http://127.0.0.1:65536",
+        "http://127.0.0.1:08765",
+        "http://127.0.0.1:8765/v1",
+        "http://127.0.0.1:8765/?x=1",
+        "http://127.0.0.1:8765#x",
+        "http://user@127.0.0.1:8765",
+        "http://user:word@127.0.0.1:8765",
+        "http://127.0.0.1:8765@example.org",
+        "http://127.0.0.1.example.org:8765",
+        "http://127.0.0.2:8765",
+        "http://[::1]:8765",
+        "http://0.0.0.0:8765",
+        "http://2130706433:8765",
+        "http://0x7f.0.0.1:8765",
+        "http://127.1:8765",
+        "http://%s:8765" % DOC_HOST,
+        "http://example.org:8765",
+        "HTTP://127.0.0.1:8765",
+        " http://127.0.0.1:8765",
+        "http://127.0.0.1:8765 ",
+        "http://127.0.0.1:8765\n",
+        "http://127.0.0.1:8765\r\nHost: x",
+        "http://127.0.0.1:８７６５",
+        "http://127.0.0.1:87٦٥",
+        "//127.0.0.1:8765",
+        "127.0.0.1:8765",
+        "file:///etc/passwd",
+        "unix:/run/opos.sock",
+        "8765",
+        "0",
+        "off",
+        8765,
+        b"http://127.0.0.1:8765",
+        ["http://127.0.0.1:8765"],
+    )
 
     def test_unset_or_empty_is_the_phones_own_server(self):
         self.assertEqual(logic.SERVER_URL, DEFAULT)
@@ -82,7 +117,9 @@ class TheServersAddress(unittest.TestCase):
         self.assertEqual(logic.server_url({"OPOS_SERVER_URL": "http://127.0.0.1:9000"}), ("http://127.0.0.1:9000", ""))
         self.assertEqual(logic.server_url({"OPOS_SERVER_URL": "http://127.0.0.1:9000/"}), ("http://127.0.0.1:9000", ""))
         self.assertEqual(logic.server_url({"OPOS_SERVER_URL": "http://127.0.0.1:1"}), ("http://127.0.0.1:1", ""))
-        self.assertEqual(logic.server_url({"OPOS_SERVER_URL": "http://127.0.0.1:65535"}), ("http://127.0.0.1:65535", ""))
+        self.assertEqual(
+            logic.server_url({"OPOS_SERVER_URL": "http://127.0.0.1:65535"}), ("http://127.0.0.1:65535", "")
+        )
 
     def test_anything_else_is_refused_and_said_and_the_phones_own_server_is_asked(self):
         for value in self.BAD:
@@ -108,7 +145,9 @@ class TheServersAddress(unittest.TestCase):
     def test_the_shell_takes_the_checked_address_and_says_a_refusal_once_in_its_log(self):
         with contextlib.redirect_stderr(io.StringIO()) as err:
             shell = stand_in_shell(self, {"OPOS_SERVER_URL": "http://127.0.0.1:9000"})
-        self.assertEqual((shell.BASE, shell.Core().base, err.getvalue()), ("http://127.0.0.1:9000", "http://127.0.0.1:9000", ""))
+        self.assertEqual(
+            (shell.BASE, shell.Core().base, err.getvalue()), ("http://127.0.0.1:9000", "http://127.0.0.1:9000", "")
+        )
         with contextlib.redirect_stderr(io.StringIO()) as err:
             shell = stand_in_shell(self, {"OPOS_SERVER_URL": "http://%s:8765" % DOC_HOST})
         self.assertEqual(shell.BASE, DEFAULT)
@@ -118,9 +157,21 @@ class TheServersAddress(unittest.TestCase):
     def test_same_server_is_scheme_host_and_port_exactly(self):
         for url in (DEFAULT + "/", DEFAULT + "/api/state", DEFAULT + "/firstrun?x=1", DEFAULT):
             self.assertTrue(logic.same_server(DEFAULT, url), url)
-        for url in ("http://127.0.0.1:8766/", "https://127.0.0.1:8765/", "http://localhost:8765/", "http://127.0.0.1/",
-                    "http://%s:8765/" % DOC_HOST, "http://127.0.0.1:8765@example.org/", "http://x@127.0.0.1:8765/",
-                    "//example.org/", "/api/state", "", None, "http://[::1", "http://127.0.0.1:x/"):
+        for url in (
+            "http://127.0.0.1:8766/",
+            "https://127.0.0.1:8765/",
+            "http://localhost:8765/",
+            "http://127.0.0.1/",
+            "http://%s:8765/" % DOC_HOST,
+            "http://127.0.0.1:8765@example.org/",
+            "http://x@127.0.0.1:8765/",
+            "//example.org/",
+            "/api/state",
+            "",
+            None,
+            "http://[::1",
+            "http://127.0.0.1:x/",
+        ):
             self.assertFalse(logic.same_server(DEFAULT, url), url)
 
 
@@ -137,14 +188,21 @@ class TheShellAsksOnlyThatServer(unittest.TestCase):
         self.assertEqual([h.proxies for h in proxies if h.proxies], [], "no handler holds a proxy from the environment")
         with mock.patch.dict(os.environ, {"http_proxy": proxy}):
             usual = urllib.request.build_opener()
-        self.assertTrue([h for h in usual.handlers if isinstance(h, urllib.request.ProxyHandler) and h.proxies],
-                        "the usual opener would have taken it: this check means something")
+        self.assertTrue(
+            [h for h in usual.handlers if isinstance(h, urllib.request.ProxyHandler) and h.proxies],
+            "the usual opener would have taken it: this check means something",
+        )
 
     def test_a_redirect_to_another_address_is_not_followed(self):
         core = self.shell.Core()
         handler = next(h for h in core.opener.handlers if isinstance(h, urllib.request.HTTPRedirectHandler))
         req = urllib.request.Request(DEFAULT + "/", headers={"X-OPOS-Token": "t"})
-        for target in ("http://%s:8765/" % DOC_HOST, "http://127.0.0.1:8766/", "https://127.0.0.1:8765/", "http://localhost:8765/"):
+        for target in (
+            "http://%s:8765/" % DOC_HOST,
+            "http://127.0.0.1:8766/",
+            "https://127.0.0.1:8765/",
+            "http://localhost:8765/",
+        ):
             with self.subTest(target=target):
                 with self.assertRaises(urllib.error.HTTPError) as caught:
                     handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {}, target)
@@ -164,7 +222,9 @@ class TheShellAsksOnlyThatServer(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 handler.redirect_request(req, answer, 302, "Found", {}, "http://127.0.0.1:8766/")
             self.assertTrue(answer.closed, "closed where it is refused")
-            self.assertEqual((caught.exception.code, caught.exception.headers), (302, {}), "what a caller reads is still there")
+            self.assertEqual(
+                (caught.exception.code, caught.exception.headers), (302, {}), "what a caller reads is still there"
+            )
             del caught
             gc.collect()
         self.assertEqual([str(w.message) for w in said if issubclass(w.category, ResourceWarning)], [])
@@ -178,6 +238,7 @@ class TheShellAsksOnlyThatServer(unittest.TestCase):
         def open_(req, timeout=None):
             seen.append((req.full_url, req.get_method(), timeout))
             return io.BytesIO(b'{"battery": {}}')
+
         core = self.shell.Core()
         core.token = "fake-token"
         core.opener = types.SimpleNamespace(open=open_)
@@ -186,8 +247,15 @@ class TheShellAsksOnlyThatServer(unittest.TestCase):
         core.app("clock")
         with mock.patch.object(self.shell.urllib.request, "urlopen", side_effect=AssertionError("the default opener")):
             core.net("net_status", {}, 20)
-        self.assertEqual(seen, [(DEFAULT + "/api/state", "GET", 5), (DEFAULT + "/api", "POST", 10),
-                                (DEFAULT + "/api/clock", "GET", 5), (DEFAULT + "/api", "POST", 20)])
+        self.assertEqual(
+            seen,
+            [
+                (DEFAULT + "/api/state", "GET", 5),
+                (DEFAULT + "/api", "POST", 10),
+                (DEFAULT + "/api/clock", "GET", 5),
+                (DEFAULT + "/api", "POST", 20),
+            ],
+        )
         source = (NATIVE / "shell.py").read_text(encoding="utf-8")
         self.assertNotIn("urllib.request.urlopen(", source)
 
@@ -211,6 +279,7 @@ class TheShellAsksOnlyThatServer(unittest.TestCase):
                 self.send_header("Location", "http://127.0.0.1:%d/api/state" % other.server_address[1])
                 self.send_header("Content-Length", "0")
                 self.end_headers()
+
         try:
             other = http.server.HTTPServer(("127.0.0.1", 0), Other)
             ours = http.server.HTTPServer(("127.0.0.1", 0), Ours)
@@ -230,8 +299,11 @@ class TheShellAsksOnlyThatServer(unittest.TestCase):
                     core.state()
                 gc.collect()
         self.assertEqual(got, [], "neither as a proxy nor as a redirect target")
-        self.assertEqual([str(w.message) for w in said if issubclass(w.category, ResourceWarning)], [],
-                         "and the refused answer's connection is closed, not left to be cleaned up")
+        self.assertEqual(
+            [str(w.message) for w in said if issubclass(w.category, ResourceWarning)],
+            [],
+            "and the refused answer's connection is closed, not left to be cleaned up",
+        )
 
 
 # --- Phone: busy ------------------------------------------------------------------------------------------------------
@@ -277,7 +349,9 @@ class PhoneBusy(base.Screens):
         p.call_or_hang()
         self.assertIn("Asking the phone to call.", p.status.get_label())
         self.shell.answer(0, None)
-        self.assertEqual((p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "Call is not offered from old news")
+        self.assertEqual(
+            (p.go_call.get_label(), p.go_call.sensitive), ("Calling", False), "Call is not offered from old news"
+        )
         self.assertIn(logic.CALL_UNSURE, p.status.get_label())
         self.assertNotIn("Asking the phone", p.status.get_label(), "nothing is being asked any more")
         p.call_or_hang()
@@ -306,6 +380,7 @@ class PhoneBusy(base.Screens):
             n = shell.seq.issue()
             done(None)
             return n
+
         shell.ask = ask
         p.call_or_hang()
         self.assertEqual((p.pending.what, p.pending.lost, p.go_call.sensitive), ("call", True, False))
@@ -318,7 +393,9 @@ class PhoneBusy(base.Screens):
         def no_thread(target=None, daemon=None):
             def start():
                 raise RuntimeError("can't start new thread")
+
             return types.SimpleNamespace(start=start)
+
         c.entries["name"].text, c.entries["number"].text = "Ada", "+15550100"
         self.screens.threading = types.SimpleNamespace(Thread=no_thread)
         c.save()
@@ -329,7 +406,7 @@ class PhoneBusy(base.Screens):
 
 
 for _name in [n for n in vars(base.Screens) if n.startswith("test_")]:
-    setattr(PhoneBusy, _name, None)     # unittest skips a None attribute: the base tests run once, in their own module
+    setattr(PhoneBusy, _name, None)  # unittest skips a None attribute: the base tests run once, in their own module
 
 
 def bare_shell(case):
@@ -361,6 +438,7 @@ class ARequestThatCouldNotBeSent(unittest.TestCase):
 
             def start(self):
                 raise RuntimeError("can't start new thread")
+
         told = []
         with mock.patch.object(module.threading, "Thread", NoThread):
             n = sh.ask("call", done=told.append, number="+15550100")
@@ -380,8 +458,10 @@ class LockCheckRules(unittest.TestCase):
 
     def test_no_answer_holds_and_after_the_limit_the_browser_decides(self):
         check = logic.LockCheck()
-        self.assertEqual([check.answer(None) for _ in range(logic.LockCheck.LIMIT)],
-                         ["hold"] * (logic.LockCheck.LIMIT - 1) + ["browser"])
+        self.assertEqual(
+            [check.answer(None) for _ in range(logic.LockCheck.LIMIT)],
+            ["hold"] * (logic.LockCheck.LIMIT - 1) + ["browser"],
+        )
         self.assertGreaterEqual(logic.LockCheck.LIMIT, 3)
 
     def test_an_answer_starts_the_count_again(self):
@@ -442,7 +522,9 @@ class TheLockQuestion(unittest.TestCase):
 
     def test_after_the_server_went_away_the_question_is_asked_again(self):
         self.assertEqual(self.look([GOOD, OSError("refused"), GOOD], [False, True]), [False, None, True])
-        self.assertEqual(self.seen, [(GOOD, False), (None, None), (GOOD, True)], "a restart may have switched the lock on")
+        self.assertEqual(
+            self.seen, [(GOOD, False), (None, None), (GOOD, True)], "a restart may have switched the lock on"
+        )
 
     def test_only_true_and_false_are_answers(self):
         self.assertEqual(self.look([GOOD, GOOD], ["yes", 0]), [None, None])
@@ -518,8 +600,12 @@ class NoAnswerAboutTheLockHoldsTheShell(unittest.TestCase):
         ringing = {"ringing": {"id": "a1"}}
         for n in (1, 2):
             sh.clock_seen(n, ringing)
-        self.assertEqual((sh.page, sh.held, sh.ring.seen), ("lock", True, None), "not brought forward, and not marked as seen")
-        self.assertEqual(sh.pages["clock"].delivered, [(1, ringing), (2, ringing)], "the Clock page still gets what was read")
+        self.assertEqual(
+            (sh.page, sh.held, sh.ring.seen), ("lock", True, None), "not brought forward, and not marked as seen"
+        )
+        self.assertEqual(
+            sh.pages["clock"].delivered, [(1, ringing), (2, ringing)], "the Clock page still gets what was read"
+        )
         sh.polled(sh.seq.issue(), self.state(), False)
         self.assertEqual((sh.page, sh.held), ("lock", False))
         sh.clock_seen(3, ringing)
@@ -549,8 +635,11 @@ class NoAnswerAboutTheLockHoldsTheShell(unittest.TestCase):
         sh.go("home")
         for _ in range(logic.LockCheck.LIMIT * 3):
             sh.polled(sh.seq.issue(), None, None)
-        self.assertEqual((sh.page, sh.held, sh.quit_calls, sh.lock_check.misses), ("home", False, 0, 0),
-                         "the last good state stays, as before; the question is asked when the server is back")
+        self.assertEqual(
+            (sh.page, sh.held, sh.quit_calls, sh.lock_check.misses),
+            ("home", False, 0, 0),
+            "the last good state stays, as before; the question is asked when the server is back",
+        )
         self.assertEqual(sh.pages["lock"].lost_text, logic.LINK_LOST)
 
     def test_the_source_has_no_default_for_the_locks_answer(self):
@@ -563,6 +652,7 @@ class NoAnswerAboutTheLockHoldsTheShell(unittest.TestCase):
 # --- the lid watcher is looked for again ------------------------------------------------------------------------------
 class Watcher:
     """Stands in for posture.LidWatcher: the test plays the thread."""
+
     made, refuse = [], False
 
     def __init__(self, on_change, on_missing):
@@ -579,7 +669,7 @@ class LidAgain(StandInShell):
     def setUp(self):
         super().setUp()
         Watcher.made, Watcher.refuse = [], False
-        self.slow = []      # (seconds, callback) handed to GLib.timeout_add_seconds
+        self.slow = []  # (seconds, callback) handed to GLib.timeout_add_seconds
         self.shell.GLib.timeout_add_seconds = lambda s, fn, *a: self.slow.append((s, fn, a)) or len(self.slow)
         patch = mock.patch.object(self.shell.posture, "LidWatcher", Watcher)
         patch.start()
@@ -646,10 +736,13 @@ class LidAgain(StandInShell):
         old.on_missing("gone")
         self.calls.clear()
         w.page = "home"
-        old.on_change(True)             # a late report from the watcher that was given up
+        old.on_change(True)  # a late report from the watcher that was given up
         old.on_missing("gone again")
-        self.assertEqual((w.lid_closed, w.page, self.calls, self.timers, len(self.slow)), (None, "home", [], [], 1),
-                         "no lock, no blank, no second look")
+        self.assertEqual(
+            (w.lid_closed, w.page, self.calls, self.timers, len(self.slow)),
+            (None, "home", [], [], 1),
+            "no lock, no blank, no second look",
+        )
         self.again()
         old.on_change(True)
         self.assertEqual((w.lid_closed, self.timers), (None, []), "nor once a new watcher runs")
@@ -689,7 +782,9 @@ class LidAgain(StandInShell):
             self.fire_timers()
             self.assertEqual((w.lid_closed, self.calls, w.blanker.dark), (True, ["blank"], True), n)
             Watcher.made[-1].on_missing("gone")
-            self.assertEqual((w.lid_closed, self.calls, w.blanker.dark), (None, ["blank", "restore"], False), "lit at loss %d" % n)
+            self.assertEqual(
+                (w.lid_closed, self.calls, w.blanker.dark), (None, ["blank", "restore"], False), "lit at loss %d" % n
+            )
             self.fire_timers()
             self.assertFalse(w.blanker.dark, "and it stays lit until a watcher says closed")
             self.assertEqual(self.err.getvalue().count("no lid signal"), n, "one line for each loss")
@@ -700,12 +795,16 @@ class LidAgain(StandInShell):
             Watcher.made[-1].on_change(False)
             Watcher.made[-1].on_missing("gone")
             self.fire_timers()
-            self.assertEqual((self.calls, w.blanker.dark), (["restore", "restore"], False), "an open phone is never darkened")
+            self.assertEqual(
+                (self.calls, w.blanker.dark), (["restore", "restore"], False), "an open phone is never darkened"
+            )
             self.again()
 
     def test_start_lid_uses_the_same_watcher_start(self):
-        with mock.patch.object(self.shell.posture, "find_lid", lambda *a: None), \
-                mock.patch.object(self.shell.displayconfig, "own", lambda b, say: None):
+        with (
+            mock.patch.object(self.shell.posture, "find_lid", lambda *a: None),
+            mock.patch.object(self.shell.displayconfig, "own", lambda b, say: None),
+        ):
             self.win.start_lid()
         self.assertEqual((len(Watcher.made), self.win.lid_gen), (1, 1))
         self.assertIs(self.win.lid_watcher, Watcher.made[0])
@@ -714,11 +813,11 @@ class LidAgain(StandInShell):
         text = (NATIVE / "shell.py").read_text(encoding="utf-8")
         self.assertIn("GLib.idle_add(self.lid_report, gen, closed)", text)
         self.assertIn("GLib.idle_add(self.lid_gone, gen, reason)", text)
-        lost = text[text.index("    def lid_lost("):text.index("    def lid_again(")]
+        lost = text[text.index("    def lid_lost(") : text.index("    def lid_again(")]
         self.assertLess(lost.index("self.restore()"), lost.index("timeout_add_seconds"), "light first, then look again")
         for name in ("watch_lid", "lid_report", "lid_gone", "lid_again"):
-            body = text[text.index("    def %s(" % name):]
-            body = body[:body.index("\n    def ", 5)]
+            body = text[text.index("    def %s(" % name) :]
+            body = body[: body.index("\n    def ", 5)]
             self.assertNotIn("blank(", body, name + " never darkens anything itself")
 
     def real_tree(self, d):
@@ -729,7 +828,9 @@ class LidAgain(StandInShell):
             (root / "sys/class/backlight" / p_).mkdir(parents=True)
             (root / "sys/class/backlight" / p_ / "brightness").write_text("%d\n" % v)
         w = self.win
-        w.blanker = blank.Blanker(root=str(root), run_dir=str(run), say=lambda t: None, may_blank=lambda: w.lid_closed is not False)
+        w.blanker = blank.Blanker(
+            root=str(root), run_dir=str(run), say=lambda t: None, may_blank=lambda: w.lid_closed is not False
+        )
         w.blanker.on_restore = w.restore
         return [root / "sys/class/backlight" / p_ / "brightness" for p_ in blank.PANELS]
 
@@ -768,7 +869,7 @@ class LidAgain(StandInShell):
                         daemon_dark = False
                     elif step == "stale" and len(Watcher.made) > 1:
                         Watcher.made[0].on_change(True)
-                    for _round in range(3):         # the blank after BLANK_MS, and a restore's next try
+                    for _round in range(3):  # the blank after BLANK_MS, and a restore's next try
                         self.fire_timers()
                     lit = [int(p.read_text()) > 0 for p in panels]
                     if w.lid_closed is not True and not daemon_dark:
@@ -776,7 +877,9 @@ class LidAgain(StandInShell):
                     if w.lid_closed is False:
                         self.assertEqual(lit, [True, True], "an open phone is never dark: %s" % history)
                     self.assertLessEqual(len(self.slow), 1, history)
-                    self.assertEqual(alive or bool(self.slow), True, "a lost watcher always has a next look waiting: %s" % history)
+                    self.assertEqual(
+                        alive or bool(self.slow), True, "a lost watcher always has a next look waiting: %s" % history
+                    )
 
 
 # --- the docs name what the code does ---------------------------------------------------------------------------------
@@ -786,8 +889,11 @@ class Docs(unittest.TestCase):
 
     def test_the_final_doc_names_the_shells_address_switch_and_what_it_refuses(self):
         doc = self.flat("docs", "duo-os-final.md")
-        row = next(line for line in ROOT.joinpath("docs", "duo-os-final.md").read_text(encoding="utf-8").splitlines()
-                   if line.startswith("| `OPOS_SERVER_URL`"))
+        row = next(
+            line
+            for line in ROOT.joinpath("docs", "duo-os-final.md").read_text(encoding="utf-8").splitlines()
+            if line.startswith("| `OPOS_SERVER_URL`")
+        )
         for words in ("http://127.0.0.1:PORT", "never reads `OPOS_LOCAL_URL`", "proxy", "redirect"):
             self.assertIn(words, row)
         self.assertNotIn("the shell reads `OPOS_LOCAL_URL` for it", doc)
@@ -799,8 +905,14 @@ class Docs(unittest.TestCase):
 
     def test_native_md_says_what_changed_and_what_was_not_run(self):
         doc = self.flat("packaging", "duo-os", "NATIVE.md")
-        for words in ("`OPOS_SERVER_URL`", '"%s"' % logic.LOCK_UNKNOWN, '"%s"' % logic.CALL_UNSURE, '"%s"' % logic.HANG_UP_UNSURE,
-                      "looked for again", "has no PIN screen"):
+        for words in (
+            "`OPOS_SERVER_URL`",
+            '"%s"' % logic.LOCK_UNKNOWN,
+            '"%s"' % logic.CALL_UNSURE,
+            '"%s"' % logic.HANG_UP_UNSURE,
+            "looked for again",
+            "has no PIN screen",
+        ):
             self.assertIn(words, doc)
         self.assertNotIn("a lid watcher that stops is not started again", doc)
         self.assertIn("%d times in a row" % logic.LockCheck.LIMIT, doc)
@@ -808,12 +920,18 @@ class Docs(unittest.TestCase):
         waits = re.search(r"^LID_AGAIN_S = \(([0-9, ]+)\)", shell, re.M).group(1).split(", ")
         every = re.search(r"^LID_AGAIN_EVERY_S = ([0-9]+)", shell, re.M).group(1)
         self.assertIn("%s s later, then every %s s" % (" s, ".join(waits[:-1]) + " s and " + waits[-1], every), doc)
-        lid = doc[doc.index("## The lid"):doc.index("## Follow-ups of November 14")]
-        for words in ("A lid switch that flaps", "The screens are lit at each loss", "one line for each loss that follows a report",
-                      "A closed phone with a flapping switch therefore alternates", "An open phone stays lit throughout",
-                      "This is the safe side", "the next look is %s s after each loss" % waits[0]):
+        lid = doc[doc.index("## The lid") : doc.index("## Follow-ups of November 14")]
+        for words in (
+            "A lid switch that flaps",
+            "The screens are lit at each loss",
+            "one line for each loss that follows a report",
+            "A closed phone with a flapping switch therefore alternates",
+            "An open phone stays lit throughout",
+            "This is the safe side",
+            "the next look is %s s after each loss" % waits[0],
+        ):
             self.assertIn(words, lid)
-        follow = doc[doc.index("## Follow-ups of November 14"):]
+        follow = doc[doc.index("## Follow-ups of November 14") :]
         self.assertIn("A lid switch that flaps", follow)
         self.assertIn("NOT_RUN", follow)
 

@@ -3,6 +3,7 @@ import unittest
 from opos import eol
 from opos.sim import DrainSim, eol_sim
 
+
 class TestEol(unittest.TestCase):
     def test_is_worn(self):
         self.assertTrue(eol.is_worn(0.35))
@@ -56,6 +57,7 @@ class TestEol(unittest.TestCase):
         s = eol_sim(level=60, temp_c=0, speed=1.0)
         s.advance(60, "NORMAL", [1.0])
         self.assertLess(s.temp_c, 5)
+
 
 if __name__ == "__main__":
     unittest.main()

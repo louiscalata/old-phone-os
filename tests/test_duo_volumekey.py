@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Simulated Duo volume-key reader tests; fake input only, no phone or sleeps."""
+
 import configparser
 import os
 import re
@@ -75,9 +76,11 @@ class Discovery(unittest.TestCase):
         with volumekey.open_input("gpio-keys", self.root) as stream:
             self.assertFalse(os.get_blocking(stream.fileno()))
             self.assertEqual(stream.read(24), wire(115, 1))
-        with mock.patch.object(volumekey, "find_device", return_value=path), \
-                mock.patch.object(volumekey.os, "set_blocking", side_effect=OSError("private")), \
-                mock.patch.object(Path, "open") as opened:
+        with (
+            mock.patch.object(volumekey, "find_device", return_value=path),
+            mock.patch.object(volumekey.os, "set_blocking", side_effect=OSError("private")),
+            mock.patch.object(Path, "open") as opened,
+        ):
             stream = opened.return_value
             with self.assertRaises(OSError):
                 volumekey.open_input("gpio-keys", self.root)
@@ -161,8 +164,11 @@ class ReaderLoop(unittest.TestCase):
             raise SystemExit(0)
 
         with self.assertRaises(SystemExit) as stopped:
-            volumekey.run(controller=volumekey.VolumeKey(values.append, logs.append),
-                          open_device=lambda name, root: opened[name], wait=wait)
+            volumekey.run(
+                controller=volumekey.VolumeKey(values.append, logs.append),
+                open_device=lambda name, root: opened[name],
+                wait=wait,
+            )
         self.assertEqual(stopped.exception.code, 0)
         self.assertEqual(values, [60, 55, 60, 65])
         self.assertTrue(up.closed)
@@ -214,8 +220,13 @@ class ReaderLoop(unittest.TestCase):
             return original_wait(readers, w, x, timeout)
 
         with self.assertRaises(SystemExit) as stopped:
-            volumekey.run(controller=volumekey.VolumeKey(values.append, logs.append),
-                          open_device=open_device, wait=staged_wait, clock=clock, log=logs.append)
+            volumekey.run(
+                controller=volumekey.VolumeKey(values.append, logs.append),
+                open_device=open_device,
+                wait=staged_wait,
+                clock=clock,
+                log=logs.append,
+            )
         self.assertEqual(stopped.exception.code, 0)
         self.assertGreaterEqual(opened["qpnp_pon"], 2)
         self.assertGreaterEqual(healthy_reads[0], 1)
@@ -250,8 +261,13 @@ class ReaderLoop(unittest.TestCase):
             raise SystemExit(0)
 
         with self.assertRaises(SystemExit) as stopped:
-            volumekey.run(controller=volumekey.VolumeKey(values.append, logs.append),
-                          open_device=open_device, wait=wait, clock=clock, log=logs.append)
+            volumekey.run(
+                controller=volumekey.VolumeKey(values.append, logs.append),
+                open_device=open_device,
+                wait=wait,
+                clock=clock,
+                log=logs.append,
+            )
         self.assertEqual(stopped.exception.code, 0)
         self.assertEqual(attempts["qpnp_pon"], 2)
         self.assertEqual(values, [60, 65])
@@ -293,8 +309,13 @@ class ReaderLoop(unittest.TestCase):
             return wait(readers, w, x, timeout)
 
         with self.assertRaises(SystemExit) as stopped:
-            volumekey.run(controller=volumekey.VolumeKey(values.append, logs.append),
-                          open_device=open_device, wait=staged_wait, clock=lambda: now[0], log=logs.append)
+            volumekey.run(
+                controller=volumekey.VolumeKey(values.append, logs.append),
+                open_device=open_device,
+                wait=staged_wait,
+                clock=lambda: now[0],
+                log=logs.append,
+            )
         self.assertEqual(stopped.exception.code, 0)
         self.assertTrue(failing.closed)
         self.assertTrue(recovered.closed)
@@ -305,8 +326,11 @@ class ReaderLoop(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             missing_parent = Path(tmp) / "absent" / "state.json"
             logs = []
-            result = volumekey.run(state_path=missing_parent, log=logs.append,
-                                   open_device=lambda *_: self.fail("must not open before initial publication"))
+            result = volumekey.run(
+                state_path=missing_parent,
+                log=logs.append,
+                open_device=lambda *_: self.fail("must not open before initial publication"),
+            )
         self.assertEqual(result, 1)
         self.assertEqual(logs, ["reader stopped; state or input unavailable"])
         self.assertNotIn("Errno", " ".join(logs))
@@ -326,20 +350,29 @@ class Packaging(unittest.TestCase):
 
     def test_build_installs_and_enables_reader_under_opos_service(self):
         build = (DUO / "build-image.sh").read_text()
-        self.assertIn('install -m 0644 "$here/opos-volumekey.service" "$r/etc/systemd/system/opos-volumekey.service"', build)
-        self.assertRegex(build, r'ln -sfn /etc/systemd/system/opos-volumekey\.service\s+\\\n\s+"\$r/etc/systemd/system/opos\.service\.wants/opos-volumekey\.service"')
+        self.assertIn(
+            'install -m 0644 "$here/opos-volumekey.service" "$r/etc/systemd/system/opos-volumekey.service"', build
+        )
+        self.assertRegex(
+            build,
+            r'ln -sfn /etc/systemd/system/opos-volumekey\.service\s+\\\n\s+"\$r/etc/systemd/system/opos\.service\.wants/opos-volumekey\.service"',
+        )
 
     def test_actual_install_and_verifier_blocks_with_missing_artifacts_and_policy(self):
         def block(name):
             text = (DUO / name).read_text()
-            return re.search(r"^# --- volume keys: BEGIN[^\n]*\n(.*?)^# --- volume keys: END",
-                             text, re.M | re.S).group(1)
+            return re.search(r"^# --- volume keys: BEGIN[^\n]*\n(.*?)^# --- volume keys: END", text, re.M | re.S).group(
+                1
+            )
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             installed = root / "etc/systemd/system"
-            result = subprocess.run(["sh", "-eu", "-c", 'here=$1; r=$2\n' + block("build-image.sh"),
-                                     "volume-test", str(DUO), str(root)], capture_output=True, text=True)
+            result = subprocess.run(
+                ["sh", "-eu", "-c", "here=$1; r=$2\n" + block("build-image.sh"), "volume-test", str(DUO), str(root)],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             shutil.copyfile(DUO / "opos-server.service", installed / "opos-server.service")
             for name in ("volumekey.py", "volume.py", "web_static/volume.js"):
@@ -348,19 +381,29 @@ class Packaging(unittest.TestCase):
                 shutil.copyfile(ROOT / "src/opos" / name, destination)
 
             def verify():
-                prelude = ('r=$1; w=$r/etc/systemd/system; fail=0\n'
-                           'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n')
-                return subprocess.run(["sh", "-c", prelude + block("verify-image.sh") + '\nexit "$fail"\n',
-                                       "volume-test", str(root)], capture_output=True, text=True)
+                prelude = (
+                    "r=$1; w=$r/etc/systemd/system; fail=0\n"
+                    'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
+                )
+                return subprocess.run(
+                    ["sh", "-c", prelude + block("verify-image.sh") + '\nexit "$fail"\n', "volume-test", str(root)],
+                    capture_output=True,
+                    text=True,
+                )
 
             result = verify()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stdout.count("PASS "), 2)
-            self.assertEqual(os.readlink(installed / "opos.service.wants/opos-volumekey.service"),
-                             "/etc/systemd/system/opos-volumekey.service")
-            for relative in ("opt/opos/src/opos/volumekey.py", "opt/opos/src/opos/volume.py",
-                             "opt/opos/src/opos/web_static/volume.js",
-                             "etc/systemd/system/opos.service.wants/opos-volumekey.service"):
+            self.assertEqual(
+                os.readlink(installed / "opos.service.wants/opos-volumekey.service"),
+                "/etc/systemd/system/opos-volumekey.service",
+            )
+            for relative in (
+                "opt/opos/src/opos/volumekey.py",
+                "opt/opos/src/opos/volume.py",
+                "opt/opos/src/opos/web_static/volume.js",
+                "etc/systemd/system/opos.service.wants/opos-volumekey.service",
+            ):
                 path = root / relative
                 saved = path.with_name(path.name + ".saved")
                 path.rename(saved)
@@ -370,13 +413,20 @@ class Packaging(unittest.TestCase):
                     saved.rename(path)
             path = installed / "opos-volumekey.service"
             original = path.read_text()
-            for directive in ("Restart=always", "RestartSec=3", "StartLimitIntervalSec=0",
-                              "User=root", "RuntimeDirectory=opos-volume", "RuntimeDirectoryMode=0755",
-                              "BindsTo=opos.service", "PartOf=opos.service", "After=opos.service"):
+            for directive in (
+                "Restart=always",
+                "RestartSec=3",
+                "StartLimitIntervalSec=0",
+                "User=root",
+                "RuntimeDirectory=opos-volume",
+                "RuntimeDirectoryMode=0755",
+                "BindsTo=opos.service",
+                "PartOf=opos.service",
+                "After=opos.service",
+            ):
                 path.write_text(original.replace(directive + "\n", ""))
                 self.assertNotEqual(verify().returncode, 0, directive)
             path.write_text(original)
             server = installed / "opos-server.service"
             server.write_text(server.read_text().replace("Environment=OPOS_VOLUME_KEYS=1\n", ""))
             self.assertNotEqual(verify().returncode, 0)
-

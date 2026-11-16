@@ -6,6 +6,7 @@ test_uxr_acceptance (test_real_controls: not a native button; test_touch_targets
 overlapping #meter). docs/jaryo.md 4.2/4.3 put the shade on a native [ Shade ] <button>
 (#jaryo-shade) instead, with #meter / #meter-hit as the existing shortcut.
 """
+
 import json
 import os
 import re
@@ -16,14 +17,19 @@ from pathlib import Path
 from opos.web import page
 from tests import test_uxr_acceptance as acceptance
 
-STATIC = Path(__file__).resolve().parents[1] / 'src/opos/web_static'
+STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
 
 
 class TestShadeButtonStatic(unittest.TestCase):
     def test_row_on_page(self):
-        out = page('t' * 32, 'n')
-        for s in ("'jaryo-status-row'", "'jaryo-shade','Shade'", "'jaryo-lock','Lock'",
-                  "sb.insertAdjacentElement('afterend',row)", '#jaryo-status-row button{min-height:48px;min-width:48px'):
+        out = page("t" * 32, "n")
+        for s in (
+            "'jaryo-status-row'",
+            "'jaryo-shade','Shade'",
+            "'jaryo-lock','Lock'",
+            "sb.insertAdjacentElement('afterend',row)",
+            "#jaryo-status-row button{min-height:48px;min-width:48px",
+        ):
             self.assertIn(s, out)
 
 
@@ -98,25 +104,30 @@ class ShadeBrowser(unittest.TestCase):
         driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
         target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        r = subprocess.run([self.node, str(driver), target, self.url, "jaryo_shade", self.state],
-                           capture_output=True, text=True, timeout=60, env=env)
+        r = subprocess.run(
+            [self.node, str(driver), target, self.url, "jaryo_shade", self.state],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
         self.assertEqual(r.returncode, 0, r.stderr[-1000:])
         self.assertEqual(json.loads(r.stdout.strip().splitlines()[-1])["violations"], [])
 
 
 class TestSbBattNotPseudoButton(unittest.TestCase):
     def test_jaryo_js_leaves_sb_batt_alone(self):
-        for name in ('jaryo.js', 'jaryo-layout.js'):
-            src = (STATIC / name).read_text(encoding='utf-8')
+        for name in ("jaryo.js", "jaryo-layout.js"):
+            src = (STATIC / name).read_text(encoding="utf-8")
             self.assertNotRegex(src, r"getElementById\(['\"]sb-batt['\"]\)", name)
 
     def test_sb_batt_markup_is_not_a_control(self):
-        html = (STATIC / 'phone-a.html').read_text(encoding='utf-8')
+        html = (STATIC / "phone-a.html").read_text(encoding="utf-8")
         m = re.search(r'<span id="sb-batt"([^>]*)>', html)
         self.assertIsNotNone(m)
-        self.assertNotIn('role=', m.group(1))
-        self.assertNotIn('tabindex', m.group(1))
+        self.assertNotIn("role=", m.group(1))
+        self.assertNotIn("tabindex", m.group(1))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@
    reads makes the verification FAIL instead of printing a traceback and then "VERIFY: PASS".
 
 The shell is run against stubs; nothing here mounts an image or starts qemu."""
+
 import contextlib
 import json
 import os
@@ -55,7 +56,11 @@ class StaticPins(unittest.TestCase):
         self.assertIn("umask 077", TEXT)
         self.assertIn("""[ "$(stat -c '%u %a' "$work")" = "0 700" ]""", TEXT)
         self.assertIn("trap cleanup EXIT", TEXT)
-        self.assertIn('    rm -rf "$work" || status=1\n    exit "$status"\n}', TEXT, "cleanup failure propagates after removing the private directory")
+        self.assertIn(
+            '    rm -rf "$work" || status=1\n    exit "$status"\n}',
+            TEXT,
+            "cleanup failure propagates after removing the private directory",
+        )
         self.assertIn('cd "$work" || exit 2', TEXT)
         # all of it before the first mount and before anything runs from the image
         self.assertLess(TEXT.index('cd "$work"'), TEXT.index("mount -o ro"))
@@ -82,29 +87,47 @@ class StaticPins(unittest.TestCase):
     def test_the_image_python_is_started_through_py_and_not_from_a_changed_directory(self):
         for ln in code_lines():
             self.assertNotRegex(ln, r"cd /tmp", ln)
-        self.assertRegex(TEXT, r'(?m)^py\(\) \{ PYTHONPATH="\$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 "\$q" -L "\$mnt" "\$mnt/usr/bin/python3" "\$@"; \}$')
+        self.assertRegex(
+            TEXT,
+            r'(?m)^py\(\) \{ PYTHONPATH="\$mnt/opt/opos/src" PYTHONDONTWRITEBYTECODE=1 "\$q" -L "\$mnt" "\$mnt/usr/bin/python3" "\$@"; \}$',
+        )
 
     def test_servers_use_picked_ports_and_are_stopped_by_pid_alone(self):
         code = "\n".join(code_lines())
         self.assertNotRegex(code, r"1899[89]", "a fixed loopback port can be held by a stale or hostile listener")
-        commands = "\n".join(ln for ln in code_lines() if not ln.startswith("check "))  # a check may name the tools it looks for in the image
+        commands = "\n".join(
+            ln for ln in code_lines() if not ln.startswith("check ")
+        )  # a check may name the tools it looks for in the image
         for word in ("pkill", "killall", "pgrep"):
-            self.assertNotIn(word, commands, "servers are stopped by the pid this script started, never by name or command line")
+            self.assertNotIn(
+                word, commands, "servers are stopped by the pid this script started, never by name or command line"
+            )
         # picked ports: the smoke server, the integration server and the monitor's "off" server (pick_port), the monitor's "on"
         # server and the closed port its model address names (pick_port_apart: never the port of a server that is still binding)
-        picks = [name for name in re.findall(r"(\w+)=\$\(pick_port(?:_apart)?\b", code) if name != "pa_p"]  # pa_p: pick_port_apart's own pick
+        picks = [
+            name for name in re.findall(r"(\w+)=\$\(pick_port(?:_apart)?\b", code) if name != "pa_p"
+        ]  # pa_p: pick_port_apart's own pick
         self.assertEqual(picks, ["port", "port2", "mport_off", "mport_on", "mport_dead"])
         self.assertEqual(code.count("-m opos.web"), 1, "one function starts a server")
-        self.assertEqual(len(re.findall(r'(?:\bif |&& )serve "', code)), 4, "and the four servers are started through it")
+        self.assertEqual(
+            len(re.findall(r'(?:\bif |&& )serve "', code)), 4, "and the four servers are started through it"
+        )
 
     def test_every_way_out_runs_the_same_cleanup(self):
         for line in ("trap cleanup EXIT", "trap 'exit 130' INT", "trap 'exit 143' TERM", "trap 'exit 129' HUP"):
             self.assertIn(line, TEXT)
-        cleanup = TEXT[TEXT.index("stop_children() {"):TEXT.index("trap cleanup EXIT")]
+        cleanup = TEXT[TEXT.index("stop_children() {") : TEXT.index("trap cleanup EXIT")]
         self.assertIn("    stop_children\n", cleanup)
         self.assertIn("unmount_image || status=1", cleanup)
         self.assertIn('    exit "$status"', cleanup)
-        for part in ("kill \"$p\"", "kill -9 \"$p\"", "umount \"$mnt\"", "rmdir \"$mnt\"", 'rm -rf "$work"', "trap '' INT TERM HUP"):
+        for part in (
+            'kill "$p"',
+            'kill -9 "$p"',
+            'umount "$mnt"',
+            'rmdir "$mnt"',
+            'rm -rf "$work"',
+            "trap '' INT TERM HUP",
+        ):
             self.assertIn(part, cleanup)
 
     def test_the_script_parses_and_keeps_its_header(self):
@@ -131,15 +154,25 @@ class PrivateDirectory(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmpdir, True)
         self.hostile = self.t / "hostile"
         (self.hostile / "opos").mkdir(parents=True)
-        (self.hostile / "opos" / "__init__.py").write_text("open(%r, 'w').write('executed as root')\n" % str(self.t / "PWNED"))
+        (self.hostile / "opos" / "__init__.py").write_text(
+            "open(%r, 'w').write('executed as root')\n" % str(self.t / "PWNED")
+        )
         self.fake("qemu-aarch64-static", "exit 0")
-        if os.geteuid() != 0:  # the script insists on root: pretend, and report the owner of the private directory as root
+        if (
+            os.geteuid() != 0
+        ):  # the script insists on root: pretend, and report the owner of the private directory as root
             self.fake("id", "echo 0")
             real = subprocess.run(["sh", "-c", "command -v stat"], capture_output=True, text=True).stdout.strip()
-            shim = portable.gnu_stat_path(self.t / "gnu")  # None on Linux; off Linux, GNU `stat -c` answers over BSD stat
+            shim = portable.gnu_stat_path(
+                self.t / "gnu"
+            )  # None on Linux; off Linux, GNU `stat -c` answers over BSD stat
             if shim:
                 real = str(Path(shim) / "stat")
-            self.fake("stat", 'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"' % (real, os.geteuid()))
+            self.fake(
+                "stat",
+                'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"'
+                % (real, os.geteuid()),
+            )
 
     def fake(self, name, body):
         p = self.bin / name
@@ -151,7 +184,9 @@ class PrivateDirectory(unittest.TestCase):
         script.write_text(prelude() + trailer)
         env = {"PATH": "%s:/usr/bin:/bin" % self.bin, "TMPDIR": str(tmpdir or self.tmpdir), "PYBIN": sys.executable}
         env.update(extra_env or {})
-        return subprocess.run(["sh", str(script), "OUT.img"], cwd=str(self.hostile), env=env, capture_output=True, text=True, timeout=60)
+        return subprocess.run(
+            ["sh", str(script), "OUT.img"], cwd=str(self.hostile), env=env, capture_output=True, text=True, timeout=60
+        )
 
     TRAILER = (
         'echo "WORK=$work"\n'
@@ -178,7 +213,10 @@ class PrivateDirectory(unittest.TestCase):
         self.assertEqual(Path(f["HOME"]).resolve(), work.resolve())
         self.assertEqual(f["MODE"], "700")
         self.assertEqual(f["SAFE"], "1 NOUSER=1 STARTUP=unset")
-        self.assertTrue(f["IMG"].endswith("/OUT.img") and f["IMG"].startswith("/"), "a relative image path is made absolute before the cd")
+        self.assertTrue(
+            f["IMG"].endswith("/OUT.img") and f["IMG"].startswith("/"),
+            "a relative image path is made absolute before the cd",
+        )
         self.assertFalse(work.exists(), "the trap removes the private directory (and its scratch files) at exit")
 
     def test_a_package_planted_in_the_callers_directory_is_not_imported(self):
@@ -190,7 +228,14 @@ class PrivateDirectory(unittest.TestCase):
     def test_the_planted_package_would_run_from_the_callers_directory_without_the_private_directory(self):
         # the control: the same python, started in the hostile directory the way the old script started it
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
-        p = subprocess.run([sys.executable, "-c", "import opos"], cwd=str(self.hostile), env=env, capture_output=True, text=True, timeout=60)
+        p = subprocess.run(
+            [sys.executable, "-c", "import opos"],
+            cwd=str(self.hostile),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertTrue((self.t / "PWNED").exists())
 
@@ -209,7 +254,9 @@ class PrivateDirectory(unittest.TestCase):
         script = self.t / "run.sh"
         script.write_text(prelude())
         env = {"PATH": "%s:/usr/bin:/bin" % self.bin, "TMPDIR": str(self.tmpdir)}
-        r = subprocess.run(["sh", str(script)], cwd=str(self.hostile), env=env, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(
+            ["sh", str(script)], cwd=str(self.hostile), env=env, capture_output=True, text=True, timeout=60
+        )
         self.assertEqual(r.returncode, 2)
         self.assertIn("usage:", r.stderr)
 
@@ -225,6 +272,7 @@ GOOD = {"battery": {"percent": 61.5}, "lock_story": "All good", "helper": {"mode
 
 class Stub(BaseHTTPRequestHandler):
     """Serves / with an opos-token and /api/state as set on the class; anything else is a 404."""
+
     state_status = 200
     state_body = json.dumps(GOOD)
     token_page = True
@@ -278,9 +326,17 @@ class StateProbe(unittest.TestCase):
 
     def probe(self, port):
         """The probe block as the script runs it, with its check() and fail variable: (exit status of the script, stdout)."""
-        script = ('set -u\nfail=0\nwork=%s\nport=%d\n'
-                  'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\nexit $fail\n') % (self.t, port, state_probe_block())
-        r = subprocess.run(["sh", "-c", script], env={"PATH": "%s:/usr/bin:/bin" % self.bin}, capture_output=True, text=True, timeout=120)
+        script = (
+            "set -u\nfail=0\nwork=%s\nport=%d\n"
+            'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\nexit $fail\n'
+        ) % (self.t, port, state_probe_block())
+        r = subprocess.run(
+            ["sh", "-c", script],
+            env={"PATH": "%s:/usr/bin:/bin" % self.bin},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         return r.returncode, r.stdout
 
     def test_a_good_state_passes(self):
@@ -342,8 +398,13 @@ class StateProbe(unittest.TestCase):
         port = free_port()
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_") and k != "TZ"}
         env.update(OPOS_CONFIG_DIR=cfg, PYTHONPATH=str(ROOT / "src"), PYTHONDONTWRITEBYTECODE="1", HOME=cfg)
-        srv = subprocess.Popen([sys.executable, "-m", "opos.web", "--port", str(port)], env=env, cwd=cfg,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        srv = subprocess.Popen(
+            [sys.executable, "-m", "opos.web", "--port", str(port)],
+            env=env,
+            cwd=cfg,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         self.addCleanup(srv.wait, 20)
         self.addCleanup(srv.terminate)
         for _ in range(100):
@@ -357,7 +418,7 @@ class StateProbe(unittest.TestCase):
         self.assertIn("PASS the authenticated /api/state", out)
 
 
-SERVER_PY = r'''
+SERVER_PY = r"""
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 GOOD = {"battery": {"percent": 61.5}, "lock_story": "All good", "helper": {"mode": "NORMAL"}}
@@ -381,9 +442,9 @@ class H(BaseHTTPRequestHandler):
 
 
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
-'''
+"""
 
-QEMU_STUB = '''#!/bin/sh
+QEMU_STUB = """#!/bin/sh
 # qemu-aarch64-static -L ROOT PYTHON ARGS...: what py() and serve() in verify-image.sh run. Only "-m opos.web --port N" does anything.
 shift 3
 case "$1 $2" in
@@ -396,7 +457,7 @@ case "$1 $2" in
     exec "$PYBIN" "$T/server.py" "$4";;
 esac
 exit 0
-'''
+"""
 
 
 def alive(pid):
@@ -427,14 +488,25 @@ class WholeScriptServers(unittest.TestCase):
             self.fake(name, "exit 0")
         self.fake("mountpoint", "exit 1")
         # python3 for the builder's own probes; the free-port question can be answered with a port somebody else holds
-        self.fake("python3", 'case "$*" in\n*\'s.bind(("127.0.0.1", 0))\'*) if [ -n "${HOSTILE_PORT:-}" ]; then echo "$HOSTILE_PORT"; exit 0; fi;;\nesac\nexec "$PYBIN" "$@"')
-        if os.geteuid() != 0:  # the script insists on root: pretend, and report the owner of the private directory as root
+        self.fake(
+            "python3",
+            'case "$*" in\n*\'s.bind(("127.0.0.1", 0))\'*) if [ -n "${HOSTILE_PORT:-}" ]; then echo "$HOSTILE_PORT"; exit 0; fi;;\nesac\nexec "$PYBIN" "$@"',
+        )
+        if (
+            os.geteuid() != 0
+        ):  # the script insists on root: pretend, and report the owner of the private directory as root
             self.fake("id", "echo 0")
             real = subprocess.run(["sh", "-c", "command -v stat"], capture_output=True, text=True).stdout.strip()
-            shim = portable.gnu_stat_path(self.t / "gnu")  # None on Linux; off Linux, GNU `stat -c` answers over BSD stat
+            shim = portable.gnu_stat_path(
+                self.t / "gnu"
+            )  # None on Linux; off Linux, GNU `stat -c` answers over BSD stat
             if shim:
                 real = str(Path(shim) / "stat")
-            self.fake("stat", 'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"' % (real, os.geteuid()))
+            self.fake(
+                "stat",
+                'out=$(%s "$@") || exit $?\ncase $out in "%d "*) out="0 ${out#* }";; esac\necho "$out"'
+                % (real, os.geteuid()),
+            )
         self.addCleanup(self.reap)
 
     def fake(self, name, body):
@@ -451,16 +523,30 @@ class WholeScriptServers(unittest.TestCase):
 
     def start(self, hostile_port=None, mode="serve", extra_env=None):
         (self.t / "server_mode").write_text(mode + "\n")
-        env = {"PATH": "%s:/usr/bin:/bin" % self.bin, "TMPDIR": str(self.tmpdir), "T": str(self.t), "PYBIN": sys.executable}
+        env = {
+            "PATH": "%s:/usr/bin:/bin" % self.bin,
+            "TMPDIR": str(self.tmpdir),
+            "T": str(self.t),
+            "PYBIN": sys.executable,
+        }
         env.update(extra_env or {})
         if hostile_port:
             env["HOSTILE_PORT"] = str(hostile_port)
+
         def default_signals():  # an ignored signal cannot be trapped by a shell, and a runner started in the background may pass them on ignored
             for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                 signal.signal(sig, signal.SIG_DFL)
 
-        return subprocess.Popen(["sh", str(SCRIPT), "OUT.img"], env=env, cwd=str(self.t), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, start_new_session=True, preexec_fn=default_signals)
+        return subprocess.Popen(
+            ["sh", str(SCRIPT), "OUT.img"],
+            env=env,
+            cwd=str(self.t),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+            preexec_fn=default_signals,
+        )
 
     def finish(self, p, timeout=120):
         out, err = p.communicate(timeout=timeout)
@@ -481,16 +567,24 @@ class WholeScriptServers(unittest.TestCase):
         self.assertTrue(all(p.isdigit() and 1024 <= int(p) < 65536 for p in ports))
         self.assertTrue(all(p not in ("18999", "18998", "18996", "18997") for p in ports))
         self.assertNotEqual(ports[2], ports[3], "the monitor's two servers run at the same time, on two ports")
-        self.assertEqual((self.t / "server.started").read_text().splitlines()[1].split(" ", 1)[1], "111", "the second server has the three switches")
+        self.assertEqual(
+            (self.t / "server.started").read_text().splitlines()[1].split(" ", 1)[1],
+            "111",
+            "the second server has the three switches",
+        )
         monitor = [ln.split(" ", 1)[1] for ln in (self.t / "server.monitor").read_text().splitlines()]
-        self.assertEqual(monitor, ["unset", "unset", "unset", "1"], "only the monitor's second server has the Inference page on")
+        self.assertEqual(
+            monitor, ["unset", "unset", "unset", "1"], "only the monitor's second server has the Inference page on"
+        )
         for pid in self.server_pids():
             self.assertFalse(alive(pid), "a server outlived the script")
         self.assertEqual(self.work_dirs(), [])
 
     def test_a_switch_left_on_in_the_callers_environment_reaches_no_server(self):
         # root's shell may have OPOS_* set: the "off" servers must be off, and only the arguments of serve() switch a piece on
-        self.finish(self.start(extra_env={"OPOS_MONITOR": "1", "OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"}))
+        self.finish(
+            self.start(extra_env={"OPOS_MONITOR": "1", "OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1"})
+        )
         started = (self.t / "server.started").read_text().splitlines()
         self.assertEqual([ln.split(" ", 1)[1] if " " in ln else "" for ln in started], ["", "111", "", ""])
         monitor = [ln.split(" ", 1)[1] for ln in (self.t / "server.monitor").read_text().splitlines()]
@@ -516,7 +610,9 @@ class WholeScriptServers(unittest.TestCase):
         port = srv.server_address[1]
         rc, out, err = self.finish(self.start(hostile_port=port))
         self.assertEqual(rc, 1, out + err)
-        self.assertIn("FAIL something already answers on 127.0.0.1:%d before the image's server was started" % port, out)
+        self.assertIn(
+            "FAIL something already answers on 127.0.0.1:%d before the image's server was started" % port, out
+        )
         self.assertIn("FAIL OPOS server from the image answers HTTP 200", out)
         self.assertIn("FAIL the authenticated /api/state was not probed", out)
         self.assertNotIn("PASS OPOS server from the image", out)
@@ -528,7 +624,11 @@ class WholeScriptServers(unittest.TestCase):
         self.assertFalse((self.t / "server.started").exists(), "no server was started on a port that already answers")
 
     def test_a_signal_stops_the_servers_and_removes_everything(self):
-        for name, sig, status in (("INT", signal.SIGINT, 130), ("TERM", signal.SIGTERM, 143), ("HUP", signal.SIGHUP, 129)):
+        for name, sig, status in (
+            ("INT", signal.SIGINT, 130),
+            ("TERM", signal.SIGTERM, 143),
+            ("HUP", signal.SIGHUP, 129),
+        ):
             with self.subTest(name):
                 for f in self.t.glob("server.*"):
                     f.unlink()
@@ -555,8 +655,13 @@ class WholeScriptServers(unittest.TestCase):
     @unittest.skipUnless(shutil.which("bash"), "needs bash for exec -a")
     def test_only_its_own_server_is_stopped(self):
         # processes whose command lines look like the old fixed-port servers, started before the script, are left alone
-        decoys = [subprocess.Popen(["bash", "-c", "exec -a 'qemu-aarch64-static python3 -m opos.web --port %d' /bin/sleep 300" % port],
-                                   start_new_session=True) for port in (18999, 18998, 18997, 18996)]  # the smoke, integration and monitor ports of the old script
+        decoys = [
+            subprocess.Popen(
+                ["bash", "-c", "exec -a 'qemu-aarch64-static python3 -m opos.web --port %d' /bin/sleep 300" % port],
+                start_new_session=True,
+            )
+            for port in (18999, 18998, 18997, 18996)
+        ]  # the smoke, integration and monitor ports of the old script
         for d in decoys:
             self.addCleanup(lambda d=d: (d.kill(), d.wait()))
         time.sleep(0.3)

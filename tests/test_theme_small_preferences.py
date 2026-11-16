@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Real served preference hooks: supported Small text and durable native theme control."""
+
 import json
 import os
 import shutil
@@ -11,7 +12,7 @@ from opos.web import page
 from tests import test_uxr_acceptance as acceptance
 from tests.test_uxp30_budget import rules
 
-STATIC = Path(__file__).resolve().parents[1] / 'src/opos/web_static'
+STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
 
 HARNESS = r"""
 const fs=require('fs'),vm=require('vm'),root=process.argv[1];
@@ -43,48 +44,52 @@ console.log(JSON.stringify(out));
 """
 
 
-@unittest.skipUnless(shutil.which('node'), 'node unavailable')
+@unittest.skipUnless(shutil.which("node"), "node unavailable")
 class ThemePreferenceRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        result = subprocess.run([shutil.which('node'), '-e', HARNESS, str(STATIC)],
-                                text=True, capture_output=True, check=True, timeout=15)
+        result = subprocess.run(
+            [shutil.which("node"), "-e", HARNESS, str(STATIC)], text=True, capture_output=True, check=True, timeout=15
+        )
         cls.actual = json.loads(result.stdout)
 
     def test_small_choice_has_its_own_scale_and_restores(self):
-        self.assertEqual([self.actual[x]['text'] for x in ('small','normal','large','xlarge')],
-                         ['s','n','l','xl'])
-        self.assertEqual(self.actual['restoredSmall']['text'], 's')
-        self.assertEqual(self.actual['changedSmall']['store']['opos_text'], 's')
+        self.assertEqual(
+            [self.actual[x]["text"] for x in ("small", "normal", "large", "xlarge")], ["s", "n", "l", "xl"]
+        )
+        self.assertEqual(self.actual["restoredSmall"]["text"], "s")
+        self.assertEqual(self.actual["changedSmall"]["store"]["opos_text"], "s")
 
     def test_native_theme_cycles_dark_system_light(self):
-        self.assertEqual(self.actual['firstSeed']['theme'], 'dark')
-        for name, theme, label in [('clickSystem',None,'Theme: System'),
-                                   ('clickLight','light','Theme: Light'),
-                                   ('clickDark','dark','Theme: Dark')]:
-            self.assertNotIn('missing_control_handler', self.actual[name])
-            self.assertEqual((self.actual[name]['theme'], self.actual[name]['label']), (theme,label))
+        self.assertEqual(self.actual["firstSeed"]["theme"], "dark")
+        for name, theme, label in [
+            ("clickSystem", None, "Theme: System"),
+            ("clickLight", "light", "Theme: Light"),
+            ("clickDark", "dark", "Theme: Dark"),
+        ]:
+            self.assertNotIn("missing_control_handler", self.actual[name])
+            self.assertEqual((self.actual[name]["theme"], self.actual[name]["label"]), (theme, label))
 
     def test_explicit_system_survives_reload_with_dark_installer_default(self):
-        self.assertIsNone(self.actual['reloadSystem']['theme'])
-        self.assertEqual(self.actual['reloadSystem']['label'], 'Theme: System')
+        self.assertIsNone(self.actual["reloadSystem"]["theme"])
+        self.assertEqual(self.actual["reloadSystem"]["label"], "Theme: System")
 
     def test_existing_saved_theme_applies_immediately_and_beats_defaults(self):
-        self.assertEqual(self.actual['savedImmediate']['theme'], 'light')
-        self.assertEqual(self.actual['savedOverrides']['theme'], 'light')
-        self.assertEqual(self.actual['savedOverrides']['text'], 's')
+        self.assertEqual(self.actual["savedImmediate"]["theme"], "light")
+        self.assertEqual(self.actual["savedOverrides"]["theme"], "light")
+        self.assertEqual(self.actual["savedOverrides"]["text"], "s")
 
     def test_blocked_storage_still_allows_in_memory_theme_and_manual_choice(self):
-        self.assertEqual(self.actual['blockedSeed']['theme'], 'dark')
-        self.assertEqual(self.actual['blockedSeed']['text'], 's')
-        self.assertIsNone(self.actual['blockedSystem']['theme'])
-        self.assertEqual(self.actual['blockedLight']['theme'], 'light')
-        self.assertEqual(self.actual['blockedPoll']['theme'], 'light')
+        self.assertEqual(self.actual["blockedSeed"]["theme"], "dark")
+        self.assertEqual(self.actual["blockedSeed"]["text"], "s")
+        self.assertIsNone(self.actual["blockedSystem"]["theme"])
+        self.assertEqual(self.actual["blockedLight"]["theme"], "light")
+        self.assertEqual(self.actual["blockedPoll"]["theme"], "light")
 
     def test_auto_invalid_storage_and_absent_matchmedia_are_safe(self):
-        self.assertIsNone(self.actual['auto']['theme'])
-        self.assertNotIn('jaryo_theme', self.actual['auto']['store'])
-        self.assertEqual(self.actual['invalid']['theme'], 'light')
+        self.assertIsNone(self.actual["auto"]["theme"])
+        self.assertNotIn("jaryo_theme", self.actual["auto"]["store"])
+        self.assertEqual(self.actual["invalid"]["theme"], "light")
 
 
 class ThemePreferenceMarkupAndCSS(unittest.TestCase):
@@ -93,47 +98,55 @@ class ThemePreferenceMarkupAndCSS(unittest.TestCase):
         self.assertIn('<button id="jaryo-theme" type="button">Theme: System</button>', rendered)
         self.assertIn('<option value="s">Small</option>', rendered)
         self.assertEqual(rendered.count('id="jaryo-theme"'), 1)
-        css = (STATIC / 'phone-b.css').read_text()
+        css = (STATIC / "phone-b.css").read_text()
         self.assertIn('html[data-text="s"]{font-size:87.5%}', css)
-        self.assertRegex(css, r'#jaryo-theme\{[^}]*min-height:48px')
+        self.assertRegex(css, r"#jaryo-theme\{[^}]*min-height:48px")
 
     def test_palette_tokens_follow_explicit_theme_and_system_media(self):
-        sheet = list(rules((STATIC / 'jaryo.css').read_text()))
-        for explicit, system_dark, expected in [(None,False,('#1a1a1a','#f3f0e8','light')),
-                                                (None,True,('#e6e2d9','#000','dark')),
-                                                ('light',True,('#1a1a1a','#f3f0e8','light')),
-                                                ('dark',False,('#e6e2d9','#000','dark'))]:
+        sheet = list(rules((STATIC / "jaryo.css").read_text()))
+        for explicit, system_dark, expected in [
+            (None, False, ("#1a1a1a", "#f3f0e8", "light")),
+            (None, True, ("#e6e2d9", "#000", "dark")),
+            ("light", True, ("#1a1a1a", "#f3f0e8", "light")),
+            ("dark", False, ("#e6e2d9", "#000", "dark")),
+        ]:
             actual = {}
             for contexts, selector, declarations in sheet:
-                if contexts and not (system_dark and all('prefers-color-scheme:dark' in c for c in contexts)):
+                if contexts and not (system_dark and all("prefers-color-scheme:dark" in c for c in contexts)):
                     continue
-                applies = (selector == ':root' or
-                           selector == 'html:not([data-theme])' and explicit is None or
-                           selector == f'html[data-theme="{explicit}"]')
+                applies = (
+                    selector == ":root"
+                    or selector == "html:not([data-theme])"
+                    and explicit is None
+                    or selector == f'html[data-theme="{explicit}"]'
+                )
                 if applies:
                     actual.update(declarations)
-            self.assertEqual(tuple(actual.get(k) for k in ('--jaryo-fg','--jaryo-bg','color-scheme')),
-                             expected, (explicit,system_dark))
+            self.assertEqual(
+                tuple(actual.get(k) for k in ("--jaryo-fg", "--jaryo-bg", "color-scheme")),
+                expected,
+                (explicit, system_dark),
+            )
 
     def test_theme_overrides_legacy_surfaces_controls_focus_and_disabled(self):
-        sheet = list(rules((STATIC / 'jaryo.css').read_text()))
+        sheet = list(rules((STATIC / "jaryo.css").read_text()))
         flat = {}
         for contexts, selector, declarations in sheet:
             if not contexts:
                 flat.setdefault(selector, {}).update(declarations)
-        for selector in ('body','#phone','#lock','#sheet','#sb','.box','#screen'):
-            self.assertEqual(flat[selector]['background'], 'var(--jaryo-bg)', selector)
-            self.assertEqual(flat[selector]['color'], 'var(--jaryo-fg)', selector)
-        for selector in ('#textsize','#goal-clear','#goal-row input[type=time]','#askbtn'):
-            self.assertEqual(flat[selector]['background'], 'var(--jaryo-bg)', selector)
-            self.assertEqual(flat[selector]['color'], 'var(--jaryo-fg)', selector)
-        self.assertEqual(flat['input[type=text]']['color-scheme'], 'inherit')
-        self.assertEqual(flat['input[type=time]']['color-scheme'], 'inherit')
-        self.assertEqual(flat['#textsize:focus-visible']['outline'], '3px solid var(--jaryo-fg)')
-        self.assertEqual(flat['button:disabled']['border-style'], 'dashed')
-        self.assertEqual(flat['#meter[data-tone]']['animation'], 'none')
-        self.assertEqual(flat['#history polyline']['stroke'], 'var(--jaryo-fg)')
-        self.assertNotRegex((STATIC / 'jaryo.css').read_text(), r'@font-face|url\(')
+        for selector in ("body", "#phone", "#lock", "#sheet", "#sb", ".box", "#screen"):
+            self.assertEqual(flat[selector]["background"], "var(--jaryo-bg)", selector)
+            self.assertEqual(flat[selector]["color"], "var(--jaryo-fg)", selector)
+        for selector in ("#textsize", "#goal-clear", "#goal-row input[type=time]", "#askbtn"):
+            self.assertEqual(flat[selector]["background"], "var(--jaryo-bg)", selector)
+            self.assertEqual(flat[selector]["color"], "var(--jaryo-fg)", selector)
+        self.assertEqual(flat["input[type=text]"]["color-scheme"], "inherit")
+        self.assertEqual(flat["input[type=time]"]["color-scheme"], "inherit")
+        self.assertEqual(flat["#textsize:focus-visible"]["outline"], "3px solid var(--jaryo-fg)")
+        self.assertEqual(flat["button:disabled"]["border-style"], "dashed")
+        self.assertEqual(flat["#meter[data-tone]"]["animation"], "none")
+        self.assertEqual(flat["#history polyline"]["stroke"], "var(--jaryo-fg)")
+        self.assertNotRegex((STATIC / "jaryo.css").read_text(), r"@font-face|url\(")
 
 
 BROWSER_CHECK = r"""
@@ -211,7 +224,7 @@ CHECKS.theme_small = async function() {
 
 class ThemePreferenceBrowser(unittest.TestCase):
     skip_reason = None
-    mode = 'port'
+    mode = "port"
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
     tearDown = acceptance.TestUxrAcceptance.tearDown
@@ -222,19 +235,24 @@ class ThemePreferenceBrowser(unittest.TestCase):
         if cls.skip_reason:
             return
         state = json.loads(Path(cls.state).read_text())
-        for name in ('hidden','visible'):
-            state[name]['prefs'].update(theme='dark', text_size='small')
+        for name in ("hidden", "visible"):
+            state[name]["prefs"].update(theme="dark", text_size="small")
         Path(cls.state).write_text(json.dumps(state))
 
     def test_computed_themes_system_reload_small_targets_and_focus(self):
-        driver = Path(self.run_dir) / 'theme-small.js'
+        driver = Path(self.run_dir) / "theme-small.js"
         source = acceptance.DRIVER.read_text()
-        self.assertIn('(async () => {', source)
-        driver.write_text(source.replace('(async () => {', BROWSER_CHECK + '\n(async () => {', 1))
-        env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile,
-                   TMPDIR=self.run_dir)
-        target = str(self.port) if self.proc is not None else 'pipe'
-        result = subprocess.run([self.node, str(driver), target, self.url, 'theme_small', self.state],
-                                check=False, text=True, capture_output=True, timeout=60, env=env)
+        self.assertIn("(async () => {", source)
+        driver.write_text(source.replace("(async () => {", BROWSER_CHECK + "\n(async () => {", 1))
+        env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
+        target = str(self.port) if self.proc is not None else "pipe"
+        result = subprocess.run(
+            [self.node, str(driver), target, self.url, "theme_small", self.state],
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=60,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])['violations'], [])
+        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])

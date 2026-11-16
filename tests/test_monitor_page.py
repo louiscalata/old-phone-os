@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The monitor page against OPOS's CSP and page rules, plus a Node smoke run of the script when Node exists."""
+
 import ast
 import json
 import re
@@ -35,7 +36,9 @@ class TemplateTests(unittest.TestCase):
         self.assertIn("<style>\n@@OPOS:monitor.css@@\n</style>", html)
         self.assertIn("<script>\n@@OPOS:monitor-theme.js@@\n</script>", html)
         self.assertIn("<script>\n@@OPOS:monitor.js@@\n</script>", html)
-        self.assertEqual(sorted(re.findall(r"@@OPOS:([A-Za-z0-9_.-]+)@@", html)), ["monitor-theme.js", "monitor.css", "monitor.js"])
+        self.assertEqual(
+            sorted(re.findall(r"@@OPOS:([A-Za-z0-9_.-]+)@@", html)), ["monitor-theme.js", "monitor.css", "monitor.js"]
+        )
         # The theme script runs before the first paint, so it is in the head, before the styles.
         self.assertLess(html.index("monitor-theme.js"), html.index("monitor.css"))
         self.assertLess(html.index("monitor.css"), html.index("<body>"))
@@ -43,12 +46,27 @@ class TemplateTests(unittest.TestCase):
     def test_the_route_has_an_anchor_for_the_token_meta(self):
         # page()-style insertion replaces the title; this document's title is its own, and must stay that exact string.
         self.assertEqual(read("monitor.html").count("<title>Inference - OPOS</title>"), 1)
-        self.assertNotIn("opos-token", read("monitor.html"), "the route adds the token meta; the template must not carry one")
+        self.assertNotIn(
+            "opos-token", read("monitor.html"), "the route adds the token meta; the template must not carry one"
+        )
 
     def test_nothing_the_csp_blocks(self):
         document = assemble()
-        for pattern in (r"<script[^>]+src", r"<link\b", r"<iframe", r"<object", r"<embed", r"<img\b", r"<form\b", r"\son[a-z]+\s*=",
-                        r"javascript:", r"@import", r"url\(", r"https?://", r"//[a-z0-9.-]+\.[a-z]{2,}/"):
+        for pattern in (
+            r"<script[^>]+src",
+            r"<link\b",
+            r"<iframe",
+            r"<object",
+            r"<embed",
+            r"<img\b",
+            r"<form\b",
+            r"\son[a-z]+\s*=",
+            r"javascript:",
+            r"@import",
+            r"url\(",
+            r"https?://",
+            r"//[a-z0-9.-]+\.[a-z]{2,}/",
+        ):
             self.assertIsNone(re.search(pattern, document, re.I), pattern)
 
     def test_the_page_stays_inside_its_own_budget(self):
@@ -65,15 +83,46 @@ class TemplateTests(unittest.TestCase):
         self.assertIn("X-OPOS-Token", js)
         self.assertIn("meta[name=opos-token]", js)
         self.assertIn("textContent", js)
-        for banned in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function", "import(",
-                       "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "localStorage", "sessionStorage", "document.cookie",
-                       "'POST'", '"POST"', "'PUT'", "'DELETE'", "onclick", "setAttribute('on", "location.href", "window.open"):
+        for banned in (
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "eval(",
+            "new Function",
+            "import(",
+            "XMLHttpRequest",
+            "WebSocket",
+            "EventSource",
+            "sendBeacon",
+            "localStorage",
+            "sessionStorage",
+            "document.cookie",
+            "'POST'",
+            '"POST"',
+            "'PUT'",
+            "'DELETE'",
+            "onclick",
+            "setAttribute('on",
+            "location.href",
+            "window.open",
+        ):
             self.assertNotIn(banned, js, banned)
 
     def test_the_theme_script_only_reads_two_known_keys_inside_a_try(self):
         js = read("monitor-theme.js")
         self.assertEqual(sorted(re.findall(r"getItem\('([a-z_]+)'\)", js)), ["jaryo_theme", "opos_text"])
-        for banned in ("setItem", "removeItem", "innerHTML", "eval(", "fetch(", "document.cookie", "sessionStorage", "location", "src="):
+        for banned in (
+            "setItem",
+            "removeItem",
+            "innerHTML",
+            "eval(",
+            "fetch(",
+            "document.cookie",
+            "sessionStorage",
+            "location",
+            "src=",
+        ):
             self.assertNotIn(banned, js, banned)
         self.assertTrue(js.lstrip().startswith("(function(){try{") and "catch(e){}" in js)
         # Only whitelisted values ever reach the document element.
@@ -90,7 +139,7 @@ class TemplateTests(unittest.TestCase):
         # The gap keeps text clear of the hinge on both sides and absorbs a classic scrollbar.
         self.assertIn("column-gap:calc(var(--hinge) + 24px)", css)
         # An explicit Light or Dark choice beats the system theme, as in OPOS's own jaryo.css.
-        self.assertIn('html:not([data-theme])', css)
+        self.assertIn("html:not([data-theme])", css)
         self.assertIn('html[data-theme="light"]', css)
         self.assertIn('html[data-theme="dark"]', css)
         for size, percent in (("s", "87.5%"), ("l", "125%"), ("xl", "150%")):
@@ -107,7 +156,10 @@ class TemplateTests(unittest.TestCase):
         # The status line spans the page, so in two panes it is held to one column; long unbroken text wraps.
         segments = css.split("@media(horizontal-viewport-segments:2){")[1].split("\n}")[0]
         self.assertIn("#mon-status{max-width:calc((100% - var(--hinge) - 24px)/2)}", segments)
-        for selector in (".mon-line,.mon-word,h2{overflow-wrap:anywhere}", ".mon-facts dd{margin:0;overflow-wrap:anywhere}"):
+        for selector in (
+            ".mon-line,.mon-word,h2{overflow-wrap:anywhere}",
+            ".mon-facts dd{margin:0;overflow-wrap:anywhere}",
+        ):
             self.assertIn(selector, css)
         self.assertIn("overflow-wrap:anywhere;position:sticky", css)
         live = css.split(".mon-live{")[1].split("}")[0]
@@ -127,22 +179,37 @@ class TemplateTests(unittest.TestCase):
 class SourceRuleTests(unittest.TestCase):
     def test_license_headers(self):
         for path in (ROOT / "src" / "opos" / "monitor.py", *sorted((ROOT / "tests").glob("test_monitor_*.py"))):
-            self.assertTrue(path.read_text(encoding="utf-8").startswith("# SPDX-License-Identifier: GPL-3.0-or-later\n"), path.name)
+            self.assertTrue(
+                path.read_text(encoding="utf-8").startswith("# SPDX-License-Identifier: GPL-3.0-or-later\n"), path.name
+            )
 
     def test_the_repository_privacy_guard_would_find_nothing(self):
         # The patterns of guard/check.py (PRIVATE), built from parts so this file does not trip them itself.
         octet = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
-        patterns = [re.compile(p) for p in (
-            r"(?<![\d.])10\." + octet + r"\." + octet + r"\." + octet + r"(?![\d.])",
-            r"(?<![\d.])172\.(?:1[6-9]|2[0-9]|3[01])\." + octet + r"\." + octet + r"(?![\d.])",
-            r"(?<![\d.])192\.168\." + octet + r"\." + octet + r"(?![\d.])",
-            "/" + "Users/[A-Za-z]", r"(?<![\w.-])/" + "home/[A-Za-z][A-Za-z0-9._-]",
-            r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*[\"'][^\"']{8,}",
-            r"[A-Za-z]:\\{1,2}" + "Users" + r"\\{1,2}", r"-----BEGIN [A-Z ]*PRIVATE" + " KEY",
-            r"\b(sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_]{16,}", r"AKIA[0-9A-Z]{16}")]
-        non_meta = re.compile(r"\b(gpt-?[0-9o]|claude|gemini|mistral|mixtral|qwen|deepseek|phi-[0-9]|gemma|command-r|grok|codex|openai|anthropic|chatgpt)", re.I)
-        files = [ROOT / "src" / "opos" / "monitor.py", *sorted((ROOT / "src" / "opos" / "web_static").glob("monitor*")),
-                 *sorted((ROOT / "tests").glob("test_monitor_*.py"))]
+        patterns = [
+            re.compile(p)
+            for p in (
+                r"(?<![\d.])10\." + octet + r"\." + octet + r"\." + octet + r"(?![\d.])",
+                r"(?<![\d.])172\.(?:1[6-9]|2[0-9]|3[01])\." + octet + r"\." + octet + r"(?![\d.])",
+                r"(?<![\d.])192\.168\." + octet + r"\." + octet + r"(?![\d.])",
+                "/" + "Users/[A-Za-z]",
+                r"(?<![\w.-])/" + "home/[A-Za-z][A-Za-z0-9._-]",
+                r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*[\"'][^\"']{8,}",
+                r"[A-Za-z]:\\{1,2}" + "Users" + r"\\{1,2}",
+                r"-----BEGIN [A-Z ]*PRIVATE" + " KEY",
+                r"\b(sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_]{16,}",
+                r"AKIA[0-9A-Z]{16}",
+            )
+        ]
+        non_meta = re.compile(
+            r"\b(gpt-?[0-9o]|claude|gemini|mistral|mixtral|qwen|deepseek|phi-[0-9]|gemma|command-r|grok|codex|openai|anthropic|chatgpt)",
+            re.I,
+        )
+        files = [
+            ROOT / "src" / "opos" / "monitor.py",
+            *sorted((ROOT / "src" / "opos" / "web_static").glob("monitor*")),
+            *sorted((ROOT / "tests").glob("test_monitor_*.py")),
+        ]
         self.assertGreaterEqual(len(files), 8)
         for path in files:
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -180,7 +247,9 @@ class SourceRuleTests(unittest.TestCase):
                 for part in node.values:
                     if isinstance(part, ast.FormattedValue):
                         field = ast.get_source_segment(source, part.value) or ""
-                        self.assertNotIn(quote[0], field, f"{path.name}:{node.lineno}: quote reused inside an f-string field")
+                        self.assertNotIn(
+                            quote[0], field, f"{path.name}:{node.lineno}: quote reused inside an f-string field"
+                        )
                         self.assertNotIn("\\", field, f"{path.name}:{node.lineno}: backslash inside an f-string field")
         # The detector sees what 3.11 would refuse. 3.11's parser rejects the sample outright;
         # 3.12 parses it and the quote is inside the replacement field, which the scan above flags.
@@ -252,8 +321,24 @@ def doc(*sections, ago=1):
     return {"updatedAgoSeconds": ago, "sections": list(sections)}
 
 
-def sec(id="duo", title="This Duo", status="NO MODEL", glyph="[ ]", lines=("No model.",), facts=(("Battery", "54%"),), pre=None):
-    return {"id": id, "title": title, "status": status, "glyph": glyph, "lines": list(lines), "facts": [list(f) for f in facts], "pre": pre}
+def sec(
+    id="duo",
+    title="This Duo",
+    status="NO MODEL",
+    glyph="[ ]",
+    lines=("No model.",),
+    facts=(("Battery", "54%"),),
+    pre=None,
+):
+    return {
+        "id": id,
+        "title": title,
+        "status": status,
+        "glyph": glyph,
+        "lines": list(lines),
+        "facts": [list(f) for f in facts],
+        "pre": pre,
+    }
 
 
 OK = lambda d: {"status": 200, "doc": d}
@@ -267,8 +352,12 @@ class ScriptSmokeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             harness = Path(scratch) / "harness.js"
             harness.write_text(HARNESS, encoding="utf-8")
-            result = subprocess.run([NODE, str(harness), str(STATIC / "monitor.js"), json.dumps(scenario)],
-                                    capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                [NODE, str(harness), str(STATIC / "monitor.js"), json.dumps(scenario)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
@@ -287,9 +376,30 @@ class ScriptSmokeTests(unittest.TestCase):
 
     def test_a_hostile_document_renders_only_as_text(self):
         evil = "<img src=x onerror=alert(1)>"
-        out = self.run_script(OK({"updatedAgoSeconds": 3, "sections": [
-            {"id": "duo", "title": evil, "status": evil, "glyph": evil * 5, "lines": [evil] * 30, "facts": [[evil, evil], "bad", None, [1, 2]] * 20, "pre": evil * 500},
-            "not a section", None, 7, {}, {}, {}]}))
+        out = self.run_script(
+            OK(
+                {
+                    "updatedAgoSeconds": 3,
+                    "sections": [
+                        {
+                            "id": "duo",
+                            "title": evil,
+                            "status": evil,
+                            "glyph": evil * 5,
+                            "lines": [evil] * 30,
+                            "facts": [[evil, evil], "bad", None, [1, 2]] * 20,
+                            "pre": evil * 500,
+                        },
+                        "not a section",
+                        None,
+                        7,
+                        {},
+                        {},
+                        {},
+                    ],
+                }
+            )
+        )
         shot = out["shots"][0]
         nodes = list(self.flat(shot["body"]))
         self.assertEqual({n["tag"] for n in nodes} - {"section", "h2", "p", "span", "dl", "dt", "dd", "pre"}, set())
@@ -320,9 +430,13 @@ class ScriptSmokeTests(unittest.TestCase):
 
     def test_the_longest_line_the_module_can_emit_is_shown_whole(self):
         from opos import monitor
+
         many = [{"name": "m" * 48, "loaded": True} for _ in range(monitor.MAX_MODELS)]
-        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ".".join(["127", "0", "0", "1"]) + ":1"},
-                               fetch=lambda _r: {"machines": [], "models": many}, probe=lambda _e: ("none", []))
+        view = monitor.Monitor(
+            {"OPOS_AGIW_URL": "http://" + ".".join(["127", "0", "0", "1"]) + ":1"},
+            fetch=lambda _r: {"machines": [], "models": many},
+            probe=lambda _e: ("none", []),
+        )
         remote = next(s for s in view.snapshot()["sections"] if s["id"] == "remote")
         out = self.run_script(OK({"updatedAgoSeconds": 0, "sections": [remote]}))
         shown = [n["t"] for n in self.flat(out["shots"][0]["body"]) if n["cls"] == "mon-line"]
@@ -330,10 +444,32 @@ class ScriptSmokeTests(unittest.TestCase):
         self.assertTrue(all("\u2026" not in t for t in shown))
 
     def test_the_same_shape_is_updated_in_place_and_only_changed_text_is_written(self):
-        first = doc(sec(), sec(id="remote", title="AGIW monitor", status="LIVE", glyph="[x]", lines=("fetched 0 s ago.", "same"),
-                              facts=(("MAC", "UP"), ("MAC age", "1 s")), pre="MAC  UP\n |==="), ago=0)
-        second = doc(sec(), sec(id="remote", title="AGIW monitor", status="LIVE", glyph="[x]", lines=("fetched 2 s ago.", "same"),
-                               facts=(("MAC", "UP"), ("MAC age", "3 s")), pre="MAC  UP\n |==="), ago=2)
+        first = doc(
+            sec(),
+            sec(
+                id="remote",
+                title="AGIW monitor",
+                status="LIVE",
+                glyph="[x]",
+                lines=("fetched 0 s ago.", "same"),
+                facts=(("MAC", "UP"), ("MAC age", "1 s")),
+                pre="MAC  UP\n |===",
+            ),
+            ago=0,
+        )
+        second = doc(
+            sec(),
+            sec(
+                id="remote",
+                title="AGIW monitor",
+                status="LIVE",
+                glyph="[x]",
+                lines=("fetched 2 s ago.", "same"),
+                facts=(("MAC", "UP"), ("MAC age", "3 s")),
+                pre="MAC  UP\n |===",
+            ),
+            ago=2,
+        )
         out = self.run_script([OK(first), OK(second)], polls=2)
         before, after = out["shots"]
         self.assertEqual(before["created"], after["created"], "no node is created when the shape is the same")
@@ -347,8 +483,14 @@ class ScriptSmokeTests(unittest.TestCase):
         self.assertIn("3 s", after_writes)
 
     def test_a_changed_shape_rebuilds_and_a_changed_pre_is_a_rebuild_of_that_shape(self):
-        out = self.run_script([OK(doc(sec(), sec(id="remote", pre="a"))), OK(doc(sec(), sec(id="remote", pre=None))),
-                               OK(doc(sec(lines=("a", "b")), sec(id="remote", pre=None)))], polls=3)
+        out = self.run_script(
+            [
+                OK(doc(sec(), sec(id="remote", pre="a"))),
+                OK(doc(sec(), sec(id="remote", pre=None))),
+                OK(doc(sec(lines=("a", "b")), sec(id="remote", pre=None))),
+            ],
+            polls=3,
+        )
         created = [shot["created"] for shot in out["shots"]]
         self.assertGreater(created[1], created[0])
         self.assertGreater(created[2], created[1])
@@ -367,20 +509,27 @@ class ScriptSmokeTests(unittest.TestCase):
         self.assertEqual(good["liveWrites"], 0)
 
     def test_the_terminal_out_of_date_state_is_announced_even_after_an_earlier_failure(self):
-        out = self.run_script([OK(doc(sec())), {"reject": True}, {"status": 403, "doc": {}}], polls=3, clock=[0, 2000, 4000])
+        out = self.run_script(
+            [OK(doc(sec())), {"reject": True}, {"status": 403, "doc": {}}], polls=3, clock=[0, 2000, 4000]
+        )
         first, second, third = out["shots"]
         self.assertEqual(second["live"], "Could not reach OPOS.")
         self.assertEqual(third["live"], "This page is out of date. Tap Back to the phone, then open Inference again.")
         self.assertEqual(out["cleared"], [1])
 
     def test_the_same_failure_is_not_announced_twice_but_a_different_one_is(self):
-        out = self.run_script([{"reject": True}, {"reject": True}, {"status": 500, "doc": {}}, {"status": 500, "doc": {}}], polls=4,
-                              clock=[0, 2000, 4000, 6000])
+        out = self.run_script(
+            [{"reject": True}, {"reject": True}, {"status": 500, "doc": {}}, {"status": 500, "doc": {}}],
+            polls=4,
+            clock=[0, 2000, 4000, 6000],
+        )
         self.assertEqual([s["liveWrites"] for s in out["shots"]], [1, 1, 2, 2])
         self.assertEqual(out["shots"][2]["live"], "OPOS answered with an error.")
 
     def test_the_live_region_is_written_once_per_change_of_state_not_per_poll(self):
-        out = self.run_script([{"reject": True}] * 3 + [OK(doc(sec()))] * 3, polls=6, clock=[0, 2000, 4000, 6000, 8000, 10000])
+        out = self.run_script(
+            [{"reject": True}] * 3 + [OK(doc(sec()))] * 3, polls=6, clock=[0, 2000, 4000, 6000, 8000, 10000]
+        )
         writes = [shot["liveWrites"] for shot in out["shots"]]
         self.assertEqual(writes, [1, 1, 1, 2, 2, 2])
 
@@ -390,8 +539,14 @@ class ScriptSmokeTests(unittest.TestCase):
         self.assertEqual(out["shots"][0]["bodyClass"], "")
 
     def test_an_error_answer_is_not_reported_as_unreachable(self):
-        for reply in ({"status": 500, "doc": {}}, {"status": 429, "doc": {}}, {"status": 200, "doc": {"sections": []}},
-                      {"status": 200, "doc": None}, {"status": 200, "badjson": True, "doc": None}, {"status": 200, "doc": {"sections": [None, 5]}}):
+        for reply in (
+            {"status": 500, "doc": {}},
+            {"status": 429, "doc": {}},
+            {"status": 200, "doc": {"sections": []}},
+            {"status": 200, "doc": None},
+            {"status": 200, "badjson": True, "doc": None},
+            {"status": 200, "doc": {"sections": [None, 5]}},
+        ):
             out = self.run_script(reply)
             self.assertEqual(out["shots"][0]["status"], "OPOS answered with an error.", reply)
 
@@ -412,7 +567,9 @@ class ScriptSmokeTests(unittest.TestCase):
 
     def test_a_request_is_called_slow_only_after_ten_seconds_measured_from_its_own_start(self):
         # Poll 2 starts at t=2 s and never answers. A tick at 9 s (a 7 s old request) says nothing; one at 13 s (11 s old) does.
-        out = self.run_script([OK(doc(sec())), {"hang": True}, {"hang": True}, {"hang": True}], polls=4, clock=[0, 2000, 9000, 13000])
+        out = self.run_script(
+            [OK(doc(sec())), {"hang": True}, {"hang": True}, {"hang": True}], polls=4, clock=[0, 2000, 9000, 13000]
+        )
         first, second, third, fourth = out["shots"]
         for shot in (second, third):
             self.assertEqual(shot["live"], "", "a slow request is not an announcement")
@@ -441,14 +598,17 @@ class ScriptSmokeTests(unittest.TestCase):
         self.assertEqual(out["shots"][1]["status"], "Updated 1 s ago.")
 
     def test_coming_back_to_the_foreground_marks_an_old_answer_before_the_new_one_arrives(self):
-        out = self.run_script([OK(doc(sec())), {"hang": True}], polls=1, visibleAgain=True, visibleStep=1, clock=[0, 60000])
+        out = self.run_script(
+            [OK(doc(sec())), {"hang": True}], polls=1, visibleAgain=True, visibleStep=1, clock=[0, 60000]
+        )
         self.assertEqual(out["final"]["status"], "Last good answer 60 s ago.")
         self.assertEqual(out["final"]["bodyClass"], "mon-stale")
 
     def test_slow_is_not_announced_again_after_a_failure_with_no_good_answer_since(self):
         """R3-9: 'Could not reach OPOS.' was announced; a later slow request must not talk over it."""
-        out = self.run_script([OK(doc(sec())), {"reject": True}, {"hang": True}, {"hang": True}], polls=4,
-                              clock=[0, 2000, 4000, 20000])
+        out = self.run_script(
+            [OK(doc(sec())), {"reject": True}, {"hang": True}, {"hang": True}], polls=4, clock=[0, 2000, 4000, 20000]
+        )
         self.assertEqual(out["shots"][1]["live"], "Could not reach OPOS.")
         fourth = out["shots"][3]
         self.assertEqual(fourth["live"], "Could not reach OPOS.")
@@ -463,15 +623,21 @@ class ScriptSmokeTests(unittest.TestCase):
 
     def test_after_a_refused_token_no_counted_age_is_shown_because_nothing_will_refresh_it(self):
         """r5 low: 'Last good answer 2 s ago' must not sit frozen on a page that will never update."""
-        out = self.run_script([OK(doc(sec())), {"status": 403, "doc": {}}, {"hang": True}], polls=3, clock=[0, 2000, 38000])
+        out = self.run_script(
+            [OK(doc(sec())), {"status": 403, "doc": {}}, {"hang": True}], polls=3, clock=[0, 2000, 38000]
+        )
         message = "This page is out of date. Tap Back to the phone, then open Inference again."
         self.assertEqual(out["shots"][1]["status"], message)
         self.assertEqual(out["shots"][2]["status"], message, "the timer must not append an age later either")
         self.assertEqual(out["shots"][1]["bodyClass"], "mon-stale", "the old answer is still dimmed")
 
     def test_a_good_answer_clears_the_remembered_failure(self):
-        out = self.run_script([OK(doc(sec())), {"reject": True}, OK(doc(sec())), {"hang": True}], polls=4, clock=[0, 2000, 4000, 40000])
-        self.assertEqual(out["shots"][3]["status"], "Last good answer 36 s ago.", "the old failure text must not come back")
+        out = self.run_script(
+            [OK(doc(sec())), {"reject": True}, OK(doc(sec())), {"hang": True}], polls=4, clock=[0, 2000, 4000, 40000]
+        )
+        self.assertEqual(
+            out["shots"][3]["status"], "Last good answer 36 s ago.", "the old failure text must not come back"
+        )
 
     def test_the_request_is_given_up_on_well_after_the_servers_own_deadlines(self):
         js = read("monitor.js")
@@ -479,12 +645,14 @@ class ScriptSmokeTests(unittest.TestCase):
         self.assertIn("setTimeout(function(){if(ctl)ctl.abort()},GIVE_UP_MS)", js)
         self.assertIn("now()-reqAt>SLOW_MS", js)
         from opos import monitor
+
         worst = monitor.LOCAL_TOTAL + monitor.TOTAL_DEADLINE
         self.assertGreater(10, worst, "SLOW_MS (10 s) must sit above the server's own worst case")
 
     def test_the_page_title_may_break_anywhere_so_it_cannot_overflow_at_200_percent(self):
         """R3-6"""
         import re
+
         css = read("monitor.css")
         rule = re.search(r"(?m)^h1\{([^}]*)\}", css)
         self.assertIsNotNone(rule)
@@ -495,7 +663,10 @@ class ScriptSmokeTests(unittest.TestCase):
             out = self.run_script(OK(doc(sec())), token=token)
             self.assertEqual(out["total"], 0, repr(token))
             self.assertEqual(out["intervals"], [])
-            self.assertEqual(out["shots"][0]["status"], "This page has no access token. Tap Back to the phone, then open Inference again.")
+            self.assertEqual(
+                out["shots"][0]["status"],
+                "This page has no access token. Tap Back to the phone, then open Inference again.",
+            )
 
     def test_a_hidden_page_does_not_poll_on_the_timer(self):
         out = self.run_script(OK(doc(sec())), visibility="hidden", polls=3)

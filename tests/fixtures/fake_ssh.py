@@ -7,6 +7,7 @@ minimal Chrome DevTools endpoint (/json/list and a WebSocket that answers Page.c
 the screenshot split over several frames, preceded by an event with no id). Any other call is a remote command, answered
 from the scenario. Only what the script needs is implemented.
 """
+
 import base64
 import hashlib
 import json
@@ -27,7 +28,13 @@ def png(w, h):
 
     def chunk(t, d):
         return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def frame(op, payload, fin=True):
@@ -62,13 +69,17 @@ def serve_ws(conn):
             return
         req = json.loads(data)
         if req["method"] == "Page.captureScreenshot":
-            body = json.dumps({"id": req["id"], "result": {"data": base64.b64encode(png(*SC["png"])).decode()}}).encode()
-            parts = [body[i:i + 40000] for i in range(0, len(body), 40000)]
+            body = json.dumps(
+                {"id": req["id"], "result": {"data": base64.b64encode(png(*SC["png"])).decode()}}
+            ).encode()
+            parts = [body[i : i + 40000] for i in range(0, len(body), 40000)]
             for i, part in enumerate(parts):
                 conn.sendall(frame(1 if i == 0 else 0, part, fin=i == len(parts) - 1))
         elif req["method"] == "Runtime.evaluate":
             v = json.dumps(SC["viewport"])
-            conn.sendall(frame(1, json.dumps({"id": req["id"], "result": {"result": {"type": "string", "value": v}}}).encode()))
+            conn.sendall(
+                frame(1, json.dumps({"id": req["id"], "result": {"result": {"type": "string", "value": v}}}).encode())
+            )
         else:
             conn.sendall(frame(1, json.dumps({"id": req["id"], "error": {"message": "unknown method"}}).encode()))
 
@@ -83,16 +94,28 @@ def handle(conn):
             buf += c
         line, _, rest = buf.partition(b"\r\n")
         path = line.split()[1].decode()
-        headers = {k.lower(): v.strip() for k, _, v in (ln.decode().partition(":") for ln in rest.split(b"\r\n") if b":" in ln)}
+        headers = {
+            k.lower(): v.strip() for k, _, v in (ln.decode().partition(":") for ln in rest.split(b"\r\n") if b":" in ln)
+        }
         if "origin" in headers:
             conn.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
             return
         if path == "/json/list":
             body = json.dumps([{"id": "PAGE1", "type": "page", "url": SC["page_url"], "title": "OPOS"}]).encode()
-            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
+            conn.sendall(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n"
+                % len(body)
+                + body
+            )
         elif path == "/devtools/page/PAGE1" and "sec-websocket-key" in headers:
-            acc = base64.b64encode(hashlib.sha1(headers["sec-websocket-key"].encode() + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
-            conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + acc + b"\r\n\r\n")
+            acc = base64.b64encode(
+                hashlib.sha1(headers["sec-websocket-key"].encode() + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest()
+            )
+            conn.sendall(
+                b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
+                + acc
+                + b"\r\n\r\n"
+            )
             serve_ws(conn)
         else:
             conn.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")

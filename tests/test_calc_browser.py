@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless calculator: 1 + 2 = 3 at three sizes, light and dark."""
+
 import json
 import os
 import shutil
@@ -29,7 +30,14 @@ if(window.innerWidth>=1200){
 if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
 return out;
 """
-CASES = ((1392, 900, "light", 1), (1392, 900, "dark", 1), (675, 900, "light", 1), (675, 900, "dark", 1), (360, 640, "light", 2), (360, 640, "dark", 2))
+CASES = (
+    (1392, 900, "light", 1),
+    (1392, 900, "dark", 1),
+    (675, 900, "light", 1),
+    (675, 900, "dark", 1),
+    (360, 640, "light", 2),
+    (360, 640, "dark", 2),
+)
 
 
 class CalcBrowser(unittest.TestCase):
@@ -74,10 +82,23 @@ class CalcBrowser(unittest.TestCase):
         acceptance._kill(getattr(self, "proc", None))
 
     def test_one_plus_two(self):
-        cases = [{"url": self.origin + "/calc", "width": w, "height": h, "theme": t, "scale": s, "hand": "right", "script": FLOW} for w, h, t, s in CASES]
+        cases = [
+            {
+                "url": self.origin + "/calc",
+                "width": w,
+                "height": h,
+                "theme": t,
+                "scale": s,
+                "hand": "right",
+                "script": FLOW,
+            }
+            for w, h, t, s in CASES
+        ]
         plan = os.path.join(self.run, "plan.json")
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90)
+        result = subprocess.run(
+            [self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-800:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 

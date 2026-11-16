@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Offline regression fixtures for the eight ckpt2 security findings; no sockets or devices."""
+
 import io
 import hashlib
 import os
@@ -26,8 +27,13 @@ class Findings(unittest.TestCase):
         self.root = usb.make_root(Path(self.tmp.name) / "root")
 
     def shell(self, code, **env):
-        return subprocess.run(["sh", "-c", code], env={**os.environ, "TMPDIR": self.tmp.name, **env},
-                              text=True, capture_output=True, timeout=30)
+        return subprocess.run(
+            ["sh", "-c", code],
+            env={**os.environ, "TMPDIR": self.tmp.name, **env},
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
 
     def test_1_inherited_usb_shell_does_not_survive_the_builder_helper_call(self):
         r = self.root
@@ -47,14 +53,16 @@ class Findings(unittest.TestCase):
 
     def test_2_build_rejects_a_quoted_password_match(self):
         (self.root / "etc/ssh/sshd_config.d/20-local.conf").write_text(
-            'Match Address ' + usb.USB_NET + '\n PasswordAuthentication "yes"\n')
+            "Match Address " + usb.USB_NET + '\n PasswordAuthentication "yes"\n'
+        )
         p = usb.run_build(self.root)
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
     def test_2_verifier_rejects_a_quoted_password_match(self):
         self.assertEqual(usb.run_build(self.root).returncode, 0)
         (self.root / "etc/ssh/sshd_config.d/20-local.conf").write_text(
-            'Match Address ' + usb.USB_NET + '\n PasswordAuthentication "yes"\n')
+            "Match Address " + usb.USB_NET + '\n PasswordAuthentication "yes"\n'
+        )
         self.assertNotEqual(usb.run_verify(self.root).returncode, 0)
 
     def test_2_verifier_requires_the_global_include(self):
@@ -68,17 +76,23 @@ class Findings(unittest.TestCase):
         (self.root / "etc/sudoers").write_text("%sudo ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n")
         (self.root / "etc/sudoers.d/91-local").write_text("Defaults:droidian !authenticate\n")
         code = sudo.block(*sudo.VERIFY_BLOCK)
-        p = self.shell('r="$ROOT"; here="$PKG"; chome=/home/droidian; fail=0; '
-                       'check() { if ! eval "$2"; then fail=1; fi; }; ' + code + '\nexit "$fail"',
-                       ROOT=str(self.root), PKG=str(PKG))
+        p = self.shell(
+            'r="$ROOT"; here="$PKG"; chome=/home/droidian; fail=0; '
+            'check() { if ! eval "$2"; then fail=1; fi; }; ' + code + '\nexit "$fail"',
+            ROOT=str(self.root),
+            PKG=str(PKG),
+        )
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
     def preflight(self, **env):
         # Execute the real builder through the first copy, never mount or copy an image.
-        code = (PKG / "build-image.sh").read_text().split('stage=$(mktemp -d', 1)[0]
-        code = code.replace('here=$(cd "$(dirname "$0")" && pwd)', 'here=' + str(PKG))
-        return self.shell('id() { echo 0; }; readlink() { echo "$2"; }; '
-                          'set -- missing-base untouched-output; ' + code + '\necho REACHED-COPY', **env)
+        code = (PKG / "build-image.sh").read_text().split("stage=$(mktemp -d", 1)[0]
+        code = code.replace('here=$(cd "$(dirname "$0")" && pwd)', "here=" + str(PKG))
+        return self.shell(
+            'id() { echo 0; }; readlink() { echo "$2"; }; '
+            "set -- missing-base untouched-output; " + code + "\necho REACHED-COPY",
+            **env,
+        )
 
     def test_4_an_owner_key_is_required_before_copying(self):
         p = self.preflight(OPOS_OWNER_SSH_PUBKEY="", OPOS_DEV_SSH_PUBKEY="", OPOS_ALLOW_NO_SSH="0")
@@ -99,7 +113,14 @@ class Findings(unittest.TestCase):
         for rel in ("docs/ota-release-howto.md", "tools/opos-release.py"):
             text = (usb.ROOT / rel).read_text()
             recipe = next(line for line in text.splitlines() if "sh packaging/duo-os/build-image.sh" in line)
-            for assignment in ("OPOS_RELEASE=1", "OPOS_DEV_SPAN=0", "OPOS_DEV_SUDO=0", "OPOS_DEV_USB_SHELL=0", "OPOS_DEV_SSH_PUBKEY=", "OPOS_OWNER_SSH_PUBKEY="):
+            for assignment in (
+                "OPOS_RELEASE=1",
+                "OPOS_DEV_SPAN=0",
+                "OPOS_DEV_SUDO=0",
+                "OPOS_DEV_USB_SHELL=0",
+                "OPOS_DEV_SSH_PUBKEY=",
+                "OPOS_OWNER_SSH_PUBKEY=",
+            ):
                 self.assertIn(assignment, recipe, rel)
 
     def test_6_the_original_usb_password_exception_fails_selftest(self):
@@ -115,7 +136,7 @@ class Findings(unittest.TestCase):
         f = st.Fake()
         self.addCleanup(f.cleanup)
         for option in ("PasswordAuthentication", "KbdInteractiveAuthentication", "ChallengeResponseAuthentication"):
-            f.put("etc/ssh/sshd_config.d/20-local.conf", 'Match User droidian\n ' + option + ' "yes" # local\n')
+            f.put("etc/ssh/sshd_config.d/20-local.conf", "Match User droidian\n " + option + ' "yes" # local\n')
             c = st.ST.Ctx(str(f.root), [str(f.bin)], f.url, st.NOW, None)
             with redirect_stdout(io.StringIO()):
                 st.ST.check_ssh(c)
@@ -130,15 +151,18 @@ class Findings(unittest.TestCase):
         self.assertIn("position:fixed", css)
         self.assertIn("z-index:2147483647", css)
 
-        def closed(p):  # what Path.exists does before Python 3.14 when /etc/sudoers.d is 0750 and the server is not root
+        def closed(
+            p,
+        ):  # what Path.exists does before Python 3.14 when /etc/sudoers.d is 0750 and the server is not root
             if str(p) == "/etc/sudoers.d/90-opos-dev":
                 raise PermissionError(13, "Permission denied", str(p))
             return original(p)
+
         with mock.patch.object(Path, "exists", closed):
             plain = panes.css_text(env={"OPOS_PANES": "1"})
             self.assertIsNotNone(panes.asset("/panes.css", env={"OPOS_PANES": "1"}))
         self.assertNotIn("passwordless sudo", plain)
-        self.assertEqual(css[:len(plain)], plain)
+        self.assertEqual(css[: len(plain)], plain)
         self.assertEqual(before, panes.inject("<head></head><body>phone</body>", "n1", {"OPOS_PANES": "1"}))
 
     def test_8_only_dev_expectation_covers_every_emitted_id(self):
@@ -148,13 +172,18 @@ class Findings(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             st.ST.check_dev(c)
         test_source = (usb.ROOT / "tests/test_duo_dev_sudo.py").read_text()
-        expected = re.search(r'self.assertEqual\(sorted\(r.rows\), (\[.*?\])\)', test_source).group(1)
+        expected = re.search(r"self.assertEqual\(sorted\(r.rows\), (\[.*?\])\)", test_source).group(1)
         import ast
+
         self.assertEqual(sorted(row[1] for row in c.rows), ast.literal_eval(expected))
 
     def policy(self, mode):
-        return subprocess.run([sys.executable, "-I", "-B", str(PKG / "image-policy.py"), mode, str(self.root)],
-                              capture_output=True, text=True, timeout=30)
+        return subprocess.run(
+            [sys.executable, "-I", "-B", str(PKG / "image-policy.py"), mode, str(self.root)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
     def test_2_other_include_paths_are_checked_in_both_scripts(self):
         main = self.root / "etc/ssh/sshd_config"
@@ -178,11 +207,17 @@ class Findings(unittest.TestCase):
     def test_3_builder_rejects_inherited_defaults_and_external_includes(self):
         (self.root / "etc/sudoers.d").mkdir()
         (self.root / "etc/sudoers").write_text("%sudo ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n")
-        for setting in ("Defaults:droidian !authenticate", "Defaults exempt_group=sudo", "@include /opt/local-policy", "#include /opt/local-policy"):
+        for setting in (
+            "Defaults:droidian !authenticate",
+            "Defaults exempt_group=sudo",
+            "@include /opt/local-policy",
+            "#include /opt/local-policy",
+        ):
             (self.root / "etc/sudoers.d/91-local").write_text(setting + "\n")
             code = sudo.block(*sudo.WRITE_BLOCK)
-            p = self.shell('set -e; r="$ROOT"; here="$PKG"; ' + code,
-                           ROOT=str(self.root), PKG=str(PKG), OPOS_DEV_SUDO="0")
+            p = self.shell(
+                'set -e; r="$ROOT"; here="$PKG"; ' + code, ROOT=str(self.root), PKG=str(PKG), OPOS_DEV_SUDO="0"
+            )
             self.assertNotEqual(p.returncode, 0, setting + p.stderr)
 
     def recovery_root(self):
@@ -206,8 +241,14 @@ class Findings(unittest.TestCase):
 
     def provision(self, pub, **env):
         code = usb.block("build-image.sh", "# --- recovery: BEGIN", "# --- recovery: END")
-        return self.shell('set -eu; r="$ROOT"; here="$PKG"; ' + code, ROOT=str(self.root), PKG=str(PKG),
-                          OPOS_OWNER_SSH_PUBKEY=str(pub), OPOS_DEV_SSH_PUBKEY="", **env)
+        return self.shell(
+            'set -eu; r="$ROOT"; here="$PKG"; ' + code,
+            ROOT=str(self.root),
+            PKG=str(PKG),
+            OPOS_OWNER_SSH_PUBKEY=str(pub),
+            OPOS_DEV_SSH_PUBKEY="",
+            **env,
+        )
 
     def test_4_recovery_repairs_home_and_rejects_bad_permissions_and_missing_startup(self):
         pub, home = self.recovery_root()
@@ -245,7 +286,12 @@ class Findings(unittest.TestCase):
         self.assertFalse((outside / ".ssh/authorized_keys").exists())
 
     def test_5_release_refuses_inherited_dev_inputs_and_installed_dev_files(self):
-        for name, value in (("OPOS_DEV_SSH_PUBKEY", "/dev/null"), ("OPOS_DEV_USB_SHELL", "1"), ("OPOS_DEV_SUDO", "1"), ("OPOS_DEV_SPAN", "1")):
+        for name, value in (
+            ("OPOS_DEV_SSH_PUBKEY", "/dev/null"),
+            ("OPOS_DEV_USB_SHELL", "1"),
+            ("OPOS_DEV_SUDO", "1"),
+            ("OPOS_DEV_SPAN", "1"),
+        ):
             p = self.preflight(OPOS_RELEASE="1", OPOS_ALLOW_NO_SSH="1", **{name: value})
             self.assertEqual(p.returncode, 2, p.stderr)
             self.assertIn("development inputs", p.stderr)
@@ -253,8 +299,12 @@ class Findings(unittest.TestCase):
         (self.root / "etc/opos/usb-shell.conf").write_text("enabled=0\n")
         (self.root / "etc/opos/build-mode").write_text("release\n")
         self.assertEqual(self.policy("release").returncode, 0)
-        for rel in ("etc/default/opos-kiosk", "etc/sudoers.d/90-opos-dev", "etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf",
-                    "etc/systemd/system/multi-user.target.wants/opos-clock-set.path"):
+        for rel in (
+            "etc/default/opos-kiosk",
+            "etc/sudoers.d/90-opos-dev",
+            "etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf",
+            "etc/systemd/system/multi-user.target.wants/opos-clock-set.path",
+        ):
             path = self.root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("stale dev state\n")
@@ -264,11 +314,21 @@ class Findings(unittest.TestCase):
     def test_5_owner_provisioning_replaces_inherited_keys_without_enabling_devtools(self):
         pub, home = self.recovery_root()
         (home / ".ssh/authorized_keys").write_text("inherited developer key\n")
-        code = (PKG / "build-image.sh").read_text().split("# --- recovery: BEGIN\n", 1)[1].split("# --- dev span: BEGIN", 1)[0]
+        code = (
+            (PKG / "build-image.sh")
+            .read_text()
+            .split("# --- recovery: BEGIN\n", 1)[1]
+            .split("# --- dev span: BEGIN", 1)[0]
+        )
         (self.root / "etc/default").mkdir()
         (self.root / "etc/default/opos-kiosk").write_text("OPOS_KIOSK_DEBUG_PORT=9222\n")
-        p = self.shell('set -eu; r="$ROOT"; here="$PKG"; ' + code, ROOT=str(self.root), PKG=str(PKG),
-                       OPOS_OWNER_SSH_PUBKEY=str(pub), OPOS_DEV_SSH_PUBKEY="")
+        p = self.shell(
+            'set -eu; r="$ROOT"; here="$PKG"; ' + code,
+            ROOT=str(self.root),
+            PKG=str(PKG),
+            OPOS_OWNER_SSH_PUBKEY=str(pub),
+            OPOS_DEV_SSH_PUBKEY="",
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual((home / ".ssh/authorized_keys").read_text(), pub.read_text())
         self.assertFalse((self.root / "etc/default/opos-kiosk").exists())
@@ -276,6 +336,7 @@ class Findings(unittest.TestCase):
 
 class SshInMemory(st.Ssh):
     """Run the existing SSH assertions without starting their usual loopback server."""
+
     def setUp(self):
         self.f = st.Fake()
         self.addCleanup(self.f.cleanup)
@@ -290,6 +351,7 @@ class SshInMemory(st.Ssh):
 
 class DevInMemory(sudo.SelftestWarning):
     """Exercise the actual --only dev assertions with just the read-only dev check."""
+
     def setUp(self):
         self.f = st.Fake()
         self.addCleanup(self.f.cleanup)
@@ -305,13 +367,23 @@ class DevInMemory(sudo.SelftestWarning):
 
 class PageBytes(unittest.TestCase):
     def test_page_and_home_digests_match_the_pre_fix_copy_without_sockets(self):
-        switches = {"OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1", "OPOS_MONITOR": "1", "OPOS_PANES": "1", "OPOS_SPAN": "675,42"}
+        switches = {
+            "OPOS_OSK": "1",
+            "OPOS_NETWORK": "1",
+            "OPOS_FIRSTRUN": "1",
+            "OPOS_MONITOR": "1",
+            "OPOS_PANES": "1",
+            "OPOS_SPAN": "675,42",
+        }
 
         def home(enabled):
             env = dict.fromkeys(switches, "")
             env.update(enabled)
-            with tempfile.TemporaryDirectory() as config, mock.patch.dict(os.environ, dict(env, OPOS_CONFIG_DIR=config)), \
-                    mock.patch.object(web.secrets, "token_urlsafe", return_value="n" * 22):
+            with (
+                tempfile.TemporaryDirectory() as config,
+                mock.patch.dict(os.environ, dict(env, OPOS_CONFIG_DIR=config)),
+                mock.patch.object(web.secrets, "token_urlsafe", return_value="n" * 22),
+            ):
                 undo = firstrun.install(web)
                 try:
                     h = web.Handler.__new__(web.Handler)
@@ -333,14 +405,20 @@ class PageBytes(unittest.TestCase):
         with mock.patch.dict(os.environ, dict(dict.fromkeys(switches, ""), TZ="UTC")):
             time.tzset()
             self.addCleanup(time.tzset)
-            bodies = [web.page("t" * 43, "n" * 22).encode(),
-                      web.page("t" * 43, "n" * 22, span=web.parse_span("675,42")).encode(), home({}), home(switches)]
+            bodies = [
+                web.page("t" * 43, "n" * 22).encode(),
+                web.page("t" * 43, "n" * 22, span=web.parse_span("675,42")).encode(),
+                home({}),
+                home(switches),
+            ]
         # Re-recorded for corrected component, simulation and hosted-demo privacy notices.
         # Under these same fixtures, only those three notice blocks differ from the prior copy.
         # Re-recorded again when the privacy notice went back to naming the Inference page (22 bytes longer each).
         # Re-recorded when phone-b.css lost its focus ring that jaryo.css overrode (128 bytes shorter; 127 where the span squeezes).
-        expected = [(100626, "4589ef7bf1fb8534264d649a923b367f2ba83788b04371089c1b5a91406f3d6a"),
-                    (100670, "db4ef7c9c09d4a0828c23d26c3cf30e691592699570dadb252ddaba60a67f0eb"),
-                    (100698, "fe5cc9f003c1ad0b63c6ec9be1d41099122c0b0d357b34a19f6d4b93c4f97fed"),
-                    (101743, "d2702e31f49753ef48352bb5e3fd24f6836a3ad1ca10a005ab12c1931bbc12cd")]
+        expected = [
+            (100626, "4589ef7bf1fb8534264d649a923b367f2ba83788b04371089c1b5a91406f3d6a"),
+            (100670, "db4ef7c9c09d4a0828c23d26c3cf30e691592699570dadb252ddaba60a67f0eb"),
+            (100698, "fe5cc9f003c1ad0b63c6ec9be1d41099122c0b0d357b34a19f6d4b93c4f97fed"),
+            (101743, "d2702e31f49753ef48352bb5e3fd24f6836a3ad1ca10a005ab12c1931bbc12cd"),
+        ]
         self.assertEqual([(len(body), hashlib.sha256(body).hexdigest()) for body in bodies], expected)

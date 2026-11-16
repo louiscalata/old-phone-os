@@ -62,7 +62,23 @@ _ALLOWED_ENV = ("PATH", "TERM", "LANG", "LC_ALL", "HOME", "TMPDIR")
 
 def _harden_mutating_commands():
     # Maintained inventory covers host-facing commands and probes from the main script and sourced libraries; mkdir, chmod, cp, mv, rm, and touch stay outside so temporary-root file operations execute normally.
-    return ("systemctl", "id", "nft", "sysctl", "apt-get", "chown", "passwd", "sshd", "ssh-keygen", "dpkg", "findmnt", "iptables-legacy", "ip6tables-legacy", "iptables-legacy-restore", "ip6tables-legacy-restore")
+    return (
+        "systemctl",
+        "id",
+        "nft",
+        "sysctl",
+        "apt-get",
+        "chown",
+        "passwd",
+        "sshd",
+        "ssh-keygen",
+        "dpkg",
+        "findmnt",
+        "iptables-legacy",
+        "ip6tables-legacy",
+        "iptables-legacy-restore",
+        "ip6tables-legacy-restore",
+    )
 
 
 def _assert_resolves_inside_stub(env, stub_dir):
@@ -192,25 +208,115 @@ _SHELL_KEYWORDS_COMMAND_NEXT = frozenset(("if", "then", "else", "elif", "do", "w
 
 _SHELL_KEYWORDS_STMT_NEXT = frozenset(("fi", "done", "esac", "}"))
 
-_SHELL_NON_COMMAND = frozenset((
-    "if", "then", "else", "elif", "fi", "for", "in", "while", "until",
-    "do", "done", "case", "esac", "select", "function", "time", "coproc",
-    "!", "{", "}", "[[", "]]", "[", ":", ".", "source",
-    "true", "false", "test", "echo", "printf", "read", "set", "shift",
-    "trap", "return", "exit", "break", "continue", "declare", "local",
-    "export", "readonly", "typeset", "unset", "eval", "exec", "command",
-    "builtin", "type", "hash", "pwd", "cd", "pushd", "popd", "dirs",
-    "jobs", "bg", "fg", "wait", "kill", "disown", "suspend", "ulimit",
-    "umask", "shopt", "getopts", "history", "alias", "unalias", "enable",
-    "help", "let", "logout", "bind", "caller", "compgen", "complete",
-    "compopt", "mapfile", "run", "have_cmd",
-))
+_SHELL_NON_COMMAND = frozenset(
+    (
+        "if",
+        "then",
+        "else",
+        "elif",
+        "fi",
+        "for",
+        "in",
+        "while",
+        "until",
+        "do",
+        "done",
+        "case",
+        "esac",
+        "select",
+        "function",
+        "time",
+        "coproc",
+        "!",
+        "{",
+        "}",
+        "[[",
+        "]]",
+        "[",
+        ":",
+        ".",
+        "source",
+        "true",
+        "false",
+        "test",
+        "echo",
+        "printf",
+        "read",
+        "set",
+        "shift",
+        "trap",
+        "return",
+        "exit",
+        "break",
+        "continue",
+        "declare",
+        "local",
+        "export",
+        "readonly",
+        "typeset",
+        "unset",
+        "eval",
+        "exec",
+        "command",
+        "builtin",
+        "type",
+        "hash",
+        "pwd",
+        "cd",
+        "pushd",
+        "popd",
+        "dirs",
+        "jobs",
+        "bg",
+        "fg",
+        "wait",
+        "kill",
+        "disown",
+        "suspend",
+        "ulimit",
+        "umask",
+        "shopt",
+        "getopts",
+        "history",
+        "alias",
+        "unalias",
+        "enable",
+        "help",
+        "let",
+        "logout",
+        "bind",
+        "caller",
+        "compgen",
+        "complete",
+        "compopt",
+        "mapfile",
+        "run",
+        "have_cmd",
+    )
+)
 
-_ALLOWED_DIRECT = frozenset((
-    "mkdir", "chmod", "cp", "mv", "rm", "touch", "mktemp",
-    "cat", "dirname", "date", "awk", "grep", "wc", "tr",
-    "head", "tail", "zgrep", "uname",
-))
+_ALLOWED_DIRECT = frozenset(
+    (
+        "mkdir",
+        "chmod",
+        "cp",
+        "mv",
+        "rm",
+        "touch",
+        "mktemp",
+        "cat",
+        "dirname",
+        "date",
+        "awk",
+        "grep",
+        "wc",
+        "tr",
+        "head",
+        "tail",
+        "zgrep",
+        "uname",
+    )
+)
 
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
@@ -225,12 +331,15 @@ def _shell_words(line):
     dq = False
     i = 0
     n = len(line)
+
     def flush():
         if buf:
             words.append(("".join(buf), not quoted))
             del buf[:]
+
     def flush_quoted_state():
         return False
+
     while i < n:
         c = line[i]
         if sq:
@@ -582,14 +691,16 @@ class ServicesRollbackTest(unittest.TestCase):
                 open(os.path.join(self.statedir, "active_" + unit), "w").close()
         with open(os.path.join(self.bindir, "systemctl"), "w", encoding="utf-8") as f:
             f.write(SYSTEMCTL_DOUBLE)
-        os.chmod(os.path.join(self.bindir, "systemctl"),
-                 os.stat(os.path.join(self.bindir, "systemctl")).st_mode
-                 | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        os.chmod(
+            os.path.join(self.bindir, "systemctl"),
+            os.stat(os.path.join(self.bindir, "systemctl")).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+        )
         with open(os.path.join(self.bindir, "id"), "w", encoding="utf-8") as f:
             f.write("#!/bin/sh\necho 0\n")
-        os.chmod(os.path.join(self.bindir, "id"),
-                 os.stat(os.path.join(self.bindir, "id")).st_mode
-                 | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        os.chmod(
+            os.path.join(self.bindir, "id"),
+            os.stat(os.path.join(self.bindir, "id")).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+        )
         for cmd in _harden_mutating_commands() + ("chmod",):
             if cmd in ("systemctl", "id"):
                 continue
@@ -597,21 +708,21 @@ class ServicesRollbackTest(unittest.TestCase):
             if not os.path.exists(stub_path):
                 with open(stub_path, "w", encoding="utf-8") as f:
                     f.write("#!/bin/sh\n")
-                    f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
-                    f.write("printf '%s\\n' \"$HOME\" >> \"$OPOS_TEST_STATE/observed_home\"\n")
-                    f.write("printf '%s\\n' \"$TMPDIR\" >> \"$OPOS_TEST_STATE/observed_tmpdir\"\n")
-                    f.write("cmd=\"$(basename \"$0\")\"\n")
-                    f.write("if [ \"$cmd\" = \"chmod\" ] && [ \"$#\" -eq 2 ] && [ \"$1\" = \"0700\" ]; then\n")
-                    f.write("  tgt=\"$2\"\n")
-                    f.write("  base=\"$OPOS_ROOT/var/backups/opos-harden\"\n")
-                    f.write("  if [ -d \"$tgt\" ]; then\n")
-                    f.write("    parent=\"$(dirname \"$tgt\")\"\n")
-                    f.write("    if [ \"$parent\" = \"$base\" ]; then\n")
+                    f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
+                    f.write('printf \'%s\\n\' "$HOME" >> "$OPOS_TEST_STATE/observed_home"\n')
+                    f.write('printf \'%s\\n\' "$TMPDIR" >> "$OPOS_TEST_STATE/observed_tmpdir"\n')
+                    f.write('cmd="$(basename "$0")"\n')
+                    f.write('if [ "$cmd" = "chmod" ] && [ "$#" -eq 2 ] && [ "$1" = "0700" ]; then\n')
+                    f.write('  tgt="$2"\n')
+                    f.write('  base="$OPOS_ROOT/var/backups/opos-harden"\n')
+                    f.write('  if [ -d "$tgt" ]; then\n')
+                    f.write('    parent="$(dirname "$tgt")"\n')
+                    f.write('    if [ "$parent" = "$base" ]; then\n')
                     f.write("      exit 0\n")
                     f.write("    fi\n")
                     f.write("  fi\n")
                     f.write("fi\n")
-                    f.write("printf 'unexpected command: %s %s\\n' \"$cmd\" \"$*\" >&2\n")
+                    f.write('printf \'unexpected command: %s %s\\n\' "$cmd" "$*" >&2\n')
                     f.write("exit 97\n")
                 os.chmod(stub_path, os.stat(stub_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         self.env = _build_env(self.bindir, self.root, self.statedir, self.tmp.name)
@@ -648,8 +759,7 @@ class ServicesRollbackTest(unittest.TestCase):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
         for unit in UNITS:
-            self.assertEqual(self.state_of(unit), (False, False),
-                             msg="apply must leave " + unit + " off")
+            self.assertEqual(self.state_of(unit), (False, False), msg="apply must leave " + unit + " off")
         manifest = self.manifest_text().splitlines()
         # svc-ea: both changed
         self.assertIn("enabled svc-ea.service", manifest)
@@ -666,14 +776,17 @@ class ServicesRollbackTest(unittest.TestCase):
         rollback = run_harden(["--rollback"], self.env, "")
         self.assertEqual(rollback.returncode, 0, msg=rollback.stdout + rollback.stderr)
         for unit, want in UNITS.items():
-            self.assertEqual(self.state_of(unit), want,
-                             msg="rollback must restore " + unit)
+            self.assertEqual(self.state_of(unit), want, msg="rollback must restore " + unit)
 
     def test_activity_assertions_reject_inactive_manifest_lines(self):
         orig = self.manifest_text
 
         def _fake():
-            return orig().replace("active svc-ea.service", "inactive svc-ea.service").replace("active svc-da.service", "inactive svc-da.service")
+            return (
+                orig()
+                .replace("active svc-ea.service", "inactive svc-ea.service")
+                .replace("active svc-da.service", "inactive svc-da.service")
+            )
 
         with mock.patch.object(self, "manifest_text", side_effect=_fake):
             with self.assertRaisesRegex(AssertionError, "active svc-ea.service"):
@@ -756,7 +869,13 @@ class ServicesRollbackTest(unittest.TestCase):
         try:
             fresh = _build_env(self.bindir, self.root, self.statedir, self.tmp.name)
             self.assertNotIn(leak_key, fresh)
-            allowed = set(_ALLOWED_ENV) | {"OPOS_ROOT", "OPOS_HARDEN_TEST", "OPOS_TEST_STATE", "OPOS_DISABLE_UNITS", "OPOS_TEST_STUB_DIR"}
+            allowed = set(_ALLOWED_ENV) | {
+                "OPOS_ROOT",
+                "OPOS_HARDEN_TEST",
+                "OPOS_TEST_STATE",
+                "OPOS_DISABLE_UNITS",
+                "OPOS_TEST_STUB_DIR",
+            }
             for k in fresh:
                 self.assertIn(k, allowed, msg=k + " leaked into subprocess env")
             _assert_resolves_inside_stub(fresh, self.bindir)
@@ -786,20 +905,14 @@ class ServicesRollbackTest(unittest.TestCase):
     def test_home_and_tmpdir_are_isolated_under_temp_root(self):
         home = self.env.get("HOME")
         self.assertIsNotNone(home)
-        self.assertTrue(
-            home.startswith(self.tmp.name + os.sep)
-            or home.startswith(self.root + os.sep)
-        )
+        self.assertTrue(home.startswith(self.tmp.name + os.sep) or home.startswith(self.root + os.sep))
         host_home = os.environ.get("HOME")
         if host_home is not None:
             self.assertNotEqual(home, host_home)
         self.assertTrue(os.path.isdir(home))
         tmpdir = self.env.get("TMPDIR")
         self.assertIsNotNone(tmpdir)
-        self.assertTrue(
-            tmpdir.startswith(self.tmp.name + os.sep)
-            or tmpdir.startswith(self.root + os.sep)
-        )
+        self.assertTrue(tmpdir.startswith(self.tmp.name + os.sep) or tmpdir.startswith(self.root + os.sep))
         host_tmpdir = os.environ.get("TMPDIR")
         if host_tmpdir is not None:
             self.assertNotEqual(tmpdir, host_tmpdir)
@@ -854,8 +967,7 @@ class ServicesRollbackTest(unittest.TestCase):
         apply = run_harden(["--apply", "--only", "services"], env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
         for unit in UNITS:
-            self.assertEqual(self.state_of(unit), (False, False),
-                             msg="stray TEST must not force test mode for " + unit)
+            self.assertEqual(self.state_of(unit), (False, False), msg="stray TEST must not force test mode for " + unit)
 
     def test_stray_test_env_without_override_keeps_real_root_mode(self):
         env = dict(self.env)
@@ -867,8 +979,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertIn("TEST is ignored; use OPOS_HARDEN_TEST instead", proc.stderr)
         self.assertIn("would run: systemctl disable --now -- svc-ea.service", proc.stdout)
         for unit, want in UNITS.items():
-            self.assertEqual(self.state_of(unit), want,
-                             msg="stray TEST must not suppress inspection for " + unit)
+            self.assertEqual(self.state_of(unit), want, msg="stray TEST must not suppress inspection for " + unit)
 
     def test_invalid_harden_test_value_rejected(self):
         env = dict(self.env)
@@ -877,14 +988,17 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("must be 0 or 1", proc.stdout + proc.stderr)
         for unit, want in UNITS.items():
-            self.assertEqual(self.state_of(unit), want,
-                             msg="rejection must precede mutation for " + unit)
+            self.assertEqual(self.state_of(unit), want, msg="rejection must precede mutation for " + unit)
         calls_path = os.path.join(self.statedir, "calls.log")
         calls = []
         if os.path.exists(calls_path):
             with open(calls_path, encoding="utf-8") as f:
                 calls = f.read().splitlines()
-        mutating = [ln for ln in calls if ln.strip() and ln.strip().split()[0] not in ("is-enabled", "is-active", "list-unit-files")]
+        mutating = [
+            ln
+            for ln in calls
+            if ln.strip() and ln.strip().split()[0] not in ("is-enabled", "is-active", "list-unit-files")
+        ]
         self.assertEqual(mutating, [], msg="rejection must precede mutating stub calls: " + "\n".join(calls))
 
     def test_f004_effective_sshd_probe_gates_reload(self):
@@ -903,12 +1017,12 @@ class ServicesRollbackTest(unittest.TestCase):
         backup_base = os.path.join(self.root, "var", "backups", "opos-harden")
         with open(os.path.join(self.bindir, "passwd"), "w", encoding="utf-8") as f:
             f.write("#!/bin/sh\n")
-            f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
+            f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
             f.write("exit 0\n")
         with open(os.path.join(self.bindir, "chmod"), "w", encoding="utf-8") as f:
             f.write("#!/bin/sh\n")
-            f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
-            f.write("/bin/chmod \"$@\"\n")
+            f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
+            f.write('/bin/chmod "$@"\n')
         for probe_ok in (False, True, None):
             for had_dropin in (False, True):
                 with self.subTest(probe_ok=probe_ok, had_dropin=had_dropin):
@@ -923,11 +1037,13 @@ class ServicesRollbackTest(unittest.TestCase):
                             f.write(orig_bytes)
                     with open(os.path.join(self.bindir, "sshd"), "w", encoding="utf-8") as f:
                         f.write("#!/bin/sh\n")
-                        f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
-                        f.write("for a in \"$@\"; do\n")
-                        f.write("  if [ \"$a\" = \"-T\" ]; then\n")
+                        f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
+                        f.write('for a in "$@"; do\n')
+                        f.write('  if [ "$a" = "-T" ]; then\n')
                         if probe_ok:
-                            f.write("    printf '%s\\n' 'passwordauthentication no' 'kbdinteractiveauthentication no' 'pubkeyauthentication yes' 'authenticationmethods publickey' 'usedns no'\n")
+                            f.write(
+                                "    printf '%s\\n' 'passwordauthentication no' 'kbdinteractiveauthentication no' 'pubkeyauthentication yes' 'authenticationmethods publickey' 'usedns no'\n"
+                            )
                             f.write("    exit 0\n")
                         else:
                             f.write("    exit 1\n")
@@ -961,7 +1077,10 @@ class ServicesRollbackTest(unittest.TestCase):
                                 self.assertEqual(f.read(), orig_bytes)
                         else:
                             self.assertFalse(os.path.exists(conf_abs))
-                        self.assertFalse(any(ln.strip().split()[0] == "sshd" for ln in calls if ln.strip()), msg="must not invoke sshd: " + "\n".join(calls))
+                        self.assertFalse(
+                            any(ln.strip().split()[0] == "sshd" for ln in calls if ln.strip()),
+                            msg="must not invoke sshd: " + "\n".join(calls),
+                        )
                         self.assertFalse(reloaded, msg="must not reload: " + "\n".join(calls))
                         self.assertFalse(passwd_called, msg="must not passwd: " + "\n".join(calls))
                     elif not probe_ok:
@@ -1000,21 +1119,33 @@ class ServicesRollbackTest(unittest.TestCase):
         backup_base = os.path.join(self.root, "var", "backups", "opos-harden")
         with open(os.path.join(self.bindir, "passwd"), "w", encoding="utf-8") as f:
             f.write("#!/bin/sh\n")
-            f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
+            f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
             f.write("exit 0\n")
         with open(os.path.join(self.bindir, "chmod"), "w", encoding="utf-8") as f:
             f.write("#!/bin/sh\n")
-            f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
-            f.write("/bin/chmod \"$@\"\n")
-        good = ["passwordauthentication no", "kbdinteractiveauthentication no", "pubkeyauthentication yes", "authenticationmethods publickey", "usedns no"]
-        bad = ["passwordauthentication yes", "kbdinteractiveauthentication no", "pubkeyauthentication yes", "authenticationmethods publickey", "usedns no"]
+            f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
+            f.write('/bin/chmod "$@"\n')
+        good = [
+            "passwordauthentication no",
+            "kbdinteractiveauthentication no",
+            "pubkeyauthentication yes",
+            "authenticationmethods publickey",
+            "usedns no",
+        ]
+        bad = [
+            "passwordauthentication yes",
+            "kbdinteractiveauthentication no",
+            "pubkeyauthentication yes",
+            "authenticationmethods publickey",
+            "usedns no",
+        ]
 
         def write_sshd(mode):
             with open(os.path.join(self.bindir, "sshd"), "w", encoding="utf-8") as f:
                 f.write("#!/bin/sh\n")
-                f.write("printf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> \"$OPOS_TEST_STATE/calls.log\"\n")
-                f.write("for a in \"$@\"; do\n")
-                f.write("  if [ \"$a\" = \"-T\" ]; then\n")
+                f.write('printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$OPOS_TEST_STATE/calls.log"\n')
+                f.write('for a in "$@"; do\n')
+                f.write('  if [ "$a" = "-T" ]; then\n')
                 if mode == "fail":
                     f.write("    exit 1\n")
                 elif mode == "bad":
@@ -1037,7 +1168,18 @@ class ServicesRollbackTest(unittest.TestCase):
                 f.write(sentinel)
 
         def context_arg(client, cport, server, sport):
-            return "sshd -T -C user=" + user + ",host=" + client + ",addr=" + client + ",laddr=" + server + ",lport=" + sport
+            return (
+                "sshd -T -C user="
+                + user
+                + ",host="
+                + client
+                + ",addr="
+                + client
+                + ",laddr="
+                + server
+                + ",lport="
+                + sport
+            )
 
         for conn, client, cport, server, sport in (
             ("192.0.2.10 41000 198.51.100.20 22", "192.0.2.10", "41000", "198.51.100.20", "22"),
@@ -1079,7 +1221,9 @@ class ServicesRollbackTest(unittest.TestCase):
                 with open(conf_abs, "rb") as f:
                     self.assertEqual(f.read(), sentinel)
                 self.assertFalse(any("reload" in ln for ln in calls), msg="\n".join(calls))
-                self.assertFalse(any(ln.strip().split()[0] == "passwd" for ln in calls if ln.strip()), msg="\n".join(calls))
+                self.assertFalse(
+                    any(ln.strip().split()[0] == "passwd" for ln in calls if ln.strip()), msg="\n".join(calls)
+                )
 
     def stub_calls(self):
         if not os.path.exists(self.calls):
@@ -1093,8 +1237,7 @@ class ServicesRollbackTest(unittest.TestCase):
         apply = run_harden(["--apply", "--only", "services"], env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
         for unit, want in UNITS.items():
-            self.assertEqual(self.state_of(unit), want,
-                             msg="test mode must not mutate " + unit)
+            self.assertEqual(self.state_of(unit), want, msg="test mode must not mutate " + unit)
         calls = self.stub_calls()
         combined = apply.stdout + apply.stderr
         detail = "calls=" + calls + " stdout=" + apply.stdout + " stderr=" + apply.stderr
@@ -1128,7 +1271,9 @@ class ServicesRollbackTest(unittest.TestCase):
             self.assertIn(cmd + " --unexpected", self.stub_calls().splitlines())
         tgt = os.path.join(self.root, "var", "backups", "opos-harden", "20261029T000000Z")
         os.makedirs(tgt, exist_ok=True)
-        proc = subprocess.run([os.path.join(self.bindir, "chmod"), "0700", tgt], env=self.env, capture_output=True, text=True)
+        proc = subprocess.run(
+            [os.path.join(self.bindir, "chmod"), "0700", tgt], env=self.env, capture_output=True, text=True
+        )
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         self.assertIn("chmod 0700 " + tgt, self.stub_calls().splitlines())
 

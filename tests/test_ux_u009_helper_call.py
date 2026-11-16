@@ -35,6 +35,6 @@ class HelperCallStatusTest(unittest.TestCase):
         self.assertIn("j={error:'" + first_msg + "'}", body[i_first:i_second])
         self.assertIn("j={error:'" + second_msg + "'}", body[i_second:i_third])
         self.assertIn("j={error:'" + third_msg + "'}", body[i_third:i_timing])
-        tail = body[i_third + len(third):i_timing]
+        tail = body[i_third + len(third) : i_timing]
         self.assertNotIn("else", tail)
         self.assertIn("return j", body[i_timing:])
