@@ -100,10 +100,11 @@ unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot preserve a root shel
   Network page shows the real radio's state, but `src/opos/mm_modem.py` is not wired to the phone page. Nothing is dialled, sent
   or received; the page says so.
 - **The hinge posture needs the phone's sensor service.** The native shell takes the hinge angle and the accelerometer
-  from sensorfw ([NATIVE.md](../packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)) and never starts it, and nothing in
-  this repository's image build starts it either, so on a freshly built image the shell knows only open and closed until
-  the service is started. A cold boot with the delayed start that was installed by hand on the owner's phone, and ten
-  cold boots, remain **NOT_RUN**.
+  from sensorfw ([NATIVE.md](../packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)) and never starts it. The image
+  build installs `opos-sensorfwd-delayed.timer` (stage 1), which starts the sensor service once, 120 s after boot, unless
+  `/etc/opos/sensors-off` exists; until then, and on a phone where the service is not running, the shell knows only open
+  and closed. The file blocks future starts only. A cold boot with the timer, ten cold boots, a dark screen ignoring
+  touch and the image run on the phone remain **NOT_RUN**.
 
 ## What is not known
 

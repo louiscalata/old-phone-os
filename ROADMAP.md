@@ -97,7 +97,12 @@ their original scope. Plans are intentions, not promises.
   Idle CPU of the shell and the sensor service, peer-measured, clock ticks per 30 seconds: 93 and 45 with fixed polling,
   31 and 21 with adaptive polling, 20 and 0 with the lid closed; these are tick counts, not battery measurements.
   **NOT_RUN**: a dark screen ignoring touch, the Settings Hinge line on the glass, a cold boot with the delayed sensor
-  start (installed by hand on that phone, not in this repository's image), ten cold boots, and any other phone.
+  start from `opos-sensorfwd-delayed.timer` (the image build installs it, 120 s after boot unless `/etc/opos/sensors-off`
+  exists; no image with it has run on a phone), ten cold boots, and any other phone.
+- Sensor service start (stage 1, [README.md](packaging/duo-os/README.md)): the image build installs
+  `opos-sensorfwd-delayed.timer`, which starts `sensorfwd.service` once, 120 s after boot, unless `/etc/opos/sensors-off`
+  exists; the file blocks future starts only. Checked by `verify-image.sh` and tests against the files, not on a phone.
+  **NOT_RUN**: a cold boot with the timer, ten cold boots, a dark screen ignoring touch and the image run on the phone.
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). Only the Surface Duo routes, started with
   `--live-battery`, read the phone's real battery (`LiveBattery`). Calls and texts are simulated on every
@@ -178,7 +183,7 @@ These rows are the phone-features checks D1 through D12. Date stays empty and Re
 D12 is a partial record, not a pass. As reported by the PC session, on November 15, 2026, on one Surface Duo with the
 hinge code running as an installed release, the owner folded the phone back and saw the one-screen layout, taps, the
 lit screen switching about one second after a flip, and both screens lighting after the lid opened; the shell's log
-showed all five postures. **NOT_RUN**: a dark screen ignoring touch, a cold boot with the delayed sensor start, ten cold
+showed all five postures. **NOT_RUN**: a dark screen ignoring touch, a cold boot with `opos-sensorfwd-delayed.timer`, ten cold
 boots, and the Settings Hinge line on the glass. The row keeps Date empty and Result NOT_RUN until a dated run with an
 evidence link fills both.
 

@@ -215,6 +215,9 @@ class ClockPage(unittest.TestCase):
             status, body = get(server, "/clock")
             self.assertEqual(status, 200)
             self.assertIn(b"Snooze 10 min", body)
+            # Pin the clock the alarm list starts from, so the real date cannot move it past FIRE.
+            code, raw = post(server, "/api/clock", {"action": "tick", "now": "2026-11-16T06:00:00+00:00"}, token)
+            self.assertEqual(code, 200, raw)
             code, raw = post(server, "/api/clock", {"action": "add", "hour": 7, "minute": 0, "days": [0, 1, 2, 3, 4], "label": "Kitchen"}, token)
             self.assertEqual(code, 200, raw)
             code, raw = post(server, "/api/clock", {"action": "tick", "now": FIRE}, token)
