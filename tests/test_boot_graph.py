@@ -37,6 +37,8 @@ REQUIRED_ORDER = (
     ("opos.service", "opos-osk.service"),
     ("opos-server.service", "opos-update-confirm.service"),
     ("opos-update-boot.service", "opos-update-confirm.service"),
+    ("opos-sensorfwd-delayed.timer", "opos-sensorfwd-delayed.service"),
+    ("opos-sensorfwd-delayed.timer", "timers.target"),
 )
 
 SHIPPED = {
@@ -44,6 +46,7 @@ SHIPPED = {
     "opos-diag.service", "opos-fallback.service", "opos-osk.service", "opos-powerkey.service",
     "opos-server.service", "opos-volumekey.service", "opos.service", "opos-update-boot.service",
     "opos-update-confirm.service", "opos-update.path", "opos-update.service",
+    "opos-sensorfwd-delayed.timer", "opos-sensorfwd-delayed.service",
 }
 
 
@@ -54,7 +57,7 @@ class BootGraphTest(unittest.TestCase):
 
     def test_every_unit_file_is_read(self):
         self.assertEqual(SHIPPED, set(self.g.units))
-        found = {p.name for d in (PKG, PKG / "updater") for p in d.iterdir() if p.suffix in (".service", ".path")}
+        found = {p.name for d in (PKG, PKG / "updater") for p in d.iterdir() if p.suffix in (".service", ".path", ".timer")}
         self.assertEqual(found, set(self.g.units))
 
     def test_drop_ins_are_merged_into_the_server(self):
@@ -127,6 +130,29 @@ class BootGraphTest(unittest.TestCase):
 
     def test_docs_index_links_the_page(self):
         self.assertIn("(os-architecture.md)", (ROOT / "docs" / "README.md").read_text(encoding="utf-8"))
+
+    def test_the_sensor_timer_is_read_as_a_trigger_and_enabled_through_timers_target(self):
+        timer = self.g.units["opos-sensorfwd-delayed.timer"]
+        self.assertEqual(["120"], timer.get("Timer", "OnBootSec"))
+        self.assertEqual("opos-sensorfwd-delayed.service", self.g.trigger_unit(timer))
+        self.assertIn(("opos-sensorfwd-delayed.timer", "opos-sensorfwd-delayed.service"), self.g.trigger)
+        self.assertIn(("timers.target", "opos-sensorfwd-delayed.timer"), {(l.target, l.unit) for l in self.g.links})
+        # Both are in a release image too; sensorfwd.service itself is inherited and is linked nowhere.
+        rel = self.g.reachable(dev=False)
+        self.assertLessEqual({"timers.target", "opos-sensorfwd-delayed.timer", "opos-sensorfwd-delayed.service"}, rel)
+        self.assertNotIn("sensorfwd.service", self.g.units)
+        self.assertNotIn("sensorfwd.service", {l.unit for l in self.g.links})
+        self.assertIn("sensorfwd.service", bootgraph.INHERITED)
+        self.assertEqual("degrade", bootgraph.FAILURE_CLASS["opos-sensorfwd-delayed.service"][0])
+
+    def test_a_timer_without_unit_starts_the_service_of_its_own_name(self):
+        u = bootgraph.Unit("a.timer", Path("a.timer"), bootgraph.parse_unit_text("[Timer]\nOnBootSec=5\n"))
+        self.assertEqual("a.service", bootgraph.Graph.trigger_unit(u))
+        u = bootgraph.Unit("a.timer", Path("a.timer"), bootgraph.parse_unit_text("[Timer]\nUnit=b.service\n"))
+        self.assertEqual("b.service", bootgraph.Graph.trigger_unit(u))
+        # A path unit's Unit= is read from [Path], not [Timer].
+        u = bootgraph.Unit("a.path", Path("a.path"), bootgraph.parse_unit_text("[Timer]\nUnit=b.service\n"))
+        self.assertEqual("a.service", bootgraph.Graph.trigger_unit(u))
 
     def test_build_script_rm_removes_a_link_only_outside_an_if(self):
         link = 'ln -sf /etc/systemd/system/a.service "$r/etc/systemd/system/multi-user.target.wants/a.service"\n'
@@ -275,6 +301,40 @@ class MutationTest(unittest.TestCase):
             self.assertCaught(f"no mermaid block equals bootgraph.py {flag}")
             self.assertCaught("a mermaid block equals neither bootgraph.py --mermaid nor --layers")
             (self.tmp / "docs/os-architecture.md").write_text(text, encoding="utf-8")
+
+    def test_8_timer_names_another_unit(self):
+        self.edit("packaging/duo-os/opos-sensorfwd-delayed.timer", "Unit=opos-sensorfwd-delayed.service",
+                  "Unit=opos-sensorfwd-later.service")
+        self.assertCaught("opos-sensorfwd-delayed.timer: opos-sensorfwd-later.service is neither shipped in "
+                          "packaging/duo-os nor listed in INHERITED")
+        self.assertCaught("opos-sensorfwd-delayed.service: nothing starts it")
+
+    def test_8b_timer_link_deleted(self):
+        self.edit("packaging/duo-os/build-image.sh",
+                  'ln -sfn /etc/systemd/system/opos-sensorfwd-delayed.timer '
+                  '"$r/etc/systemd/system/timers.target.wants/opos-sensorfwd-delayed.timer"\n', "")
+        self.assertCaught("opos-sensorfwd-delayed.timer: [Install] WantedBy=timers.target but build-image.sh links no "
+                          "timers.target.wants/opos-sensorfwd-delayed.timer")
+        self.assertCaught("opos-sensorfwd-delayed.timer: nothing starts it")
+        self.assertCaught("opos-sensorfwd-delayed.service: nothing starts it")
+
+    def test_8c_timer_file_missing(self):
+        (self.tmp / "packaging/duo-os/opos-sensorfwd-delayed.timer").unlink()
+        self.assertCaught("build-image.sh installs /etc/systemd/system/opos-sensorfwd-delayed.timer from "
+                          "opos-sensorfwd-delayed.timer, which does not exist")
+        self.assertCaught("build-image.sh links timers.target.wants/opos-sensorfwd-delayed.timer, which OPOS does not ship")
+        self.assertCaught("opos-sensorfwd-delayed.service: nothing starts it")
+
+    def test_8d_timer_install_section_names_another_target(self):
+        self.edit("packaging/duo-os/opos-sensorfwd-delayed.timer", "WantedBy=timers.target", "WantedBy=multi-user.target")
+        self.assertCaught("build-image.sh links timers.target.wants/opos-sensorfwd-delayed.timer, but its [Install] "
+                          "does not name timers.target")
+
+    def test_8e_doc_row_for_the_timer_deleted(self):
+        text = (self.tmp / "docs/os-architecture.md").read_text(encoding="utf-8")
+        row = next(l for l in text.splitlines() if l.startswith("| 120 s after boot | `opos-sensorfwd-delayed.timer` |"))
+        self.edit("docs/os-architecture.md", row + "\n", "")
+        self.assertCaught("boot table has no row for opos-sensorfwd-delayed.timer")
 
     def test_fallback_unwired(self):
         self.edit("packaging/duo-os/opos.service", "OnFailure=opos-fallback.service\n", "")

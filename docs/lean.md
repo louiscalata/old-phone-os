@@ -41,6 +41,23 @@ Actual package/image size and performance overhead are unmeasured. No formal
 The separate November 3 QEMU boot observation is documented in [pmos.md](pmos.md);
 it is not a formal boot benchmark.
 
+## Duo image service additions
+
+The Surface Duo image is built from a Droidian base, not from the postmarketOS
+packages above, and this is not an inventory of its units. It lists only the
+units the Duo build adds with the owner's approval. The owner approved these on
+2026-11-15 for stage 1 of the sensor plan only: `sensorfwd.service` itself stays
+disabled, and enabling it directly (stage 2) is not approved.
+
+| Duo image unit | Why it is there |
+| --- | --- |
+| `opos-sensorfwd-delayed.timer` | The only sensor unit the build enables; fires once, 120 s after boot. |
+| `opos-sensorfwd-delayed.service` | Started by the timer; starts `sensorfwd.service` once. Cannot be enabled by itself. |
+| `sensorfwd.service.d/70-opos-boot.conf` | Skips the start when `/etc/opos/sensors-off` exists and caps restarts at 3 starts in 5 minutes. |
+
+Building them into an image, a cold boot with the timer and ten cold boots
+are NOT_RUN. See `packaging/duo-os/README.md`, "What is in the image".
+
 ## What is not installed
 
 No app store, no preinstalled apps beyond the essential OPOS kiosk interface,
