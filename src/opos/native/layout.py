@@ -32,7 +32,7 @@ def hinge_px(env=None):
     return int(m.group(2)) if m else 0
 
 
-def swipe_action(page, shade_open, start, width, height, vx, vy, hinge=0):
+def swipe_action(page, shade_open, start, width, height, vx, vy, hinge=0, active=None):
     """What a finished swipe does: "shade-open", "shade-close", "home", "hand-right", "hand-left" or None.
 
     page is "lock", "home" or "app"; start is (x, y) where the finger went down, or None; vx and vy are the swipe's
@@ -47,6 +47,8 @@ def swipe_action(page, shade_open, start, width, height, vx, vy, hinge=0):
       6. sideways, from an outer side edge, on an app page: goes Home
 
     Rule 5 is "push the buttons across the hinge"; it works the same on every page, including the lock screen.
+    active is the screen in use in back mode (0 left, 1 right) and None otherwise. With one screen there is nothing to
+    push across, so rule 5 is off, and rule 6 takes both side edges of that screen as its outer edges.
     """
     if not start:
         return None
@@ -61,10 +63,16 @@ def swipe_action(page, shade_open, start, width, height, vx, vy, hinge=0):
         return "home"
     if page != "lock" and up and y > height - EDGE:
         return "home"
-    if side and abs(x - width / 2) <= hinge / 2 + MIDDLE:
+    if active is None and side and abs(x - width / 2) <= hinge / 2 + MIDDLE:
         return "hand-right" if vx > 0 else "hand-left"
-    if page == "app" and side and (x < EDGE or x > width - EDGE):
-        return "home"
+    if page == "app" and side:
+        if active is None:
+            low, high = 0, width
+        else:
+            pane = (width - hinge) / 2
+            low, high = (0, pane) if active == 0 else (pane + hinge, width)
+        if x < low + EDGE or x > high - EDGE:
+            return "home"
     return None
 
 
@@ -153,6 +161,57 @@ def pane_order(hand):
     Right-handed: the buttons are on the right screen. Left-handed: on the left screen. Nothing else changes.
     """
     return ("act", "read") if hand == "left" else ("read", "act")
+
+
+# Back mode: the phone is folded all the way back (posture "back") with the lid open, so only one screen faces the owner.
+# The shell then shows the page on that screen alone and darkens the other. The functions below decide which is which.
+# Screens are numbered by the window: 0 the left half, 1 the right half. PANEL_OF_SCREEN says which backlight
+# (blank.PANELS index) lights each half; panel0 = left is an assumption not yet checked on the phone.
+PANEL_OF_SCREEN = (0, 1)
+
+
+def screen_at(x, width, hinge=0):
+    """Which screen a point x pixels from the window's left edge is on: 0 (left), 1 (right), or None in the hinge gap,
+    off the window, or when there is no width. Each screen is (width - hinge) / 2 wide."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or x != x:
+        return None
+    pane = (width - hinge) / 2
+    if pane <= 0:
+        return None
+    if 0 <= x < pane:
+        return 0
+    if width - pane <= x <= width:
+        return 1
+    return None
+
+
+def thumb_screen(hand):
+    """The screen that holds the thumb pane for this hand: 1 (right) right-handed, 0 (left) left-handed."""
+    return pane_order(hand).index("act")
+
+
+def active_screen(last, hand, facing=None):
+    """The screen back mode uses. facing is what the accelerometer says faces the user ("left" or "right", see
+    facing.py), which wins when it says anything; otherwise the one last touched (0 or 1), or the thumb side when none
+    has been touched yet."""
+    if facing in ("left", "right"):
+        return 0 if facing == "left" else 1
+    return last if last in (0, 1) else thumb_screen(hand)
+
+
+def panel_to_darken(active):
+    """The backlight index (blank.PANELS) to darken in back mode: the one behind the screen that is not active."""
+    return PANEL_OF_SCREEN[1 - active] if active in (0, 1) else None
+
+
+def touch_ignored(start, width, hinge, active):
+    """Whether a touch that went down at start, (x, y) or None, is ignored: in back mode (active is 0 or 1) every touch
+    that does not land on the active screen is, so a hand holding the folded phone cannot tap through the dark one.
+    A touch whose start is unknown is ignored too. Outside back mode (active None) nothing is ignored. Only where the
+    finger went down counts: a drag that began on the active screen may end anywhere."""
+    if active not in (0, 1):
+        return False
+    return not start or screen_at(start[0], width, hinge) != active
 
 
 def settings_path(env=None):

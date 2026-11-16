@@ -24,6 +24,17 @@ PAGE_BUDGET = 100 * 1024
 # page(): the keyboard's and the panes' tags, the Settings links, and the first-run decoration.
 WAVE_GATE = 102000
 SWITCHES = {"OPOS_OSK": "1", "OPOS_NETWORK": "1", "OPOS_FIRSTRUN": "1", "OPOS_MONITOR": "1", "OPOS_PANES": "1", "OPOS_SPAN": "675,42"}
+# The unit and the two drop-ins the Duo image installs for opos-server.service (packaging/duo-os/build-image.sh).
+DUO_UNITS = ("opos-server.service", "opos-network.conf", "opos-apps.conf")
+
+
+def duo_image_switches():
+    """Every OPOS_* the Duo image sets for the server, read from its own unit files: the six above plus volume keys and apps."""
+    found = {}
+    for name in DUO_UNITS:
+        text = (Path(__file__).parents[1] / "packaging/duo-os" / name).read_text(encoding="utf-8")
+        found.update(re.findall(r"^Environment=(OPOS_[A-Z_]+)=(\S*)$", text, re.M))
+    return found
 
 
 def served_home_page(switches):
@@ -189,6 +200,21 @@ class WaveGate(unittest.TestCase):
         print(message)
         for name, size in sizes.items():
             self.assertLessEqual(size, WAVE_GATE, f"{name} is over the wave gate ({message})")
+
+    def test_the_served_duo_image_home_page_fits_the_wave_gate_with_and_without_the_lock(self):
+        # The image adds volume keys and the six apps to the six switches; the owner may also turn on the PIN lock.
+        duo = duo_image_switches()
+        self.assertLessEqual(set(SWITCHES), set(duo))
+        self.assertEqual(duo["OPOS_VOLUME_KEYS"], "1")
+        self.assertEqual(duo["OPOS_APPS"], "clock,contacts,notes,calc,calls,convert")
+        for lock in ("", "1"):
+            with self.subTest(lock=lock), mock.patch.dict(os.environ, {"OPOS_LOCK": lock}):
+                body = served_home_page(duo)
+                for tag in (b'src="/volume.js"', b'src="/apps-home.js"') + ((b"src=/pin.js",) if lock else ()):
+                    self.assertIn(tag, body)
+                message = f"served, Duo image{' and the lock' if lock else ''}: {len(body):,} bytes; wave gate: {WAVE_GATE:,} bytes"
+                print(message)
+                self.assertLessEqual(len(body), WAVE_GATE, message)
 
     def test_the_measurement_includes_what_each_switch_adds(self):
         # A measurement that silently drops a switch would pass the gate for the wrong reason.

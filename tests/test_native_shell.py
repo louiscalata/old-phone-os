@@ -288,7 +288,8 @@ class StandInShell(unittest.TestCase):
     BORROWED = ("page_kind", "swipe_begin", "swipe_end", "event_ms", "drag_begin", "drag_update", "drag_end",
                 "drag_cancel", "dragged", "settle", "set_shade", "lid_changed", "blank_if_closed", "start_lid",
                 "lid_closed_now", "lid_lost", "restore", "retry_restore", "restore_again", "end",
-                "watch_lid", "lid_report", "lid_gone", "lid_again")
+                "watch_lid", "lid_report", "lid_gone", "lid_again", "set_posture", "hinge_changed",
+                "relight", "fit_back", "enter_back", "leave_back", "two_rows", "tilt_changed")
 
     def setUp(self):
         import importlib
@@ -317,6 +318,22 @@ class StandInShell(unittest.TestCase):
         S = shell.Shell
         test = self
 
+        class NoWatcher:
+            """No sensor service in these tests: the real watcher would start a thread."""
+            def __init__(self, *a, **k):
+                pass
+
+            def start(self):
+                return self
+
+            def set_paused(self, paused):
+                test.paused = paused
+        self.addCleanup(setattr, shell.hinge, "HingeWatcher", shell.hinge.HingeWatcher)   # the real module: put it back
+        shell.hinge.HingeWatcher = NoWatcher
+        self.layouts = []               # ("one", row, screen) and ("two", row, hand): what ui was asked to do with the rows
+        shell.one_column = lambda row, screen: self.layouts.append(("one", row, screen))
+        shell.two_columns = lambda row, hand: self.layouts.append(("two", row, hand))
+
         class Win:
             hinge, hand, page, warming, leaving = 42, "right", "lock", False, 0
 
@@ -324,6 +341,10 @@ class StandInShell(unittest.TestCase):
                 self.drag, self.drag_decided, self.drag_start, self.samples, self.owned = None, False, None, [], False
                 self.start, self.gone, self.hands, self.quits = None, [], [], 0
                 self.lid_closed, self.lid_watcher, self.posture = None, None, "open"
+                self.angle, self.hinge_watcher, self.pages = None, None, {}
+                self.back, self.last_screen, self.ignored, self.rows = None, None, False, ["page", "sheet"]
+                self.back_failed = False
+                self.facing = shell.facing.Facing()
                 self.restore_tries, self.restore_timer, self.restore_blanks = 0, None, 0
                 self.lid_gen, self.lid_tries, self.lid_timer, self.lid_said = 0, 0, None, False
                 self.page_slide, self.sheet_slide = Fake(dy=0.0), Fake(dy=0.0)
@@ -985,7 +1006,8 @@ class ShellModule(unittest.TestCase):
             self.skipTest("GTK 4 or PyGObject is not installed here")
         from opos.native import screens
         self.assertEqual([c.name for c in screens.PAGES],
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"])
+                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls",
+                          "settings", "network"])
 
 
 if __name__ == "__main__":

@@ -78,6 +78,7 @@ check cannot run yet (the diagnostics dump is only written 90 seconds after boot
 | `ota.updater` | only if `/var/lib/opos-update` exists: the release link, `status.json`, the trusted signers, `opos-update.path` | the path unit is not active | WARN: the last update failed or rolled back, one is in progress, or no signer is installed; SKIP: no updater |
 | `osk.keyboard` | with `OPOS_OSK` on: the page loads `/osk.js` and the server serves it (mode `1`/`web`), or the port's keyboard process runs (`stevia`) | the image ships the keyboard (`src/opos/osk.py`) but the server runs without `OPOS_OSK`; the web keyboard is on but not served | WARN: switched off in an image that has one, a unit edited but not restarted, or no keyboard process; SKIP: the image has none |
 | `firstrun.flag`, `firstrun.routes` | `OPOS_FIRSTRUN=1` in the server's environment; `GET /firstrun`, `GET /timezone`, `/api/firstrun` with and without the token, `/api/timezone` (it must answer 200 with the zone list in the shape the setup page reads), Settings linking to `/timezone`, whether the first run is still pending, the saved zone against the zone the server uses | the image ships the first run (`src/opos/firstrun.py`) but the server runs without `OPOS_FIRSTRUN=1`; a route does not answer (`/api/timezone` included, even when everything else does) or the token gate is open | WARN: the server has not applied the saved zone; SKIP: the image has no first run |
+| `alarm.sound` | on the phone (`OPOS_ON_PHONE=1` for `opos-server`): `paplay` on the server's own `PATH`, and the PulseAudio socket of the user the server runs as (its uid, else `User=` of `opos-server.service` and `/etc/passwd`): the `PULSE_SERVER` socket when it is set, else `$XDG_RUNTIME_DIR/pulse/native`, both read from the running server's environment, else from the unit, its drop-ins and its `EnvironmentFile=` files. It plays no sound, starts nothing and does not connect to the socket | | WARN, with the reason: `paplay` missing (the image recipes do not add it, so an alarm shows on screen only); no socket there for that user; the unit sets no `XDG_RUNTIME_DIR` or `PULSE_SERVER` (the evidence then says whether `/run/user/<uid>/pulse/native` exists); a unit edited but not restarted. SKIP: not the phone. A PASS is not a heard tone: see [apps.md](apps.md) |
 | `dev.build-mode` | `/etc/opos/build-mode`: release or dev | missing or invalid marker | dev WARNs; release PASSes |
 | `dev.ssh-key`, `dev.devtools`, `dev.time-drop`, `dev.span`, `dev.sudo` | an authorized ssh key for droidian, a Chromium DevTools port, the clock-setting file drop, a dev-span drop-in, passwordless sudo for droidian (`/etc/sudoers.d/90-opos-dev`, only its presence; nothing is run) | | `dev.ssh-key` reports owner or developer keys as PASS; the other dev features WARN; `dev.sudo` means an image that must never be carried or shared |
 
@@ -137,6 +138,19 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 - How: hold the phone upright, on its side, and upside down, a few seconds each.
 - Expected: not designed yet, so this records what happens. Nothing may be cut off, drawn over the wrong panel or crash. Write down
   which it is: no change, rotates correctly, rotates wrongly. Then run `opos-selftest` again: it must still pass.
+- Observed: ____________________________________________  Date: ____-__-__  [ ] as expected  [ ] not
+
+### 4a. Hinge angle and back mode (native shell)
+
+- How: only when the sensor service is already running (`systemctl is-active sensorfwd` through ssh answers `active`;
+  starting it is the owner's decision, see [NATIVE.md](../packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)). Fold the
+  phone slowly from flat to nearly shut, then open it and fold it all the way back; folded back, turn the phone over so
+  the other screen faces you, and touch the dark screen. Read the shell's `opos shell: posture` lines from its log
+  (`journalctl -b | grep "opos shell: posture"` through ssh, if the session's output reaches the journal).
+- Expected: the log names book, flat, tent and back as the angle passes through them (closed only when the lid switch
+  says so); folded back, one screen is lit and the page is one screen wide; after a flip the lit screen changes within
+  about two seconds; a touch on the dark screen does nothing; unfolding the phone out of back mode, or closing and opening
+  the lid, lights both screens. Settings > Hinge shows the posture and the angle.
 - Observed: ____________________________________________  Date: ____-__-__  [ ] as expected  [ ] not
 
 ### 5. Fold-to-sleep
@@ -201,7 +215,7 @@ Image revision under test: ______________________  Part 1 evidence folder: _____
 
 ### Sign-off
 
-Part 1: PASS / FAIL, with ____ WARN and ____ SKIP explained in the evidence folder.  Part 2: ____ of 10 as expected.
+Part 1: PASS / FAIL, with ____ WARN and ____ SKIP explained in the evidence folder.  Part 2: ____ of 11 as expected.
 Findings to keep (each with the check number): ______________________________________________________________
 
 ## Limits

@@ -4,6 +4,7 @@ records what the screens ask the server and answers when the test says so. No di
 run everywhere. What they pin: a draft, a contact, an alarm or a note changes on screen only when the server confirms,
 a late reply never puts a screen back, rows that read the same act on the newest id, and practice is said."""
 import importlib
+import os
 import sys
 import threading
 import types
@@ -367,8 +368,10 @@ class Screens(unittest.TestCase):
         self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
                          ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"])
         self.assertEqual(names({"OPOS_APPS": "clock,contacts,notes,calc,calls,convert"}),
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"],
-                         "the Duo list: the converter is a browser page, with no native screen")
+                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls",
+                          "settings", "network"], "the Duo list: the converter has a native screen")
+        self.assertEqual(names({"OPOS_APPS": "convert"}), ["lock", "home", "phone", "messages", "calc", "convert", "settings", "network"],
+                         "only when OPOS_APPS names it")
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
 
     # --- two taps to delete, as the browser asks --------------------------------------------------------------------
@@ -619,6 +622,249 @@ class Screens(unittest.TestCase):
         n.deliver(second, {"ok": True, "notes": [{"id": "n9", "title": "new"}]})
         n.deliver(first, {"ok": True, "notes": [{"id": "n1", "title": "old"}]})
         self.assertEqual(n.data["notes"][0]["id"], "n9")
+
+    # --- Converter ------------------------------------------------------------------------------------------------
+    KINDS = {"ok": True, "kinds": [
+        {"id": "length", "title": "Length", "src": "km", "dst": "mi",
+         "units": [{"id": "m", "title": "m"}, {"id": "km", "title": "km"}, {"id": "mi", "title": "mile"}]},
+        {"id": "temperature", "title": "Temperature", "src": "c", "dst": "f",
+         "units": [{"id": "c", "title": "C"}, {"id": "f", "title": "F"}, {"id": "k", "title": "K"}]}]}
+
+    def converter(self, amount="5"):
+        c = self.page(self.screens.Converter)
+        self.shell.core.answers = [self.KINDS]
+        c.enter()
+        self.flush()
+        for ch in amount:
+            c.key(ch)
+        return c
+
+    def test_the_converter_reads_its_measures_from_the_server_and_starts_on_the_first(self):
+        c = self.converter("")
+        self.assertEqual(self.shell.core.sent, [("convert", None)], "one read of the measures, nothing else")
+        self.assertEqual((c.kind, c.src, c.dst), ("length", "km", "mi"))
+        self.assertEqual((c.measure.get_label(), c.from_b.get_label(), c.to_b.get_label()),
+                         ("Measure: Length", "From: km", "To: mile"))
+        self.assertEqual(c.result.get_label(), "", "nothing is worked out on the phone")
+
+    def test_convert_sends_one_request_and_shows_the_servers_words(self):
+        c = self.converter("5")
+        self.assertEqual(c.amount.get_label(), "5")
+        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
+                                    "src": "km", "dst": "mi"}]
+        c.convert()
+        c.convert()
+        self.assertEqual(len(self.work), 1, "one request in flight, not two")
+        self.assertEqual((c.go.get_label(), c.go.sensitive), ("Converting", False))
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("convert", {"kind": "length", "value": "5", "src": "km", "dst": "mi"}))
+        self.assertEqual((c.result.get_label(), c.line.get_label()), ("3.10686", "5 km = 3.10686 mile"))
+        self.assertEqual((c.go.get_label(), c.go.sensitive), ("Convert", True))
+        self.assertEqual(len(self.shell.core.sent), 2, "a conversion asks for no refresh after it")
+
+    def test_the_answer_shown_is_the_servers_text_not_one_the_phone_works_out(self):
+        c = self.converter("5")
+        self.shell.core.answers = [{"ok": True, "text": "server says", "line": "server line", "kind": "length",
+                                    "src": "km", "dst": "mi"}]
+        c.convert()
+        self.flush()
+        self.assertEqual((c.result.get_label(), c.line.get_label()), ("server says", "server line"))
+
+    def test_an_answer_for_other_units_than_were_asked_is_not_drawn(self):
+        c = self.converter("5")
+        self.shell.core.answers = [{"ok": True, "text": "8.04672", "line": "5 mile = 8.04672 km", "kind": "length",
+                                    "src": "mi", "dst": "km"}]
+        c.convert()
+        self.flush()
+        self.assertEqual(c.result.get_label(), "")
+        self.assertEqual(c.note.get_label(), "That conversion is not available.")
+        self.assertTrue(c.go.sensitive)
+
+    def test_a_refusal_is_said_in_the_converters_words_and_no_result_stays(self):
+        c = self.converter("5")
+        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
+                                    "src": "km", "dst": "mi"}]
+        c.convert()
+        self.flush()
+        c.key("<")
+        for ch in "-1":
+            c.key(ch)
+
+        def refuse(name, data=None):
+            self.shell.core.sent.append((name, data))
+            raise urllib.error.HTTPError("u", 400, "bad", {}, __import__("io").BytesIO(b'{"error": "sign"}'))
+        self.shell.core.app = refuse
+        c.convert()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1][1]["value"], "-1")
+        self.assertEqual((c.result.get_label(), c.line.get_label()), ("", ""), "the old answer is not left beside new input")
+        self.assertEqual(c.note.get_label(), "Length, mass and volume stay at zero or more.")
+        self.assertTrue(c.go.sensitive)
+
+    def test_a_lost_connection_never_shows_its_raw_text(self):
+        c = self.converter("5")
+
+        def fail(name, data=None):
+            raise OSError("connection refused to 127.0.0.1:8765 token=abc")
+        self.shell.core.app = fail
+        c.convert()
+        self.flush()
+        self.assertEqual(c.note.get_label(), "That conversion is not available.")
+        self.assertTrue(c.go.sensitive, "the button comes back")
+
+    def test_a_converter_the_server_does_not_have_says_it_is_missing(self):
+        c = self.page(self.screens.Converter)
+
+        def gone(name, data=None):
+            raise urllib.error.HTTPError("u", 404, "missing", {}, __import__("io").BytesIO(b"{}"))
+        self.shell.core.app = gone
+        c.enter()
+        self.flush()
+        self.assertEqual(c.note.get_label(), self.screens.MISSING % "Converter")
+        c.convert()
+        self.assertEqual(c.note.get_label(), "Loading the converter.", "no measures: nothing is converted")
+
+    def test_no_thread_means_nothing_was_sent_and_the_button_comes_back(self):
+        c = self.converter("5")
+
+        def no_thread(target, daemon=None):
+            def start():
+                raise RuntimeError("can't start new thread")
+            return types.SimpleNamespace(start=start)
+        self.screens.threading = types.SimpleNamespace(Thread=no_thread)
+        c.convert()
+        self.assertFalse(c.busy)
+        self.assertEqual((c.go.get_label(), c.go.sensitive), ("Convert", True))
+        self.assertEqual(c.note.get_label(), "That conversion is not available.")
+
+    def test_inputs_do_not_change_while_a_conversion_is_on_its_way(self):
+        c = self.converter("5")
+        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
+                                    "src": "km", "dst": "mi"}]
+        c.convert()
+        c.key("9")
+        c.next_unit("src")
+        c.next_unit("dst")
+        c.swap()
+        c.next_kind()
+        self.assertEqual(c.inputs(), ("length", "5", "km", "mi"), "the answer will be for what is on screen")
+        self.flush()
+        self.assertEqual(c.result.get_label(), "3.10686")
+
+    def test_any_change_to_the_input_clears_the_answer(self):
+        for change in (lambda c: c.key("0"), lambda c: c.next_unit("src"), lambda c: c.next_unit("dst"),
+                       lambda c: c.swap(), lambda c: c.next_kind()):
+            c = self.converter("5")
+            self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
+                                        "src": "km", "dst": "mi"}]
+            c.convert()
+            self.flush()
+            change(c)
+            self.assertEqual((c.result.get_label(), c.line.get_label()), ("", ""))
+
+    def test_units_step_and_swap_and_never_meet(self):
+        c = self.converter("")
+        c.next_unit("src")
+        self.assertEqual((c.src, c.dst), ("m", "mi"), "km, then the next one round")
+        c.next_unit("src")
+        self.assertEqual((c.src, c.dst), ("km", "mi"), "mile is the To unit, so From skips it")
+        c.next_unit("dst")
+        self.assertEqual((c.src, c.dst), ("km", "m"))
+        c.swap()
+        self.assertEqual((c.src, c.dst, c.from_b.get_label(), c.to_b.get_label()), ("m", "km", "From: m", "To: km"))
+        c.next_kind()
+        self.assertEqual((c.kind, c.src, c.dst, c.measure.get_label()), ("temperature", "c", "f", "Measure: Temperature"))
+        c.next_kind()
+        self.assertEqual(c.kind, "length")
+
+    def test_an_older_read_of_the_measures_is_not_drawn_over_a_newer_one(self):
+        c = self.page(self.screens.Converter)
+        first, second = c.seq.issue(), c.seq.issue()
+        c.deliver(second, self.KINDS)
+        c.deliver(first, {"ok": True, "kinds": [{"id": "mass", "title": "Mass", "src": "kg", "dst": "lb",
+                                                 "units": [{"id": "kg", "title": "kg"}, {"id": "lb", "title": "lb"}]}]})
+        self.assertEqual(c.kind, "length")
+
+    def test_a_conversion_answer_sets_no_floor_and_is_not_the_pages_data(self):
+        """A conversion changes nothing on the server: a read of the measures asked after it is still drawn, and its
+        answer never becomes the measures."""
+        c = self.converter("5")
+        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
+                                    "src": "km", "dst": "mi"}]
+        c.convert()
+        c.refresh()
+        self.shell.core.answers.append(self.KINDS)
+        self.flush()
+        self.assertEqual(c.data, self.KINDS)
+        self.assertEqual(c.result.get_label(), "3.10686")
+        c.deliver(c.seq.issue(), {"ok": True, "text": "1", "line": "nobody asked", "kind": "length", "src": "km", "dst": "mi"},
+                  None, True)
+        self.assertEqual(c.result.get_label(), "3.10686", "an answer nobody is waiting for is not drawn")
+
+    def test_a_late_answer_to_an_earlier_request_is_not_drawn(self):
+        c = self.converter("5")
+        c.convert()
+        old = self.work.pop(0)
+        c.busy = False      # as if that answer had been given up on; a newer request is then sent
+        c.set_busy(False)
+        self.shell.core.answers = [{"ok": True, "text": "new", "line": "new line", "kind": "length", "src": "km", "dst": "mi"},
+                                   {"ok": True, "text": "old", "line": "old line", "kind": "length", "src": "km", "dst": "mi"}]
+        c.convert()
+        self.flush()
+        old()
+        self.assertEqual(c.result.get_label(), "new")
+
+    def test_measures_the_converter_cannot_use_are_not_offered(self):
+        c = self.page(self.screens.Converter)
+        c.got({"ok": True, "kinds": ["x", {"id": "solo", "title": "Solo", "units": [{"id": "a", "title": "a"}]},
+                                     {"id": 3, "title": "Bad", "units": []}]})
+        self.assertEqual(c.kinds, [])
+        self.assertEqual(c.note.get_label(), "That conversion is not available.")
+        c.convert()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("convert", None)], "it reads the measures again, it sends no conversion")
+
+    def test_the_home_preview_shows_the_last_answer(self):
+        c = self.page(self.screens.Converter)
+        self.assertEqual(c.preview({}), ("Loading the converter.", []))
+        c.got(self.KINDS)
+        self.assertEqual(c.preview({})[0], "No conversion yet.")
+        for ch in "5":
+            c.key(ch)
+        self.shell.core.answers = [{"ok": True, "text": "3.10686", "line": "5 km = 3.10686 mile", "kind": "length",
+                                    "src": "km", "dst": "mi"}]
+        c.convert()
+        self.flush()
+        self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")
+
+    # --- Settings: storage ----------------------------------------------------------------------------------------
+    def test_storage_is_read_when_settings_is_entered_and_not_before(self):
+        reads = []
+
+        def usage(path):
+            reads.append(path)
+            return types.SimpleNamespace(total=52_100_000_000, used=0, free=12_300_000_000)
+        self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
+        s = self.page(self.screens.Settings)
+        s.preview({})
+        s.show({})
+        s.tick()
+        self.assertEqual(reads, [], "building, previewing, a new state and the clock read nothing")
+        self.assertEqual(s.storage.get_label(), "Storage: unknown")
+        s.enter()
+        self.assertEqual(s.storage.get_label(), "Storage: 12.3 GB free of 52.1 GB")
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(reads[0], os.path.expanduser("~") if os.path.isdir(os.path.expanduser("~")) else os.sep, "the owner's home folder is the one measured")
+        s.enter()
+        self.assertEqual(len(reads), 2, "read again on each visit, once")
+
+    def test_a_failing_storage_read_says_unknown(self):
+        def usage(path):
+            raise PermissionError("no")
+        self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
+        s = self.page(self.screens.Settings)
+        s.enter()
+        self.assertEqual(s.storage.get_label(), "Storage: unknown")
 
 
 class Recorder:

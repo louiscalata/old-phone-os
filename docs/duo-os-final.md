@@ -48,6 +48,7 @@ Set by the image's units; unset means the page and every route are byte for byte
 | `OPOS_OSK` | `1` (`opos-server.service`; `/etc/default/opos-osk` overrides) | `1` or `web`: the in-page keyboard on every full page; `stevia`: the port's keyboard instead; `off` or anything else: none |
 | `OPOS_OSK_HINGE` | unset (42) | CSS pixels between the two halves of a split keyboard when the page does not say; `0` never splits |
 | `OPOS_NETWORK` | `1` (drop-in `opos-network.conf`) | the Settings link to `/network` and the actions that change things; without it the page only reads |
+| `OPOS_APPS` | `clock,contacts,notes,calc,calls,convert` (drop-in `opos-apps.conf`) | the everyday apps, comma-separated; each app's page and `/api/` routes answer 404 until it is named (see [apps.md](apps.md)). The native shell reads the same line through `opos-native` (`OPOS_NATIVE_APPS_CONF`, below) and gives Clock, Contacts, Notes, Converter and Call log a screen only when it names `clock`, `contacts`, `notes`, `convert` or `calls`; the Calculator screen needs no server and is always there. The Converter screen asks the server's `/api/convert` for every answer and stores nothing. Not yet seen on the phone |
 | `OPOS_NET_TTY` | unset | `1` hands the Wi-Fi password to `nmcli` through a pseudo-terminal, if a pipe is not accepted on the phone |
 | `OPOS_NET_POLKIT` | unset (a build input; the rule is not installed) | `1` at build time installs the polkit rule that lets `opos-server.service`, running as `droidian`, use the four NetworkManager actions (any value but `1`, `0`, empty or unset stops the build; `verify-image.sh` checks the rule, and with `OPOS_NET_POLKIT` in its environment requires or forbids it). Without it joining Wi-Fi is refused on this image |
 | `OPOS_FIRSTRUN` | `1` (`opos-server.service`) | the first-run setup, `/timezone`, and applying the saved zone at start |
@@ -98,6 +99,11 @@ unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot preserve a root shel
 - **Calls and texts are simulated.** The base has ModemManager (through ofono2mm) and `mmcli` can read the modem and SIM, so the
   Network page shows the real radio's state, but `src/opos/mm_modem.py` is not wired to the phone page. Nothing is dialled, sent
   or received; the page says so.
+- **The hinge posture needs the phone's sensor service.** The native shell takes the hinge angle and the accelerometer
+  from sensorfw ([NATIVE.md](../packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)) and never starts it, and nothing in
+  this repository's image build starts it either, so on a freshly built image the shell knows only open and closed until
+  the service is started. A cold boot with the delayed start that was installed by hand on the owner's phone, and ten
+  cold boots, remain **NOT_RUN**.
 
 ## What is not known
 

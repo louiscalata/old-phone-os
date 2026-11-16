@@ -63,6 +63,10 @@ if name == "fastboot":
         sys.stderr.write(answer)
     elif args == ["getvar", "unlocked"]:
         sys.stderr.write(os.environ.get("STUB_UNLOCKED", "unlocked: yes\\n"))
+    elif args == ["getvar", "current-slot"]:
+        sys.stderr.write(os.environ.get("STUB_SLOT", "current-slot: a\\n"))
+    elif args == ["getvar", "battery-level"]:
+        sys.stderr.write(os.environ.get("STUB_BATTERY", "battery-level: 80\\n"))
     elif args[:1] == ["boot"] and len(args) == 2 and os.path.isfile(args[1]):
         # Record the bytes a real fastboot would send, and how the file is protected.
         image = pathlib.Path(args[1])

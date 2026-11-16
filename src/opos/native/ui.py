@@ -158,6 +158,47 @@ def two_panes(read, act, hinge, hand="right"):
     return box
 
 
+def one_column(row, screen):
+    """Back mode: move a two_panes row's reading pane above its thumb pane, both on `screen` (0 left, 1 right), and leave
+    the other half empty. The reading pane takes the free height, the thumb pane its natural height. The same two
+    widgets move; the column and the empty half are made once per row and kept for the next time."""
+    if getattr(row, "column", None) is None:
+        row.column, row.empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL), Gtk.Box()
+    read, act = row.read, row.act
+    if getattr(row, "kept", None) is None:      # how the panes stretched before, put back by two_columns
+        row.kept = (read.get_vexpand_set(), read.get_vexpand(), act.get_vexpand_set(), act.get_vexpand(),
+                    act.get_vhomogeneous() if isinstance(act, Gtk.Stack) else None)
+    for w in (read, act):
+        if w.get_parent() is not None:
+            w.get_parent().remove(w)
+    read.set_vexpand(True)
+    act.set_vexpand(False)
+    if isinstance(act, Gtk.Stack):
+        act.set_vhomogeneous(False)     # as tall as the page shown, not as the tallest page
+    row.column.append(read)
+    row.column.append(act)
+    for w in ((row.column, row.empty) if screen == 0 else (row.empty, row.column)):
+        row.append(w)
+
+
+def two_columns(row, hand):
+    """Undo one_column (also a one_column that stopped half way): the two panes side by side again in the hand's
+    order, stretching as they did before. Safe to call on a row that is already two panes."""
+    for w in (row.read, row.act, getattr(row, "column", None), getattr(row, "empty", None)):
+        if w is not None and w.get_parent() is not None:
+            w.get_parent().remove(w)        # every one comes off; the two panes go back below, in order
+    kept, row.kept = getattr(row, "kept", None), None
+    if kept is not None:
+        row.read.set_vexpand(kept[1])
+        row.read.set_vexpand_set(kept[0])
+        row.act.set_vexpand(kept[3])
+        row.act.set_vexpand_set(kept[2])
+        if kept[4] is not None:
+            row.act.set_vhomogeneous(kept[4])
+    for name in pane_order(hand):
+        row.append(getattr(row, name))
+
+
 class Slide(Gtk.Widget):
     """Holds one child and draws it moved up or down by `offset` pixels, for a surface held under the finger.
 

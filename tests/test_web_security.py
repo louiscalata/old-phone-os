@@ -370,12 +370,9 @@ class TestWebHardening(unittest.TestCase):
         for host in ("0.0.0.0", "", "192.0.2.1"):
             with self.assertRaises(ValueError):
                 web.make_server(0, web.Phone(), host=host)
-        try:
-            srv = web.make_server(0, web.Phone(), host="::1")
-        except OSError:
-            self.skipTest("no ipv6")
-            return
-        srv.server_close()
+        # The server is IPv4 only and the Host/Origin checks know no [::1], so ::1 is refused up front.
+        with self.assertRaises(ValueError):
+            web.make_server(0, web.Phone(), host="::1")
     def test_loopback_address(self) -> None:
         """Server binds loopback only."""
         self.assertEqual(self._run.server.server_address[0], "127.0.0.1")

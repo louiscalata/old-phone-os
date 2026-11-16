@@ -140,7 +140,8 @@ that include Wi-Fi addresses.
 
 Sources: PR #130 "the device checks stay NOT_RUN"; `ROADMAP.md:161` "the device checks above remain";
 `packaging/duo-os/NATIVE.md:242` "the server's address (`OPOS_SERVER_URL`, never `OPOS_LOCAL_URL`), what Phone says while
-an answer is missing, the hold on the lock page while the PIN lock question has no answer".
+an answer is missing, the hold on the lock page while the PIN lock question has no answer"; `ROADMAP.md:116` "Checked
+with a stand-in toolkit only; all four remain".
 
 **Preconditions.** First-run setup finished, `OPOS_LOCK` not set, `/etc/opos/native-off` absent.
 
@@ -213,7 +214,7 @@ Bedside on the real hinge stays NOT_RUN: see C29.
 Sources: `packaging/duo-os/NATIVE.md:244` "the lid watcher that is looked for again"; `packaging/duo-os/NATIVE.md:224`
 "the switch is looked for again 5 s, 15 s and 30 s later, then every 60 s"; `packaging/duo-os/NATIVE.md:229` "A lid
 switch that flaps"; `packaging/duo-os/NATIVE.md:262` "a lid switch that disappears and comes back"; PR #135 "any lid
-close, blank or restore on a Duo".
+close, blank or restore on a Duo"; `ROADMAP.md:112` "any lid close, blank or restore on the Duo remains".
 
 **Preconditions.** C05 passed. This check only watches what happens; it never makes a panel fail on purpose, and it
 never makes the lid switch go away on purpose (no driver unbind, no module removal, no writes under `/sys`), because
@@ -641,19 +642,20 @@ ring while the clock is unknown, no warning, or no ring once set.
 ### C23. The alarm tone on the speaker
 
 Sources: `ROADMAP.md:134` "The alarm tone plays on the speaker and steps from 20 percent to 70 percent."; PR #28 "The
-tone has not been played on the Duo".
+tone has not been played on the Duo"; `ROADMAP.md:22` "Hearing the tone on a phone is NOT_RUN."
 
-**Preconditions.** On this revision the alarm player's default refuses playback and no audio mixer is connected
-([VOLUME.md](../packaging/duo-os/VOLUME.md)), and the roadmap says sound and vibration are not played yet. So this check
-cannot pass on this revision; it is listed so that it is run when a player change lands.
+**Preconditions.** A ring plays six short beeps of `src/opos/sounds/alarm.wav` through `paplay`, from 20 to 70 percent of
+the paplay stream ([docs/apps.md](apps.md)). No OPOS mixer path is connected ([VOLUME.md](../packaging/duo-os/VOLUME.md)).
+The image recipes do not add `paplay`; on an image without it the alarm shows on screen only and no tone can play.
 
 **Steps.**
-1. During the ring of C21, listen at the speaker.
+1. [READ-ONLY] On the phone: `command -v paplay`.
+2. During the ring of C21, listen at the speaker.
 
-**Observe.** Whether any tone plays.
+**Observe.** Whether `paplay` is on the path, and whether any tone plays.
 
-**Pass or fail.** On this revision the expected observation is no tone, and the check stays NOT_RUN. It passes only on a
-revision with a connected player, when the tone starts at about 20 percent and steps to 70 percent and stops at Stop.
+**Pass or fail.** Passes when six beeps play, getting louder from about 20 percent to 70 percent, and end at Stop or
+within 24 seconds. With no `paplay` on the path the expected observation is no tone, and the check stays NOT_RUN.
 
 **Stop and undo.** Stop on the ring screen.
 
@@ -729,8 +731,8 @@ cannot be reached.
 
 Sources: `ROADMAP.md:144` "The apps index and More apps on the glass."; PR #23 "Device: NOT_RUN (D1–D11)".
 
-**Preconditions.** `OPOS_APPS` names Clock, Contacts, Notes and Calculator (the image's drop-in). Browser interface for
-More apps.
+**Preconditions.** `OPOS_APPS` names Clock, Contacts, Notes, Calculator, Call log and Converter (the image's drop-in).
+Browser interface for More apps.
 
 **Steps.**
 1. [READ-ONLY] On the phone: `systemctl show opos-server -p Environment` (look for `OPOS_APPS`).
@@ -768,20 +770,64 @@ revision that adds camera code.
 Sources: `ROADMAP.md:143` "Folded posture, and bedside on the real hinge."; PR #26 "Bedside is a button until posture
 exists".
 
-**Preconditions.** C05 passed. No hinge angle or accelerometer reaches Linux on this phone, so book, tent and flat cannot
-be told apart (NATIVE.md, The lid).
+**Preconditions.** C05 passed. The kernel gives no hinge angle on this phone; book, tent and flat are told apart only
+from the sensor service's angle, and without it the shell knows only open and closed (NATIVE.md, The lid; C34).
 
 **Steps.**
 1. Stand the phone half open as a tent and watch the screens for 30 seconds; then open Clock and tap Bedside.
 
 **Observe.** Whether anything changes by itself in the tent posture (nothing is expected), and the Bedside button.
 
-**Pass or fail.** The folded part is C05. The automatic bedside posture cannot be detected on this kernel and stays
-NOT_RUN; the Bedside button is checked in C21.
+**Pass or fail.** The folded part is C05. The shell may name the tent posture from the angle, but it opens no bedside
+by itself, so an automatic bedside posture stays NOT_RUN; the Bedside button is checked in C21.
 
 **Stop and undo.** Open the phone flat.
 
 **Record.** What changed, if anything, in the tent posture.
+
+### C34. Hinge postures and back mode (native shell)
+
+Sources: `packaging/duo-os/NATIVE.md:319` "a dark screen ignoring touch, the Settings Hinge line on the glass";
+`ROADMAP.md:92` "November 15 hinge angle and back mode"; `ROADMAP.md:176` "Hinge angle: the postures closed, book,
+flat, tent and back"; `ROADMAP.md:178` "D12 is a partial record, not a pass."; `docs/duo-os-final.md:102` "The hinge
+posture needs the phone's sensor service."
+
+**Preconditions.** C04 and C05 passed, `/etc/opos/native-off` absent, and the sensor service already running:
+`systemctl is-active sensorfwd` answers `active`. Starting or enabling it is not a step here: the PC session reported
+that a sensor-chip stall once reset this phone, so that is the owner's own decision and test plan. Never read anything
+under `/sys/kernel/debug`.
+
+**Steps.**
+1. [READ-ONLY] On the phone: `systemctl is-active sensorfwd`, then follow the shell's posture lines with
+   `journalctl -b -f | grep "opos shell: posture"` (if the session's output does not reach the journal, record that).
+2. Fold the phone slowly from flat to nearly shut, open it again, then fold it all the way back; open Settings on the
+   lit screen and read the Hinge line.
+3. Folded back, turn the phone over so the other screen faces you; wait two seconds; then touch the dark screen.
+4. Unfold the phone; then close the lid for ten seconds and open it.
+5. [REBOOTS] [OWNER ONLY] Only if the owner's own delayed sensor start, installed by hand on that phone, is still there
+   (it is not in this repository's image, and nothing in this repository starts the sensor service): ten cold boots in
+   a row, each a start from power off. A RAM-boot from the PC (R5) is a last resort and does not count as a cold boot.
+   After each boot repeat step 1 only. Stop at the first stall or reset; do not continue the count. Without that
+   delayed start, skip this step: it stays NOT_RUN.
+
+**Observe.** The log names book, flat, tent and back as the angle passes through them, and closed only when the lid
+switch says so; folded back, one screen lit and the page one screen wide; the Settings line ("One screen is lit; the
+other is dark."); after the flip, the lit screen changes within about two seconds; the touch on the dark screen does
+nothing; unfolding and opening the lid light both screens; in step 5, any stall or reset of the phone.
+
+**Pass or fail.** Pass: every observation above as written, and in step 5 ten cold boots with none stalling or
+resetting the phone; a skipped step 5 leaves that part NOT_RUN, not passed. Fail: a posture line missing or wrong, the wrong screen lit, a touch on the dark screen that acts, a screen
+left dark after the lid opens, or any stall or reset.
+
+**Stop and undo.** Unfold the phone, or close and open the lid: both screens are lit again. A dark screen: R1. The
+shell wrong or stuck: R2. The sensor service itself is left as it was found. If the owner decides to stop it, the
+file `/etc/opos/sensors-off` is not enough: on the owner's hand-installed delayed start, as reported by the PC session,
+that file only blocks later starts and does not stop a `sensorfwd` that is already running. A live stop is
+`sudo systemctl disable --now opos-sensorfwd-delayed.timer`, then `sudo systemctl stop sensorfwd`; that is the owner's
+decision, not a step of this check.
+
+**Record.** The posture lines (without addresses or serials), which screen was lit before and after the flip, what the
+touch on the dark screen did, the Settings line, and for step 5 the count of boots and any stall.
 
 ## On the PC, and installing
 
@@ -876,6 +922,34 @@ NOT_RUN".
 **Stop and undo.** As that runbook says, including its return to Android.
 
 **Record.** In that runbook's own record, and the gate reached here.
+
+### C33. Boot smoke test in QEMU on the PC (no phone)
+
+Sources: `packaging/duo-os/README.md`, "Boot smoke test (QEMU, PC only)"; `packaging/duo-os/qemu-boot-smoke.sh` and
+`packaging/duo-os/boot-smoke-verdict.py`.
+
+**Preconditions.** The PC session on Linux, with `qemu-system-aarch64` and a generic arm64 kernel (with its initrd if it
+needs one); no phone connected, since this check never touches one. An image built from this checkout.
+
+**Steps.**
+1. [READ-ONLY] `sh packaging/duo-os/qemu-boot-smoke.sh --kernel <vmlinuz> [--initrd <initrd>] --rootfs <OUT.img>
+   --accept server-started --timeout 600` (the drive is `snapshot=on`, so the image file is not written).
+
+**Observe.** The harness's last line, a JSON line with `verdict`, `exit`, `source`, `server_started` and `negative`, and
+its exit status. QEMU `virt` has no hwcomposer, so the shell does not start; the run covers systemd ordering, the
+updater's boot step, the clock floor and the server process. It does not name the image: the identity marker
+(`--expect`) needs the proposed `opos-boot-ok.service`, which is not installed until Louis says yes (see the README
+section).
+
+**Pass or fail.** Pass: exit 0, one `Started opos-server.service` line, no negative marker. Fail: exit 1 (a negative
+marker, or the server started more than once) or exit 3 (no such line before the timeout). Exit 2 is a setup problem,
+not a result.
+
+**Stop and undo.** Nothing to undo: the image is not written and no phone is involved. A run that hangs is ended by the
+harness's timeout.
+
+**Record.** The exit status, the JSON line, the kernel used and the date. Keep the serial log with the session record,
+without addresses or serials.
 
 ## Recovery paths
 
@@ -977,7 +1051,9 @@ This copy stays NOT_RUN.
 | C26 | The calculator | | NOT_RUN | | | |
 | C27 | The apps index and More apps | | NOT_RUN | | | |
 | C28 | A camera still | | NOT_RUN | | | no camera code on this revision |
-| C29 | Bedside on the real hinge | | NOT_RUN | | | no hinge angle on this kernel |
+| C29 | Bedside on the real hinge | | NOT_RUN | | | the angle comes from the sensor service only |
+| C34 | Hinge postures and back mode | | NOT_RUN | | | needs the sensor service running |
 | C30 | The image folder check on the Windows PC | | NOT_RUN | | | |
 | C31 | The shell installer's first phone run | | NOT_RUN | | | erases userdata |
 | C32 | The persistent kernel | | NOT_RUN | | | see duo-persistent-install.md |
+| C33 | Boot smoke test in QEMU on the PC | | NOT_RUN | | | PC session; no phone |

@@ -15,7 +15,7 @@ The Duo image drop-in `packaging/duo-os/opos-apps.conf` names `clock,contacts,no
 |---|---|
 | Clock and alarm | `/clock`: alarms, one timer, a stopwatch, and a bedside clock. The timer is one countdown in whole minutes and is stored with the alarms. The stopwatch runs in the page and is cleared when the page is closed. A ring plays six short beeps through `paplay` (`alarm_sound.py`), ending within 24 seconds, and Stop ends them. Hearing it on a phone is NOT_RUN. |
 | Calculator | `/calc`. Arithmetic runs in the page. Nothing is stored. |
-| Converter | `/convert`. Length, mass, volume and temperature with fixed factors. Nothing is stored. Browser interface only; the native shell has no Converter screen. |
+| Converter | `/convert`. Length, mass, volume and temperature with fixed factors. Nothing is stored. The native shell has a Converter screen that asks the same `/api/convert`; it is not run on a phone. |
 | Contacts | `/contacts`. A local book, search, and vCard import and export. Call and Text on that page say the call is practice and that nothing was sent. |
 | Notes | `/notes`. Plain text files on the phone. |
 | Phone | The front page dials and hangs up through the in-memory modem. Messages are threads in the same page. `src/opos/mm_modem.py` is not wired in. The Duo image carries ModemManager through ofono2mm. Calls and texts on that image are still the simulated modem. |
@@ -35,9 +35,9 @@ A gap fits the ethos when it is a plain local tool, keeps its own data on the ph
 | Flashlight | A pocket light fits. | The LED is a kernel path, not a package in this tree, and writing it is not approved. A white screen would need no package and is a poor stand-in. | Listed only. |
 | Timer and stopwatch | Already in Clock. Not a gap. | No. | Do not add a second one. |
 | Battery readout | Already on the phone. Not a gap. | No. | None. |
-| Storage readout | Yes. One factual line for free space, from the standard library. | No. | Not this round. The call log is the higher daily need. |
+| Storage readout | Yes. One factual line for free space, from the standard library. | No. | Implemented in the native shell only. Settings shows one line such as "Storage: 12.3 GB free of 52.1 GB" for the home folder (`shutil.disk_usage`), in decimal GB/MB. It is read once each time Settings is opened and never in the background. A failed read shows "Storage: unknown". Formatting is `logic.storage_line`, tested on the Mac. The browser interface has no storage line. On-device check NOT_RUN. |
 | Do Not Disturb | Only if calls, messages, and alarms still come through. A switch that hides optional noise can stay local. | No. | Not this round. |
-| Unit converter | Yes. The same kind of tool as the calculator. | No. | Implemented at `/convert`, enabled by `OPOS_APPS=convert`, in the browser interface. No native shell screen yet. Every on-device check is NOT_RUN. |
+| Unit converter | Yes. The same kind of tool as the calculator. | No. | Implemented at `/convert`, enabled by `OPOS_APPS=convert`, in the browser interface and as the native shell's Converter screen, which asks the same `/api/convert`. Every on-device check is NOT_RUN. |
 | Music | A local player is a weaker fit than calls and notes. | Files the browser can already play need no package. Further codecs would be a new package. | Listed only. |
 | Voice memos | Notes already keep text. | No Debian package for a browser recording. The page currently refuses the microphone, so this is a permission change. | Listed only. |
 

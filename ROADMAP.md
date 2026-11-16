@@ -19,7 +19,7 @@ their original scope. Plans are intentions, not promises.
   non-essential tasks, never fewer.
 - Offline floor: every decision and fallback answer works with no model running.
 - Desktop demo with a simulated battery, calls and texts (`?demo=1` simulator controls).
-- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes and Calculator. App data stays in local files. Alarms wait while the clock is unknown. Alarms show on screen only; sound and vibration are not played yet.
+- Everyday apps index at `/apps`, only when `OPOS_APPS` names an app ([docs/apps.md](docs/apps.md)). With the variable absent the main page is unchanged. The Duo image names Clock, Contacts, Notes, Calculator, Call log and Converter (`clock,contacts,notes,calc,calls,convert` in `packaging/duo-os/opos-apps.conf`). App data stays in local files. Alarms wait while the clock is unknown. An alarm ring shows on screen and plays six short beeps through `paplay`, ending within 24 seconds; Stop ends them. The image recipes do not add `paplay`; without it the alarm shows on screen only. Hearing the tone on a phone is NOT_RUN. Vibration stays off.
 - Camera: research only ([docs/camera-spike.md](docs/camera-spike.md)). No still has been captured. No camera code.
 - Setup wizard, per-user installer for macOS and Linux, and postmarketOS packages
   (`opos`, `postmarketos-ui-opos`) that start OPOS as a full-screen kiosk. The kiosk runs the
@@ -89,6 +89,15 @@ their original scope. Plans are intentions, not promises.
   no count limit and a three-second delay. Production-controller fake-tree tests are local work; phone behavior,
   native systemd lifecycle and image execution remain **NOT_RUN**. See [POWER.md](packaging/duo-os/POWER.md) for
   current results and limits.
+- November 15 hinge angle and back mode ([NATIVE.md](packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)): the native
+  shell reads the hinge angle from the phone's sensor service (sensorfw), names the posture (closed, book, flat, tent,
+  back) and, folded back, lights only the screen that faces you, chosen from the accelerometer. As reported by the PC
+  session, one phone, one session, with the owner watching: the postures, the one-screen layout, taps, the flip-over
+  switch and both screens lighting after the lid opens were seen on the phone with the code as an installed release.
+  Idle CPU of the shell and the sensor service, peer-measured, clock ticks per 30 seconds: 93 and 45 with fixed polling,
+  31 and 21 with adaptive polling, 20 and 0 with the lid closed; these are tick counts, not battery measurements.
+  **NOT_RUN**: a dark screen ignoring touch, the Settings Hinge line on the glass, a cold boot with the delayed sensor
+  start (installed by hand on that phone, not in this repository's image), ten cold boots, and any other phone.
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). Only the Surface Duo routes, started with
   `--live-battery`, read the phone's real battery (`LiveBattery`). Calls and texts are simulated on every
@@ -105,6 +114,28 @@ their original scope. Plans are intentions, not promises.
 - On-phone model inference: Llama 3.2 1B was timed on the Duo under Android (see above); Llama 3.2 3B has no
   phone-speed measurement, and nothing was timed on the Duo OS image.
 - Windows install runs `install.ps1`, but the Windows runtime is untested.
+- November 14 native shell lid blank fixes ([NATIVE.md](packaging/duo-os/NATIVE.md#the-lid)): with no saved
+  brightness file, a panel whose `brightness` file is there but cannot be read is written its default (capped by its
+  readable `max_brightness`) and stays listed as failed until a read shows it lit; an absent `brightness` file is never
+  created. A `PowerSaveMode` of 1 to 3 that the shell refuses (the lid reads open) reads 0, because the screens stay
+  lit. Local tests only; any lid close, blank or restore on the Duo remains **NOT_RUN**.
+- November 14 native shell follow-ups ([NATIVE.md](packaging/duo-os/NATIVE.md#follow-ups-of-november-14)): the shell
+  asks only `http://127.0.0.1:PORT` (`OPOS_SERVER_URL`; it no longer reads the Helper's `OPOS_LOCAL_URL`), draws no
+  state without the server's answer about its PIN lock, says when a call's answer is missing, and looks again for a
+  lid switch it lost. Checked with a stand-in toolkit only; all four remain **NOT_RUN** on the phone. The shell still
+  has no PIN screen.
+- November 14 PIN lock fixes (`OPOS_LOCK=1`, [docs/apps.md](docs/apps.md#while-the-phone-is-locked)): while the
+  phone is locked, every app read and every write that stays allowed answers with the locked `/api/state` body; the
+  Clock answer adds only whether an alarm is ringing and its time. The browser page has a PIN pad (`/pin.js`), and the
+  lock screen comes off only after the server has answered that the phone is unlocked. A Lock request that was lost or
+  refused is sent again before any status request or digits, the pad shrinks with narrow screens, and the wrong-PIN
+  wait stops at 8 hours from the 15th wrong try on. The lock screen's missed-call count comes from the Call log app.
+  The pad was run in node against a stand-in page; a browser and the phone are **NOT_RUN** (check D5 below: "The lock
+  PIN works on the glass."). The native shell has no PIN screen; with the lock on, the browser is the interface.
+- November 14 device-check runbook ([docs/duo-device-checks.md](docs/duo-device-checks.md)): one check, C01 to C32,
+  for each phone check the docs still mark NOT_RUN, each with its preconditions, steps, what to observe, pass or fail,
+  how to stop and undo, and what to record. Nothing in it has been run. As in the device table below, Date stays empty
+  and Result stays NOT_RUN until a phone run fills both.
 
 ## Public browser demo
 
@@ -127,7 +158,7 @@ checks and deployment observations remain separate evidence.
 
 ## On-device checks
 
-These rows are the phone-features checks D1 through D11. Date stays empty and Result stays NOT_RUN until a phone run fills both, with an evidence link. The link in Evidence today is the feature pull request, not a device receipt. No row here records a pass.
+These rows are the phone-features checks D1 through D12. Date stays empty and Result stays NOT_RUN until a phone run fills both, with an evidence link. The link in Evidence today is the feature pull request, not a device receipt (D12's has no number yet). No row here records a pass.
 
 | ID | Check | Date | Result | Evidence |
 |---|---|---|---|---|
@@ -142,6 +173,14 @@ These rows are the phone-features checks D1 through D11. Date stays empty and Re
 | D9 | A camera still, and the drain while it is taken. | | NOT_RUN | [PR #32](https://github.com/louiscalata/old-phone-os/pull/32) |
 | D10 | Folded posture, and bedside on the real hinge. | | NOT_RUN | [PR #21](https://github.com/louiscalata/old-phone-os/pull/21) |
 | D11 | The apps index and More apps on the glass. | | NOT_RUN | [PR #23](https://github.com/louiscalata/old-phone-os/pull/23) |
+| D12 | Hinge angle: the postures closed, book, flat, tent and back, and back mode with the lit screen following the side that faces you. | | NOT_RUN | no pull request number yet; the November 15 report is in the paragraph below |
+
+D12 is a partial record, not a pass. As reported by the PC session, on November 15, 2026, on one Surface Duo with the
+hinge code running as an installed release, the owner folded the phone back and saw the one-screen layout, taps, the
+lit screen switching about one second after a flip, and both screens lighting after the lid opened; the shell's log
+showed all five postures. **NOT_RUN**: a dark screen ignoring touch, a cold boot with the delayed sensor start, ten cold
+boots, and the Settings Hinge line on the glass. The row keeps Date empty and Result NOT_RUN until a dated run with an
+evidence link fills both.
 
 ## Next
 
