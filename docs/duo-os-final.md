@@ -99,6 +99,11 @@ unconditionally. An inherited `OPOS_DEV_USB_SHELL=1` cannot preserve a root shel
 - **Calls and texts are simulated.** The base has ModemManager (through ofono2mm) and `mmcli` can read the modem and SIM, so the
   Network page shows the real radio's state, but `src/opos/mm_modem.py` is not wired to the phone page. Nothing is dialled, sent
   or received; the page says so.
+- **The hinge posture needs the phone's sensor service.** The native shell takes the hinge angle and the accelerometer
+  from sensorfw ([NATIVE.md](../packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)) and never starts it, and nothing in
+  this repository's image build starts it either, so on a freshly built image the shell knows only open and closed until
+  the service is started. A cold boot with the delayed start that was installed by hand on the owner's phone, and ten
+  cold boots, remain **NOT_RUN**.
 
 ## What is not known
 

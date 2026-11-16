@@ -89,6 +89,15 @@ their original scope. Plans are intentions, not promises.
   no count limit and a three-second delay. Production-controller fake-tree tests are local work; phone behavior,
   native systemd lifecycle and image execution remain **NOT_RUN**. See [POWER.md](packaging/duo-os/POWER.md) for
   current results and limits.
+- November 15 hinge angle and back mode ([NATIVE.md](packaging/duo-os/NATIVE.md#the-hinge-and-back-mode)): the native
+  shell reads the hinge angle from the phone's sensor service (sensorfw), names the posture (closed, book, flat, tent,
+  back) and, folded back, lights only the screen that faces you, chosen from the accelerometer. As reported by the PC
+  session, one phone, one session, with the owner watching: the postures, the one-screen layout, taps, the flip-over
+  switch and both screens lighting after the lid opens were seen on the phone with the code as an installed release.
+  Idle CPU of the shell and the sensor service, peer-measured, clock ticks per 30 seconds: 93 and 45 with fixed polling,
+  31 and 21 with adaptive polling, 20 and 0 with the lid closed; these are tick counts, not battery measurements.
+  **NOT_RUN**: a dark screen ignoring touch, the Settings Hinge line on the glass, a cold boot with the delayed sensor
+  start (installed by hand on that phone, not in this repository's image), ten cold boots, and any other phone.
 - The desktop demo and the postmarketOS kiosk both simulate the battery, calls and texts
   (`DrainSim` and `ScreenModem` in `src/opos/web.py`). Only the Surface Duo routes, started with
   `--live-battery`, read the phone's real battery (`LiveBattery`). Calls and texts are simulated on every
@@ -149,7 +158,7 @@ checks and deployment observations remain separate evidence.
 
 ## On-device checks
 
-These rows are the phone-features checks D1 through D11. Date stays empty and Result stays NOT_RUN until a phone run fills both, with an evidence link. The link in Evidence today is the feature pull request, not a device receipt. No row here records a pass.
+These rows are the phone-features checks D1 through D12. Date stays empty and Result stays NOT_RUN until a phone run fills both, with an evidence link. The link in Evidence today is the feature pull request, not a device receipt (D12's has no number yet). No row here records a pass.
 
 | ID | Check | Date | Result | Evidence |
 |---|---|---|---|---|
@@ -164,6 +173,14 @@ These rows are the phone-features checks D1 through D11. Date stays empty and Re
 | D9 | A camera still, and the drain while it is taken. | | NOT_RUN | [PR #32](https://github.com/louiscalata/old-phone-os/pull/32) |
 | D10 | Folded posture, and bedside on the real hinge. | | NOT_RUN | [PR #21](https://github.com/louiscalata/old-phone-os/pull/21) |
 | D11 | The apps index and More apps on the glass. | | NOT_RUN | [PR #23](https://github.com/louiscalata/old-phone-os/pull/23) |
+| D12 | Hinge angle: the postures closed, book, flat, tent and back, and back mode with the lit screen following the side that faces you. | | NOT_RUN | no pull request number yet; the November 15 report is in the paragraph below |
+
+D12 is a partial record, not a pass. As reported by the PC session, on November 15, 2026, on one Surface Duo with the
+hinge code running as an installed release, the owner folded the phone back and saw the one-screen layout, taps, the
+lit screen switching about one second after a flip, and both screens lighting after the lid opened; the shell's log
+showed all five postures. **NOT_RUN**: a dark screen ignoring touch, a cold boot with the delayed sensor start, ten cold
+boots, and the Settings Hinge line on the glass. The row keeps Date empty and Result NOT_RUN until a dated run with an
+evidence link fills both.
 
 ## Next
 

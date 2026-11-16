@@ -15,8 +15,10 @@ handling and the frame pacing have not been run on the phone, and no image with 
 | `src/opos/native/logic.py` | what the screens decide for themselves, with no toolkit, so it is tested anywhere |
 | `src/opos/native/netlogic.py` | the same for the Network screen: its rows, sentences and replies, and the typed password |
 | `src/opos/native/layout.py`, `ui.py` | the hinge gap, swipe and drag rules; the few widgets and the stylesheet |
-| `src/opos/native/posture.py` | reads the lid switch, read-only; closed or open is all Linux can tell on this phone |
-| `src/opos/native/blank.py`, `displayconfig.py` | both screens dark while the lid is closed, and lit as before when it opens |
+| `src/opos/native/posture.py` | reads the lid switch, read-only, and names the posture from the lid and the hinge angle: closed, book, flat, tent or back |
+| `src/opos/native/hinge.py` | reads the hinge angle and the accelerometer from the phone's sensor service (sensorfw) over D-Bus, read-only, with adaptive polling |
+| `src/opos/native/facing.py` | in back mode, which screen faces you, from the accelerometer |
+| `src/opos/native/blank.py`, `displayconfig.py` | both screens dark while the lid is closed, and lit as before when it opens; in back mode, the screen that does not face you dark |
 | `packaging/duo-os/opos-native` | the session launcher: keeps the shell running and hands over to the browser when it cannot |
 
 The rules for battery, calls, messages, alarms, notes and storage stay in the OPOS server. The shell draws what the server
@@ -205,8 +207,9 @@ closes the shell locks; 350 ms later it writes 0 to the two panels' `brightness`
 `$XDG_RUNTIME_DIR/opos-saved-brightness`. Opening the lid writes them back. The shell also owns
 `org.gnome.Mutter.DisplayConfig` on the session bus, if nobody else does, and serves its `PowerSaveMode` property, which
 the port's lid daemon sets; it never replaces another owner and lets a later one take the name over. If the lid switch is
-missing or cannot be read the shell says so once and does not blank on its own. No hinge angle or accelerometer reaches
-Linux on this phone, so book, tent and flat postures cannot be told apart and are not guessed.
+missing or cannot be read the shell says so once and does not blank on its own. The kernel gives Linux no hinge angle or
+accelerometer on this phone; both come from the phone's sensor service (see "The hinge and back mode"), and while it gives
+none the shell knows only open and closed and does not guess book, tent or flat.
 
 The screens are lit again when the lid opens, when the shell starts with the lid not closed, when its lid signal is lost,
 when the lid daemon sets `PowerSaveMode` to 0, when it ends for any reason it can handle (SIGTERM included), after every
@@ -271,6 +274,51 @@ Left for the owner, with no code here:
   for longer, which is lit, never dark.
 - On the phone: a lid switch that disappears and comes back (the looks every 60 s cost one read of
   `/sys/class/input` each; their effect on battery is not measured), and every sentence above on the glass.
+
+## The hinge and back mode
+
+The hinge angle and the accelerometer come from the phone's sensor service, sensorfw (`sensorfwd.service`, D-Bus name
+`com.nokia.SensorService` on the system bus), which reads Android's sensors through the container's sensors HAL.
+`hinge.py` asks it for a `hingesensor` session and an `accelerometersensor` session and reads them. It never starts,
+stops or configures the service and writes nothing to the phone's sensors; nothing in this repository starts the
+service. sensorfw drops a session that never connects to its data socket (`/var/run/sensord.sock`: the session id sent
+as an int32, one byte read back) after about 10 seconds, and the angle then freezes, so the reader connects for each
+session. A started sensor reads 0 until its first report, so the first reading waits 0.8 s and a 0 before any real
+reading is not taken as an angle. When the service is not running or a read fails, the watcher says so once in the log,
+the shell keeps the lid-only behaviour above, and the watcher looks again every 5 s. Starting the service is the
+owner's decision: the PC session reported that a sensor-chip stall once reset this phone. Nothing here reads
+`/sys/kernel/debug`.
+
+The angle is in degrees: 0 folded shut, about 180 flat, 360 folded back. `posture.py` names the zones closed below 15
+degrees, book 15 to 170, flat 170 to 190, tent 190 to 345, back from 345, and keeps a zone until the angle leaves it by
+6 degrees, so the name does not flutter at a border. Closed comes from the lid switch only: an angle near 0 with the lid
+open reads "open". Each change is one log line, `opos shell: posture A -> B (hinge N)`. Settings shows the posture and
+the angle, and in back mode adds "One screen is lit; the other is dark."
+
+Back mode is posture back with the lid switch reading open (an unknown lid is not open, so both screens stay lit). The
+page is on one screen and one screen wide; the other screen is dark and ignores touches that go down on it. The
+accelerometer is in the right half of the phone: a z reading above +0.35 g means the right screen faces you, below
+-0.35 g the left; in between the shell keeps the screen touched last (the thumb side before any touch). A new verdict
+must hold for 0.8 s before the lit screen changes. Any other posture, no hinge reading, the lid closing, the lid signal
+lost or the shell ending leaves back mode and lights both screens (the lid closing hands over to its own blank of
+both). The angle never locks, changes the page or the hand. The light and proximity sensors are not used; the PC
+session found them unusable folded back.
+
+Polling is adaptive: every 0.25 s while the hinge is moving (it changed by 2 degrees or more in the last 3 s) or sits
+at 300 degrees or more, where the accelerometer chooses the screen; otherwise every 1 s, with the accelerometer read
+every 2 s. While the lid is closed the shell reads neither sensor (the accelerometer session is closed) and starts again
+when the lid opens. Idle CPU, peer-measured (the PC session, one phone, each case read once, clock ticks of user and
+system time per 30 seconds for the shell and the sensor service): 93 and 45 ticks with fixed fast polling, 31 and 21
+with adaptive polling, 20 and 0 with the lid closed; the shell alone used 13 before any hinge work. These are tick
+counts, not battery measurements, and were not reproduced from the Mac.
+
+Seen on the phone, as reported by the PC session: on November 15, 2026, on one Surface Duo with the hinge code running
+as an installed release (the shell only; the server untouched; some items were seen on an earlier version of the same
+change), the owner confirmed the back-mode layout, taps on the lit screen, the lit screen following a flip after about
+a second, and both screens lit again after the lid opened, and the shell's log showed all five postures in one fold
+test (closed from the lid, the other four from the angle). One phone, one session. **NOT_RUN**: a dark screen ignoring
+touch, the Settings Hinge line on the glass, a cold boot with the delayed sensor start that was installed by hand on
+that phone (it is not in this repository's image), ten cold boots, and any other phone.
 
 ## Assistants are deferred
 
