@@ -44,9 +44,12 @@ ALLOW_SIZE = {
 # is replaced by a stricter one for the controls under them: where they overlap, a 48 x 48 px part of the covered control must stay free
 # (so it can still be tapped). The size rule still applies to the floating control.
 ALLOW_OVERLAP = {
-    "#reload-shell": (("full",), "the Reload button of a page that cannot reach its server is a fixed 48 px button at the bottom right (W1-02); "
-                                 "in the boot-failure view (state fetches fail) it floats over whatever scrolls under it, at 360x640 over part of #number; "
-                                 "in the 'home' view it is hidden and takes part in the gap rule like any control"),
+    "#reload-shell": (
+        ("full",),
+        "the Reload button of a page that cannot reach its server is a fixed 48 px button at the bottom right (W1-02); "
+        "in the boot-failure view (state fetches fail) it floats over whatever scrolls under it, at 360x640 over part of #number; "
+        "in the 'home' view it is hidden and takes part in the gap rule like any control",
+    ),
 }
 # test_real_controls: selector -> reason for a non-native element that may be clickable.
 ALLOW_CONTROLS = {}
@@ -92,9 +95,21 @@ def _launch(chrome, tmp):
     err_path = os.path.join(tmp, "chrome.err")
     with open(err_path, "wb") as err:
         proc = subprocess.Popen(
-            [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--remote-debugging-port=0",
-             "--user-data-dir=" + udd, "--no-first-run", "--no-default-browser-check", "about:blank"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
+            [
+                chrome,
+                "--headless",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--remote-debugging-port=0",
+                "--user-data-dir=" + udd,
+                "--no-first-run",
+                "--no-default-browser-check",
+                "about:blank",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=err,
+        )
     active = os.path.join(udd, "DevToolsActivePort")
     end = time.monotonic() + 15
     while time.monotonic() < end and proc.poll() is None:
@@ -141,11 +156,21 @@ class TestUxrAcceptance(unittest.TestCase):
         Path(html).write_text(page(demo=True), encoding="utf-8")
         cls.url = Path(html).as_uri()
         cls.state = os.path.join(cls.tmp, "state.json")
-        Path(cls.state).write_text(json.dumps({
-            "hidden": Phone().state(),
-            "visible": Phone(visible=True).state(),
-            "allow": {"size": {k: v[0] for k, v in ALLOW_SIZE.items()}, "controls": dict(ALLOW_CONTROLS), "overlap": {k: list(v[0]) for k, v in ALLOW_OVERLAP.items()}},
-        }, default=str), encoding="utf-8")
+        Path(cls.state).write_text(
+            json.dumps(
+                {
+                    "hidden": Phone().state(),
+                    "visible": Phone(visible=True).state(),
+                    "allow": {
+                        "size": {k: v[0] for k, v in ALLOW_SIZE.items()},
+                        "controls": dict(ALLOW_CONTROLS),
+                        "overlap": {k: list(v[0]) for k, v in ALLOW_OVERLAP.items()},
+                    },
+                },
+                default=str,
+            ),
+            encoding="utf-8",
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -178,8 +203,13 @@ class TestUxrAcceptance(unittest.TestCase):
     def _run(self, check):
         target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        r = subprocess.run([self.node, str(DRIVER), target, self.url, check, self.state],
-                           capture_output=True, text=True, timeout=40, env=env)
+        r = subprocess.run(
+            [self.node, str(DRIVER), target, self.url, check, self.state],
+            capture_output=True,
+            text=True,
+            timeout=40,
+            env=env,
+        )
         self.assertEqual(r.returncode, 0, "uxr_cdp.js %s failed: %s" % (check, r.stderr[-800:]))
         return json.loads(r.stdout.strip().splitlines()[-1])["violations"]
 

@@ -36,9 +36,7 @@ class TestOposWiring(unittest.TestCase):
         return pairs
 
     def test_sources_have_exactly_one_real_checksum_each(self):
-        source_names = [
-            token.split("::", 1)[0] for token in self.vars["source"].split()
-        ]
+        source_names = [token.split("::", 1)[0] for token in self.vars["source"].split()]
         self.assertEqual(len(source_names), len(set(source_names)))
         pairs = self._checksum_pairs()
         self.assertCountEqual([name for _, name in pairs], source_names)
@@ -55,9 +53,7 @@ class TestOposWiring(unittest.TestCase):
 
     def test_pre_install(self):
         self.assertEqual(self.vars["install"], "$pkgname.pre-install")
-        self.assertTrue(
-            (ROOT / "packaging/pmos/opos/opos.pre-install").is_file()
-        )
+        self.assertTrue((ROOT / "packaging/pmos/opos/opos.pre-install").is_file())
 
     def test_systemd_subpackage(self):
         self.assertIn("$pkgname-systemd:_systemd", self.vars["subpackages"].split())
@@ -65,9 +61,7 @@ class TestOposWiring(unittest.TestCase):
             'install="$subpkgname.post-install"',
             function_body(APKBUILD, "_systemd"),
         )
-        self.assertTrue(
-            (ROOT / "packaging/pmos/opos/opos-systemd.post-install").is_file()
-        )
+        self.assertTrue((ROOT / "packaging/pmos/opos/opos-systemd.post-install").is_file())
         self.assertIn(
             'depends="systemd $pkgname=$pkgver-r$pkgrel"',
             function_body(APKBUILD, "_systemd"),
@@ -75,15 +69,16 @@ class TestOposWiring(unittest.TestCase):
 
     def test_package_installs_initd(self):
         self.assertIn(
-            'install -Dm755 "$srcdir/opos-server.initd" '
-            '"$pkgdir/etc/init.d/opos-server"',
+            'install -Dm755 "$srcdir/opos-server.initd" "$pkgdir/etc/init.d/opos-server"',
             function_body(APKBUILD, "package"),
         )
 
     def test_firstboot_source_and_checksums(self):
         names = {name for _, name in self._checksum_pairs()}
         for name in (
-            "opos-firstboot.sh", "opos-kiosk-off.sh", "opos-firstboot.initd",
+            "opos-firstboot.sh",
+            "opos-kiosk-off.sh",
+            "opos-firstboot.initd",
         ):
             with self.subTest(source=name):
                 self.assertIn(name, self.vars["source"].split())
@@ -107,6 +102,4 @@ class TestOposWiring(unittest.TestCase):
         body = function_body(APKBUILD, "_openrc")
         self.assertIn('install="$subpkgname.post-install"', body)
         self.assertIn('depends="openrc $pkgname=$pkgver-r$pkgrel"', body)
-        self.assertTrue(
-            (ROOT / "packaging/pmos/opos/opos-openrc.post-install").is_file()
-        )
+        self.assertTrue((ROOT / "packaging/pmos/opos/opos-openrc.post-install").is_file())

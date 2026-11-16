@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The view model: truth about this phone, an untrusted remote document, caching and thread safety."""
+
 import json
 import re
 import threading
@@ -12,21 +13,52 @@ from opos import monitor
 def ip4(*octets):
     return ".".join(str(o) for o in octets)
 
-AGIW_ROW = {"host": "mac", "platform": "mac", "state": "up", "reasonCode": "observed", "trust": "local", "ageSeconds": 1.2,
-            "freshForSeconds": 3, "modelsComplete": True, "loadedCount": 2, "busyCount": 1,
-            "promptTokensPerSecond": 812.4, "generationTokensPerSecond": 4.33, "handsOff": False}
-PC_ROW = {"host": "pc", "platform": "windows", "state": "unknown", "reasonCode": "not_connected", "trust": "unverified",
-          "ageSeconds": 41, "freshForSeconds": 30, "modelsComplete": False, "loadedCount": None, "busyCount": None,
-          "promptTokensPerSecond": None, "generationTokensPerSecond": None, "handsOff": None}
+
+AGIW_ROW = {
+    "host": "mac",
+    "platform": "mac",
+    "state": "up",
+    "reasonCode": "observed",
+    "trust": "local",
+    "ageSeconds": 1.2,
+    "freshForSeconds": 3,
+    "modelsComplete": True,
+    "loadedCount": 2,
+    "busyCount": 1,
+    "promptTokensPerSecond": 812.4,
+    "generationTokensPerSecond": 4.33,
+    "handsOff": False,
+}
+PC_ROW = {
+    "host": "pc",
+    "platform": "windows",
+    "state": "unknown",
+    "reasonCode": "not_connected",
+    "trust": "unverified",
+    "ageSeconds": 41,
+    "freshForSeconds": 30,
+    "modelsComplete": False,
+    "loadedCount": None,
+    "busyCount": None,
+    "promptTokensPerSecond": None,
+    "generationTokensPerSecond": None,
+    "handsOff": None,
+}
 
 
 def snapshot(*rows, models=None):
-    return {"host": "mac", "machines": list(rows), "models": models if models is not None else [
-        {"name": "gemma-4", "loaded": True}, {"name": "qwen-27b", "loaded": False}]}
+    return {
+        "host": "mac",
+        "machines": list(rows),
+        "models": models
+        if models is not None
+        else [{"name": "gemma-4", "loaded": True}, {"name": "qwen-27b", "loaded": False}],
+    }
 
 
 def _loopback_ok():
     import socket
+
     try:
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
@@ -60,6 +92,7 @@ def make(remote=None, probe=("none", []), env=None, fetch=None, clock=None):
     def prober(_env):
         calls["probe"] += 1
         return probe
+
     return monitor.Monitor(environment, fetch=fetcher, probe=prober, clock=clock or Clock()), calls
 
 
@@ -89,15 +122,32 @@ class ThisDuoTests(unittest.TestCase):
     def test_a_probe_that_raises_is_unknown_not_a_crash(self):
         def boom(_env):
             raise RuntimeError("x")
+
         view = monitor.Monitor({}, probe=boom, clock=Clock()).snapshot()
         self.assertEqual(section(view, "duo")["status"], "UNKNOWN")
 
     def test_battery_numbers_pass_through_only_when_they_are_valid(self):
         view, _ = make()
-        facts = dict(map(tuple, section(view.snapshot({"percent": 54.2, "healthPercent": 87, "source": "sysfs"}), "duo")["facts"]))
+        facts = dict(
+            map(
+                tuple, section(view.snapshot({"percent": 54.2, "healthPercent": 87, "source": "sysfs"}), "duo")["facts"]
+            )
+        )
         self.assertEqual((facts["Battery"], facts["Battery health"], facts["Battery source"]), ("54%", "87%", "sysfs"))
-        for bad in (None, {}, [], "x", {"percent": None}, {"percent": "54"}, {"percent": True}, {"percent": float("nan")},
-                    {"percent": -1}, {"percent": 101}, {"percent": float("inf")}, {"source": "<b>x</b>"}):
+        for bad in (
+            None,
+            {},
+            [],
+            "x",
+            {"percent": None},
+            {"percent": "54"},
+            {"percent": True},
+            {"percent": float("nan")},
+            {"percent": -1},
+            {"percent": 101},
+            {"percent": float("inf")},
+            {"source": "<b>x</b>"},
+        ):
             facts = dict(map(tuple, section(make()[0].snapshot(bad), "duo")["facts"]))
             self.assertEqual(facts["Battery"], "Not reported", bad)
             self.assertEqual(facts["Battery source"], "Not reported", bad)
@@ -122,9 +172,14 @@ class RemoteTests(unittest.TestCase):
         self.assertIn("gemma-4 · loaded", " ".join(remote["lines"]))
         self.assertIn("went silent", remote["pre"])
         facts = dict(map(tuple, remote["facts"]))
-        self.assertEqual((facts["MAC models"], facts["MAC prompts"], facts["PC"], facts["PC models"]),
-                         ("2 loaded (1 busy)", "812 tok/s", "UNKNOWN · went silent", "Not measured"))
-        self.assertIn("never observed", monitor.peer_map(monitor.machine_rows(snapshot({**PC_ROW, "reasonCode": "not_observed"}, AGIW_ROW)), True))
+        self.assertEqual(
+            (facts["MAC models"], facts["MAC prompts"], facts["PC"], facts["PC models"]),
+            ("2 loaded (1 busy)", "812 tok/s", "UNKNOWN · went silent", "Not measured"),
+        )
+        self.assertIn(
+            "never observed",
+            monitor.peer_map(monitor.machine_rows(snapshot({**PC_ROW, "reasonCode": "not_observed"}, AGIW_ROW)), True),
+        )
         self.assertEqual(calls["fetch"], 1)
 
     def test_an_old_or_unverified_own_sample_is_stale_not_live(self):
@@ -149,13 +204,19 @@ class RemoteTests(unittest.TestCase):
     def test_an_unexpected_exception_is_unreachable_never_a_crash(self):
         def boom(_remote):
             raise ValueError("secret detail")
+
         view, _ = make(remote={}, fetch=boom)
         remote = section(view.snapshot(), "remote")
         self.assertEqual(remote["status"], "UNREACHABLE")
         self.assertNotIn("secret", json.dumps(remote))
 
     def test_a_bad_address_in_the_settings_is_not_fetched(self):
-        for url in ("http://user@" + ip4(192, 168, 1, 5), "ftp://x", "http://" + ip4(192, 168, 1, 5) + "/api/snapshot", "x"):
+        for url in (
+            "http://user@" + ip4(192, 168, 1, 5),
+            "ftp://x",
+            "http://" + ip4(192, 168, 1, 5) + "/api/snapshot",
+            "x",
+        ):
             view, calls = make(env={"OPOS_AGIW_URL": url})
             remote = section(view.snapshot(), "remote")
             self.assertEqual(remote["status"], "NOT CONFIGURED")
@@ -170,7 +231,9 @@ class RemoteTests(unittest.TestCase):
         self.assertIsNone(rows[1]["loaded"], "a complete list without a count is not a zero count")
         text = monitor.peer_map(rows, True)
         self.assertNotRegex(text, r"\b0 loaded\b")
-        facts = dict(map(tuple, section(make(remote=snapshot({"host": "x", "state": "up"}))[0].snapshot(), "remote")["facts"]))
+        facts = dict(
+            map(tuple, section(make(remote=snapshot({"host": "x", "state": "up"}))[0].snapshot(), "remote")["facts"])
+        )
         self.assertEqual(facts["X prompts"], "Not measured")
         self.assertEqual(facts["X age"], "Unknown")
         self.assertEqual(facts["X models"], "Model list incomplete")
@@ -186,12 +249,29 @@ class RemoteTests(unittest.TestCase):
     def test_hostile_values_never_become_markup_or_raw_json(self):
         evil = "<img src=x onerror=alert(1)>"
         row = {**AGIW_ROW, "host": evil, "platform": evil, "reasonCode": evil, "trust": evil, "state": evil}
-        document = snapshot(row, {**PC_ROW, "host": "a" * 500, "reasonCode": "A;B"}, models=[
-            {"name": evil, "loaded": True}, {"name": "ok-model", "loaded": "yes"}, "string", None, 5, {"id": "from-id"}])
+        document = snapshot(
+            row,
+            {**PC_ROW, "host": "a" * 500, "reasonCode": "A;B"},
+            models=[
+                {"name": evil, "loaded": True},
+                {"name": "ok-model", "loaded": "yes"},
+                "string",
+                None,
+                5,
+                {"id": "from-id"},
+            ],
+        )
         document["extra"] = {"password": "hunter2", "token": "t0ken"}
         document["sources"] = [{"id": evil}]
         text = json.dumps(make(remote=document)[0].snapshot(), ensure_ascii=False)
-        for forbidden in ("<", ">", "onerror", "hunter2", "t0ken", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"):
+        for forbidden in (
+            "<",
+            ">",
+            "onerror",
+            "hunter2",
+            "t0ken",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ):
             self.assertNotIn(forbidden, text, forbidden)
         self.assertIn("ok-model · unknown", text)
         self.assertIn("from-id", text)
@@ -217,9 +297,13 @@ class RemoteTests(unittest.TestCase):
 
     def test_the_peer_map_matches_the_agiw_wording(self):
         rows = monitor.machine_rows(snapshot(AGIW_ROW, PC_ROW))
-        self.assertEqual(monitor.peer_map(rows, True).split("\n"), [
-            "MAC           UP       2 loaded / 1 busy · local · 1 s",
-            " |-?- PC       UNKNOWN  went silent · unverified · 41 s"])
+        self.assertEqual(
+            monitor.peer_map(rows, True).split("\n"),
+            [
+                "MAC           UP       2 loaded / 1 busy · local · 1 s",
+                " |-?- PC       UNKNOWN  went silent · unverified · 41 s",
+            ],
+        )
         self.assertTrue(monitor.peer_map(rows, False).endswith("last sample, not live"))
         self.assertEqual(monitor.peer_map([], True), "MACHINES  UNKNOWN\n          no machine rows in this sample")
         self.assertIn("no other machine in this sample", monitor.peer_map(rows[:1], True))
@@ -265,13 +349,16 @@ class CacheTests(unittest.TestCase):
             started.set()
             gate.wait(5)
             return snapshot(AGIW_ROW)
+
         view, _ = make(remote={}, fetch=slow, clock=clock)
         results = {}
         first = threading.Thread(target=lambda: results.setdefault("first", view.snapshot()))
         first.start()
         self.assertTrue(started.wait(5))
         during = view.snapshot()
-        self.assertEqual(section(during, "duo")["status"], "NO MODEL", "the phone's own answer does not wait for the remote fetch")
+        self.assertEqual(
+            section(during, "duo")["status"], "NO MODEL", "the phone's own answer does not wait for the remote fetch"
+        )
         self.assertEqual(section(during, "remote")["status"], "CHECKING")
         self.assertEqual(len(calls), 1, "a second caller must not start a second fetch")
         gate.set()
@@ -295,6 +382,7 @@ class CacheTests(unittest.TestCase):
                 started.set()
                 gate.wait(5)
             return snapshot(AGIW_ROW)
+
         view, _ = make(remote={}, fetch=fetch, clock=clock)
         view.snapshot()
         clock.now += 10
@@ -303,7 +391,9 @@ class CacheTests(unittest.TestCase):
         self.assertTrue(started.wait(5))
         served = view.snapshot()
         self.assertEqual(served["updatedAgoSeconds"], 0, "the phone's own answer was just taken")
-        self.assertIn("fetched 10 s ago", section(served, "remote")["lines"][0], "the remote's answer keeps its own age")
+        self.assertIn(
+            "fetched 10 s ago", section(served, "remote")["lines"][0], "the remote's answer keeps its own age"
+        )
         gate.set()
         worker.join(5)
 
@@ -317,6 +407,7 @@ class CacheTests(unittest.TestCase):
                     json.dumps(view.snapshot({"percent": 50}))
             except Exception as error:
                 errors.append(error)
+
         threads = [threading.Thread(target=hit) for _ in range(8)]
         for t in threads:
             t.start()
@@ -335,15 +426,27 @@ class CacheTests(unittest.TestCase):
 class LocalProbeTests(unittest.TestCase):
     def test_the_local_url_is_loopback_http_only(self):
         self.assertEqual(monitor.local_models_url({}), ("127.0.0.1", 8080, "/v1/models"))
-        self.assertEqual(monitor.local_models_url({"OPOS_LOCAL_URL": "http://127.0.0.1:1236/v1"}), ("127.0.0.1", 1236, "/v1/models"))
-        self.assertEqual(monitor.local_models_url({"OPOS_LOCAL_URL": "http://localhost:9000"}), ("localhost", 9000, "/models"))
-        for bad in ("http://" + ip4(192, 168, 1, 2) + ":8080/v1", "https://127.0.0.1:8080/v1", "http://evil.example/v1", "http://[::1]:9000/v1",
-                    "http://user@127.0.0.1:8080/v1", "http://127.0.0.1:notaport/v1", "file:///x"):
+        self.assertEqual(
+            monitor.local_models_url({"OPOS_LOCAL_URL": "http://127.0.0.1:1236/v1"}), ("127.0.0.1", 1236, "/v1/models")
+        )
+        self.assertEqual(
+            monitor.local_models_url({"OPOS_LOCAL_URL": "http://localhost:9000"}), ("localhost", 9000, "/models")
+        )
+        for bad in (
+            "http://" + ip4(192, 168, 1, 2) + ":8080/v1",
+            "https://127.0.0.1:8080/v1",
+            "http://evil.example/v1",
+            "http://[::1]:9000/v1",
+            "http://user@127.0.0.1:8080/v1",
+            "http://127.0.0.1:notaport/v1",
+            "file:///x",
+        ):
             self.assertEqual(monitor.local_models_url({"OPOS_LOCAL_URL": bad}), ("127.0.0.1", 8080, "/v1/models"), bad)
 
     @unittest.skipUnless(_loopback_ok(), "cannot bind 127.0.0.1 here")
     def test_nothing_listening_is_none_and_garbage_is_unknown(self):
         import socket
+
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
@@ -364,6 +467,7 @@ class StaleTests(unittest.TestCase):
                 started.set()
                 gate.wait(10)
             return remote_doc
+
         view, _ = make(remote={}, fetch=fetch, probe=("model", ["m1"]), clock=clock)
         first = view.snapshot()
         clock.now += 3
@@ -399,7 +503,9 @@ class StaleTests(unittest.TestCase):
         self.assertEqual(section(current, "remote")["status"], "LIVE")
         clock.now += 1
         later = view.snapshot()
-        self.assertEqual(section(later, "duo")["status"], "MODEL LISTED", "the phone's own answer is younger than the remote's")
+        self.assertEqual(
+            section(later, "duo")["status"], "MODEL LISTED", "the phone's own answer is younger than the remote's"
+        )
         self.assertEqual(section(later, "remote")["status"], "STALE")
         clock.now = 1003 + monitor.STALE_AFTER + 1
         self.assertEqual(section(view.snapshot(), "duo")["status"], "UNKNOWN")
@@ -412,6 +518,7 @@ class StaleTests(unittest.TestCase):
         def slow_fetch(_remote):
             clock.now += 5
             return snapshot(AGIW_ROW)
+
         view, _ = make(remote={}, fetch=slow_fetch, probe=("model", ["m1"]), clock=clock)
         out = view.snapshot()
         facts = dict(map(tuple, section(out, "duo")["facts"]))
@@ -427,6 +534,7 @@ class StaleTests(unittest.TestCase):
             started.set()
             gate.wait(10)
             return snapshot(AGIW_ROW)
+
         view, _ = make(remote={}, fetch=fetch, probe=("model", ["m1"]))
         worker = threading.Thread(target=view.snapshot, daemon=True)
         worker.start()
@@ -441,21 +549,45 @@ class StaleTests(unittest.TestCase):
 
 class NeverRaisesTests(unittest.TestCase):
     def test_a_list_or_object_where_a_word_belongs_is_unknown_not_an_exception(self):
-        for field in ("state", "platform", "host", "reasonCode", "trust", "ageSeconds", "freshForSeconds", "modelsComplete",
-                      "loadedCount", "busyCount", "promptTokensPerSecond", "generationTokensPerSecond", "handsOff"):
+        for field in (
+            "state",
+            "platform",
+            "host",
+            "reasonCode",
+            "trust",
+            "ageSeconds",
+            "freshForSeconds",
+            "modelsComplete",
+            "loadedCount",
+            "busyCount",
+            "promptTokensPerSecond",
+            "generationTokensPerSecond",
+            "handsOff",
+        ):
             for value in ([], {}, [1], {"a": 1}, [[]], None, 7, 1.5, True, "", "x" * 500, "\n", float("nan")):
-                document = {"machines": [{**AGIW_ROW, field: value}, {field: value}], "models": [{"name": value, "loaded": value}]}
+                document = {
+                    "machines": [{**AGIW_ROW, field: value}, {field: value}],
+                    "models": [{"name": value, "loaded": value}],
+                }
                 out = make(remote=document)[0].snapshot({"percent": value, "source": value})
                 self.assertEqual({s["id"] for s in out["sections"]}, {"duo", "remote"}, (field, value))
                 json.dumps(out)
-        for document in ({"machines": [{"platform": []}]}, {"machines": [{"state": {}}]}, {"machines": {}}, {"machines": "x"},
-                         {"models": {}}, {"models": [[], {}, None, 5]}, {"machines": [[], None, 5, "x"]}):
+        for document in (
+            {"machines": [{"platform": []}]},
+            {"machines": [{"state": {}}]},
+            {"machines": {}},
+            {"machines": "x"},
+            {"models": {}},
+            {"models": [[], {}, None, 5]},
+            {"machines": [[], None, 5, "x"]},
+        ):
             out = make(remote=document)[0].snapshot()
             self.assertEqual(len(out["sections"]), 2, document)
 
     def test_a_small_type_fuzz_never_raises_and_always_keeps_the_local_section(self):
         import itertools
-        values = [None, True, 0, -1, 2 ** 70, 1.5, float("inf"), "", "a", "a\n", [], [None], {}, {"x": []}]
+
+        values = [None, True, 0, -1, 2**70, 1.5, float("inf"), "", "a", "a\n", [], [None], {}, {"x": []}]
         fields = ["state", "platform", "host", "reasonCode", "trust", "ageSeconds", "modelsComplete", "loadedCount"]
         for combo in itertools.product(values, repeat=3):
             row = {fields[i]: combo[i] for i in range(3)}
@@ -495,12 +627,24 @@ class TextTests(unittest.TestCase):
         self.assertEqual(monitor.clean_text("studio"), "studio")
         self.assertEqual(monitor.reason_words("not_connected\n"), "not observed")
         self.assertEqual(monitor.reason_words("x\n"), "not observed")
-        row = monitor.machine_rows({"machines": [{"host": "evil\n", "state": "up", "trust": "local\n", "reasonCode": "not_connected\n"}]})[0]
+        row = monitor.machine_rows(
+            {"machines": [{"host": "evil\n", "state": "up", "trust": "local\n", "reasonCode": "not_connected\n"}]}
+        )[0]
         self.assertIsNone(row["trust"])
         self.assertNotIn("\n", row["name"])
-        document = {"machines": [{"host": "evil\n", "platform": "mac", "state": "unknown", "trust": "local\n", "reasonCode": "not_connected\n"},
-                                 {"host": "ok\n", "state": "unknown", "trust": "x\n", "reasonCode": "stale\n"}],
-                    "models": [{"name": "m\n", "loaded": True}, {"name": "fine", "loaded": True}]}
+        document = {
+            "machines": [
+                {
+                    "host": "evil\n",
+                    "platform": "mac",
+                    "state": "unknown",
+                    "trust": "local\n",
+                    "reasonCode": "not_connected\n",
+                },
+                {"host": "ok\n", "state": "unknown", "trust": "x\n", "reasonCode": "stale\n"},
+            ],
+            "models": [{"name": "m\n", "loaded": True}, {"name": "fine", "loaded": True}],
+        }
         out = make(remote=document, probe=("model", ["ok"]))[0].snapshot()
         for part in out["sections"]:
             for line in part["lines"]:
@@ -523,7 +667,9 @@ class MarkerTests(unittest.TestCase):
         machines = [{**AGIW_ROW, "host": f"h{i}"} for i in range(30)]
         cut = section(make(remote=snapshot(*machines))[0].snapshot(), "remote")
         self.assertIn("More machines are reported than are shown", " ".join(cut["lines"]))
-        self.assertNotIn("More machines", " ".join(section(make(remote=snapshot(AGIW_ROW, PC_ROW))[0].snapshot(), "remote")["lines"]))
+        self.assertNotIn(
+            "More machines", " ".join(section(make(remote=snapshot(AGIW_ROW, PC_ROW))[0].snapshot(), "remote")["lines"])
+        )
 
     def test_the_longest_line_the_module_can_emit_fits_the_pages_cap(self):
         many = [{"name": "m" * 48, "loaded": True} for _ in range(monitor.MAX_MODELS + 4)]
@@ -545,7 +691,13 @@ class HubTests(unittest.TestCase):
         self.assertNotIn("degraded", " ".join(self.remote(AGIW_ROW)["lines"]))
 
     def test_a_down_or_unknown_hub_is_never_live_however_fresh(self):
-        for state, code in (("down", "reported_down"), ("unknown", "not_observed"), ("weird", "observed"), (None, None), ([], {})):
+        for state, code in (
+            ("down", "reported_down"),
+            ("unknown", "not_observed"),
+            ("weird", "observed"),
+            (None, None),
+            ([], {}),
+        ):
             out = self.remote({**AGIW_ROW, "state": state, "reasonCode": code})
             self.assertEqual(out["status"], "STALE", state)
             self.assertIn("old or unverified", " ".join(out["lines"]))
@@ -575,13 +727,32 @@ class ReasonTests(unittest.TestCase):
 
     def test_only_a_silent_observed_or_degraded_reason_counts_as_observed(self):
         for ok in (None, "observed"):
-            row = {k: v for k, v in AGIW_ROW.items() if k != "reasonCode"} if ok is None else {**AGIW_ROW, "reasonCode": ok}
+            row = (
+                {k: v for k, v in AGIW_ROW.items() if k != "reasonCode"}
+                if ok is None
+                else {**AGIW_ROW, "reasonCode": ok}
+            )
             out = self.remote(row)
             self.assertEqual(out["status"], "LIVE", ok)
             self.assertEqual(dict(map(tuple, out["facts"]))["MAC"], "UP · observed")
         self.assertEqual(self.remote({**AGIW_ROW, "reasonCode": "reported_degraded"})["status"], "LIVE")
-        for code in ("host_key_mismatch", "untrusted", "clock_skew", "not_connected", "stale", "share_unmounted", "asleep",
-                     "schema_invalid", "some_new_code", "Bad word!", "", 5, [], {}, True):
+        for code in (
+            "host_key_mismatch",
+            "untrusted",
+            "clock_skew",
+            "not_connected",
+            "stale",
+            "share_unmounted",
+            "asleep",
+            "schema_invalid",
+            "some_new_code",
+            "Bad word!",
+            "",
+            5,
+            [],
+            {},
+            True,
+        ):
             out = self.remote({**AGIW_ROW, "reasonCode": code})
             self.assertEqual(out["status"], "STALE", repr(code))
             self.assertNotEqual(dict(map(tuple, out["facts"]))["MAC"], "UP · observed", repr(code))
@@ -595,8 +766,13 @@ class ReasonTests(unittest.TestCase):
         self.assertNotIn("loaded", out["pre"].split("\n")[0], "no count is claimed for a row that is not confirmed")
 
     def test_a_down_row_shows_its_true_reason_in_the_map_and_the_facts(self):
-        for code, words in (("reported_down", "reported down"), ("share_unmounted", "share not mounted"), ("clock_skew", "clock out of step"),
-                            (None, "reported down"), ("some_new_code", "some new code")):
+        for code, words in (
+            ("reported_down", "reported down"),
+            ("share_unmounted", "share not mounted"),
+            ("clock_skew", "clock out of step"),
+            (None, "reported down"),
+            ("some_new_code", "some new code"),
+        ):
             row = {**PC_ROW, "state": "down", "reasonCode": code}
             if code is None:
                 row = {k: v for k, v in row.items() if k != "reasonCode"}
@@ -621,7 +797,10 @@ class PublicationTests(unittest.TestCase):
                 started.set()
                 gate.wait(5)
             return snapshot(AGIW_ROW)
-        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch, probe=probe, clock=clock)
+
+        view = monitor.Monitor(
+            {"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch, probe=probe, clock=clock
+        )
         first = view.snapshot()
         self.assertEqual(section(first, "duo")["status"], "MODEL LISTED")
         count[0] = 1
@@ -630,7 +809,9 @@ class PublicationTests(unittest.TestCase):
         worker.start()
         self.assertTrue(started.wait(5))
         second = view.snapshot()
-        self.assertEqual(section(second, "duo")["status"], "NO MODEL", "the new probe is published before the remote fetch ends")
+        self.assertEqual(
+            section(second, "duo")["status"], "NO MODEL", "the new probe is published before the remote fetch ends"
+        )
         self.assertEqual(section(second, "remote")["status"], "LIVE")
         self.assertIn("fetched 3 s ago", section(second, "remote")["lines"][0])
         gate.set()
@@ -649,8 +830,13 @@ class PublicationTests(unittest.TestCase):
                 started.set()
                 gate.wait(5)
             return snapshot(dict(AGIW_ROW, ageSeconds=1.0, freshForSeconds=3))
-        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch,
-                               probe=lambda _e: ("none", []), clock=clock)
+
+        view = monitor.Monitor(
+            {"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"},
+            fetch=fetch,
+            probe=lambda _e: ("none", []),
+            clock=clock,
+        )
         self.assertEqual(section(view.snapshot(), "remote")["status"], "LIVE")
         clock.now += 8
         worker = threading.Thread(target=view.snapshot, daemon=True)
@@ -673,7 +859,9 @@ class FreshnessIncludesFetchAgeTests(unittest.TestCase):
             self.assertEqual(monitor.remote_section(snapshot(row), "x", fetched)["status"], "LIVE", fetched)
         self.assertEqual(monitor.remote_section(snapshot(row), "x", 5)["status"], "STALE")
         young = dict(AGIW_ROW, ageSeconds=0.5, freshForSeconds=3)
-        self.assertEqual(monitor.remote_section(snapshot(young), "x", 5)["status"], "STALE", "a genuinely old sample is still caught")
+        self.assertEqual(
+            monitor.remote_section(snapshot(young), "x", 5)["status"], "STALE", "a genuinely old sample is still caught"
+        )
 
     def poll_words(self, row, *, step, polls=24, fetch_takes=0.0):
         """Poll a real Monitor through its real cache; returns the remote section's words and how many fetches happened."""
@@ -684,8 +872,13 @@ class FreshnessIncludesFetchAgeTests(unittest.TestCase):
             fetches[0] += 1
             clock.now += fetch_takes
             return snapshot(row)
-        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=fetch,
-                               probe=lambda _e: ("none", []), clock=clock)
+
+        view = monitor.Monitor(
+            {"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"},
+            fetch=fetch,
+            probe=lambda _e: ("none", []),
+            clock=clock,
+        )
         words = []
         for _ in range(polls):
             words.append(section(view.snapshot(), "remote")["status"])
@@ -720,7 +913,10 @@ class FreshnessIncludesFetchAgeTests(unittest.TestCase):
             for fetched in (0, 1, 2):
                 got = monitor.remote_section(snapshot(row), "x", fetched)["status"]
                 self.assertEqual(got, expect if fetched <= 2 else "STALE", (age, fetched))
-        self.assertEqual(monitor.remote_section(snapshot(dict(AGIW_ROW, ageSeconds=100, freshForSeconds=3)), "x", 50)["status"], "STALE")
+        self.assertEqual(
+            monitor.remote_section(snapshot(dict(AGIW_ROW, ageSeconds=100, freshForSeconds=3)), "x", 50)["status"],
+            "STALE",
+        )
 
     def test_the_time_the_fetch_took_counts_toward_the_age(self):
         """The remote's age is stamped before the fetch starts, so a slow fetch cannot read 'fetched 0 s ago'."""
@@ -729,11 +925,18 @@ class FreshnessIncludesFetchAgeTests(unittest.TestCase):
         def slow(_remote):
             clock.now += 6
             return snapshot(AGIW_ROW)
-        view = monitor.Monitor({"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"}, fetch=slow,
-                               probe=lambda _e: ("none", []), clock=clock)
+
+        view = monitor.Monitor(
+            {"OPOS_AGIW_URL": "http://" + ip4(10, 0, 0, 9) + ":1"},
+            fetch=slow,
+            probe=lambda _e: ("none", []),
+            clock=clock,
+        )
         remote = section(view.snapshot(), "remote")
         self.assertIn("fetched 6 s ago", remote["lines"][0])
-        self.assertEqual(remote["status"], "STALE", "1.2 s old at the fetch, 6 s since: past freshFor 3 plus the cache allowance")
+        self.assertEqual(
+            remote["status"], "STALE", "1.2 s old at the fetch, 6 s since: past freshFor 3 plus the cache allowance"
+        )
 
 
 class UnconfirmedRowWordsTests(unittest.TestCase):
@@ -743,9 +946,15 @@ class UnconfirmedRowWordsTests(unittest.TestCase):
         return dict(map(tuple, monitor.remote_section(snapshot(row), "x", 0)["facts"]))
 
     def test_counts_and_rates_of_a_row_that_is_not_up_are_not_measured(self):
-        for row in (dict(AGIW_ROW, state="down"), dict(AGIW_ROW, state="unknown"), dict(AGIW_ROW, reasonCode="not_connected")):
+        for row in (
+            dict(AGIW_ROW, state="down"),
+            dict(AGIW_ROW, state="unknown"),
+            dict(AGIW_ROW, reasonCode="not_connected"),
+        ):
             facts = self.facts(row)
-            self.assertEqual((facts["MAC models"], facts["MAC prompts"], facts["MAC writing"]), ("Not measured",) * 3, row)
+            self.assertEqual(
+                (facts["MAC models"], facts["MAC prompts"], facts["MAC writing"]), ("Not measured",) * 3, row
+            )
 
     def test_a_confirmed_row_still_shows_its_numbers(self):
         facts = self.facts(AGIW_ROW)
@@ -762,7 +971,9 @@ class UnconfirmedRowWordsTests(unittest.TestCase):
             rows = monitor.machine_rows(snapshot(dict(AGIW_ROW, reasonCode=code)))
             self.assertNotEqual(rows[0]["reason"], "observed", code)
             self.assertFalse(rows[0]["confirmed"], code)
-        self.assertEqual(monitor.machine_rows(snapshot(dict(AGIW_ROW, reasonCode="observed_")))[0]["reason"], "unrecognised reason")
+        self.assertEqual(
+            monitor.machine_rows(snapshot(dict(AGIW_ROW, reasonCode="observed_")))[0]["reason"], "unrecognised reason"
+        )
 
 
 if __name__ == "__main__":

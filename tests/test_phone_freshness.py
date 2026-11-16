@@ -5,8 +5,8 @@ import shutil
 import subprocess
 import unittest
 
-STATIC = Path(__file__).resolve().parents[1] / 'src/opos/web_static'
-NODE = shutil.which('node')
+STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
+NODE = shutil.which("node")
 
 # Run the actual poll scheduler and freshness hook together, with no browser or socket.
 HARNESS = r"""
@@ -38,13 +38,21 @@ function go(){} function toggleSim(){} function showNotice(s){notices.push(s)}
 
 
 def program(driver):
-    js4 = (STATIC / 'js-4.js').read_text()
-    render = js4[js4.index('async function render(s){'):js4.index('running=!!s.running')]
+    js4 = (STATIC / "js-4.js").read_text()
+    render = js4[js4.index("async function render(s){") : js4.index("running=!!s.running")]
     render += "display=s.status; (window.oposHooks||[]).forEach(f=>f(s));}\n"
-    phone = (STATIC / 'phone-a.js').read_text()
+    phone = (STATIC / "phone-a.js").read_text()
     marker = phone.index("var retry=G('reload-shell'),m=0;")
-    hook = phone[phone.rfind('(function(){', 0, marker):phone.index('})();', marker) + len('})();')]
-    return HARNESS + js4[js4.index('function healReload('):js4.index('const sync=')] + render + "\nqueue.push({status:200,payload:{status:'old',poll_ms:1000}});\n" + (STATIC / 'js-8.js').read_text() + hook + driver
+    hook = phone[phone.rfind("(function(){", 0, marker) : phone.index("})();", marker) + len("})();")]
+    return (
+        HARNESS
+        + js4[js4.index("function healReload(") : js4.index("const sync=")]
+        + render
+        + "\nqueue.push({status:200,payload:{status:'old',poll_ms:1000}});\n"
+        + (STATIC / "js-8.js").read_text()
+        + hook
+        + driver
+    )
 
 
 DRIVER_SETUP = r"""
@@ -55,11 +63,15 @@ function snapshot(){return {hidden:element('reload-shell').hidden,stale,display,
 """
 
 
-@unittest.skipUnless(NODE, 'node missing')
+@unittest.skipUnless(NODE, "node missing")
 class PhoneFreshness(unittest.TestCase):
     def run_driver(self, driver):
-        proc = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', program(DRIVER_SETUP + driver)],
-                              capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(
+            [NODE, "--unhandled-rejections=strict", "-e", program(DRIVER_SETUP + driver)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return json.loads(proc.stdout)
 
@@ -70,22 +82,33 @@ class PhoneFreshness(unittest.TestCase):
  await step({status:200,payload:{status:'new',poll_ms:3000}});out.good=snapshot();
  out.next=timers[0].at-now;console.log(JSON.stringify(out))})().catch(e=>{console.error(e);process.exitCode=1});
 """)
-        self.assertEqual(out['boot'], {'hidden': True, 'stale': False, 'display': 'old', 'notice': ''})
-        self.assertEqual(out['request'], {'url': '/api/state', 'options': {'headers': {'X-OPOS-Token': 'test-token'}, 'signal': {'timeout': 8000}}})
-        self.assertEqual(out['one']['hidden'], True)
-        self.assertEqual(out['one']['stale'], False)
-        self.assertEqual(out['two'], {'hidden': False, 'stale': True, 'display': 'old', 'notice': 'Not updating. Values shown may be old. Tap Reload.'})
-        self.assertEqual(out['good']['hidden'], True)
-        self.assertEqual(out['good']['stale'], False)
-        self.assertEqual(out['good']['display'], 'new')
-        self.assertEqual(out['next'], 3000)
+        self.assertEqual(out["boot"], {"hidden": True, "stale": False, "display": "old", "notice": ""})
+        self.assertEqual(
+            out["request"],
+            {"url": "/api/state", "options": {"headers": {"X-OPOS-Token": "test-token"}, "signal": {"timeout": 8000}}},
+        )
+        self.assertEqual(out["one"]["hidden"], True)
+        self.assertEqual(out["one"]["stale"], False)
+        self.assertEqual(
+            out["two"],
+            {
+                "hidden": False,
+                "stale": True,
+                "display": "old",
+                "notice": "Not updating. Values shown may be old. Tap Reload.",
+            },
+        )
+        self.assertEqual(out["good"]["hidden"], True)
+        self.assertEqual(out["good"]["stale"], False)
+        self.assertEqual(out["good"]["display"], "new")
+        self.assertEqual(out["next"], 3000)
 
     def test_fetch_state_returns_the_original_json_payload(self):
         out = self.run_driver(r"""
 (async()=>{await flush();let payload={status:'ready',poll_ms:5000,extra:{n:7}};
  queue.push({status:200,payload});console.log(JSON.stringify(await fetchState()))})().catch(e=>{console.error(e);process.exitCode=1});
 """)
-        self.assertEqual(out, {'status': 'ready', 'poll_ms': 5000, 'extra': {'n': 7}})
+        self.assertEqual(out, {"status": "ready", "poll_ms": 5000, "extra": {"n": 7}})
 
     def test_http_errors_count_as_misses_until_a_snapshot_recovers(self):
         out = self.run_driver(r"""
@@ -97,15 +120,26 @@ class PhoneFreshness(unittest.TestCase):
  await step({status:200,payload:{status:'new',poll_ms:3000}});out.recovered=snapshot();
  console.log(JSON.stringify(out))})().catch(e=>{console.error(e);process.exitCode=1});
 """)
-        self.assertEqual(out['forbidden'], {'hidden': True, 'stale': False, 'display': 'old', 'notice': 'Restarting the screen. One moment.'})
-        self.assertEqual(out['heal'], [500])
-        self.assertEqual(out['failed'], {'hidden': False, 'stale': True, 'display': 'old', 'notice': 'Not updating. Values shown may be old. Tap Reload.'})
-        self.assertEqual(out['badStatus']['hidden'], False)
-        self.assertEqual(out['badStatus']['stale'], True)
-        self.assertEqual(out['badStatus']['display'], 'old')
-        self.assertEqual(out['recovered']['hidden'], True)
-        self.assertEqual(out['recovered']['stale'], False)
-        self.assertEqual(out['recovered']['display'], 'new')
+        self.assertEqual(
+            out["forbidden"],
+            {"hidden": True, "stale": False, "display": "old", "notice": "Restarting the screen. One moment."},
+        )
+        self.assertEqual(out["heal"], [500])
+        self.assertEqual(
+            out["failed"],
+            {
+                "hidden": False,
+                "stale": True,
+                "display": "old",
+                "notice": "Not updating. Values shown may be old. Tap Reload.",
+            },
+        )
+        self.assertEqual(out["badStatus"]["hidden"], False)
+        self.assertEqual(out["badStatus"]["stale"], True)
+        self.assertEqual(out["badStatus"]["display"], "old")
+        self.assertEqual(out["recovered"]["hidden"], True)
+        self.assertEqual(out["recovered"]["stale"], False)
+        self.assertEqual(out["recovered"]["display"], "new")
 
     def test_json_error_with_success_status_still_counts_as_a_miss(self):
         out = self.run_driver(r"""
@@ -113,7 +147,15 @@ class PhoneFreshness(unittest.TestCase):
  await step({status:200,payload:{error:'unavailable'}});console.log(JSON.stringify(snapshot()))
  })().catch(e=>{console.error(e);process.exitCode=1});
 """)
-        self.assertEqual(out, {'hidden': False, 'stale': True, 'display': 'old', 'notice': 'Not updating. Values shown may be old. Tap Reload.'})
+        self.assertEqual(
+            out,
+            {
+                "hidden": False,
+                "stale": True,
+                "display": "old",
+                "notice": "Not updating. Values shown may be old. Tap Reload.",
+            },
+        )
 
     def test_unusable_payloads_do_not_clear_stale_and_identical_snapshot_does(self):
         out = self.run_driver(r"""
@@ -124,10 +166,18 @@ class PhoneFreshness(unittest.TestCase):
  await step({status:200,payload:{status:'old',poll_ms:1000}});out.recovered=snapshot();
  console.log(JSON.stringify(out))})().catch(e=>{console.error(e);process.exitCode=1});
 """)
-        self.assertEqual(out['stale'], {'hidden': False, 'stale': True, 'display': 'old', 'notice': 'Not updating. Values shown may be old. Tap Reload.'})
-        self.assertEqual(out['forbidden']['hidden'], False)
-        self.assertEqual(out['forbidden']['stale'], True)
-        self.assertEqual(out['forbidden']['display'], 'old')
-        self.assertEqual(out['recovered']['hidden'], True)
-        self.assertEqual(out['recovered']['stale'], False)
-        self.assertEqual(out['recovered']['display'], 'old')
+        self.assertEqual(
+            out["stale"],
+            {
+                "hidden": False,
+                "stale": True,
+                "display": "old",
+                "notice": "Not updating. Values shown may be old. Tap Reload.",
+            },
+        )
+        self.assertEqual(out["forbidden"]["hidden"], False)
+        self.assertEqual(out["forbidden"]["stale"], True)
+        self.assertEqual(out["forbidden"]["display"], "old")
+        self.assertEqual(out["recovered"]["hidden"], True)
+        self.assertEqual(out["recovered"]["stale"], False)
+        self.assertEqual(out["recovered"]["display"], "old")

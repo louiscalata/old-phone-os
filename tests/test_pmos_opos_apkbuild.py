@@ -8,11 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 APKBUILD = ROOT / "packaging/pmos/opos/APKBUILD"
 ARCHIVE = "opos-runtime-source-20261102.tar.gz"
 SOURCE_ROOT = "old-phone-os-source"
-RELEASE_URL = (
-    "https://github.com/louiscalata/old-phone-os/releases/download/"
-    "v0.1.0-source-20261102/$_source_archive"
-)
-
+RELEASE_URL = "https://github.com/louiscalata/old-phone-os/releases/download/v0.1.0-source-20261102/$_source_archive"
 
 
 class TestOposApkbuild(unittest.TestCase):
@@ -80,13 +76,11 @@ class TestOposApkbuild(unittest.TestCase):
     def test_package_installs_root_license_and_third_party_notice(self):
         body = function_body(APKBUILD, "package")
         self.assertIn(
-            'install -Dm644 "$builddir/LICENSE" '
-            '"$pkgdir/usr/share/licenses/$pkgname/LICENSE"',
+            'install -Dm644 "$builddir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"',
             body,
         )
         self.assertIn(
-            'install -Dm644 "$builddir/THIRD_PARTY.md" '
-            '"$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY.md"',
+            'install -Dm644 "$builddir/THIRD_PARTY.md" "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY.md"',
             body,
         )
         for name in ("LICENSE", "THIRD_PARTY.md"):

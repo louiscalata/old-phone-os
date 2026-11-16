@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Measured drain: the discharge rate a live battery shows in its own readings."""
+
 import json
 import math
 import random
@@ -149,7 +150,10 @@ class MeasuredDrainTests(unittest.TestCase):
     def test_a_step_is_timed_midway_between_the_readings_that_bracket_it(self):
         md = MeasuredDrain()
         readings = [(0, 80)] + [(t, 79) for t in range(100, 601, 100)] + [(620, 78)]
-        for t, level in readings:  # the first step is seen at 100 (so it is stamped 50), the second at 620 (stamped 610)
+        for (
+            t,
+            level,
+        ) in readings:  # the first step is seen at 100 (so it is stamped 50), the second at 620 (stamped 610)
             md.observe(float(t), float(level), False)
         self.assertAlmostEqual(md.ema, 3600 / 560, places=6)
 
@@ -256,8 +260,14 @@ class LiveBatteryDrainTests(unittest.TestCase):
     def reader(self):
         if self.unreadable[0]:
             return None
-        r = {"level": round(self.level[0]), "temp_c": 29.0, "charging": self.charging[0], "source": "sysfs",
-             "health": 0.7, "health_source": "OPOS_BATTERY_HEALTH"}
+        r = {
+            "level": round(self.level[0]),
+            "temp_c": 29.0,
+            "charging": self.charging[0],
+            "source": "sysfs",
+            "health": 0.7,
+            "health_source": "OPOS_BATTERY_HEALTH",
+        }
         if self.counter[0] is not None:
             r[self.counter_key] = self.counter[0]
         return r
@@ -276,7 +286,10 @@ class LiveBatteryDrainTests(unittest.TestCase):
         b = self.battery()
         use, info = b.drain_rate(23.0)
         self.assertEqual(use, 23.0)
-        self.assertEqual((info["basis"], info["per_hour"], info["measured_per_hour"], info["model_per_hour"]), ("model", 23.0, None, 23.0))
+        self.assertEqual(
+            (info["basis"], info["per_hour"], info["measured_per_hour"], info["model_per_hour"]),
+            ("model", 23.0, None, 23.0),
+        )
         self.assertEqual((info["age_s"], info["window_s"], info["via"]), (0.0, 0.0, "level"))
         self.run_for(b, 300, 6)
         self.assertEqual(b.drain_rate(23.0)[1]["basis"], "model")
@@ -369,7 +382,9 @@ class LiveBatteryDrainTests(unittest.TestCase):
                 break
             self.assertNotIn("10 of 10", words)
             if info["window_s"] < lb.DRAIN_WINDOW_S:
-                self.assertEqual(words, f"drain from the model, not measured yet ({int(info['window_s'] // 60)} of 10 min)")
+                self.assertEqual(
+                    words, f"drain from the model, not measured yet ({int(info['window_s'] // 60)} of 10 min)"
+                )
                 minutes.add(int(info["window_s"] // 60))
             else:
                 waiting.append(words)
@@ -407,9 +422,15 @@ class SysfsCounterTests(unittest.TestCase):
         return d.name
 
     def test_charge_counter_then_charge_now_then_energy_now(self):
-        for files, want in (({"charge_counter": "2400000", "charge_now": "1"}, 2400000), ({"charge_now": "1800000"}, 1800000), ({"energy_now": "9000000"}, 9000000)):
+        for files, want in (
+            ({"charge_counter": "2400000", "charge_now": "1"}, 2400000),
+            ({"charge_now": "1800000"}, 1800000),
+            ({"energy_now": "9000000"}, 9000000),
+        ):
             with self.subTest(files=files):
-                root = self._root({"battery": dict({"type": "Battery", "status": "Discharging", "capacity": "60"}, **files)})
+                root = self._root(
+                    {"battery": dict({"type": "Battery", "status": "Discharging", "capacity": "60"}, **files)}
+                )
                 self.assertEqual(lb._sysfs_counter(root), want)
                 self.assertEqual(lb._sysfs_status(root)["counter"], want)
 
@@ -421,7 +442,9 @@ class SysfsCounterTests(unittest.TestCase):
         self.assertIsNone(lb._sysfs_counter("/nonexistent"))
 
     def test_read_live_hands_the_counter_over_without_touching_health(self):
-        root = self._root({"battery": {"type": "Battery", "status": "Discharging", "capacity": "60", "charge_now": "1800000"}})
+        root = self._root(
+            {"battery": {"type": "Battery", "status": "Discharging", "capacity": "60", "charge_now": "1800000"}}
+        )
         r = lb.read_live(env={}, root=root, which=lambda name: None)
         self.assertEqual((r["counter"], r["health"], r["health_source"]), (1800000, 1.0, "assumed"))
 

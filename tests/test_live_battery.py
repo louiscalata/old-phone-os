@@ -12,6 +12,7 @@ from opos.web import Phone
 def _run_json(payload):
     def run(cmd, **kw):
         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+
     return run
 
 
@@ -25,8 +26,12 @@ def _no_which(name):
 
 class TermuxTests(unittest.TestCase):
     def test_discharging(self):
-        r = lb._termux_status(_run_json({"percentage": 42, "status": "DISCHARGING", "plugged": "UNPLUGGED", "temperature": 31.5}), _which)
-        self.assertEqual(r, {"level": 42.0, "temp_c": 31.5, "charging": False, "source": "termux-api", "charge_counter_uah": None})
+        r = lb._termux_status(
+            _run_json({"percentage": 42, "status": "DISCHARGING", "plugged": "UNPLUGGED", "temperature": 31.5}), _which
+        )
+        self.assertEqual(
+            r, {"level": 42.0, "temp_c": 31.5, "charging": False, "source": "termux-api", "charge_counter_uah": None}
+        )
 
     def test_charging_and_full(self):
         for status in ("CHARGING", "FULL"):
@@ -36,11 +41,15 @@ class TermuxTests(unittest.TestCase):
     def test_missing_or_bad_output(self):
         self.assertIsNone(lb._termux_status(_run_json({}), _no_which))
         self.assertIsNone(lb._termux_status(_run_json({"status": "CHARGING"}), _which))
+
         def bad(cmd, **kw):
             return subprocess.CompletedProcess(cmd, 0, stdout="not json", stderr="")
+
         self.assertIsNone(lb._termux_status(bad, _which))
+
         def boom(cmd, **kw):
             raise subprocess.TimeoutExpired(cmd, 10)
+
         self.assertIsNone(lb._termux_status(boom, _which))
 
     def test_percentage_clamped(self):
@@ -49,7 +58,9 @@ class TermuxTests(unittest.TestCase):
     def test_charge_counter_kept(self):
         r = lb._termux_status(_run_json({"percentage": 100, "charge_counter": 3179000}), _which)
         self.assertEqual(r["charge_counter_uah"], 3179000)
-        self.assertIsNone(lb._termux_status(_run_json({"percentage": 50, "charge_counter": -1}), _which)["charge_counter_uah"])
+        self.assertIsNone(
+            lb._termux_status(_run_json({"percentage": 50, "charge_counter": -1}), _which)["charge_counter_uah"]
+        )
 
 
 class CounterHealthTests(unittest.TestCase):
@@ -67,6 +78,7 @@ class CounterHealthTests(unittest.TestCase):
     def test_design_capacity_sources(self):
         def model(name):
             return lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=name + "\n", stderr="")
+
         self.assertEqual(lb.design_mah({}, model("Surface Duo")), 3577)
         self.assertEqual(lb.design_mah({"OPOS_BATTERY_DESIGN_MAH": "4000"}, model("Surface Duo")), 4000)
         self.assertIsNone(lb.design_mah({}, model("Pixel 3")))
@@ -75,6 +87,7 @@ class CounterHealthTests(unittest.TestCase):
         def run(cmd, **kw):
             out = "Surface Duo\n" if cmd[0] == "getprop" else json.dumps({"percentage": 80, "charge_counter": 2543200})
             return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
         r = lb.read_live(env={"OPOS_BATTERY_HEALTH": "0.5"}, root="/nonexistent", run=run, which=_which)
         self.assertEqual(r["health_source"], "charge-counter")
         self.assertAlmostEqual(r["health"], 0.8887, places=3)
@@ -91,7 +104,15 @@ class SysfsAndHealthTests(unittest.TestCase):
         return d.name
 
     def test_sysfs_reading_and_measured_health(self):
-        root = self._root({"type": "Battery", "status": "Charging", "capacity": "57", "charge_full": "2400000", "charge_full_design": "3000000"})
+        root = self._root(
+            {
+                "type": "Battery",
+                "status": "Charging",
+                "capacity": "57",
+                "charge_full": "2400000",
+                "charge_full_design": "3000000",
+            }
+        )
         r = lb.read_live(env={}, root=root, which=_no_which)
         self.assertEqual((r["level"], r["charging"], r["source"]), (57.0, True, "sysfs"))
         self.assertAlmostEqual(r["health"], 0.8)
@@ -109,7 +130,14 @@ class SysfsAndHealthTests(unittest.TestCase):
 
 class LiveBatteryTests(unittest.TestCase):
     def _reading(self, level, charging=False):
-        return {"level": level, "temp_c": 29.0, "charging": charging, "source": "termux-api", "health": 0.7, "health_source": "OPOS_BATTERY_HEALTH"}
+        return {
+            "level": level,
+            "temp_c": 29.0,
+            "charging": charging,
+            "source": "termux-api",
+            "health": 0.7,
+            "health_source": "OPOS_BATTERY_HEALTH",
+        }
 
     def test_refresh_is_rate_limited_and_advance_never_simulates(self):
         now = [0.0]
@@ -148,6 +176,7 @@ class LiveBatteryTests(unittest.TestCase):
 class OnPhoneLabelTests(unittest.TestCase):
     def test_termux_flag_names_the_phone(self):
         from opos import assist
+
         if assist.PHONE_BUILD:
             self.skipTest("packaged phone install")
         self.assertEqual(assist.local_route({}, free=4096).where, "on this computer")

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Security checks for Essentials messaging."""
+
 import unittest
 from unittest import mock
 import opos.essentials as ess_mod
@@ -8,6 +9,7 @@ from opos.essentials import Essentials
 
 class FakeModem:
     """Record modem calls for assertions."""
+
     def __init__(self) -> None:
         """Init empty records."""
         self.dialed: list[str] = []
@@ -32,6 +34,7 @@ class FakeModem:
 
 class TestEssentialsSecurity(unittest.TestCase):
     """Security behavior of receive and send paths."""
+
     def setUp(self) -> None:
         """Build Essentials with a fake modem."""
         self.modem = FakeModem()
@@ -254,9 +257,7 @@ class TestEssentialsSecurity(unittest.TestCase):
                 self.assertEqual(len(ess.log), 2)
                 self.assertIs(ess.log[0], second)
                 self.assertIs(ess.log[1], new)
-                self.assertEqual(
-                    [id(m) for m in ess.outbox], [id(first), id(second), id(new)]
-                )
+                self.assertEqual([id(m) for m in ess.outbox], [id(first), id(second), id(new)])
                 modem.fail_send = False
                 self.assertEqual(ess.retry_outbox(), 3)
                 self.assertEqual(
@@ -286,9 +287,7 @@ class TestEssentialsSecurity(unittest.TestCase):
                 self.assertIs(self.e.log[1], new)
                 self.assertNotIn(old, self.e.log)
                 self.assertEqual(self.e.outbox, [pending])
-                self.assertEqual(
-                    self.modem.sent, sent_before + [(str(base + 2), "new")]
-                )
+                self.assertEqual(self.modem.sent, sent_before + [(str(base + 2), "new")])
             with self.subTest("receive"):
                 self.setUp()
                 self.modem.fail_send = True
@@ -356,6 +355,7 @@ class TestEssentialsSecurity(unittest.TestCase):
         import os
         import tempfile
         from unittest import mock
+
         with tempfile.TemporaryDirectory() as tmp:
             sentinel = os.path.join(tmp, "sentinel.bin")
             link = os.path.join(tmp, "messages.json.tmp")
@@ -369,13 +369,16 @@ class TestEssentialsSecurity(unittest.TestCase):
                 def fail(*args, **kwargs):  # type: ignore[no-untyped-def]
                     calls.append(name)
                     raise AssertionError(name)
+
                 return fail
 
-            with mock.patch.object(builtins, "open", side_effect=guard("builtins.open")), \
-                    mock.patch.object(io, "open", side_effect=guard("io.open")), \
-                    mock.patch.object(os, "open", side_effect=guard("os.open")), \
-                    mock.patch.object(os, "chmod", side_effect=guard("os.chmod")), \
-                    mock.patch.object(os, "replace", side_effect=guard("os.replace")):
+            with (
+                mock.patch.object(builtins, "open", side_effect=guard("builtins.open")),
+                mock.patch.object(io, "open", side_effect=guard("io.open")),
+                mock.patch.object(os, "open", side_effect=guard("os.open")),
+                mock.patch.object(os, "chmod", side_effect=guard("os.chmod")),
+                mock.patch.object(os, "replace", side_effect=guard("os.replace")),
+            ):
                 self.modem.fail_send = True
                 queued = self.e.send_message("123456", "queued")
                 self.modem.fail_send = False

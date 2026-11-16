@@ -3,9 +3,10 @@ import re
 import unittest
 from opos.setup.wizard_page import page
 
+
 class TestDoneHonest(unittest.TestCase):
     def setUp(self):
-        self.html = page("a"*32, "n1")
+        self.html = page("a" * 32, "n1")
         start_poll = self.html.index("async function poll(")
         start_apply = self.html.index("async function doApply(")
         self.poll_src = self.html[start_poll:start_apply]
@@ -22,24 +23,28 @@ class TestDoneHonest(unittest.TestCase):
         src = self.poll_src
         self.assertIn('"health"', src)
         self.assertIn('"skipped"', src)
-        self.assertIn('#done-norun', src)
+        self.assertIn("#done-norun", src)
         first_health = src.index('"health"')
         first_done_hide = src.index('q("#done").hidden=false')
         self.assertLess(first_health, first_done_hide, "health check must precede done reveal")
 
     def test_messages_are_plain_and_exact(self):
         src = self.poll_src
-        self.assertIn('Dry run finished. No services or tools were installed. Personal choices are still saved.', src)
-        self.assertIn('Your choices are saved, but Old Phone OS Interface cannot start on its own here. See the README, section Quickstart, to start it by hand.', src)
-        self.assertIn('S.dry_run', src)
-        self.assertNotIn('innerHTML', src)
+        self.assertIn("Dry run finished. No services or tools were installed. Personal choices are still saved.", src)
+        self.assertIn(
+            "Your choices are saved, but Old Phone OS Interface cannot start on its own here. See the README, section Quickstart, to start it by hand.",
+            src,
+        )
+        self.assertIn("S.dry_run", src)
+        self.assertNotIn("innerHTML", src)
 
     def test_apply_resets_norun_message(self):
         src = self.apply_src
-        self.assertIn('#done-norun', src)
-        idx_norun = src.index('#done-norun')
-        idx_collect = src.index('collect()')
+        self.assertIn("#done-norun", src)
+        idx_norun = src.index("#done-norun")
+        idx_collect = src.index("collect()")
         self.assertLess(idx_norun, idx_collect, "done-norun reset must be before collect")
+
 
 if __name__ == "__main__":
     unittest.main()

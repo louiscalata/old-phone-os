@@ -119,13 +119,17 @@ def _run_retain_rollback(tmp_path, preamble):
     runner = tmp_path / "run.sh"
     runner.write_text(helpers + preamble + 'retain_hardening_rollback "$1"\n')
     env = os.environ.copy()
-    env.update({
-        "OPOS_HOME": str(tmp_path / "home"),
-        "DRY": "0",
-        "OPOS_DEST": str(dest),
-        "OPOS_VICTIM": str(tmp_path / "victim"),
-    })
-    proc = subprocess.run(["sh", str(runner), str(tmp_path / "clone")], capture_output=True, text=True, env=env, timeout=30)
+    env.update(
+        {
+            "OPOS_HOME": str(tmp_path / "home"),
+            "DRY": "0",
+            "OPOS_DEST": str(dest),
+            "OPOS_VICTIM": str(tmp_path / "victim"),
+        }
+    )
+    proc = subprocess.run(
+        ["sh", str(runner), str(tmp_path / "clone")], capture_output=True, text=True, env=env, timeout=30
+    )
     return (proc, tmp_path / "home", dest, helper_bytes)
 
 
@@ -591,7 +595,7 @@ def _mask_heredoc_bodies(text):
                         e = line.find("'", k + 1)
                         if e < 0:
                             break
-                        parts.append(line[k + 1:e])
+                        parts.append(line[k + 1 : e])
                         k = e + 1
                         found = True
                         quoted = True
@@ -600,7 +604,7 @@ def _mask_heredoc_bodies(text):
                         e = line.find('"', k + 1)
                         if e < 0:
                             break
-                        parts.append(line[k + 1:e])
+                        parts.append(line[k + 1 : e])
                         k = e + 1
                         found = True
                         quoted = True
@@ -1115,13 +1119,13 @@ def _line_path_violations(line):
         if idx < 0:
             return []
         header_extra = _header_substitution_code(s[:idx])
-        code = s[idx + 2:]
+        code = s[idx + 2 :]
     elif s.startswith(("case ", "case\t")):
         idx = _shell_delimiter_index(s, "in")
         if idx < 0:
             return []
         header_extra = _header_substitution_code(s[:idx])
-        rest = s[idx + 2:]
+        rest = s[idx + 2 :]
         kept = []
         in_single = False
         in_double = False
@@ -1169,7 +1173,7 @@ def _line_path_violations(line):
                     buf.append(c)
                 i += 1
                 continue
-            if i + 4 <= n and rest[i:i + 4] == "esac":
+            if i + 4 <= n and rest[i : i + 4] == "esac":
                 prev = rest[i - 1] if i > 0 else " "
                 nxt = rest[i + 4] if i + 4 < n else " "
                 if prev in " \t;|&()<>\n" and nxt in " \t;|&()<>\n#":
@@ -1177,7 +1181,7 @@ def _line_path_violations(line):
                         kept.append("".join(buf))
                         buf = []
                         in_body = False
-                    kept.append(rest[i + 4:])
+                    kept.append(rest[i + 4 :])
                     break
             if not in_body:
                 if c == ")":
@@ -1198,10 +1202,10 @@ def _line_path_violations(line):
         code = " ".join(kept)
     if header_extra:
         code = header_extra + " " + code
-    toks = re.findall(r'''(?:"[^"]*"|'[^']*'|\\.|[^\s;|&<>()"'])+''', code)
+    toks = re.findall(r"""(?:"[^"]*"|'[^']*'|\\.|[^\s;|&<>()"'])+""", code)
     if not toks:
         return []
-    if toks[0] in _PATH_OPS or "/" + toks[0] in code[:len(toks[0]) + 1]:
+    if toks[0] in _PATH_OPS or "/" + toks[0] in code[: len(toks[0]) + 1]:
         base = toks[0].rsplit("/", 1)[-1]
         scoped = base in _PATH_OPS
     else:
@@ -1256,29 +1260,29 @@ def _assert_snippet_confined(snippet):
         if not s or s.startswith("#"):
             continue
         if _writes_backup(raw):
-            raise AssertionError('backup write: %r' % raw)
+            raise AssertionError("backup write: %r" % raw)
         if _line_path_violations(raw):
             raise AssertionError("unconfined path operation: %r" % raw)
 
 
 def _writes_backup(line):
-    leaf = 'sshd_config' + '.bak'
+    leaf = "sshd_config" + ".bak"
     code = _strip_shell_comment(line)
     if leaf not in code:
         return False
-    if re.search(r'>\s*>? ?\S*' + re.escape(leaf), code):
+    if re.search(r">\s*>? ?\S*" + re.escape(leaf), code):
         return True
-    for seg in re.split(r'[;&|]+', code):
+    for seg in re.split(r"[;&|]+", code):
         toks = seg.split()
-        while toks and toks[0] in ('if', 'then', 'elif', 'else', 'while', 'until', 'do'):
+        while toks and toks[0] in ("if", "then", "elif", "else", "while", "until", "do"):
             toks = toks[1:]
         if not toks:
             continue
-        base = toks[0].rsplit('/', 1)[-1]
-        args = [t for t in toks[1:] if not t.startswith('-')]
-        if base in ('tee', 'touch', 'truncate', 'dd') and any(leaf in arg for arg in args):
+        base = toks[0].rsplit("/", 1)[-1]
+        args = [t for t in toks[1:] if not t.startswith("-")]
+        if base in ("tee", "touch", "truncate", "dd") and any(leaf in arg for arg in args):
             return True
-        if base in ('cp', 'mv', 'ln', 'install') and args and leaf in args[-1]:
+        if base in ("cp", "mv", "ln", "install") and args and leaf in args[-1]:
             return True
     return False
 
@@ -1313,7 +1317,7 @@ def _dynamic_hit_for_code(code):
         )
         if not bare:
             return "dynamic"
-    for tok in re.findall(r'''(?:"[^"]*"|'[^']*'|\\.|[^\s;|&<>()"'])+''', marked):
+    for tok in re.findall(r"""(?:"[^"]*"|'[^']*'|\\.|[^\s;|&<>()"'])+""", marked):
         frags = re.findall(r'"[^"]*"', tok)
         if not frags:
             continue
@@ -1381,7 +1385,8 @@ def _scan_installer_paths(text):
 class TestInstallReview(unittest.TestCase):
     def test_f1116_substitution_spans_quote_context(self):
         spans = []
-        a = chr(96); b = chr(96)
+        a = chr(96)
+        b = chr(96)
         txt = "x=" + a + "a" + b + " y=$(b) z='$(c)' w=\"$(d)\""
         out = _header_substitution_code(txt, spans)
         self.assertEqual(out, "a b d")
@@ -1400,7 +1405,7 @@ class TestInstallReview(unittest.TestCase):
         _header_substitution_code(nested, spans2)
         self.assertEqual(len(spans2), 1)
         self.assertEqual(spans2, [(4, 20, False)])
-        self.assertEqual(nested[spans2[0][0]:spans2[0][1]], "$(outer$(inner))")
+        self.assertEqual(nested[spans2[0][0] : spans2[0][1]], "$(outer$(inner))")
         self.assertFalse(spans2[0][2])
 
     def test_f1116_command_substitution_operands(self):
@@ -1575,15 +1580,76 @@ class TestInstallReview(unittest.TestCase):
                         clone.mkdir()
                         (clone / "install.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                         base_env = dict(os.environ)
-                        subprocess.run(["git", "-C", str(clone), "init"], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                        subprocess.run(["git", "-C", str(clone), "add", "install.sh"], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                        subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["i", "nit"])], check=True, capture_output=True, text=True, env=base_env, timeout=30)
+                        subprocess.run(
+                            ["git", "-C", str(clone), "init"],
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                            env=base_env,
+                            timeout=30,
+                        )
+                        subprocess.run(
+                            ["git", "-C", str(clone), "add", "install.sh"],
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                            env=base_env,
+                            timeout=30,
+                        )
+                        subprocess.run(
+                            [
+                                "git",
+                                "-C",
+                                str(clone),
+                                "-c",
+                                "user.email=" + "".join(["o", "pos@", "example.com"]),
+                                "-c",
+                                "user.name=" + "".join(["o", "pos"]),
+                                "-c",
+                                "commit.gpgsign=false",
+                                "commit",
+                                "-m",
+                                "".join(["i", "nit"]),
+                            ],
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                            env=base_env,
+                            timeout=30,
+                        )
                         if name == "committed_addition":
                             owned = clone / "".join(["owner-ad", "ded.txt"])
                             owned_bytes = "".join(["owner-", "added-", "9", "\n"]).encode()
                             owned.write_bytes(owned_bytes)
-                            subprocess.run(["git", "-C", str(clone), "add", owned.name], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                            subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["add-", "owner"])], check=True, capture_output=True, text=True, env=base_env, timeout=30)
+                            subprocess.run(
+                                ["git", "-C", str(clone), "add", owned.name],
+                                check=True,
+                                capture_output=True,
+                                text=True,
+                                env=base_env,
+                                timeout=30,
+                            )
+                            subprocess.run(
+                                [
+                                    "git",
+                                    "-C",
+                                    str(clone),
+                                    "-c",
+                                    "user.email=" + "".join(["o", "pos@", "example.com"]),
+                                    "-c",
+                                    "user.name=" + "".join(["o", "pos"]),
+                                    "-c",
+                                    "commit.gpgsign=false",
+                                    "commit",
+                                    "-m",
+                                    "".join(["add-", "owner"]),
+                                ],
+                                check=True,
+                                capture_output=True,
+                                text=True,
+                                env=base_env,
+                                timeout=30,
+                            )
                             check_path = owned
                         else:
                             hook = clone / ".git" / "hooks" / "pre-commit"
@@ -1593,7 +1659,13 @@ class TestInstallReview(unittest.TestCase):
                             check_path = hook
                             owned = hook
                             owned_bytes = hook_bytes
-                        status = subprocess.run(["git", "-C", str(clone), "status", "--porcelain", "--ignored", "--untracked-files=all"], capture_output=True, text=True, env=base_env, timeout=30)
+                        status = subprocess.run(
+                            ["git", "-C", str(clone), "status", "--porcelain", "--ignored", "--untracked-files=all"],
+                            capture_output=True,
+                            text=True,
+                            env=base_env,
+                            timeout=30,
+                        )
                         self.assertEqual(status.returncode, 0, status.stderr)
                         self.assertEqual(status.stdout, "", name)
                         runner = tmp_path / "run.sh"
@@ -1602,7 +1674,9 @@ class TestInstallReview(unittest.TestCase):
                         env["ROOT"] = str(clone)
                         env["HOME"] = str(tmp_path)
                         env["DRY"] = "1" if dry == "dry_run" else "0"
-                        proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
+                        proc = subprocess.run(
+                            ["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30
+                        )
                         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                         self.assertTrue(clone.is_dir(), name)
                         self.assertTrue(check_path.is_file(), name)
@@ -1628,15 +1702,82 @@ class TestInstallReview(unittest.TestCase):
                     clone.mkdir()
                     (clone / "install.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                     base_env = _isolated_git_env()
-                    subprocess.run(["git", "-C", str(clone), "init"], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    subprocess.run(["git", "-C", str(clone), "add", "install.sh"], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["i", "nit"])], check=True, capture_output=True, text=True, env=base_env, timeout=30)
+                    subprocess.run(
+                        ["git", "-C", str(clone), "init"],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
+                    subprocess.run(
+                        ["git", "-C", str(clone), "add", "install.sh"],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(clone),
+                            "-c",
+                            "user.email=" + "".join(["o", "pos@", "example.com"]),
+                            "-c",
+                            "user.name=" + "".join(["o", "pos"]),
+                            "-c",
+                            "commit.gpgsign=false",
+                            "commit",
+                            "-m",
+                            "".join(["i", "nit"]),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
                     owned = clone / "".join(["owner-ad", "ded.txt"])
                     owned_bytes = "".join(["owner-", "added-", "5", "\n"]).encode()
                     owned.write_bytes(owned_bytes)
-                    subprocess.run(["git", "-C", str(clone), "add", owned.name], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["add-", "owner"])], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    status = subprocess.run(["git", "-C", str(clone), "status", "--porcelain", "--ignored", "--untracked-files=all"], capture_output=True, text=True, env=base_env, timeout=30)
+                    subprocess.run(
+                        ["git", "-C", str(clone), "add", owned.name],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(clone),
+                            "-c",
+                            "user.email=" + "".join(["o", "pos@", "example.com"]),
+                            "-c",
+                            "user.name=" + "".join(["o", "pos"]),
+                            "-c",
+                            "commit.gpgsign=false",
+                            "commit",
+                            "-m",
+                            "".join(["add-", "owner"]),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
+                    status = subprocess.run(
+                        ["git", "-C", str(clone), "status", "--porcelain", "--ignored", "--untracked-files=all"],
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
                     self.assertEqual(status.returncode, 0, status.stderr)
                     self.assertEqual(status.stdout, "", dry)
                     runner = tmp_path / "run.sh"
@@ -1645,7 +1786,9 @@ class TestInstallReview(unittest.TestCase):
                     env["ROOT"] = str(clone)
                     env["HOME"] = str(tmp_path)
                     env["DRY"] = "1" if dry == "dry_run" else "0"
-                    proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
+                    proc = subprocess.run(
+                        ["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30
+                    )
                     self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                     self.assertTrue(clone.is_dir(), dry)
                     self.assertTrue(owned.is_file(), dry)
@@ -1671,7 +1814,9 @@ class TestInstallReview(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, seed, clear=True):
             before = dict(os.environ)
             result = _isolated_git_env()
-            self.assertEqual(result, {"PATH": "/usr/bin:/bin", "HOME": "/tmp/" + "opos-home", sentinel_key: sentinel_value})
+            self.assertEqual(
+                result, {"PATH": "/usr/bin:/bin", "HOME": "/tmp/" + "opos-home", sentinel_key: sentinel_value}
+            )
             self.assertEqual(dict(os.environ), before)
             self.assertEqual(dict(os.environ), seed)
 
@@ -1718,11 +1863,7 @@ class TestInstallReview(unittest.TestCase):
                     else:
                         plant = 'mkdir -p "$OPOS_TARGET"\nln -s "$OPOS_TARGET" "$OPOS_PLANT"\n'
                     script = (
-                        helpers
-                        + 'chmod() {\ncommand chmod "$@"\n'
-                        + plant
-                        + '}\n'
-                        + 'retain_hardening_rollback "$1"\n'
+                        helpers + 'chmod() {\ncommand chmod "$@"\n' + plant + "}\n" + 'retain_hardening_rollback "$1"\n'
                     )
                     runner.write_text(script, encoding="utf-8")
                     env = dict(os.environ)
@@ -1730,7 +1871,9 @@ class TestInstallReview(unittest.TestCase):
                     env["OPOS_PLANT"] = str(dest)
                     env["OPOS_TARGET"] = str(target)
                     env["DRY"] = "0"
-                    proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
+                    proc = subprocess.run(
+                        ["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30
+                    )
                     self.assertNotEqual(proc.returncode, 0, mode)
                     self.assertIn(mode, ("directory", "symlink"))
                     if mode == "directory":
@@ -1772,6 +1915,7 @@ class TestInstallReview(unittest.TestCase):
     def test_rollback_publication_rejects_destination_replaced_after_staging(self):
         import tempfile
         import pathlib
+
         with tempfile.TemporaryDirectory() as td:
             tmp_path = pathlib.Path(td)
             victim = tmp_path / "victim"
@@ -1793,8 +1937,8 @@ class TestInstallReview(unittest.TestCase):
         cases = [
             ("exit_zero", "exit 0\n", 0, False),
             ("exit_seven", "exit 7\n", 7, False),
-            ("sigint", "true\nkill -INT \"$$\"\n: > \"$CONTINUATION\"\n", 130, True),
-            ("sigterm", "true\nkill -TERM \"$$\"\n: > \"$CONTINUATION\"\n", 143, True),
+            ("sigint", 'true\nkill -INT "$$"\n: > "$CONTINUATION"\n', 130, True),
+            ("sigterm", 'true\nkill -TERM "$$"\n: > "$CONTINUATION"\n', 143, True),
         ]
         for name, ending, want_rc, is_signal in cases:
             with self.subTest(name=name):
@@ -1812,9 +1956,7 @@ class TestInstallReview(unittest.TestCase):
                     continuation = tmp_path / "continued"
                     runner = tmp_path / "run.sh"
                     runner.write_text(
-                        fragment
-                        + "_staging_root=\"$STAGING_ROOT\"\n"
-                        + ending,
+                        fragment + '_staging_root="$STAGING_ROOT"\n' + ending,
                         encoding="utf-8",
                     )
                     env = dict(os.environ)
@@ -1846,10 +1988,11 @@ class TestInstallReview(unittest.TestCase):
 
     def test_rollback_retention_partial_copy_failure_leaves_nothing(self):
         import tempfile
+
         tmp = tempfile.TemporaryDirectory()
         try:
             tmp_path = pathlib.Path(tmp.name)
-            preamble = "cp() { for a in \"$@\"; do last=\"$a\"; done; printf '%s' partial-7 > \"$last\"; return 1; }\n"
+            preamble = 'cp() { for a in "$@"; do last="$a"; done; printf \'%s\' partial-7 > "$last"; return 1; }\n'
             proc, home, dest, helper_bytes = _run_retain_rollback(tmp_path, preamble)
             self.assertNotEqual(proc.returncode, 0)
             self.assertFalse(os.path.lexists(str(dest)))
@@ -1916,6 +2059,7 @@ class TestInstallReview(unittest.TestCase):
     def test_rollback_retention_rejects_replaced_staging_file(self):
         import os, stat, tempfile
         from pathlib import Path
+
         tmp = tempfile.TemporaryDirectory()
         try:
             tmp_path = Path(tmp.name)
@@ -1948,24 +2092,44 @@ class TestInstallReview(unittest.TestCase):
         start = text.index("verified_recovery()")
         end = text.index("do_uninstall()", start)
         helper = text[start:end]
-        self.assertRegex(helper, r'(?m)^\s*\[ "(\$\{UVENV:-\}|\$UVENV)" = "\$OPOS_HOME/venv" \]', "fallback must validate UVENV with strict equality")
-        self.assertRegex(helper, r'(?m)^\s*opos_owned_path "\$UVENV" "\$OPOS_HOME/venv"', "fallback must check trusted venv ownership")
+        self.assertRegex(
+            helper,
+            r'(?m)^\s*\[ "(\$\{UVENV:-\}|\$UVENV)" = "\$OPOS_HOME/venv" \]',
+            "fallback must validate UVENV with strict equality",
+        )
+        self.assertRegex(
+            helper,
+            r'(?m)^\s*opos_owned_path "\$UVENV" "\$OPOS_HOME/venv"',
+            "fallback must check trusted venv ownership",
+        )
         self.assertRegex(helper, r'(?m)^\s*\[ -x "\$UVENV/bin/python" \]', "fallback must check recovery python")
         helper_start = text.index("run_verified_recovery()")
         helper_end = text.index("do_uninstall()", helper_start)
         helper_fn = text[helper_start:helper_end]
         anchor = text.index("do_uninstall()")
         body = text[anchor:]
-        helper_sites = re.findall(r'(?m)^\s*if verified_recovery; then\s*\n\s*_verified=1', helper_fn)
-        body_sites = re.findall(r'(?m)^\s*if verified_recovery; then\s*\n\s*_verified=1', body)
+        helper_sites = re.findall(r"(?m)^\s*if verified_recovery; then\s*\n\s*_verified=1", helper_fn)
+        body_sites = re.findall(r"(?m)^\s*if verified_recovery; then\s*\n\s*_verified=1", body)
         self.assertEqual(len(helper_sites), 1, "execution helper must have one verification site")
         self.assertEqual(len(body_sites), 1, "do_uninstall must retain one dry-run verification site")
-        self.assertEqual(len(helper_sites) + len(body_sites), 2, "must have two verification sites across the two functions")
-        self.assertNotRegex(body, r'(?<![A-Za-z0-9_])UH(?![A-Za-z0-9_])', "must not retain standalone UH cleanup")
-        self.assertRegex(body, r'(?m)^\s*if \[ "\$LAUNCHER" = "\$DEF_LAUNCHER" \]; then\s*\n\s*remove_path "\$LAUNCHER"', "fallback must validate LAUNCHER with strict equality")
-        exec_lines = [line for line in helper_fn.splitlines() if "$UVENV/bin/python" in line and "-m opos.setup" in line]
+        self.assertEqual(
+            len(helper_sites) + len(body_sites), 2, "must have two verification sites across the two functions"
+        )
+        self.assertNotRegex(body, r"(?<![A-Za-z0-9_])UH(?![A-Za-z0-9_])", "must not retain standalone UH cleanup")
+        self.assertRegex(
+            body,
+            r'(?m)^\s*if \[ "\$LAUNCHER" = "\$DEF_LAUNCHER" \]; then\s*\n\s*remove_path "\$LAUNCHER"',
+            "fallback must validate LAUNCHER with strict equality",
+        )
+        exec_lines = [
+            line for line in helper_fn.splitlines() if "$UVENV/bin/python" in line and "-m opos.setup" in line
+        ]
         self.assertEqual(len(exec_lines), 1, "execution helper must run one verified command")
-        preview_lines = [line for line in body.splitlines() if "would run recovery entry point" in line and "$UVENV/bin/python" in line]
+        preview_lines = [
+            line
+            for line in body.splitlines()
+            if "would run recovery entry point" in line and "$UVENV/bin/python" in line
+        ]
         self.assertEqual(len(preview_lines), 1, "dry-run must preview one recovery entry point")
         for fragment, target in ((helper_fn, exec_lines[0]), (body, preview_lines[0])):
             split_lines = fragment.splitlines()
@@ -1975,7 +2139,14 @@ class TestInstallReview(unittest.TestCase):
                 stripped = line.strip()
                 if stripped.startswith("if ") or stripped.startswith("if\t"):
                     stack.append("_verified" in line and "-eq 1" in line)
-                elif stripped == "else" or stripped.startswith("else ") or stripped.startswith("else;") or stripped.startswith("else\t") or stripped.startswith("elif ") or stripped.startswith("elif\t"):
+                elif (
+                    stripped == "else"
+                    or stripped.startswith("else ")
+                    or stripped.startswith("else;")
+                    or stripped.startswith("else\t")
+                    or stripped.startswith("elif ")
+                    or stripped.startswith("elif\t")
+                ):
                     if stack:
                         stack[-1] = False
                 elif stripped == "fi" or stripped.startswith("fi ") or stripped.startswith("fi;"):
@@ -1988,13 +2159,18 @@ class TestInstallReview(unittest.TestCase):
         self.test_fallback_uses_only_trusted_manifest_paths()
         marker = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
         split = text.splitlines()
-        targets = [i for i, line in enumerate(split) if ("$UVENV/bin/python" in line and "-m opos.setup" in line) or ("would run recovery entry point" in line and "$UVENV/bin/python" in line)]
+        targets = [
+            i
+            for i, line in enumerate(split)
+            if ("$UVENV/bin/python" in line and "-m opos.setup" in line)
+            or ("would run recovery entry point" in line and "$UVENV/bin/python" in line)
+        ]
         self.assertEqual(len(targets), 2, "must target execution command and dry-run preview")
         for pos in range(len(targets)):
             with self.subTest(site=pos):
                 idx = targets[pos]
                 moving = split[idx]
-                remaining = split[:idx] + split[idx + 1:]
+                remaining = split[:idx] + split[idx + 1 :]
                 at = next(i for i, line in enumerate(remaining) if marker in line)
                 mutant = "\n".join(remaining[:at] + [moving] + remaining[at:]) + "\n"
                 self.assertNotEqual(mutant, text)
@@ -2006,7 +2182,11 @@ class TestInstallReview(unittest.TestCase):
         text = _read_install_sh()
         self.test_fallback_uses_only_trusted_manifest_paths()
         split = text.splitlines()
-        hits = [i for i, line in enumerate(split) if "would run recovery entry point" in line and "$UVENV/bin/python" in line]
+        hits = [
+            i
+            for i, line in enumerate(split)
+            if "would run recovery entry point" in line and "$UVENV/bin/python" in line
+        ]
         self.assertEqual(len(hits), 1, "must find one dry-run preview")
         idx = hits[0]
         self.assertEqual(split[idx + 1].strip(), "else", "preview must be followed by else")
@@ -2015,10 +2195,10 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(branch=branch):
                 lines = list(split)
                 preview = lines[idx]
-                indent = preview[:len(preview) - len(preview.lstrip())]
+                indent = preview[: len(preview) - len(preview.lstrip())]
                 lines[idx] = indent + ":"
                 nxt = lines[idx + 1]
-                nindent = nxt[:len(nxt) - len(nxt.lstrip())]
+                nindent = nxt[: len(nxt) - len(nxt.lstrip())]
                 lines[idx + 1] = nindent + branch
                 lines.insert(idx + 2, preview)
                 mutant = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
@@ -2084,7 +2264,7 @@ class TestInstallReview(unittest.TestCase):
     def test_uninstall_fallback_survives_unset_uvenv(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall()")
-        head = text[anchor:anchor + 400]
+        head = text[anchor : anchor + 400]
         self.assertRegex(head, r'do_uninstall\(\) \{\n\s*UVENV=""')
 
     def test_uninstall_dry_run_removes_home_once(self):
@@ -2189,11 +2369,26 @@ class TestInstallReview(unittest.TestCase):
                         p.mkdir(parents=True)
                     marker = tmp_path / "ran"
                     launcher = bindir / "opos"
-                    launcher.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+                    launcher.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
                     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                    recorded = subprocess.run(["cksum"], input=launcher.read_bytes(), capture_output=True, check=True).stdout.decode().strip()
-                    (opos / "manifest").write_text("launcher=" + str(launcher) + "\nvenv=" + str(venv) + "\nrepo=\nlauncher_cksum=" + recorded + "\n", encoding="utf-8")
-                    launcher.write_text("#!/bin/sh\n# replaced\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+                    recorded = (
+                        subprocess.run(["cksum"], input=launcher.read_bytes(), capture_output=True, check=True)
+                        .stdout.decode()
+                        .strip()
+                    )
+                    (opos / "manifest").write_text(
+                        "launcher="
+                        + str(launcher)
+                        + "\nvenv="
+                        + str(venv)
+                        + "\nrepo=\nlauncher_cksum="
+                        + recorded
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    launcher.write_text(
+                        '#!/bin/sh\n# replaced\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8"
+                    )
                     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     launcher_before = launcher.read_bytes()
                     manifest_before = (opos / "manifest").read_bytes()
@@ -2202,7 +2397,9 @@ class TestInstallReview(unittest.TestCase):
                     env["OPOS_HOME"] = str(opos)
                     env["OPOS_BIN_DIR"] = str(bindir)
                     env["OPOS_ROOT"] = str(root)
-                    proc = subprocess.run(["sh", str(install), "--uninstall", *flags], capture_output=True, text=True, env=env, timeout=30)
+                    proc = subprocess.run(
+                        ["sh", str(install), "--uninstall", *flags], capture_output=True, text=True, env=env, timeout=30
+                    )
                     self.assertEqual(proc.returncode, 1)
                     self.assertIn("warning: ownership verification failed: " + str(launcher), proc.stderr)
                     self.assertFalse(marker.exists())
@@ -2219,16 +2416,25 @@ class TestInstallReview(unittest.TestCase):
                 p.mkdir(parents=True)
             marker = tmp_path / "ran"
             launcher = bindir / "opos"
-            launcher.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            launcher.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            recorded = subprocess.run(["cksum"], input=launcher.read_bytes(), capture_output=True, check=True).stdout.decode().strip()
-            (opos / "manifest").write_text("launcher=" + str(launcher) + "\nvenv=" + str(venv) + "\nrepo=\nlauncher_cksum=" + recorded + "\n", encoding="utf-8")
+            recorded = (
+                subprocess.run(["cksum"], input=launcher.read_bytes(), capture_output=True, check=True)
+                .stdout.decode()
+                .strip()
+            )
+            (opos / "manifest").write_text(
+                "launcher=" + str(launcher) + "\nvenv=" + str(venv) + "\nrepo=\nlauncher_cksum=" + recorded + "\n",
+                encoding="utf-8",
+            )
             env = dict(os.environ)
             env["HOME"] = str(home)
             env["OPOS_HOME"] = str(opos)
             env["OPOS_BIN_DIR"] = str(bindir)
             env["OPOS_ROOT"] = str(root)
-            proc = subprocess.run(["sh", str(install), "--uninstall", "--dry-run"], capture_output=True, text=True, env=env, timeout=30)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall", "--dry-run"], capture_output=True, text=True, env=env, timeout=30
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertIn("==> would run " + str(launcher) + " uninstall --dry-run", proc.stdout.splitlines())
             self.assertFalse(marker.exists())
@@ -2260,7 +2466,7 @@ class TestInstallReview(unittest.TestCase):
                         value = str(launch_dir)
                     else:
                         outside.write_text(
-                            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$OPOS_TEST_MAL_MARKER\"\nexit 42\n",
+                            '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$OPOS_TEST_MAL_MARKER"\nexit 42\n',
                             encoding="utf-8",
                         )
                         outside.chmod(outside.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -2275,7 +2481,7 @@ class TestInstallReview(unittest.TestCase):
                     if name == "default_launcher" or name == "empty_opos_home":
                         default = bindir / "opos"
                         default.write_text(
-                            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$OPOS_TEST_DEF_MARKER\"\nexit 42\n",
+                            '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$OPOS_TEST_DEF_MARKER"\nexit 42\n',
                             encoding="utf-8",
                         )
                         default.chmod(default.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -2391,14 +2597,16 @@ class TestInstallReview(unittest.TestCase):
                 marker = tmp_path / (tool + ".invoked")
                 markers[tool] = marker
                 stub = stubdir / tool
-                stub.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 1\n", encoding="utf-8")
+                stub.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n', encoding="utf-8")
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             marker = tmp_path / "systemctl.invoked"
             markers["systemctl"] = marker
             stub = stubdir / "systemctl"
             stub.write_text(
-                "#!/bin/sh\ntouch \"" + str(marker) + "\"\n"
-                + 'case "$*" in *list-unit-files*) printf \'opos-server.service disabled\\n\'; exit 0;; esac\n'
+                '#!/bin/sh\ntouch "'
+                + str(marker)
+                + '"\n'
+                + "case \"$*\" in *list-unit-files*) printf 'opos-server.service disabled\\n'; exit 0;; esac\n"
                 + "exit 1\n",
                 encoding="utf-8",
             )
@@ -2457,7 +2665,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[line_start:line_start + used]
+        block = text[line_start : line_start + used]
         self.assertIn(leaf, block)
         self.assertIn("==> restore summary", text)
         for state in ("active", "on", "inactive", "off"):
@@ -2473,9 +2681,17 @@ class TestInstallReview(unittest.TestCase):
                     stubdir.mkdir()
                     log = tmp_path / "ufw.log"
                     stub = stubdir / "ufw"
-                    stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+                    stub.write_text(
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8"
+                    )
                     stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                    script = "OPOS_HOME=\"" + str(opos_home) + "\"\n_firewall=\"failed\"\n" + block + "\nprintf '%s' \"$_firewall\"\n"
+                    script = (
+                        'OPOS_HOME="'
+                        + str(opos_home)
+                        + '"\n_firewall="failed"\n'
+                        + block
+                        + "\nprintf '%s' \"$_firewall\"\n"
+                    )
                     runner = tmp_path / "run.sh"
                     runner.write_text(script, encoding="utf-8")
                     env = dict(os.environ)
@@ -2497,9 +2713,17 @@ class TestInstallReview(unittest.TestCase):
                     stubdir.mkdir()
                     log = tmp_path / "ufw.log"
                     stub = stubdir / "ufw"
-                    stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+                    stub.write_text(
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8"
+                    )
                     stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                    script = "OPOS_HOME=\"" + str(opos_home) + "\"\n_firewall=\"skipped\"\n" + block + "\nprintf '%s' \"$_firewall\"\n"
+                    script = (
+                        'OPOS_HOME="'
+                        + str(opos_home)
+                        + '"\n_firewall="skipped"\n'
+                        + block
+                        + "\nprintf '%s' \"$_firewall\"\n"
+                    )
                     runner = tmp_path / "run.sh"
                     runner.write_text(script, encoding="utf-8")
                     env = dict(os.environ)
@@ -2556,11 +2780,14 @@ class TestInstallReview(unittest.TestCase):
                 marker = tmp_path / (tool + ".invoked")
                 markers[tool] = marker
                 stub = stubdir / tool
-                stub.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 1\n", encoding="utf-8")
+                stub.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n', encoding="utf-8")
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             ctl_marker = tmp_path / "systemctl.invoked"
             ctl_stub = stubdir / "systemctl"
-            ctl_stub.write_text("#!/bin/sh\ntouch \"" + str(ctl_marker) + "\"\ncase \"$*\" in *list-unit-files*) exit 0;; esac\nexit 1\n", encoding="utf-8")
+            ctl_stub.write_text(
+                '#!/bin/sh\ntouch "' + str(ctl_marker) + '"\ncase "$*" in *list-unit-files*) exit 0;; esac\nexit 1\n',
+                encoding="utf-8",
+            )
             ctl_stub.chmod(ctl_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             replaced = fragment.replace(dest_literal, str(dest))
             replaced = replaced.replace(dropin_literal, str(tmp_path / "no-dropin"))
@@ -2572,10 +2799,10 @@ class TestInstallReview(unittest.TestCase):
                 + "is_linger_enabled() { return 1; }\n"
             )
             checks = (
-                "\n[ \"$_sshd\" = \"skipped\" ] || exit 1\n"
-                + "[ \"$_firewall\" = \"skipped\" ] || exit 1\n"
-                + "[ \"$_service\" = \"skipped\" ] || exit 1\n"
-                + "[ \"$_restore_failed\" = \"0\" ] || exit 1\n"
+                '\n[ "$_sshd" = "skipped" ] || exit 1\n'
+                + '[ "$_firewall" = "skipped" ] || exit 1\n'
+                + '[ "$_service" = "skipped" ] || exit 1\n'
+                + '[ "$_restore_failed" = "0" ] || exit 1\n'
             )
             runner = tmp_path / "run.sh"
             runner.write_text(preamble + replaced + checks, encoding="utf-8")
@@ -2589,7 +2816,9 @@ class TestInstallReview(unittest.TestCase):
                 env["USER"] = "opos-test-user"
             proc = subprocess.run(["sh", str(runner)], capture_output=True, text=True, env=env, timeout=30)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("==> restore summary: sshd=skipped firewall=skipped service=skipped", proc.stdout.splitlines())
+            self.assertIn(
+                "==> restore summary: sshd=skipped firewall=skipped service=skipped", proc.stdout.splitlines()
+            )
             self.assertTrue(ctl_marker.is_file())
             for tool, marker in markers.items():
                 self.assertFalse(marker.exists(), tool + " must not run when restoration is skipped")
@@ -2630,7 +2859,7 @@ class TestInstallReview(unittest.TestCase):
                 marker = tmp_path / (tool + ".invoked")
                 markers[tool] = marker
                 stub = stubdir / tool
-                stub.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 1\n", encoding="utf-8")
+                stub.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n', encoding="utf-8")
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             stat_stub = stubdir / "stat"
             stat_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"0 600\"\n", encoding="utf-8")
@@ -2640,7 +2869,10 @@ class TestInstallReview(unittest.TestCase):
             sshd_stub.chmod(sshd_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             ctl_marker = tmp_path / "systemctl.invoked"
             ctl_stub = stubdir / "systemctl"
-            ctl_stub.write_text("#!/bin/sh\ntouch \"" + str(ctl_marker) + "\"\ncase \"$*\" in *list-unit-files*) exit 0;; esac\nexit 1\n", encoding="utf-8")
+            ctl_stub.write_text(
+                '#!/bin/sh\ntouch "' + str(ctl_marker) + '"\ncase "$*" in *list-unit-files*) exit 0;; esac\nexit 1\n',
+                encoding="utf-8",
+            )
             ctl_stub.chmod(ctl_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             replaced = fragment.replace(dest_literal, str(dest))
             replaced = replaced.replace(dropin_literal, str(tmp_path / "no-dropin"))
@@ -2713,7 +2945,7 @@ class TestInstallReview(unittest.TestCase):
                     if tools_present:
                         for tool in ("ufw", "systemctl"):
                             stub = stubdir / tool
-                            stub.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+                            stub.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
                             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     replaced = fragment.replace(dest_literal, str(dest))
                     preamble = (
@@ -2784,7 +3016,7 @@ class TestInstallReview(unittest.TestCase):
             marker = tmp_path / "invoked"
             for tool in ("ufw", "systemctl"):
                 stub = stubdir / tool
-                stub.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+                stub.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             env = dict(os.environ)
             env["PATH"] = str(stubdir)
@@ -2817,7 +3049,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         self.assertIn(prod_dest, block)
         self.assertNotRegex(block, r'>\s*"/etc/ssh/')
         self.assertNotRegex(block, r'>>\s*"/etc/ssh/')
@@ -2837,16 +3069,38 @@ class TestInstallReview(unittest.TestCase):
             ops = tmp_path / "ops.log"
             ops.write_text("", encoding="utf-8")
             prod_prefix = "/etc/" + "ssh/"
+
             def write_stub(path, body):
                 path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
                 path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
             write_stub(stubdir / "stat", "printf '%s\\n' \"0 600\"\n")
-            write_stub(stubdir / "sshd", "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\nexit 0\n")
-            write_stub(stubdir / "mktemp", "printf 'mktemp %s\\n' \"$*\" >> \"" + str(ops) + "\"\nstaged=\"$OPOS_TMPDIR/staged.tmp\"\n: > \"$staged\"\nprintf '%s\\n' \"$staged\"\nexit 0\n")
-            write_stub(stubdir / "cp", "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\ncase \"$*\" in *\"$OPOS_PROD_PREFIX\"*) exit 1;; esac\nexec /bin/cp \"$@\"\n")
-            write_stub(stubdir / "mv", "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\ncase \"$*\" in *\"$OPOS_PROD_PREFIX\"*) exit 1;; esac\nexec /bin/mv \"$@\"\n")
-            write_stub(stubdir / "rm", "printf 'rm %s\\n' \"$*\" >> \"" + str(ops) + "\"\ncase \"$*\" in *\"$OPOS_PROD_PREFIX\"*) exit 1;; esac\nexec /bin/rm \"$@\"\n")
-            script = "_sshd=\"skipped\"\n_sshd_dropin=\"" + str(dropin) + "\"\n" + block + "\nprintf '%s' \"$_sshd\"\n"
+            write_stub(stubdir / "sshd", 'printf \'sshd %s\\n\' "$*" >> "' + str(ops) + '"\nexit 0\n')
+            write_stub(
+                stubdir / "mktemp",
+                'printf \'mktemp %s\\n\' "$*" >> "'
+                + str(ops)
+                + '"\nstaged="$OPOS_TMPDIR/staged.tmp"\n: > "$staged"\nprintf \'%s\\n\' "$staged"\nexit 0\n',
+            )
+            write_stub(
+                stubdir / "cp",
+                'printf \'cp %s\\n\' "$*" >> "'
+                + str(ops)
+                + '"\ncase "$*" in *"$OPOS_PROD_PREFIX"*) exit 1;; esac\nexec /bin/cp "$@"\n',
+            )
+            write_stub(
+                stubdir / "mv",
+                'printf \'mv %s\\n\' "$*" >> "'
+                + str(ops)
+                + '"\ncase "$*" in *"$OPOS_PROD_PREFIX"*) exit 1;; esac\nexec /bin/mv "$@"\n',
+            )
+            write_stub(
+                stubdir / "rm",
+                'printf \'rm %s\\n\' "$*" >> "'
+                + str(ops)
+                + '"\ncase "$*" in *"$OPOS_PROD_PREFIX"*) exit 1;; esac\nexec /bin/rm "$@"\n',
+            )
+            script = '_sshd="skipped"\n_sshd_dropin="' + str(dropin) + '"\n' + block + "\nprintf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
             runner.write_text(script, encoding="utf-8")
             env = dict(os.environ)
@@ -2914,23 +3168,34 @@ class TestInstallReview(unittest.TestCase):
                         marker = tmp_path / (tool + ".invoked")
                         markers[tool] = marker
                         stub = fakebin / tool
-                        stub.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+                        stub.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
                         stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     nft_log = tmp_path / "nft.argv"
                     nft_stub = fakebin / "nft"
                     if nft_ok:
-                        nft_body = "case \"$*\" in \"list tables\") printf '%s\\n' \"" + table_line + "\"\nexit 0;; esac\nexit 1\n"
+                        nft_body = (
+                            'case "$*" in "list tables") printf \'%s\\n\' "' + table_line + '"\nexit 0;; esac\nexit 1\n'
+                        )
                     else:
-                        nft_body = "case \"$*\" in \"list tables\") exit 1;; esac\nexit 1\n"
-                    nft_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(nft_log) + "\"\n" + nft_body, encoding="utf-8")
+                        nft_body = 'case "$*" in "list tables") exit 1;; esac\nexit 1\n'
+                    nft_stub.write_text(
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(nft_log) + '"\n' + nft_body, encoding="utf-8"
+                    )
                     nft_stub.chmod(nft_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     loginctl_log = tmp_path / "loginctl.argv"
                     loginctl_stub = fakebin / "loginctl"
                     if login_ok:
-                        login_body = "case \"$*\" in \"show-user \"*) printf '%s\\n' \"" + linger_line + "\"\nexit 0;; esac\nexit 1\n"
+                        login_body = (
+                            'case "$*" in "show-user "*) printf \'%s\\n\' "'
+                            + linger_line
+                            + '"\nexit 0;; esac\nexit 1\n'
+                        )
                     else:
-                        login_body = "case \"$*\" in \"show-user \"*) exit 1;; esac\nexit 1\n"
-                    loginctl_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(loginctl_log) + "\"\n" + login_body, encoding="utf-8")
+                        login_body = 'case "$*" in "show-user "*) exit 1;; esac\nexit 1\n'
+                    loginctl_stub.write_text(
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(loginctl_log) + '"\n' + login_body,
+                        encoding="utf-8",
+                    )
                     loginctl_stub.chmod(loginctl_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     env = dict(os.environ)
                     env["HOME"] = str(home)
@@ -2963,8 +3228,16 @@ class TestInstallReview(unittest.TestCase):
                             _kind = "other"
                         _data = _artifact_data(str(_p), _kind)
                         snaps[str(_p)] = (_kind, _mode, _data)
-                    venv_inventory = sorted(os.path.relpath(str(_p), str(venv_dir)) for _p in recorded if str(_p) == str(venv_dir) or str(_p).startswith(str(venv_dir) + os.sep))
-                    venv_inventory = sorted(os.path.relpath(os.path.join(_b, _n), str(venv_dir)) for _b, _ds, _fs in os.walk(str(venv_dir)) for _n in _ds + _fs)
+                    venv_inventory = sorted(
+                        os.path.relpath(str(_p), str(venv_dir))
+                        for _p in recorded
+                        if str(_p) == str(venv_dir) or str(_p).startswith(str(venv_dir) + os.sep)
+                    )
+                    venv_inventory = sorted(
+                        os.path.relpath(os.path.join(_b, _n), str(venv_dir))
+                        for _b, _ds, _fs in os.walk(str(venv_dir))
+                        for _n in _ds + _fs
+                    )
                     proc = subprocess.run(
                         ["sh", str(install), "--uninstall", "--dry-run", "--force"],
                         capture_output=True,
@@ -2980,11 +3253,19 @@ class TestInstallReview(unittest.TestCase):
                         self.assertIn(nft_advice, proc.stdout)
                     else:
                         self.assertNotIn(nft_advice, proc.stdout)
-                    self.assertIn("".join(["==> linger is enabled: run sudo loginctl ", "disable", "-linger ", user]), proc.stdout)
+                    self.assertIn(
+                        "".join(["==> linger is enabled: run sudo loginctl ", "disable", "-linger ", user]), proc.stdout
+                    )
                     for tool, marker in markers.items():
                         self.assertFalse(marker.exists(), tool + " must not run during dry-run")
-                    _current = sorted(os.path.relpath(os.path.join(_b, _n), str(venv_dir)) for _b, _ds, _fs in os.walk(str(venv_dir)) for _n in _ds + _fs)
-                    self.assertEqual(sorted(_current), venv_inventory, "virtual-environment inventory must be unchanged")
+                    _current = sorted(
+                        os.path.relpath(os.path.join(_b, _n), str(venv_dir))
+                        for _b, _ds, _fs in os.walk(str(venv_dir))
+                        for _n in _ds + _fs
+                    )
+                    self.assertEqual(
+                        sorted(_current), venv_inventory, "virtual-environment inventory must be unchanged"
+                    )
                     for _p_str, (_kind, _mode, _data) in snaps.items():
                         self.assertTrue(os.path.lexists(_p_str), "artifact must still exist: " + _p_str)
                         _st = os.lstat(_p_str)
@@ -2997,8 +3278,12 @@ class TestInstallReview(unittest.TestCase):
                         else:
                             _now_kind = "other"
                         self.assertEqual(_now_kind, _kind, "artifact type must be unchanged: " + _p_str)
-                        self.assertEqual(stat.S_IMODE(_st.st_mode), _mode, "artifact permissions must be unchanged: " + _p_str)
-                        self.assertEqual(_artifact_data(_p_str, _now_kind), _data, "artifact bytes must be unchanged: " + _p_str)
+                        self.assertEqual(
+                            stat.S_IMODE(_st.st_mode), _mode, "artifact permissions must be unchanged: " + _p_str
+                        )
+                        self.assertEqual(
+                            _artifact_data(_p_str, _now_kind), _data, "artifact bytes must be unchanged: " + _p_str
+                        )
                     self.assertTrue(nft_log.is_file(), "nft probe must run")
                     self.assertTrue(loginctl_log.is_file(), "loginctl probe must run")
                     nft_calls = nft_log.read_text(encoding="utf-8").splitlines()
@@ -3120,9 +3405,15 @@ class TestInstallReview(unittest.TestCase):
             venv_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home / "manifest").write_text(
-                "launcher=" + str(home.parent / "bin" / "opos") + "\n"
-                + "venv=" + str(home / "venv") + "\n"
-                + "repo=" + repo_value + "\n",
+                "launcher="
+                + str(home.parent / "bin" / "opos")
+                + "\n"
+                + "venv="
+                + str(home / "venv")
+                + "\n"
+                + "repo="
+                + repo_value
+                + "\n",
                 encoding="utf-8",
             )
 
@@ -3201,7 +3492,9 @@ class TestInstallReview(unittest.TestCase):
                         "#!/bin/sh\n"
                         # Installer probes recovery python with -c; keep the probe out of the log.
                         + 'if [ "$1" = "-c" ]; then exit 0; fi\n'
-                        + "printf '%s\\n' \"$@\" >> \"" + str(log) + "\"\n"
+                        + 'printf \'%s\\n\' "$@" >> "'
+                        + str(log)
+                        + '"\n'
                         + "exit 42\n",
                         encoding="utf-8",
                     )
@@ -3210,9 +3503,15 @@ class TestInstallReview(unittest.TestCase):
                         launcher.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
                         launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     (opos / "manifest").write_text(
-                        "launcher=" + str(launcher) + "\n"
-                        + "venv=" + str(opos / "venv") + "\n"
-                        + "repo=" + recorded + "\n",
+                        "launcher="
+                        + str(launcher)
+                        + "\n"
+                        + "venv="
+                        + str(opos / "venv")
+                        + "\n"
+                        + "repo="
+                        + recorded
+                        + "\n",
                         encoding="utf-8",
                     )
                     keep = opos / "keep"
@@ -3237,10 +3536,14 @@ class TestInstallReview(unittest.TestCase):
                     )
                     if equivalent:
                         self.assertEqual(proc.returncode, 42, proc.stdout + proc.stderr)
-                        self.assertEqual(log.read_text(encoding="utf-8").splitlines(), ["-m", "opos.setup", "uninstall"])
+                        self.assertEqual(
+                            log.read_text(encoding="utf-8").splitlines(), ["-m", "opos.setup", "uninstall"]
+                        )
                     else:
                         self.assertEqual(proc.returncode, 127 if with_launcher else 1, proc.stdout + proc.stderr)
-                        self.assertIn("repo mismatch: run the uninstaller from the original checkout", proc.stderr.splitlines())
+                        self.assertIn(
+                            "repo mismatch: run the uninstaller from the original checkout", proc.stderr.splitlines()
+                        )
                         self.assertNotIn(recorded, proc.stdout + proc.stderr)
                         self.assertFalse(log.exists())
                     for key, value in before.items():
@@ -3278,9 +3581,15 @@ class TestInstallReview(unittest.TestCase):
                         launcher.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
                         launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     (home / "manifest").write_text(
-                        "launcher=" + str(launcher) + "\n"
-                        + "venv=" + str(home / "venv") + "\n"
-                        + "repo=" + recorded + "\n",
+                        "launcher="
+                        + str(launcher)
+                        + "\n"
+                        + "venv="
+                        + str(home / "venv")
+                        + "\n"
+                        + "repo="
+                        + recorded
+                        + "\n",
                         encoding="utf-8",
                     )
                     env = dict(os.environ)
@@ -3298,7 +3607,11 @@ class TestInstallReview(unittest.TestCase):
 
     def test_recovery_python_ignores_caller_cwd(self):
         text = _read_install_sh()
-        lines = [line for line in text.splitlines() if "-m opos.setup" in line and ("UVENV/bin/python" in line or "_recovery_python" in line)]
+        lines = [
+            line
+            for line in text.splitlines()
+            if "-m opos.setup" in line and ("UVENV/bin/python" in line or "_recovery_python" in line)
+        ]
         self.assertEqual(len(lines), 1, "expected one verified recovery entry point")
         for line in lines:
             self.assertTrue(
@@ -3346,10 +3659,18 @@ class TestInstallReview(unittest.TestCase):
                     stub.write_text(
                         "#!/bin/sh\n"
                         + 'if [ "$1" = "-c" ]; then exit 0; fi\n'
-                        + "printf '%s\\n' \"$*\" >> \"" + str(log) + "\"\n"
-                        + "pwd -P >> \"" + str(log) + "\"\n"
-                        + "printf '%s\\n' \"$PYTHONPATH\" >> \"" + str(log) + "\"\n"
-                        + "printf '%s\\n' \"$PYTHONSAFEPATH\" >> \"" + str(log) + "\"\n"
+                        + 'printf \'%s\\n\' "$*" >> "'
+                        + str(log)
+                        + '"\n'
+                        + 'pwd -P >> "'
+                        + str(log)
+                        + '"\n'
+                        + 'printf \'%s\\n\' "$PYTHONPATH" >> "'
+                        + str(log)
+                        + '"\n'
+                        + 'printf \'%s\\n\' "$PYTHONSAFEPATH" >> "'
+                        + str(log)
+                        + '"\n'
                         + "exit 42\n",
                         encoding="utf-8",
                     )
@@ -3405,7 +3726,9 @@ class TestInstallReview(unittest.TestCase):
                     interp.write_text(
                         "#!/bin/sh\n"
                         + 'if [ "$1" = "-c" ]; then exit 0; fi\n'
-                        + "printf '%s\\n' \"$*\" >> \"" + str(ilog) + "\"\n"
+                        + 'printf \'%s\\n\' "$*" >> "'
+                        + str(ilog)
+                        + '"\n'
                         + "exit 42\n",
                         encoding="utf-8",
                     )
@@ -3416,8 +3739,12 @@ class TestInstallReview(unittest.TestCase):
                         status = int(mode)
                         launcher.write_text(
                             "#!/bin/sh\n"
-                            + "printf '%s\\n' \"$*\" >> \"" + str(llog) + "\"\n"
-                            + "exit " + str(status) + "\n",
+                            + 'printf \'%s\\n\' "$*" >> "'
+                            + str(llog)
+                            + '"\n'
+                            + "exit "
+                            + str(status)
+                            + "\n",
                             encoding="utf-8",
                         )
                         launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -3448,7 +3775,11 @@ class TestInstallReview(unittest.TestCase):
                     is_owned = venv == "owned"
                     if dry and is_owned:
                         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                        want = "==> would run recovery entry point " + str(owned_venv / "bin" / "python") + " uninstall --dry-run"
+                        want = (
+                            "==> would run recovery entry point "
+                            + str(owned_venv / "bin" / "python")
+                            + " uninstall --dry-run"
+                        )
                         self.assertIn(want, proc.stdout.splitlines())
                         self.assertFalse(ilog.exists())
                     elif dry and not is_owned:
@@ -3474,7 +3805,9 @@ class TestInstallReview(unittest.TestCase):
 
     def test_recovery_verification_is_shared(self):
         text = _read_install_sh()
-        self.assertEqual(len(re.findall(r"^verified_recovery\(\)", text, re.MULTILINE)), 1, "exactly one helper definition")
+        self.assertEqual(
+            len(re.findall(r"^verified_recovery\(\)", text, re.MULTILINE)), 1, "exactly one helper definition"
+        )
         start = text.index("verified_recovery()")
         end = text.index("do_uninstall()", start)
         helper = text[start:end]
@@ -3494,20 +3827,26 @@ class TestInstallReview(unittest.TestCase):
         body_calls = re.findall(r"if verified_recovery; then", uninstall_body)
         self.assertEqual(len(helper_calls), 1, "exactly one conditional verification call inside execution helper")
         self.assertEqual(len(body_calls), 1, "exactly one conditional verification call inside do_uninstall")
-        self.assertNotIn('[ -x "$UVENV/bin/python" ]', uninstall_body, "no executable-Python check may remain in do_uninstall")
-
-
+        self.assertNotIn(
+            '[ -x "$UVENV/bin/python" ]', uninstall_body, "no executable-Python check may remain in do_uninstall"
+        )
 
     def test_uninstall_recovery_uses_one_helper(self):
         text = _read_install_sh()
-        self.assertEqual(len(re.findall(r"^run_verified_recovery\(\)", text, re.MULTILINE)), 1, "exactly one execution-helper definition")
+        self.assertEqual(
+            len(re.findall(r"^run_verified_recovery\(\)", text, re.MULTILINE)),
+            1,
+            "exactly one execution-helper definition",
+        )
         verified_start = text.index("verified_recovery()")
         helper_start = text.index("run_verified_recovery()", verified_start)
         uninstall_start = text.index("do_uninstall()", helper_start)
         verified_block = text[verified_start:helper_start]
         helper_block = text[helper_start:uninstall_start]
         uninstall_body = text[uninstall_start:]
-        self.assertRegex(helper_block, r"(?m)^\s*if verified_recovery; then", "execution helper must call verification conditionally")
+        self.assertRegex(
+            helper_block, r"(?m)^\s*if verified_recovery; then", "execution helper must call verification conditionally"
+        )
         self.assertIn("_verified=1", helper_block)
         lines = [line for line in text.splitlines() if "UVENV/bin/python" in line and "-m opos.setup" in line]
         self.assertEqual(len(lines), 1, "exactly one verified recovery command")
@@ -3624,12 +3963,17 @@ class TestInstallReview(unittest.TestCase):
             home = pathlib.Path(tmp) / "home"
             stub = home / "venv" / "bin" / "python"
             stub.parent.mkdir(parents=True, exist_ok=True)
-            stub.write_text("#!/bin/sh\nif [ $# -eq 3 ] && [ \"$1\" = \"-m\" ] && [ \"$2\" = \"opos.setup\" ] && [ \"$3\" = \"uninstall\" ]; then\ntouch \"$OPOS_RECOVERY_MARKER\"\nexit 42\nfi\nexit 1\n", encoding="utf-8")
+            stub.write_text(
+                '#!/bin/sh\nif [ $# -eq 3 ] && [ "$1" = "-m" ] && [ "$2" = "opos.setup" ] && [ "$3" = "uninstall" ]; then\ntouch "$OPOS_RECOVERY_MARKER"\nexit 42\nfi\nexit 1\n',
+                encoding="utf-8",
+            )
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             marker = home / ".recovery_invoked"
             env = dict(os.environ)
             env["OPOS_RECOVERY_MARKER"] = str(marker)
-            proc = subprocess.run([str(stub), "-m", "opos.setup", "uninstall"], capture_output=True, text=True, env=env, timeout=30)
+            proc = subprocess.run(
+                [str(stub), "-m", "opos.setup", "uninstall"], capture_output=True, text=True, env=env, timeout=30
+            )
             self.assertEqual(proc.returncode, 42, "stub must exit with distinctive code")
             self.assertTrue(marker.is_file(), "stub must create marker so dry-run check can fail")
             marker.unlink()
@@ -3689,7 +4033,7 @@ class TestInstallReview(unittest.TestCase):
             marker = tmp_path / "recovery-marker"
             venv_python = home / "venv" / "bin" / "python"
             venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_python.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            venv_python.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             write_manifest(home, str(bindir / "opos"), str(home / "venv"), str(root))
             for tool in ("ufw", "systemctl", "loginctl", "nft", "cp", "sshd"):
@@ -3706,7 +4050,9 @@ class TestInstallReview(unittest.TestCase):
             env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
             if not env.get("USER"):
                 env["USER"] = "opos-test-user"
-            proc = subprocess.run(["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=env, timeout=60)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=env, timeout=60
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertTrue(marker.is_file(), "valid control must execute recovery")
             self.assertIn("==> restore summary:", proc.stdout)
@@ -3724,12 +4070,22 @@ class TestInstallReview(unittest.TestCase):
                         make_venv(home)
                     elif name == "venv_mismatch":
                         make_venv(home)
-                        write_manifest(home, str(home.parent / "bin" / "opos"), str(pathlib.Path(tmp) / "other" / "venv"), str(root))
+                        write_manifest(
+                            home,
+                            str(home.parent / "bin" / "opos"),
+                            str(pathlib.Path(tmp) / "other" / "venv"),
+                            str(root),
+                        )
                     elif name == "python_missing":
                         write_manifest(home, str(home.parent / "bin" / "opos"), str(home / "venv"), str(root))
                     elif name == "repo_mismatch":
                         make_venv(home)
-                        write_manifest(home, str(home.parent / "bin" / "opos"), str(home / "venv"), str(pathlib.Path(tmp) / "elsewhere"))
+                        write_manifest(
+                            home,
+                            str(home.parent / "bin" / "opos"),
+                            str(home / "venv"),
+                            str(pathlib.Path(tmp) / "elsewhere"),
+                        )
                     elif name == "src_missing":
                         bare = pathlib.Path(tmp) / "bare"
                         bare.mkdir()
@@ -3745,7 +4101,9 @@ class TestInstallReview(unittest.TestCase):
                     if name != "python_missing":
                         live_python = home / "venv" / "bin" / "python"
                         if live_python.is_file():
-                            live_python.write_text("#!/bin/sh\ntouch \"" + str(live_marker) + "\"\nexit 0\n", encoding="utf-8")
+                            live_python.write_text(
+                                '#!/bin/sh\ntouch "' + str(live_marker) + '"\nexit 0\n', encoding="utf-8"
+                            )
                             live_python.chmod(live_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     live_fake = pathlib.Path(tmp) / "live-fake"
                     live_fake.mkdir()
@@ -3765,32 +4123,18 @@ class TestInstallReview(unittest.TestCase):
                         live_env.update(extra)
                     if not live_env.get("USER"):
                         live_env["USER"] = "opos-test-user"
-                    live_proc = subprocess.run(["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=live_env, timeout=60)
-                    self.assertEqual(live_proc.returncode, 0, name + " must reach fallback; " + live_proc.stdout + live_proc.stderr)
+                    live_proc = subprocess.run(
+                        ["sh", str(install), "--uninstall", "--force"],
+                        capture_output=True,
+                        text=True,
+                        env=live_env,
+                        timeout=60,
+                    )
+                    self.assertEqual(
+                        live_proc.returncode, 0, name + " must reach fallback; " + live_proc.stdout + live_proc.stderr
+                    )
                     self.assertIn("==> restore summary:", live_proc.stdout, name)
                     self.assertFalse(live_marker.is_file(), name + " must not execute recovery")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     def test_uninstall_refuses_untrusted_sshd_backup(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -3822,7 +4166,13 @@ class TestInstallReview(unittest.TestCase):
                     sentinel_before = sentinel_file.read_bytes()
                     elsewhere = tmp_path / "elsewhere"
                     (opos_home / "manifest").write_text(
-                        "launcher=" + str(launcher) + "\nvenv=" + str(elsewhere / "venv") + "\nrepo=" + str(elsewhere) + "\n",
+                        "launcher="
+                        + str(launcher)
+                        + "\nvenv="
+                        + str(elsewhere / "venv")
+                        + "\nrepo="
+                        + str(elsewhere)
+                        + "\n",
                         encoding="utf-8",
                     )
                     manifest_before = (opos_home / "manifest").read_bytes()
@@ -3849,7 +4199,7 @@ class TestInstallReview(unittest.TestCase):
                     for tool in ("ufw", "systemctl"):
                         stub = fakebin / tool
                         stub.write_text(
-                            "#!/bin/sh\nprintf '%s\\n' \"" + tool + " $*\" >> \"" + str(call_log) + "\"\nexit 0\n",
+                            "#!/bin/sh\nprintf '%s\\n' \"" + tool + ' $*" >> "' + str(call_log) + '"\nexit 0\n',
                             encoding="utf-8",
                         )
                         stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -3885,6 +4235,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertEqual(bak.read_bytes(), bak_bytes)
                     calls = call_log.read_text(encoding="utf-8").splitlines()
                     self.assertEqual(calls, [], "no firewall/service calls allowed")
+
     def test_sshd_restore_block_snippet_restores_trusted_backup(self):
         """Run only the extracted restore snippet, not install.sh --uninstall.
 
@@ -3909,7 +4260,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
             opos_home = tmp_path / "opos"
@@ -3928,12 +4279,14 @@ class TestInstallReview(unittest.TestCase):
             sshd_log = tmp_path / "".join(["sshd", ".log"])
             sshd_log.write_text("", encoding="utf-8")
             sshd_stub = fakebin / "sshd"
-            sshd_stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(sshd_log) + "\"\nexit 0\n", encoding="utf-8")
+            sshd_stub.write_text(
+                '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(sshd_log) + '"\nexit 0\n', encoding="utf-8"
+            )
             sshd_stub.chmod(sshd_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             replaced = block.replace("/etc/ssh/" + "sshd_config", str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
@@ -3985,7 +4338,13 @@ class TestInstallReview(unittest.TestCase):
                     (venv_dir / "".join(["dum", "my"])).write_bytes(b"".join([b"dummy-venv-", b"1"]))
                     elsewhere = tmp_path / "elsewhere"
                     (opos_home / "manifest").write_text(
-                        "launcher=" + str(launcher) + "\nvenv=" + str(elsewhere / "venv") + "\nrepo=" + str(elsewhere) + "\n",
+                        "launcher="
+                        + str(launcher)
+                        + "\nvenv="
+                        + str(elsewhere / "venv")
+                        + "\nrepo="
+                        + str(elsewhere)
+                        + "\n",
                         encoding="utf-8",
                     )
                     dest = tmp_path / "sshd_config"
@@ -4036,11 +4395,17 @@ class TestInstallReview(unittest.TestCase):
                     self.assertTrue(bak.is_symlink(), "backup link must remain a symlink")
                     self.assertEqual(os.readlink(str(bak)), before_link, "backup link target must remain unchanged")
                     after_stat = os.lstat(str(bak))
-                    self.assertEqual(after_stat.st_ino, before_stat.st_ino, "backup link must keep identity (unlink-and-recreate with same target must fail)")
+                    self.assertEqual(
+                        after_stat.st_ino,
+                        before_stat.st_ino,
+                        "backup link must keep identity (unlink-and-recreate with same target must fail)",
+                    )
                     self.assertEqual(after_stat.st_dev, before_stat.st_dev, "backup link device must be preserved")
                     self.assertEqual(after_stat.st_mode, before_stat.st_mode, "backup link metadata must be preserved")
                     if kind == "symlink":
-                        self.assertEqual(real.read_bytes(), real_before, "existing link target must retain original bytes")
+                        self.assertEqual(
+                            real.read_bytes(), real_before, "existing link target must retain original bytes"
+                        )
                     else:
                         self.assertFalse(os.path.lexists(str(missing)), "dangling target must remain absent")
                         self.assertFalse(bak.exists())
@@ -4127,8 +4492,8 @@ class TestInstallReview(unittest.TestCase):
         marker = "".join(["unique-restore-", "marker-7"])
         prefix = 'UH="$OPOS_HOME"\nrmdir "$OPOS_BIN_DIR"\n'
         header = "do_uninstall() {\n"
-        body = "  echo \"" + marker + "\"\n  printf '==> restore summary: %s\\n' \"done\"\n"
-        suffix = "  cmd || true\n  rmdir \"$OPOS_BIN_DIR\"\n}\n"
+        body = '  echo "' + marker + '"\n  printf \'==> restore summary: %s\\n\' "done"\n'
+        suffix = '  cmd || true\n  rmdir "$OPOS_BIN_DIR"\n}\n'
         text = prefix + header + body + suffix
         want = header + body
         self.assertEqual(_uninstall_restore_block(text), want)
@@ -4244,9 +4609,15 @@ class TestInstallReview(unittest.TestCase):
                     stub = fakebin / "ufw"
                     stub.write_text(
                         "#!/bin/sh\n"
-                        + "printf '%s\\n' \"ufw $*\" >> \"" + str(log) + "\"\n"
-                        + "case \"$*\" in *reload*) exit " + str(reload_exit) + ";; esac\n"
-                        + "case \"$*\" in *disable*) exit " + str(disable_exit) + ";; esac\n"
+                        + 'printf \'%s\\n\' "ufw $*" >> "'
+                        + str(log)
+                        + '"\n'
+                        + 'case "$*" in *reload*) exit '
+                        + str(reload_exit)
+                        + ";; esac\n"
+                        + 'case "$*" in *disable*) exit '
+                        + str(disable_exit)
+                        + ";; esac\n"
                         + "exit 0\n",
                         encoding="utf-8",
                     )
@@ -4263,7 +4634,9 @@ class TestInstallReview(unittest.TestCase):
                     env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
                     if not env.get("USER"):
                         env["USER"] = "opos-test-user"
-                    proc = subprocess.run(["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60)
+                    proc = subprocess.run(
+                        ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
+                    )
                     self.assertNotEqual(proc.returncode, 0, name + proc.stdout + proc.stderr)
                     self.assertIn(failed_mark, proc.stdout, name)
                     self.assertEqual(state.read_bytes(), sentinel, name)
@@ -4289,15 +4662,15 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         self.assertIn('sshd -t -f "$OPOS_HOME/sshd_config.bak"', block)
         self.assertIn('[ ! -f "/etc/ssh/sshd_config" ]', block)
 
         def run_block(home, dest, fakebin, extra_env):
             replaced = block.replace("/etc/ssh/sshd_config", str(dest))
             dropin = pathlib.Path(home).parent / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = pathlib.Path(home).parent / "run.sh"
@@ -4349,15 +4722,17 @@ class TestInstallReview(unittest.TestCase):
                     if meta is None:
                         make_stub(fakebin / "stat", "exit 1")
                     else:
-                        make_stub(fakebin / "stat", "printf '%s\\n' \"" + meta + "\"")
+                        make_stub(fakebin / "stat", "printf '%s\\n' \"" + meta + '"')
                     if sshd_body is not None:
-                        body = "printf '%s\\n' \"$@\" >> \"" + str(log) + "\"\n" + sshd_body
+                        body = 'printf \'%s\\n\' "$@" >> "' + str(log) + '"\n' + sshd_body
                         make_stub(fakebin / "sshd", body)
                     if fail_cp:
                         make_stub(
                             fakebin / "cp",
-                            "for a in \"$@\"; do last=\"$a\"; done\n"
-                            + "printf '%s' \"" + "".join(["par", "tial-", "9"]) + "\" > \"$last\"\n"
+                            'for a in "$@"; do last="$a"; done\n'
+                            + "printf '%s' \""
+                            + "".join(["par", "tial-", "9"])
+                            + '" > "$last"\n'
                             + "exit 1",
                         )
                     status = run_block(home, dest, fakebin, {"SSHD_LOG": str(log)})
@@ -4377,7 +4752,14 @@ class TestInstallReview(unittest.TestCase):
                             self.assertIn("-t", logged.split())
                             self.assertIn("-f", logged.split())
                             self.assertIn(str(bak), logged)
-                        if name in ("non-root", "group-write", "other-write", "symlink", "metadata-failure", "copy-failure"):
+                        if name in (
+                            "non-root",
+                            "group-write",
+                            "other-write",
+                            "symlink",
+                            "metadata-failure",
+                            "copy-failure",
+                        ):
                             self.assertTrue(bak.exists() or bak.is_symlink())
                         if name == "copy-failure":
                             self.assertEqual(bak.read_bytes(), bak_b)
@@ -4440,8 +4822,10 @@ class TestInstallReview(unittest.TestCase):
                 write_stub(
                     fakebin / "systemctl",
                     "case \"$*\" in *list-unit-files*) printf 'opos-server.service disabled\\n'\nexit 0;; esac\n"
-                    + "case \"$*\" in *disable*) " + disable_code + ";; esac\n"
-                    + "case \"$*\" in *daemon-reload*) exit 0;; esac\n"
+                    + 'case "$*" in *disable*) '
+                    + disable_code
+                    + ";; esac\n"
+                    + 'case "$*" in *daemon-reload*) exit 0;; esac\n'
                     + "exit 0\n",
                 )
                 for name in ("loginctl", "nft"):
@@ -4454,7 +4838,9 @@ class TestInstallReview(unittest.TestCase):
                 env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
                 if not env.get("USER"):
                     env["USER"] = "opos-test-user"
-                proc = subprocess.run(["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60)
+                proc = subprocess.run(
+                    ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
+                )
                 return proc
 
         proc = run_once(False, False)
@@ -4499,7 +4885,9 @@ class TestInstallReview(unittest.TestCase):
             ufw_log.write_text("", encoding="utf-8")
             ufw_stub = stubdir / "ufw"
             ufw_stub.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(ufw_log) + "\"\n"
+                '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "'
+                + str(ufw_log)
+                + '"\n'
                 + 'case "$*" in "--force disable") exit 0;; esac\n'
                 + 'case "$*" in "reload") exit 0;; esac\n'
                 + "exit 0\n",
@@ -4510,7 +4898,9 @@ class TestInstallReview(unittest.TestCase):
             ctl_log.write_text("", encoding="utf-8")
             ctl_stub = stubdir / "systemctl"
             ctl_stub.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(ctl_log) + "\"\n"
+                '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "'
+                + str(ctl_log)
+                + '"\n'
                 + 'case "$*" in *list-unit-files*--no-legend*opos-server.service*)\n'
                 + "printf 'opos-server.service enabled\\n'\nexit 0;;\n"
                 + "esac\n"
@@ -4561,9 +4951,9 @@ class TestInstallReview(unittest.TestCase):
         anchor = text.index("do_uninstall() {")
         idx = text.index("FOUND=0", anchor)
         leaf = "sshd_config" + ".bak"
-        insert = "\nprintf x > \"$OPOS_HOME/" + leaf + "\""
+        insert = '\nprintf x > "$OPOS_HOME/' + leaf + '"'
         token = "FOUND=0"
-        mutant = text[:idx + len(token)] + insert + text[idx + len(token):]
+        mutant = text[: idx + len(token)] + insert + text[idx + len(token) :]
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
             dropin = tmp_path / "dropin"
@@ -4610,8 +5000,8 @@ class TestInstallReview(unittest.TestCase):
                 write_stub(
                     fakebin / "systemctl",
                     "case \"$*\" in *list-unit-files*) printf 'opos-server.service disabled\\n'\nexit 0;; esac\n"
-                    + "case \"$*\" in *disable*) exit 0;; esac\n"
-                    + "case \"$*\" in *daemon-reload*) exit 0;; esac\n"
+                    + 'case "$*" in *disable*) exit 0;; esac\n'
+                    + 'case "$*" in *daemon-reload*) exit 0;; esac\n'
                     + "exit 0\n",
                 )
                 for name in ("loginctl", "nft"):
@@ -4624,7 +5014,9 @@ class TestInstallReview(unittest.TestCase):
                 env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
                 if not env.get("USER"):
                     env["USER"] = "opos-test-user"
-                proc = subprocess.run(["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60)
+                proc = subprocess.run(
+                    ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
+                )
                 return proc
 
         good = run_once(False)
@@ -4659,7 +5051,10 @@ class TestInstallReview(unittest.TestCase):
             stubs.mkdir()
             for tool in ("cp", "mv", "rm", "mktemp", "stat", "sshd"):
                 stub = stubs / tool
-                stub.write_text("#!/bin/sh\n" + 'case "$*" in *"$OPOS_PROD_PREFIX"*) exit 1;; esac\nexec /bin/' + tool + ' "$@"\n', encoding="utf-8")
+                stub.write_text(
+                    "#!/bin/sh\n" + 'case "$*" in *"$OPOS_PROD_PREFIX"*) exit 1;; esac\nexec /bin/' + tool + ' "$@"\n',
+                    encoding="utf-8",
+                )
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             body = body.replace(prod_dropin, str(dropin)).replace(prod, str(dest))
             script = "ufw() { return 1; }\n" + "systemctl() { return 0; }\n" + "id() { printf '1001\\n'; }\n" + body
@@ -4671,7 +5066,9 @@ class TestInstallReview(unittest.TestCase):
             env["PATH"] = str(stubs) + os.pathsep + env.get("PATH", "")
             proc = subprocess.run(["sh"], input=script, capture_output=True, text=True, env=env, timeout=30)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertIn("==> restore summary: sshd=skipped firewall=failed service=succeeded", proc.stdout.splitlines())
+            self.assertIn(
+                "==> restore summary: sshd=skipped firewall=failed service=succeeded", proc.stdout.splitlines()
+            )
 
     def test_restore_mixed_outcomes_isolates_host_ssh(self):
         src = pathlib.Path(__file__).read_text(encoding="utf-8")
@@ -4723,8 +5120,10 @@ class TestInstallReview(unittest.TestCase):
                 write_stub(
                     fakebin / "systemctl",
                     "case \"$*\" in *list-unit-files*) printf 'opos-server.service disabled\\n'\nexit 0;; esac\n"
-                    + "case \"$*\" in *disable*) " + disable_code + ";; esac\n"
-                    + "case \"$*\" in *daemon-reload*) exit 0;; esac\n"
+                    + 'case "$*" in *disable*) '
+                    + disable_code
+                    + ";; esac\n"
+                    + 'case "$*" in *daemon-reload*) exit 0;; esac\n'
                     + "exit 0\n",
                 )
                 for name in ("loginctl", "nft"):
@@ -4759,7 +5158,19 @@ class TestInstallReview(unittest.TestCase):
             path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
             path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-        def run_case(name, with_file, list_exit, list_out, disable_exit, disable_msg, reload_exit, want_service, want_disable, want_reload, want_rc):
+        def run_case(
+            name,
+            with_file,
+            list_exit,
+            list_out,
+            disable_exit,
+            disable_msg,
+            reload_exit,
+            want_service,
+            want_disable,
+            want_reload,
+            want_rc,
+        ):
             with self.subTest(name=name):
                 with tempfile.TemporaryDirectory() as tmp:
                     tmp_path = pathlib.Path(tmp)
@@ -4777,20 +5188,36 @@ class TestInstallReview(unittest.TestCase):
                     log.write_text("", encoding="utf-8")
                     write_stub(
                         stubdir / "systemctl",
-                        "LOG=\"" + str(log) + "\"\n"
-                        + "UNIT=\"" + str(unit) + "\"\n"
-                        + "HAS=\"absent\"\n"
-                        + "if [ -f \"$UNIT\" ]; then HAS=\"present\"; fi\n"
-                        + "printf '%s|%s\\n' \"$*\" \"$HAS\" >> \"$LOG\"\n"
+                        'LOG="'
+                        + str(log)
+                        + '"\n'
+                        + 'UNIT="'
+                        + str(unit)
+                        + '"\n'
+                        + 'HAS="absent"\n'
+                        + 'if [ -f "$UNIT" ]; then HAS="present"; fi\n'
+                        + 'printf \'%s|%s\\n\' "$*" "$HAS" >> "$LOG"\n'
                         + 'case "$*" in *list-unit-files*)\n'
-                        + "printf '%s' \"" + list_out + "\"\n"
-                        + "exit " + str(list_exit) + ";;\n"
+                        + "printf '%s' \""
+                        + list_out
+                        + '"\n'
+                        + "exit "
+                        + str(list_exit)
+                        + ";;\n"
                         + "esac\n"
                         + 'case "$*" in *disable*)\n'
-                        + "if [ \"" + disable_msg + "\" != \"\" ]; then printf '%s\\n' \"" + disable_msg + "\" >&2; fi\n"
-                        + "exit " + str(disable_exit) + ";;\n"
+                        + 'if [ "'
+                        + disable_msg
+                        + '" != "" ]; then printf \'%s\\n\' "'
+                        + disable_msg
+                        + '" >&2; fi\n'
+                        + "exit "
+                        + str(disable_exit)
+                        + ";;\n"
                         + "esac\n"
-                        + 'case "$*" in *daemon-reload*) exit ' + str(reload_exit) + ";;\n"
+                        + 'case "$*" in *daemon-reload*) exit '
+                        + str(reload_exit)
+                        + ";;\n"
                         + "esac\n"
                         + "exit 0\n",
                     )
@@ -4865,8 +5292,10 @@ class TestInstallReview(unittest.TestCase):
             stub = stubdir / "systemctl"
             stub.write_text(
                 "#!/bin/sh\n"
-                + "printf '%s\\n' \"systemctl $*\" >> \"" + str(log) + "\"\n"
-                + "case \"$*\" in *list-unit-files*) exit 1;; esac\n"
+                + 'printf \'%s\\n\' "systemctl $*" >> "'
+                + str(log)
+                + '"\n'
+                + 'case "$*" in *list-unit-files*) exit 1;; esac\n'
                 + "exit 0\n",
                 encoding="utf-8",
             )
@@ -4915,8 +5344,10 @@ class TestInstallReview(unittest.TestCase):
             stub = stubdir / "systemctl"
             stub.write_text(
                 "#!/bin/sh\n"
-                + "printf '%s\\n' \"systemctl $*\" >> \"" + str(log) + "\"\n"
-                + "case \"$*\" in *list-unit-files*) exit 1;; esac\n"
+                + 'printf \'%s\\n\' "systemctl $*" >> "'
+                + str(log)
+                + '"\n'
+                + 'case "$*" in *list-unit-files*) exit 1;; esac\n'
                 + "exit 0\n",
                 encoding="utf-8",
             )
@@ -4990,28 +5421,40 @@ class TestInstallReview(unittest.TestCase):
                     diag = diags[name]
                     ufw_stub = fakebin / "ufw"
                     if name == "ufw_reload":
-                        ufw_body = "printf '%s\\n' \"ufw $*\" >> \"" + str(log) + "\"\nprintf '%s\\n' \"" + diag + "\" >&2\nexit 1\n"
+                        ufw_body = (
+                            'printf \'%s\\n\' "ufw $*" >> "'
+                            + str(log)
+                            + "\"\nprintf '%s\\n' \""
+                            + diag
+                            + '" >&2\nexit 1\n'
+                        )
                     else:
-                        ufw_body = "printf '%s\\n' \"ufw $*\" >> \"" + str(log) + "\"\nexit 0\n"
+                        ufw_body = 'printf \'%s\\n\' "ufw $*" >> "' + str(log) + '"\nexit 0\n'
                     ufw_stub.write_text("#!/bin/sh\n" + ufw_body, encoding="utf-8")
                     ufw_stub.chmod(ufw_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     ctl_stub = fakebin / "systemctl"
                     disable_diag = diags["service_disable"]
                     reload_diag = diags["daemon_reload"]
                     if name == "service_disable":
-                        disable_action = "printf '%s\\n' \"" + disable_diag + "\" >&2\nexit 1\n"
+                        disable_action = "printf '%s\\n' \"" + disable_diag + '" >&2\nexit 1\n'
                     else:
                         disable_action = "exit 0\n"
                     if name == "daemon_reload":
-                        reload_action = "printf '%s\\n' \"" + reload_diag + "\" >&2\nexit 1\n"
+                        reload_action = "printf '%s\\n' \"" + reload_diag + '" >&2\nexit 1\n'
                     else:
                         reload_action = "exit 0\n"
                     ctl_stub.write_text(
                         "#!/bin/sh\n"
-                        + "printf '%s\\n' \"systemctl $*\" >> \"" + str(log) + "\"\n"
+                        + 'printf \'%s\\n\' "systemctl $*" >> "'
+                        + str(log)
+                        + '"\n'
                         + "case \"$*\" in *list-unit-files*) printf 'opos-server.service disabled\\n'\nexit 0;; esac\n"
-                        + "case \"$*\" in *disable*) " + disable_action + ";; esac\n"
-                        + "case \"$*\" in *daemon-reload*) " + reload_action + ";; esac\n"
+                        + 'case "$*" in *disable*) '
+                        + disable_action
+                        + ";; esac\n"
+                        + 'case "$*" in *daemon-reload*) '
+                        + reload_action
+                        + ";; esac\n"
                         + "exit 0\n",
                         encoding="utf-8",
                     )
@@ -5040,7 +5483,6 @@ class TestInstallReview(unittest.TestCase):
                     else:
                         self.assertIn("service=failed", proc.stdout)
 
-
     def test_uninstall_dir_validation_and_trailing_slash(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -5051,9 +5493,15 @@ class TestInstallReview(unittest.TestCase):
             venv_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home_dir / "manifest").write_text(
-                "launcher=" + str(home_dir.parent / "bin" / "opos") + "\n"
-                + "venv=" + str(home_dir / "venv") + "\n"
-                + "repo=" + str(root) + "\n",
+                "launcher="
+                + str(home_dir.parent / "bin" / "opos")
+                + "\n"
+                + "venv="
+                + str(home_dir / "venv")
+                + "\n"
+                + "repo="
+                + str(root)
+                + "\n",
                 encoding="utf-8",
             )
             env = dict(os.environ)
@@ -5140,14 +5588,20 @@ class TestInstallReview(unittest.TestCase):
                 sentinel_file = sentinel_venv / "".join(["dum", "my"])
                 sentinel_file.write_bytes(b"".join([b"senti", b"nel-venv-", b"9"]))
                 (opos_home / "manifest").write_text(
-                    "launcher=" + str(sentinel_launcher) + "\n"
-                    + "venv=" + str(sentinel_venv) + "\n"
-                    + "repo=" + str(home) + "\n",
+                    "launcher="
+                    + str(sentinel_launcher)
+                    + "\n"
+                    + "venv="
+                    + str(sentinel_venv)
+                    + "\n"
+                    + "repo="
+                    + str(home)
+                    + "\n",
                     encoding="utf-8",
                 )
                 for name in ("ufw", "systemctl", "loginctl", "nft", "cp", "sshd", "stat"):
                     if name == "systemctl":
-                        write_stub(fakebin / name, "case \"$*\" in *list-unit-files*) exit 0;; esac\nexit 0\n")
+                        write_stub(fakebin / name, 'case "$*" in *list-unit-files*) exit 0;; esac\nexit 0\n')
                     elif name == "stat":
                         write_stub(fakebin / name, "printf '%s\\n' \"0 600\"\n")
                     elif name == "sshd":
@@ -5174,7 +5628,7 @@ class TestInstallReview(unittest.TestCase):
                 sentinel.write_bytes(b"".join([b"senti", b"nel-invalid-", b"3"]))
                 for name in ("ufw", "systemctl", "loginctl", "nft", "cp", "sshd", "stat"):
                     if name == "systemctl":
-                        write_stub(fakebin / name, "case \"$*\" in *list-unit-files*) exit 1;; esac\nexit 0\n")
+                        write_stub(fakebin / name, 'case "$*" in *list-unit-files*) exit 1;; esac\nexit 0\n')
                     elif name == "stat":
                         write_stub(fakebin / name, "printf '%s\\n' \"0 600\"\n")
                     elif name == "sshd":
@@ -5219,9 +5673,15 @@ class TestInstallReview(unittest.TestCase):
                 owned_file = owned_venv / "".join(["dum", "my"])
                 owned_file.write_bytes(b"".join([b"owned-venv-", b"4"]))
                 (opos_home / "manifest").write_text(
-                    "launcher=" + str(owned_launcher) + "\n"
-                    + "venv=" + str(owned_venv) + "\n"
-                    + "repo=" + str(home) + "\n",
+                    "launcher="
+                    + str(owned_launcher)
+                    + "\n"
+                    + "venv="
+                    + str(owned_venv)
+                    + "\n"
+                    + "repo="
+                    + str(home)
+                    + "\n",
                     encoding="utf-8",
                 )
                 unrelated = outside / "".join(["unre", "lated-keep"])
@@ -5232,7 +5692,7 @@ class TestInstallReview(unittest.TestCase):
                 home_sentinel.write_bytes(b"".join([b"senti", b"nel-home-", b"8"]))
                 for name in ("ufw", "systemctl", "loginctl", "nft", "cp", "sshd", "stat"):
                     if name == "systemctl":
-                        write_stub(fakebin / name, "case \"$*\" in *list-unit-files*) exit 0;; esac\nexit 0\n")
+                        write_stub(fakebin / name, 'case "$*" in *list-unit-files*) exit 0;; esac\nexit 0\n')
                     elif name == "stat":
                         write_stub(fakebin / name, "printf '%s\\n' \"0 600\"\n")
                     elif name == "sshd":
@@ -5249,9 +5709,10 @@ class TestInstallReview(unittest.TestCase):
                 self.assertEqual(unrelated.read_bytes(), b"".join([b"senti", b"nel-keep-", b"5"]))
                 self.assertTrue(bin_sentinel.is_file(), "unrelated bindir sentinel must survive successful uninstall")
                 self.assertEqual(bin_sentinel.read_bytes(), b"".join([b"senti", b"nel-bin-", b"6"]))
-                self.assertTrue(home_sentinel.is_file(), "unrelated opos_home sentinel must survive successful uninstall")
+                self.assertTrue(
+                    home_sentinel.is_file(), "unrelated opos_home sentinel must survive successful uninstall"
+                )
                 self.assertEqual(home_sentinel.read_bytes(), b"".join([b"senti", b"nel-home-", b"8"]))
-
 
     def test_uninstall_dir_validation_isolated(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -5263,9 +5724,15 @@ class TestInstallReview(unittest.TestCase):
             venv_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home_dir / "manifest").write_text(
-                "launcher=" + str(home_dir.parent / "bin" / "opos") + "\n"
-                + "venv=" + str(home_dir / "venv") + "\n"
-                + "repo=" + str(root) + "\n",
+                "launcher="
+                + str(home_dir.parent / "bin" / "opos")
+                + "\n"
+                + "venv="
+                + str(home_dir / "venv")
+                + "\n"
+                + "repo="
+                + str(root)
+                + "\n",
                 encoding="utf-8",
             )
             env = dict(os.environ)
@@ -5324,9 +5791,15 @@ class TestInstallReview(unittest.TestCase):
             venv_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home / "manifest").write_text(
-                "launcher=" + str(custom_launcher) + "\n"
-                + "venv=" + str(home / "venv") + "\n"
-                + "repo=" + str(root) + "\n",
+                "launcher="
+                + str(custom_launcher)
+                + "\n"
+                + "venv="
+                + str(home / "venv")
+                + "\n"
+                + "repo="
+                + str(root)
+                + "\n",
                 encoding="utf-8",
             )
             for name in ("ufw", "loginctl", "nft"):
@@ -5373,7 +5846,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         self.assertIn('mktemp "/etc/ssh/sshd_config.opos.XXXXXX"', block)
         self.assertIn("cp -p", block)
         self.assertIn('sshd -t -f "$_sshd_tmp"', block)
@@ -5405,44 +5878,48 @@ class TestInstallReview(unittest.TestCase):
             if mode == "copy-fail":
                 make_stub(
                     fakebin / "cp",
-                    "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "for a in \"$@\"; do last=\"$a\"; done\n"
-                    + "printf '%s' \"" + "".join(["par", "tial-", "9"]) + "\" > \"$last\"\n"
+                    'printf \'cp %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
+                    + 'for a in "$@"; do last="$a"; done\n'
+                    + "printf '%s' \""
+                    + "".join(["par", "tial-", "9"])
+                    + '" > "$last"\n'
                     + "exit 1",
                 )
             else:
                 make_stub(
                     fakebin / "cp",
-                    "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "exec /bin/cp \"$@\"",
+                    'printf \'cp %s\\n\' "$*" >> "' + str(ops) + '"\n' + 'exec /bin/cp "$@"',
                 )
             if mode == "validation-fail":
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
+                    'printf \'sshd %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
                     + 'case "$*" in *.bak*) exit 0;; esac\n'
                     + "exit 1",
                 )
             else:
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 0",
+                    'printf \'sshd %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 0",
                 )
             if mode == "rename-fail":
                 make_stub(
                     fakebin / "mv",
-                    "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 1",
+                    'printf \'mv %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 1",
                 )
             else:
                 make_stub(
                     fakebin / "mv",
-                    "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "exec /bin/mv \"$@\"",
+                    'printf \'mv %s\\n\' "$*" >> "' + str(ops) + '"\n' + 'exec /bin/mv "$@"',
                 )
             replaced = block.replace("/etc/ssh/sshd_config", str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
@@ -5489,7 +5966,6 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
 
-
     def test_sshd_restore_stages_before_replacing_active_config(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -5508,7 +5984,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         dest_literal = "/etc/" + "ssh/" + "sshd_config"
         bak_leaf = "".join(["sshd_config", ".bak"])
         live_leaf = "".join(["sshd_config", ".live"])
@@ -5536,26 +6012,32 @@ class TestInstallReview(unittest.TestCase):
             if cp_mode == "partial":
                 make_stub(
                     fakebin / "cp",
-                    "for a in \"$@\"; do last=\"$a\"; done\n"
-                    + "src=\"$(eval echo \\${$(($# - 1))})\"\n"
-                    + "head -c 2 \"$src\" > \"$last\"\n"
+                    'for a in "$@"; do last="$a"; done\n'
+                    + 'src="$(eval echo \\${$(($# - 1))})"\n'
+                    + 'head -c 2 "$src" > "$last"\n'
                     + "exit 1",
                 )
             elif cp_mode == "mismatch":
                 make_stub(
                     fakebin / "cp",
-                    "for a in \"$@\"; do last=\"$a\"; done\n"
-                    + "printf '%s' \"" + "".join(["wro", "ng-bytes-", "9"]) + "\" > \"$last\"\n"
+                    'for a in "$@"; do last="$a"; done\n'
+                    + "printf '%s' \""
+                    + "".join(["wro", "ng-bytes-", "9"])
+                    + '" > "$last"\n'
                     + "exit 0",
                 )
             else:
-                make_stub(fakebin / "cp", "exec /bin/cp \"$@\"")
+                make_stub(fakebin / "cp", 'exec /bin/cp "$@"')
             observed = tmp_path / "observed-live"
             if sshd_reject_staged:
                 make_stub(
                     fakebin / "sshd",
-                    "for a in \"$@\"; do last=\"$a\"; done\n"
-                    + 'case "$last" in *.opos.*) cat "' + str(dest) + '" > "' + str(observed) + '"\n'
+                    'for a in "$@"; do last="$a"; done\n'
+                    + 'case "$last" in *.opos.*) cat "'
+                    + str(dest)
+                    + '" > "'
+                    + str(observed)
+                    + '"\n'
                     + "exit 1;; esac\n"
                     + 'case "$*" in *.bak*) exit 0;; esac\n'
                     + "exit 0",
@@ -5563,18 +6045,22 @@ class TestInstallReview(unittest.TestCase):
             else:
                 make_stub(
                     fakebin / "sshd",
-                    "for a in \"$@\"; do last=\"$a\"; done\n"
-                    + 'case "$last" in *.opos.*) cat "' + str(dest) + '" > "' + str(observed) + '"\n'
+                    'for a in "$@"; do last="$a"; done\n'
+                    + 'case "$last" in *.opos.*) cat "'
+                    + str(dest)
+                    + '" > "'
+                    + str(observed)
+                    + '"\n'
                     + "exit 0;; esac\n"
                     + "exit 0",
                 )
             replaced = block.replace(dest_literal, str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf 'sshd=%s\\n' \"$_sshd\"\n"
-            script += "[ \"$_sshd\" = failed ] && exit 1\n"
+            script += '[ "$_sshd" = failed ] && exit 1\n'
             script += "exit 0\n"
             runner = tmp_path / "run.sh"
             runner.write_text(script, encoding="utf-8")
@@ -5595,7 +6081,9 @@ class TestInstallReview(unittest.TestCase):
             ("sshd_rejects_staged", "ok", True),
         ):
             with self.subTest(name=name):
-                tmp, proc, dest_b, bak_now, leftovers, live_copy_exists, live_b, bak_b, observed_b = run_case(cp_mode, sshd_reject)
+                tmp, proc, dest_b, bak_now, leftovers, live_copy_exists, live_b, bak_b, observed_b = run_case(
+                    cp_mode, sshd_reject
+                )
                 try:
                     self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
                     self.assertIn("sshd=failed", proc.stdout, name)
@@ -5639,7 +6127,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         self.assertIn('mktemp "/etc/ssh/sshd_config.opos.XXXXXX"', block)
         self.assertIn("cp -p", block)
         self.assertIn('sshd -t -f "$_sshd_tmp"', block)
@@ -5671,47 +6159,60 @@ class TestInstallReview(unittest.TestCase):
             if mode in ("copy-fail", "copy-incomplete-success"):
                 make_stub(
                     fakebin / "cp",
-                    "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "for a in \"$@\"; do last=\"$a\"; done\n"
-                    + "printf '%s' \"" + "".join(["par", "tial-", "9"]) + "\" > \"$last\"\n"
+                    'printf \'cp %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
+                    + 'for a in "$@"; do last="$a"; done\n'
+                    + "printf '%s' \""
+                    + "".join(["par", "tial-", "9"])
+                    + '" > "$last"\n'
                     + ("exit 1" if mode == "copy-fail" else "exit 0"),
                 )
             else:
                 make_stub(
                     fakebin / "cp",
-                    "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "exec /bin/cp \"$@\"",
+                    'printf \'cp %s\\n\' "$*" >> "' + str(ops) + '"\n' + 'exec /bin/cp "$@"',
                 )
             if mode == "validation-fail":
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
+                    'printf \'sshd %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
                     + 'case "$*" in *.bak*) exit 0;; esac\n'
                     + "exit 1",
                 )
             else:
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 0",
+                    'printf \'sshd %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 0",
                 )
             if mode == "rename-fail":
                 make_stub(
                     fakebin / "mv",
-                    "if [ ! -f \"" + str(bak) + "\" ]; then exit 99; fi\n"
-                    + "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
+                    'if [ ! -f "'
+                    + str(bak)
+                    + '" ]; then exit 99; fi\n'
+                    + 'printf \'mv %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
                     + "exit 1",
                 )
             else:
                 make_stub(
                     fakebin / "mv",
-                    "if [ ! -f \"" + str(bak) + "\" ]; then exit 99; fi\n"
-                    + "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "exec /bin/mv \"$@\"",
+                    'if [ ! -f "'
+                    + str(bak)
+                    + '" ]; then exit 99; fi\n'
+                    + 'printf \'mv %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
+                    + 'exec /bin/mv "$@"',
                 )
             replaced = block.replace("/etc/ssh/" + "sshd_config", str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
@@ -5781,7 +6282,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
 
         def make_stub(path, body):
             path.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8")
@@ -5808,37 +6309,46 @@ class TestInstallReview(unittest.TestCase):
             make_stub(fakebin / "stat", "printf '%s\\n' \"0 600\"")
             make_stub(
                 fakebin / "cp",
-                "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                + "exec /bin/cp \"$@\"",
+                'printf \'cp %s\\n\' "$*" >> "' + str(ops) + '"\n' + 'exec /bin/cp "$@"',
             )
             make_stub(
                 fakebin / "sshd",
-                "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 0",
+                'printf \'sshd %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 0",
             )
             if mode == "success":
                 make_stub(
                     fakebin / "mv",
-                    "cmp -s \"" + str(live_copy) + "\" \"" + str(dest) + "\" || exit 99\n"
-                    + "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "exec /bin/mv \"$@\"",
+                    'cmp -s "'
+                    + str(live_copy)
+                    + '" "'
+                    + str(dest)
+                    + '" || exit 99\n'
+                    + 'printf \'mv %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
+                    + 'exec /bin/mv "$@"',
                 )
             elif mode == "verify-fail":
                 make_stub(
                     fakebin / "mv",
-                    "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "/bin/mv \"$@\"\n"
-                    + "printf 'corrupt' > \"" + str(dest) + "\"\n"
+                    'printf \'mv %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
+                    + '/bin/mv "$@"\n'
+                    + "printf 'corrupt' > \""
+                    + str(dest)
+                    + '"\n'
                     + "exit 0",
                 )
             else:
                 make_stub(
                     fakebin / "mv",
-                    "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 1",
+                    'printf \'mv %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 1",
                 )
             replaced = block.replace("/etc/ssh/" + "sshd_config", str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
@@ -5853,10 +6363,26 @@ class TestInstallReview(unittest.TestCase):
             bak_now = bak.read_bytes() if (bak.exists() or bak.is_symlink()) else None
             live_now = live_copy.read_bytes() if (live_copy.exists() or live_copy.is_symlink()) else None
             live_exists = os.path.lexists(str(live_copy))
-            return tmp, proc.stdout, proc.stderr, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy
+            return (
+                tmp,
+                proc.stdout,
+                proc.stderr,
+                dest_b,
+                bak_now,
+                live_now,
+                live_exists,
+                names,
+                live_b,
+                bak_b,
+                bak,
+                dest,
+                live_copy,
+            )
 
         with self.subTest(mode="success"):
-            tmp, status, err, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy = run_mode("success")
+            tmp, status, err, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy = (
+                run_mode("success")
+            )
             try:
                 self.assertEqual(status, "succeeded")
                 self.assertEqual(dest_b, bak_b)
@@ -5866,7 +6392,9 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
         with self.subTest(mode="verify-fail"):
-            tmp, status, err, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy = run_mode("verify-fail")
+            tmp, status, err, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy = (
+                run_mode("verify-fail")
+            )
             try:
                 self.assertEqual(status, "failed")
                 self.assertEqual(live_now, live_b)
@@ -5876,7 +6404,9 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
         with self.subTest(mode="rename-fail"):
-            tmp, status, err, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy = run_mode("rename-fail")
+            tmp, status, err, dest_b, bak_now, live_now, live_exists, names, live_b, bak_b, bak, dest, live_copy = (
+                run_mode("rename-fail")
+            )
             try:
                 self.assertEqual(status, "failed")
                 self.assertEqual(dest_b, live_b)
@@ -5904,7 +6434,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         dest_literal = "/etc/ssh/" + "sshd_config"
         bak_leaf = "".join(["sshd_config", ".bak"])
         live_leaf = "".join(["sshd_config", ".live"])
@@ -5933,13 +6463,22 @@ class TestInstallReview(unittest.TestCase):
             ops.write_text("", encoding="utf-8")
             corrupt_b = b"".join([b"cor", b"rupt-9"])
             make_stub(fakebin / "stat", "printf '%s\\n' \"0 600\"")
-            make_stub(fakebin / "sshd", "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\nexit 0")
-            make_stub(fakebin / "cp", "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\nexec /bin/cp \"$@\"")
-            make_stub(fakebin / "mv", "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n/bin/mv \"$@\"\nprintf '%s' \"" + corrupt_b.decode() + "\" > \"" + str(dest) + "\"\nexit 0")
+            make_stub(fakebin / "sshd", 'printf \'sshd %s\\n\' "$*" >> "' + str(ops) + '"\nexit 0')
+            make_stub(fakebin / "cp", 'printf \'cp %s\\n\' "$*" >> "' + str(ops) + '"\nexec /bin/cp "$@"')
+            make_stub(
+                fakebin / "mv",
+                'printf \'mv %s\\n\' "$*" >> "'
+                + str(ops)
+                + '"\n/bin/mv "$@"\nprintf \'%s\' "'
+                + corrupt_b.decode()
+                + '" > "'
+                + str(dest)
+                + '"\nexit 0',
+            )
             replaced = block.replace(dest_literal, str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
@@ -5977,7 +6516,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[start:start + used]
+        block = text[start : start + used]
         dest_literal = "/etc/ssh/" + "sshd_config"
         bak_leaf = "".join(["sshd_config", ".bak"])
         staged_leaf = "".join(["sshd", "_config"])
@@ -6007,48 +6546,62 @@ class TestInstallReview(unittest.TestCase):
             make_stub(fakebin / "stat", "printf '%s\\n' \"0 600\"")
             make_stub(
                 fakebin / "cp",
-                "printf 'cp %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                + "exec /bin/cp \"$@\"",
+                'printf \'cp %s\\n\' "$*" >> "' + str(ops) + '"\n' + 'exec /bin/cp "$@"',
             )
             if mode == "dir":
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
+                    'printf \'sshd %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
                     + 'case "$*" in *.bak*) exit 0;; esac\n'
-                    + "rm -rf \"" + str(dest) + "\"\n"
-                    + "mkdir -p \"" + str(dest) + "\"\n"
+                    + 'rm -rf "'
+                    + str(dest)
+                    + '"\n'
+                    + 'mkdir -p "'
+                    + str(dest)
+                    + '"\n'
                     + "exit 0",
                 )
             elif mode == "symlink-dir":
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
+                    'printf \'sshd %s\\n\' "$*" >> "'
+                    + str(ops)
+                    + '"\n'
                     + 'case "$*" in *.bak*) exit 0;; esac\n'
-                    + "mkdir -p \"" + str(target_dir) + "\"\n"
-                    + "rm -rf \"" + str(dest) + "\"\n"
-                    + "ln -s \"" + str(target_dir) + "\" \"" + str(dest) + "\"\n"
+                    + 'mkdir -p "'
+                    + str(target_dir)
+                    + '"\n'
+                    + 'rm -rf "'
+                    + str(dest)
+                    + '"\n'
+                    + 'ln -s "'
+                    + str(target_dir)
+                    + '" "'
+                    + str(dest)
+                    + '"\n'
                     + "exit 0",
                 )
             else:
                 make_stub(
                     fakebin / "sshd",
-                    "printf 'sshd %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 0",
+                    'printf \'sshd %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 0",
                 )
             if mode == "false-success-mv":
                 make_stub(
                     fakebin / "mv",
-                    "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n" + "exit 0",
+                    'printf \'mv %s\\n\' "$*" >> "' + str(ops) + '"\n' + "exit 0",
                 )
             else:
                 make_stub(
                     fakebin / "mv",
-                    "printf 'mv %s\\n' \"$*\" >> \"" + str(ops) + "\"\n"
-                    + "exec /bin/mv \"$@\"",
+                    'printf \'mv %s\\n\' "$*" >> "' + str(ops) + '"\n' + 'exec /bin/mv "$@"',
                 )
             replaced = block.replace(dest_literal, str(dest))
             dropin = tmp_path / "no-dropin"
-            script = "_sshd=\"skipped\"\n"
-            script += "_sshd_dropin=\"" + str(dropin) + "\"\n"
+            script = '_sshd="skipped"\n'
+            script += '_sshd_dropin="' + str(dropin) + '"\n'
             script += replaced + "\n"
             script += "printf '%s' \"$_sshd\"\n"
             runner = tmp_path / "run.sh"
@@ -6163,38 +6716,46 @@ class TestInstallReview(unittest.TestCase):
 
                     write_stub(
                         stubdir / "id",
-                        "if [ \"$#\" -eq 1 ]; then printf '%s\\n' \"$OPOS_TEST_CURRENT_UID\"\nexit 0\nfi\n"
-                        + "if [ \"$OPOS_TEST_TARGET_OK\" = \"1\" ]; then printf '%s\\n' \"$OPOS_TEST_TARGET_UID\"\nexit 0\nfi\n"
+                        'if [ "$#" -eq 1 ]; then printf \'%s\\n\' "$OPOS_TEST_CURRENT_UID"\nexit 0\nfi\n'
+                        + 'if [ "$OPOS_TEST_TARGET_OK" = "1" ]; then printf \'%s\\n\' "$OPOS_TEST_TARGET_UID"\nexit 0\nfi\n'
                         + "exit 1\n",
                     )
                     write_stub(
                         stubdir / "getent",
-                        "if [ \"$OPOS_TEST_TARGET_OK\" != \"1\" ]; then exit 2\nfi\n"
-                        + "if [ \"$1\" = \"passwd\" ]; then printf '%s:x:%s:1001::%s:/bin/sh\\n' \"$2\" \"$OPOS_TEST_TARGET_UID\" \"$OPOS_TEST_USER_HOME\"\nexit 0\nfi\n"
+                        'if [ "$OPOS_TEST_TARGET_OK" != "1" ]; then exit 2\nfi\n'
+                        + 'if [ "$1" = "passwd" ]; then printf \'%s:x:%s:1001::%s:/bin/sh\\n\' "$2" "$OPOS_TEST_TARGET_UID" "$OPOS_TEST_USER_HOME"\nexit 0\nfi\n'
                         + "exit 2\n",
                     )
                     write_stub(
                         stubdir / "sudo",
-                        "printf '%s\\n' \"$*\" >> \"" + str(sudo_log) + "\"\n"
-                        + "if [ \"$1\" != \"-u\" ]; then exit 1\nfi\n"
-                        + "if [ -z \"$2\" ]; then exit 1\nfi\n"
+                        'printf \'%s\\n\' "$*" >> "'
+                        + str(sudo_log)
+                        + '"\n'
+                        + 'if [ "$1" != "-u" ]; then exit 1\nfi\n'
+                        + 'if [ -z "$2" ]; then exit 1\nfi\n'
                         + "shift 2\n"
-                        + "exec \"$@\"\n",
+                        + 'exec "$@"\n',
                     )
                     write_stub(
                         stubdir / "systemctl",
-                        "printf '%s\\n' \"systemctl $* HOME=$HOME XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-} DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-} LC_ALL=${LC_ALL:-}\" >> \"" + str(ctl_log) + "\"\n"
+                        'printf \'%s\\n\' "systemctl $* HOME=$HOME XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-} DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-} LC_ALL=${LC_ALL:-}" >> "'
+                        + str(ctl_log)
+                        + '"\n'
                         + "case \"$*\" in *list-unit-files*) printf 'opos-server.service disabled\\n'\nexit 0;; esac\n"
                         + "exit 0\n",
                     )
                     write_stub(
                         stubdir / "rm",
-                        "printf '%s\\n' \"rm $*\" >> \"" + str(rm_log) + "\"\n"
-                        + "for a in \"$@\"; do case \"$a\" in -*) ;; \"$OPOS_TEST_ROOT_UNIT\"|\"$OPOS_TEST_USER_UNIT\") ;; *) exit 1;; esac; done\n"
-                        + "exec /bin/rm \"$@\"\n",
+                        'printf \'%s\\n\' "rm $*" >> "'
+                        + str(rm_log)
+                        + '"\n'
+                        + 'for a in "$@"; do case "$a" in -*) ;; "$OPOS_TEST_ROOT_UNIT"|"$OPOS_TEST_USER_UNIT") ;; *) exit 1;; esac; done\n'
+                        + 'exec /bin/rm "$@"\n',
                     )
                     runner = tmp_path / "run.sh"
-                    runner.write_text("_service=\"skipped\"\n" + block + "\nprintf '%s' \"$_service\"\n", encoding="utf-8")
+                    runner.write_text(
+                        '_service="skipped"\n' + block + "\nprintf '%s' \"$_service\"\n", encoding="utf-8"
+                    )
                     env = dict(os.environ)
                     env.pop("SUDO_USER", None)
                     if sudo_user:
@@ -6256,7 +6817,9 @@ class TestInstallReview(unittest.TestCase):
                     else:
                         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                         self.assertEqual(proc.stdout, "skipped")
-                        self.assertIn("service cleanup skipped: no original non-root user could be resolved", proc.stderr)
+                        self.assertIn(
+                            "service cleanup skipped: no original non-root user could be resolved", proc.stderr
+                        )
                         self.assertEqual(sudo_lines, [])
                         self.assertEqual(ctl_lines, [])
                         self.assertEqual(rm_lines, [])
@@ -6309,26 +6872,32 @@ class TestInstallReview(unittest.TestCase):
                     current_uid = "0" if use_sudo else target_uid
                     write_stub(
                         stubdir / "id",
-                        "if [ \"$#\" -eq 0 ]; then printf '%s\\n' \"$OPOS_CURRENT_UID\"\nexit 0\nfi\n"
-                        + "if [ \"$#\" -eq 1 ]; then printf '%s\\n' \"" + target_uid + "\"\nexit 0\nfi\nexit 1\n",
+                        'if [ "$#" -eq 0 ]; then printf \'%s\\n\' "$OPOS_CURRENT_UID"\nexit 0\nfi\n'
+                        + 'if [ "$#" -eq 1 ]; then printf \'%s\\n\' "'
+                        + target_uid
+                        + '"\nexit 0\nfi\nexit 1\n',
                     )
                     write_stub(
                         stubdir / "getent",
-                        "if [ \"$1\" = \"passwd\" ]; then printf '%s:x:%s:1001::%s:/bin/sh\\n' \"$2\" \"" + target_uid + "\" \"$OPOS_TARGET_HOME\"\nexit 0\nfi\nexit 2\n",
+                        'if [ "$1" = "passwd" ]; then printf \'%s:x:%s:1001::%s:/bin/sh\\n\' "$2" "'
+                        + target_uid
+                        + '" "$OPOS_TARGET_HOME"\nexit 0\nfi\nexit 2\n',
                     )
                     write_stub(
                         stubdir / "sudo",
-                        "if [ \"$1\" != \"-u\" ]; then exit 1\nfi\nshift 2\nexec \"$@\"\n",
+                        'if [ "$1" != "-u" ]; then exit 1\nfi\nshift 2\nexec "$@"\n',
                     )
                     if with_ctl:
                         write_stub(
                             stubdir / "systemctl",
-                            "printf '%s\\n' \"systemctl $*\" >> \"" + str(ctl_log) + "\"\n"
-                            + "case \"$*\" in *list-unit-files*) exit 1;; esac\nexit 0\n",
+                            'printf \'%s\\n\' "systemctl $*" >> "'
+                            + str(ctl_log)
+                            + '"\n'
+                            + 'case "$*" in *list-unit-files*) exit 1;; esac\nexit 0\n',
                         )
                     write_stub(
                         stubdir / "rm",
-                        "printf '%s\\n' \"rm $*\" >> \"" + str(rm_log) + "\"\nexec /bin/rm \"$@\"\n",
+                        'printf \'%s\\n\' "rm $*" >> "' + str(rm_log) + '"\nexec /bin/rm "$@"\n',
                     )
                     for tool in ("cut", "grep", "env"):
                         found = None
@@ -6340,7 +6909,9 @@ class TestInstallReview(unittest.TestCase):
                         self.assertIsNotNone(found, tool)
                         os.symlink(found, str(stubdir / tool))
                     runner = tmp_path / "run.sh"
-                    runner.write_text("_service=\"skipped\"\n" + block + "\nprintf '%s' \"$_service\"\n", encoding="utf-8")
+                    runner.write_text(
+                        '_service="skipped"\n' + block + "\nprintf '%s' \"$_service\"\n", encoding="utf-8"
+                    )
                     env = dict(os.environ)
                     env.pop("SUDO_USER", None)
                     if use_sudo:
@@ -6461,7 +7032,6 @@ class TestInstallReview(unittest.TestCase):
                             found += 1
         self.assertEqual(found, 2, "expected two bounded uninstall runs")
 
-
     def test_failed_firewall_restore_preserves_state_for_retry(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         state_name = "".join(["fire", "wall.state"])
@@ -6485,7 +7055,7 @@ class TestInstallReview(unittest.TestCase):
             log = tmp_path / "ufw.log"
             log.write_text("", encoding="utf-8")
             ufw = stubdir / "ufw"
-            ufw.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 1\n", encoding="utf-8")
+            ufw.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 1\n', encoding="utf-8")
             ufw.chmod(ufw.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             ctl = stubdir / "systemctl"
             ctl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -6498,18 +7068,21 @@ class TestInstallReview(unittest.TestCase):
             env["PATH"] = str(stubdir) + os.pathsep + env.get("PATH", "")
             if not env.get("USER"):
                 env["USER"] = "opos-test-user"
-            proc = subprocess.run(["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
+            )
             self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
             self.assertIn(failed_mark, proc.stdout)
             self.assertIn(want_args, log.read_text(encoding="utf-8"))
             self.assertEqual(state.read_bytes(), sentinel)
-            ufw.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+            ufw.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8")
             ufw.chmod(ufw.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            proc = subprocess.run(["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertIn(ok_mark, proc.stdout)
             self.assertFalse(state.exists(), "state file must be removed after successful retry")
-
 
     def test_verified_recovery_enforces_each_prerequisite(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -6535,12 +7108,18 @@ class TestInstallReview(unittest.TestCase):
             venv_python = home / "venv" / "bin" / "python"
             venv_python.parent.mkdir(parents=True, exist_ok=True)
             marker = tmp_path / "recovery-marker"
-            venv_python.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            venv_python.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home / "manifest").write_text(
-                "launcher=" + str(tmp_path / "bin" / "opos") + "\n"
-                + "venv=" + str(home / "venv") + "\n"
-                + "repo=" + str(root) + "\n",
+                "launcher="
+                + str(tmp_path / "bin" / "opos")
+                + "\n"
+                + "venv="
+                + str(home / "venv")
+                + "\n"
+                + "repo="
+                + str(root)
+                + "\n",
                 encoding="utf-8",
             )
             return home, bindir, marker
@@ -6568,7 +7147,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(prereq=label):
                 found = re.search(pat, helper)
                 self.assertIsNotNone(found, label + " prerequisite must exist")
-                mutated_helper = helper[:found.start()] + "false" + helper[found.end():]
+                mutated_helper = helper[: found.start()] + "false" + helper[found.end() :]
                 mutated = text[:hstart] + mutated_helper + text[hend:]
                 self.assertNotEqual(mutated, text)
                 with tempfile.TemporaryDirectory() as tmp:
@@ -6598,14 +7177,14 @@ class TestInstallReview(unittest.TestCase):
             marker = tmp_path / "recovery-marker"
             venv_python = home / "venv" / "bin" / "python"
             venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_python.write_text("#!/bin/sh\ntouch \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            venv_python.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (home / "manifest").write_text(
                 "launcher=" + str(bindir / "opos") + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(root) + "\n",
                 encoding="utf-8",
             )
             write_stub(fakebin / "ufw", "exit 0\n")
-            write_stub(fakebin / "systemctl", "case \"$*\" in *list-unit-files*) exit 0;; esac\nexit 0\n")
+            write_stub(fakebin / "systemctl", 'case "$*" in *list-unit-files*) exit 0;; esac\nexit 0\n')
             for name in ("loginctl", "nft", "cp", "sshd"):
                 write_stub(fakebin / name, "exit 0\n")
             write_stub(fakebin / "stat", "printf '%s\\n' \"0 600\"\n")
@@ -6649,7 +7228,13 @@ class TestInstallReview(unittest.TestCase):
                         (home / "manifest").unlink()
                     elif name == "venv_mismatch":
                         (home / "manifest").write_text(
-                            "launcher=" + str(bindir / "opos") + "\nvenv=" + str(tmp_path / "other" / "venv") + "\nrepo=" + str(root) + "\n",
+                            "launcher="
+                            + str(bindir / "opos")
+                            + "\nvenv="
+                            + str(tmp_path / "other" / "venv")
+                            + "\nrepo="
+                            + str(root)
+                            + "\n",
                             encoding="utf-8",
                         )
                     elif name == "python_missing":
@@ -6658,14 +7243,26 @@ class TestInstallReview(unittest.TestCase):
                             target.unlink()
                     elif name == "repo_mismatch":
                         (home / "manifest").write_text(
-                            "launcher=" + str(bindir / "opos") + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(tmp_path / "elsewhere") + "\n",
+                            "launcher="
+                            + str(bindir / "opos")
+                            + "\nvenv="
+                            + str(home / "venv")
+                            + "\nrepo="
+                            + str(tmp_path / "elsewhere")
+                            + "\n",
                             encoding="utf-8",
                         )
                     elif name == "src_missing":
                         bare = tmp_path / "bare"
                         bare.mkdir()
                         (home / "manifest").write_text(
-                            "launcher=" + str(bindir / "opos") + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(bare) + "\n",
+                            "launcher="
+                            + str(bindir / "opos")
+                            + "\nvenv="
+                            + str(home / "venv")
+                            + "\nrepo="
+                            + str(bare)
+                            + "\n",
                             encoding="utf-8",
                         )
                         install_src = bare / "install.sh"
@@ -6677,11 +7274,19 @@ class TestInstallReview(unittest.TestCase):
                     self.assertIn("==> restore summary:", proc.stdout, msg)
                     self.assertFalse(marker.is_file(), msg)
                     if name != "missing_manifest":
-                        self.assertIn("warning: force uninstall without verified recovery entry point, removing files only", proc.stderr, msg)
+                        self.assertIn(
+                            "warning: force uninstall without verified recovery entry point, removing files only",
+                            proc.stderr,
+                            msg,
+                        )
                     if name == "repo_mismatch":
                         self.assertIn("repo mismatch: run the uninstaller from the original checkout", proc.stderr, msg)
                     if name == "src_missing":
-                        self.assertNotIn("repo mismatch: run the uninstaller from the original checkout", proc.stdout + proc.stderr, msg)
+                        self.assertNotIn(
+                            "repo mismatch: run the uninstaller from the original checkout",
+                            proc.stdout + proc.stderr,
+                            msg,
+                        )
 
     def test_untrusted_launcher_warning_omits_control_characters(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -6706,9 +7311,15 @@ class TestInstallReview(unittest.TestCase):
                     trusted.chmod(trusted.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     launcher_value = "".join([first, esc, "[2J", cret, second])
                     (home / "manifest").write_text(
-                        "launcher=" + launcher_value + "\n"
-                        + "venv=" + str(home / "venv") + "\n"
-                        + "repo=" + str(home) + "\n",
+                        "launcher="
+                        + launcher_value
+                        + "\n"
+                        + "venv="
+                        + str(home / "venv")
+                        + "\n"
+                        + "repo="
+                        + str(home)
+                        + "\n",
                         encoding="utf-8",
                     )
                     for tool in ("ufw", "loginctl", "nft"):
@@ -6762,11 +7373,13 @@ class TestInstallReview(unittest.TestCase):
         probe_split = 'mv "$SRC" "$DST"\n'
         probe_concat_static = 'rm -rf "$BASE"/static-leaf\n'
         probe_positional_unquoted = 'rm -rf $1/rest\nmv $2 "$DST"\n'
-        probe_special_unquoted = 'rm -rf $@\nrm -rf $*/leaf\n'
+        probe_special_unquoted = "rm -rf $@\nrm -rf $*/leaf\n"
         probe_positional_dynamic = 'rm -rf "$BASE/$1"\n'
         probe_arglist_dynamic = 'rm -rf "$BASE/$@"\nrm -rf "$BASE/$*"\n'
+
         def _scan(snippet):
             return _scan_installer_paths(snippet)
+
         puq, _ = _scan(probe_unquoted)
         self.assertEqual(len(puq), 2, "scan must catch unquoted operands")
         _, pdyn = _scan(probe_dynamic)
@@ -6812,7 +7425,9 @@ class TestInstallReview(unittest.TestCase):
         uq, dyn = _scan_installer_paths(probe)
         self.assertEqual(len(dyn), 1)
         self.assertEqual(uq, [])
-        with unittest.mock.patch.object(sys.modules[__name__], "_scan_installer_paths", wraps=_scan_installer_paths) as scan_mock:
+        with unittest.mock.patch.object(
+            sys.modules[__name__], "_scan_installer_paths", wraps=_scan_installer_paths
+        ) as scan_mock:
             self.test_production_paths_reject_unquoted_and_dynamic()
             self.assertGreater(scan_mock.call_count, 0)
             probed = [c.args[0] for c in scan_mock.call_args_list if "$SUFFIX" in c.args[0]]
@@ -6820,6 +7435,7 @@ class TestInstallReview(unittest.TestCase):
 
     def test_production_paths_reject_split_positional_and_special_parameters(self):
         from unittest.mock import patch
+
         cases = (
             ("1", 'rm -rf "$BASE"/"$1"'),
             ("@", 'rm -rf "$BASE"/"$@"'),
@@ -6835,6 +7451,7 @@ class TestInstallReview(unittest.TestCase):
 
     def test_production_paths_catch_unsafe_command_after_continuation_separator(self):
         from unittest.mock import patch
+
         for sep in ("", "# separator"):
             with self.subTest(sep=sep):
                 marker = "echo " + chr(34) + "# marker" + chr(34) + " " + chr(92)
@@ -6845,8 +7462,9 @@ class TestInstallReview(unittest.TestCase):
 
     def test_production_paths_quoted_hash_does_not_hide_command(self):
         from unittest.mock import patch
+
         snippets = [
-            "printf \"%s\" \"#\"; rm -rf $TARGET/rest",
+            'printf "%s" "#"; rm -rf $TARGET/rest',
             "printf '%s' '#'; rm -rf $TARGET/rest",
         ]
         for snippet in snippets:
@@ -6968,7 +7586,21 @@ class TestInstallReview(unittest.TestCase):
         h = chr(35)
         q = chr(39)
         dq = chr(34)
-        inline = text + nl + "rm -rf " + dq + "$BASE/static-leaf" + dq + " " + h + " note " + bs + nl + "rm -rf $TARGET/rest" + nl
+        inline = (
+            text
+            + nl
+            + "rm -rf "
+            + dq
+            + "$BASE/static-leaf"
+            + dq
+            + " "
+            + h
+            + " note "
+            + bs
+            + nl
+            + "rm -rf $TARGET/rest"
+            + nl
+        )
         self.assertNotEqual(inline, text)
         with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=inline):
             with self.assertRaises(AssertionError):
@@ -6987,7 +7619,22 @@ class TestInstallReview(unittest.TestCase):
         h = chr(35)
         dq = chr(34)
         heredoc = "cat <<EOF" + nl + dq + nl + "EOF" + nl
-        mutant = text + nl + heredoc + "rm -rf " + dq + "$BASE/static-leaf" + dq + " " + h + " note " + bs + nl + "rm -rf $TARGET/rest" + nl
+        mutant = (
+            text
+            + nl
+            + heredoc
+            + "rm -rf "
+            + dq
+            + "$BASE/static-leaf"
+            + dq
+            + " "
+            + h
+            + " note "
+            + bs
+            + nl
+            + "rm -rf $TARGET/rest"
+            + nl
+        )
         self.assertNotEqual(mutant, text)
         with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
             with self.assertRaises(AssertionError):
@@ -7024,7 +7671,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertTrue(_line_path_violations(line), "must flag: %r" % line)
         good = [
-            "rm -rf " + '"' + home_var + "/" + '*' + '"',
+            "rm -rf " + '"' + home_var + "/" + "*" + '"',
             "rm -rf " + '"' + tilde_x + '"',
             "rm -rf " + "'" + "*" + "'",
             "rm -rf a" + "~" + "b",
@@ -7089,7 +7736,7 @@ class TestInstallReview(unittest.TestCase):
                     break
                 continue
             used += len(line)
-        block = text[line_start:line_start + used]
+        block = text[line_start : line_start + used]
         self.assertIn(leaf, block)
         valid = "".join(["in", "active"]) + "\n"
         self.assertEqual(valid, "inactive\n")
@@ -7103,9 +7750,11 @@ class TestInstallReview(unittest.TestCase):
             stubdir.mkdir()
             log = tmp_path / "ufw.log"
             stub = stubdir / "ufw"
-            stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+            stub.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8")
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            script = "OPOS_HOME=\"" + str(opos_home) + "\"\n_firewall=\"skipped\"\n" + block + "\nprintf '%s' \"$_firewall\"\n"
+            script = (
+                'OPOS_HOME="' + str(opos_home) + '"\n_firewall="skipped"\n' + block + "\nprintf '%s' \"$_firewall\"\n"
+            )
             runner = tmp_path / "run.sh"
             runner.write_text(script, encoding="utf-8")
             env = dict(os.environ)
@@ -7137,9 +7786,17 @@ class TestInstallReview(unittest.TestCase):
                     stubdir.mkdir()
                     log = tmp_path / "ufw.log"
                     stub = stubdir / "ufw"
-                    stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+                    stub.write_text(
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8"
+                    )
                     stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                    script = "OPOS_HOME=\"" + str(opos_home) + "\"\n_firewall=\"skipped\"\n" + block + "\nprintf '%s' \"$_firewall\"\n"
+                    script = (
+                        'OPOS_HOME="'
+                        + str(opos_home)
+                        + '"\n_firewall="skipped"\n'
+                        + block
+                        + "\nprintf '%s' \"$_firewall\"\n"
+                    )
                     runner = tmp_path / "run.sh"
                     runner.write_text(script, encoding="utf-8")
                     env = dict(os.environ)
@@ -7189,16 +7846,18 @@ class TestInstallReview(unittest.TestCase):
             ctl_log.write_text("", encoding="utf-8")
             ufw_stub = fakebin / "ufw"
             ufw_stub.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(ufw_log) + "\"\nexit 0\n",
+                '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(ufw_log) + '"\nexit 0\n',
                 encoding="utf-8",
             )
             ufw_stub.chmod(ufw_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             ctl_stub = fakebin / "systemctl"
             ctl_stub.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(ctl_log) + "\"\n"
+                '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "'
+                + str(ctl_log)
+                + '"\n'
                 + "case \"$*\" in *list-unit-files*) printf 'opos-server.service enabled\\n'\nexit 0;; esac\n"
-                + "case \"$*\" in *disable*) exit 0;; esac\n"
-                + "case \"$*\" in *daemon-reload*) exit 0;; esac\n"
+                + 'case "$*" in *disable*) exit 0;; esac\n'
+                + 'case "$*" in *daemon-reload*) exit 0;; esac\n'
                 + "exit 0\n",
                 encoding="utf-8",
             )
@@ -7257,7 +7916,13 @@ class TestInstallReview(unittest.TestCase):
             helper_src.write_bytes(helper_bytes)
             helper_src.chmod(helper_src.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             (opos_home / "manifest").write_text(
-                "launcher=" + str(bindir / "opos") + "\nvenv=" + str(opos_home / "venv") + "\nrepo=" + str(clone) + "\n",
+                "launcher="
+                + str(bindir / "opos")
+                + "\nvenv="
+                + str(opos_home / "venv")
+                + "\nrepo="
+                + str(clone)
+                + "\n",
                 encoding="utf-8",
             )
             fakebin = tmp_path / "fakebin"
@@ -7271,7 +7936,9 @@ class TestInstallReview(unittest.TestCase):
             ctl_stub.chmod(ctl_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             clean_stub = fakebin / "git"
             clean_stub.write_text(
-                "#!/bin/sh\ncase \"$*\" in *show-toplevel*) printf '%s\\n' \"" + str(clone) + "\"\nexit 0;; esac\nexit 0\n",
+                '#!/bin/sh\ncase "$*" in *show-toplevel*) printf \'%s\\n\' "'
+                + str(clone)
+                + '"\nexit 0;; esac\nexit 0\n',
                 encoding="utf-8",
             )
             clean_stub.chmod(clean_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -7296,7 +7963,9 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(retained.read_bytes(), helper_bytes)
             self.assertTrue(os.access(str(retained), os.X_OK), "retained helper must stay executable")
             self.assertIn(str(retained), proc.stdout)
-            self.assertTrue((clone / "deploy" / "harden-device.sh").is_file(), "checkout must be preserved without ownership record")
+            self.assertTrue(
+                (clone / "deploy" / "harden-device.sh").is_file(), "checkout must be preserved without ownership record"
+            )
 
     def test_retention_refuses_unverified_destination(self):
         text = _read_install_sh()
@@ -7352,7 +8021,9 @@ class TestInstallReview(unittest.TestCase):
                     env = dict(os.environ)
                     env["OPOS_HOME"] = str(home)
                     env["DRY"] = "0"
-                    proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
+                    proc = subprocess.run(
+                        ["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30
+                    )
                     self.assertNotEqual(proc.returncode, 0, kind)
                     if kind == "regular":
                         self.assertFalse(dest.is_symlink())
@@ -7427,8 +8098,9 @@ class TestInstallReview(unittest.TestCase):
             stub = stubdir / "cp"
             part = b"".join([b"par", b"tial-", b"7"])
             stub.write_text(
-                "#!/bin/sh\nfor a in \"$@\"; do last=\"$a\"; done\nprintf '%s' \""
-                + part.decode() + "\" > \"$last\"\nexit 1\n",
+                '#!/bin/sh\nfor a in "$@"; do last="$a"; done\nprintf \'%s\' "'
+                + part.decode()
+                + '" > "$last"\nexit 1\n',
                 encoding="utf-8",
             )
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -7441,7 +8113,7 @@ class TestInstallReview(unittest.TestCase):
             proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
             self.assertNotEqual(proc.returncode, 0)
             self.assertFalse(dest.exists() or dest.is_symlink(), "partial copy must be removed")
-            stub.write_text("#!/bin/sh\nexec /bin/cp \"$@\"\n", encoding="utf-8")
+            stub.write_text('#!/bin/sh\nexec /bin/cp "$@"\n', encoding="utf-8")
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -7637,10 +8309,14 @@ class TestInstallReview(unittest.TestCase):
                     env = dict(os.environ)
                     env["OPOS_HOME"] = str(home)
                     env["DRY"] = "0"
-                    proc = subprocess.run(["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30)
+                    proc = subprocess.run(
+                        ["sh", str(runner), str(clone)], capture_output=True, text=True, env=env, timeout=30
+                    )
                     self.assertNotEqual(proc.returncode, 0)
                     self.assertEqual(_snapshot_tree(home), before_home, "home tree must match including added entries")
-                    self.assertEqual(_snapshot_tree(foreign), before_foreign, "foreign directory must match including added entries")
+                    self.assertEqual(
+                        _snapshot_tree(foreign), before_foreign, "foreign directory must match including added entries"
+                    )
 
     def test_retention_rejects_concurrent_destination_replacement(self):
         text = _read_install_sh()
@@ -7672,9 +8348,7 @@ class TestInstallReview(unittest.TestCase):
             stubdir.mkdir()
             stub = stubdir / "cp"
             stub.write_text(
-                "#!/bin/sh\n"
-                + "ln -sf \"" + str(victim) + "\" \"" + str(dest) + "\"\n"
-                + "exec /bin/cp \"$@\"\n",
+                "#!/bin/sh\n" + 'ln -sf "' + str(victim) + '" "' + str(dest) + '"\n' + 'exec /bin/cp "$@"\n',
                 encoding="utf-8",
             )
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -7715,14 +8389,14 @@ class TestInstallReview(unittest.TestCase):
                     log = tmp_path / "ufw.log"
                     ufw = stubdir / "ufw"
                     ufw.write_text(
-                        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n",
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n',
                         encoding="utf-8",
                     )
                     ufw.chmod(ufw.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                     ctl_log = tmp_path / "ctl.log"
                     ctl = stubdir / "systemctl"
                     ctl.write_text(
-                        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(ctl_log) + "\"\nexit 0\n",
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(ctl_log) + '"\nexit 0\n',
                         encoding="utf-8",
                     )
                     ctl.chmod(ctl.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -7785,7 +8459,7 @@ class TestInstallReview(unittest.TestCase):
                     log = tmp_path / "ufw.log"
                     ufw = stubdir / "ufw"
                     ufw.write_text(
-                        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n",
+                        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n',
                         encoding="utf-8",
                     )
                     ufw.chmod(ufw.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -7868,7 +8542,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertEqual(run_mock.call_count, 0)
             good = inner / "ok.sh"
             done = inner / "done"
-            good.write_text("#!/bin/sh\ntouch \"" + str(done) + "\"\n", encoding="utf-8")
+            good.write_text('#!/bin/sh\ntouch "' + str(done) + '"\n', encoding="utf-8")
             proc = _run_contained(base, good, ["sh", str(good)])
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(done.is_file())
@@ -7877,7 +8551,11 @@ class TestInstallReview(unittest.TestCase):
         src = pathlib.Path(__file__).read_text(encoding="utf-8")
         tree = ast.parse(src)
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "TestInstallReview")
-        skip = ("test_tmp_execution_sites_reject_hostile_paths", "test_tmp_prefix_candidates_resolve_and_contain", "test_tmp_execution_path_rejects_traversal_and_symlink")
+        skip = (
+            "test_tmp_execution_sites_reject_hostile_paths",
+            "test_tmp_prefix_candidates_resolve_and_contain",
+            "test_tmp_execution_path_rejects_traversal_and_symlink",
+        )
         sites = []
         for node in cls.body:
             if not isinstance(node, ast.FunctionDef):
@@ -7887,7 +8565,12 @@ class TestInstallReview(unittest.TestCase):
             for sub in ast.walk(node):
                 if isinstance(sub, ast.Call):
                     func = sub.func
-                    if isinstance(func, ast.Attribute) and func.attr == "run" and isinstance(func.value, ast.Name) and func.value.id == "subprocess":
+                    if (
+                        isinstance(func, ast.Attribute)
+                        and func.attr == "run"
+                        and isinstance(func.value, ast.Name)
+                        and func.value.id == "subprocess"
+                    ):
                         sites.append(node.name)
                         break
         self.assertTrue(sites)
@@ -7903,7 +8586,7 @@ class TestInstallReview(unittest.TestCase):
                     payload = outside / "payload.sh"
                     marker_name = "".join(["bypassed-", site])
                     bypass_marker = outside / marker_name
-                    payload.write_text("#!/bin/sh\ntouch \"" + str(bypass_marker) + "\"\nexit 0\n", encoding="utf-8")
+                    payload.write_text('#!/bin/sh\ntouch "' + str(bypass_marker) + '"\nexit 0\n', encoding="utf-8")
                     traversal = str(inner) + "/../../" + outside.name + "/payload.sh"
                     link = inner / "link"
                     link.symlink_to(str(outside))
@@ -7917,14 +8600,19 @@ class TestInstallReview(unittest.TestCase):
                                     _run_contained(base, hostile, ["sh", hostile])
                                 self.assertEqual(run_mock.call_count, 0)
                             self.assertFalse(bypass_marker.exists())
-                            with unittest.mock.patch("tests.test_install_review._contained_candidate", side_effect=lambda t, c: str(c)):
+                            with unittest.mock.patch(
+                                "tests.test_install_review._contained_candidate", side_effect=lambda t, c: str(c)
+                            ):
                                 proc = _run_contained(base, hostile, ["sh", hostile])
                             self.assertEqual(proc.returncode, 0, proc.stderr)
-                            self.assertTrue(bypass_marker.is_file(), "removing containment must let hostile payload execute for " + site)
+                            self.assertTrue(
+                                bypass_marker.is_file(),
+                                "removing containment must let hostile payload execute for " + site,
+                            )
                             bypass_marker.unlink()
                     good = inner / "ok.sh"
                     done = inner / "done"
-                    good.write_text("#!/bin/sh\ntouch \"" + str(done) + "\"\n", encoding="utf-8")
+                    good.write_text('#!/bin/sh\ntouch "' + str(done) + '"\n', encoding="utf-8")
                     proc = _run_contained(base, good, ["sh", str(good)])
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     self.assertTrue(done.is_file())
@@ -7948,14 +8636,48 @@ class TestInstallReview(unittest.TestCase):
             subprocess.run(["git", "-C", str(clone), "init"], check=True, capture_output=True, text=True, env=base_env)
             tracked = clone / "".join(["tra", "cked.txt"])
             tracked.write_bytes("".join(["base-", "content-", "1", "\n"]).encode())
-            subprocess.run(["git", "-C", str(clone), "add", "install.sh", tracked.name], check=True, capture_output=True, text=True, env=base_env)
-            subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["i", "nit"])], check=True, capture_output=True, text=True, env=base_env)
+            subprocess.run(
+                ["git", "-C", str(clone), "add", "install.sh", tracked.name],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(clone),
+                    "-c",
+                    "user.email=" + "".join(["o", "pos@", "example.com"]),
+                    "-c",
+                    "user.name=" + "".join(["o", "pos"]),
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-m",
+                    "".join(["i", "nit"]),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
             tracked.write_bytes(tracked.read_bytes() + "".join(["owner-", "edit-", "2", "\n"]).encode())
             owned = clone / "".join(["owner-ad", "ded.txt"])
             owned_bytes = "".join(["owner-", "added-", "3", "\n"]).encode()
             owned.write_bytes(owned_bytes)
             tracked_after = tracked.read_bytes()
-            (opos_home / "manifest").write_text("launcher=" + str(bindir / "opos") + "\nvenv=" + str(tmp_path / "elsewhere" / "venv") + "\nrepo=" + str(clone) + "\n", encoding="utf-8")
+            (opos_home / "manifest").write_text(
+                "launcher="
+                + str(bindir / "opos")
+                + "\nvenv="
+                + str(tmp_path / "elsewhere" / "venv")
+                + "\nrepo="
+                + str(clone)
+                + "\n",
+                encoding="utf-8",
+            )
             fakebin = tmp_path / "fakebin"
             fakebin.mkdir()
             ctl_stub = fakebin / "systemctl"
@@ -7969,7 +8691,13 @@ class TestInstallReview(unittest.TestCase):
             env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
             if not env.get("USER"):
                 env["USER"] = "opos-test-user"
-            proc = subprocess.run(["sh", str(clone_install), "--uninstall", "--force"], capture_output=True, text=True, env=env, timeout=60)
+            proc = subprocess.run(
+                ["sh", str(clone_install), "--uninstall", "--force"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=60,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertTrue(clone.is_dir(), "checkout with owner contents must be preserved")
             self.assertTrue(owned.is_file(), "untracked owner file must survive")
@@ -7981,11 +8709,24 @@ class TestInstallReview(unittest.TestCase):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
         def git(clone, *args):
-            subprocess.run(["git", "-C", str(clone)] + list(args), check=True, capture_output=True, text=True, env=dict(os.environ))
+            subprocess.run(
+                ["git", "-C", str(clone)] + list(args), check=True, capture_output=True, text=True, env=dict(os.environ)
+            )
 
         def commit_all(clone, message):
             git(clone, "add", "-A")
-            git(clone, "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", message)
+            git(
+                clone,
+                "-c",
+                "user.email=" + "".join(["o", "pos@", "example.com"]),
+                "-c",
+                "user.name=" + "".join(["o", "pos"]),
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-m",
+                message,
+            )
 
         def run_case(name):
             with tempfile.TemporaryDirectory() as tmp:
@@ -8057,7 +8798,16 @@ class TestInstallReview(unittest.TestCase):
                         commit_all(clone, "".join(["add-", "owner"]))
                     else:
                         raise AssertionError(name)
-                (opos_home / "manifest").write_text("launcher=" + str(bindir / "opos") + "\nvenv=" + str(tmp_path / "elsewhere" / "venv") + "\nrepo=" + str(clone) + "\n", encoding="utf-8")
+                (opos_home / "manifest").write_text(
+                    "launcher="
+                    + str(bindir / "opos")
+                    + "\nvenv="
+                    + str(tmp_path / "elsewhere" / "venv")
+                    + "\nrepo="
+                    + str(clone)
+                    + "\n",
+                    encoding="utf-8",
+                )
                 env = dict(os.environ)
                 env["HOME"] = str(home)
                 env["OPOS_HOME"] = str(opos_home)
@@ -8066,13 +8816,26 @@ class TestInstallReview(unittest.TestCase):
                 env["PATH"] = path_value
                 if not env.get("USER"):
                     env["USER"] = "opos-test-user"
-                proc = subprocess.run(["sh", str(clone_install), "--uninstall", "--force"], capture_output=True, text=True, env=env, timeout=60)
+                proc = subprocess.run(
+                    ["sh", str(clone_install), "--uninstall", "--force"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=60,
+                )
                 self.assertEqual(proc.returncode, 0, name + proc.stdout + proc.stderr)
                 self.assertTrue(clone.is_dir(), name + ": checkout must be preserved")
                 self.assertTrue(owned.is_file(), name + ": owner file must survive")
                 self.assertEqual(owned.read_bytes(), owned_bytes, name)
 
-        for name in ("modified_tracked_only", "untracked_only", "ignored_only", "committed_addition", "git_unavailable", "inspection_fails"):
+        for name in (
+            "modified_tracked_only",
+            "untracked_only",
+            "ignored_only",
+            "committed_addition",
+            "git_unavailable",
+            "inspection_fails",
+        ):
             with self.subTest(name=name):
                 run_case(name)
 
@@ -8093,14 +8856,54 @@ class TestInstallReview(unittest.TestCase):
             subprocess.run(["git", "-C", str(clone), "init"], check=True, capture_output=True, text=True, env=base_env)
             tracked = clone / "".join(["tra", "cked.txt"])
             tracked.write_bytes("".join(["base-", "content-", "1", "\n"]).encode())
-            subprocess.run(["git", "-C", str(clone), "add", "install.sh", tracked.name], check=True, capture_output=True, text=True, env=base_env)
-            subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["i", "nit"])], check=True, capture_output=True, text=True, env=base_env)
-            subprocess.run(["git", "-C", str(clone), "config", "status.showUntrackedFiles", "no"], check=True, capture_output=True, text=True, env=base_env)
+            subprocess.run(
+                ["git", "-C", str(clone), "add", "install.sh", tracked.name],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(clone),
+                    "-c",
+                    "user.email=" + "".join(["o", "pos@", "example.com"]),
+                    "-c",
+                    "user.name=" + "".join(["o", "pos"]),
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-m",
+                    "".join(["i", "nit"]),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
+            subprocess.run(
+                ["git", "-C", str(clone), "config", "status.showUntrackedFiles", "no"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
             owned = clone / "".join(["owner-ad", "ded.txt"])
             owned_bytes = "".join(["owner-", "added-", "7", "\n"]).encode()
             owned.write_bytes(owned_bytes)
             tracked_before = tracked.read_bytes()
-            (opos_home / "manifest").write_text("launcher=" + str(bindir / "opos") + "\nvenv=" + str(tmp_path / "elsewhere" / "venv") + "\nrepo=" + str(clone) + "\n", encoding="utf-8")
+            (opos_home / "manifest").write_text(
+                "launcher="
+                + str(bindir / "opos")
+                + "\nvenv="
+                + str(tmp_path / "elsewhere" / "venv")
+                + "\nrepo="
+                + str(clone)
+                + "\n",
+                encoding="utf-8",
+            )
             fakebin = tmp_path / "fakebin"
             fakebin.mkdir()
             ctl_stub = fakebin / "systemctl"
@@ -8114,7 +8917,13 @@ class TestInstallReview(unittest.TestCase):
             env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
             if not env.get("USER"):
                 env["USER"] = "opos-test-user"
-            proc = subprocess.run(["sh", str(clone_install), "--uninstall", "--force"], capture_output=True, text=True, env=env, timeout=60)
+            proc = subprocess.run(
+                ["sh", str(clone_install), "--uninstall", "--force"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=60,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertTrue(clone.is_dir(), "checkout with untracked owner must be preserved")
             self.assertTrue(owned.is_file(), "untracked owner file must survive hidden status")
@@ -8126,7 +8935,7 @@ class TestInstallReview(unittest.TestCase):
         text = _read_install_sh()
         block = _uninstall_restore_block(text)
         begin_marker = "# BEGIN fallback service cleanup"
-        service = block[block.index(begin_marker):]
+        service = block[block.index(begin_marker) :]
         self.assertIn("opos-server.service", service)
         self.assertNotIn("ufw", service)
         self.assertNotIn("sshd -t", service)
@@ -8145,7 +8954,7 @@ class TestInstallReview(unittest.TestCase):
             stubdir.mkdir()
             log = tmp_path / "calls.log"
             stub = stubdir / "systemctl"
-            stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+            stub.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8")
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             id_stub = stubdir / "id"
             id_stub.write_text("#!/bin/sh\nprintf '1001\\n'\n", encoding="utf-8")
@@ -8157,11 +8966,17 @@ class TestInstallReview(unittest.TestCase):
             env["PATH"] = str(stubdir) + os.pathsep + env.get("PATH", "")
             proc = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=env, timeout=30)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertEqual(log.read_text(encoding="utf-8").splitlines(), ["--user list-unit-files --no-legend opos-server.service", "--user disable --now opos-server.service", "--user daemon-reload"])
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [
+                    "--user list-unit-files --no-legend opos-server.service",
+                    "--user disable --now opos-server.service",
+                    "--user daemon-reload",
+                ],
+            )
             self.assertFalse(unit.exists())
             self.assertEqual(keep.read_bytes(), keep_bytes)
             self.assertIn("sshd=skipped firewall=skipped service=succeeded", proc.stdout)
-
 
     def test_uninstall_preserves_checkout_when_git_inspection_fails(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -8183,7 +8998,13 @@ class TestInstallReview(unittest.TestCase):
                     owned_bytes = "".join(["owner-", "bytes-", "9", "\n"]).encode()
                     owned.write_bytes(owned_bytes)
                     (opos_home / "manifest").write_text(
-                        "launcher=" + str(bindir / "opos") + "\nvenv=" + str(tmp_path / "elsewhere" / "venv") + "\nrepo=" + str(clone) + "\n",
+                        "launcher="
+                        + str(bindir / "opos")
+                        + "\nvenv="
+                        + str(tmp_path / "elsewhere" / "venv")
+                        + "\nrepo="
+                        + str(clone)
+                        + "\n",
                         encoding="utf-8",
                     )
                     fakebin = tmp_path / "fakebin"
@@ -8240,7 +9061,6 @@ class TestInstallReview(unittest.TestCase):
                     self.assertTrue(owned.is_file(), "owner file must survive")
                     self.assertEqual(owned.read_bytes(), owned_bytes)
 
-
     def test_uninstall_preserves_valid_checkout_regardless_of_git_validation(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         for outcome in ("success", "failure"):
@@ -8257,15 +9077,61 @@ class TestInstallReview(unittest.TestCase):
                     clone_install = clone / "install.sh"
                     clone_install.write_bytes(install.read_bytes())
                     base_env = dict(os.environ)
-                    subprocess.run(["git", "-C", str(clone), "init"], check=True, capture_output=True, text=True, env=base_env, timeout=30)
+                    subprocess.run(
+                        ["git", "-C", str(clone), "init"],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
                     tracked = clone / "".join(["tra", "cked.txt"])
                     tracked.write_bytes("".join(["base-", "content-", "1", "\n"]).encode())
-                    subprocess.run(["git", "-C", str(clone), "add", "install.sh", tracked.name], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    subprocess.run(["git", "-C", str(clone), "-c", "user.email=" + "".join(["o", "pos@", "example.com"]), "-c", "user.name=" + "".join(["o", "pos"]), "-c", "commit.gpgsign=false", "commit", "-m", "".join(["i", "nit"])], check=True, capture_output=True, text=True, env=base_env, timeout=30)
-                    valid = subprocess.run(["git", "-C", str(clone), "rev-parse", "--show-toplevel"], capture_output=True, text=True, env=base_env, timeout=30)
+                    subprocess.run(
+                        ["git", "-C", str(clone), "add", "install.sh", tracked.name],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(clone),
+                            "-c",
+                            "user.email=" + "".join(["o", "pos@", "example.com"]),
+                            "-c",
+                            "user.name=" + "".join(["o", "pos"]),
+                            "-c",
+                            "commit.gpgsign=false",
+                            "commit",
+                            "-m",
+                            "".join(["i", "nit"]),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
+                    valid = subprocess.run(
+                        ["git", "-C", str(clone), "rev-parse", "--show-toplevel"],
+                        capture_output=True,
+                        text=True,
+                        env=base_env,
+                        timeout=30,
+                    )
                     self.assertEqual(valid.returncode, 0)
                     (opos_home / "manifest").write_text(
-                        "launcher=" + str(bindir / "opos") + "\nvenv=" + str(tmp_path / "elsewhere" / "venv") + "\nrepo=" + str(clone) + "\n",
+                        "launcher="
+                        + str(bindir / "opos")
+                        + "\nvenv="
+                        + str(tmp_path / "elsewhere" / "venv")
+                        + "\nrepo="
+                        + str(clone)
+                        + "\n",
                         encoding="utf-8",
                     )
                     install_before = clone_install.read_bytes()
@@ -8295,9 +9161,15 @@ class TestInstallReview(unittest.TestCase):
                     if outcome == "success":
                         git_stub.write_text(
                             "#!/bin/sh\n"
-                            + "printf '%s\\n' \"$*\" >> \"" + str(log) + "\"\n"
-                            + "if [ \"$#\" = \"4\" ] && [ \"$1\" = \"-C\" ] && [ \"$2\" = \"" + str(clone) + "\" ] && [ \"$3\" = \"rev-parse\" ] && [ \"$4\" = \"--show-toplevel\" ]; then\n"
-                            + "exec \"" + real_git + "\" \"$@\"\n"
+                            + 'printf \'%s\\n\' "$*" >> "'
+                            + str(log)
+                            + '"\n'
+                            + 'if [ "$#" = "4" ] && [ "$1" = "-C" ] && [ "$2" = "'
+                            + str(clone)
+                            + '" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then\n'
+                            + 'exec "'
+                            + real_git
+                            + '" "$@"\n'
                             + "fi\n"
                             + "exit 1\n",
                             encoding="utf-8",
@@ -8305,9 +9177,17 @@ class TestInstallReview(unittest.TestCase):
                     else:
                         git_stub.write_text(
                             "#!/bin/sh\n"
-                            + "printf '%s\\n' \"$*\" >> \"" + str(log) + "\"\n"
-                            + "if [ \"$#\" = \"4\" ] && [ \"$1\" = \"-C\" ] && [ \"$2\" = \"" + str(clone) + "\" ] && [ \"$3\" = \"rev-parse\" ] && [ \"$4\" = \"--show-toplevel\" ]; then\n"
-                            + "printf '%s\\n' \"" + marker + "\" >> \"" + str(log) + "\"\n"
+                            + 'printf \'%s\\n\' "$*" >> "'
+                            + str(log)
+                            + '"\n'
+                            + 'if [ "$#" = "4" ] && [ "$1" = "-C" ] && [ "$2" = "'
+                            + str(clone)
+                            + '" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then\n'
+                            + "printf '%s\\n' \""
+                            + marker
+                            + '" >> "'
+                            + str(log)
+                            + '"\n'
                             + "exit 1\n"
                             + "fi\n"
                             + "exit 1\n",
@@ -8348,11 +9228,11 @@ class TestInstallReview(unittest.TestCase):
         star = chr(42)
         base = '"$BASE"'
         for_body = "for f in a b; do rm -rf " + base + "/" + star + "; done"
-        case_body = "case \"$MODE\" in fast) rm -rf " + base + "/" + star + ";; esac"
+        case_body = 'case "$MODE" in fast) rm -rf ' + base + "/" + star + ";; esac"
         self.assertTrue(_line_path_violations(for_body), "for body must be inspected: %r" % for_body)
         self.assertTrue(_line_path_violations(case_body), "case body must be inspected: %r" % case_body)
         for_safe = "for f in " + star + ".sh; do echo ok; done"
-        case_safe = "case \"$MODE\" in " + star + ".bak) echo ok;; esac"
+        case_safe = 'case "$MODE" in ' + star + ".bak) echo ok;; esac"
         self.assertEqual(_line_path_violations(for_safe), [])
         self.assertEqual(_line_path_violations(case_safe), [])
 
@@ -8406,9 +9286,51 @@ class TestInstallReview(unittest.TestCase):
         quoted_paren_dq = dq + rparen + dq
         quoted_semi_sq = sq + semi + semi + sq
         quoted_paren_sq = sq + rparen + sq
-        line_dq = "case " + dq + "$MODE" + dq + " in " + star + rparen + " echo " + quoted_semi_dq + semi + " rm -rf " + base + "/" + star + semi + " echo " + quoted_paren_dq + semi + semi + " esac"
+        line_dq = (
+            "case "
+            + dq
+            + "$MODE"
+            + dq
+            + " in "
+            + star
+            + rparen
+            + " echo "
+            + quoted_semi_dq
+            + semi
+            + " rm -rf "
+            + base
+            + "/"
+            + star
+            + semi
+            + " echo "
+            + quoted_paren_dq
+            + semi
+            + semi
+            + " esac"
+        )
         self.assertTrue(_line_path_violations(line_dq), "quoted delimiters must not erase body: %r" % line_dq)
-        line_sq = "case " + dq + "$MODE" + dq + " in " + star + rparen + " echo " + quoted_semi_sq + semi + " rm -rf " + base + "/" + star + semi + " echo " + quoted_paren_sq + semi + semi + " esac"
+        line_sq = (
+            "case "
+            + dq
+            + "$MODE"
+            + dq
+            + " in "
+            + star
+            + rparen
+            + " echo "
+            + quoted_semi_sq
+            + semi
+            + " rm -rf "
+            + base
+            + "/"
+            + star
+            + semi
+            + " echo "
+            + quoted_paren_sq
+            + semi
+            + semi
+            + " esac"
+        )
         self.assertTrue(_line_path_violations(line_sq), "quoted delimiters must not erase body: %r" % line_sq)
 
     def test_production_paths_inspect_commands_after_esac(self):
@@ -8416,12 +9338,27 @@ class TestInstallReview(unittest.TestCase):
         base = '"$BASE"'
         dq = chr(34)
         semi = chr(59)
-        line = "case " + dq + "$MODE" + dq + " in fast) echo ok" + semi + semi + " esac" + semi + " rm -rf " + base + "/" + star
+        line = (
+            "case "
+            + dq
+            + "$MODE"
+            + dq
+            + " in fast) echo ok"
+            + semi
+            + semi
+            + " esac"
+            + semi
+            + " rm -rf "
+            + base
+            + "/"
+            + star
+        )
         self.assertTrue(_line_path_violations(line), "commands after esac must be inspected: %r" % line)
 
     def test_dropin_removal_keeps_backup_when_restore_fails(self):
         import tempfile
         import pathlib
+
         with tempfile.TemporaryDirectory() as tmp:
             proc, bak, bak_bytes, dest, dropin = _run_sshd_dropin_restore(pathlib.Path(tmp), 1)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -8434,6 +9371,7 @@ class TestInstallReview(unittest.TestCase):
     def test_dropin_removal_restores_config_before_deleting_backup(self):
         import tempfile
         import pathlib
+
         with tempfile.TemporaryDirectory() as tmp:
             proc, bak, bak_bytes, dest, dropin = _run_sshd_dropin_restore(pathlib.Path(tmp), 0)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -8562,7 +9500,6 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(dropin.read_bytes(), modified_before)
             self.assertEqual(bak.read_bytes(), bak_bytes)
 
-
     def test_backup_probe_exception_is_exact(self):
         _assert_snippet_confined(_EXPECTED_BACKUP_PROBE + "\n")
         _assert_snippet_confined("  " + _EXPECTED_BACKUP_PROBE + "  \n")
@@ -8570,29 +9507,42 @@ class TestInstallReview(unittest.TestCase):
         home = "".join(["$OPOS_", "HOME"])
         prefix = _EXPECTED_BACKUP_PROBE
         redir = prefix + " > " + '"$OPOS_HOME/"' + leaf
-        with self.assertRaisesRegex(AssertionError, 'backup write'):
+        with self.assertRaisesRegex(AssertionError, "backup write"):
             _assert_snippet_confined(redir + "\n")
-        q = '"' + home + '/' + leaf + '"'
-        writes = [prefix + '; cp a ' + q, prefix + ' && printf x > ' + q, prefix + ' | tee ' + q]
+        q = '"' + home + "/" + leaf + '"'
+        writes = [prefix + "; cp a " + q, prefix + " && printf x > " + q, prefix + " | tee " + q]
         for item in writes:
             with self.subTest(item=item):
-                with self.assertRaisesRegex(AssertionError, 'backup write'):
-                    _assert_snippet_confined(item + '\n')
-        reads = [prefix + ' && cp -p ' + q + ' "$T"', prefix.replace('test -f', 'test -d')]
+                with self.assertRaisesRegex(AssertionError, "backup write"):
+                    _assert_snippet_confined(item + "\n")
+        reads = [prefix + " && cp -p " + q + ' "$T"', prefix.replace("test -f", "test -d")]
         for item in reads:
             with self.subTest(item=item):
-                _assert_snippet_confined(item + '\n')
+                _assert_snippet_confined(item + "\n")
         star = chr(42)
         ordinary = "rm -rf " + '"$BASE"/' + star
         with self.assertRaises(AssertionError):
             _assert_snippet_confined(ordinary + "\n")
 
-
     def test_writes_backup_detects_backup_writes(self):
-        leaf = 'sshd_config' + '.bak'
+        leaf = "sshd_config" + ".bak"
         bak = '"$OPOS_HOME/' + leaf + '"'
-        bad = ['printf x > ' + bak, 'printf x >>' + bak, 'cp evil ' + bak, 'echo x | tee ' + bak, 'true; ln -s /x ' + bak]
-        good = ['cp -p ' + bak + ' "$_sshd_tmp"', 'sshd -t -f ' + bak, 'rm -f ' + bak, 'cmp ' + bak + ' "$_sshd_tmp" >/dev/null', 'if [ -f ' + bak + ' ]; then', 'echo ok # > ' + bak, _EXPECTED_BACKUP_PROBE]
+        bad = [
+            "printf x > " + bak,
+            "printf x >>" + bak,
+            "cp evil " + bak,
+            "echo x | tee " + bak,
+            "true; ln -s /x " + bak,
+        ]
+        good = [
+            "cp -p " + bak + ' "$_sshd_tmp"',
+            "sshd -t -f " + bak,
+            "rm -f " + bak,
+            "cmp " + bak + ' "$_sshd_tmp" >/dev/null',
+            "if [ -f " + bak + " ]; then",
+            "echo ok # > " + bak,
+            _EXPECTED_BACKUP_PROBE,
+        ]
         for line in bad:
             with self.subTest(line=line):
                 self.assertTrue(_writes_backup(line))
@@ -8601,19 +9551,24 @@ class TestInstallReview(unittest.TestCase):
                 self.assertFalse(_writes_backup(line))
 
     def test_writes_backup_detects_inline_control_bodies(self):
-        leaf = 'sshd_config' + '.bak'
+        leaf = "sshd_config" + ".bak"
         bak = '"$OPOS_HOME/' + leaf + '"'
-        bad = ['if true; then cp evil BAK; fi', 'if false; then :; else cp evil BAK; fi', 'for item in x; do cp evil BAK; done', 'while false; do cp evil BAK; done']
+        bad = [
+            "if true; then cp evil BAK; fi",
+            "if false; then :; else cp evil BAK; fi",
+            "for item in x; do cp evil BAK; done",
+            "while false; do cp evil BAK; done",
+        ]
         for line in bad:
             with self.subTest(line=line):
-                snippet = line.replace('BAK', bak)
+                snippet = line.replace("BAK", bak)
                 self.assertTrue(_writes_backup(snippet))
-                with self.assertRaisesRegex(AssertionError, 'backup write'):
+                with self.assertRaisesRegex(AssertionError, "backup write"):
                     _assert_snippet_confined(snippet)
-        good = ['if [ -f BAK ]; then :; fi', 'if true; then cp -p BAK "$_sshd_tmp"; fi']
+        good = ["if [ -f BAK ]; then :; fi", 'if true; then cp -p BAK "$_sshd_tmp"; fi']
         for line in good:
             with self.subTest(line=line):
-                self.assertFalse(_writes_backup(line.replace('BAK', bak)))
+                self.assertFalse(_writes_backup(line.replace("BAK", bak)))
 
     def test_production_paths_inspect_header_substitutions(self):
         star = chr(42)
@@ -8637,7 +9592,7 @@ class TestInstallReview(unittest.TestCase):
         safe_inner = dollar + lparen + "echo ok" + rparen
         safe = [
             "for f in " + star + ".sh; do echo ok; done",
-            "case \"$MODE\" in " + star + ".bak) echo ok;; esac",
+            'case "$MODE" in ' + star + ".bak) echo ok;; esac",
             "for f in " + safe_inner + "; do echo ok; done",
             "case " + safe_inner + " in fast) echo ok;; esac",
         ]
@@ -8690,8 +9645,41 @@ class TestInstallReview(unittest.TestCase):
         dollar = chr(36)
         lparen = chr(40)
         rparen = chr(41)
-        nested_subshell = "for f in " + dollar + lparen + " " + lparen + "echo inner" + rparen + "; rm -rf " + base + "/" + star + " " + rparen + "; do echo ok; done"
-        nested_arith = "for f in " + dollar + lparen + "echo " + dollar + lparen + lparen + "1 + 2" + rparen + rparen + "; rm -rf " + base + "/" + star + " " + rparen + "; do echo ok; done"
+        nested_subshell = (
+            "for f in "
+            + dollar
+            + lparen
+            + " "
+            + lparen
+            + "echo inner"
+            + rparen
+            + "; rm -rf "
+            + base
+            + "/"
+            + star
+            + " "
+            + rparen
+            + "; do echo ok; done"
+        )
+        nested_arith = (
+            "for f in "
+            + dollar
+            + lparen
+            + "echo "
+            + dollar
+            + lparen
+            + lparen
+            + "1 + 2"
+            + rparen
+            + rparen
+            + "; rm -rf "
+            + base
+            + "/"
+            + star
+            + " "
+            + rparen
+            + "; do echo ok; done"
+        )
         for line in (nested_subshell, nested_arith):
             with self.subTest(line=line):
                 self.assertTrue(_line_path_violations(line), "nested construct must not hide deletion: %r" % line)
@@ -8704,7 +9692,22 @@ class TestInstallReview(unittest.TestCase):
         nl = chr(10)
         arith_cmd = "((" + " x = 1 " + lt + lt + " 2 ))" + nl + "rm -rf $TARGET/rest" + nl
         arith_exp = "$" + "((" + " 1 " + lt + lt + " 2 ))" + nl + "rm -rf $TARGET/rest" + nl
-        quoted = "echo " + dq + "first" + nl + "second " + lt + lt + "HID" + nl + "third" + dq + nl + "rm -rf $TARGET/rest" + nl
+        quoted = (
+            "echo "
+            + dq
+            + "first"
+            + nl
+            + "second "
+            + lt
+            + lt
+            + "HID"
+            + nl
+            + "third"
+            + dq
+            + nl
+            + "rm -rf $TARGET/rest"
+            + nl
+        )
         for name, snippet in (("arith_command", arith_cmd), ("arith_expand", arith_exp), ("multiline_quote", quoted)):
             with self.subTest(case=name):
                 mutant = text + nl + snippet
@@ -8759,7 +9762,27 @@ class TestInstallReview(unittest.TestCase):
         rp = chr(41)
         lt = chr(60)
         tgt = ds + "TARGET/rest"
-        first = "v=" + ds + lp + lp + " " + ds + lp + "echo " + ds + lp + "echo hi" + rp + rp + " " + lt + lt + " 2 " + rp + rp
+        first = (
+            "v="
+            + ds
+            + lp
+            + lp
+            + " "
+            + ds
+            + lp
+            + "echo "
+            + ds
+            + lp
+            + "echo hi"
+            + rp
+            + rp
+            + " "
+            + lt
+            + lt
+            + " 2 "
+            + rp
+            + rp
+        )
         fixture = first + nl + "echo middle" + nl + "rm -rf " + tgt + nl
         self.assertEqual(_mask_heredoc_bodies(fixture), fixture)
         self.assertEqual(_scan_installer_paths(fixture), (["rm -rf " + tgt], []))
@@ -8772,14 +9795,51 @@ class TestInstallReview(unittest.TestCase):
         rparen = chr(41)
         btick = chr(96)
         dq = chr(34)
-        for_line = "for f in " + dollar + lparen + "rm -rf " + base + "/" + star + "; echo do" + rparen + "; do echo ok; done"
-        self.assertTrue(_line_path_violations(for_line), "misleading do inside substitution must not discard deletion: %r" % for_line)
-        case_line = "case " + dollar + lparen + "rm -rf " + base + "/" + star + "; echo in" + rparen + " in fast) echo ok;; esac"
-        self.assertTrue(_line_path_violations(case_line), "misleading in inside substitution must not discard deletion: %r" % case_line)
+        for_line = (
+            "for f in " + dollar + lparen + "rm -rf " + base + "/" + star + "; echo do" + rparen + "; do echo ok; done"
+        )
+        self.assertTrue(
+            _line_path_violations(for_line),
+            "misleading do inside substitution must not discard deletion: %r" % for_line,
+        )
+        case_line = (
+            "case "
+            + dollar
+            + lparen
+            + "rm -rf "
+            + base
+            + "/"
+            + star
+            + "; echo in"
+            + rparen
+            + " in fast) echo ok;; esac"
+        )
+        self.assertTrue(
+            _line_path_violations(case_line),
+            "misleading in inside substitution must not discard deletion: %r" % case_line,
+        )
         tick_line = "for f in " + btick + "rm -rf " + base + "/" + star + "; echo do" + btick + "; do echo ok; done"
-        self.assertTrue(_line_path_violations(tick_line), "misleading do inside backticks must not discard deletion: %r" % tick_line)
-        quoted_line = "for f in " + dollar + lparen + "rm -rf " + base + "/" + star + "; echo " + dq + "do" + dq + rparen + "; do echo ok; done"
-        self.assertTrue(_line_path_violations(quoted_line), "quoted misleading do must not discard deletion: %r" % quoted_line)
+        self.assertTrue(
+            _line_path_violations(tick_line), "misleading do inside backticks must not discard deletion: %r" % tick_line
+        )
+        quoted_line = (
+            "for f in "
+            + dollar
+            + lparen
+            + "rm -rf "
+            + base
+            + "/"
+            + star
+            + "; echo "
+            + dq
+            + "do"
+            + dq
+            + rparen
+            + "; do echo ok; done"
+        )
+        self.assertTrue(
+            _line_path_violations(quoted_line), "quoted misleading do must not discard deletion: %r" % quoted_line
+        )
 
     def test_production_paths_reject_case_in_command_substitution(self):
         star = chr(42)
@@ -8788,21 +9848,46 @@ class TestInstallReview(unittest.TestCase):
         lparen = chr(40)
         rparen = chr(41)
         case_kw = "".join(["ca", "se"])
-        destructive = "for f in " + dollar + lparen + case_kw + " x in x" + rparen + " rm -rf " + base + "/" + star + "; echo do;; esac" + rparen + "; do echo ok; done"
-        minimal = "for f in " + dollar + lparen + case_kw + " x in x" + rparen + " echo do;; esac" + rparen + "; do echo ok; done"
+        destructive = (
+            "for f in "
+            + dollar
+            + lparen
+            + case_kw
+            + " x in x"
+            + rparen
+            + " rm -rf "
+            + base
+            + "/"
+            + star
+            + "; echo do;; esac"
+            + rparen
+            + "; do echo ok; done"
+        )
+        minimal = (
+            "for f in "
+            + dollar
+            + lparen
+            + case_kw
+            + " x in x"
+            + rparen
+            + " echo do;; esac"
+            + rparen
+            + "; do echo ok; done"
+        )
         snippets = (("destructive", destructive), ("minimal", minimal))
         for label, snippet in snippets:
             with self.subTest(snippet=label):
                 with self.assertRaisesRegex(AssertionError, "unsupported case in command substitution"):
                     _assert_snippet_confined(snippet)
 
-
     def test_retained_rollback_restores_state_after_checkout_removal(self):
         text = _read_install_sh()
+
         def _extract(name):
             start = text.index(name + "() {")
             end = text.index("\n}\n", start) + 3
             return text[start:end] + "\n"
+
         helpers = _extract("opos_owned_path") + _extract("canon_file") + _extract("retain_hardening_rollback")
         for _name in ("py_ok", "find_python"):
             if _name + "() {" in text:
@@ -8854,14 +9939,17 @@ class TestInstallReview(unittest.TestCase):
             created_path.write_bytes(created_bytes)
             (backup_dir / "etc" / "opos").mkdir(parents=True, exist_ok=True)
             (backup_dir / "etc" / "opos" / "".join(["test-", "restore.conf"])).write_bytes(backup_bytes)
-            (backup_dir / "MANIFEST").write_text("restore " + restore_rel + "\ncreated " + created_rel + "\n", encoding="utf-8")
+            (backup_dir / "MANIFEST").write_text(
+                "restore " + restore_rel + "\ncreated " + created_rel + "\n", encoding="utf-8"
+            )
             rb_env = dict(os.environ)
             rb_env["OPOS_ROOT"] = str(isolated)
-            rb_proc = subprocess.run(["bash", str(retained), "--rollback"], capture_output=True, text=True, env=rb_env, timeout=30)
+            rb_proc = subprocess.run(
+                ["bash", str(retained), "--rollback"], capture_output=True, text=True, env=rb_env, timeout=30
+            )
             self.assertEqual(rb_proc.returncode, 0, rb_proc.stdout + rb_proc.stderr)
             self.assertEqual(live_path.read_bytes(), backup_bytes)
             self.assertFalse(os.path.lexists(str(created_path)))
-
 
     def test_uninstall_preserves_unverified_service_unit(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
@@ -8884,7 +9972,9 @@ class TestInstallReview(unittest.TestCase):
             log.write_text("", encoding="utf-8")
             stub = stubdir / "systemctl"
             stub.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + str(log) + "\"\n"
+                '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "'
+                + str(log)
+                + '"\n'
                 + "case \"$*\" in *list-unit-files*) printf 'opos-server.service enabled\\n'\nexit 0;; esac\n"
                 + "exit 0\n",
                 encoding="utf-8",
@@ -8927,7 +10017,6 @@ class TestInstallReview(unittest.TestCase):
             _assert_snippet_confined(line)
         self.assertEqual(_strip_shell_comment("echo ok # trailing"), "echo ok ")
 
-
     def test_retain_uses_stable_tmp_handles(self):
         text = _read_install_sh()
         start = text.index("retain_hardening_rollback() {")
@@ -8935,7 +10024,7 @@ class TestInstallReview(unittest.TestCase):
         block = text[start:end]
         self.assertIn("O_NOFOLLOW", block)
         self.assertIn("fchmod", block)
-        self.assertIn("[ ! -L \"$_retain_tmp\" ]", block)
+        self.assertIn('[ ! -L "$_retain_tmp" ]', block)
 
         def _extract(name):
             s = text.index(name + "() {")
@@ -8966,12 +10055,12 @@ class TestInstallReview(unittest.TestCase):
             runner = tmp_path / "run.sh"
             script = (
                 helpers
-                + 'cp() {\n'
+                + "cp() {\n"
                 + '  last="";\n'
                 + '  for a in "$@"; do last="$a"; done\n'
                 + '  case "$last" in *".opos-harden-rollback."*) rm -f "$last"; ln -s "$OPOS_VICTIM" "$last";; esac\n'
                 + '  command cp "$@"\n'
-                + '}\n'
+                + "}\n"
                 + 'retain_hardening_rollback "$1"\n'
             )
             runner.write_text(script, encoding="utf-8")
@@ -9022,7 +10111,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn(quoted, proc.stdout)
             prefix = "==> hardening active: run sudo "
             self.assertTrue(line.startswith(prefix))
-            token = line[len(prefix):-len(" --rollback")]
+            token = line[len(prefix) : -len(" --rollback")]
             self.assertEqual(token, quoted)
             check = subprocess.run(["sh", "-c", "printf '%s' " + token], capture_output=True, text=True, timeout=30)
             self.assertEqual(check.returncode, 0, check.stderr)
@@ -9030,8 +10119,9 @@ class TestInstallReview(unittest.TestCase):
 
     def test_retained_rollback_quoting_preserves_apostrophe_herein(self):
         import shlex
+
         text = _read_install_sh()
-        start = text.index("_retain_q=\"'\"")
+        start = text.index('_retain_q="\'"')
         marker = "printf '==> hardening active: run sudo "
         end = text.index(marker, start)
         block = text[start:end]
@@ -9046,7 +10136,13 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(path=path):
                 env = dict(os.environ)
                 env["_retain_dst"] = path
-                proc = subprocess.run(["sh", "-c", block + "\nprintf '%s' \"$_retain_q\""], capture_output=True, text=True, env=env, timeout=30)
+                proc = subprocess.run(
+                    ["sh", "-c", block + "\nprintf '%s' \"$_retain_q\""],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=30,
+                )
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(shlex.split(proc.stdout), [path])
 

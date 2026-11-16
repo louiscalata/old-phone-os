@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The alarm engine: repeat rules, daylight-saving time, snooze, a missed fire, and an unknown clock."""
+
 import json
 import tempfile
 import unittest
@@ -114,9 +115,15 @@ class Engine(unittest.TestCase):
         row = book.add(7, 0, label="Kitchen", now=fire - timedelta(hours=1))
         self.assertEqual(book.tick(fire), [Event("ring", "alarm", row["id"], fire, "Alarm 07:00")])
         self.assertEqual(book.alarms[0], dict(row, done=True, ringing=True))
-        self.assertEqual(book.next_alarm(fire + timedelta(seconds=1)), {
-            "id": row["id"], "at": fire + timedelta(days=1), "label": "Kitchen", "text": "Alarm 07:00",
-        })
+        self.assertEqual(
+            book.next_alarm(fire + timedelta(seconds=1)),
+            {
+                "id": row["id"],
+                "at": fire + timedelta(days=1),
+                "label": "Kitchen",
+                "text": "Alarm 07:00",
+            },
+        )
         book = Book(book.store.root, UTC)
         self.assertEqual(book.tick(fire + timedelta(seconds=30)), [])
         self.assertEqual(book.alarms[0], dict(row, enabled=False, ringing=True))
@@ -135,12 +142,21 @@ class Engine(unittest.TestCase):
         snoozed = book.snooze(snoozed_at)
         self.assertEqual(snoozed, dict(row, snooze_at="2026-11-09T07:11:00+00:00"))
         book = Book(book.store.root, UTC)
-        self.assertEqual(book.next_alarm(snoozed_at), {
-            "id": row["id"], "at": snoozed_at + timedelta(minutes=10), "label": "", "text": "Alarm 07:00",
-        })
-        self.assertEqual(book.tick(snoozed_at + timedelta(minutes=10)), [
-            Event("ring", "alarm", row["id"], snoozed_at + timedelta(minutes=10), "Alarm 07:00"),
-        ])
+        self.assertEqual(
+            book.next_alarm(snoozed_at),
+            {
+                "id": row["id"],
+                "at": snoozed_at + timedelta(minutes=10),
+                "label": "",
+                "text": "Alarm 07:00",
+            },
+        )
+        self.assertEqual(
+            book.tick(snoozed_at + timedelta(minutes=10)),
+            [
+                Event("ring", "alarm", row["id"], snoozed_at + timedelta(minutes=10), "Alarm 07:00"),
+            ],
+        )
         self.assertEqual(book.stop(snoozed_at + timedelta(minutes=10), row["id"]), dict(row, enabled=False, done=True))
 
     def test_unknown_clock_preserves_the_entire_saved_book(self):
@@ -162,10 +178,13 @@ class Engine(unittest.TestCase):
         row = book.add(7, 0, days=(0,), now=fire - timedelta(hours=1))
         timer = book.start_timer(60, fire - timedelta(minutes=1))
         book = Book(book.store.root, UTC)
-        self.assertEqual(book.tick(fire + timedelta(minutes=11)), [
-            Event("missed", "timer", timer["id"], fire, "Missed timer"),
-            Event("missed", "alarm", row["id"], fire, "Missed alarm 07:00"),
-        ])
+        self.assertEqual(
+            book.tick(fire + timedelta(minutes=11)),
+            [
+                Event("missed", "timer", timer["id"], fire, "Missed timer"),
+                Event("missed", "alarm", row["id"], fire, "Missed alarm 07:00"),
+            ],
+        )
         self.assertEqual(book.alarms, [row])
         self.assertIsNone(book.timer)
         self.assertEqual(book.notices, ["Missed timer", "Missed alarm 07:00"])
@@ -201,7 +220,9 @@ class Engine(unittest.TestCase):
         edited["enabled"] = True
         self.assertEqual(book.toggle(row["id"], True), edited)
         data = json.loads((book.store.root / "alarms.json").read_text())
-        self.assertEqual(data, {"schema": 1, "alarms": [edited], "timer": None, "last_seen": now.isoformat(), "notices": []})
+        self.assertEqual(
+            data, {"schema": 1, "alarms": [edited], "timer": None, "last_seen": now.isoformat(), "notices": []}
+        )
         book.delete(row["id"])
         self.assertEqual(Book(book.store.root, UTC).alarms, [])
 
@@ -238,18 +259,24 @@ class Engine(unittest.TestCase):
         self.assertEqual(edited["snooze_at"], "2026-11-09T07:10:00+00:00")
         self.assertEqual(book.next_alarm(fire)["text"], "Alarm 08:05")
         self.assertEqual(book.next_alarm(fire)["label"], "Tea")
-        self.assertEqual(book.tick(fire + timedelta(minutes=10)), [
-            Event("ring", "alarm", row["id"], fire + timedelta(minutes=10), "Alarm 08:05"),
-        ])
+        self.assertEqual(
+            book.tick(fire + timedelta(minutes=10)),
+            [
+                Event("ring", "alarm", row["id"], fire + timedelta(minutes=10), "Alarm 08:05"),
+            ],
+        )
 
     def test_a_repeating_alarm_still_rings_next_week_without_a_stop(self):
         book = self.book()
         fire = at(UTC, 2026, 11, 9, 7, 0)
         row = book.add(7, 0, days=(0,), now=fire - timedelta(hours=1))
         book.tick(fire)
-        self.assertEqual(book.tick(fire + timedelta(days=7)), [
-            Event("ring", "alarm", row["id"], fire + timedelta(days=7), "Alarm 07:00"),
-        ])
+        self.assertEqual(
+            book.tick(fire + timedelta(days=7)),
+            [
+                Event("ring", "alarm", row["id"], fire + timedelta(days=7), "Alarm 07:00"),
+            ],
+        )
 
     def test_switching_off_a_snoozed_alarm_cancels_its_ring(self):
         for days in ((), (0,)):
@@ -268,8 +295,11 @@ class Engine(unittest.TestCase):
 
     def test_snooze_requires_a_ring_even_with_an_explicit_id(self):
         fire = at(UTC, 2026, 11, 9, 7, 0)
-        for enabled, selected, now in ((True, True, fire - timedelta(minutes=1)),
-                                       (False, True, fire), (True, False, fire)):
+        for enabled, selected, now in (
+            (True, True, fire - timedelta(minutes=1)),
+            (False, True, fire),
+            (True, False, fire),
+        ):
             with self.subTest(enabled=enabled, selected=selected):
                 book = self.book()
                 row = book.add(7, 0, now=fire - timedelta(hours=1))

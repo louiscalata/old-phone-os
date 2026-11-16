@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The actual app handlers and script, without a listening socket or browser."""
+
 from io import BytesIO
 import json
 import os
@@ -47,7 +48,11 @@ def request(path, body=None, token="t" * 43, host="127.0.0.1:8765", **headers):
 class CallsPage(unittest.TestCase):
     def setUp(self):
         tmp = self.enterContext(tempfile.TemporaryDirectory())
-        self.enterContext(mock.patch.dict(os.environ, {"OPOS_APPS": "calls", "OPOS_STATE_DIR": tmp, "OPOS_CONFIG_DIR": tmp, "OPOS_LOCK": "0"}))
+        self.enterContext(
+            mock.patch.dict(
+                os.environ, {"OPOS_APPS": "calls", "OPOS_STATE_DIR": tmp, "OPOS_CONFIG_DIR": tmp, "OPOS_LOCK": "0"}
+            )
+        )
         calllog.reset()
         contacts_page.reset()
         self.addCleanup(calllog.reset)
@@ -80,13 +85,19 @@ class CallsPage(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["missed_count"], 1)
         self.assertIs(json.loads(body)["calls"][0]["practice"], True)
-        for payload in ({"action": "clear"}, {"action": "clear", "confirm": "true"},
-                        {"action": "clear", "confirm": 1}, {"action": "record", "practice": False},
-                        {"action": "clear", "confirm": True, "calls": []}):
+        for payload in (
+            {"action": "clear"},
+            {"action": "clear", "confirm": "true"},
+            {"action": "clear", "confirm": 1},
+            {"action": "record", "practice": False},
+            {"action": "clear", "confirm": True, "calls": []},
+        ):
             self.assertEqual(request("/api/calls", payload)[0], 400, payload)
             self.assertEqual(len(calllog.snapshot()["calls"]), 1)
         self.assertEqual(request("/api/calls", {"action": "clear", "confirm": True}, token="wrong")[0], 403)
-        self.assertEqual(request("/api/calls", {"action": "clear", "confirm": True}, Origin="https://elsewhere.invalid")[0], 403)
+        self.assertEqual(
+            request("/api/calls", {"action": "clear", "confirm": True}, Origin="https://elsewhere.invalid")[0], 403
+        )
         status, body, _ = request("/api/calls", {"action": "clear", "confirm": True})
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["calls"], [])
@@ -110,9 +121,20 @@ class CallsPage(unittest.TestCase):
         html = raw.decode()
         self.assertEqual(status, 200)
         self.assertEqual(int(headers["Content-Length"]), len(raw))
-        for text in ('src="/osk.js"', 'src="/panes.js"', 'id="list"', 'id="thumb"', 'data-hand',
-                     'id="home" class="btn" href="/"', 'Search calls <input', 'type="search"',
-                     'aria-label="Calls, newest first"', 'role="status"', 'Confirm clear all calls', '>Cancel<'):
+        for text in (
+            'src="/osk.js"',
+            'src="/panes.js"',
+            'id="list"',
+            'id="thumb"',
+            "data-hand",
+            'id="home" class="btn" href="/"',
+            "Search calls <input",
+            'type="search"',
+            'aria-label="Calls, newest first"',
+            'role="status"',
+            "Confirm clear all calls",
+            ">Cancel<",
+        ):
             self.assertIn(text, html)
         self.assertEqual(set(), css_hexes(style_of(html)) - TOKENS)
         self.assertTrue(is_quiet(visible(html)))
@@ -125,6 +147,7 @@ class CallsPage(unittest.TestCase):
         # The original digest test needs no fixture; its inherited setUp binds
         # an unrelated HTTP source that is unavailable in a socket sandbox.
         from tests.test_update_client import MainPageIsUntouched
+
         MainPageIsUntouched("test_recorded_digests").test_recorded_digests()
         plain = web.page("t" * 43, "n" * 22)
         with mock.patch.dict(os.environ, {"OPOS_APPS": ""}):
@@ -137,6 +160,7 @@ class CallsPage(unittest.TestCase):
             after = request("/")[1]
         # Real handlers create random nonces; normalize only the nonce value.
         import re
+
         normalize = lambda raw: re.sub(rb'nonce="[A-Za-z0-9_-]+"', b'nonce="fixed"', raw)
         self.assertEqual(normalize(before), normalize(after))
         self.assertGreater(len(after), len(off))
@@ -166,8 +190,13 @@ class CallsPage(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        result = subprocess.run([node, str(Path(__file__).with_name("calls_page_test.js"))],
-                                input=json.dumps(calls_page._SCRIPT), text=True, capture_output=True, timeout=20)
+        result = subprocess.run(
+            [node, str(Path(__file__).with_name("calls_page_test.js"))],
+            input=json.dumps(calls_page._SCRIPT),
+            text=True,
+            capture_output=True,
+            timeout=20,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("call log script checks passed", result.stdout)
 

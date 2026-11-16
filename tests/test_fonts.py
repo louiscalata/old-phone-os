@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Newsreader and Inter Tight are separate files, not part of page()."""
+
 import unittest
 
 from opos import fonts, secure
@@ -34,8 +35,12 @@ class Fonts(unittest.TestCase):
         self.assertIn("Inter Tight", jaryo)
 
     def test_the_files_are_latin_woff2_under_the_ofl(self):
-        for name in ("newsreader-400-latin.woff2", "newsreader-700-latin.woff2",
-                     "inter-tight-400-latin.woff2", "inter-tight-700-latin.woff2"):
+        for name in (
+            "newsreader-400-latin.woff2",
+            "newsreader-700-latin.woff2",
+            "inter-tight-400-latin.woff2",
+            "inter-tight-700-latin.woff2",
+        ):
             raw = (STATIC / "fonts" / name).read_bytes()
             self.assertTrue(raw.startswith(b"wOF2"), name)
             self.assertLess(len(raw), 40_000, name)

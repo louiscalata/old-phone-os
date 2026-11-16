@@ -4,6 +4,7 @@
 The page's lock screen is a cover. These tests check that, with the script loaded, the cover comes off only after the
 server's own answer says the phone is unlocked, and that showing the cover locks the server. No browser is used.
 """
+
 import json
 from pathlib import Path
 import re
@@ -357,8 +358,9 @@ class LockPad(unittest.TestCase):
     def setUpClass(cls):
         if not NODE:
             raise unittest.SkipTest("node not installed")
-        result = subprocess.run([NODE, "--unhandled-rejections=strict", "-e", HARNESS, str(JS)],
-                                capture_output=True, text=True, timeout=60)
+        result = subprocess.run(
+            [NODE, "--unhandled-rejections=strict", "-e", HARNESS, str(JS)], capture_output=True, text=True, timeout=60
+        )
         if result.returncode != 0:
             raise AssertionError(result.stderr)
         cls.out = json.loads(result.stdout)
@@ -368,19 +370,42 @@ class LockPad(unittest.TestCase):
         self.assertEqual(out["loadLocks"], ["lock"])
         self.assertEqual(out["headers"], ["/api/lock", "tok", "application/json"])
         self.assertEqual(out["poll"], [5000])
-        self.assertEqual(out["relock"], {"cover": False, "posts": [{"action": "lock"}], "server": True, "pad": True, "opener": False})
+        self.assertEqual(
+            out["relock"], {"cover": False, "posts": [{"action": "lock"}], "server": True, "pad": True, "opener": False}
+        )
 
     def test_a_saved_pin_needs_the_pad_and_the_servers_answer(self):
         out = self.out
-        self.assertEqual(out["afterTap"], {"cover": False, "inert": True, "pad": True, "opener": True,
-                                           "line": "Enter the PIN", "posts": []})
+        self.assertEqual(
+            out["afterTap"],
+            {"cover": False, "inert": True, "pad": True, "opener": True, "line": "Enter the PIN", "posts": []},
+        )
         self.assertEqual(out["keys"], ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "Unlock"])
         self.assertTrue(out["padBefore"])
-        self.assertEqual((out["one"], out["four"], out["cleared"]), ("1 digit entered", "4 digits entered", "Enter the PIN"))
-        self.assertEqual(out["wrong"], {"cover": False, "inert": True, "line": "Wrong PIN",
-                                        "posts": [{"action": "unlock", "pin": "9999"}], "uncovered": False})
-        self.assertEqual(out["right"], {"cover": True, "inert": False, "pad": True, "opener": False,
-                                        "posts": [{"action": "unlock", "pin": "1234"}], "server": False})
+        self.assertEqual(
+            (out["one"], out["four"], out["cleared"]), ("1 digit entered", "4 digits entered", "Enter the PIN")
+        )
+        self.assertEqual(
+            out["wrong"],
+            {
+                "cover": False,
+                "inert": True,
+                "line": "Wrong PIN",
+                "posts": [{"action": "unlock", "pin": "9999"}],
+                "uncovered": False,
+            },
+        )
+        self.assertEqual(
+            out["right"],
+            {
+                "cover": True,
+                "inert": False,
+                "pad": True,
+                "opener": False,
+                "posts": [{"action": "unlock", "pin": "1234"}],
+                "server": False,
+            },
+        )
 
     def test_digits_are_never_shown_and_the_length_is_bounded(self):
         out = self.out
@@ -388,7 +413,9 @@ class LockPad(unittest.TestCase):
         self.assertEqual(out["long"], "8 digits entered")
         self.assertEqual(out["longSent"], ["12345678"])
         for text in (out["one"], out["four"], out["long"], out["wrong"]["line"]):
-            self.assertNotRegex(text.replace("4 to 8", "").replace("8 digits", "").replace("4 digits", "").replace("1 digit", ""), r"\d")
+            self.assertNotRegex(
+                text.replace("4 to 8", "").replace("8 digits", "").replace("4 digits", "").replace("1 digit", ""), r"\d"
+            )
 
     def test_a_wait_is_said_in_plain_units_and_keeps_the_cover(self):
         expected = {30: "30 s", 119: "119 s", 120: "2 min", 3599: "60 min", 3600: "about 1 h", 950400: "about 264 h"}
@@ -400,8 +427,10 @@ class LockPad(unittest.TestCase):
     def test_no_saved_pin_opens_without_digits_only_after_the_server_answers(self):
         out = self.out
         self.assertFalse(out["noPinBeforeAnswer"])
-        self.assertEqual(out["noPin"], {"cover": True, "inert": False, "posts": [{"action": "unlock", "pin": ""}],
-                                        "pad": False, "server": False})
+        self.assertEqual(
+            out["noPin"],
+            {"cover": True, "inert": False, "posts": [{"action": "unlock", "pin": ""}], "pad": False, "server": False},
+        )
         self.assertEqual(out["shade"], 0)
         self.assertEqual(out["covered"], {"cover": False, "inert": True, "posts": []})
         self.assertEqual(out["coveredLater"], [])
@@ -423,29 +452,56 @@ class LockPad(unittest.TestCase):
 
     def test_a_refused_lock_keeps_the_cover_and_never_skips_the_pin(self):
         rows = self.out["refused"]
-        self.assertEqual([row["how"] for row in rows], ["busy 429", "connection", "answer unlocked",
-                                                        "answer without locked", "answer null", "answer 500"])
+        self.assertEqual(
+            [row["how"] for row in rows],
+            ["busy 429", "connection", "answer unlocked", "answer without locked", "answer null", "answer 500"],
+        )
         for row in rows:
             with self.subTest(how=row["how"]):
                 # The cover is on, the server is not locked, and the page says so.
-                self.assertEqual(row["lock"], {"cover": False, "inert": True, "server": False, "line": self.FAILED, "locks": 1})
+                self.assertEqual(
+                    row["lock"], {"cover": False, "inert": True, "server": False, "line": self.FAILED, "locks": 1}
+                )
                 # Two taps: the lock is asked for again each time, the status is not, and nothing opens.
-                self.assertEqual(row["tap"], {"cover": False, "inert": True, "uncovered": False, "line": self.FAILED,
-                                              "locks": 3, "unlocks": 0, "gets": 0})
+                self.assertEqual(
+                    row["tap"],
+                    {
+                        "cover": False,
+                        "inert": True,
+                        "uncovered": False,
+                        "line": self.FAILED,
+                        "locks": 3,
+                        "unlocks": 0,
+                        "gets": 0,
+                    },
+                )
                 if row["keys"]:
                     self.assertEqual(row["typed"], {"cover": False, "unlocks": 0, "line": self.FAILED})
                 self.assertEqual(row["tick"], {"cover": False, "locks": 1, "server": False})
-                self.assertEqual(row["mended"], {"cover": False, "server": True, "pad": True, "opener": True,
-                                                 "line": "Enter the PIN", "order": ["lock", "status"]})
+                self.assertEqual(
+                    row["mended"],
+                    {
+                        "cover": False,
+                        "server": True,
+                        "pad": True,
+                        "opener": True,
+                        "line": "Enter the PIN",
+                        "order": ["lock", "status"],
+                    },
+                )
                 self.assertEqual(row["wrong"], {"cover": False, "line": "Wrong PIN"})
                 self.assertEqual(row["right"], {"cover": True, "inert": False, "server": False})
 
     def test_a_failed_lock_is_retried_by_the_check_and_not_in_a_loop(self):
         out = self.out
-        self.assertEqual(out["selfMended"], {"cover": False, "server": True, "locks": 2, "line": "Enter the PIN",
-                                             "pad": True, "opener": False})
+        self.assertEqual(
+            out["selfMended"],
+            {"cover": False, "server": True, "locks": 2, "line": "Enter the PIN", "pad": True, "opener": False},
+        )
         self.assertEqual(out["selfMendedLater"], 2)
-        self.assertEqual(out["refusedAtLoad"], {"cover": False, "uncovered": False, "server": False, "line": self.FAILED})
+        self.assertEqual(
+            out["refusedAtLoad"], {"cover": False, "uncovered": False, "server": False, "line": self.FAILED}
+        )
 
     def test_unlock_waits_for_the_lock_request_that_is_on_its_way(self):
         out = self.out
@@ -459,15 +515,19 @@ class LockPad(unittest.TestCase):
 
     def test_a_busy_answer_to_the_digits_is_not_a_wrong_pin(self):
         out = self.out
-        self.assertEqual(out["busyUnlock"], {"cover": False, "line": "The phone is busy. Wait a few seconds, then try again."})
+        self.assertEqual(
+            out["busyUnlock"], {"cover": False, "line": "The phone is busy. Wait a few seconds, then try again."}
+        )
         self.assertTrue(out["busyUnlockAfter"])
 
     def test_unlocked_inside_an_error_answer_keeps_the_cover(self):
-        self.assertEqual(self.out["errorCodes"], [[403, False, False, False], [500, False, False, False],
-                                                  [201, False, False, False]])
+        self.assertEqual(
+            self.out["errorCodes"], [[403, False, False, False], [500, False, False, False], [201, False, False, False]]
+        )
 
     def test_the_pad_fits_a_320_pixel_screen(self):
         """The rules, not a rendering: no browser is used. The three columns can shrink and no key keeps a minimum width."""
+
         def rules(text):
             return dict(part.split(":", 1) for part in text.split(";") if part)
 
@@ -481,7 +541,9 @@ class LockPad(unittest.TestCase):
         key = rules(self.out["keyStyles"][0])
         # The page's own "#lock button" rules give every button on the cover a 160px minimum and a 360px width.
         # A style set on the element wins over them unless one is !important.
-        self.assertEqual((key["min-width"], key["width"], key["box-sizing"], key["margin"]), ("0", "100%", "border-box", "0"))
+        self.assertEqual(
+            (key["min-width"], key["width"], key["box-sizing"], key["margin"]), ("0", "100%", "border-box", "0")
+        )
         self.assertEqual(key["min-height"], "56px")
         self.assertEqual(rules(self.out["lineStyle"])["min-width"], "0")
         static = JS.parent

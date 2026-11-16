@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """W1-07: the battery claims are true (health nobody read, a one-point graph, a goal nobody set, a modelled time left)."""
+
 import re
 import unittest
 from pathlib import Path
@@ -18,10 +19,20 @@ NOON = 12 * 3600
 def live_phone(level=55.0, health=1.0, source="assumed", charging=False, clock_s=NOON + 2 * 3600 + 600, visible=True):
     """A Duo-like phone: a sysfs reader whose health is `source`, a steerable wall clock and a steerable monotonic clock."""
     box = {"level": level, "t": 0.0, "clock_s": clock_s}
-    reader = lambda: {"level": box["level"], "temp_c": None, "charging": charging, "source": "sysfs", "health": health, "health_source": source}
+    reader = lambda: {
+        "level": box["level"],
+        "temp_c": None,
+        "charging": charging,
+        "source": "sysfs",
+        "health": health,
+        "health_source": source,
+    }
     lb = LiveBattery(reader=reader, clock=lambda: box["t"], refresh_s=0)
-    with mock.patch.object(web, "_local_clock_s", lambda: box["clock_s"]), mock.patch.object(web.assist, "free_mb", return_value=4096), \
-            mock.patch.object(web.prefs, "load", side_effect=OSError):
+    with (
+        mock.patch.object(web, "_local_clock_s", lambda: box["clock_s"]),
+        mock.patch.object(web.assist, "free_mb", return_value=4096),
+        mock.patch.object(web.prefs, "load", side_effect=OSError),
+    ):
         phone = Phone(visible=visible, live_battery=lb)
     phone.box = box
     return phone
@@ -29,8 +40,11 @@ def live_phone(level=55.0, health=1.0, source="assumed", charging=False, clock_s
 
 def state_of(phone):
     box = getattr(phone, "box", {"clock_s": NOON})
-    with mock.patch.object(web, "_local_clock_s", lambda: box["clock_s"]), mock.patch.object(web.assist, "free_mb", return_value=4096), \
-            mock.patch.object(web.prefs, "load", side_effect=OSError):
+    with (
+        mock.patch.object(web, "_local_clock_s", lambda: box["clock_s"]),
+        mock.patch.object(web.assist, "free_mb", return_value=4096),
+        mock.patch.object(web.prefs, "load", side_effect=OSError),
+    ):
         return phone.state()
 
 
@@ -57,7 +71,9 @@ class HealthIsOnlySaidWhenRead(unittest.TestCase):
         s = state_of(phone)
         self.assertTrue(s["lock_story"].startswith("Worn battery."), s["lock_story"])
         why = s["helper"]["why_paused"]
-        self.assertTrue(why.startswith("The battery is worn. It holds 60% of what it did when new, so 55% is really about 33%"), why)
+        self.assertTrue(
+            why.startswith("The battery is worn. It holds 60% of what it did when new, so 55% is really about 33%"), why
+        )
         self.assertEqual(s["helper"]["battery_health_percent"], 60)
 
     def test_a_measured_healthy_battery_says_nothing_about_health(self):
@@ -76,12 +92,18 @@ class HealthIsOnlySaidWhenRead(unittest.TestCase):
         self.assertEqual(lock_story(55, 1.0, 30, False, [], None, True, health_known=False), "Nothing paused.")
         self.assertEqual(lock_story(55, 0.5, 30, False, [], None, True, health_known=False), "Nothing paused.")
         self.assertEqual(lock_story(55, 0.5, 30, False, [], None, True), "Worn battery. Nothing paused.")
-        self.assertEqual(why_paused(55, 1.0, 30, False, [], health_known=False),
-                         "The battery is at 55% and it is not charging; nothing is paused, so everything is on.")
-        self.assertEqual(why_paused(55, 0.6, 30, False, [], health_known=False),
-                         "The battery is at 55% and it is not charging; nothing is paused, so everything is on.")
-        self.assertEqual(why_paused(100, 0.6, 30, False, []),
-                         "The battery is worn. It holds 60% of what it did when new, so 100% is really about 60% and it is not charging; nothing is paused, so everything is on.")
+        self.assertEqual(
+            why_paused(55, 1.0, 30, False, [], health_known=False),
+            "The battery is at 55% and it is not charging; nothing is paused, so everything is on.",
+        )
+        self.assertEqual(
+            why_paused(55, 0.6, 30, False, [], health_known=False),
+            "The battery is at 55% and it is not charging; nothing is paused, so everything is on.",
+        )
+        self.assertEqual(
+            why_paused(100, 0.6, 30, False, []),
+            "The battery is worn. It holds 60% of what it did when new, so 100% is really about 60% and it is not charging; nothing is paused, so everything is on.",
+        )
         self.assertTrue(why_paused(80, 1.0, 30, False, []).startswith("The battery is at 80% and it is not charging"))
 
 
@@ -144,11 +166,25 @@ class Goal(unittest.TestCase):
             srv.server_address = ("127.0.0.1", 1)
             return srv
 
-        patches = [mock.patch.object(web.setup_config, "load", return_value=None), mock.patch.object(web, "_route_with_glimmer"),
-                   mock.patch.object(web, "make_server", side_effect=fake_make_server), mock.patch.object(web.prefs, "load", side_effect=OSError)]
+        patches = [
+            mock.patch.object(web.setup_config, "load", return_value=None),
+            mock.patch.object(web, "_route_with_glimmer"),
+            mock.patch.object(web, "make_server", side_effect=fake_make_server),
+            mock.patch.object(web.prefs, "load", side_effect=OSError),
+        ]
         if live:
-            lb = LiveBattery(reader=lambda: {"level": 55.0, "temp_c": None, "charging": False, "source": "sysfs", "health": 1.0, "health_source": "assumed"},
-                             clock=lambda: 0.0, refresh_s=0)
+            lb = LiveBattery(
+                reader=lambda: {
+                    "level": 55.0,
+                    "temp_c": None,
+                    "charging": False,
+                    "source": "sysfs",
+                    "health": 1.0,
+                    "health_source": "assumed",
+                },
+                clock=lambda: 0.0,
+                refresh_s=0,
+            )
             patches.append(mock.patch.object(live_battery, "LiveBattery", lambda: lb))
         for p in patches:
             p.start()
@@ -174,11 +210,23 @@ class Goal(unittest.TestCase):
 class TimeLeftLabel(unittest.TestCase):
     def view(self, **kw):
         from opos.runtime import Runtime
+
         rt = Runtime(visible=True)
         d = Dashboard(rt.tasks)
         tick = rt.step(0, 60.0, health=1.0, goal_hours=None)
-        return d.view(60.0, tick.decision.mode, kw.pop("charging", False), 1.0, 43200, True, "", deferred=tick.decision.deferred,
-                      steps=tick.steps, drain_per_h=kw.pop("drain_per_h", tick.drain_per_h), **kw)
+        return d.view(
+            60.0,
+            tick.decision.mode,
+            kw.pop("charging", False),
+            1.0,
+            43200,
+            True,
+            "",
+            deferred=tick.decision.deferred,
+            steps=tick.steps,
+            drain_per_h=kw.pop("drain_per_h", tick.drain_per_h),
+            **kw,
+        )
 
     def test_a_model_figure_says_rough_estimate(self):
         v = self.view()
@@ -207,9 +255,24 @@ class TimeLeftLabel(unittest.TestCase):
         self.assertTrue(s["battery"]["time_left"].startswith(ROUGH))
         self.assertTrue(s["helper"]["time_left"].startswith(ROUGH))
         # ... and the helper's sentence still reads well
-        mid = web.why_paused(60, 1.0, 30, False, ["maps"], "16:00", goal_met=False, time_left=s["helper"]["time_left"], health_known=False)
+        mid = web.why_paused(
+            60,
+            1.0,
+            30,
+            False,
+            ["maps"],
+            "16:00",
+            goal_met=False,
+            time_left=s["helper"]["time_left"],
+            health_known=False,
+        )
         self.assertNotIn("rough estimate", mid)
-        self.assertTrue(mid.endswith(", but at this rate the battery shows " + s["helper"]["time_left"][len(ROUGH):].lower() + "."), mid)
+        self.assertTrue(
+            mid.endswith(
+                ", but at this rate the battery shows " + s["helper"]["time_left"][len(ROUGH) :].lower() + "."
+            ),
+            mid,
+        )
 
     def test_a_trusted_measurement_drops_the_label(self):
         phone = live_phone(level=80.0)

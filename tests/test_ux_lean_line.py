@@ -36,10 +36,7 @@ class SheetParser(HTMLParser):
 class LeanLineTests(unittest.TestCase):
     def setUp(self):
         self.body = page()
-        self.script = (
-            Path(__file__).resolve().parents[1]
-            / "src/opos/web_static/js-6.js"
-        ).read_text(encoding="utf-8")
+        self.script = (Path(__file__).resolve().parents[1] / "src/opos/web_static/js-6.js").read_text(encoding="utf-8")
 
     def test_lean_line_once_inside_sheet_after_time_left(self):
         parser = SheetParser()
@@ -48,7 +45,7 @@ class LeanLineTests(unittest.TestCase):
         self.assertEqual(len(parser.lean_parents), 1)
         self.assertEqual(parser.lean_parents[0][-1], "sheet")
         index = parser.children.index("time-left")
-        self.assertEqual(parser.children[index + 1:index + 3], ["lean-line", "headline"])
+        self.assertEqual(parser.children[index + 1 : index + 3], ["lean-line", "headline"])
         self.assertRegex(
             self.body,
             r'<div id="time-left"></div>\s*'
@@ -67,7 +64,7 @@ class LeanLineTests(unittest.TestCase):
 
     def test_script_wording_and_fallback(self):
         self.assertIn(
-            r'`OPOS process uses ${l.opos_mb} MB \u00b7 ${l.free_mb} MB available`'
+            r"`OPOS process uses ${l.opos_mb} MB \u00b7 ${l.free_mb} MB available`"
             ":'Memory figures unavailable on this device'",
             self.script,
         )

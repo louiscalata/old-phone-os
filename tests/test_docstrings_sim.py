@@ -2,6 +2,7 @@
 import unittest
 import opos.sim as m
 
+
 class TestSimDocstrings(unittest.TestCase):
     def test_docstrings(self):
         for obj in (m, m.DrainSim, m.eol_sim):

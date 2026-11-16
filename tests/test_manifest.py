@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for deploy manifest scripts."""
+
 import hashlib
 import pathlib
 import shutil

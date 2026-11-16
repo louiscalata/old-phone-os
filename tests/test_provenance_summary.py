@@ -21,7 +21,7 @@ def _load():
             break
     if next_idx is None:
         raise ValueError("Missing '## ' heading after '# Provenance'")
-    summary = "\n".join(lines[title_idx + 1:next_idx])
+    summary = "\n".join(lines[title_idx + 1 : next_idx])
     return t, summary, summary.lower()
 
 
@@ -36,6 +36,7 @@ class TestProvenanceSummary(unittest.TestCase):
     def test_summary_mentions_paid_routes_and_spend_ledger(self):
         self.assertIn("spend ledger", self.lower)
         import re
+
         models = ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0")
         paid_models = ["muse-spark-1.3"]
         for m in models:
@@ -47,121 +48,209 @@ class TestProvenanceSummary(unittest.TestCase):
                         paid_models.append(m)
                     break
         self.assertTrue(paid_models, "no paid models discovered")
-        sentences = re.split(r'(?<=[.!?])\s+|\n+', self.summary)
+        sentences = re.split(r"(?<=[.!?])\s+|\n+", self.summary)
         for m in paid_models:
             pattern_m = re.compile(re.escape(m), re.IGNORECASE)
             has_positive = False
-            clause_split_re = re.compile(r'\s*;\s*|\s*\b(?:while|whereas|but)\b\s*', re.IGNORECASE)
+            clause_split_re = re.compile(r"\s*;\s*|\s*\b(?:while|whereas|but)\b\s*", re.IGNORECASE)
             for sent in sentences:
                 clauses = clause_split_re.split(sent)
                 for clause in clauses:
                     clause_lower = clause.lower()
                     if pattern_m.search(clause_lower):
-                        if re.search(r'\bunpaid\b', clause_lower) or re.search(r'\bnot\s+paid\b', clause_lower):
+                        if re.search(r"\bunpaid\b", clause_lower) or re.search(r"\bnot\s+paid\b", clause_lower):
                             self.fail(f"Model {m} clause contains negative paid status: {clause!r}")
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)free\b", "", clause_lower)
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:available\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?:for\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*free\b", "", clause_free)
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:offered\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*free\s+of\s+charge\b", "", clause_free)
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:on\s+a\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*free\s+(?:tier|plan|pricing|price|route|access|usage|model)\b", "", clause_free)
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:available\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*at\s+(?:no|zero)\s+(?:cost|charge)\b", "", clause_free)
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)without\s+(?:charge|cost|fees?)\b", "", clause_free)
-                        clause_free = re.sub(r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)costs?\s+nothing\b", "", clause_free)
-                        if re.search(r'\bfree\s+(?:tier|plan|pricing|price|route|access|usage|model)\b', clause_free):
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)free\b",
+                            "",
+                            clause_lower,
+                        )
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:available\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?:for\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*free\b",
+                            "",
+                            clause_free,
+                        )
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:offered\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*free\s+of\s+charge\b",
+                            "",
+                            clause_free,
+                        )
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:on\s+a\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*free\s+(?:tier|plan|pricing|price|route|access|usage|model)\b",
+                            "",
+                            clause_free,
+                        )
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)(?:available\s+)?(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*at\s+(?:no|zero)\s+(?:cost|charge)\b",
+                            "",
+                            clause_free,
+                        )
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)without\s+(?:charge|cost|fees?)\b",
+                            "",
+                            clause_free,
+                        )
+                        clause_free = re.sub(
+                            r"\b(?:not|never|no\s+longer|isn't|wasn't|aren't|weren't)\s+(?:(?:entirely|fully|completely|currently|still|also|really|very|quite)\s+)*(?!only\b|just\b)costs?\s+nothing\b",
+                            "",
+                            clause_free,
+                        )
+                        if re.search(r"\bfree\s+(?:tier|plan|pricing|price|route|access|usage|model)\b", clause_free):
                             self.fail(f"Model {m} clause claims free status: {clause!r}")
-                        if re.search(r'\bfor\s+free\b|\bavailable\s+(?:for\s+)?free\b|\bfree\s+of\s+charge\b|\bat\s+(?:no|zero)\s+(?:cost|charge)\b|\bwithout\s+(?:charge|cost|fees?)\b|\bcosts?\s+nothing\b', clause_free):
+                        if re.search(
+                            r"\bfor\s+free\b|\bavailable\s+(?:for\s+)?free\b|\bfree\s+of\s+charge\b|\bat\s+(?:no|zero)\s+(?:cost|charge)\b|\bwithout\s+(?:charge|cost|fees?)\b|\bcosts?\s+nothing\b",
+                            clause_free,
+                        ):
                             self.fail(f"Model {m} clause claims free status: {clause!r}")
-                        for free_match in re.finditer(r'\b(?:is|was|are|were|be|been|being|remains?|remained|stays?|stayed)\s+(?:entirely|fully|completely|currently|still|also|really|very|quite)?\s*\bfree\b', clause_free):
-                            prior_models = list(pattern_m.finditer(clause_free[:free_match.start()]))
+                        for free_match in re.finditer(
+                            r"\b(?:is|was|are|were|be|been|being|remains?|remained|stays?|stayed)\s+(?:entirely|fully|completely|currently|still|also|really|very|quite)?\s*\bfree\b",
+                            clause_free,
+                        ):
+                            prior_models = list(pattern_m.finditer(clause_free[: free_match.start()]))
                             if not prior_models:
                                 fwd = None
-                                for fwd_m in pattern_m.finditer(clause_free[free_match.end():]):
+                                for fwd_m in pattern_m.finditer(clause_free[free_match.end() :]):
                                     fwd = fwd_m
                                     break
                                 if fwd is None:
                                     continue
-                                between_fwd = clause_free[free_match.end():free_match.end() + fwd.start()]
-                                if not re.fullmatch(r'[\s,;:()"\'\-]*(?:(?:is|was|are|were|be|been|being)[\s,;:()"\'\-]+)?(?:(?:the|a|an)[\s,;:()"\'\-]+)?[\s,;:()"\'\-]*', between_fwd):
+                                between_fwd = clause_free[free_match.end() : free_match.end() + fwd.start()]
+                                if not re.fullmatch(
+                                    r'[\s,;:()"\'\-]*(?:(?:is|was|are|were|be|been|being)[\s,;:()"\'\-]+)?(?:(?:the|a|an)[\s,;:()"\'\-]+)?[\s,;:()"\'\-]*',
+                                    between_fwd,
+                                ):
                                     continue
                                 self.fail(f"Model {m} clause claims free status: {clause!r}")
-                            between = clause_free[prior_models[-1].end():free_match.start()]
-                            if re.search(r'\b(?:its|their|the|this|that|these|those)?\s*(?:output|outputs|software|documentation|docs?|results?|responses?|artifacts?|artefacts?)\s*$', between):
+                            between = clause_free[prior_models[-1].end() : free_match.start()]
+                            if re.search(
+                                r"\b(?:its|their|the|this|that|these|those)?\s*(?:output|outputs|software|documentation|docs?|results?|responses?|artifacts?|artefacts?)\s*$",
+                                between,
+                            ):
                                 continue
-                            pre = clause_free[:free_match.end()]
-                            if re.search(r'\b(?:its|their|the|this|that|these|those)\s+(?:output|outputs|software|documentation|docs?|results?|responses?|artifacts?|artefacts?)\b(?:\s+(?:generated|produced)\s+by\s+[a-z0-9_.-]+|\s+(?:of|from)\s+[a-z0-9_.-]+)?\s*,?\s*\b(?:is|was|are|were|be|been|being|remains?|remained|stays?|stayed)\s+(?:entirely|fully|completely|currently|still|also|really|very|quite)?\s*free$', pre):
+                            pre = clause_free[: free_match.end()]
+                            if re.search(
+                                r"\b(?:its|their|the|this|that|these|those)\s+(?:output|outputs|software|documentation|docs?|results?|responses?|artifacts?|artefacts?)\b(?:\s+(?:generated|produced)\s+by\s+[a-z0-9_.-]+|\s+(?:of|from)\s+[a-z0-9_.-]+)?\s*,?\s*\b(?:is|was|are|were|be|been|being|remains?|remained|stays?|stayed)\s+(?:entirely|fully|completely|currently|still|also|really|very|quite)?\s*free$",
+                                pre,
+                            ):
                                 continue
                             self.fail(f"Model {m} clause claims free status: {clause!r}")
-                        for paid_match in re.finditer(r'\bpaid\b', clause_lower):
-                            before = clause_lower[:paid_match.start()]
+                        for paid_match in re.finditer(r"\bpaid\b", clause_lower):
+                            before = clause_lower[: paid_match.start()]
                             last_model_end = None
                             for mm in pattern_m.finditer(before):
                                 last_model_end = mm.end()
                             if last_model_end is None:
                                 next_model_start = None
-                                for mm in pattern_m.finditer(clause_lower[paid_match.end():]):
+                                for mm in pattern_m.finditer(clause_lower[paid_match.end() :]):
                                     next_model_start = paid_match.end() + mm.start()
                                     break
                                 if next_model_start is None:
                                     continue
-                                between = clause_lower[paid_match.end():next_model_start]
+                                between = clause_lower[paid_match.end() : next_model_start]
                                 if re.fullmatch(r'[\s,;:()"\']*', between):
                                     continue
                                 else:
-                                    route_match = re.search(r'\broutes?\b|\bpool\b|\bmodels?\b', between)
+                                    route_match = re.search(r"\broutes?\b|\bpool\b|\bmodels?\b", between)
                                     if route_match is None:
                                         continue
-                                    before_route = between[:route_match.start()]
-                                    if not re.fullmatch(r'[\s,;:()"\']*(?:[a-z0-9][a-z0-9_.\-]*[\s,;:()"\']+){0,2}', before_route):
+                                    before_route = between[: route_match.start()]
+                                    if not re.fullmatch(
+                                        r'[\s,;:()"\']*(?:[a-z0-9][a-z0-9_.\-]*[\s,;:()"\']+){0,2}', before_route
+                                    ):
                                         continue
-                                    if re.search(r'\bhosting\b|\bstorage\b', before_route):
+                                    if re.search(r"\bhosting\b|\bstorage\b", before_route):
                                         continue
-                                    after = between[route_match.end():]
-                                    after_tokens = [t for t in re.split(r'[^a-z0-9]+', after.lower()) if t]
-                                    allowed = set(("for", "of", "and", "or", "the", "a", "an", "route", "routes", "pool", "model", "models", "meta", "partner", "inference"))
+                                    after = between[route_match.end() :]
+                                    after_tokens = [t for t in re.split(r"[^a-z0-9]+", after.lower()) if t]
+                                    allowed = set(
+                                        (
+                                            "for",
+                                            "of",
+                                            "and",
+                                            "or",
+                                            "the",
+                                            "a",
+                                            "an",
+                                            "route",
+                                            "routes",
+                                            "pool",
+                                            "model",
+                                            "models",
+                                            "meta",
+                                            "partner",
+                                            "inference",
+                                        )
+                                    )
                                     for _mid in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
-                                        for _p in re.split(r'[^a-z0-9]+', _mid.lower()):
+                                        for _p in re.split(r"[^a-z0-9]+", _mid.lower()):
                                             if _p:
                                                 allowed.add(_p)
                                     if any(t not in allowed for t in after_tokens):
                                         continue
-                                    parts = [p for p in re.split(r'[^a-z0-9]+', m.lower()) if p]
-                                    display_pat = r'[\s\-_./]*'.join(re.escape(p) for p in parts)
+                                    parts = [p for p in re.split(r"[^a-z0-9]+", m.lower()) if p]
+                                    display_pat = r"[\s\-_./]*".join(re.escape(p) for p in parts)
                                     if after.count("(") < after.count(")") or after.count("[") < after.count("]"):
                                         self.fail(f"Model {m} clause has excess closing delimiters: {clause!r}")
-                                    if not re.search(r'\b(?:for|of)\b', after):
+                                    if not re.search(r"\b(?:for|of)\b", after):
                                         if not re.search(display_pat, after):
                                             if ")" in after or "]" in after:
                                                 stripped_models = after
                                                 for lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
-                                                    lparts = [q for q in re.split(r'[^a-z0-9]+', lm.lower()) if q]
-                                                    lpat = r'[\s\-_./]*'.join(re.escape(q) for q in lparts)
-                                                    stripped_models = re.sub(lpat, '', stripped_models)
-                                                stripped_models = re.sub(r'\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b', '', stripped_models)
+                                                    lparts = [q for q in re.split(r"[^a-z0-9]+", lm.lower()) if q]
+                                                    lpat = r"[\s\-_./]*".join(re.escape(q) for q in lparts)
+                                                    stripped_models = re.sub(lpat, "", stripped_models)
+                                                stripped_models = re.sub(
+                                                    r"\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b",
+                                                    "",
+                                                    stripped_models,
+                                                )
                                                 if re.fullmatch(r'[\s,;:()"\'.-]*', stripped_models):
                                                     continue
-                                            if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(' ise', ''), after):
+                                            if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(" ise", ""), after):
                                                 rest = after
                                                 for lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
-                                                    lparts = [q for q in re.split(r'[^a-z0-9]+', lm.lower()) if q]
-                                                    lpat = r'[\s\-_./]*'.join(re.escape(q) for q in lparts)
-                                                    rest = re.sub(lpat, '', rest)
-                                                rest = re.sub(r'\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b', '', rest)
-                                                if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(' ise', ''), rest):
+                                                    lparts = [q for q in re.split(r"[^a-z0-9]+", lm.lower()) if q]
+                                                    lpat = r"[\s\-_./]*".join(re.escape(q) for q in lparts)
+                                                    rest = re.sub(lpat, "", rest)
+                                                rest = re.sub(
+                                                    r"\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b",
+                                                    "",
+                                                    rest,
+                                                )
+                                                if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(" ise", ""), rest):
                                                     continue
                                 bound_other = False
                                 for _lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
                                     if _lm.lower() == m.lower():
                                         continue
-                                    _lparts = [q for q in re.split(r'[^a-z0-9]+', _lm.lower()) if q]
-                                    _lpat = r'[\s\-_./]*'.join(re.escape(q) for q in _lparts)
-                                    if re.search(r'\b(?:for|of)\b[^.!?]*?' + _lpat, between, re.IGNORECASE):
+                                    _lparts = [q for q in re.split(r"[^a-z0-9]+", _lm.lower()) if q]
+                                    _lpat = r"[\s\-_./]*".join(re.escape(q) for q in _lparts)
+                                    if re.search(r"\b(?:for|of)\b[^.!?]*?" + _lpat, between, re.IGNORECASE):
                                         bound_other = True
                                         break
                                 if bound_other:
                                     continue
                                 hijacked_fwd = False
-                                for sm in re.finditer(r'\b([a-z0-9][a-z0-9_.-]*)\s+(?:is|was|are|were|be|been|being)\b', between):
+                                for sm in re.finditer(
+                                    r"\b([a-z0-9][a-z0-9_.-]*)\s+(?:is|was|are|were|be|been|being)\b", between
+                                ):
                                     subj = sm.group(1)
-                                    if subj in ("and", "or", "not", "it", "they", "them", "this", "that", "these", "those", "route", "routes", "model", "models"):
+                                    if subj in (
+                                        "and",
+                                        "or",
+                                        "not",
+                                        "it",
+                                        "they",
+                                        "them",
+                                        "this",
+                                        "that",
+                                        "these",
+                                        "those",
+                                        "route",
+                                        "routes",
+                                        "model",
+                                        "models",
+                                    ):
                                         continue
                                     if pattern_m.search(subj):
                                         continue
@@ -173,9 +262,26 @@ class TestProvenanceSummary(unittest.TestCase):
                                 continue
                             between = before[last_model_end:]
                             hijacked = False
-                            for sm in re.finditer(r'\b([a-z0-9][a-z0-9_.-]*)\s+(?:is|was|are|were|be|been|being)\b', between):
+                            for sm in re.finditer(
+                                r"\b([a-z0-9][a-z0-9_.-]*)\s+(?:is|was|are|were|be|been|being)\b", between
+                            ):
                                 subj = sm.group(1)
-                                if subj in ("and", "or", "not", "it", "they", "them", "this", "that", "these", "those", "route", "routes", "model", "models"):
+                                if subj in (
+                                    "and",
+                                    "or",
+                                    "not",
+                                    "it",
+                                    "they",
+                                    "them",
+                                    "this",
+                                    "that",
+                                    "these",
+                                    "those",
+                                    "route",
+                                    "routes",
+                                    "model",
+                                    "models",
+                                ):
                                     continue
                                 if pattern_m.search(subj):
                                     continue
@@ -183,15 +289,18 @@ class TestProvenanceSummary(unittest.TestCase):
                                 break
                             if hijacked:
                                 continue
-                            copulas = list(re.finditer(r'\b(?:is|was|are|were|be|been|being)\b', between))
+                            copulas = list(re.finditer(r"\b(?:is|was|are|were|be|been|being)\b", between))
                             if not copulas:
                                 continue
-                            tail = between[copulas[-1].end():]
-                            if not re.fullmatch(r'[\s,;:]*((?:entirely|fully|completely|currently|still|also|really|very|quite)[\s,;:]*)*(?:(?:a|an|the)[\s,;:]+)?', tail):
+                            tail = between[copulas[-1].end() :]
+                            if not re.fullmatch(
+                                r"[\s,;:]*((?:entirely|fully|completely|currently|still|also|really|very|quite)[\s,;:]*)*(?:(?:a|an|the)[\s,;:]+)?",
+                                tail,
+                            ):
                                 continue
                             has_positive = True
             self.assertTrue(has_positive, f"Model {m} sentence lacks paid")
-        self.assertRegex(self.lower, r'\bpaid\b')
+        self.assertRegex(self.lower, r"\bpaid\b")
 
     def test_summary_labels_historical_prompts_and_preserves_evidence(self):
         self.assertIn("historical", self.lower)
@@ -202,11 +311,12 @@ class TestProvenanceSummary(unittest.TestCase):
 
     def assert_summary_has_no_contradiction(self, summary):
         import re
-        joined = re.sub(r'(?<!\n)\n(?!\n)', ' ', summary)
-        sentences = re.split(r'(?<=[.!?])\s+|\n+', joined)
-        pat_a = r'\b(?:every\s+line|all\s+code|entirely)\b'
-        pat_b = r'\b(?:local(?:\s*-\s*|\s+)only|entirely\s+local|lm\s+studio)\b'
-        paid_route_re = r'\bpaid\s+routes?\b'
+
+        joined = re.sub(r"(?<!\n)\n(?!\n)", " ", summary)
+        sentences = re.split(r"(?<=[.!?])\s+|\n+", joined)
+        pat_a = r"\b(?:every\s+line|all\s+code|entirely)\b"
+        pat_b = r"\b(?:local(?:\s*-\s*|\s+)only|entirely\s+local|lm\s+studio)\b"
+        paid_route_re = r"\bpaid\s+routes?\b"
         for sent in sentences:
             if re.search(pat_a, sent, re.IGNORECASE) and re.search(pat_b, sent, re.IGNORECASE):
                 paid_route = re.search(paid_route_re, sent, re.IGNORECASE)
@@ -215,42 +325,76 @@ class TestProvenanceSummary(unittest.TestCase):
                     lo = min(paid_route.start(), local_route.start())
                     hi = max(paid_route.end(), local_route.end())
                     between = sent[lo:hi]
-                    after_paid = sent[paid_route.end():]
-                    if re.search(r'\bunpaid\b', sent, re.IGNORECASE):
+                    after_paid = sent[paid_route.end() :]
+                    if re.search(r"\bunpaid\b", sent, re.IGNORECASE):
                         pass
-                    elif re.search(r'\b(?:rather\s+than|instead\s+of|avoid\w*|except|excluding|other\s+than)\b[^.!?]*paid\s+routes?\b', sent, re.IGNORECASE):
+                    elif re.search(
+                        r"\b(?:rather\s+than|instead\s+of|avoid\w*|except|excluding|other\s+than)\b[^.!?]*paid\s+routes?\b",
+                        sent,
+                        re.IGNORECASE,
+                    ):
                         pass
-                    elif re.search(r'\bnot\s+(?:only|merely|exclusively)\b[^.!?]*\bbut\s+also\b[^.!?]*\bpaid\s+routes?\b', sent, re.IGNORECASE):
+                    elif re.search(
+                        r"\bnot\s+(?:only|merely|exclusively)\b[^.!?]*\bbut\s+also\b[^.!?]*\bpaid\s+routes?\b",
+                        sent,
+                        re.IGNORECASE,
+                    ):
                         self.fail(f"contradictory whole-codebase claim in sentence: {sent!r}")
-                    elif re.search(r'\b(?:no|never|without)\b(?:\s+(?!humans\b)\w+){0,10}\s+paid\s+routes?\b', sent, re.IGNORECASE):
+                    elif re.search(
+                        r"\b(?:no|never|without)\b(?:\s+(?!humans\b)\w+){0,10}\s+paid\s+routes?\b", sent, re.IGNORECASE
+                    ):
                         pass
-                    elif re.search(r'\bnot\b(?:\s+(?!only\b|just\b|merely\b|exclusively\b|humans\b)\w+){0,10}\s+paid\s+routes?\b', sent, re.IGNORECASE):
+                    elif re.search(
+                        r"\bnot\b(?:\s+(?!only\b|just\b|merely\b|exclusively\b|humans\b)\w+){0,10}\s+paid\s+routes?\b",
+                        sent,
+                        re.IGNORECASE,
+                    ):
                         pass
-                    elif re.search(r'\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b[^.!?]*(?:\binvolv\w*\b|\bgenerat\w*\b|\bproduc\w*\b|\bcontribut\w*\b|\bused\b)', sent, re.IGNORECASE):
+                    elif re.search(
+                        r"\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b[^.!?]*(?:\binvolv\w*\b|\bgenerat\w*\b|\bproduc\w*\b|\bcontribut\w*\b|\bused\b)",
+                        sent,
+                        re.IGNORECASE,
+                    ):
                         pass
-                    elif re.search(r'\bpaid\s+routes?\b[^.!?]*(?:were|was)?\s*(?:not\s+used|never\s+used|unused|avoided)\b', sent, re.IGNORECASE):
+                    elif re.search(
+                        r"\bpaid\s+routes?\b[^.!?]*(?:were|was)?\s*(?:not\s+used|never\s+used|unused|avoided)\b",
+                        sent,
+                        re.IGNORECASE,
+                    ):
                         pass
-                    elif re.search(r'\band\b', between, re.IGNORECASE):
-                        if re.search(r'\brather\s+than\b|\binstead\s+of\b', between, re.IGNORECASE):
+                    elif re.search(r"\band\b", between, re.IGNORECASE):
+                        if re.search(r"\brather\s+than\b|\binstead\s+of\b", between, re.IGNORECASE):
                             pass
-                        elif re.search(r'\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b[^.!?]*(?:\binvolv\w*\b|\bgenerat\w*\b|\bproduc\w*\b|\bcontribut\w*\b|\bused\b)', sent, re.IGNORECASE):
+                        elif re.search(
+                            r"\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b[^.!?]*(?:\binvolv\w*\b|\bgenerat\w*\b|\bproduc\w*\b|\bcontribut\w*\b|\bused\b)",
+                            sent,
+                            re.IGNORECASE,
+                        ):
                             pass
-                        elif re.search(r'\b(?:generat\w*|produc\w*|built|build\w*|wrote|written|creat\w*|ran|run\w*|using|used|use\w*|through|via|with|including|both)\b[^.!?]*\bpaid\s+routes?\b', sent, re.IGNORECASE):
-                            if re.search(r'\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b', sent, re.IGNORECASE):
+                        elif re.search(
+                            r"\b(?:generat\w*|produc\w*|built|build\w*|wrote|written|creat\w*|ran|run\w*|using|used|use\w*|through|via|with|including|both)\b[^.!?]*\bpaid\s+routes?\b",
+                            sent,
+                            re.IGNORECASE,
+                        ):
+                            if re.search(r"\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b", sent, re.IGNORECASE):
                                 pass
                             else:
                                 continue
-                        elif re.search(r'\bpaid\s+routes?\b[^.!?]*\b(?:generat\w*|produc\w*|built|build\w*|wrote|written|creat\w*|ran|run\w*|used|use\w*|contribut\w*)\b', sent, re.IGNORECASE):
-                            if re.search(r'\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b', sent, re.IGNORECASE):
+                        elif re.search(
+                            r"\bpaid\s+routes?\b[^.!?]*\b(?:generat\w*|produc\w*|built|build\w*|wrote|written|creat\w*|ran|run\w*|used|use\w*|contribut\w*)\b",
+                            sent,
+                            re.IGNORECASE,
+                        ):
+                            if re.search(r"\bpaid\s+routes?\b[^.!?]*\b(?:not|never|without)\b", sent, re.IGNORECASE):
                                 pass
                             else:
                                 continue
                         else:
                             pass
                 self.fail(f"contradictory whole-codebase claim in sentence: {sent!r}")
-        if re.search(r'\bunpaid\b', summary, re.IGNORECASE):
+        if re.search(r"\bunpaid\b", summary, re.IGNORECASE):
             self.fail("contradictory claim: unpaid")
-        if re.search(r'\b(?:no|not|never|without)\s+(?:any\s+)?paid\b', summary, re.IGNORECASE):
+        if re.search(r"\b(?:no|not|never|without)\s+(?:any\s+)?paid\b", summary, re.IGNORECASE):
             self.fail("contradictory claim: negated paid")
 
     def test_summary_rejects_old_blanket_local_only_claim(self):
@@ -294,7 +438,9 @@ class TestProvenanceSummary(unittest.TestCase):
                     self.assert_summary_has_no_contradiction(fixture)
 
     def test_summary_contradiction_guard_rejects_unrelated_avoidance_phrase(self):
-        fixture = "All code was generated local-only, not merely via local models to avoid delays but also via paid routes."
+        fixture = (
+            "All code was generated local-only, not merely via local models to avoid delays but also via paid routes."
+        )
         with self.assertRaisesRegex(AssertionError, "contradictory whole-codebase claim in sentence"):
             self.assert_summary_has_no_contradiction(fixture)
 
@@ -340,6 +486,7 @@ class TestProvenanceSummary(unittest.TestCase):
 
     def test_paid_route_validation_cannot_skip_models(self):
         import re
+
         fixture = "Paid routes use the spend ledger. muse-spark-1.3 is recorded."
         obj = TestProvenanceSummary("test_summary_mentions_paid_routes_and_spend_ledger")
         obj.content = fixture
@@ -348,7 +495,9 @@ class TestProvenanceSummary(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, re.escape("Model muse-spark-1.3 sentence lacks paid")):
             obj.test_summary_mentions_paid_routes_and_spend_ledger()
         summary = "muse-spark-1.3 is paid and logged to the spend ledger. muse-wonder-1.0 is recorded."
-        content = summary + "\nmuse-wonder-1.0 (historical prompt)\nmuse-wonder-1.0 (meta pool, paid, logged to spend ledger)"
+        content = (
+            summary + "\nmuse-wonder-1.0 (historical prompt)\nmuse-wonder-1.0 (meta pool, paid, logged to spend ledger)"
+        )
         obj = TestProvenanceSummary("test_summary_mentions_paid_routes_and_spend_ledger")
         obj.content = content
         obj.summary = summary
@@ -356,7 +505,9 @@ class TestProvenanceSummary(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, re.escape("Model muse-wonder-1.0 sentence lacks paid")):
             obj.test_summary_mentions_paid_routes_and_spend_ledger()
         summary = "muse-spark-1.3 is paid and logged to the spend ledger. muse-wonder-1.0 is paid."
-        content = summary + "\nmuse-wonder-1.0 (historical prompt)\nmuse-wonder-1.0 (meta pool, paid, logged to spend ledger)"
+        content = (
+            summary + "\nmuse-wonder-1.0 (historical prompt)\nmuse-wonder-1.0 (meta pool, paid, logged to spend ledger)"
+        )
         obj = TestProvenanceSummary("test_summary_mentions_paid_routes_and_spend_ledger")
         obj.content = content
         obj.summary = summary
@@ -365,6 +516,7 @@ class TestProvenanceSummary(unittest.TestCase):
 
     def test_paid_attribution_rejects_other_models_paid_clause(self):
         import re
+
         obj = TestProvenanceSummary("test_summary_mentions_paid_routes_and_spend_ledger")
         obj.setUp()
         invalid_summary = "muse-spark-1.3 was free, while muse-wonder-1.0 was paid and logged to the spend ledger."
@@ -556,7 +708,9 @@ class TestPaidRouteValidation(unittest.TestCase):
 
     def test_paid_route_validation_rejects_unrelated_paid_before_model(self):
         content = "muse-spark-1.3 (meta pool, paid, logged to spend ledger)"
-        fixture = "The spend ledger records all routes. Paid hosting was logged and muse-spark-1.3 generated documentation."
+        fixture = (
+            "The spend ledger records all routes. Paid hosting was logged and muse-spark-1.3 generated documentation."
+        )
         obj = TestProvenanceSummary("test_summary_mentions_paid_routes_and_spend_ledger")
         obj.content = content
         obj.summary = fixture
@@ -667,7 +821,6 @@ class TestPaidRouteValidation(unittest.TestCase):
                 obj.lower = fixture.lower()
                 with self.assertRaises(AssertionError):
                     obj.test_summary_mentions_paid_routes_and_spend_ledger()
-
 
     def test_paid_route_validation_rejects_excess_closers_after_valid_attribution(self):
         content = "muse-spark-1.3 (meta pool, paid, logged to spend ledger)"

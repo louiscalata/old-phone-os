@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """blank.py and displayconfig.py: blanking and restoring both panels in a fake sysfs tree, the PowerSaveMode state, and
 the D-Bus wiring with a stand-in gi. No toolkit, no bus and no real device."""
+
 import ast
 import importlib
 import os
@@ -26,7 +27,7 @@ class Tree:
         self.root = Path(tmp.name)
         self.run = self.root / "run" / "user" / "1000"
         self.run.mkdir(parents=True)
-        self.run.chmod(0o700)       # as systemd makes $XDG_RUNTIME_DIR, whatever the umask of the test run
+        self.run.chmod(0o700)  # as systemd makes $XDG_RUNTIME_DIR, whatever the umask of the test run
         for panel, value in zip(panels, values):
             d = self.root / "sys" / "class" / "backlight" / panel
             d.mkdir(parents=True)
@@ -37,7 +38,7 @@ class Tree:
         self.blanker = blank.Blanker(root=str(self.root), run_dir=str(self.run), say=self.said.append)
 
     def brightness(self, panel):
-        return (self.root / "sys" / "class" / "backlight" / panel / "brightness")
+        return self.root / "sys" / "class" / "backlight" / panel / "brightness"
 
     def values(self):
         out = []
@@ -99,14 +100,16 @@ class Blanking(unittest.TestCase):
     def test_a_second_blank_keeps_the_values_saved_by_the_first_and_darkens_a_panel_that_came_back_on(self):
         t = Tree(self, (90, 200))
         self.assertTrue(t.blanker.blank())
-        t.brightness("panel0-backlight").write_text("0\n", encoding="ascii")   # still dark
+        t.brightness("panel0-backlight").write_text("0\n", encoding="ascii")  # still dark
         before = t.snapshot()
         self.assertFalse(t.blanker.blank(), "both dark: nothing to write")
         self.assertEqual(t.snapshot(), before)
         t.brightness("panel1-backlight").write_text("150\n", encoding="ascii")  # lit while closed
         self.assertTrue(t.blanker.blank(), "dark again")
         self.assertEqual(t.values(), (0, 0))
-        self.assertEqual(t.saved.read_text(encoding="ascii").split(), ["90", "200"], "the saved values are never replaced")
+        self.assertEqual(
+            t.saved.read_text(encoding="ascii").split(), ["90", "200"], "the saved values are never replaced"
+        )
         self.assertEqual(t.blanker.blanks, 3, "every allowed blank counts, also the one that had nothing to write")
         t.blanker.restore()
         self.assertEqual(t.values(), (90, 200))
@@ -153,7 +156,9 @@ class Blanking(unittest.TestCase):
         self.assertTrue(t.blanker.restore())
         self.assertEqual(t.values(), (1800, 4095), "no fixed 255 clamp: only the panel's own maximum")
         self.assertEqual(blank.parse_saved("1800 4095"), (1800, 4095))
-        self.assertEqual(blank.parse_saved("1234567 5"), blank.DEFAULTS, "a value longer than a brightness is malformed")
+        self.assertEqual(
+            blank.parse_saved("1234567 5"), blank.DEFAULTS, "a value longer than a brightness is malformed"
+        )
 
     def test_dark_with_no_saved_file_lights_the_dark_panels_with_their_defaults(self):
         t = Tree(self, (0, 140))
@@ -183,11 +188,11 @@ class Blanking(unittest.TestCase):
         t.blanker.blank()
         gone = t.root / "sys" / "class" / "backlight" / "panel0-backlight"
         away = t.root / "panel0-away"
-        gone.rename(away)                    # the panel's driver is reloading
+        gone.rename(away)  # the panel's driver is reloading
         t.blanker.restore()
         self.assertEqual((t.values(), t.saved.exists()), ((None, 44), True))
         self.assertTrue(t.blanker.failed)
-        away.rename(gone)                    # back, still at 0
+        away.rename(gone)  # back, still at 0
         t.blanker.restore()
         self.assertEqual((t.values(), t.saved.exists(), t.blanker.failed), ((33, 44), False, []))
         self.assertFalse(t.blanker.pending())
@@ -314,7 +319,7 @@ class Safety(unittest.TestCase):
     def test_killed_while_dark_then_restored_from_the_file_alone(self):
         t = Tree(self, (37, 211))
         t.blanker.blank()
-        fresh = blank.Blanker(root=str(t.root), run_dir=str(t.run), say=t.said.append)     # a new process
+        fresh = blank.Blanker(root=str(t.root), run_dir=str(t.run), say=t.said.append)  # a new process
         self.assertTrue(fresh.restore())
         self.assertEqual(t.values(), (37, 211))
 
@@ -323,8 +328,9 @@ class Safety(unittest.TestCase):
         real = t.blanker._save
 
         def other_shell_first(values):
-            t.saved.write_text("11 22\n", encoding="ascii")      # another shell saved between our check and our save
+            t.saved.write_text("11 22\n", encoding="ascii")  # another shell saved between our check and our save
             return real(values)
+
         t.blanker._save = other_shell_first
         self.assertFalse(t.blanker.blank())
         self.assertEqual(t.saved.read_text(encoding="ascii").split(), ["11", "22"])
@@ -389,12 +395,14 @@ class Safety(unittest.TestCase):
     def test_the_command_line_restore_never_raises_and_says_whether_it_lit_the_screens(self):
         import contextlib
         import io
+
         t = Tree(self, (37, 211))
         t.blanker.blank()
         real_init = blank.Blanker.__init__
 
         def at_tree(self, root="/", run_dir=None, say=blank._say, may_blank=None):
             real_init(self, root=str(t.root), run_dir=str(t.run), say=say, may_blank=may_blank)
+
         with unittest.mock.patch.object(blank.Blanker, "__init__", at_tree):
             self.assertEqual(blank.main(["--restore"], sleep=self.fail), 0, "lit at the first try: no wait")
         self.assertEqual(t.values(), (37, 211))
@@ -430,10 +438,14 @@ class Safety(unittest.TestCase):
         _broken(t, "panel0-backlight")
         _broken(t, "panel1-backlight")
         t.blanker.blank()
-        self.assertEqual(t.blanker.blanks, 3, "unreadable panels with the saved file in place: dark is still what was asked")
+        self.assertEqual(
+            t.blanker.blanks, 3, "unreadable panels with the saved file in place: dark is still what was asked"
+        )
         dark = Tree(self, (0, 0))
         dark.blanker.blank()
-        self.assertEqual((dark.blanker.blanks, dark.saved.exists()), (1, False), "already dark, nothing saved: still counted")
+        self.assertEqual(
+            (dark.blanker.blanks, dark.saved.exists()), (1, False), "already dark, nothing saved: still counted"
+        )
         refused = Tree(self, (90, 200))
         refused.blanker.may_blank = lambda: False
         refused.blanker.blank()
@@ -455,6 +467,7 @@ class Safety(unittest.TestCase):
         """R4: `--restore --for 120` is the kiosk's background retry: bounded, and at a low rate."""
         import contextlib
         import io
+
         t = Tree(self, (37, 211))
         t.blanker.blank()
         _broken(t)
@@ -474,27 +487,36 @@ class Safety(unittest.TestCase):
             if len(clk.slept) == 9 and p.is_dir():
                 p.rmdir()
                 p.write_text("0\n", encoding="ascii")
+
         clk = Clock(back)
         self.assertEqual(blank.main(["--restore", "--for", "120"], make=make, sleep=clk.sleep, clock=clk.now), 0)
         self.assertEqual((t.values(), t.saved.exists()), ((37, 211), False))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            for bad in (["--restore", "--for", "0"], ["--restore", "--for", "601"], ["--restore", "--for", "x"], ["--for", "5"]):
+            for bad in (
+                ["--restore", "--for", "0"],
+                ["--restore", "--for", "601"],
+                ["--restore", "--for", "x"],
+                ["--for", "5"],
+            ):
                 self.assertEqual(blank.main(bad, make=self.fail), 0, bad)
         self.assertIn("usage", err.getvalue())
 
     def test_the_command_line_restore_tries_again_for_a_few_seconds(self):
         import contextlib
         import io
+
         t = Tree(self, (37, 211))
         t.blanker.blank()
         p = t.brightness("panel0-backlight")
         p.unlink()
         p.mkdir()
-        def back(_s):           # the panel takes the write after about two seconds
+
+        def back(_s):  # the panel takes the write after about two seconds
             if clk.t >= 2 and p.is_dir():
                 p.rmdir()
                 p.write_text("0\n", encoding="ascii")
+
         clk = Clock(back)
         slept = clk.slept
         make = lambda: blank.Blanker(root=str(t.root), run_dir=str(t.run), say=lambda _l: None)  # noqa: E731
@@ -508,7 +530,9 @@ class Safety(unittest.TestCase):
         slept = clk.slept
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            self.assertEqual(blank.main(["--restore"], make=make, sleep=clk.sleep, clock=clk.now), 1, "still dark: says so")
+            self.assertEqual(
+                blank.main(["--restore"], make=make, sleep=clk.sleep, clock=clk.now), 1, "still dark: says so"
+            )
         self.assertEqual(sum(slept), blank.CLI_WAIT_S, "a few seconds, not for ever: the browser must still start")
         self.assertIn("could not light both screens", err.getvalue())
         self.assertTrue(t.saved.exists(), "kept for the next try")
@@ -519,6 +543,7 @@ class Safety(unittest.TestCase):
         one try."""
         import contextlib
         import io
+
         clk = Clock()
         tries = []
 
@@ -527,7 +552,7 @@ class Safety(unittest.TestCase):
 
             def restore(self):
                 tries.append(clk.t)
-                clk.t += 0.2        # each try takes 0.2 s
+                clk.t += 0.2  # each try takes 0.2 s
 
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(blank.main(["--restore"], make=Slow, sleep=clk.sleep, clock=clk.now, wait_s=1.0), 1)
@@ -538,7 +563,6 @@ class Safety(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(blank.main(["--restore", "--for", "30"], make=Slow, sleep=clk.sleep, clock=clk.now), 1)
         self.assertLessEqual(clk.t, 30 + 0.2 + 1e-9)
-
 
     def write_only(self, t, panel="panel0-backlight"):
         """Make the panel's brightness writable but not readable (mode 0200), as a sysfs file whose read fails; skip where
@@ -582,6 +606,7 @@ class Safety(unittest.TestCase):
         """The verifier's case through `--restore`: it writes the panel (lit) and still exits 1, since it could not confirm."""
         import contextlib
         import io
+
         t = Tree(self, (0, 0))
         p = self.write_only(t)
         make = lambda: blank.Blanker(root=str(t.root), run_dir=str(t.run), say=lambda _l: None)  # noqa: E731
@@ -608,7 +633,9 @@ class Safety(unittest.TestCase):
         self.assertEqual(t.blanker.set_mode(3), 3, "a re-asserted 3 on dark screens is still dark")
         lid_open[0] = True
         self.assertEqual(t.blanker.set_mode(3), 0, "a refused 3 while the saved file is there")
-        self.assertEqual(t.values(), (0, 0), "a refused blank writes nothing: the lit-again path is restore, not set_mode(3)")
+        self.assertEqual(
+            t.values(), (0, 0), "a refused blank writes nothing: the lit-again path is restore, not set_mode(3)"
+        )
         self.assertEqual(t.blanker.set_mode(0), 0)
         self.assertEqual((t.blanker.mode, t.values()), (0, (90, 200)), "0 still restores")
         t.blanker.run_dir = str(t.run / "missing")
@@ -663,6 +690,7 @@ class PowerSave(unittest.TestCase):
         class Silent(Blanked):
             def set_mode(self, mode):
                 self.modes.append(mode)
+
         s = displayconfig.PowerSaveState(Silent())
         self.assertTrue(s.set("PowerSaveMode", 3))
         self.assertEqual(s.get("PowerSaveMode"), 3, "never None: the property always has an int")
@@ -685,21 +713,30 @@ class PowerSave(unittest.TestCase):
     def test_a_wrong_name_or_type_is_refused(self):
         b = Blanked()
         s = displayconfig.PowerSaveState(b)
-        for name, value in (("Other", 3), ("PowerSaveMode", "3"), ("PowerSaveMode", 3.0), ("PowerSaveMode", None),
-                            ("PowerSaveMode", True)):
+        for name, value in (
+            ("Other", 3),
+            ("PowerSaveMode", "3"),
+            ("PowerSaveMode", 3.0),
+            ("PowerSaveMode", None),
+            ("PowerSaveMode", True),
+        ):
             with self.subTest(name=name, value=value):
                 self.assertFalse(s.set(name, value))
         self.assertEqual((b.modes, s.get("PowerSaveMode")), ([], 0))
 
     def test_the_interface_has_exactly_one_property(self):
         import xml.etree.ElementTree as ET
+
         node = ET.fromstring(displayconfig.XML)
         ifaces = node.findall("interface")
         self.assertEqual([i.get("name") for i in ifaces], [displayconfig.IFACE])
-        self.assertEqual([(p.get("name"), p.get("type"), p.get("access")) for p in ifaces[0]],
-                         [("PowerSaveMode", "i", "readwrite")])
-        self.assertEqual((displayconfig.IFACE, displayconfig.PATH),
-                         ("org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig"))
+        self.assertEqual(
+            [(p.get("name"), p.get("type"), p.get("access")) for p in ifaces[0]], [("PowerSaveMode", "i", "readwrite")]
+        )
+        self.assertEqual(
+            (displayconfig.IFACE, displayconfig.PATH),
+            ("org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig"),
+        )
 
 
 class Variant:
@@ -734,6 +771,7 @@ class StandInGi(unittest.TestCase):
                 sys.modules.pop(n, None)
                 if m is not None:
                     sys.modules[n] = m
+
         self.addCleanup(restore)
         gi, repo = types.ModuleType("gi"), types.ModuleType("gi.repository")
         gi.repository = repo
@@ -741,9 +779,11 @@ class StandInGi(unittest.TestCase):
         Gio = types.SimpleNamespace(
             BusType=types.SimpleNamespace(SESSION="session"),
             BusNameOwnerFlags=types.SimpleNamespace(ALLOW_REPLACEMENT=1, REPLACE=2, DO_NOT_QUEUE=4),
-            DBusNodeInfo=types.SimpleNamespace(new_for_xml=new_for_xml or (lambda xml: types.SimpleNamespace(
-                interfaces=["iface from " + xml[:5]]))),
-            bus_own_name=own or (lambda *a: self.owned.append(a) or 7))
+            DBusNodeInfo=types.SimpleNamespace(
+                new_for_xml=new_for_xml or (lambda xml: types.SimpleNamespace(interfaces=["iface from " + xml[:5]]))
+            ),
+            bus_own_name=own or (lambda *a: self.owned.append(a) or 7),
+        )
         repo.Gio, repo.GLib = Gio, types.SimpleNamespace(Variant=Variant)
         sys.modules["gi"], sys.modules["gi.repository"] = gi, repo
 
@@ -751,23 +791,30 @@ class StandInGi(unittest.TestCase):
         self.gi()
         said, b = [], Blanked()
         self.assertEqual(displayconfig.own(b, said.append), 7)
-        (bus, name, flags, acquired, got, lost), = self.owned
-        self.assertEqual((bus, name, flags, got), ("session", displayconfig.IFACE, 4 | 1, None),
-                         "never REPLACE, never queue, and a later owner that asks may take it over")
+        ((bus, name, flags, acquired, got, lost),) = self.owned
+        self.assertEqual(
+            (bus, name, flags, got),
+            ("session", displayconfig.IFACE, 4 | 1, None),
+            "never REPLACE, never queue, and a later owner that asks may take it over",
+        )
         conn = Conn()
         acquired(conn, name)
-        (path, iface, method, get, set_), = conn.objects
+        ((path, iface, method, get, set_),) = conn.objects
         self.assertEqual((path, iface, method), (displayconfig.PATH, "iface from <node", None))
         self.assertEqual(get(conn, ":1.5", path, name, "PowerSaveMode").value, 0)
         self.assertIsNone(get(conn, ":1.5", path, name, "Other"))
         self.assertIs(set_(conn, ":1.5", path, name, "PowerSaveMode", Variant("i", 3)), True)
         self.assertEqual(b.modes, [3])
-        (dest, spath, siface, signal, body), = conn.signals
-        self.assertEqual((dest, spath, siface, signal, body.sig),
-                         (None, displayconfig.PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged", "(sa{sv}as)"))
+        ((dest, spath, siface, signal, body),) = conn.signals
+        self.assertEqual(
+            (dest, spath, siface, signal, body.sig),
+            (None, displayconfig.PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged", "(sa{sv}as)"),
+        )
         iface_name, changed, gone = body.value
-        self.assertEqual((iface_name, {k: (v.sig, v.value) for k, v in changed.items()}, gone),
-                         (displayconfig.IFACE, {"PowerSaveMode": ("i", 3)}, []))
+        self.assertEqual(
+            (iface_name, {k: (v.sig, v.value) for k, v in changed.items()}, gone),
+            (displayconfig.IFACE, {"PowerSaveMode": ("i", 3)}, []),
+        )
         self.assertIs(set_(conn, ":1.5", path, name, "PowerSaveMode", Variant("i", 3)), True, "a repeat succeeds")
         self.assertEqual((b.modes, len(conn.signals)), ([3, 3], 1), "but signals nothing")
         self.assertIs(set_(conn, ":1.5", path, name, "Other", Variant("i", 3)), False)
@@ -782,10 +829,10 @@ class StandInGi(unittest.TestCase):
         self.gi()
         b = Refusing()
         displayconfig.own(b, lambda _l: None)
-        (_bus, name, _flags, acquired, _got, _lost), = self.owned
+        ((_bus, name, _flags, acquired, _got, _lost),) = self.owned
         conn = Conn()
         acquired(conn, name)
-        (path, _iface, _method, get, set_), = conn.objects
+        ((path, _iface, _method, get, set_),) = conn.objects
         self.assertIs(set_(conn, ":1.5", path, name, "PowerSaveMode", Variant("i", 3)), True)
         self.assertEqual((get(conn, ":1.5", path, name, "PowerSaveMode").value, conn.signals, b.modes), (0, [], [3]))
 
@@ -796,17 +843,21 @@ class StandInGi(unittest.TestCase):
         class Bad:
             def set_mode(self, _m):
                 raise RuntimeError("boom")
+
         displayconfig.own(Bad(), said.append)
         conn = Conn()
         self.owned[0][3](conn, displayconfig.IFACE)
         set_ = conn.objects[0][4]
         for _ in range(2):
-            self.assertIs(set_(conn, "", displayconfig.PATH, displayconfig.IFACE, "PowerSaveMode", Variant("i", 3)), False)
+            self.assertIs(
+                set_(conn, "", displayconfig.PATH, displayconfig.IFACE, "PowerSaveMode", Variant("i", 3)), False
+            )
         self.assertEqual(len(said), 1)
 
     def test_own_never_raises(self):
         def fail(*_a):
             raise RuntimeError("no bus")
+
         for kwargs in ({"own": fail}, {"new_for_xml": fail}):
             with self.subTest(kwargs=list(kwargs)):
                 self.gi(**kwargs)
@@ -822,8 +873,9 @@ class StandInGi(unittest.TestCase):
                 sys.modules.pop(n, None)
                 if m is not None:
                     sys.modules[n] = m
+
         self.addCleanup(restore)
-        sys.modules["gi"] = None            # import gi now fails, as on a machine without PyGObject
+        sys.modules["gi"] = None  # import gi now fails, as on a machine without PyGObject
         sys.modules.pop("gi.repository", None)
         sys.modules.pop("opos.native.displayconfig", None)
         mod = importlib.import_module("opos.native.displayconfig")
@@ -865,8 +917,19 @@ class Source(unittest.TestCase):
             mods |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
             with self.subTest(name=name):
                 self.assertFalse(mods & {"subprocess", "socket", "urllib", "ctypes", "signal"}, mods)
-                for bad in ("os.system", "os.exec", "os.spawn", "os.kill", "systemctl", "reboot", "loginctl", "Restart",
-                            "call_sync", "new_for_bus_sync", "bus_get_sync"):
+                for bad in (
+                    "os.system",
+                    "os.exec",
+                    "os.spawn",
+                    "os.kill",
+                    "systemctl",
+                    "reboot",
+                    "loginctl",
+                    "Restart",
+                    "call_sync",
+                    "new_for_bus_sync",
+                    "bus_get_sync",
+                ):
                     self.assertNotIn(bad, text)
 
 

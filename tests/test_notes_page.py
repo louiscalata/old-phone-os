@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Notes: create, save unicode, refuse a note over 64 KB, and read it back from the file."""
+
 import json
 import os
 from pathlib import Path
@@ -132,8 +133,12 @@ class NotesDeleteFailures(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        result = subprocess.run([node, "--test", str(Path(__file__).with_name("notes_delete_test.js"))],
-                                capture_output=True, text=True, timeout=20)
+        result = subprocess.run(
+            [node, "--test", str(Path(__file__).with_name("notes_delete_test.js"))],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 

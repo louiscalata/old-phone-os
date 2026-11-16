@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless notes: type, see Saved, confirm delete, and find the note gone."""
+
 import json
 import os
 import shutil
@@ -58,7 +59,14 @@ resolve(out);
 },100);
 });
 """
-CASES = ((1392, 900, "light", 1), (1392, 900, "dark", 1), (675, 900, "light", 1), (675, 900, "dark", 1), (360, 640, "light", 2), (360, 640, "dark", 2))
+CASES = (
+    (1392, 900, "light", 1),
+    (1392, 900, "dark", 1),
+    (675, 900, "light", 1),
+    (675, 900, "dark", 1),
+    (360, 640, "light", 2),
+    (360, 640, "dark", 2),
+)
 
 
 class NotesBrowser(unittest.TestCase):
@@ -107,10 +115,23 @@ class NotesBrowser(unittest.TestCase):
         acceptance._kill(getattr(self, "proc", None))
 
     def test_type_and_autosave(self):
-        cases = [{"url": self.origin + "/notes", "width": w, "height": h, "theme": t, "scale": s, "hand": "right", "script": FLOW} for w, h, t, s in CASES]
+        cases = [
+            {
+                "url": self.origin + "/notes",
+                "width": w,
+                "height": h,
+                "theme": t,
+                "scale": s,
+                "hand": "right",
+                "script": FLOW,
+            }
+            for w, h, t, s in CASES
+        ]
         plan = os.path.join(self.run, "plan.json")
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90)
+        result = subprocess.run(
+            [self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1200:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 

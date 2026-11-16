@@ -4,6 +4,7 @@
 The VM uses the existing recovery harness with mocked HTTP only. Browser-level
 selection/persistence is covered separately; these tests start no application server.
 """
+
 import json
 import shutil
 import stat
@@ -15,76 +16,77 @@ from pathlib import Path
 from opos.setup import prefs, wizard_page
 from tests.test_jaryo_setup_recovery import _Dom, _script, RUNTIME as _RECOVERY_RUNTIME
 
-NODE = shutil.which('node')
-APPS = ('phone', 'messages', 'helper', 'settings')
-DEFAULTS = {'phone': 'medium', 'messages': 'medium', 'helper': 'small', 'settings': 'small'}
-SIZES = ('small', 'medium', 'wide')
+NODE = shutil.which("node")
+APPS = ("phone", "messages", "helper", "settings")
+DEFAULTS = {"phone": "medium", "messages": "medium", "helper": "small", "settings": "small"}
+SIZES = ("small", "medium", "wide")
 
 
 class TileSizeMarkupTests(unittest.TestCase):
     def test_four_native_labelled_controls_and_defaults_are_in_layout_step(self):
-        dom = _Dom(wizard_page.page('tok', 'nonce123'))
-        section = dom.by_id('j2')
-        selects = [i for i in dom.descendants(section, 'select')
-                   if 'data-jtile-size' in dom.nodes[i]['attrs']]
-        self.assertEqual([dom.nodes[i]['attrs']['data-jtile-size'] for i in selects], list(APPS))
+        dom = _Dom(wizard_page.page("tok", "nonce123"))
+        section = dom.by_id("j2")
+        selects = [i for i in dom.descendants(section, "select") if "data-jtile-size" in dom.nodes[i]["attrs"]]
+        self.assertEqual([dom.nodes[i]["attrs"]["data-jtile-size"] for i in selects], list(APPS))
         for app in APPS:
             with self.subTest(app=app):
-                element_id = 'jaryo-size-' + app
-                matches = [i for i, n in enumerate(dom.nodes) if n['attrs'].get('id') == element_id]
-                self.assertEqual(len(matches), 1, 'Each control has a unique native label target')
+                element_id = "jaryo-size-" + app
+                matches = [i for i, n in enumerate(dom.nodes) if n["attrs"].get("id") == element_id]
+                self.assertEqual(len(matches), 1, "Each control has a unique native label target")
                 index = matches[0]
                 node = dom.nodes[index]
-                self.assertEqual(node['tag'], 'select')
+                self.assertEqual(node["tag"], "select")
                 self.assertTrue(dom.inside(index, section))
-                self.assertNotIn('disabled', node['attrs'])
-                options = [dom.nodes[i] for i in dom.descendants(index, 'option')]
-                self.assertEqual([n['attrs'].get('value') for n in options], list(SIZES))
-                selected = [n['attrs']['value'] for n in options if 'selected' in n['attrs']]
+                self.assertNotIn("disabled", node["attrs"])
+                options = [dom.nodes[i] for i in dom.descendants(index, "option")]
+                self.assertEqual([n["attrs"].get("value") for n in options], list(SIZES))
+                selected = [n["attrs"]["value"] for n in options if "selected" in n["attrs"]]
                 self.assertEqual(selected, [DEFAULTS[app]])
-                labels = [n['text'] for n in dom.nodes
-                          if n['tag'] == 'label' and n['attrs'].get('for') == element_id]
-                parent = node['parent']
+                labels = [n["text"] for n in dom.nodes if n["tag"] == "label" and n["attrs"].get("for") == element_id]
+                parent = node["parent"]
                 while parent >= 0:
                     ancestor = dom.nodes[parent]
-                    if ancestor['tag'] == 'label':
-                        labels.append(ancestor['text'])
-                    parent = ancestor['parent']
-                if node['attrs'].get('aria-label'):
-                    labels.append(node['attrs']['aria-label'])
-                self.assertTrue(labels, 'The native select has an accessible text label')
-                self.assertIn(app, ' '.join(labels).lower())
-                self.assertRegex(' '.join(labels).lower(), r'tile|size')
+                    if ancestor["tag"] == "label":
+                        labels.append(ancestor["text"])
+                    parent = ancestor["parent"]
+                if node["attrs"].get("aria-label"):
+                    labels.append(node["attrs"]["aria-label"])
+                self.assertTrue(labels, "The native select has an accessible text label")
+                self.assertIn(app, " ".join(labels).lower())
+                self.assertRegex(" ".join(labels).lower(), r"tile|size")
         # The four app checkboxes remain an independent recorded preference.
-        checkboxes = [dom.nodes[i]['attrs'].get('value') for i in dom.descendants(section, 'input')
-                      if dom.nodes[i]['attrs'].get('type') == 'checkbox']
+        checkboxes = [
+            dom.nodes[i]["attrs"].get("value")
+            for i in dom.descendants(section, "input")
+            if dom.nodes[i]["attrs"].get("type") == "checkbox"
+        ]
         self.assertEqual(checkboxes, list(APPS))
 
     def test_chosen_sizes_persist_independently_of_favourites(self):
-        selected = {'phone': 'wide', 'messages': 'small', 'helper': 'medium', 'settings': 'wide'}
-        value = {'favourites': ['settings'], 'sizes': selected}
+        selected = {"phone": "wide", "messages": "small", "helper": "medium", "settings": "wide"}
+        value = {"favourites": ["settings"], "sizes": selected}
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'prefs.json'
-            prefs.answer('layout', value, path)
+            path = Path(folder) / "prefs.json"
+            prefs.answer("layout", value, path)
             prefs.skip_all(path)
             effective = prefs.finish(path)
-            self.assertEqual(prefs.load(path)['answers']['layout'], value)
-            self.assertEqual(effective['layout'], value)
-            self.assertTrue(prefs.load(path)['applied'])
+            self.assertEqual(prefs.load(path)["answers"]["layout"], value)
+            self.assertEqual(effective["layout"], value)
+            self.assertTrue(prefs.load(path)["applied"])
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 
     def test_backend_keeps_legacy_null_partial_and_allapps_compatibility(self):
-        for sizes in (None, {}, {'phone': 'wide'}, {'allapps': 'wide'}):
+        for sizes in (None, {}, {"phone": "wide"}, {"allapps": "wide"}):
             with self.subTest(sizes=sizes):
-                prefs.validate_answer('layout', {'favourites': [], 'sizes': sizes})
-        for sizes in ([], 'wide', {'phone': 'huge'}, {'unknown': 'small'}, {'settings': None}):
+                prefs.validate_answer("layout", {"favourites": [], "sizes": sizes})
+        for sizes in ([], "wide", {"phone": "huge"}, {"unknown": "small"}, {"settings": None}):
             with self.subTest(sizes=sizes):
                 with self.assertRaises(ValueError):
-                    prefs.validate_answer('layout', {'favourites': [], 'sizes': sizes})
+                    prefs.validate_answer("layout", {"favourites": [], "sizes": sizes})
 
 
 # Reuse the fake-DOM/HTTP boundary, not any existing scenario or unittest method.
-_PREFIX = _RECOVERY_RUNTIME.split('let scenarios = 0;', 1)[0]
+_PREFIX = _RECOVERY_RUNTIME.split("let scenarios = 0;", 1)[0]
 _HELPERS = r"""
 const APPS = ['phone', 'messages', 'helper', 'settings'];
 const DEFAULTS = {phone:'medium', messages:'medium', helper:'small', settings:'small'};
@@ -125,18 +127,25 @@ let INPUT=''; process.stdin.on('data', s => INPUT += s);
 """
 
 
-@unittest.skipUnless(NODE, 'node not installed')
+@unittest.skipUnless(NODE, "node not installed")
 class TileSizeWizardRuntimeTests(unittest.TestCase):
     def run_scenario(self, body):
-        page = wizard_page.page('tok', 'nonce123')
-        payload = json.dumps({'nodes': _Dom(page).nodes, 'script': _script(page)})
-        program = (_PREFIX + _HELPERS + '\nasync function main() {\n' + body + '\n}\n'
-                   "process.stdin.on('end', () => main().then(() => console.log('tile-size scenario ok'))"
-                   ".catch(e => { console.error(e.stack); process.exitCode=1; }));\n")
-        result = subprocess.run([NODE, '--unhandled-rejections=strict', '-e', program],
-                                input=payload, text=True, capture_output=True, timeout=30)
+        page = wizard_page.page("tok", "nonce123")
+        payload = json.dumps({"nodes": _Dom(page).nodes, "script": _script(page)})
+        program = (
+            _PREFIX + _HELPERS + "\nasync function main() {\n" + body + "\n}\n"
+            "process.stdin.on('end', () => main().then(() => console.log('tile-size scenario ok'))"
+            ".catch(e => { console.error(e.stack); process.exitCode=1; }));\n"
+        )
+        result = subprocess.run(
+            [NODE, "--unhandled-rejections=strict", "-e", program],
+            input=payload,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('tile-size scenario ok', result.stdout)
+        self.assertIn("tile-size scenario ok", result.stdout)
 
     def test_save_all_four_sizes_independent_of_checked_favourites(self):
         self.run_scenario(r"""
@@ -280,5 +289,5 @@ assertNamedSizes(text,CUSTOM);
 """)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

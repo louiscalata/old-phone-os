@@ -36,7 +36,7 @@ STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
 def _settings(out):
     s = out.index('<section id="settings"')
     e = out.index('<p id="about">', s)
-    return out[s:out.index("</section></section>", e) + len("</section></section>")]
+    return out[s : out.index("</section></section>", e) + len("</section></section>")]
 
 
 def _css():
@@ -90,9 +90,19 @@ class UXP13SettingsStatic(unittest.TestCase):
         css = _css()
         for k, pct in (("n", 100), ("l", 125), ("xl", 150)):
             self.assertIn('html[data-text="%s"]{font-size:%d%%}' % (k, pct), css)
-        self.assertIn("html[data-text] label,html[data-text] input,html[data-text] button,html[data-text] select{font-size:1rem}", css)
+        self.assertIn(
+            "html[data-text] label,html[data-text] input,html[data-text] button,html[data-text] select{font-size:1rem}",
+            css,
+        )
         # ID rules beat the html[data-text] rule, so Home, All apps and device-type text must be rem themselves.
-        for sel in ("#home button", "#home #allapps", "#apps-list button", "#phone[data-app] #ff label", "#settings h2", "#settings h3"):
+        for sel in (
+            "#home button",
+            "#home #allapps",
+            "#apps-list button",
+            "#phone[data-app] #ff label",
+            "#settings h2",
+            "#settings h3",
+        ):
             m = re.search(re.escape(sel) + r"\{([^}]*)\}", css)
             self.assertIsNotNone(m, sel)
             self.assertRegex(m.group(1), r"font-size:[\d.]+rem", sel)
@@ -100,10 +110,15 @@ class UXP13SettingsStatic(unittest.TestCase):
 
     def test_hit_areas(self):
         css = _css()
-        self.assertIn("#phone[data-app] #ff label{display:flex;align-items:center;gap:12px;min-height:48px;font-size:1.125rem;margin:0 0 8px}", css)
+        self.assertIn(
+            "#phone[data-app] #ff label{display:flex;align-items:center;gap:12px;min-height:48px;font-size:1.125rem;margin:0 0 8px}",
+            css,
+        )
         self.assertRegex(css, r"#textsize\{[^}]*min-height:48px")
         self.assertRegex(css, r"label\[for=textsize\]\{[^}]*margin:0 0 8px")
-        self.assertRegex(css, r'#phone\[data-app\]:not\(\[data-app="home"\]\) #back:not\(\[hidden\]\)\{[^}]*min-height:48px')
+        self.assertRegex(
+            css, r'#phone\[data-app\]:not\(\[data-app="home"\]\) #back:not\(\[hidden\]\)\{[^}]*min-height:48px'
+        )
         self.assertRegex(css, r"#settings section\{margin-top:16px\}")
 
 
@@ -164,8 +179,9 @@ class UXP13SettingsRuntime(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             harness = Path(tmp) / "harness.js"
             harness.write_text(HARNESS, encoding="utf-8")
-            proc = subprocess.run(["node", str(harness), str(STATIC / "phone-b.js")],
-                                  capture_output=True, text=True, timeout=30)
+            proc = subprocess.run(
+                ["node", str(harness), str(STATIC / "phone-b.js")], capture_output=True, text=True, timeout=30
+            )
         if proc.returncode:
             raise AssertionError(proc.stderr)
         cls.r = json.loads(proc.stdout)
@@ -262,13 +278,13 @@ class UXP13Wizard(unittest.TestCase):
 
     def test_profile_choice_survives_reload(self):
         self.assertIn('sessionStorage.setItem("opos_setup_profile",v)', self.html)
-        load = self.html[self.html.index("async function load(){"):self.html.index("async function changeProfile(")]
+        load = self.html[self.html.index("async function load(){") : self.html.index("async function changeProfile(")]
         self.assertIn('sessionStorage.getItem("opos_setup_profile")', load)
         self.assertIn("changeProfile();", load)
         self.assertLess(load.index("fillProfiles()"), load.index("opos_setup_profile"))
 
     def test_load_renders_choices_before_profile_restore(self):
-        load = self.html[self.html.index("async function load(){"):self.html.index("function busy(")]
+        load = self.html[self.html.index("async function load(){") : self.html.index("function busy(")]
         self.assertNotIn("await changeProfile", load)
         self.assertLess(load.index("renderAi();"), load.index("changeProfile();"))
 
@@ -396,12 +412,17 @@ class UXP13WizardRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         s = wizard_page._TEMPLATE
-        src = s[s.index("async function errMsg("):s.index("function updMeter(")] + s[s.index("function busy("):s.index("let pollId")] + s[s.index("const FIELDS="):s.index("Object.values(FIELDS)")]
+        src = (
+            s[s.index("async function errMsg(") : s.index("function updMeter(")]
+            + s[s.index("function busy(") : s.index("let pollId")]
+            + s[s.index("const FIELDS=") : s.index("Object.values(FIELDS)")]
+        )
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "h.js").write_text(WIZ_HARNESS, encoding="utf-8")
             (Path(tmp) / "w.js").write_text(src, encoding="utf-8")
-            proc = subprocess.run(["node", str(Path(tmp) / "h.js"), str(Path(tmp) / "w.js")],
-                                  capture_output=True, text=True, timeout=30)
+            proc = subprocess.run(
+                ["node", str(Path(tmp) / "h.js"), str(Path(tmp) / "w.js")], capture_output=True, text=True, timeout=30
+            )
         if proc.returncode:
             raise AssertionError(proc.stderr)
         cls.r = json.loads(proc.stdout)
@@ -435,12 +456,20 @@ class UXP13WizardRuntime(unittest.TestCase):
         self.assertEqual(self.r["pending"], {"select": "duo", "dev": {"id": "det"}, "disabled": True})
 
     def test_stalled_profile_times_out_and_reverts(self):
-        self.assertEqual(self.r["timedOut"], {"select": "", "dev": {"id": "det"}, "disabled": False,
-                                              "errs": ["The device did not load. Try again."]})
+        self.assertEqual(
+            self.r["timedOut"],
+            {"select": "", "dev": {"id": "det"}, "disabled": False, "errs": ["The device did not load. Try again."]},
+        )
 
     def test_response_body_deadline_releases_controls_and_ignores_late_body(self):
-        expected = {"select": "", "pid": "", "store": None, "dev": {"id": "det"},
-                    "disabled": False, "errs": ["The device did not load. Try again."]}
+        expected = {
+            "select": "",
+            "pid": "",
+            "store": None,
+            "dev": {"id": "det"},
+            "disabled": False,
+            "errs": ["The device did not load. Try again."],
+        }
         for kind in ("success", "errorJson", "errorText"):
             with self.subTest(kind=kind):
                 self.assertEqual(self.r[kind + "BodyTimeout"], expected)
@@ -449,16 +478,24 @@ class UXP13WizardRuntime(unittest.TestCase):
     def test_overlapping_requests_only_allow_latest_to_mutate(self):
         for fail in ("false", "true"):
             with self.subTest(stale_failure=fail):
-                self.assertEqual(self.r["overlapPending" + fail], {
-                    "select": "duo", "pid": "", "store": None, "dev": {"id": "det"},
-                    "disabled": True, "errs": []})
-                self.assertEqual(self.r["overlapFailed" + fail], {
-                    "select": "", "pid": "", "store": None, "dev": {"id": "det"},
-                    "disabled": False, "errs": ["latest failure"]})
+                self.assertEqual(
+                    self.r["overlapPending" + fail],
+                    {"select": "duo", "pid": "", "store": None, "dev": {"id": "det"}, "disabled": True, "errs": []},
+                )
+                self.assertEqual(
+                    self.r["overlapFailed" + fail],
+                    {
+                        "select": "",
+                        "pid": "",
+                        "store": None,
+                        "dev": {"id": "det"},
+                        "disabled": False,
+                        "errs": ["latest failure"],
+                    },
+                )
 
     def test_use_detected_invalidates_pending_success_and_failure(self):
-        expected = {"select": "", "pid": "", "store": None, "dev": {"id": "det"},
-                    "disabled": False, "errs": []}
+        expected = {"select": "", "pid": "", "store": None, "dev": {"id": "det"}, "disabled": False, "errs": []}
         for fail in ("false", "true"):
             with self.subTest(stale_failure=fail):
                 self.assertEqual(self.r["detectedPending" + fail], expected)

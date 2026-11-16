@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Modem foundation tests."""
+
 import ast
 import unittest
 from pathlib import Path
@@ -139,20 +140,20 @@ class ToGvariantTests(unittest.TestCase):
 
     def test_p076_integer_width_boundaries(self):
         cases = [
-            (-2 ** 31, str(-2 ** 31)),
-            (2 ** 31 - 1, str(2 ** 31 - 1)),
-            (-2 ** 31 - 1, "int64 " + str(-2 ** 31 - 1)),
-            (2 ** 31, "int64 " + str(2 ** 31)),
-            (-2 ** 63, "int64 " + str(-2 ** 63)),
-            (2 ** 63 - 1, "int64 " + str(2 ** 63 - 1)),
-            (2 ** 63, "uint64 " + str(2 ** 63)),
-            (2 ** 64 - 1, "uint64 " + str(2 ** 64 - 1)),
+            (-(2**31), str(-(2**31))),
+            (2**31 - 1, str(2**31 - 1)),
+            (-(2**31) - 1, "int64 " + str(-(2**31) - 1)),
+            (2**31, "int64 " + str(2**31)),
+            (-(2**63), "int64 " + str(-(2**63))),
+            (2**63 - 1, "int64 " + str(2**63 - 1)),
+            (2**63, "uint64 " + str(2**63)),
+            (2**64 - 1, "uint64 " + str(2**64 - 1)),
         ]
         for value, expected in cases:
             with self.subTest(value=value):
                 self.assertEqual(to_gvariant(value), expected)
                 self.assertEqual(to_gvariant({"n": value}), "{'n': <" + expected + ">}")
-        bad = [-2 ** 63 - 1, 2 ** 64]
+        bad = [-(2**63) - 1, 2**64]
         for value in bad:
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
@@ -756,9 +757,7 @@ class TestPollIncomingNoSilentExceptPass(unittest.TestCase):
         bad = [
             node.lineno
             for node in ast.walk(func)
-            if isinstance(node, ast.ExceptHandler)
-            and len(node.body) == 1
-            and isinstance(node.body[0], ast.Pass)
+            if isinstance(node, ast.ExceptHandler) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
         ]
         self.assertEqual(bad, [], "poll_incoming has pass-only handlers at lines %s" % (bad,))
 
@@ -773,6 +772,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_call_argv_and_unwrap(self):
         from opos.mm_modem import GdbusBus
+
         modem_path = MM_PATH + "/Modem/" + "0"
         call_path = MM_PATH + "/Call/" + "1"
         number = "555" + "1234"
@@ -804,6 +804,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_find_modem_supplies_destination(self):
         from opos.mm_modem import GdbusBus
+
         modem_path = MM_PATH + "/Modem/" + "0"
         modem_iface = MM + ".Modem"
         stdout = "({'" + modem_path + "': {'" + modem_iface + "': {}}},)\n"
@@ -833,6 +834,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_call_string_arg_argv(self):
         from opos.mm_modem import GdbusBus
+
         call_path = MM_PATH + "/Call/" + "1"
         iface = MM + ".Call"
         bus = GdbusBus()
@@ -860,6 +862,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_call_nonzero_rc_raises_oserror(self):
         from opos.mm_modem import GdbusBus
+
         number = "555" + "1234"
         completed = Mock()
         completed.stdout = ""
@@ -873,6 +876,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_get_nonzero_rc_raises_oserror(self):
         from opos.mm_modem import GdbusBus
+
         completed = Mock()
         completed.stdout = ""
         completed.stderr = "denied\n"
@@ -885,6 +889,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_get_argv_and_unwrap_variant(self):
         from opos.mm_modem import GdbusBus
+
         stdout = "(<uint32 3>,)\n"
         bus = GdbusBus()
         with patch("opos.mm_modem.subprocess.run", return_value=self._completed(stdout)) as run:
@@ -910,6 +915,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_get_string_value(self):
         from opos.mm_modem import GdbusBus
+
         number = "+1" + "5551234"
         stdout = "(<'" + number + "'>,)\n"
         bus = GdbusBus()
@@ -919,6 +925,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_r009_missing_decoder_raises_oserror(self):
         from opos.mm_modem import GdbusBus
+
         bus = GdbusBus()
         stdouts = [
             "(<uint32 3>,)",
@@ -943,6 +950,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_r011_discovery_and_incoming_sms_through_adapter(self):
         from opos.mm_modem import GdbusBus
+
         number = "555" + "1234"
         text = "hel" + "lo"
         modem_iface = MM + ".Modem"
@@ -965,13 +973,82 @@ class GdbusBusTests(unittest.TestCase):
         self.assertEqual(run.call_count, 7)
         props = "org.freedesktop.DBus.Properties.Get"
         expected = [
-            ["gdbus", "call", "--system", "--dest", MM, "--object-path", MM_PATH, "--method", OM + ".GetManagedObjects"],
+            [
+                "gdbus",
+                "call",
+                "--system",
+                "--dest",
+                MM,
+                "--object-path",
+                MM_PATH,
+                "--method",
+                OM + ".GetManagedObjects",
+            ],
             ["gdbus", "call", "--system", "--dest", MM, "--object-path", MODEM, "--method", MESSAGING + ".List"],
-            ["gdbus", "call", "--system", "--dest", MM, "--object-path", SMS_PATH_1, "--method", props, "'" + SMS + "'", "'Number'"],
-            ["gdbus", "call", "--system", "--dest", MM, "--object-path", SMS_PATH_1, "--method", props, "'" + SMS + "'", "'Text'"],
-            ["gdbus", "call", "--system", "--dest", MM, "--object-path", SMS_PATH_1, "--method", props, "'" + SMS + "'", "'PduType'"],
-            ["gdbus", "call", "--system", "--dest", MM, "--object-path", SMS_PATH_1, "--method", props, "'" + SMS + "'", "'State'"],
-            ["gdbus", "call", "--system", "--dest", MM, "--object-path", MODEM, "--method", MESSAGING + ".Delete", "'" + SMS_PATH_1 + "'"],
+            [
+                "gdbus",
+                "call",
+                "--system",
+                "--dest",
+                MM,
+                "--object-path",
+                SMS_PATH_1,
+                "--method",
+                props,
+                "'" + SMS + "'",
+                "'Number'",
+            ],
+            [
+                "gdbus",
+                "call",
+                "--system",
+                "--dest",
+                MM,
+                "--object-path",
+                SMS_PATH_1,
+                "--method",
+                props,
+                "'" + SMS + "'",
+                "'Text'",
+            ],
+            [
+                "gdbus",
+                "call",
+                "--system",
+                "--dest",
+                MM,
+                "--object-path",
+                SMS_PATH_1,
+                "--method",
+                props,
+                "'" + SMS + "'",
+                "'PduType'",
+            ],
+            [
+                "gdbus",
+                "call",
+                "--system",
+                "--dest",
+                MM,
+                "--object-path",
+                SMS_PATH_1,
+                "--method",
+                props,
+                "'" + SMS + "'",
+                "'State'",
+            ],
+            [
+                "gdbus",
+                "call",
+                "--system",
+                "--dest",
+                MM,
+                "--object-path",
+                MODEM,
+                "--method",
+                MESSAGING + ".Delete",
+                "'" + SMS_PATH_1 + "'",
+            ],
         ]
         for idx, argv in enumerate(expected):
             with self.subTest(idx=idx):
@@ -980,6 +1057,7 @@ class GdbusBusTests(unittest.TestCase):
     def test_r011_adapter_timeout_and_nonzero_errors(self):
         import subprocess
         from opos.mm_modem import GdbusBus
+
         for method in ("call", "get"):
             with self.subTest(method=method):
                 failed = Mock()
@@ -1109,6 +1187,7 @@ class DefaultModemTests(unittest.TestCase):
     def test_f2043_default_modem_selection(self):
         from opos.mm_modem import GdbusBus
         from opos.mm_modem import default_modem
+
         gdbus = "/usr/bin/gdbus"
         socket = "/run/dbus/system_bus_socket"
         cases = [

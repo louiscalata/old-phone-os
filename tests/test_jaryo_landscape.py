@@ -10,6 +10,7 @@ letter-jump row spans both panes above the two-pane list, its buttons in the lef
 hinge rules). The module also pins the three base-suite repairs that landed with it (UXP12 show() skipping JRY08
 letter headings; the data-size and helperCall markers).
 """
+
 import json
 import os
 import re
@@ -42,7 +43,7 @@ def _strip(text):
 class LandscapeStatic(unittest.TestCase):
     def test_inlined_after_jaryo_css_and_within_budget(self):
         out = page("t" * 32, "n")
-        style = out[:out.index("</style>")]
+        style = out[: out.index("</style>")]
         self.assertIn(_css(), style)
         self.assertLess(style.index((STATIC / "jaryo.css").read_text(encoding="utf-8")), style.index(_css()))
         self.assertLessEqual(len(out.encode("utf-8")), PAGE_BUDGET)
@@ -59,14 +60,26 @@ class LandscapeStatic(unittest.TestCase):
         seg = blocks(text, segments)
         self.assertEqual(len(seg), 1)
         self.assertEqual(sorted(re.findall(r"@media[^{]*\{", text)), sorted([LOCK, WIDE, segments]))
-        rest = text.replace(LOCK + lock[0] + "}", "").replace(WIDE + wide[0] + "}", "").replace(segments + seg[0] + "}", "")
+        rest = (
+            text.replace(LOCK + lock[0] + "}", "")
+            .replace(WIDE + wide[0] + "}", "")
+            .replace(segments + seg[0] + "}", "")
+        )
         outside = [r.strip() for r in re.findall(r"[^{}]+\{[^{}]*\}", rest)]
         self.assertEqual(re.sub(r"[^{}]+\{[^{}]*\}", "", rest).strip(), "", "only whole rules outside the media blocks")
         self.assertEqual(outside.count(LOCK_MARGIN), 1)
         for rule in outside:
             if rule != LOCK_MARGIN:
-                self.assertIn("#jaryo-letters", rule[:rule.index("{")], "JRY08's letter row owns every other rule outside the blocks: " + rule)
-        self.assertEqual(len([r for r in outside if "#lock" in r]), 1, "the lock button margin is the only lock rule outside the two >=840px media blocks")
+                self.assertIn(
+                    "#jaryo-letters",
+                    rule[: rule.index("{")],
+                    "JRY08's letter row owns every other rule outside the blocks: " + rule,
+                )
+        self.assertEqual(
+            len([r for r in outside if "#lock" in r]),
+            1,
+            "the lock button margin is the only lock rule outside the two >=840px media blocks",
+        )
         self.assertLess(text.index(LOCK_MARGIN), text.index(LOCK))
         self.assertNotIn("max-width:839px", text)
         self.assertNotIn("orientation:portrait", text)
@@ -85,27 +98,37 @@ class LandscapeStatic(unittest.TestCase):
         # Every lock button is a direct child of #lock, so the child selector reaches all of them.
         html = (STATIC / "phone-a.html").read_text(encoding="utf-8")
         start = html.index('<div id="lock"')
-        lock = html[start:html.index("</div>", html.index('id="lock-hangup"', start))]
+        lock = html[start : html.index("</div>", html.index('id="lock-hangup"', start))]
         self.assertEqual(lock.count("<button"), 4)
         self.assertEqual(lock.count("</button><button") + lock.count("</div><button"), 4)
         self.assertEqual(lock.count("<div"), 6, "#lock and its five text rows; no wrapper around the buttons")
 
     def test_lock_two_columns(self):
         body = blocks(_strip(_css()), LOCK)[0]
-        self.assertIn(NOT_FOLD + " #lock:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:24px;grid-auto-flow:row dense;", body)
+        self.assertIn(
+            NOT_FOLD
+            + " #lock:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:24px;grid-auto-flow:row dense;",
+            body,
+        )
         self.assertIn(NOT_FOLD + " #lock>*{grid-column:1}", body)
         self.assertIn(NOT_FOLD + " #lock>div{text-align:left}", body)
         self.assertIn(NOT_FOLD + " #lock>#lock-notice," + NOT_FOLD + " #lock>button{grid-column:2}", body)
         self.assertIn(NOT_FOLD + " #lock>#lock-date{justify-self:stretch;border-bottom:3px solid currentColor;", body)
         # Safe areas: the landscape lock pads by the insets like UXP06's #lock rule.
-        self.assertIn("padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))", body)
+        self.assertIn(
+            "padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))",
+            body,
+        )
         for sel in re.findall(r"([^{}]+)\{", body):
             for s in sel.split(","):
                 self.assertTrue(s.strip().startswith(NOT_FOLD + " #lock"), s)
 
     def test_shade_sidebar(self):
         body = blocks(_strip(_css()), WIDE)[0]
-        self.assertIn("#sheet{right:auto;width:min(100%,24rem);border-right:1px solid currentColor;transform:translateX(-100%)}", body)
+        self.assertIn(
+            "#sheet{right:auto;width:min(100%,24rem);border-right:1px solid currentColor;transform:translateX(-100%)}",
+            body,
+        )
         self.assertIn(".sheet-open #sheet{transform:translateX(0)}", body)
         self.assertIn(".sheet-open #scrim{opacity:0}", body)
         # The base #sheet keeps its visibility delay (test_uxp30_budget); the sidebar adds no transition of its own.
@@ -127,18 +150,28 @@ class LandscapeStatic(unittest.TestCase):
         # full-width row as well; the right pane plus half the 24px gutter is padding, so its buttons never reach the hinge.
         css = _strip(_css())
         body = blocks(css, WIDE)[0]
-        self.assertIn('html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1/-1;padding-right:calc(50% + 12px)}', body)
+        self.assertIn(
+            'html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1/-1;padding-right:calc(50% + 12px)}', body
+        )
         # With All apps open the row's own two columns are 48px apart, like the two-pane list, so neither column crosses the hinge.
-        self.assertIn('html[data-ff="foldable"] #phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1/-1;column-gap:48px}', body)
+        self.assertIn(
+            'html[data-ff="foldable"] #phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1/-1;column-gap:48px}',
+            body,
+        )
         # Only while All apps is open: the row is display:none otherwise and a two-column grid of 48px buttons when shown (JRY08).
         self.assertIn("#jaryo-letters{display:none;margin:12px}", css)
-        self.assertIn('#phone[data-app="home"][data-allapps] #jaryo-letters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}', css)
+        self.assertIn(
+            '#phone[data-app="home"][data-allapps] #jaryo-letters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
+            css,
+        )
         self.assertIn("#jaryo-letters button{margin:0;min-width:48px;min-height:48px}", css)
         # With real viewport segments the row keeps to column 1 with the list and drops the padding.
         seg = blocks(css, "@media (horizontal-viewport-segments:2){")
         self.assertEqual(len(seg), 1)
         self.assertIn('html[data-ff="foldable"] #phone>#jaryo-letters{grid-column:1;padding-right:0}', seg[0])
-        self.assertIn('html[data-ff="foldable"] #phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1}', seg[0])
+        self.assertIn(
+            'html[data-ff="foldable"] #phone[data-app="home"][data-allapps]>#jaryo-letters{grid-column:1}', seg[0]
+        )
         # Every foldable rule in this file is a letter-row rule inside one of those two blocks; the lock block has none.
         foldable = re.findall(r'html\[data-ff="foldable"\][^{},]*', css)
         self.assertTrue(foldable)
@@ -148,26 +181,43 @@ class LandscapeStatic(unittest.TestCase):
         # phone-b.css keeps its own foldable rules: the row spans both panes with #home and #apps-list, the list keeps its 48px
         # gap and the row's own padding-right matches this file's, in both the >=840px block and the segments block.
         pb = _strip((STATIC / "phone-b.css").read_text(encoding="utf-8"))
-        self.assertIn('html[data-ff="foldable"] #phone>#home,html[data-ff="foldable"] #phone>#apps-list,html[data-ff="foldable"] #phone>#jaryo-letters,html[data-ff="foldable"] #phone>#jaryo-masthead{grid-column:1/-1}', blocks(pb, WIDE)[0])
-        self.assertIn('html[data-ff="foldable"] #phone>#jaryo-letters{box-sizing:border-box;padding-right:calc(50% + 12px)}', blocks(pb, WIDE)[0])
-        self.assertIn('html[data-ff="foldable"] #phone[data-app] #home:not([hidden]),html[data-ff="foldable"] #phone[data-app] #apps-list:not([hidden]){column-gap:48px}', blocks(pb, WIDE)[0])
-        self.assertIn('html[data-ff="foldable"] #phone>#jaryo-letters{padding-right:0}', blocks(pb, "@media (horizontal-viewport-segments:2){")[0])
+        self.assertIn(
+            'html[data-ff="foldable"] #phone>#home,html[data-ff="foldable"] #phone>#apps-list,html[data-ff="foldable"] #phone>#jaryo-letters,html[data-ff="foldable"] #phone>#jaryo-masthead{grid-column:1/-1}',
+            blocks(pb, WIDE)[0],
+        )
+        self.assertIn(
+            'html[data-ff="foldable"] #phone>#jaryo-letters{box-sizing:border-box;padding-right:calc(50% + 12px)}',
+            blocks(pb, WIDE)[0],
+        )
+        self.assertIn(
+            'html[data-ff="foldable"] #phone[data-app] #home:not([hidden]),html[data-ff="foldable"] #phone[data-app] #apps-list:not([hidden]){column-gap:48px}',
+            blocks(pb, WIDE)[0],
+        )
+        self.assertIn(
+            'html[data-ff="foldable"] #phone>#jaryo-letters{padding-right:0}',
+            blocks(pb, "@media (horizontal-viewport-segments:2){")[0],
+        )
 
     def test_palette_motion_and_order(self):
         css = _strip(_css())
         self.assertEqual(set(re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", css)), set())
-        self.assertNotRegex(css, r"[;{]\s*order\s*:|row-reverse|column-reverse|[;{]\s*direction\s*:|grid-template-areas")
+        self.assertNotRegex(
+            css, r"[;{]\s*order\s*:|row-reverse|column-reverse|[;{]\s*direction\s*:|grid-template-areas"
+        )
         self.assertNotRegex(css, r"transition|animation|will-change|@font-face|url\(|gradient|filter|box-shadow")
         self.assertNotRegex(css, r"[;{]\s*height\s*:")
 
     def test_existing_landscape_rules_still_inlined(self):
         # 4.2 and 4.6 are owned elsewhere: JRY04's four tracks and UXP21's sticky slide-out action row.
         out = page("t" * 32, "n")
-        self.assertIn('html:not([data-ff]) #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}', out)
+        self.assertIn(
+            "html:not([data-ff]) #phone[data-app] #home:not([hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}",
+            out,
+        )
         self.assertIn('html[data-ff="slideout"] #controls{position:sticky;bottom:0;', out)
         # phone-b.css keeps exactly one >=840px block (test_uxp22_twopane); this layer never adds a 839px block.
         self.assertEqual(len(blocks(_strip((STATIC / "phone-b.css").read_text(encoding="utf-8")), WIDE)), 1)
-        self.assertEqual(len(blocks(out[:out.index("</style>")], "@media (max-width:839px){")), 1)
+        self.assertEqual(len(blocks(out[: out.index("</style>")], "@media (max-width:839px){")), 1)
         self.assertNotIn("840", (STATIC / "jaryo-layout.js").read_text(encoding="utf-8"))
 
 
@@ -176,15 +226,23 @@ class BaseRepairsStatic(unittest.TestCase):
 
     def test_all_apps_skips_rows_without_a_button(self):
         js = (STATIC / "phone-b.js").read_text(encoding="utf-8")
-        show = js[js.index("function show(){"):js.index("a.addEventListener('click',show)")]
+        show = js[js.index("function show(){") : js.index("a.addEventListener('click',show)")]
         self.assertIn("b=li.firstChild;if(!b||!b.dataset)continue;", show)
 
     def test_tiles_keep_label_after_attributes(self):
         out = page("t" * 32, "n")
         # Canonical tile markup (phone-b.html): type, then an optional JRY04 data-size, then data-open, then the label as the
         # button's only content. Each tile is rendered exactly once.
-        for name, label in [("phone", "Phone"), ("messages", "Messages"), ("helper", "Helper"), ("settings", "Settings")]:
-            pattern = r'<button type="button"(?: data-size="(?:small|medium|wide)")? data-open="%s">%s</button>' % (name, label)
+        for name, label in [
+            ("phone", "Phone"),
+            ("messages", "Messages"),
+            ("helper", "Helper"),
+            ("settings", "Settings"),
+        ]:
+            pattern = r'<button type="button"(?: data-size="(?:small|medium|wide)")? data-open="%s">%s</button>' % (
+                name,
+                label,
+            )
             self.assertRegex(out, pattern)
             self.assertEqual(len(re.findall(pattern, out)), 1, name)
             self.assertEqual(out.count('data-open="%s"' % name), 1, name)
@@ -197,7 +255,11 @@ class BaseRepairsStatic(unittest.TestCase):
         # Each inline handler is one line and each line is unique: Plan and Why call helperCall with their own literal action;
         # the Ask handler (UXP99 shared Ask request) has no literal action of its own, it hands helperCall to helperAsk as the
         # transport and helperAsk builds the one action:'ask' request.
-        for marker in ("document.getElementById('askbtn').onclick=", "helperCall({action:'plan'", "helperCall({action:'explain'"):
+        for marker in (
+            "document.getElementById('askbtn').onclick=",
+            "helperCall({action:'plan'",
+            "helperCall({action:'explain'",
+        ):
             self.assertEqual(len([ln for ln in lines if marker in ln]), 1, marker)
         ask = next(ln for ln in lines if "document.getElementById('askbtn').onclick=" in ln)
         self.assertIn("helperAsk(asked,webq.checked,o=>helperCall(o,ans))", ask)
@@ -228,8 +290,12 @@ class AllAppsRuntime(unittest.TestCase):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as d:
                 h = Path(d) / "h.js"
                 h.write_text(harness, encoding="utf-8")
-                r = subprocess.run([uxp12.NODE, str(h), str(STATIC / "phone-b.js"), mode, ""],
-                                   capture_output=True, text=True, timeout=30)
+                r = subprocess.run(
+                    [uxp12.NODE, str(h), str(STATIC / "phone-b.js"), mode, ""],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
                 self.assertEqual(r.returncode, 0, r.stderr)
                 o = json.loads(r.stdout)
                 self.assertEqual(o["opened"], ["home", False, True, True, True, "Phone"])
@@ -364,8 +430,13 @@ class LandscapeBrowser(unittest.TestCase):
         driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
         target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        r = subprocess.run([self.node, str(driver), target, self.url, "jaryo_landscape", self.state],
-                           capture_output=True, text=True, timeout=90, env=env)
+        r = subprocess.run(
+            [self.node, str(driver), target, self.url, "jaryo_landscape", self.state],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            env=env,
+        )
         self.assertEqual(r.returncode, 0, r.stderr[-1000:])
         self.assertEqual(json.loads(r.stdout.strip().splitlines()[-1])["violations"], [])
 

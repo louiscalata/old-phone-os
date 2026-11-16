@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for the OPOS tinydm post-install hook."""
+
 import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-HOOK = Path(__file__).resolve().parent.parent / "packaging" / "pmos" / "postmarketos-ui-opos" / "postmarketos-ui-opos.post-install"
+HOOK = (
+    Path(__file__).resolve().parent.parent
+    / "packaging"
+    / "pmos"
+    / "postmarketos-ui-opos"
+    / "postmarketos-ui-opos.post-install"
+)
 
 
 def _lines():
@@ -34,9 +41,13 @@ class TestPostInstall(unittest.TestCase):
                 stub = base / "tinydm-set-session"
                 stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALL_LOG"\nexit {status}\n')
                 stub.chmod(0o755)
-                result = subprocess.run(["/bin/sh", str(HOOK)],
-                                        env=dict(os.environ, PATH=str(base), CALL_LOG=str(log)),
-                                        capture_output=True, text=True, timeout=10)
+                result = subprocess.run(
+                    ["/bin/sh", str(HOOK)],
+                    env=dict(os.environ, PATH=str(base), CALL_LOG=str(log)),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertEqual(log.read_text(), "-s /usr/share/wayland-sessions/cage-ui.desktop\n")
 

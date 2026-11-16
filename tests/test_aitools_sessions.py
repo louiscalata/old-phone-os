@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for opos.aitools.sessions."""
+
 import json
 import os
 import shutil
@@ -16,7 +17,16 @@ except ImportError:
     fcntl = None
 
 from opos.aitools import sessions
-from opos.aitools.sessions import APP_TASK, Session, SessionGuard, descendants, list_sessions, should_run, sync_dashboard, with_session_task
+from opos.aitools.sessions import (
+    APP_TASK,
+    Session,
+    SessionGuard,
+    descendants,
+    list_sessions,
+    should_run,
+    sync_dashboard,
+    with_session_task,
+)
 from opos.governor import Priority, Task
 
 
@@ -622,7 +632,14 @@ class MainGuardTests(unittest.TestCase):
     def test_missing_run_dir(self):
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
-            rc = sessions.main_guard(td / "nope", interval_s=0.1, sleep=lambda _: None, proc_root=td / "proc", supply_dir=td / "sup", idle_exit_s=0.2)
+            rc = sessions.main_guard(
+                td / "nope",
+                interval_s=0.1,
+                sleep=lambda _: None,
+                proc_root=td / "proc",
+                supply_dir=td / "sup",
+                idle_exit_s=0.2,
+            )
             self.assertEqual(rc, 0)
 
     def test_lock_held(self):
@@ -636,7 +653,14 @@ class MainGuardTests(unittest.TestCase):
             f = open(lock_path, "w")
             try:
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                rc = sessions.main_guard(run_dir, interval_s=0.1, sleep=lambda _: None, proc_root=td / "proc", supply_dir=td / "sup", idle_exit_s=0.2)
+                rc = sessions.main_guard(
+                    run_dir,
+                    interval_s=0.1,
+                    sleep=lambda _: None,
+                    proc_root=td / "proc",
+                    supply_dir=td / "sup",
+                    idle_exit_s=0.2,
+                )
                 self.assertEqual(rc, 0)
             finally:
                 try:
@@ -682,7 +706,15 @@ class MainGuardTests(unittest.TestCase):
             buf = StringIO()
             sys.stderr = buf
             try:
-                rc = sessions.main_guard(run_dir, interval_s=1, sleep=fake_sleep, proc_root=proc_root, supply_dir=supply, idle_exit_s=2, kill=rec)
+                rc = sessions.main_guard(
+                    run_dir,
+                    interval_s=1,
+                    sleep=fake_sleep,
+                    proc_root=proc_root,
+                    supply_dir=supply,
+                    idle_exit_s=2,
+                    kill=rec,
+                )
             finally:
                 sys.stderr = old
             self.assertEqual(rc, 0)
@@ -694,6 +726,7 @@ class MainGuardTests(unittest.TestCase):
 
     def test_F017_telemetry_failure_after_charging_pauses_and_recovers(self):
         import unittest.mock
+
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -752,7 +785,15 @@ class MainGuardTests(unittest.TestCase):
                 with unittest.mock.patch.object(sessions.power, "on_external_power", fake_power):
                     with unittest.mock.patch.object(sessions.power, "battery_percent", fake_level):
                         with unittest.mock.patch.object(sessions.time, "monotonic", fake_mono):
-                            rc = sessions.main_guard(run_dir, interval_s=5, sleep=fake_sleep, proc_root=proc_root, supply_dir=supply, idle_exit_s=1000, kill=rec)
+                            rc = sessions.main_guard(
+                                run_dir,
+                                interval_s=5,
+                                sleep=fake_sleep,
+                                proc_root=proc_root,
+                                supply_dir=supply,
+                                idle_exit_s=1000,
+                                kill=rec,
+                            )
             finally:
                 sys.stderr = old
             self.assertEqual(rc, 0)
@@ -792,7 +833,9 @@ class MainGuardTests(unittest.TestCase):
             def bad_sleep(s):
                 raise SystemExit(0)
 
-            rc = sessions.main_guard(run_dir, interval_s=1, sleep=bad_sleep, proc_root=proc_root, supply_dir=supply, idle_exit_s=10, kill=rec)
+            rc = sessions.main_guard(
+                run_dir, interval_s=1, sleep=bad_sleep, proc_root=proc_root, supply_dir=supply, idle_exit_s=10, kill=rec
+            )
             self.assertEqual(rc, 0)
             self.assertTrue(any(c[0] == pid and c[1] == signal.SIGSTOP for c in rec.calls))
             self.assertTrue(any(c[0] == pid and c[1] == signal.SIGCONT for c in rec.calls))
@@ -809,12 +852,15 @@ class MainGuardTests(unittest.TestCase):
             supply = td / "supply"
             supply.mkdir()
             (tools_root / "manifest.json").write_text("not json")
-            rc = sessions.main_guard(run_dir, interval_s=1, sleep=lambda _: None, proc_root=proc_root, supply_dir=supply, idle_exit_s=1)
+            rc = sessions.main_guard(
+                run_dir, interval_s=1, sleep=lambda _: None, proc_root=proc_root, supply_dir=supply, idle_exit_s=1
+            )
             self.assertEqual(rc, 0)
 
     def test_tick_error_continues(self):
         """Tick failure does not cause early idle exit."""
         import unittest.mock
+
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -858,7 +904,15 @@ class MainGuardTests(unittest.TestCase):
                 buf = StringIO()
                 sys.stderr = buf
                 try:
-                    rc = sessions.main_guard(run_dir, interval_s=1, sleep=fake_sleep, proc_root=proc_root, supply_dir=supply, idle_exit_s=2, kill=lambda *_: None)
+                    rc = sessions.main_guard(
+                        run_dir,
+                        interval_s=1,
+                        sleep=fake_sleep,
+                        proc_root=proc_root,
+                        supply_dir=supply,
+                        idle_exit_s=2,
+                        kill=lambda *_: None,
+                    )
                 finally:
                     sys.stderr = old
                 self.assertEqual(rc, 0)
@@ -868,6 +922,7 @@ class MainGuardTests(unittest.TestCase):
     def test_real_kill_not_reached(self):
         """Real kill never reached when injected."""
         import unittest.mock
+
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             prefix = td / "prefix"
@@ -905,7 +960,15 @@ class MainGuardTests(unittest.TestCase):
                 buf = StringIO()
                 sys.stderr = buf
                 try:
-                    rc = sessions.main_guard(run_dir, interval_s=1, sleep=fake_sleep, proc_root=proc_root, supply_dir=supply, idle_exit_s=2, kill=rec)
+                    rc = sessions.main_guard(
+                        run_dir,
+                        interval_s=1,
+                        sleep=fake_sleep,
+                        proc_root=proc_root,
+                        supply_dir=supply,
+                        idle_exit_s=2,
+                        kill=rec,
+                    )
                 finally:
                     sys.stderr = old
             self.assertEqual(rc, 0)

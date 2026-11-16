@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Follow-up regressions for the Meta helper: hidden reasoning, cut-off replies, attribution and transport."""
+
 import contextlib
 import http.client
 import io
@@ -24,29 +25,37 @@ class Opener:
     def __init__(self, content="ok", finish_reason="stop", error=None):
         self.content, self.finish_reason, self.error = content, finish_reason, error
         self.requests, self.timeouts = [], []
+
     def __call__(self, req, timeout=None):
         self.requests.append(req)
         self.timeouts.append(timeout)
         if self.error is not None:
             raise self.error
-        body = {"model": "muse-glimmer-30b", "choices": [{"message": {"content": self.content}, "finish_reason": self.finish_reason}]}
+        body = {
+            "model": "muse-glimmer-30b",
+            "choices": [{"message": {"content": self.content}, "finish_reason": self.finish_reason}],
+        }
         return io.BytesIO(json.dumps(body).encode())
 
 
 class BrokenRead:
     """A response whose body ends early, as http.client reports it."""
+
     def read(self, n=-1):
         raise http.client.IncompleteRead(b"{")
+
     def __enter__(self):
         return self
+
     def __exit__(self, *a):
         return False
 
 
 def run_advisor(ask):
     queued = []
-    adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}), ask=ask,
-                         spawn=queued.append, clock=lambda: 0, backoff=60.0)
+    adv = GlimmerAdvisor(
+        Router(visible=True), route=muse.glimmer_route({}), ask=ask, spawn=queued.append, clock=lambda: 0, backoff=60.0
+    )
     state = PowerState(90, False, 1, 25)
     adv(state, DEFAULT_TASKS)
     queued.pop()()
@@ -62,12 +71,14 @@ class AdvisorStatusTest(unittest.TestCase):
         for state in (None, PowerState(5, False, 1, 25), PowerState(90, False, 1, 45)):
             with self.subTest(state=state):
                 queued = []
-                adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}),
-                                     spawn=queued.append, clock=lambda: 0)
+                adv = GlimmerAdvisor(
+                    Router(visible=True), route=muse.glimmer_route({}), spawn=queued.append, clock=lambda: 0
+                )
                 if state is not None:
                     decision = adv(state, DEFAULT_TASKS)
-                    self.assertEqual(set(decision.allowed),
-                                     {t.name for t in DEFAULT_TASKS if t.priority == Priority.ESSENTIAL})
+                    self.assertEqual(
+                        set(decision.allowed), {t.name for t in DEFAULT_TASKS if t.priority == Priority.ESSENTIAL}
+                    )
                 self.assertEqual(queued, [])
                 self.assertEqual(adv.pending, set())
                 self.assertEqual(adv.cache, {})
@@ -75,9 +86,13 @@ class AdvisorStatusTest(unittest.TestCase):
 
     def test_waiting_tracks_inflight_work_even_with_cached_reply(self):
         queued = []
-        adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}),
-                             ask=lambda *a, **k: '{"defer":[]}',
-                             spawn=queued.append, clock=lambda: 0)
+        adv = GlimmerAdvisor(
+            Router(visible=True),
+            route=muse.glimmer_route({}),
+            ask=lambda *a, **k: '{"defer":[]}',
+            spawn=queued.append,
+            clock=lambda: 0,
+        )
         for level in (90, 100):
             adv(PowerState(level, False, 1, 25), DEFAULT_TASKS)
             self.assertEqual(len(queued), 1)
@@ -88,10 +103,18 @@ class AdvisorStatusTest(unittest.TestCase):
 
     def test_failed_reply_stays_visible_until_backoff_expires_then_is_idle(self):
         now, queued = [0], []
+
         def ask(*a, **k):
             raise muse.MuseError("no response")
-        adv = GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}), ask=ask,
-                             spawn=queued.append, clock=lambda: now[0], backoff=60)
+
+        adv = GlimmerAdvisor(
+            Router(visible=True),
+            route=muse.glimmer_route({}),
+            ask=ask,
+            spawn=queued.append,
+            clock=lambda: now[0],
+            backoff=60,
+        )
         adv(PowerState(90, False, 1, 25), DEFAULT_TASKS)
         queued.pop()()
         now[0] = 59
@@ -106,9 +129,12 @@ class UnclosedThinkTest(unittest.TestCase):
     HIDDEN = 'Note <think>{"defer":["email"]}'
 
     def test_visible_drops_unclosed_think_after_text(self):
-        for content, expected in ((self.HIDDEN, "Note"), ('Note <THINK >{"defer":["email"]}', "Note"),
-                                  ("<think>a</think>Answer <think>more", "Answer"),
-                                  ("<think>a</think>Answer", "Answer")):
+        for content, expected in (
+            (self.HIDDEN, "Note"),
+            ('Note <THINK >{"defer":["email"]}', "Note"),
+            ("<think>a</think>Answer <think>more", "Answer"),
+            ("<think>a</think>Answer", "Answer"),
+        ):
             with self.subTest(content=content):
                 self.assertEqual(muse._visible(content), expected)
                 self.assertEqual(muse.ask(muse.glimmer_route({}), "hi", env={}, opener=Opener(content)), expected)
@@ -129,9 +155,17 @@ class CutOffReplyTest(unittest.TestCase):
 
     def test_probe_length_with_partial_text_is_not_answered(self):
         out = muse.probe(env={}, opener=Opener(self.PARTIAL, finish_reason="length"))
-        self.assertEqual(out, {"answered": False, "latency_s": mock.ANY, "finish_reason": "length",
-                               "reply_model": "muse-glimmer-30b", "reply": self.PARTIAL[:60],
-                               "error": "reasoning used the whole token budget"})
+        self.assertEqual(
+            out,
+            {
+                "answered": False,
+                "latency_s": mock.ANY,
+                "finish_reason": "length",
+                "reply_model": "muse-glimmer-30b",
+                "reply": self.PARTIAL[:60],
+                "error": "reasoning used the whole token budget",
+            },
+        )
         self.assertIsInstance(out["latency_s"], float)
 
     def test_probe_length_with_nonstring_content_is_bad_response(self):
@@ -156,13 +190,22 @@ class CutOffReplyTest(unittest.TestCase):
 
 
 class CheckHintTest(unittest.TestCase):
-    GOOD = {"route": "Muse Glimmer, on this device", "model": "muse-glimmer-30b", "endpoint": "http://127.0.0.1:1234/v1",
-            "reachable": True, "served": ["muse-glimmer-30b"], "model_served": True}
+    GOOD = {
+        "route": "Muse Glimmer, on this device",
+        "model": "muse-glimmer-30b",
+        "endpoint": "http://127.0.0.1:1234/v1",
+        "reachable": True,
+        "served": ["muse-glimmer-30b"],
+        "model_served": True,
+    }
 
     def run_main(self, check_result, probe_result):
         out = io.StringIO()
-        with mock.patch.object(muse, "check", return_value=dict(check_result)), \
-                mock.patch.object(muse, "probe", return_value=probe_result), contextlib.redirect_stdout(out):
+        with (
+            mock.patch.object(muse, "check", return_value=dict(check_result)),
+            mock.patch.object(muse, "probe", return_value=probe_result),
+            contextlib.redirect_stdout(out),
+        ):
             code = muse.main(["muse", "--check", "--probe"])
         return code, json.loads(out.getvalue())
 
@@ -176,8 +219,11 @@ class CheckHintTest(unittest.TestCase):
                 self.assertNotIn("Serve the model", printed["hint"])
 
     def test_other_failures_keep_the_serve_hint(self):
-        for check_result, error in ((self.GOOD, "HTTP 502"), (self.GOOD, "bad response"),
-                                    (dict(self.GOOD, model_served=False), "empty reply")):
+        for check_result, error in (
+            (self.GOOD, "HTTP 502"),
+            (self.GOOD, "bad response"),
+            (dict(self.GOOD, model_served=False), "empty reply"),
+        ):
             with self.subTest(error=error, served=check_result["model_served"]):
                 code, printed = self.run_main(check_result, {"answered": False, "error": error})
                 self.assertEqual(code, 1)
@@ -194,21 +240,30 @@ class GlimmerAttributionTest(unittest.TestCase):
         self.assertEqual(text, why + " Calls and messages are never paused.")
 
     def test_never_names_calls_messages_alarms_or_blank_names(self):
-        text = self.explain_offline({"why_paused": "Reason.", "paused": ["calls", "email", "Alarms", " "],
-                                     "paused_by_glimmer": ["calls", "email", "Alarms", " ", "maps"]})
+        text = self.explain_offline(
+            {
+                "why_paused": "Reason.",
+                "paused": ["calls", "email", "Alarms", " "],
+                "paused_by_glimmer": ["calls", "email", "Alarms", " ", "maps"],
+            }
+        )
         self.assertEqual(text, "Reason. Muse Glimmer chose to pause email. Calls and messages are never paused.")
 
     def test_joined_names_are_capped(self):
         names = ["task %03d %s" % (i, "x" * 30) for i in range(40)]
         text = self.explain_offline({"why_paused": "Reason.", "paused": names, "paused_by_glimmer": names})
-        part = text[len("Reason. Muse Glimmer chose to pause "):text.index(". Calls")]
+        part = text[len("Reason. Muse Glimmer chose to pause ") : text.index(". Calls")]
         self.assertLessEqual(len(part), muse.GLIMMER_NAMES_CAP + len(" and other tasks"))
         self.assertTrue(part.endswith(" and other tasks"))
         self.assertTrue(part.startswith(names[0] + ", "))
 
     def test_prompts_use_the_same_filter_and_add_no_purpose(self):
-        bad = ({"paused": [], "paused_by_glimmer": ["maps"]}, {"paused": ["calls"], "paused_by_glimmer": ["calls"]},
-               {"paused_by_glimmer": [5]}, {"paused_by_glimmer": [""]})
+        bad = (
+            {"paused": [], "paused_by_glimmer": ["maps"]},
+            {"paused": ["calls"], "paused_by_glimmer": ["calls"]},
+            {"paused_by_glimmer": [5]},
+            {"paused_by_glimmer": [""]},
+        )
         for facts in bad:
             with self.subTest(facts=facts):
                 op = Opener("Model explanation.")
@@ -221,7 +276,10 @@ class GlimmerAttributionTest(unittest.TestCase):
                 self.assertNotIn("Muse Glimmer chose", prompt_of(op))
         op = Opener("Model explanation.")
         muse.explain({"paused": ["maps"], "paused_by_glimmer": ["maps"]}, muse.glimmer_route({}), env={}, opener=op)
-        self.assertIn(" If a paused_by_glimmer fact is present, also say that Muse Glimmer chose to pause those tasks.", prompt_of(op))
+        self.assertIn(
+            " If a paused_by_glimmer fact is present, also say that Muse Glimmer chose to pause those tasks.",
+            prompt_of(op),
+        )
         self.assertNotIn("to protect", prompt_of(op))
 
 
@@ -232,12 +290,15 @@ class TransportErrorTest(unittest.TestCase):
                 muse.ask(muse.glimmer_route({}), "hi", env={}, opener=opener)
 
     def test_why_falls_back_to_rules_on_http_client_error(self):
-        out = muse.explain({"paused": []}, muse.glimmer_route({}), env={}, opener=Opener(error=http.client.BadStatusLine("x")))
+        out = muse.explain(
+            {"paused": []}, muse.glimmer_route({}), env={}, opener=Opener(error=http.client.BadStatusLine("x"))
+        )
         self.assertEqual(out["engine"], "rules")
 
     def test_advisor_worker_backs_off_on_http_client_error(self):
         def ask(route, prompt, **kw):
             raise http.client.IncompleteRead(b"")
+
         adv, decision = run_advisor(ask)
         self.assertEqual(adv.down_until, 60.0)
         self.assertEqual(adv.pending, set())
@@ -262,7 +323,9 @@ class TransportErrorTest(unittest.TestCase):
 
 
 class RouteBudgetTest(unittest.TestCase):
-    LOCAL = muse.Route("local", "Meta Llama 3.2 1B", "on this phone", "http://127.0.0.1:8080/v1", "llama-3.2-1b-instruct")
+    LOCAL = muse.Route(
+        "local", "Meta Llama 3.2 1B", "on this phone", "http://127.0.0.1:8080/v1", "llama-3.2-1b-instruct"
+    )
 
     def test_last_route_gets_all_remaining_time(self):
         with mock.patch.object(muse.time, "monotonic", return_value=0):
@@ -286,14 +349,18 @@ class ParseDeferTest(unittest.TestCase):
 def https_transport(reply):
     """Keep urllib routing real (proxies, redirects), replacing only the HTTPS socket transport."""
     calls = []
+
     def open_https(_handler, _connection, req, **_kw):
         calls.append(req)
         return reply(req)
+
     env = {"https_proxy": "http://proxy.example:8080", "no_proxy": ""}
-    with mock.patch.dict(os.environ, env, clear=True), \
-            mock.patch.object(urllib.request, "_opener", None), \
-            mock.patch.object(urllib.request, "proxy_bypass", return_value=False), \
-            mock.patch.object(urllib.request.HTTPSHandler, "do_open", autospec=True, side_effect=open_https):
+    with (
+        mock.patch.dict(os.environ, env, clear=True),
+        mock.patch.object(urllib.request, "_opener", None),
+        mock.patch.object(urllib.request, "proxy_bypass", return_value=False),
+        mock.patch.object(urllib.request.HTTPSHandler, "do_open", autospec=True, side_effect=open_https),
+    ):
         yield calls
 
 
@@ -309,10 +376,12 @@ class WikipediaTransportTest(unittest.TestCase):
 
     def test_search_does_not_follow_redirects(self):
         target = "https://redirect.example/result"
+
         def reply(req):
             if req.full_url == target:
                 return response(req, self.WIKI)
             return response(req, {}, 302, target)
+
         with https_transport(reply) as calls:
             out = assist.search("What is a battery?")
         self.assertEqual(out, [])
@@ -325,7 +394,9 @@ DOCS = Path(__file__).resolve().parents[1] / "docs"
 
 class HelperDocsTest(unittest.TestCase):
     def test_meta_worn_hours_read_as_before_and_after_pairs(self):
-        line = next(l for l in (DOCS / "META.md").read_text(encoding="utf-8").splitlines() if l.startswith("Worn-battery hours"))
+        line = next(
+            l for l in (DOCS / "META.md").read_text(encoding="utf-8").splitlines() if l.startswith("Worn-battery hours")
+        )
         self.assertIn("averaged over 40 simulated worn phones, without and then with OPOS's worn-battery reserve", line)
         self.assertNotRegex(line, r"\d to \d")
         self.assertIn("router 5.52 and 6.54", line)
@@ -334,8 +405,15 @@ class HelperDocsTest(unittest.TestCase):
         text = (DOCS / "META.md").read_text(encoding="utf-8")
         self.assertIn("a 90 s timeout, or the helper timeout when that is lower", text)
         self.assertIn("held between 5 and 600; when it is unset or invalid it is 120 s", text)
-        self.assertEqual((muse.timeout_s({"OPOS_MUSE_TIMEOUT": "1"}), muse.timeout_s({"OPOS_MUSE_TIMEOUT": "9999"}),
-                          muse.timeout_s({"OPOS_MUSE_TIMEOUT": "x"}), muse.timeout_s({})), (5.0, 600.0, 120.0, 120.0))
+        self.assertEqual(
+            (
+                muse.timeout_s({"OPOS_MUSE_TIMEOUT": "1"}),
+                muse.timeout_s({"OPOS_MUSE_TIMEOUT": "9999"}),
+                muse.timeout_s({"OPOS_MUSE_TIMEOUT": "x"}),
+                muse.timeout_s({}),
+            ),
+            (5.0, 600.0, 120.0, 120.0),
+        )
         for value, expected in (("9999", 90.0), ("40", 40.0), ("1", 5.0), ("x", 90.0)):
             op = Opener("OK")
             muse.probe(env={"OPOS_MUSE_TIMEOUT": value}, opener=op)
@@ -343,9 +421,11 @@ class HelperDocsTest(unittest.TestCase):
 
     def test_docs_say_what_wikipedia_search_sends(self):
         seen = []
+
         def opener(req, timeout=None):
             seen.append((req, timeout))
             return io.BytesIO(b'{"query": {"search": []}}')
+
         assist.search("battery", opener=opener)
         req, timeout = seen[0]
         doc = (DOCS / "ai-tools.md").read_text(encoding="utf-8")
@@ -355,7 +435,9 @@ class HelperDocsTest(unittest.TestCase):
         self.assertIn("`" + req.full_url.split("?", 1)[0] + "`", doc)
         self.assertIn("`User-Agent: " + req.get_header("User-agent") + "`", doc)
         self.assertIn("%d-second network timeout" % timeout, doc)
-        self.assertIn("ignores `HTTP_PROXY`, `HTTPS_PROXY` and system proxy settings and does not follow redirects", doc)
+        self.assertIn(
+            "ignores `HTTP_PROXY`, `HTTPS_PROXY` and system proxy settings and does not follow redirects", doc
+        )
         meta = (DOCS / "META.md").read_text(encoding="utf-8")
         self.assertNotIn("Wikipedia search uses urllib's default redirect and proxy handling", meta)
         self.assertIn("Wikipedia search and model requests ignore HTTP_PROXY", meta)

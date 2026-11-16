@@ -24,8 +24,12 @@ class SetupSkipRoutesTest(unittest.TestCase):
         self.addCleanup(environment.stop)
         self.path = prefs.prefs_path()
         context = SetupContext(
-            repo_root=self.root, python=sys.executable, home=self.root,
-            platform=sys.platform, env=env, dry_run=True,
+            repo_root=self.root,
+            python=sys.executable,
+            home=self.root,
+            platform=sys.platform,
+            env=env,
+            dry_run=True,
         )
         self.server = make_server(0, context)
         self.addCleanup(self.server.server_close)

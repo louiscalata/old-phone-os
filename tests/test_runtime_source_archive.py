@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Declared-source admission and normalized package-input archive checks."""
+
 import importlib.util
 import os
 import stat
@@ -44,8 +45,7 @@ class RuntimeSourceArchive(unittest.TestCase):
             self.assertEqual(len(files), 4)
             for member in files:
                 relative = member.name.removeprefix("old-phone-os-source/")
-                self.assertEqual(archive.extractfile(member).read(),
-                                 (self.root / relative).read_bytes())
+                self.assertEqual(archive.extractfile(member).read(), (self.root / relative).read_bytes())
                 expected_mode = 0o755 if relative.endswith("b.js") else 0o644
                 self.assertEqual(member.mode, expected_mode)
             for member in archive.getmembers():
@@ -65,16 +65,21 @@ class RuntimeSourceArchive(unittest.TestCase):
         self.build()
         self.assertEqual(self.output.read_bytes(), before)
         with tarfile.open(self.output, "r:gz") as archive:
-            self.assertFalse(any("untracked" in n or "__pycache__" in n
-                                 for n in archive.getnames()))
+            self.assertFalse(any("untracked" in n or "__pycache__" in n for n in archive.getnames()))
 
     def test_unsafe_duplicate_unsorted_and_bytecode_inventory_is_rejected(self):
         for text in (
-            "src/opos/../escape\n", "src/opos/./a.py\n",
-            "src//opos/a.py\n", " src/opos/a.py\n", "/src/opos/a.py\n",
-            "src/opos/a.py\nsrc/opos/a.py\n", "src/opos/b.js\nsrc/opos/a.py\n",
-            "src/opos/a.pyc\n", "src/opos/__pycache__/a.py\n",
-            "src/opos/._metadata\n", "",
+            "src/opos/../escape\n",
+            "src/opos/./a.py\n",
+            "src//opos/a.py\n",
+            " src/opos/a.py\n",
+            "/src/opos/a.py\n",
+            "src/opos/a.py\nsrc/opos/a.py\n",
+            "src/opos/b.js\nsrc/opos/a.py\n",
+            "src/opos/a.pyc\n",
+            "src/opos/__pycache__/a.py\n",
+            "src/opos/._metadata\n",
+            "",
         ):
             with self.subTest(text=text):
                 self.inventory.write_text(text)
@@ -132,8 +137,11 @@ class RuntimeSourceArchive(unittest.TestCase):
     def test_declared_inventory_matches_editable_runtime_files(self):
         declared = set(builder.runtime_paths(ROOT))
         actual = {
-            p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*")
-            if p.is_file() and "__pycache__" not in p.parts
-            and p.suffix not in (".pyc", ".pyo") and not p.name.startswith("._")
+            p.relative_to(ROOT).as_posix()
+            for p in (ROOT / "src").rglob("*")
+            if p.is_file()
+            and "__pycache__" not in p.parts
+            and p.suffix not in (".pyc", ".pyo")
+            and not p.name.startswith("._")
         }
         self.assertEqual(declared, actual)

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What the docs say about OPOS as the Duo's operating system, checked against the packaging files and the code.
 The claims are about one run on one phone; these tests keep the wording honest and the docs consistent."""
+
 import re
 import unittest
 from pathlib import Path
@@ -8,8 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DUO_OS = "packaging/duo-os"
 # What guard/check.py refuses in tracked files: private network addresses and user paths.
-PRIVATE = (r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![\d.])",
-           r"(?<![\w.-])/home/[A-Za-z]", r"[A-Za-z]:\\{1,2}Users\\{1,2}", "/Users/[A-Za-z]")
+PRIVATE = (
+    r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![\d.])",
+    r"(?<![\w.-])/home/[A-Za-z]",
+    r"[A-Za-z]:\\{1,2}Users\\{1,2}",
+    "/Users/[A-Za-z]",
+)
 CHECKED = ("deploy/duo-opos-boot.ps1", "tests/test_duo_boot_script.py", "tests/test_duo_os_docs.py")
 LINKED = ("README.md", "ROADMAP.md", "CHANGELOG.md", "docs/README.md", "docs/duo-android.md", DUO_OS + "/README.md")
 
@@ -25,12 +30,12 @@ def flat(text):
 def section(text, heading):
     start = text.index(heading + "\n")
     end = text.find("\n## ", start + len(heading))
-    return text[start:end if end != -1 else len(text)]
+    return text[start : end if end != -1 else len(text)]
 
 
 def script_params():
     block = read("deploy/duo-opos-boot.ps1")
-    block = block[block.index("param("):block.index("\n)\n")]
+    block = block[block.index("param(") : block.index("\n)\n")]
     return set(re.findall(r"\]\$(\w+)", block))
 
 
@@ -40,12 +45,17 @@ class TestDuoOsReadme(unittest.TestCase):
         self.flat = flat(self.text)
 
     def test_status_is_the_run_not_a_plan(self):
-        head = flat(self.text[:self.text.index("## What was seen")])
-        for phrase in ("Status, November 7, 2026", "ran on the owner's Surface Duo 1, RAM-booted from a PC",
-                       '"it\'s working"', "One phone, one day, one person watching",
-                       "A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata).",
-                       "Read-only observations from the PC session on November 11, 2026",
-                       "metadata encryption in place", "unreadable to Linux"):
+        head = flat(self.text[: self.text.index("## What was seen")])
+        for phrase in (
+            "Status, November 7, 2026",
+            "ran on the owner's Surface Duo 1, RAM-booted from a PC",
+            '"it\'s working"',
+            "One phone, one day, one person watching",
+            "A power cycle or any start without the PC boots Android, which destroys the OPOS installation (metadata encryption of userdata).",
+            "Read-only observations from the PC session on November 11, 2026",
+            "metadata encryption in place",
+            "unreadable to Linux",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, head)
         for stale in ("not yet booted on a phone", "image built and checked offline", "Install, once USB data works"):
@@ -53,19 +63,37 @@ class TestDuoOsReadme(unittest.TestCase):
 
     def test_observations_name_the_evidence_and_the_gaps(self):
         seen = flat(section(self.text, "## What was seen, and what was not"))
-        for phrase in ("`hwcomposer` backend", "Adreno 640", "phone's sysfs", "both backlights were on",
-                       "Not measured, and not claimed", "battery life", "stability over hours",
-                       "suspend and resume", "`opos-fallback`", "simulated modem",
-                       "The raw logs from that day are not part of this repository"):
+        for phrase in (
+            "`hwcomposer` backend",
+            "Adreno 640",
+            "phone's sysfs",
+            "both backlights were on",
+            "Not measured, and not claimed",
+            "battery life",
+            "stability over hours",
+            "suspend and resume",
+            "`opos-fallback`",
+            "simulated modem",
+            "The raw logs from that day are not part of this repository",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, seen)
         # Nothing in the README quotes a speed, a boot time or a battery figure for the OS image.
-        self.assertIsNone(re.search(r"\d+(\.\d+)?\s*(%|tokens|fps|ms\b|mAh|hours? of battery)", self.text.replace("20 %", "")))
+        self.assertIsNone(
+            re.search(r"\d+(\.\d+)?\s*(%|tokens|fps|ms\b|mAh|hours? of battery)", self.text.replace("20 %", ""))
+        )
 
     def test_image_contents_match_the_packaging_files(self):
         table = section(self.text, "## What is in the image")
-        for name in ("opos-server.service", "opos.service", "opos-session", "opos-kiosk", "opos-fallback.service",
-                     "opos-switch", "opos-diag"):
+        for name in (
+            "opos-server.service",
+            "opos.service",
+            "opos-session",
+            "opos-kiosk",
+            "opos-fallback.service",
+            "opos-switch",
+            "opos-diag",
+        ):
             with self.subTest(name=name):
                 self.assertIn("`" + name, table)
                 self.assertTrue((ROOT / DUO_OS / name).is_file())
@@ -81,19 +109,29 @@ class TestDuoOsReadme(unittest.TestCase):
         self.assertNotRegex(command[0], r"(^|\s)-S(\s|$)")
         self.assertIn("-E /usr/libexec/opos/opos-kiosk", command[0])
         why = flat(section(self.text, "## What is in the image"))
-        for phrase in ("**Why no phoc shell mode.**", "starts phoc with `-S`", "opaque black shield",
-                       "both panels stayed black", "`opos-session` leaves `-S` out"):
+        for phrase in (
+            "**Why no phoc shell mode.**",
+            "starts phoc with `-S`",
+            "opaque black shield",
+            "both panels stayed black",
+            "`opos-session` leaves `-S` out",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, why)
         self.assertIn("phoc is NOT started in shell mode", read(DUO_OS + "/verify-image.sh"))
 
     def test_ram_boot_rule_and_misc_brake_are_stated_and_kept_by_the_tools(self):
         rule = flat(section(self.text, "## RAM-boot only, and the misc brake"))
-        for phrase in ("`fastboot boot boot.img`",
-                       "The image is RAM-booted from a PC; the phone's installed system is left unchanged.",
-                       "No tool here writes the boot image", "`bootonce-bootloader`",
-                       "One RAM-boot, never retried", "Never run `reboot` or `systemctl reboot`",
-                       "`reboot bootloader`", "It is a precaution, not a guarantee"):
+        for phrase in (
+            "`fastboot boot boot.img`",
+            "The image is RAM-booted from a PC; the phone's installed system is left unchanged.",
+            "No tool here writes the boot image",
+            "`bootonce-bootloader`",
+            "One RAM-boot, never retried",
+            "Never run `reboot` or `systemctl reboot`",
+            "`reboot bootloader`",
+            "It is a precaution, not a guarantee",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, rule)
         for tool in ("deploy/duo-opos-boot.ps1", "deploy/duo-rootfs-install.sh", DUO_OS + "/build-image.sh"):
@@ -111,11 +149,16 @@ class TestDuoOsReadme(unittest.TestCase):
             with self.subTest(option=option):
                 self.assertIn("-" + option, install)
                 self.assertIn(option, params)
-        for phrase in ("This erases Android and everything it stored", "without touching the phone",
-                       "The first failure stops it and nothing is retried",
-                       "derives the /24 from the address of the PC's RNDIS adapter", "TCP port 22",
-                       "trying host 82 first (`-PreferHost`", "has been parsed and had its probe exercised against loopback, not run on a phone",
-                       "the less guarded route"):
+        for phrase in (
+            "This erases Android and everything it stored",
+            "without touching the phone",
+            "The first failure stops it and nothing is retried",
+            "derives the /24 from the address of the PC's RNDIS adapter",
+            "TCP port 22",
+            "trying host 82 first (`-PreferHost`",
+            "has been parsed and had its probe exercised against loopback, not run on a phone",
+            "the less guarded route",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, install)
         # A default Windows execution policy can refuse an unsigned script; the repository's own launcher shows the fix.
@@ -141,8 +184,12 @@ class TestDuoOsReadme(unittest.TestCase):
         self.assertIn("# --- recovery: BEGIN", build)
         self.assertIn("OPOS_NO_SSH=1", dev)
         self.assertIn("DEV image", verify)
-        for phrase in ("a shell as droidian", "Removing a key", "revokes it",
-                       "Leave it unset for a carried or release image"):
+        for phrase in (
+            "a shell as droidian",
+            "Removing a key",
+            "revokes it",
+            "Leave it unset for a carried or release image",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, dev)
 
@@ -153,8 +200,14 @@ class TestDuoOsReadme(unittest.TestCase):
         self.assertIn("Storage=persistent", build)
         self.assertIn("SystemMaxUse=200M", build)
         self.assertIn("50-opos-persistent.conf", build)
-        for phrase in ("Storage=persistent", "SystemMaxUse=200M", "50-opos-persistent.conf",
-                       "`/var/log/opos-boot-diag.txt`", "90 seconds", "that has not been rehearsed"):
+        for phrase in (
+            "Storage=persistent",
+            "SystemMaxUse=200M",
+            "50-opos-persistent.conf",
+            "`/var/log/opos-boot-diag.txt`",
+            "90 seconds",
+            "that has not been rehearsed",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evidence)
         self.assertIn("out=/var/log/opos-boot-diag.txt", diag)
@@ -164,24 +217,44 @@ class TestDuoOsReadme(unittest.TestCase):
     def test_known_issues_and_restore_are_documented(self):
         issues = flat(section(self.text, "## Known issues"))
         restore = flat(section(self.text, "## Restore to Android"))
-        for phrase in ("The clock reads 1970 until it is set", "A power cycle that reaches stock Android destroys the OPOS install",
-                       "metadata encryption in place", "rootfs unreadable to Linux",
-                       "Calls and texts are simulated", "have not been exercised on the phone"):
+        for phrase in (
+            "The clock reads 1970 until it is set",
+            "A power cycle that reaches stock Android destroys the OPOS install",
+            "metadata encryption in place",
+            "rootfs unreadable to Linux",
+            "Calls and texts are simulated",
+            "have not been exercised on the phone",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, issues)
-        for phrase in ("nothing was written to boot, vbmeta, dtbo or recovery", "no slot was changed",
-                       "factory reset", "zero the first 2 KB of `misc`", "all 25 partitions",
-                       "No restore from it is recorded in this repository", "October 31, 2026"):
+        for phrase in (
+            "nothing was written to boot, vbmeta, dtbo or recovery",
+            "no slot was changed",
+            "factory reset",
+            "zero the first 2 KB of `misc`",
+            "all 25 partitions",
+            "No restore from it is recorded in this repository",
+            "October 31, 2026",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, restore)
 
     def test_discovery_needs_the_adapter_to_hold_the_phones_network(self):
         issues = flat(section(self.text, "## Known issues"))
-        for phrase in ("<phone-usb-address>", "<pc-usb-address>", "#usb-link-addresses",
-                       "only if the PC's USB adapter holds an address in the phone's /24", "self-assigned link-local address",
-                       "no lease", "the sweep covers the wrong network", "times out after the kernel boot",
-                       "Do not run the script again to retry", "a second kernel boot", "no attach-only mode",
-                       "ssh to it by hand"):
+        for phrase in (
+            "<phone-usb-address>",
+            "<pc-usb-address>",
+            "#usb-link-addresses",
+            "only if the PC's USB adapter holds an address in the phone's /24",
+            "self-assigned link-local address",
+            "no lease",
+            "the sweep covers the wrong network",
+            "times out after the kernel boot",
+            "Do not run the script again to retry",
+            "a second kernel boot",
+            "no attach-only mode",
+            "ssh to it by hand",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, issues)
         # What the bullet says about the script is true of the script.
@@ -192,22 +265,34 @@ class TestDuoOsReadme(unittest.TestCase):
 
     def test_restore_step_one_is_hedged_and_step_two_reconciles_the_reset_with_the_button_steps(self):
         restore = section(self.text, "## Restore to Android")
-        step1 = flat(restore[restore.index("1. Power cycle"):restore.index("2. If Android")])
-        step2 = flat(restore[restore.index("2. If Android"):restore.index("3. For a full stock reflash")])
+        step1 = flat(restore[restore.index("1. Power cycle") : restore.index("2. If Android")])
+        step2 = flat(restore[restore.index("2. If Android") : restore.index("3. For a full stock reflash")])
         # The PC session recorded encryption, while the result of a power cycle and the brake are not guaranteed.
-        for phrase in ("Android may start", "destroy the OPOS install", "may instead reach Boot Select",
-                       "behavior is not guaranteed"):
+        for phrase in (
+            "Android may start",
+            "destroy the OPOS install",
+            "may instead reach Boot Select",
+            "behavior is not guaranteed",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, step1)
-        for phrase in ("read-only observations from the pc session on november 11, 2026", "metadata encryption in place",
-                       "rootfs unreadable to linux", "if a slot holds persistent opos, do not select factory reset"):
+        for phrase in (
+            "read-only observations from the pc session on november 11, 2026",
+            "metadata encryption in place",
+            "rootfs unreadable to linux",
+            "if a slot holds persistent opos, do not select factory reset",
+        ):
             self.assertIn(phrase, flat(restore).lower())
         # The install guide forbids Factory data reset; the restore says when that rule does not apply.
         usb = flat(read("docs/duo-usb-install.md"))
         self.assertIn("Never pick Start, Recovery Mode or Factory data reset", usb)
-        for phrase in ("Button steps", "(../../docs/duo-usb-install.md)", "never pick Factory data reset",
-                       "applies while the OS image is being installed",
-                       "when you are restoring Android, the reset is the intended step"):
+        for phrase in (
+            "Button steps",
+            "(../../docs/duo-usb-install.md)",
+            "never pick Factory data reset",
+            "applies while the OS image is being installed",
+            "when you are restoring Android, the reset is the intended step",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, step2)
 
@@ -215,10 +300,14 @@ class TestDuoOsReadme(unittest.TestCase):
 class TestDuoStatusDocs(unittest.TestCase):
     def test_calls_and_texts_are_simulated_on_every_route_in_the_code(self):
         from opos import web
+
         phone = web.Phone()
         self.assertEqual(type(phone.modem).__name__, "ScreenModem")
-        source = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "src" / "opos").rglob("*.py")
-                           if path.name != "mm_modem.py")
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "src" / "opos").rglob("*.py")
+            if path.name != "mm_modem.py"
+        )
         self.assertNotIn("mm_modem", source)
         for name in ("ROADMAP.md", DUO_OS + "/README.md"):
             with self.subTest(doc=name):
@@ -227,16 +316,27 @@ class TestDuoStatusDocs(unittest.TestCase):
 
     def test_roadmap_separates_what_ran_from_what_did_not(self):
         roadmap = flat(read("ROADMAP.md"))
-        working = roadmap[roadmap.index("## Working today"):roadmap.index("## Simulated or not yet verified")]
-        simulated = roadmap[roadmap.index("## Simulated or not yet verified"):roadmap.index("## Public browser demo")]
-        for phrase in ("Surface Duo with OPOS as the web interface on Droidian", "RAM-booted from a PC with no Android",
-                       "the owner confirmed on the screens that it was working", "hwcomposer backend",
-                       "real battery from sysfs", "One phone, one session", "17.7-18.4 generated tokens/s"):
+        working = roadmap[roadmap.index("## Working today") : roadmap.index("## Simulated or not yet verified")]
+        simulated = roadmap[roadmap.index("## Simulated or not yet verified") : roadmap.index("## Public browser demo")]
+        for phrase in (
+            "Surface Duo with OPOS as the web interface on Droidian",
+            "RAM-booted from a PC with no Android",
+            "the owner confirmed on the screens that it was working",
+            "hwcomposer backend",
+            "real battery from sysfs",
+            "One phone, one session",
+            "17.7-18.4 generated tokens/s",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, working)
-        for phrase in ("no measurement of inference speed, battery life or long-term stability", "startup has not been achieved",
-                       "every start still needs a PC", "have not been run on the phone",
-                       "nothing was timed on the Duo OS image", "The postmarketOS kiosk has not been tested on a physical phone"):
+        for phrase in (
+            "no measurement of inference speed, battery life or long-term stability",
+            "startup has not been achieved",
+            "every start still needs a PC",
+            "have not been run on the phone",
+            "nothing was timed on the Duo OS image",
+            "The postmarketOS kiosk has not been tested on a physical phone",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, simulated)
         self.assertIn("Documentation reconciled on November 13, 2026", roadmap)
@@ -249,17 +349,30 @@ class TestDuoStatusDocs(unittest.TestCase):
         self.assertNotIn("Duo work is paused", index)
         self.assertIn("(duo-android.md)", index)
         readme = read("README.md")
-        limits = flat(readme[readme.index("## Limits"):readme.index("## Documentation")])
-        for phrase in ("(packaging/duo-os/README.md)", "(docs/duo-android.md)", "(docs/duo-usb-install.md)",
-                       "limited observations on one phone", "Tasks, calls and texts are simulated", "requires a PC to start",
-                       "do not establish permanent installation, measured battery life or long-term stability", "are historical"):
+        limits = flat(readme[readme.index("## Limits") : readme.index("## Documentation")])
+        for phrase in (
+            "(packaging/duo-os/README.md)",
+            "(docs/duo-android.md)",
+            "(docs/duo-usb-install.md)",
+            "limited observations on one phone",
+            "Tasks, calls and texts are simulated",
+            "requires a PC to start",
+            "do not establish permanent installation, measured battery life or long-term stability",
+            "are historical",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, limits)
         self.assertNotIn("Surface Duo work is paused", readme)
         self.assertNotIn("This source has not run on a physical phone", readme)
         unreleased = flat(read("CHANGELOG.md").split("## 0.1.0")[0])
-        for phrase in ("packaging/duo-os", "deploy/duo-opos-boot.ps1", "TCP 22", "it has not been run in this form",
-                       "RAM-boot only", "no speed, battery-life or stability measurements"):
+        for phrase in (
+            "packaging/duo-os",
+            "deploy/duo-opos-boot.ps1",
+            "TCP 22",
+            "it has not been run in this form",
+            "RAM-boot only",
+            "no speed, battery-life or stability measurements",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, unreleased)
         android = flat(read("docs/duo-android.md"))

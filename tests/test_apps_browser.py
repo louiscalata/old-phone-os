@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless flows for /apps at the spanned, single-pane and 200% phone sizes, light and dark."""
+
 import json
 import os
 import shutil
@@ -162,24 +163,42 @@ class AppsBrowser(unittest.TestCase):
     def _run(self, cases):
         plan = self.run + "/plan.json"
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90)
+        result = subprocess.run(
+            [self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1500:])
         return json.loads(result.stdout.strip().splitlines()[-1])["violations"]
 
     def test_index_at_three_sizes_in_light_and_dark(self):
-        cases = [{
-            "url": self.origin + "/apps",
-            "width": w, "height": h, "theme": theme, "scale": scale, "hand": hand,
-            "script": SHELL,
-        } for w, h, theme, scale, hand in CASES]
+        cases = [
+            {
+                "url": self.origin + "/apps",
+                "width": w,
+                "height": h,
+                "theme": theme,
+                "scale": scale,
+                "hand": hand,
+                "script": SHELL,
+            }
+            for w, h, theme, scale, hand in CASES
+        ]
         self.assertEqual(self._run(cases), [])
 
     def test_more_apps_opens_the_index_and_home_returns(self):
-        cases = [{
-            "url": self.origin + "/?lock=0",
-            "width": w, "height": h, "theme": theme, "scale": scale, "hand": "right",
-            "script": FLOW, "after": AFTER,
-        } for w, h, theme, scale, hand in CASES if hand == "right"]
+        cases = [
+            {
+                "url": self.origin + "/?lock=0",
+                "width": w,
+                "height": h,
+                "theme": theme,
+                "scale": scale,
+                "hand": "right",
+                "script": FLOW,
+                "after": AFTER,
+            }
+            for w, h, theme, scale, hand in CASES
+            if hand == "right"
+        ]
         self.assertEqual(self._run(cases), [])
 
 

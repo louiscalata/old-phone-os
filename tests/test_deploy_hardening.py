@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fail if a deploy hardening directive is removed."""
+
 import os
 from pathlib import Path
 import unittest
@@ -105,7 +106,18 @@ class ServerTest(unittest.TestCase):
 
     def test_pairs(self) -> None:
         """Required [Service] pairs are present."""
-        for key, val in [("User", "opos"), ("Group", "opos"), ("NoNewPrivileges", "yes"), ("ProtectSystem", "strict"), ("ProtectHome", "yes"), ("PrivateTmp", "yes"), ("PrivateDevices", "yes"), ("MemoryDenyWriteExecute", "yes"), ("IPAddressDeny", "any"), ("LockPersonality", "yes")]:
+        for key, val in [
+            ("User", "opos"),
+            ("Group", "opos"),
+            ("NoNewPrivileges", "yes"),
+            ("ProtectSystem", "strict"),
+            ("ProtectHome", "yes"),
+            ("PrivateTmp", "yes"),
+            ("PrivateDevices", "yes"),
+            ("MemoryDenyWriteExecute", "yes"),
+            ("IPAddressDeny", "any"),
+            ("LockPersonality", "yes"),
+        ]:
             with self.subTest(key=key):
                 self.assertTrue(has(self.parsed, "Service", key, val))
 
@@ -142,7 +154,12 @@ class KioskTest(unittest.TestCase):
     def test_pairs(self) -> None:
         """Required drop-in pairs are present."""
         parsed = parse_unit(read_text(KIOSK))
-        for key, val in [("NoNewPrivileges", "yes"), ("ProtectSystem", "strict"), ("PrivateTmp", "yes"), ("CapabilityBoundingSet", "")]:
+        for key, val in [
+            ("NoNewPrivileges", "yes"),
+            ("ProtectSystem", "strict"),
+            ("PrivateTmp", "yes"),
+            ("CapabilityBoundingSet", ""),
+        ]:
             with self.subTest(key=key):
                 self.assertTrue(has(parsed, "Service", key, val))
 
@@ -193,7 +210,7 @@ class RulesTest(unittest.TestCase):
         self.assertTrue(lines)
         for i, line in enumerate(lines):
             if "polkit.Result.YES" in line:
-                window = " ".join(lines[max(0, i - 4):i + 1])
+                window = " ".join(lines[max(0, i - 4) : i + 1])
                 self.assertIn("if (", window)
                 self.assertIn("subject.user", window)
                 self.assertIn("action.id", window)
@@ -205,7 +222,10 @@ class StagingTest(unittest.TestCase):
     def test_f006_ssh_staging_entrypoint_absent(self) -> None:
         """Staging entry point must stay absent."""
         target = DEPLOY / "stage-install.sh"
-        self.assertFalse(os.path.lexists(target), "F006: restored staging requires destination validation and SSH/SCP option delimiters")
+        self.assertFalse(
+            os.path.lexists(target),
+            "F006: restored staging requires destination validation and SSH/SCP option delimiters",
+        )
 
 
 if __name__ == "__main__":

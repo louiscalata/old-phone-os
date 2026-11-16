@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The Duo modem rule names droidian. The postmarketOS rule still names opos."""
+
 import json
 import shutil
 import subprocess
@@ -11,7 +12,7 @@ DUO = ROOT / "packaging/duo-os/50-opos-modem.rules"
 PMOS = ROOT / "deploy/50-opos-modemmanager.rules"
 NODE = shutil.which("node")
 
-DRIVER = r'''
+DRIVER = r"""
 const fs = require("fs");
 const vm = require("vm");
 const callbacks = [];
@@ -20,14 +21,16 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), context);
 if (callbacks.length !== 1) throw new Error("expected one rule");
 const out = JSON.parse(process.argv[2]).map(test => callbacks[0]({id: test.action}, {user: test.user}) === "YES");
 process.stdout.write(JSON.stringify(out));
-'''
+"""
 
 
 @unittest.skipUnless(NODE, "node is required to evaluate the polkit JavaScript rule")
 class DuoModemRule(unittest.TestCase):
     def allows(self, path, user, action):
         cases = [{"user": user, "action": action}]
-        proc = subprocess.run([NODE, "-e", DRIVER, str(path), json.dumps(cases)], capture_output=True, text=True, check=True)
+        proc = subprocess.run(
+            [NODE, "-e", DRIVER, str(path), json.dumps(cases)], capture_output=True, text=True, check=True
+        )
         return json.loads(proc.stdout)[0]
 
     def test_droidian_gets_voice_and_messaging_only(self):

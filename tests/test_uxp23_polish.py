@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Small portrait polish, with the existing optional CDP browser harness."""
+
 import json
 import os
 from pathlib import Path
@@ -14,44 +15,58 @@ from tests import test_uxr_acceptance as acceptance
 class PolishStatic(unittest.TestCase):
     def test_portrait_and_notice(self):
         out = page()
-        self.assertIn('@media (max-width:839px)', out)
-        self.assertRegex(out, r'#phone\{width:100%;max-width:none;box-sizing:border-box;padding:16px')
-        self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', out)
+        self.assertIn("@media (max-width:839px)", out)
+        self.assertRegex(out, r"#phone\{width:100%;max-width:none;box-sizing:border-box;padding:16px")
+        self.assertIn("grid-template-columns:repeat(2,minmax(0,1fr))", out)
         # JRY04: the notice is the front-page lede directly under the tiles (margin-top:0, no void). The old grey
         # card with a yellow bar (phone-a.css) is gone (B-03 of the interface plan); the Jaryo rule (docs/jaryo.md 2.3)
         # is the only one that sets its colours.
-        self.assertNotIn('#1e1e1e', out)
-        self.assertNotIn('#f2c14e', out)
-        self.assertNotRegex(out, r'#home-notice\{(?:[^}]*;)?(?:background|color):#')
-        self.assertIn('#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);', out)
+        self.assertNotIn("#1e1e1e", out)
+        self.assertNotIn("#f2c14e", out)
+        self.assertNotRegex(out, r"#home-notice\{(?:[^}]*;)?(?:background|color):#")
+        self.assertIn(
+            "#home-notice{margin-top:0;border-top:1px solid var(--jaryo-fg,#000);border-left:0;background:var(--jaryo-bg,#fff);color:var(--jaryo-fg,#000);",
+            out,
+        )
         # W1-01: the card's words are made once, on the server (opos.practice.home_note), so a practice phone cannot say
         # "Calls and messages are on."; the page only shows what the state carries.
         self.assertIn("var notice=s.home_note||'';", out)
-        self.assertNotIn('Calls and messages are on.', out)
-        self.assertNotIn('Paused to save power: ', out)
+        self.assertNotIn("Calls and messages are on.", out)
+        self.assertNotIn("Paused to save power: ", out)
 
     def test_helper_and_lock(self):
         out = page()
         self.assertRegex(out, r'<label class="wiki-consent"><input id="webq" type="checkbox"><span>')
-        self.assertRegex(out, r'\.wiki-consent\{[^}]*gap:12px;align-items:flex-start;min-height:48px')
+        self.assertRegex(out, r"\.wiki-consent\{[^}]*gap:12px;align-items:flex-start;min-height:48px")
         # The model actions share one equal-width row (Why? joins Plan after the first render); Reset sits last, under Technical details.
-        self.assertIn('.helper-actions{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}', out)
-        self.assertRegex(out, r'<div class="helper-actions"><button id="askbtn">Ask</button><button id="planbtn">Plan</button></div><p id="glimmer-credit">[^<]*</p><div id="answer"></div><label class="wiki-consent">')
-        self.assertRegex(out, r'<button id="helperrestart" hidden>Restart helper</button><button id="helperreset">Reset</button></div>\n<div id="helper" class="box" hidden></div>')
+        self.assertIn(".helper-actions{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}", out)
+        self.assertRegex(
+            out,
+            r'<div class="helper-actions"><button id="askbtn">Ask</button><button id="planbtn">Plan</button></div><p id="glimmer-credit">[^<]*</p><div id="answer"></div><label class="wiki-consent">',
+        )
+        self.assertRegex(
+            out,
+            r'<button id="helperrestart" hidden>Restart helper</button><button id="helperreset">Reset</button></div>\n<div id="helper" class="box" hidden></div>',
+        )
         self.assertIn('id="lock-ask" type="button" hidden', out)
-        self.assertIn('width:min(100%,360px);min-height:56px', out)
+        self.assertIn("width:min(100%,360px);min-height:56px", out)
 
     def test_shade_and_status(self):
         out = page()
-        self.assertIn('#sheet{top:0;right:0;bottom:0;left:0;height:100%;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}', out)
+        self.assertIn(
+            "#sheet{top:0;right:0;bottom:0;left:0;height:100%;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}",
+            out,
+        )
         self.assertIn('<details id="shade-technical"><summary>Technical details</summary>', out)
-        self.assertIn('#features:empty', out)
-        self.assertIn('scrollbar-width:none', out)
-        self.assertIn('low=p<=15', out)  # the Shade title's LOW threshold (the bar's chip is pinned by test_uxp01_statusbar)
+        self.assertIn("#features:empty", out)
+        self.assertIn("scrollbar-width:none", out)
+        self.assertIn(
+            "low=p<=15", out
+        )  # the Shade title's LOW threshold (the bar's chip is pinned by test_uxp01_statusbar)
         # The low-battery chip is bold with a double border; its colour is the Jaryo ink (jaryo.css), not #ff7075.
         self.assertIn('#sb-batt[data-low="true"]{font-weight:700}', out)
         self.assertRegex(out, r'#sb-batt\[data-low="true"\][^{}]*\{[^}]*color:var\(--jaryo-fg\)')
-        self.assertNotIn('#ff7075', out)
+        self.assertNotIn("#ff7075", out)
 
 
 class KeyedSyncStatic(unittest.TestCase):
@@ -59,7 +74,9 @@ class KeyedSyncStatic(unittest.TestCase):
 
     def test_lists_are_rebuilt_only_when_their_markup_changed(self):
         out = page()
-        self.assertEqual(out.count("const sync=(el,html,wire)=>{if(el._k!==html){el._k=html;el.innerHTML=html;wire&&wire(el)}};"), 1)
+        self.assertEqual(
+            out.count("const sync=(el,html,wire)=>{if(el._k!==html){el._k=html;el.innerHTML=html;wire&&wire(el)}};"), 1
+        )
         for el in ("contacts", "threads", "thread", "features", "events"):
             self.assertIn("sync(G('%s')," % el, out, el)
             self.assertNotIn("G('%s').innerHTML" % el, out, el)
@@ -76,11 +93,13 @@ class KeyedSyncStatic(unittest.TestCase):
         # phone-a.js: an enhanced box holds a details element; its button branch would take Reset or Restart for "Why?"
         self.assertIn("button=helper.querySelector('details')?null:helper.querySelector('button')", out)
 
-    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    @unittest.skipUnless(shutil.which("node"), "node missing")
     def test_sync_writes_and_wires_only_on_a_change(self):
-        src = (Path(__file__).resolve().parent.parent / 'src/opos/web_static/js-4.js').read_text(encoding='utf-8')
-        line = next(l for l in src.splitlines() if l.startswith('const sync='))
-        code = line + r"""
+        src = (Path(__file__).resolve().parent.parent / "src/opos/web_static/js-4.js").read_text(encoding="utf-8")
+        line = next(l for l in src.splitlines() if l.startswith("const sync="))
+        code = (
+            line
+            + r"""
 const el={writes:0,set innerHTML(v){this.writes++;this.html=v}};let wired=0;
 sync(el,'<b>a</b>',()=>wired++);sync(el,'<b>a</b>',()=>wired++);sync(el,'<b>a</b>');
 const same=[el.writes,wired];
@@ -88,13 +107,15 @@ sync(el,'<b>b</b>',()=>wired++);sync(el,'<b>b</b>',()=>wired++);
 sync(el,'',()=>wired++);sync(el,'');
 console.log(JSON.stringify({same,after:[el.writes,wired],last:el.html}));
 """
-        r = subprocess.run(['node', '-e', code], capture_output=True, text=True, timeout=20)
+        )
+        r = subprocess.run(["node", "-e", code], capture_output=True, text=True, timeout=20)
         self.assertEqual(r.returncode, 0, r.stderr)
         import json
+
         out = json.loads(r.stdout.strip().splitlines()[-1])
-        self.assertEqual(out['same'], [1, 1], 'three identical renders: one write, one wiring')
-        self.assertEqual(out['after'], [3, 3], 'a changed markup, then an emptied one: one write and one wiring each')
-        self.assertEqual(out['last'], '')
+        self.assertEqual(out["same"], [1, 1], "three identical renders: one write, one wiring")
+        self.assertEqual(out["after"], [3, 3], "a changed markup, then an emptied one: one write and one wiring each")
+        self.assertEqual(out["last"], "")
 
 
 # Test-owned tracking is inserted before the page schedules its first automatic poll.
@@ -169,25 +190,31 @@ class IdlePollFixtures(unittest.TestCase):
         raw = page(demo=True)
         altered = instrument_idle_polls(raw)
         self.assertEqual(altered.replace("\n" + POLL_TRACKER, "", 1), raw)
-        poller = (Path(__file__).resolve().parents[1] / 'src/opos/web_static/js-8.js').read_text()
-        body = poller[poller.index('async function pollTick()'):poller.index('\narmPoll(pollMs);')]
+        poller = (Path(__file__).resolve().parents[1] / "src/opos/web_static/js-8.js").read_text()
+        body = poller[poller.index("async function pollTick()") : poller.index("\narmPoll(pollMs);")]
         self.assertEqual(altered.count(body), 1)
-        for invalid in (raw.replace(POLL_ENTRY, ''), raw + POLL_ENTRY):
+        for invalid in (raw.replace(POLL_ENTRY, ""), raw + POLL_ENTRY):
             with self.assertRaises(ValueError):
                 instrument_idle_polls(invalid)
 
-    @unittest.skipUnless(shutil.which('node'), 'node missing')
+    @unittest.skipUnless(shutil.which("node"), "node missing")
     def test_actual_poll_and_shade_lifecycle_positive_and_negative_fixtures(self):
         root = Path(__file__).resolve().parents[1]
-        poller = (root / 'src/opos/web_static/js-8.js').read_text()
-        poller = poller[poller.index('let pollMs='):poller.index('fetchState().then')]
-        shade = (root / 'src/opos/web_static/phone-a.js').read_text()
-        start = shade.index('try{(function(){')
-        shade = shade[start:shade.index('})()}catch(e){}', start) + len('})()}catch(e){}')]
-        payload = {'poller': instrument_idle_polls(poller), 'shade': shade, 'idle': IDLE_POLL_CHECK}
-        result = subprocess.run([shutil.which('node'), str(root / 'tests/polish_idle_test.js')], input=json.dumps(payload), text=True, capture_output=True, timeout=20)
+        poller = (root / "src/opos/web_static/js-8.js").read_text()
+        poller = poller[poller.index("let pollMs=") : poller.index("fetchState().then")]
+        shade = (root / "src/opos/web_static/phone-a.js").read_text()
+        start = shade.index("try{(function(){")
+        shade = shade[start : shade.index("})()}catch(e){}", start) + len("})()}catch(e){}")]
+        payload = {"poller": instrument_idle_polls(poller), "shade": shade, "idle": IDLE_POLL_CHECK}
+        result = subprocess.run(
+            [shutil.which("node"), str(root / "tests/polish_idle_test.js")],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            timeout=20,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('actual poller and Shade fixtures passed', result.stdout)
+        self.assertIn("actual poller and Shade fixtures passed", result.stdout)
 
 
 CHECK = r"""
@@ -261,32 +288,39 @@ CHECKS.polish = async function() {
 """
 
 
-CHECK = CHECK.replace('__IDLE_POLL_CHECK__', IDLE_POLL_CHECK)
+CHECK = CHECK.replace("__IDLE_POLL_CHECK__", IDLE_POLL_CHECK)
 
 
 class PolishBrowser(unittest.TestCase):
     skip_reason = None
-    mode = 'port'
+    mode = "port"
+
     @classmethod
     def setUpClass(cls):
         acceptance.TestUxrAcceptance.setUpClass.__func__(cls)
         if cls.skip_reason:
             return
-        html = Path(cls.tmp) / 'page.html'
-        html.write_text(instrument_idle_polls(html.read_text()), encoding='utf-8')
+        html = Path(cls.tmp) / "page.html"
+        html.write_text(instrument_idle_polls(html.read_text()), encoding="utf-8")
+
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
     tearDown = acceptance.TestUxrAcceptance.tearDown
 
     def test_portrait(self):
         # Extend a temporary copy so the shared CDP driver remains untouched.
-        driver = Path(self.run_dir) / 'polish.js'
+        driver = Path(self.run_dir) / "polish.js"
         source = acceptance.DRIVER.read_text()
-        self.assertIn('(async () => {', source)
-        driver.write_text(source.replace('(async () => {', CHECK + '\n(async () => {', 1))
-        target = str(self.port) if self.proc is not None else 'pipe'
+        self.assertIn("(async () => {", source)
+        driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
+        target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        result = subprocess.run([self.node, str(driver), target, self.url, 'polish', self.state],
-                                capture_output=True, text=True, timeout=40, env=env)
+        result = subprocess.run(
+            [self.node, str(driver), target, self.url, "polish", self.state],
+            capture_output=True,
+            text=True,
+            timeout=40,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1000:])
-        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])['violations'], [])
+        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])

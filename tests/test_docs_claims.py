@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Policy, simulation and package claims in the public docs, checked against the code."""
+
 import re
 import tomllib
 import unittest
@@ -43,11 +44,13 @@ FLOOR_WORDS = {
 }
 # Present exactly when a goal or affordability CRITICAL stays soft in the runtime.
 SOFT_CRITICAL = "Those pauses are soft: only the battery rules' CRITICAL mode is a hard floor."
-RESERVE_IN_TABLE = ("The router figures in the table come from the full runtime, so in the worn and "
-                    "end-of-life profiles, where battery health can be below 50%, they include the "
-                    "worn-battery reserve's task pauses.")
+RESERVE_IN_TABLE = (
+    "The router figures in the table come from the full runtime, so in the worn and "
+    "end-of-life profiles, where battery health can be below 50%, they include the "
+    "worn-battery reserve's task pauses."
+)
 ROUTER_BEFORE = "(the router's runs include the task pauses both times)"
-DESCRIPTION = ("Experimental Surface Duo 1 web interface with simulated battery-rule tasks, calls and texts")
+DESCRIPTION = "Experimental Surface Duo 1 web interface with simulated battery-rule tasks, calls and texts"
 
 
 def read(name):
@@ -70,8 +73,10 @@ def demo_undo_at_40():
 
 def no_reserve():
     """Run the runtime without the worn-battery reserve."""
-    return (patch.object(runtime, "apply_reserve", lambda decision, *args, **kwargs: decision),
-            patch.object(runtime, "reserve_keeps", lambda *args, **kwargs: None))
+    return (
+        patch.object(runtime, "apply_reserve", lambda decision, *args, **kwargs: decision),
+        patch.object(runtime, "reserve_keeps", lambda *args, **kwargs: None),
+    )
 
 
 class TestPolicyDocs(unittest.TestCase):
@@ -137,8 +142,9 @@ class TestSimulationDocs(unittest.TestCase):
             for profile in ("worn", "eol"):
                 result = profiles.benchmark(router_policy, profile)
                 with self.subTest(profile=profile):
-                    self.assertNotEqual(published_profile_minutes(result["important_min"]),
-                                        table[profile, "router", "important_min"])
+                    self.assertNotEqual(
+                        published_profile_minutes(result["important_min"]), table[profile, "router", "important_min"]
+                    )
 
     def test_worn_simulation_router_runs_include_task_pauses(self):
         state = PowerState(5.0, False, 0.35, 25.0)
@@ -178,8 +184,10 @@ class TestReleaseDocs(unittest.TestCase):
             data = tomllib.load(handle)
         project = data["project"]
         self.assertEqual(data["build-system"]["build-backend"], "setuptools.build_meta")
-        self.assertEqual((project["name"], project["version"], project["requires-python"], project["license"]),
-                         ("opos", "0.1.0", ">=3.11", "GPL-3.0-or-later"))
+        self.assertEqual(
+            (project["name"], project["version"], project["requires-python"], project["license"]),
+            ("opos", "0.1.0", ">=3.11", "GPL-3.0-or-later"),
+        )
         self.assertEqual(project["dependencies"], [])
         # The package says what the README says, no more.
         self.assertEqual(project["description"], DESCRIPTION)

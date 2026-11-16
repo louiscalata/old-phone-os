@@ -30,6 +30,7 @@ from opos.setup.config import (
 
 ROOT = Path(os.path.abspath(os.sep))
 
+
 def _p(*parts: str) -> Path:
     """Build absolute path from ROOT."""
     return ROOT.joinpath(*parts)
@@ -44,16 +45,54 @@ def _rsa_modulus() -> bytes:
 
 
 def _p256_point() -> bytes:
-    x_hex = "6b17" + "d1f2" + "e12c" + "4247" + "f8bc" + "e6e5" + "63a4" + "40f2" + "7703" + "7d81" + "2deb" + "33a0" + "f4a1" + "3945" + "d898" + "c296"
-    y_hex = "4fe3" + "42e2" + "fe1a" + "7f9b" + "8ee7" + "eb4a" + "7c0f" + "9e16" + "2bce" + "3357" + "6b31" + "5ece" + "cbb6" + "4068" + "37bf" + "51f5"
+    x_hex = (
+        "6b17"
+        + "d1f2"
+        + "e12c"
+        + "4247"
+        + "f8bc"
+        + "e6e5"
+        + "63a4"
+        + "40f2"
+        + "7703"
+        + "7d81"
+        + "2deb"
+        + "33a0"
+        + "f4a1"
+        + "3945"
+        + "d898"
+        + "c296"
+    )
+    y_hex = (
+        "4fe3"
+        + "42e2"
+        + "fe1a"
+        + "7f9b"
+        + "8ee7"
+        + "eb4a"
+        + "7c0f"
+        + "9e16"
+        + "2bce"
+        + "3357"
+        + "6b31"
+        + "5ece"
+        + "cbb6"
+        + "4068"
+        + "37bf"
+        + "51f5"
+    )
     return b"\x04" + bytes.fromhex(x_hex) + bytes.fromhex(y_hex)
 
 
 SSH_PUBLIC_KEYS = {
     "ssh-ed25519": "ssh-ed25519 " + _b64(b"ssh-ed25519", b"\x11" * 32) + " test@example",
     "ssh-rsa": "ssh-rsa " + _b64(b"ssh-rsa", b"\x01\x00\x01", _rsa_modulus()) + " user@host",
-    "ecdsa-sha2-nistp256": "ecdsa-sha2-nistp256 " + _b64(b"ecdsa-sha2-nistp256", b"nistp256", _p256_point()) + " user@host",
-    "sk-ssh-ed25519@openssh.com": "sk-ssh-ed25519@openssh.com " + _b64(b"sk-ssh-ed25519@openssh.com", b"\x11" * 32, b"ssh:test") + " comment",
+    "ecdsa-sha2-nistp256": "ecdsa-sha2-nistp256 "
+    + _b64(b"ecdsa-sha2-nistp256", b"nistp256", _p256_point())
+    + " user@host",
+    "sk-ssh-ed25519@openssh.com": "sk-ssh-ed25519@openssh.com "
+    + _b64(b"sk-ssh-ed25519@openssh.com", b"\x11" * 32, b"ssh:test")
+    + " comment",
 }
 
 
@@ -63,7 +102,12 @@ def valid_config() -> dict:
 
 class ConfigDirTests(unittest.TestCase):
     def test_override_wins_on_all_platforms(self) -> None:
-        env = {"OPOS_CONFIG_DIR": str(_p("tmp", "opos-custom")), "HOME": str(_p("home", "u")), "APPDATA": str(_p("fake", "win-home", "AppData", "Roaming")), "XDG_CONFIG_HOME": str(_p("xdg"))}
+        env = {
+            "OPOS_CONFIG_DIR": str(_p("tmp", "opos-custom")),
+            "HOME": str(_p("home", "u")),
+            "APPDATA": str(_p("fake", "win-home", "AppData", "Roaming")),
+            "XDG_CONFIG_HOME": str(_p("xdg")),
+        }
         for platform in ("linux", "darwin", "win32"):
             with self.subTest(platform=platform):
                 self.assertEqual(config_dir(env, platform), _p("tmp", "opos-custom"))
@@ -78,7 +122,10 @@ class ConfigDirTests(unittest.TestCase):
 
     def test_linux_fallback_to_home_config(self) -> None:
         self.assertEqual(config_dir({"HOME": str(_p("home", "u"))}, "linux"), _p("home", "u", ".config", "opos"))
-        self.assertEqual(config_dir({"HOME": str(_p("home", "u")), "XDG_CONFIG_HOME": ""}, "linux"), _p("home", "u", ".config", "opos"))
+        self.assertEqual(
+            config_dir({"HOME": str(_p("home", "u")), "XDG_CONFIG_HOME": ""}, "linux"),
+            _p("home", "u", ".config", "opos"),
+        )
 
     def test_darwin(self) -> None:
         env = {"HOME": str(_p("fake", "mac-home")), "XDG_CONFIG_HOME": str(_p("ignored"))}
@@ -89,8 +136,13 @@ class ConfigDirTests(unittest.TestCase):
         self.assertEqual(config_dir(env, "win32"), _p("fake", "AppData", "Roaming", "opos"))
 
     def test_win32_fallback(self) -> None:
-        self.assertEqual(config_dir({"HOME": str(_p("fake", "home"))}, "win32"), _p("fake", "home", "AppData", "Roaming", "opos"))
-        self.assertEqual(config_dir({"HOME": str(_p("fake", "home")), "APPDATA": ""}, "win32"), _p("fake", "home", "AppData", "Roaming", "opos"))
+        self.assertEqual(
+            config_dir({"HOME": str(_p("fake", "home"))}, "win32"), _p("fake", "home", "AppData", "Roaming", "opos")
+        )
+        self.assertEqual(
+            config_dir({"HOME": str(_p("fake", "home")), "APPDATA": ""}, "win32"),
+            _p("fake", "home", "AppData", "Roaming", "opos"),
+        )
 
     def test_unknown_platform_uses_xdg_logic(self) -> None:
         self.assertEqual(config_dir({"HOME": str(_p("home", "u"))}, "freebsd"), _p("home", "u", ".config", "opos"))
@@ -120,7 +172,9 @@ class DefaultConfigTests(unittest.TestCase):
         cfg = default_config()
         self.assertEqual(cfg["version"], SCHEMA_VERSION)
         self.assertEqual(SCHEMA_VERSION, 1)
-        self.assertEqual(cfg["device"], {"id": "unknown", "name": "Unknown device", "source": "stub", "battery_health": None})
+        self.assertEqual(
+            cfg["device"], {"id": "unknown", "name": "Unknown device", "source": "stub", "battery_health": None}
+        )
         self.assertEqual(cfg["services"], list(SERVICES))
         self.assertEqual(cfg["goal"], {"enabled": True, "time": "23:00"})
         self.assertEqual(cfg["battery_mode"], "auto")
@@ -150,102 +204,147 @@ class ValidateTests(unittest.TestCase):
                 self.assert_invalid(bad)
 
     def test_unknown_and_missing_top_level_keys(self) -> None:
-        cfg = valid_config(); cfg["extra"] = 1; self.assert_invalid(cfg)
-        cfg = valid_config(); del cfg["goal"]; self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["token"] = "x" * 40; self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["session_token"] = "x" * 40; self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["extra"] = 1
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        del cfg["goal"]
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["token"] = "x" * 40
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["session_token"] = "x" * 40
+        self.assert_invalid(cfg)
 
     def test_version(self) -> None:
         for bad in (0, 2, "1", None, 1.0, True):
-            cfg = valid_config(); cfg["version"] = bad
+            cfg = valid_config()
+            cfg["version"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
 
     def test_device_not_dict_and_extra_keys(self) -> None:
-        cfg = valid_config(); cfg["device"] = "x"; self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["device"]["extra"] = 1; self.assert_invalid(cfg)
-        cfg = valid_config(); del cfg["device"]["name"]; self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["device"] = "x"
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["device"]["extra"] = 1
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        del cfg["device"]["name"]
+        self.assert_invalid(cfg)
 
     def test_device_id(self) -> None:
         for bad in ("", "a" * 65, "Upper", "has space", "bad/slash", "bad@id", 123, None):
-            cfg = valid_config(); cfg["device"]["id"] = bad
+            cfg = valid_config()
+            cfg["device"]["id"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
         for good in ("a", "device-1_x.y", "a" * 64):
-            cfg = valid_config(); cfg["device"]["id"] = good
+            cfg = valid_config()
+            cfg["device"]["id"] = good
             with self.subTest(good=good):
                 self.assertEqual(validate(cfg), [])
 
     def test_device_name(self) -> None:
         for bad in ("", "x" * 81, "bad\nname", "bad\x00name", "bad\x1fname", 42, None):
-            cfg = valid_config(); cfg["device"]["name"] = bad
+            cfg = valid_config()
+            cfg["device"]["name"] = bad
             with self.subTest(bad=repr(bad)):
                 self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["device"]["name"] = "x" * 80; self.assertEqual(validate(cfg), [])
+        cfg = valid_config()
+        cfg["device"]["name"] = "x" * 80
+        self.assertEqual(validate(cfg), [])
 
     def test_device_source(self) -> None:
         for bad in ("", "other", None, 1):
-            cfg = valid_config(); cfg["device"]["source"] = bad
+            cfg = valid_config()
+            cfg["device"]["source"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
         for good in ("hw-adapt", "stub", "manual"):
-            cfg = valid_config(); cfg["device"]["source"] = good
+            cfg = valid_config()
+            cfg["device"]["source"] = good
             with self.subTest(good=good):
                 self.assertEqual(validate(cfg), [])
 
     def test_battery_health(self) -> None:
         for bad in (True, False, math.nan, float("inf"), -0.1, 1.1, "0.5", None.__class__):
-            cfg = valid_config(); cfg["device"]["battery_health"] = bad
+            cfg = valid_config()
+            cfg["device"]["battery_health"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
         for good in (None, 0, 0.0, 0.5, 1, 1.0):
-            cfg = valid_config(); cfg["device"]["battery_health"] = good
+            cfg = valid_config()
+            cfg["device"]["battery_health"] = good
             with self.subTest(good=good):
                 self.assertEqual(validate(cfg), [])
 
     def test_services(self) -> None:
         for bad in ([], ["sms"], ["calls", "calls"], ["calls", "bogus"], ["calls", 1], "calls", None, ("calls",)):
-            cfg = valid_config(); cfg["services"] = bad
+            cfg = valid_config()
+            cfg["services"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["services"] = ["calls"]; self.assertEqual(validate(cfg), [])
-        cfg = valid_config(); cfg["services"] = list(reversed(SERVICES)); self.assertEqual(validate(cfg), [])
+        cfg = valid_config()
+        cfg["services"] = ["calls"]
+        self.assertEqual(validate(cfg), [])
+        cfg = valid_config()
+        cfg["services"] = list(reversed(SERVICES))
+        self.assertEqual(validate(cfg), [])
 
     def test_goal(self) -> None:
-        cfg = valid_config(); cfg["goal"] = "x"; self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["goal"]["extra"] = 1; self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["goal"] = "x"
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["goal"]["extra"] = 1
+        self.assert_invalid(cfg)
         for bad in (1, "true", None):
-            cfg = valid_config(); cfg["goal"]["enabled"] = bad
+            cfg = valid_config()
+            cfg["goal"]["enabled"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
         for bad in ("24:00", "23:60", "9:00", "23:0", "2300", "ab:cd", "", "23:00:00", 2300, None):
-            cfg = valid_config(); cfg["goal"]["time"] = bad
+            cfg = valid_config()
+            cfg["goal"]["time"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
         for good in ("00:00", "09:05", "23:59"):
-            cfg = valid_config(); cfg["goal"]["time"] = good
+            cfg = valid_config()
+            cfg["goal"]["time"] = good
             with self.subTest(good=good):
                 self.assertEqual(validate(cfg), [])
 
     def test_battery_mode(self) -> None:
         for bad in ("", "eco", None, 1):
-            cfg = valid_config(); cfg["battery_mode"] = bad
+            cfg = valid_config()
+            cfg["battery_mode"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
         for good in BATTERY_MODES:
-            cfg = valid_config(); cfg["battery_mode"] = good
+            cfg = valid_config()
+            cfg["battery_mode"] = good
             with self.subTest(good=good):
                 self.assertEqual(validate(cfg), [])
 
     def test_security_shape(self) -> None:
-        cfg = valid_config(); cfg["security"] = None; self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["security"]["token"] = "x"; self.assert_invalid(cfg)
-        cfg = valid_config(); del cfg["security"]["ssh_public_key"]; self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["security"] = None
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        cfg["security"]["token"] = "x"
+        self.assert_invalid(cfg)
+        cfg = valid_config()
+        del cfg["security"]["ssh_public_key"]
+        self.assert_invalid(cfg)
 
     def test_ssh_public_key_valid(self) -> None:
         keys = list(SSH_PUBLIC_KEYS.values())
         for key in keys:
-            cfg = valid_config(); cfg["security"]["ssh_public_key"] = key
+            cfg = valid_config()
+            cfg["security"]["ssh_public_key"] = key
             with self.subTest(key=key.split()[0]):
                 self.assertEqual(validate(cfg), [])
 
@@ -264,7 +363,8 @@ class ValidateTests(unittest.TestCase):
             123,
         ]
         for bad in bad_keys:
-            cfg = valid_config(); cfg["security"]["ssh_public_key"] = bad
+            cfg = valid_config()
+            cfg["security"]["ssh_public_key"] = bad
             with self.subTest(bad=repr(bad)[:40]):
                 self.assert_invalid(cfg)
 
@@ -302,19 +402,23 @@ class ValidateTests(unittest.TestCase):
                     (size,) = struct.unpack_from(">I", raw, pos)
                     pos += 4
                     self.assertLessEqual(pos + size, len(raw))
-                    fields.append(raw[pos:pos + size])
+                    fields.append(raw[pos : pos + size])
                     pos += size
                 self.assertEqual(fields, expected[algo])
                 self.assertEqual(pos, len(raw))
-                cfg = valid_config(); cfg["security"]["ssh_public_key"] = key
+                cfg = valid_config()
+                cfg["security"]["ssh_public_key"] = key
                 self.assertEqual(validate(cfg), [])
 
     def test_applied(self) -> None:
         for bad in (1, 0, "false", None):
-            cfg = valid_config(); cfg["applied"] = bad
+            cfg = valid_config()
+            cfg["applied"] = bad
             with self.subTest(bad=bad):
                 self.assert_invalid(cfg)
-        cfg = valid_config(); cfg["applied"] = True; self.assertEqual(validate(cfg), [])
+        cfg = valid_config()
+        cfg["applied"] = True
+        self.assertEqual(validate(cfg), [])
 
 
 class AiToolsTests(unittest.TestCase):
@@ -451,7 +555,8 @@ class SaveLoadTests(unittest.TestCase):
     def test_save_invalid_raises_and_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "config.json"
-            cfg = valid_config(); cfg["version"] = 99
+            cfg = valid_config()
+            cfg["version"] = 99
             with self.assertRaises(ConfigError):
                 save(cfg, path)
             self.assertFalse(path.exists())
@@ -485,7 +590,8 @@ class SaveLoadTests(unittest.TestCase):
     def test_load_invalid_config(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "config.json"
-            cfg = valid_config(); cfg["battery_mode"] = "bogus"
+            cfg = valid_config()
+            cfg["battery_mode"] = "bogus"
             path.write_text(json.dumps(cfg), encoding="utf-8")
             with self.assertRaises(ConfigError):
                 load(path)

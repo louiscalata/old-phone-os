@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The VoLTE note stays an open check."""
+
 import unittest
 from pathlib import Path
 

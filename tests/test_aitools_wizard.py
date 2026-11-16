@@ -12,7 +12,23 @@ from opos.aitools import catalog, installer, place, wizard
 
 def _td(tid, binary, url, archs, min_free):
     """Build catalog tool dict; its installer_sha256 matches the b"ok" payload the fake fetches return."""
-    return {"id": tid, "name": f"Name {tid}", "binary": binary, "installer_url": url, "interpreter": "sh", "installer_args": [], "installer_env": {}, "archs": list(archs), "min_free_mb": min_free, "state_subdir": f".{tid}", "run_env": {}, "lite_env": {}, "signin": f"signin {tid}", "docs_url": f"https://example.com/{tid}", "installer_sha256": hashlib.sha256(b"ok").hexdigest()}
+    return {
+        "id": tid,
+        "name": f"Name {tid}",
+        "binary": binary,
+        "installer_url": url,
+        "interpreter": "sh",
+        "installer_args": [],
+        "installer_env": {},
+        "archs": list(archs),
+        "min_free_mb": min_free,
+        "state_subdir": f".{tid}",
+        "run_env": {},
+        "lite_env": {},
+        "signin": f"signin {tid}",
+        "docs_url": f"https://example.com/{tid}",
+        "installer_sha256": hashlib.sha256(b"ok").hexdigest(),
+    }
 
 
 def _write_cat(p, tools):
@@ -22,6 +38,7 @@ def _write_cat(p, tools):
 
 def _runner_all(bins):
     """Return runner creating given binaries."""
+
     def run(argv, env, timeout_s):
         """Fake runner."""
         sb = Path(env["HOME"])
@@ -53,7 +70,9 @@ class TestPublicState(unittest.TestCase):
             orig = place.volatile_warning
             place.volatile_warning = lambda p, mounts_file=Path("/proc/mounts"): None
             try:
-                out = wizard.public_state(env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=lambda p: 10)
+                out = wizard.public_state(
+                    env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=lambda p: 10
+                )
             finally:
                 place.volatile_warning = orig
             self.assertTrue(out["supported"])
@@ -84,7 +103,9 @@ class TestPublicState(unittest.TestCase):
             orig = place.volatile_warning
             place.volatile_warning = lambda p, mounts_file=Path("/proc/mounts"): None
             try:
-                out = wizard.public_state(env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=lambda p: 100)
+                out = wizard.public_state(
+                    env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=lambda p: 100
+                )
             finally:
                 place.volatile_warning = orig
             self.assertFalse(out["tools"][0]["ok"])
@@ -103,7 +124,9 @@ class TestPublicState(unittest.TestCase):
             orig = place.volatile_warning
             place.volatile_warning = lambda p, mounts_file=Path("/proc/mounts"): None
             try:
-                out = wizard.public_state(env=env, home=home, machine="x86_64", platform="win32", free_mb_fn=lambda p: 100)
+                out = wizard.public_state(
+                    env=env, home=home, machine="x86_64", platform="win32", free_mb_fn=lambda p: 100
+                )
             finally:
                 place.volatile_warning = orig
             self.assertFalse(out["supported"])
@@ -123,7 +146,9 @@ class TestPublicState(unittest.TestCase):
             orig = place.volatile_warning
             place.volatile_warning = lambda p, mounts_file=Path("/proc/mounts"): None
             try:
-                out = wizard.public_state(env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=lambda p: 100)
+                out = wizard.public_state(
+                    env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=lambda p: 100
+                )
             finally:
                 place.volatile_warning = orig
             self.assertTrue(out["supported"])
@@ -145,7 +170,9 @@ class TestPublicState(unittest.TestCase):
                 raise RuntimeError("boom")
 
             orig = place.volatile_warning
-            place.volatile_warning = lambda p, mounts_file=Path("/proc/mounts"): (_ for _ in ()).throw(RuntimeError("vw"))
+            place.volatile_warning = lambda p, mounts_file=Path("/proc/mounts"): (_ for _ in ()).throw(
+                RuntimeError("vw")
+            )
             try:
                 out = wizard.public_state(env=env, home=home, machine="x86_64", platform="linux", free_mb_fn=bad_free)
                 self.assertIsNotNone(out)
@@ -172,7 +199,18 @@ class TestInstallSelected(unittest.TestCase):
             src = td / "src"
             src.mkdir()
             env = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(prefix)}
-            out = wizard.install_selected(["tool-a"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, dry_run=True, free_mb_fn=lambda p: 100000)
+            out = wizard.install_selected(
+                ["tool-a"],
+                "lite",
+                env=env,
+                home=home,
+                machine="x86_64",
+                platform="linux",
+                python="python3",
+                src_dir=src,
+                dry_run=True,
+                free_mb_fn=lambda p: 100000,
+            )
             self.assertTrue(any("would" in s.lower() for s in out))
             self.assertFalse((prefix / "opos-tools").exists())
 
@@ -190,7 +228,19 @@ class TestInstallSelected(unittest.TestCase):
             src.mkdir()
             env = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(prefix)}
             runner = _runner_all(["tool-a-bin"])
-            out = wizard.install_selected(["tool-a"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, fetch=lambda u: b"ok", runner=runner, free_mb_fn=lambda p: 100000)
+            out = wizard.install_selected(
+                ["tool-a"],
+                "lite",
+                env=env,
+                home=home,
+                machine="x86_64",
+                platform="linux",
+                python="python3",
+                src_dir=src,
+                fetch=lambda u: b"ok",
+                runner=runner,
+                free_mb_fn=lambda p: 100000,
+            )
             self.assertTrue(any("installed" in s for s in out))
             self.assertTrue((prefix / "opos-tools" / "manifest.json").exists())
             self.assertTrue((prefix / "opos-tools" / "bin" / "tool-a-bin").exists())
@@ -210,22 +260,71 @@ class TestInstallSelected(unittest.TestCase):
             src.mkdir()
             env = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(prefix)}
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected(["tool-a"], "badmode", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src)
+                wizard.install_selected(
+                    ["tool-a"],
+                    "badmode",
+                    env=env,
+                    home=home,
+                    machine="x86_64",
+                    platform="linux",
+                    python="python3",
+                    src_dir=src,
+                )
             self.assertIn("unknown mode", str(cm.exception).lower())
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected([], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src)
+                wizard.install_selected(
+                    [], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src
+                )
             self.assertIn("no tools selected", str(cm.exception).lower())
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected(["tool-a", "tool-a"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src)
+                wizard.install_selected(
+                    ["tool-a", "tool-a"],
+                    "lite",
+                    env=env,
+                    home=home,
+                    machine="x86_64",
+                    platform="linux",
+                    python="python3",
+                    src_dir=src,
+                )
             self.assertIn("duplicate", str(cm.exception).lower())
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected(["tool-a"], "lite", env=env, home=home, machine="x86_64", platform="win32", python="python3", src_dir=src)
+                wizard.install_selected(
+                    ["tool-a"],
+                    "lite",
+                    env=env,
+                    home=home,
+                    machine="x86_64",
+                    platform="win32",
+                    python="python3",
+                    src_dir=src,
+                )
             self.assertIn("unsupported platform", str(cm.exception).lower())
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected(["unknown-id"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, free_mb_fn=lambda p: 100000)
+                wizard.install_selected(
+                    ["unknown-id"],
+                    "lite",
+                    env=env,
+                    home=home,
+                    machine="x86_64",
+                    platform="linux",
+                    python="python3",
+                    src_dir=src,
+                    free_mb_fn=lambda p: 100000,
+                )
             self.assertIn("unknown-id", str(cm.exception))
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected(["tool-a"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, free_mb_fn=lambda p: 1)
+                wizard.install_selected(
+                    ["tool-a"],
+                    "lite",
+                    env=env,
+                    home=home,
+                    machine="x86_64",
+                    platform="linux",
+                    python="python3",
+                    src_dir=src,
+                    free_mb_fn=lambda p: 1,
+                )
             self.assertTrue(str(cm.exception).startswith("tool-a:"))
 
     def test_second_failing_leaves_first(self):
@@ -250,7 +349,19 @@ class TestInstallSelected(unittest.TestCase):
 
             runner = _runner_all(["tool-a-bin", "tool-b-bin"])
             with self.assertRaises(installer.InstallError) as cm:
-                wizard.install_selected(["tool-a", "tool-b"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, fetch=fetch, runner=runner, free_mb_fn=lambda p: 100000)
+                wizard.install_selected(
+                    ["tool-a", "tool-b"],
+                    "lite",
+                    env=env,
+                    home=home,
+                    machine="x86_64",
+                    platform="linux",
+                    python="python3",
+                    src_dir=src,
+                    fetch=fetch,
+                    runner=runner,
+                    free_mb_fn=lambda p: 100000,
+                )
             self.assertTrue(str(cm.exception).startswith("tool-b:"))
             m = json.loads((prefix / "opos-tools" / "manifest.json").read_text(encoding="utf-8"))
             self.assertIn("tool-a", m["tools"])
@@ -289,7 +400,19 @@ class TestUninstallAll(unittest.TestCase):
             env = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(prefix)}
             snap = set(td.rglob("*"))
             runner = _runner_all(["tool-a-bin"])
-            wizard.install_selected(["tool-a"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, fetch=lambda u: b"ok", runner=runner, free_mb_fn=lambda p: 100000)
+            wizard.install_selected(
+                ["tool-a"],
+                "lite",
+                env=env,
+                home=home,
+                machine="x86_64",
+                platform="linux",
+                python="python3",
+                src_dir=src,
+                fetch=lambda u: b"ok",
+                runner=runner,
+                free_mb_fn=lambda p: 100000,
+            )
             self.assertTrue((prefix / "opos-tools").exists())
             with mock.patch.object(wizard, "_FALLBACK_PREFIXES", ()):
                 out = wizard.uninstall_all(env=env, home=home)
@@ -313,7 +436,19 @@ class TestUninstallAll(unittest.TestCase):
             src.mkdir()
             env = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(prefix)}
             runner = _runner_all(["tool-a-bin"])
-            wizard.install_selected(["tool-a"], "lite", env=env, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, fetch=lambda u: b"ok", runner=runner, free_mb_fn=lambda p: 100000)
+            wizard.install_selected(
+                ["tool-a"],
+                "lite",
+                env=env,
+                home=home,
+                machine="x86_64",
+                platform="linux",
+                python="python3",
+                src_dir=src,
+                fetch=lambda u: b"ok",
+                runner=runner,
+                free_mb_fn=lambda p: 100000,
+            )
             with mock.patch.object(wizard, "_FALLBACK_PREFIXES", ()):
                 out = wizard.uninstall_all(env=env, home=home, dry_run=True)
             self.assertTrue(any("would remove" in s for s in out))
@@ -366,7 +501,19 @@ class TestUninstallAll(unittest.TestCase):
             src.mkdir()
             env_install = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(old)}
             runner = _runner_all(["tool-a-bin"])
-            wizard.install_selected(["tool-a"], "lite", env=env_install, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, fetch=lambda u: b"ok", runner=runner, free_mb_fn=lambda p: 100000)
+            wizard.install_selected(
+                ["tool-a"],
+                "lite",
+                env=env_install,
+                home=home,
+                machine="x86_64",
+                platform="linux",
+                python="python3",
+                src_dir=src,
+                fetch=lambda u: b"ok",
+                runner=runner,
+                free_mb_fn=lambda p: 100000,
+            )
             self.assertTrue((old / "opos-tools").exists())
             env_uninstall = {"OPOS_AI_TOOLS_TABLE": str(cat)}
             with mock.patch.object(wizard, "_FALLBACK_PREFIXES", (old,)):
@@ -389,7 +536,19 @@ class TestUninstallAll(unittest.TestCase):
             src.mkdir()
             env_install = {"OPOS_AI_TOOLS_TABLE": str(cat), "OPOS_TOOLS_PREFIX": str(old)}
             runner = _runner_all(["tool-a-bin"])
-            wizard.install_selected(["tool-a"], "lite", env=env_install, home=home, machine="x86_64", platform="linux", python="python3", src_dir=src, fetch=lambda u: b"ok", runner=runner, free_mb_fn=lambda p: 100000)
+            wizard.install_selected(
+                ["tool-a"],
+                "lite",
+                env=env_install,
+                home=home,
+                machine="x86_64",
+                platform="linux",
+                python="python3",
+                src_dir=src,
+                fetch=lambda u: b"ok",
+                runner=runner,
+                free_mb_fn=lambda p: 100000,
+            )
             self.assertTrue((old / "opos-tools").exists())
             env_uninstall = {"OPOS_TOOLS_PREFIX": str(new), "OPOS_AI_TOOLS_TABLE": str(cat)}
             with mock.patch.object(wizard, "_FALLBACK_PREFIXES", (old,)):
@@ -427,7 +586,18 @@ class TestUninstallAll(unittest.TestCase):
             prefix_home = home / ".local" / "share" / "opos"
             tools = catalog.load(cat)
             tool = catalog.get(tools, "tool-a")
-            installer.install(tool, prefix=prefix_home, mode="lite", machine="x86_64", home=home, python="python3", src_dir=src, fetch=lambda u: b"ok", runner=_runner_all(["tool-a-bin"]), free_mb_fn=lambda p: 100000)
+            installer.install(
+                tool,
+                prefix=prefix_home,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=src,
+                fetch=lambda u: b"ok",
+                runner=_runner_all(["tool-a-bin"]),
+                free_mb_fn=lambda p: 100000,
+            )
             self.assertTrue((prefix_home / "opos-tools").exists())
             with mock.patch.object(wizard, "_FALLBACK_PREFIXES", ()):
                 out = wizard.uninstall_all(env={}, home=home)

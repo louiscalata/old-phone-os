@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Calculator arithmetic, including 0.1 + 0.2, and the page stays off the main page."""
+
 import shutil
 import subprocess
 import unittest
@@ -43,11 +44,14 @@ class Calc(unittest.TestCase):
         path = Path(self.id().replace(".", "_") + ".js")
         # Keep the script next to the test run, not in the repo.
         import tempfile
+
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         file = Path(folder.name) / "table.js"
         file.write_text(JS, encoding="utf-8")
-        result = subprocess.run([node, str(file), str(ROOT / "src/opos/apps_static/calc.js")], capture_output=True, text=True, timeout=20)
+        result = subprocess.run(
+            [node, str(file), str(ROOT / "src/opos/apps_static/calc.js")], capture_output=True, text=True, timeout=20
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_page_uses_only_token_colours(self):

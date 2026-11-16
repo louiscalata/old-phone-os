@@ -15,7 +15,7 @@ class TestSheetLonghand(unittest.TestCase):
     def _props(self, selector):
         start = self.page.find(selector + "{")
         end = self.page.find("}", start)
-        body = self.page[start + len(selector) + 1:end]
+        body = self.page[start + len(selector) + 1 : end]
         props = {}
         for decl in body.split(";"):
             if ":" not in decl:
@@ -47,5 +47,5 @@ class TestSheetLonghand(unittest.TestCase):
         self.assertNotIn("inset", props)
         self.assertEqual(props.get("height"), "88dvh")
         start = self.page.find("#sheet{")
-        rule = self.page[start:self.page.find("}", start) + 1]
+        rule = self.page[start : self.page.find("}", start) + 1]
         self.assertLess(rule.find("height:88vh"), rule.find("height:88dvh"))

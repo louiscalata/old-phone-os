@@ -21,14 +21,16 @@ class TestReviewFixes(unittest.TestCase):
             self.assertIn(name, decision.allowed)
             self.assertNotIn(name, decision.deferred)
 
-
     def test_glimmer_pause_keeps_its_attribution_through_runtime(self):
         from opos.advisor import GlimmerAdvisor
         from opos.governor import Governor
         from opos.home import plain_reason
         from opos.router import Router
+
         jobs = []
-        advisor = GlimmerAdvisor(Router(visible=True), ask=lambda *a, **k: '{"defer":["email"]}', spawn=jobs.append, clock=lambda: 0.0)
+        advisor = GlimmerAdvisor(
+            Router(visible=True), ask=lambda *a, **k: '{"defer":["email"]}', spawn=jobs.append, clock=lambda: 0.0
+        )
         rt = Runtime(visible=True)
         rt.governor = Governor(advisor=advisor)
         first = rt.step(0, 100, charging=True, health=1.0, temp_c=25)

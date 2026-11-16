@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Setup progress contracts and deterministic completion regressions, without sockets."""
+
 from __future__ import annotations
 
 import io
@@ -24,7 +25,7 @@ STEPS = (
     ("health", "Check that it is running"),
     ("tools", "Install AI coding tools"),
 )
-SAVED_DEFAULTS = b'''{
+SAVED_DEFAULTS = b"""{
   "ai_tools": {
     "mode": "lite",
     "tools": []
@@ -52,7 +53,7 @@ SAVED_DEFAULTS = b'''{
   ],
   "version": 1
 }
-'''
+"""
 
 
 class SetupProgressCase(unittest.TestCase):
@@ -62,8 +63,12 @@ class SetupProgressCase(unittest.TestCase):
         self.root = Path(temporary.name)
         self.env = {"OPOS_CONFIG_DIR": str(self.root / "config")}
         self.ctx = server.SetupContext(
-            repo_root=self.root, python=sys.executable, home=self.root,
-            platform="linux", env=self.env, runner=Mock(),
+            repo_root=self.root,
+            python=sys.executable,
+            home=self.root,
+            platform="linux",
+            env=self.env,
+            runner=Mock(),
             health_check=lambda port: (True, "healthy"),
         )
         # Capture the actual handler and its closure without binding any socket.
@@ -80,8 +85,10 @@ class SetupProgressCase(unittest.TestCase):
         raw = json.dumps(body).encode() if body is not None else b""
         handler.command, handler.path = method, path
         handler.headers = {
-            "Host": "127.0.0.1:8766", "X-OPOS-Token": self.server.token,
-            "Origin": "http://127.0.0.1:8766", "Content-Type": "application/json",
+            "Host": "127.0.0.1:8766",
+            "X-OPOS-Token": self.server.token,
+            "Origin": "http://127.0.0.1:8766",
+            "Content-Type": "application/json",
             "Content-Length": str(len(raw)),
         }
         handler.rfile, handler.wfile = io.BytesIO(raw), io.BytesIO()
@@ -93,9 +100,14 @@ class SetupProgressCase(unittest.TestCase):
         with patch.object(apply_mod, "install_services", return_value=["service ready"]):
             return apply_mod.apply(
                 config.default_config() if cfg is None else cfg,
-                repo_root=self.root, python=sys.executable, home=self.root,
-                platform="linux", env=self.env, runner=self.ctx.runner,
-                health_check=self.ctx.health_check, **kwargs,
+                repo_root=self.root,
+                python=sys.executable,
+                home=self.root,
+                platform="linux",
+                env=self.env,
+                runner=self.ctx.runner,
+                health_check=self.ctx.health_check,
+                **kwargs,
             )
 
 
@@ -121,11 +133,20 @@ class CharacterizationTests(SetupProgressCase):
                         args = (sid,) if status == "running" else (sid, "detail")
                         getattr(progress, method)(*args)
                 self.server.progress_state.progress = progress
-                expected = {"running": not done, "done": done, "ok": ok, "steps": [
-                    {"id": sid, "label": label, "status": status,
-                     "detail": "" if status in ("pending", "running") else "detail"}
-                    for (sid, label), status in zip(STEPS, statuses)
-                ]}
+                expected = {
+                    "running": not done,
+                    "done": done,
+                    "ok": ok,
+                    "steps": [
+                        {
+                            "id": sid,
+                            "label": label,
+                            "status": status,
+                            "detail": "" if status in ("pending", "running") else "detail",
+                        }
+                        for (sid, label), status in zip(STEPS, statuses)
+                    ],
+                }
                 self.assertEqual(self.request(), (200, json.dumps(expected).encode()))
                 self.assertEqual((progress.done(), progress.ok()), (done, ok))
 
@@ -141,8 +162,10 @@ class CharacterizationTests(SetupProgressCase):
             self.assertEqual(self.request("POST", "/setup/api/apply", body), (202, b'{"started": true}'))
             self.assertIsNot(self.server.progress_state.progress, first)
             self.assertEqual(thread.return_value.start.call_count, 2)
-        self.assertEqual(self.request("POST", "/setup/api/apply", {"config": None}),
-                         (400, b'{"ok": false, "errors": ["config must be an object"]}'))
+        self.assertEqual(
+            self.request("POST", "/setup/api/apply", {"config": None}),
+            (400, b'{"ok": false, "errors": ["config must be an object"]}'),
+        )
 
     def test_saved_config_and_existing_token_bytes(self):
         token = config.token_path(self.env, "linux")
@@ -160,9 +183,15 @@ class CharacterizationTests(SetupProgressCase):
         progress = self.run_apply(cfg, tools_runner=Mock(side_effect=ValueError("private")))
         self.assertTrue(progress.done())
         self.assertFalse(progress.ok())
-        self.assertEqual(progress.snapshot()[-1], {
-            "id": "tools", "label": "Install AI coding tools", "status": "failed", "detail": "ValueError",
-        })
+        self.assertEqual(
+            progress.snapshot()[-1],
+            {
+                "id": "tools",
+                "label": "Install AI coding tools",
+                "status": "failed",
+                "detail": "ValueError",
+            },
+        )
         self.assertTrue(config.load(config.config_path(self.env, "linux"))["applied"])
 
     def test_cli_exact_output_and_exit_codes(self):
@@ -178,10 +207,12 @@ class CharacterizationTests(SetupProgressCase):
                     for sid, _ in STEPS[1:]:
                         progress.skip(sid)
                 out = io.StringIO()
-                with patch.object(cli, "reboot_warning", return_value=None), \
-                     patch.object(cli.opos.setup.device, "detect_device", return_value=SimpleNamespace()), \
-                     patch.object(cli.opos.setup.device, "to_config_device", return_value=None), \
-                     patch.object(apply_mod, "apply", return_value=progress):
+                with (
+                    patch.object(cli, "reboot_warning", return_value=None),
+                    patch.object(cli.opos.setup.device, "detect_device", return_value=SimpleNamespace()),
+                    patch.object(cli.opos.setup.device, "to_config_device", return_value=None),
+                    patch.object(apply_mod, "apply", return_value=progress),
+                ):
                     args = ["run", "--defaults"] + (["--dry-run"] if dry_run else [])
                     rc = cli.main(args, env=self.env, home=self.root, platform="linux", out=out)
                 if failed:
@@ -189,8 +220,10 @@ class CharacterizationTests(SetupProgressCase):
                 elif dry_run:
                     expected = "Dry run finished. Nothing was configured or started.\n"
                 else:
-                    expected = ("Old Phone OS Interface is set up with the default settings. Device: Unknown device\n"
-                                "Open it at http://127.0.0.1:8765/\n")
+                    expected = (
+                        "Old Phone OS Interface is set up with the default settings. Device: Unknown device\n"
+                        "Open it at http://127.0.0.1:8765/\n"
+                    )
                 self.assertEqual((rc, out.getvalue()), (int(failed), expected))
 
 
@@ -229,9 +262,15 @@ class CompletionRegressionTests(SetupProgressCase):
 
         with patch.object(apply_mod, "save", side_effect=save):
             progress = self.run_apply()
-        self.assertEqual(progress.snapshot()[0], {
-            "id": "config", "label": "Save your preferences", "status": "failed", "detail": "OSError",
-        })
+        self.assertEqual(
+            progress.snapshot()[0],
+            {
+                "id": "config",
+                "label": "Save your preferences",
+                "status": "failed",
+                "detail": "OSError",
+            },
+        )
         self.assertTrue(progress.done())
         self.assertFalse(progress.ok())
         self.assertFalse(config.load(config.config_path(self.env, "linux"))["applied"])
@@ -239,10 +278,12 @@ class CompletionRegressionTests(SetupProgressCase):
         payload = json.loads(self.request()[1])
         self.assertEqual((payload["running"], payload["done"], payload["ok"]), (False, True, False))
         out = io.StringIO()
-        with patch.object(cli, "reboot_warning", return_value=None), \
-             patch.object(cli.opos.setup.device, "to_config_device", return_value=None), \
-             patch.object(cli.opos.setup.device, "detect_device", return_value=None), \
-             patch.object(apply_mod, "apply", return_value=progress):
+        with (
+            patch.object(cli, "reboot_warning", return_value=None),
+            patch.object(cli.opos.setup.device, "to_config_device", return_value=None),
+            patch.object(cli.opos.setup.device, "detect_device", return_value=None),
+            patch.object(apply_mod, "apply", return_value=progress),
+        ):
             rc = cli.main(["run", "--defaults"], env=self.env, home=self.root, platform="linux", out=out)
         self.assertEqual(rc, 1)
         self.assertTrue(out.getvalue().endswith("step Save your preferences: OSError\nsetup failed\n"))

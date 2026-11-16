@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Viewport continuity uses the existing #msg id (the spec calls it #message)."""
+
 import json
 import shutil
 import subprocess
@@ -9,8 +10,8 @@ from pathlib import Path
 from opos.web import page
 from tests import test_uxr_acceptance as acceptance
 
-JS = Path(__file__).resolve().parents[1] / 'src/opos/web_static/phone-a.js'
-NODE = shutil.which('node')
+JS = Path(__file__).resolve().parents[1] / "src/opos/web_static/phone-a.js"
+NODE = shutil.which("node")
 HARNESS = r"""
 const assert=require('assert'),vm=require('vm'),fs=require('fs');
 // UXP23 is a separate render module, outside the continuity handler.
@@ -69,19 +70,25 @@ console.log(JSON.stringify({ok:true}));
 
 
 class TestContinuityLogic(unittest.TestCase):
-    @unittest.skipUnless(NODE, 'no node')
+    @unittest.skipUnless(NODE, "no node")
     def test_restore_keyboard_and_fail_open(self):
-        result = subprocess.run([NODE, '-e', HARNESS, str(JS)],
-                                capture_output=True, text=True, timeout=30)
+        result = subprocess.run([NODE, "-e", HARNESS, str(JS)], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), {'ok': True})
+        self.assertEqual(json.loads(result.stdout), {"ok": True})
 
     def test_no_rebuild_or_layout_handlers(self):
         # UXP23 follows continuity and builds its own panels, not viewport handlers.
-        source = JS.read_text().split('// UXP20:', 1)[1].split('// UXP23:', 1)[0]
+        source = JS.read_text().split("// UXP20:", 1)[1].split("// UXP23:", 1)[0]
         self.assertIn(source, page())
-        for forbidden in ('innerHTML', 'createElement', 'appendChild', 'replaceChild',
-                          'location.reload', 'matchMedia', 'orientationchange'):
+        for forbidden in (
+            "innerHTML",
+            "createElement",
+            "appendChild",
+            "replaceChild",
+            "location.reload",
+            "matchMedia",
+            "orientationchange",
+        ):
             self.assertNotIn(forbidden, source)
         self.assertIn('id="msg"', page())
 
@@ -89,7 +96,7 @@ class TestContinuityLogic(unittest.TestCase):
 class TestContinuityBrowser(unittest.TestCase):
     # Reuse exactly the acceptance harness's Chromium discovery and sandbox fallback.
     skip_reason = None
-    mode = 'port'
+    mode = "port"
     setUpClass = classmethod(acceptance.TestUxrAcceptance.setUpClass.__func__)
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
@@ -97,8 +104,8 @@ class TestContinuityBrowser(unittest.TestCase):
     _run = acceptance.TestUxrAcceptance._run
 
     def test_rotation_draft_sheet_escape_and_keyboard(self):
-        self.assertEqual(self._run('continuity'), [])
+        self.assertEqual(self._run("continuity"), [])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

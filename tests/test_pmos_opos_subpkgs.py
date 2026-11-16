@@ -9,7 +9,9 @@ class TestOposSubpkgs(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parent.parent
         text = (repo / "packaging/pmos/opos/APKBUILD").read_text(encoding="utf-8")
         body = re.search(r"(?ms)^package\(\)[ \t]*\{[ \t]*\n(.*?)^\}", text).group(1)
-        self.assertRegex(body, r"(?m)^[ \t]*install -Dm755 \"\$srcdir/opos-kiosk\" \"\$pkgdir/usr/bin/opos-kiosk\"[ \t]*$")
+        self.assertRegex(
+            body, r"(?m)^[ \t]*install -Dm755 \"\$srcdir/opos-kiosk\" \"\$pkgdir/usr/bin/opos-kiosk\"[ \t]*$"
+        )
 
 
 if __name__ == "__main__":

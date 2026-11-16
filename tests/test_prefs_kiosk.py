@@ -13,75 +13,77 @@ from opos import web
 from opos.setup import prefs
 from opos.web import Phone, page
 
-STATIC = Path(__file__).resolve().parents[1] / 'src/opos/web_static'
+STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
 
 
 class TestPrefsKiosk(unittest.TestCase):
     def test_state_defaults_and_skip_all(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, OPOS_CONFIG_DIR=directory):
-            self.assertEqual(Phone().state()['prefs'], prefs.defaults())
+            self.assertEqual(Phone().state()["prefs"], prefs.defaults())
             prefs.skip_all()
-            self.assertEqual(Phone().state()['prefs'], prefs.defaults())
+            self.assertEqual(Phone().state()["prefs"], prefs.defaults())
 
     def test_effective_and_redaction(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, OPOS_CONFIG_DIR=directory):
-            prefs.answer('theme', 'dark')
-            prefs.answer('text_size', 'large')
-            prefs.answer('helper', 'off')
-            prefs.answer('wifi', {'ssid': 'private-network'})
-            prefs.answer('pin', 'skip')
+            prefs.answer("theme", "dark")
+            prefs.answer("text_size", "large")
+            prefs.answer("helper", "off")
+            prefs.answer("wifi", {"ssid": "private-network"})
+            prefs.answer("pin", "skip")
             prefs.finish()
             state = Phone().state()
-            self.assertEqual(state['prefs']['theme'], 'dark')
-            self.assertEqual(state['prefs']['text_size'], 'large')
-            self.assertEqual(state['prefs']['helper'], 'off')
-            self.assertNotIn('ssid', json.dumps(state))
-            self.assertNotIn('private-', json.dumps(state))
-            self.assertEqual(state['prefs']['wifi'], 'later')
+            self.assertEqual(state["prefs"]["theme"], "dark")
+            self.assertEqual(state["prefs"]["text_size"], "large")
+            self.assertEqual(state["prefs"]["helper"], "off")
+            self.assertNotIn("ssid", json.dumps(state))
+            self.assertNotIn("private-", json.dumps(state))
+            self.assertEqual(state["prefs"]["wifi"], "later")
             # JRY34: the lock PIN step is record-only and never published; the kiosk only ever sees the default.
-            self.assertEqual(state['prefs']['pin'], 'later')
+            self.assertEqual(state["prefs"]["pin"], "later")
 
     def test_answers_and_invalid_file(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, OPOS_CONFIG_DIR=directory):
-            prefs.answer('theme', 'dark')
-            self.assertEqual(Phone().state()['prefs']['theme'], 'auto')
+            prefs.answer("theme", "dark")
+            self.assertEqual(Phone().state()["prefs"]["theme"], "auto")
             prefs.finish()
-            self.assertEqual(Phone().state()['prefs']['theme'], 'dark')
-            prefs.prefs_path().write_text('{broken')
-            self.assertEqual(Phone().state()['prefs'], prefs.defaults())
+            self.assertEqual(Phone().state()["prefs"]["theme"], "dark")
+            prefs.prefs_path().write_text("{broken")
+            self.assertEqual(Phone().state()["prefs"], prefs.defaults())
 
     def _main_phone(self, argv):
         captured = {}
 
-        def fake_make_server(port, phone, host='127.0.0.1', token=None):
-            captured['phone'] = phone
+        def fake_make_server(port, phone, host="127.0.0.1", token=None):
+            captured["phone"] = phone
             return mock.Mock(serve_forever=mock.Mock())
 
-        with mock.patch.object(web, '_route_with_glimmer'), \
-                mock.patch.object(web, 'make_server', side_effect=fake_make_server):
+        with (
+            mock.patch.object(web, "_route_with_glimmer"),
+            mock.patch.object(web, "make_server", side_effect=fake_make_server),
+        ):
             web.main(argv)
-        return captured['phone']
+        return captured["phone"]
 
     def test_main_applies_helper_preference(self):
         # JRY24-rfix2: step j7 is shared server state, so the service start reads it (docs/jaryo.md section 6).
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, OPOS_CONFIG_DIR=directory):
             self.assertFalse(self._main_phone([]).visible)  # no prefs file: the old default
-            prefs.answer('helper', 'on')
+            prefs.answer("helper", "on")
             self.assertFalse(self._main_phone([]).visible)  # answered but setup not finished
             prefs.finish()
             self.assertTrue(self._main_phone([]).visible)
-            prefs.answer('helper', 'off')
+            prefs.answer("helper", "off")
             self.assertFalse(self._main_phone([]).visible)
-            self.assertTrue(self._main_phone(['--visible']).visible)  # the flag always wins
-            prefs.prefs_path().write_text('{broken')
+            self.assertTrue(self._main_phone(["--visible"]).visible)  # the flag always wins
+            prefs.prefs_path().write_text("{broken")
             self.assertFalse(self._main_phone([]).visible)
 
     def test_browser_defaults_local_choices_and_refresh(self):
-        node = shutil.which('node')
+        node = shutil.which("node")
         if not node:
-            self.skipTest('node not installed')
+            self.skipTest("node not installed")
         # Files load whole and in page order (phone-b.js, jaryo.js, jaryo-layout.js), as web.py inlines them.
-        script = r'''
+        script = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const files=process.argv.slice(1,4).map(f=>fs.readFileSync(f,'utf8'));
 function run(saved,prefs){
@@ -132,16 +134,19 @@ assert.equal(run({},{helper:'off'}).store.opos_helper_visible,undefined);
 const c={location:{search:''},addEventListener(){},document:{documentElement:{},addEventListener(){},getElementById(){return null}},localStorage:{getItem(){throw Error('blocked')}}};c.window=c;
 vm.createContext(c);for(const src of files)vm.runInContext(src,c);
 for(const hook of c.oposHooks){hook({});hook({prefs:{}})}
-'''
-        result = subprocess.run([node, '-e', script, str(STATIC / 'phone-b.js'),
-                                 str(STATIC / 'jaryo.js'),
-                                 str(STATIC / 'jaryo-layout.js')],
-                                capture_output=True, text=True, timeout=30)
+"""
+        result = subprocess.run(
+            [node, "-e", script, str(STATIC / "phone-b.js"), str(STATIC / "jaryo.js"), str(STATIC / "jaryo-layout.js")],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_inline_and_budget(self):
         from tests.test_uxp30_budget import PAGE_BUDGET
+
         rendered = page()
-        for name in ('jaryo.js', 'jaryo-layout.js'):
+        for name in ("jaryo.js", "jaryo-layout.js"):
             self.assertIn((STATIC / name).read_text(), rendered)
         self.assertLessEqual(len(rendered.encode()), PAGE_BUDGET)

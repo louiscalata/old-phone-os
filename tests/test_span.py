@@ -56,10 +56,24 @@ class Parse(unittest.TestCase):
             self.assertIsNone(parse(text), text)
 
     def test_rejects_what_is_not_two_panes_and_a_hinge(self):
-        for text in ("675", "675,", ",42", "675,42,1", "675x42", "675;42", "abc", "-675,42", "675,-42", "6e2,42",
-                     "675,0", "675,675", "675,700",  # no hinge, or a hinge as wide as a pane
-                     "100,42", "419,1",  # narrower than the page's 840 px two-column layouts
-                     "5000,42"):  # wider than any phone
+        for text in (
+            "675",
+            "675,",
+            ",42",
+            "675,42,1",
+            "675x42",
+            "675;42",
+            "abc",
+            "-675,42",
+            "675,-42",
+            "6e2,42",
+            "675,0",
+            "675,675",
+            "675,700",  # no hinge, or a hinge as wide as a pane
+            "100,42",
+            "419,1",  # narrower than the page's 840 px two-column layouts
+            "5000,42",
+        ):  # wider than any phone
             with self.assertRaises(ValueError, msg=text):
                 parse(text)
 
@@ -100,7 +114,10 @@ class Geometry(unittest.TestCase):
         css = style(page(span=span))
         gate = f"@media (min-width:{spanmod.gate(span)}px){{"
         # The rule that makes #phone and #lock two columns: first pane, hinge as the gap, second pane takes the rest.
-        m = re.search(r'html\[data-ff="foldable"\] #phone,html\[data-ff="foldable"\] #lock:not\(\[hidden\]\)\{([^}]*)\}', css[css.index(gate):])
+        m = re.search(
+            r'html\[data-ff="foldable"\] #phone,html\[data-ff="foldable"\] #lock:not\(\[hidden\]\)\{([^}]*)\}',
+            css[css.index(gate) :],
+        )
         self.assertIsNotNone(m)
         decl = dict(d.split(":", 1) for d in m[1].split(";") if d)
         cols = decl["grid-template-columns"]
@@ -126,8 +143,9 @@ class Geometry(unittest.TestCase):
     def test_the_segment_env_values_are_the_only_things_swapped_for_variables(self):
         css = (STATIC / "phone-b.css").read_text(encoding="utf-8")
         body = blocks(css, "@media " + SEGMENTS + "{")[0]
-        expected = body.replace("env(viewport-segment-width 0 0)", "var(--pane)") \
-                       .replace("env(viewport-segment-left 1 0)", "calc(var(--pane) + var(--hinge))")
+        expected = body.replace("env(viewport-segment-width 0 0)", "var(--pane)").replace(
+            "env(viewport-segment-left 1 0)", "calc(var(--pane) + var(--hinge))"
+        )
         self.assertIn("@media (min-width:1055px){" + expected.replace("\n", ""), style(page(span=DUO)))
 
 
@@ -153,7 +171,7 @@ class ServedPage(unittest.TestCase):
         # the three places the query lived plus the one block of rules the span adds
         self.assertEqual(out.count("(min-width:1055px)"), page().count(SEGMENTS) + 1)
         self.assertIn("var TWO='(min-width:1055px)'", out)
-        self.assertIn("@media (min-width:1055px){html[data-ff=\"foldable\"] #phone,", out)
+        self.assertIn('@media (min-width:1055px){html[data-ff="foldable"] #phone,', out)
 
     def test_gate_is_the_first_pane_the_hinge_and_half_a_second_pane(self):
         self.assertEqual(spanmod.gate(DUO), 1055)  # 675 + 42 + 337.5, rounded up; the whole span is 1392
@@ -173,10 +191,12 @@ class ServedPage(unittest.TestCase):
 
     def test_extra_rules_keep_the_hinge_clear(self):
         css = style(page(span=DUO))
-        tail = css[css.rindex("@media (min-width:1055px){"):]
+        tail = css[css.rindex("@media (min-width:1055px){") :]
         self.assertIn("#sb-engine{flex:0 1 auto;max-width:calc(var(--pane) - 220px);text-align:left}", tail)
         self.assertIn("#meter-hit::after{left:calc(var(--pane)/2)}", tail)
-        self.assertIn("#meter{right:auto;width:var(--pane)}", tail)  # the gauge is a full-width button: it stays in the first pane
+        self.assertIn(
+            "#meter{right:auto;width:var(--pane)}", tail
+        )  # the gauge is a full-width button: it stays in the first pane
         self.assertIn('html[data-ff="foldable"] #lock:not([hidden]){align-content:center}', tail)
 
     def test_single_pane_gets_no_new_rules(self):
@@ -238,12 +258,15 @@ class ServedPage(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node is not installed")
-        body = spanmod.readout(DUO)[len("<script>"):-len("</script>")]
-        driver = ("var h={},e={textContent:'Auto looks like: two screens'};"
-                  "var addEventListener=function(t,f){h[t]=f};"
-                  "var document={getElementById:function(){return e}};"
-                  "var innerWidth=1392,innerHeight=900,devicePixelRatio=1;"
-                  + body + ";h.resize();h.load();console.log(e.textContent)")
+        body = spanmod.readout(DUO)[len("<script>") : -len("</script>")]
+        driver = (
+            "var h={},e={textContent:'Auto looks like: two screens'};"
+            "var addEventListener=function(t,f){h[t]=f};"
+            "var document={getElementById:function(){return e}};"
+            "var innerWidth=1392,innerHeight=900,devicePixelRatio=1;"
+            + body
+            + ";h.resize();h.load();console.log(e.textContent)"
+        )
         out = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=30).stdout.strip()
         self.assertEqual(out.count(". Window "), 1, out)
         self.assertIn("span 675 + 42 + 675.", out)
@@ -265,6 +288,7 @@ def serving(**kw):
             return res.status, {k.lower(): v for k, v in res.getheaders()}, res.read()
         finally:
             conn.close()
+
     try:
         yield server, fetch
     finally:
@@ -297,11 +321,14 @@ class Wiring(unittest.TestCase):
             return mock.Mock(serve_forever=mock.Mock())
 
         out, err = io.StringIO(), io.StringIO()
-        with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.dict(os.environ, dict(env or {}, OPOS_CONFIG_DIR=directory)), \
-                mock.patch.object(web, "_route_with_glimmer"), \
-                mock.patch.object(web, "make_server", side_effect=fake_make_server), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, dict(env or {}, OPOS_CONFIG_DIR=directory)),
+            mock.patch.object(web, "_route_with_glimmer"),
+            mock.patch.object(web, "make_server", side_effect=fake_make_server),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
             if not env or "OPOS_SPAN" not in env:
                 os.environ.pop("OPOS_SPAN", None)
             web.main(argv)
@@ -335,7 +362,11 @@ class Wiring(unittest.TestCase):
 
     def test_bad_option_stops_the_start(self):
         err = io.StringIO()
-        with mock.patch.object(web, "make_server") as make, contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as ctx:
+        with (
+            mock.patch.object(web, "make_server") as make,
+            contextlib.redirect_stderr(err),
+            self.assertRaises(SystemExit) as ctx,
+        ):
             web.main(["--span", "wide"])
         self.assertEqual(ctx.exception.code, 2)
         self.assertIn("--span", err.getvalue())
@@ -352,7 +383,9 @@ class Wiring(unittest.TestCase):
 class Docs(unittest.TestCase):
     def test_readme_says_the_window_readout_is_shown_whatever_the_width(self):
         text = " ".join((ROOT / "packaging" / "duo-os" / "README.md").read_text(encoding="utf-8").split())
-        self.assertIn("whatever the window's width it adds the window's size, the output scale and the span it was given", text)
+        self.assertIn(
+            "whatever the window's width it adds the window's size, the output scale and the span it was given", text
+        )
         self.assertIn("again after every resize", text)
         self.assertNotIn("while the window spans both panels. Unset", text)  # the old sentence tied the size to it
 
@@ -440,8 +473,10 @@ def driver():
     parse, served-page and wiring tests next to them."""
     head, sep, _ = CDP.partition("async function run(")
     if not sep:
-        raise AssertionError("tests/test_uxp21_profiles.py's driver changed: it has no 'async function run(' for "
-                             "tests/test_span.py to replace; update MAIN here to match")
+        raise AssertionError(
+            "tests/test_uxp21_profiles.py's driver changed: it has no 'async function run(' for "
+            "tests/test_span.py to replace; update MAIN here to match"
+        )
     return head + MAIN
 
 
@@ -456,14 +491,16 @@ class DriverDrift(unittest.TestCase):
         with self.assertRaises(AssertionError) as ctx:
             copy.Browser.setUpClass()
         self.assertIn("async function run(", str(ctx.exception))
-        result = unittest.TextTestRunner(stream=io.StringIO()).run(unittest.defaultTestLoader.loadTestsFromTestCase(copy.Parse))
+        result = unittest.TextTestRunner(stream=io.StringIO()).run(
+            unittest.defaultTestLoader.loadTestsFromTestCase(copy.Parse)
+        )
         self.assertGreater(result.testsRun, 0)
         self.assertTrue(result.wasSuccessful())
 
     def test_the_driver_is_the_shared_start_up_then_these_cases(self):
         script = driver()
         self.assertTrue(script.endswith(MAIN))
-        head = script[:-len(MAIN)]
+        head = script[: -len(MAIN)]
         self.assertTrue(head and CDP.startswith(head))
         self.assertNotIn("async function run(", head)
         self.assertEqual(script.count("async function run("), 1)
@@ -486,12 +523,27 @@ class Browser(unittest.TestCase):
             calling, refused = Phone(), Phone()
             calling.call("+15550100")
             refused.call("")
-            state.write_text(json.dumps({"hidden": Phone().state(), "visible": Phone(visible=True).state(),
-                                         "incall": calling.state(), "error": refused.state()}, default=str), encoding="utf-8")
+            state.write_text(
+                json.dumps(
+                    {
+                        "hidden": Phone().state(),
+                        "visible": Phone(visible=True).state(),
+                        "incall": calling.state(),
+                        "error": refused.state(),
+                    },
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
             drv = Path(d) / "cdp.js"
             drv.write_text(script, encoding="utf-8")
-            p = subprocess.run([NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri()],
-                               capture_output=True, text=True, timeout=90, env=dict(os.environ, TMPDIR=d))
+            p = subprocess.run(
+                [NODE, str(drv), chrome, files["span"].as_uri(), str(state), files["plain"].as_uri()],
+                capture_output=True,
+                text=True,
+                timeout=90,
+                env=dict(os.environ, TMPDIR=d),
+            )
             if p.returncode:
                 raise AssertionError("CDP driver failed: " + p.stderr[-5000:])
             cls.r = json.loads(p.stdout.strip().splitlines()[-1])
@@ -501,8 +553,19 @@ class Browser(unittest.TestCase):
             self.skipTest("no headless chromium or node")
 
     def test_nothing_lands_on_the_hinge(self):
-        for k in ("span_home", "span_phone", "span_phone_incall", "span_phone_error", "span_messages", "span_helper", "span_settings",
-                  "span_allapps", "span_lock", "span_shade", "span_xl"):
+        for k in (
+            "span_home",
+            "span_phone",
+            "span_phone_incall",
+            "span_phone_error",
+            "span_messages",
+            "span_helper",
+            "span_settings",
+            "span_allapps",
+            "span_lock",
+            "span_shade",
+            "span_xl",
+        ):
             m = self.r[k]
             self.assertEqual(m["ff"], "foldable", k)
             self.assertGreater(m["n"], 0, k)
@@ -545,8 +608,11 @@ class Browser(unittest.TestCase):
         # A resize event, then a real change of the window's height: the line is written again each time and the
         # readout comes back once, with the size the window has now.
         for k, height in (("resized", 900), ("resized_real", 800)):
-            self.assertEqual(self.r[k]["auto"],
-                             "Auto looks like: two screens. Window 1392 x %d CSS px at 1x, span 675 + 42 + 675." % height, k)
+            self.assertEqual(
+                self.r[k]["auto"],
+                "Auto looks like: two screens. Window 1392 x %d CSS px at 1x, span 675 + 42 + 675." % height,
+                k,
+            )
 
     def test_an_explicit_device_type_is_still_honoured(self):
         self.assertEqual(self.r["slab"]["ff"], "slab")

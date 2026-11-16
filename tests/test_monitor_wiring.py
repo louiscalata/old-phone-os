@@ -4,6 +4,7 @@
 The drop-in's own tests (test_monitor_net, test_monitor_view, test_monitor_page) cover the data and the document; these
 cover the wiring in opos.web, so a new revision of the drop-in is a file swap and these keep passing.
 """
+
 import http.client
 import json
 import os
@@ -19,8 +20,14 @@ from opos import fonts, monitor, monitor_web, notices, secure, web
 from opos.span import parse as parse_span
 
 ROOT = Path(__file__).resolve().parents[1]
-MONITOR_FILES = ("src/opos/monitor.py", "src/opos/monitor_web.py", "src/opos/web_static/monitor-theme.js",
-                 "src/opos/web_static/monitor.css", "src/opos/web_static/monitor.html", "src/opos/web_static/monitor.js")
+MONITOR_FILES = (
+    "src/opos/monitor.py",
+    "src/opos/monitor_web.py",
+    "src/opos/web_static/monitor-theme.js",
+    "src/opos/web_static/monitor.css",
+    "src/opos/web_static/monitor.html",
+    "src/opos/web_static/monitor.js",
+)
 VIEW_KEYS = {"version", "title", "updatedAgoSeconds", "sections"}
 SECTION_KEYS = {"id", "title", "status", "glyph", "lines", "facts", "pre"}
 
@@ -184,7 +191,11 @@ class SwitchOff(WiringCase):
         s = self.server()
         st, h, body = s.get("/")
         self.assertEqual(st, 200)
-        self.assertEqual(body, fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)), "byte for byte, plus the font sheet")
+        self.assertEqual(
+            body,
+            fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)),
+            "byte for byte, plus the font sheet",
+        )
         self.assertNotIn(b"/monitor", body)
         self.assertNotIn(b"mon-link", body)
 
@@ -225,7 +236,9 @@ class SwitchOn(WiringCase):
         self.assertEqual(len(re.findall(r"<(?:script|style)\b", html)), len(tags))
         meta = '<meta name="opos-token" content="' + s.token + '">'
         self.assertEqual(html.count(meta), 1)
-        self.assertLess(html.index(meta), html.index("<title>Inference - OPOS</title>"), "the token meta comes before the title")
+        self.assertLess(
+            html.index(meta), html.index("<title>Inference - OPOS</title>"), "the token meta comes before the title"
+        )
         self.assertNotIn("@@OPOS:", html)
         self.assertNotIn("/osk.js", html, "no text input on this page, so no keyboard")
         self.assertLess(len(body), 36 * 1024)
@@ -253,10 +266,21 @@ class SwitchOn(WiringCase):
         data = raw_exchange(s.port, ("HEAD /monitor HTTP/1.1\r\n" + host + "Connection: close\r\n\r\n").encode("ascii"))
         head, sep, rest = data.partition(b"\r\n\r\n")
         self.assertTrue(sep, data[:200])
-        self.assertTrue(head.startswith(b"HTTP/1.") and head.split(b"\r\n")[0].split()[1] == b"200", head.split(b"\r\n")[0])
-        self.assertIn(("content-length: %d" % get_length).encode("ascii"), head.lower(), "the length GET would send, in the header only")
+        self.assertTrue(
+            head.startswith(b"HTTP/1.") and head.split(b"\r\n")[0].split()[1] == b"200", head.split(b"\r\n")[0]
+        )
+        self.assertIn(
+            ("content-length: %d" % get_length).encode("ascii"),
+            head.lower(),
+            "the length GET would send, in the header only",
+        )
         self.assertEqual(rest, b"", "nothing after the blank line that ends the headers")
-        data = raw_exchange(s.port, ("HEAD /api/monitor HTTP/1.1\r\n%sX-OPOS-Token: %s\r\nConnection: close\r\n\r\n" % (host, s.token)).encode("ascii"))
+        data = raw_exchange(
+            s.port,
+            ("HEAD /api/monitor HTTP/1.1\r\n%sX-OPOS-Token: %s\r\nConnection: close\r\n\r\n" % (host, s.token)).encode(
+                "ascii"
+            ),
+        )
         head, sep, rest = data.partition(b"\r\n\r\n")
         self.assertTrue(sep and head.split(b"\r\n")[0].split()[1] == b"405", head.split(b"\r\n")[0])
         self.assertEqual(rest, b"")
@@ -281,13 +305,21 @@ class SwitchOn(WiringCase):
             st, h, body = s.get("/monitor")
             html = body.decode("utf-8")
             self.assertEqual(st, 200)
-            self.assertNotIn("horizontal-viewport-segments", html, "Chromium on Linux reports no segments: the query is a width test")
+            self.assertNotIn(
+                "horizontal-viewport-segments", html, "Chromium on Linux reports no segments: the query is a width test"
+            )
             self.assertIn("@media(min-width:", html)
-            self.assertIn(":root{--pane:675px;--hinge:%spx}" % text.split(",")[1], html, "the configured hinge, not just the default 42 px")
+            self.assertIn(
+                ":root{--pane:675px;--hinge:%spx}" % text.split(",")[1],
+                html,
+                "the configured hinge, not just the default 42 px",
+            )
             self.assertLess(html.rindex(":root{--pane"), html.index("</style>"), "inside the style sheet")
             nonce = nonce_of(h)
             for tag in re.findall(r"<(?:script|style)\b[^>]*>", html):
-                self.assertEqual(tag[tag.index(" "):-1], ' nonce="%s"' % nonce, "the rewrite's own script is under the nonce too")
+                self.assertEqual(
+                    tag[tag.index(" ") : -1], ' nonce="%s"' % nonce, "the rewrite's own script is under the nonce too"
+                )
             meta = '<meta name="opos-token" content="' + s.token + '">'
             self.assertLess(html.index(meta), html.index("<title>"))
             self.assertLess(len(body), 36 * 1024)
@@ -299,7 +331,9 @@ class SwitchOn(WiringCase):
             for host in ("evil.example", "evil.example:%d" % s.port, "127.0.0.1", "127.0.0.1:1", "localhost"):
                 for method in ("GET", "HEAD"):
                     self.assertEqual(s.get(path, {"Host": host}, method=method)[0], 403, (path, host, method))
-        self.assertEqual(s.get("/monitor", {"Host": "localhost:%d" % s.port})[0], 200, "localhost with the right port is fine")
+        self.assertEqual(
+            s.get("/monitor", {"Host": "localhost:%d" % s.port})[0], 200, "localhost with the right port is fine"
+        )
         self.assertEqual(fake.calls, [])
 
     def test_the_data_needs_the_session_token(self):
@@ -315,7 +349,9 @@ class SwitchOn(WiringCase):
         self.assertEqual(len(fake.calls), 1)
 
     def test_the_data_has_the_documented_shape(self):
-        real = monitor.Monitor(env={}, probe=lambda e: ("none", []), fetch=lambda r: self.fail("nothing is fetched by default"))
+        real = monitor.Monitor(
+            env={}, probe=lambda e: ("none", []), fetch=lambda r: self.fail("nothing is fetched by default")
+        )
         with mock.patch.object(monitor, "get", return_value=real):
             s = self.server()
             st, h, body = s.get("/api/monitor")
@@ -372,7 +408,11 @@ class SwitchOn(WiringCase):
         fake = self.fake_monitor()
         for state, health, want in (
             (live_state(63, "sysfs", "sysfs"), 0.873, {"percent": 63, "healthPercent": 87.3, "source": "sysfs"}),
-            (live_state(41, "termux-api", "charge-counter"), 0.5, {"percent": 41, "source": "termux-api"}),  # an estimate: not shown
+            (
+                live_state(41, "termux-api", "charge-counter"),
+                0.5,
+                {"percent": 41, "source": "termux-api"},
+            ),  # an estimate: not shown
             (live_state(63, "sysfs", "assumed"), 1.0, {"percent": 63, "source": "sysfs"}),
             (live_state(63, "sysfs", "OPOS_BATTERY_HEALTH"), 0.9, {"percent": 63, "source": "sysfs"}),
             ({"battery": {"percent": 60}}, 0.6, {}),
@@ -511,9 +551,14 @@ class SettingsLink(WiringCase):
         self.assertEqual(home.count('href="/monitor"'), 1)
         self.assertEqual(home.count(monitor_web.LINK), 1)
         self.assertEqual(home.count('aria-labelledby="set-about"'), 1)
-        self.assertLess(home.index('href="/monitor"'), home.index('<section aria-labelledby="set-about">'), "ahead of About")
-        self.assertEqual(home.replace(monitor_web.LINK, "", 1).encode("utf-8"), fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)),
-                         "the monitor link is the only difference besides the font sheet")
+        self.assertLess(
+            home.index('href="/monitor"'), home.index('<section aria-labelledby="set-about">'), "ahead of About"
+        )
+        self.assertEqual(
+            home.replace(monitor_web.LINK, "", 1).encode("utf-8"),
+            fonts.inject(web.page(s.token, nonce_of(h)).encode("utf-8"), nonce_of(h)),
+            "the monitor link is the only difference besides the font sheet",
+        )
         self.assertEqual(int(h["content-length"]), len(body))
         with mock.patch.dict(os.environ, {"OPOS_MONITOR": "0"}):
             self.assertNotIn(b'href="/monitor"', s.get("/")[2])
@@ -523,10 +568,14 @@ class SettingsLink(WiringCase):
         self.assertIn('href="/monitor"', tag)
         self.assertRegex(tag, r"min-height:48px")
         self.assertRegex(tag, r"display:inline-block")
-        self.assertNotRegex(monitor_web.LINK, r"<(?:script|style)\b|\bon\w+=", "no tag the page's CSP would need a nonce for")
+        self.assertNotRegex(
+            monitor_web.LINK, r"<(?:script|style)\b|\bon\w+=", "no tag the page's CSP would need a nonce for"
+        )
         ids = re.findall(r'id="([^"]+)"', monitor_web.LINK)
         self.assertEqual(sorted(ids), ["mon-link", "set-inference"])
-        self.assertTrue(all(i not in web.page() for i in ('id="%s"' % x for x in ids)), "no clash with an id on the page")
+        self.assertTrue(
+            all(i not in web.page() for i in ('id="%s"' % x for x in ids)), "no clash with an id on the page"
+        )
 
     def test_page_itself_does_not_grow_with_the_switch(self):
         base = web.page("t" * 43, "n" * 22, demo=True)
@@ -535,10 +584,15 @@ class SettingsLink(WiringCase):
 
     def test_add_settings_link_needs_the_anchor_and_the_exact_value(self):
         page = "<p>x</p>" + monitor_web.ANCHOR + "<p>y</p>"
-        self.assertEqual(monitor_web.add_settings_link(page, {"OPOS_MONITOR": "1"}), "<p>x</p>" + monitor_web.LINK + monitor_web.ANCHOR + "<p>y</p>")
+        self.assertEqual(
+            monitor_web.add_settings_link(page, {"OPOS_MONITOR": "1"}),
+            "<p>x</p>" + monitor_web.LINK + monitor_web.ANCHOR + "<p>y</p>",
+        )
         for env in ({}, {"OPOS_MONITOR": "0"}, {"OPOS_MONITOR": "true"}, {"OPOS_MONITOR": "1 "}):
             self.assertIs(monitor_web.add_settings_link(page, env), page)
-        self.assertEqual(monitor_web.add_settings_link("<p>no settings</p>", {"OPOS_MONITOR": "1"}), "<p>no settings</p>")
+        self.assertEqual(
+            monitor_web.add_settings_link("<p>no settings</p>", {"OPOS_MONITOR": "1"}), "<p>no settings</p>"
+        )
         body = b"<p>x</p>"
         self.assertIs(monitor_web.link_bytes(body, {}), body)
 
@@ -573,27 +627,44 @@ class Document(unittest.TestCase):
 class LocalState(unittest.TestCase):
     def test_a_measured_health_is_passed_on(self):
         for hs in sorted(monitor_web.MEASURED_HEALTH):
-            self.assertEqual(monitor_web.local_state(live_state(63, "sysfs", hs), 0.873), {"percent": 63, "healthPercent": 87.3, "source": "sysfs"})
-        self.assertEqual(monitor_web.MEASURED_HEALTH, {"sysfs"}, "only the gauge's own reading; the charge-counter figure is an estimate")
+            self.assertEqual(
+                monitor_web.local_state(live_state(63, "sysfs", hs), 0.873),
+                {"percent": 63, "healthPercent": 87.3, "source": "sysfs"},
+            )
+        self.assertEqual(
+            monitor_web.MEASURED_HEALTH,
+            {"sysfs"},
+            "only the gauge's own reading; the charge-counter figure is an estimate",
+        )
 
     def test_an_estimated_assumed_or_typed_in_health_is_left_out(self):
         # live_battery.counter_health is counter / level / design capacity (a model-table constant or OPOS_BATTERY_DESIGN_MAH),
         # clamped to 0.1..1.0: an estimate, and local_state has no way to label one, so the page would print it as a reading.
         for hs in ("charge-counter", "assumed", "OPOS_BATTERY_HEALTH", "", None, "Sysfs", 7, ["sysfs"], {"sysfs": 1}):
-            self.assertEqual(monitor_web.local_state(live_state(63, "termux-api", hs), 0.9), {"percent": 63, "source": "termux-api"}, hs)
+            self.assertEqual(
+                monitor_web.local_state(live_state(63, "termux-api", hs), 0.9),
+                {"percent": 63, "source": "termux-api"},
+                hs,
+            )
 
     def test_the_estimate_the_live_battery_makes_is_not_a_reading(self):
         # The real producer, not a hand-written state: a Termux:API reading with a charge counter and no sysfs health.
         from opos.hw import live_battery
+
         with mock.patch.object(live_battery, "read_battery", return_value={"health": None}):
             health, where = live_battery._health({}, "/", {"level": 80.0, "charge_counter_uah": 2_000_000}, 4000)
         self.assertEqual(where, "charge-counter", "this is the label the live battery gives an estimate")
         self.assertAlmostEqual(health, 0.625)
-        self.assertEqual(monitor_web.local_state(live_state(80, "termux-api", where), health), {"percent": 80, "source": "termux-api"})
+        self.assertEqual(
+            monitor_web.local_state(live_state(80, "termux-api", where), health),
+            {"percent": 80, "source": "termux-api"},
+        )
 
     def test_a_simulated_battery_reports_nothing(self):
         self.assertEqual(monitor_web.local_state({"battery": {"percent": 60}}, 0.6), {})
-        self.assertEqual(monitor_web.local_state(live_state(60, None, "sysfs"), 0.6), {}, "the live battery cannot be read just now")
+        self.assertEqual(
+            monitor_web.local_state(live_state(60, None, "sysfs"), 0.6), {}, "the live battery cannot be read just now"
+        )
         self.assertEqual(monitor_web.local_state(live_state(60, "", "sysfs"), 0.6), {})
 
     def test_nothing_that_is_not_a_plain_number_in_range_gets_through(self):
@@ -606,13 +677,21 @@ class LocalState(unittest.TestCase):
             self.assertEqual(monitor_web.local_state(snap, 0.5), {}, snap)
 
     def test_the_edges_of_the_ranges(self):
-        self.assertEqual(monitor_web.local_state(live_state(0), 1.0), {"percent": 0, "healthPercent": 100.0, "source": "sysfs"})
-        self.assertEqual(monitor_web.local_state(live_state(100), 0.1), {"percent": 100, "healthPercent": 10.0, "source": "sysfs"})
+        self.assertEqual(
+            monitor_web.local_state(live_state(0), 1.0), {"percent": 0, "healthPercent": 100.0, "source": "sysfs"}
+        )
+        self.assertEqual(
+            monitor_web.local_state(live_state(100), 0.1), {"percent": 100, "healthPercent": 10.0, "source": "sysfs"}
+        )
 
 
 class Shipping(unittest.TestCase):
     def test_the_inventory_lists_the_files_and_stays_sorted(self):
-        lines = [x for x in (ROOT / "packaging/pmos/runtime-files.txt").read_text(encoding="utf-8").splitlines() if x and not x.startswith("#")]
+        lines = [
+            x
+            for x in (ROOT / "packaging/pmos/runtime-files.txt").read_text(encoding="utf-8").splitlines()
+            if x and not x.startswith("#")
+        ]
         self.assertEqual(lines, sorted(set(lines)))
         for name in MONITOR_FILES + ("src/opos/hw/live_battery.py",):
             self.assertIn(name, lines)
@@ -653,10 +732,12 @@ def table_rows(path):
 class LocalUrlBelongsToTheHelper(unittest.TestCase):
     """OPOS_LOCAL_URL is the Helper's variable (assist.local_route). The Inference page's probe reads it as well, but setting it,
     even to the default, turns off the Helper's /models check and drops its alternates, so nothing may offer it as a page setting."""
+
     DOCS = ("packaging/duo-os/README.md", "docs/duo-os-final.md")
 
     def test_the_helper_changes_when_it_is_set_even_to_the_default(self):
         from opos import assist
+
         plain = assist.local_route({}, 8192)
         same = assist.local_route({"OPOS_LOCAL_URL": monitor.LOCAL_DEFAULT_URL}, 8192)
         self.assertEqual(plain.base_url, same.base_url)
@@ -667,13 +748,23 @@ class LocalUrlBelongsToTheHelper(unittest.TestCase):
 
     def test_the_page_probe_follows_it_when_it_is_set_and_is_8080_when_not(self):
         self.assertEqual(monitor.local_models_url({}), ("127.0.0.1", 8080, "/v1/models"))
-        self.assertEqual(monitor.local_models_url({"OPOS_LOCAL_URL": "http://127.0.0.1:9000/v1"}), ("127.0.0.1", 9000, "/v1/models"))
+        self.assertEqual(
+            monitor.local_models_url({"OPOS_LOCAL_URL": "http://127.0.0.1:9000/v1"}), ("127.0.0.1", 9000, "/v1/models")
+        )
 
     def test_the_example_does_not_offer_it(self):
         example = build_example()
         self.assertNotIn("OPOS_LOCAL_URL", example)
-        self.assertEqual(re.findall(r"(?m)^#(OPOS_[A-Z_]+)=", example), ["OPOS_AGIW_URL", "OPOS_AGIW_HOST"], "the only settings it lists")
-        self.assertEqual([x for x in example.splitlines() if x.strip() and not x.lstrip().startswith("#")], [], "and every line is a comment")
+        self.assertEqual(
+            re.findall(r"(?m)^#(OPOS_[A-Z_]+)=", example),
+            ["OPOS_AGIW_URL", "OPOS_AGIW_HOST"],
+            "the only settings it lists",
+        )
+        self.assertEqual(
+            [x for x in example.splitlines() if x.strip() and not x.lstrip().startswith("#")],
+            [],
+            "and every line is a comment",
+        )
 
     def test_the_server_unit_does_not_name_it(self):
         unit = (ROOT / "packaging/duo-os/opos-server.service").read_text(encoding="utf-8")
@@ -694,7 +785,11 @@ class LocalUrlBelongsToTheHelper(unittest.TestCase):
             self.assertIn("not an inference page setting", flat, path)
 
     def test_the_changelog_does_not_list_it_as_an_inference_setting(self):
-        entry = next(x for x in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines() if x.startswith("- Inference page ("))
+        entry = next(
+            x
+            for x in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+            if x.startswith("- Inference page (")
+        )
         self.assertIn("(`OPOS_AGIW_URL`, `OPOS_AGIW_HOST`;", entry)
         self.assertNotIn("`OPOS_AGIW_HOST`, `OPOS_LOCAL_URL`", entry)
         self.assertIn("only if you already set it for the Helper, and setting it changes the Helper too", entry)
@@ -705,11 +800,20 @@ class HealthIsOnlyTheGauges(unittest.TestCase):
         text = (ROOT / "packaging/duo-os/README.md").read_text(encoding="utf-8")
         section = text.split("\n## Inference page\n", 1)[1].split("\n## ", 1)[0]
         flat = " ".join(section.split())
-        self.assertIn('a health that is estimated from the charge counter, assumed, or typed in (`OPOS_BATTERY_HEALTH`) reads "Not reported"', flat)
+        self.assertIn(
+            'a health that is estimated from the charge counter, assumed, or typed in (`OPOS_BATTERY_HEALTH`) reads "Not reported"',
+            flat,
+        )
 
     def test_the_changelog_says_so_too(self):
-        entry = next(x for x in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines() if x.startswith("- Inference page ("))
-        self.assertIn("only when the battery's own gauge reports it, never an estimated, assumed or typed-in value", entry)
+        entry = next(
+            x
+            for x in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+            if x.startswith("- Inference page (")
+        )
+        self.assertIn(
+            "only when the battery's own gauge reports it, never an estimated, assumed or typed-in value", entry
+        )
 
 
 class NoticesEvidence(unittest.TestCase):
@@ -718,18 +822,23 @@ class NoticesEvidence(unittest.TestCase):
     def cells(self):
         doc = (ROOT / "docs/notices-verification.md").read_text(encoding="utf-8")
         row = next(x for x in doc.splitlines() if x.startswith("| " + self.CLAIM + " |"))
-        return [c.strip() for c in row[len("| " + self.CLAIM + " |"):].strip().strip("|").split(" | ")]
+        return [c.strip() for c in row[len("| " + self.CLAIM + " |") :].strip().strip("|").split(" | ")]
 
     def test_the_evidence_says_the_page_always_asks_the_phones_own_loopback_port(self):
         evidence, scope = self.cells()
         flat = evidence.replace("`", "")
-        self.assertIn("src/opos/monitor.py sends nothing off the phone unless OPOS_AGIW_URL is set; "
-                      "it always asks the phone's own loopback model port", flat)
+        self.assertIn(
+            "src/opos/monitor.py sends nothing off the phone unless OPOS_AGIW_URL is set; "
+            "it always asks the phone's own loopback model port",
+            flat,
+        )
         self.assertNotIn("fetches nothing", flat)
 
     def test_it_does_ask_without_an_agiw_url(self):
         asked = []
-        page = monitor.Monitor(env={}, probe=lambda env: asked.append(env) or ("none", []), fetch=lambda r: self.fail("fetched"))
+        page = monitor.Monitor(
+            env={}, probe=lambda env: asked.append(env) or ("none", []), fetch=lambda r: self.fail("fetched")
+        )
         page.snapshot()
         self.assertEqual(len(asked), 1, "one uncached poll, one ask of the loopback port, with nothing configured")
 

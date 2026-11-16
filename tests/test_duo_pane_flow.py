@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """At 1392 x 900, no app control sits on the hinge band from x 675 to x 717."""
+
 import json
 import os
 import shutil
@@ -70,7 +71,10 @@ class PaneFlow(unittest.TestCase):
         text = (Path(__file__).resolve().parents[1] / "docs/jaryo-panes.md").read_text(encoding="utf-8")
         for name in ("list-detail", "companion pane", "extended canvas", "Clock", "Contacts", "Notes", "Calculator"):
             self.assertIn(name, text)
-        self.assertIn("https://learn.microsoft.com/en-us/previous-versions/xamarin/xamarin-forms/app-fundamentals/dual-screen/design-patterns", text)
+        self.assertIn(
+            "https://learn.microsoft.com/en-us/previous-versions/xamarin/xamarin-forms/app-fundamentals/dual-screen/design-patterns",
+            text,
+        )
         self.assertIn("675", text)
         self.assertIn("717", text)
 
@@ -83,14 +87,23 @@ class PaneFlow(unittest.TestCase):
         except (OSError, RuntimeError) as exc:
             self.skipTest(str(exc)[-200:])
         try:
-            cases = [{
-                "url": self.origin + path,
-                "width": 1392, "height": 900, "theme": "light", "scale": 1, "hand": "right",
-                "script": HINGE,
-            } for path in PATHS]
+            cases = [
+                {
+                    "url": self.origin + path,
+                    "width": 1392,
+                    "height": 900,
+                    "theme": "light",
+                    "scale": 1,
+                    "hand": "right",
+                    "script": HINGE,
+                }
+                for path in PATHS
+            ]
             plan = os.path.join(run, "plan.json")
             Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-            result = subprocess.run([self.node, str(DRIVER), str(port), plan], capture_output=True, text=True, timeout=90)
+            result = subprocess.run(
+                [self.node, str(DRIVER), str(port), plan], capture_output=True, text=True, timeout=90
+            )
             self.assertEqual(result.returncode, 0, result.stderr[-1500:])
             self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
         finally:

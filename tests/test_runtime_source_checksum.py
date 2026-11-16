@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Release checksums follow the supplied artifact, not the current source tree."""
+
 import hashlib
 import importlib.util
 import subprocess
@@ -30,9 +31,9 @@ class RuntimeSourceChecksum(unittest.TestCase):
 
     def run_script(self, *args):
         return subprocess.run(
-            [sys.executable, str(SCRIPT), str(self.archive),
-             "--apkbuild", str(self.recipe), *args],
-            capture_output=True, text=True,
+            [sys.executable, str(SCRIPT), str(self.archive), "--apkbuild", str(self.recipe), *args],
+            capture_output=True,
+            text=True,
         )
 
     def test_refresh_changes_only_release_archive_checksum(self):

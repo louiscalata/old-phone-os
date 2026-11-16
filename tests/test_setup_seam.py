@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Setup health checks against the real state-token gate, without sockets."""
+
 from __future__ import annotations
 
 import io
@@ -17,6 +18,7 @@ from tests.test_security_fixes import handler, response, result
 
 def state_opener(server_token):
     """Adapt urllib requests to the real in-memory web.Handler."""
+
     def open_state(request, timeout=None):
         if isinstance(request, str):
             request = urllib.request.Request(request)
@@ -26,6 +28,7 @@ def state_opener(server_token):
         h.do_GET()
         code, body = result(h)
         return response(request, body, code=code)
+
     return open_state
 
 
@@ -76,11 +79,19 @@ class SetupTokenTests(unittest.TestCase):
                 cfg = config.default_config()
                 cfg["ai_tools"] = {"tools": ["claude"], "mode": "lite"}
                 tools = mock.Mock(return_value=["installed selected tool"])
-                with mock.patch.object(apply_mod, "install_services", return_value=["started"]), \
-                        mock.patch.object(apply_mod, "http_health", side_effect=health) as checker:
-                    progress = apply_mod.apply(cfg, repo_root=self.root, python=sys.executable,
-                                               home=self.root, platform=platform, env=self.env,
-                                               tools_runner=tools)
+                with (
+                    mock.patch.object(apply_mod, "install_services", return_value=["started"]),
+                    mock.patch.object(apply_mod, "http_health", side_effect=health) as checker,
+                ):
+                    progress = apply_mod.apply(
+                        cfg,
+                        repo_root=self.root,
+                        python=sys.executable,
+                        home=self.root,
+                        platform=platform,
+                        env=self.env,
+                        tools_runner=tools,
+                    )
                 self.assertTrue(progress.ok(), progress.snapshot())
                 checker.assert_called_once()
                 self.assertEqual(checker.call_args.args, (8765,))
@@ -99,11 +110,20 @@ class SetupTokenTests(unittest.TestCase):
             calls.append(port)
             return True, "responding"
 
-        with mock.patch.object(apply_mod, "install_services", return_value=["started"]), \
-                mock.patch.object(apply_mod, "http_health") as default_checker:
-            progress = apply_mod.apply(config.default_config(), repo_root=self.root,
-                                       python=sys.executable, home=self.root, platform="linux",
-                                       env=self.env, port=8123, health_check=checker)
+        with (
+            mock.patch.object(apply_mod, "install_services", return_value=["started"]),
+            mock.patch.object(apply_mod, "http_health") as default_checker,
+        ):
+            progress = apply_mod.apply(
+                config.default_config(),
+                repo_root=self.root,
+                python=sys.executable,
+                home=self.root,
+                platform="linux",
+                env=self.env,
+                port=8123,
+                health_check=checker,
+            )
         self.assertTrue(progress.ok())
         self.assertEqual(calls, [8123])
         default_checker.assert_not_called()
@@ -126,10 +146,17 @@ class SetupTokenTests(unittest.TestCase):
                     kwargs["timeout_s"] = 0
                     return real_health(port, opener=state_opener(token), **kwargs)
 
-                with mock.patch.object(apply_mod, "http_health", side_effect=health) as checker, \
-                        mock.patch.object(config, "ensure_token") as ensure:
-                    rc = cli.main(["status", "--config-dir", str(directory)], env=self.env,
-                                  home=self.root, platform=platform, out=out)
+                with (
+                    mock.patch.object(apply_mod, "http_health", side_effect=health) as checker,
+                    mock.patch.object(config, "ensure_token") as ensure,
+                ):
+                    rc = cli.main(
+                        ["status", "--config-dir", str(directory)],
+                        env=self.env,
+                        home=self.root,
+                        platform=platform,
+                        out=out,
+                    )
                 self.assertEqual(rc, 0)
                 self.assertIn("running: yes", out.getvalue())
                 self.assertNotIn(token, out.getvalue())
@@ -143,8 +170,10 @@ class SetupTokenTests(unittest.TestCase):
         for running in (True, False):
             with self.subTest(running=running):
                 out = io.StringIO()
-                with mock.patch.object(apply_mod, "http_health", return_value=(running, "probe")) as checker, \
-                        mock.patch.object(config, "ensure_token") as ensure:
+                with (
+                    mock.patch.object(apply_mod, "http_health", return_value=(running, "probe")) as checker,
+                    mock.patch.object(config, "ensure_token") as ensure,
+                ):
                     rc = cli.main(["status"], env=self.env, home=self.root, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn(f"running: {'yes' if running else 'no'}", out.getvalue())
@@ -167,9 +196,11 @@ class SetupTokenTests(unittest.TestCase):
         for running in (True, False):
             with self.subTest(running=running):
                 out = io.StringIO()
-                with mock.patch.object(Path, "read_text", read), \
-                        mock.patch.object(apply_mod, "http_health", return_value=(running, "probe")) as checker, \
-                        mock.patch.object(config, "ensure_token") as ensure:
+                with (
+                    mock.patch.object(Path, "read_text", read),
+                    mock.patch.object(apply_mod, "http_health", return_value=(running, "probe")) as checker,
+                    mock.patch.object(config, "ensure_token") as ensure,
+                ):
                     rc = cli.main(["status"], env=self.env, home=self.root, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn(f"running: {'yes' if running else 'no'}", out.getvalue())

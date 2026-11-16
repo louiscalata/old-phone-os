@@ -5,6 +5,7 @@ The fakes are shell scripts on a private PATH, so the real runner, its timeouts 
 to nmcli (a private file, or opted-in terminal input, never a password argument) are exercised for real. What these cannot show: how the phone's own
 NetworkManager, ModemManager and polkit behave; that needs the live recipe on the device.
 """
+
 import http.client
 import json
 import os
@@ -68,8 +69,11 @@ def fetch_token(port):
 
 def post_action(port, action, token=None, **fields):
     body = json.dumps({"action": action, **fields}).encode()
-    status, hdrs, raw = request(port, "POST", "/api", body, {"Content-Type": "application/json", "X-OPOS-Token": token or fetch_token(port)})
+    status, hdrs, raw = request(
+        port, "POST", "/api", body, {"Content-Type": "application/json", "X-OPOS-Token": token or fetch_token(port)}
+    )
     return status, hdrs, json.loads(raw) if raw else None
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PW = "correct horse 9"
@@ -189,24 +193,52 @@ exit $(cat "$D/@NAME@_rc" 2>/dev/null || echo 0)
 """
 
 GENERAL = "running:connected:full:enabled:enabled:enabled:enabled\n"
-PERMS = "".join(f"org.freedesktop.NetworkManager.{k}:{v}\n" for k, v in (
-    ("checkpoint-rollback", "auth"), ("enable-disable-connectivity-check", "no"), ("enable-disable-network", "yes"),
-    ("enable-disable-statistics", "no"), ("enable-disable-wifi", "yes"), ("enable-disable-wwan", "yes"), ("network-control", "yes"),
-    ("reload", "auth"), ("settings.modify.global-dns", "auth"), ("settings.modify.hostname", "auth"), ("settings.modify.own", "yes"),
-    ("settings.modify.system", "yes"), ("sleep-wake", "no"), ("wifi.scan", "yes"), ("wifi.share.open", "yes"), ("wifi.share.protected", "yes")))
-DEVICES = ("wlan0:wifi:connected:HomeNet\np2p-dev-wlan0:wifi-p2p:disconnected:\nril_0:gsm:disconnected:\n"
-           "rmnet_data0:ethernet:unmanaged:\nusb0:ethernet:unmanaged:\nlo:loopback:connected (externally):lo\n")
-CONNS = (f"HomeNet:{UUID_HOME}:wifi:wlan0\nCafe\\: Free WiFi:{UUID_CAFE}:wifi:\nMobile data:{UUID_GSM}:gsm:\n"
-         "lo:44444444-4444-4444-8444-444444444444:loopback:lo\n")
-WIFI_LIST = ("yes:HomeNet:78:WPA2\nno:HomeNet:55:WPA2\nno:Cafe\\: Free WiFi:62:--\nno:Neighbor 5G:41:WPA2 WPA3\n"
-             "no:Office:35:WPA2 802.1X\nno::28:WPA2\nno:OldRouter:22:WEP\n")
+PERMS = "".join(
+    f"org.freedesktop.NetworkManager.{k}:{v}\n"
+    for k, v in (
+        ("checkpoint-rollback", "auth"),
+        ("enable-disable-connectivity-check", "no"),
+        ("enable-disable-network", "yes"),
+        ("enable-disable-statistics", "no"),
+        ("enable-disable-wifi", "yes"),
+        ("enable-disable-wwan", "yes"),
+        ("network-control", "yes"),
+        ("reload", "auth"),
+        ("settings.modify.global-dns", "auth"),
+        ("settings.modify.hostname", "auth"),
+        ("settings.modify.own", "yes"),
+        ("settings.modify.system", "yes"),
+        ("sleep-wake", "no"),
+        ("wifi.scan", "yes"),
+        ("wifi.share.open", "yes"),
+        ("wifi.share.protected", "yes"),
+    )
+)
+DEVICES = (
+    "wlan0:wifi:connected:HomeNet\np2p-dev-wlan0:wifi-p2p:disconnected:\nril_0:gsm:disconnected:\n"
+    "rmnet_data0:ethernet:unmanaged:\nusb0:ethernet:unmanaged:\nlo:loopback:connected (externally):lo\n"
+)
+CONNS = (
+    f"HomeNet:{UUID_HOME}:wifi:wlan0\nCafe\\: Free WiFi:{UUID_CAFE}:wifi:\nMobile data:{UUID_GSM}:gsm:\n"
+    "lo:44444444-4444-4444-8444-444444444444:loopback:lo\n"
+)
+WIFI_LIST = (
+    "yes:HomeNet:78:WPA2\nno:HomeNet:55:WPA2\nno:Cafe\\: Free WiFi:62:--\nno:Neighbor 5G:41:WPA2 WPA3\n"
+    "no:Office:35:WPA2 802.1X\nno::28:WPA2\nno:OldRouter:22:WEP\n"
+)
 # `nmcli device show` as nmcli prints it: padded columns, not terse.
-SHOW_WLAN0 = ("IP4.ADDRESS[1]:                         198.51.100.23/24\n"
-              "IP4.GATEWAY:                            198.51.100.1\nIP6.ADDRESS[1]:                         fe80::aaaa:bbbb:cccc:dddd/64\n")
-RFKILL = ("0: phy0: Wireless LAN\n\tSoft blocked: no\n\tHard blocked: no\n"
-          "1: hci0: Bluetooth\n\tSoft blocked: no\n\tHard blocked: no\n")
-IP_BR = ("lo               UNKNOWN        127.0.0.1/8 ::1/128 \nwlan0            UP             198.51.100.23/24 fe80::aaaa:bbbb:cccc:dddd/64 \n"
-         "usb0             UNKNOWN        203.0.113.1/24 fe80::1/64 \nrmnet_data0      DOWN           \n")
+SHOW_WLAN0 = (
+    "IP4.ADDRESS[1]:                         198.51.100.23/24\n"
+    "IP4.GATEWAY:                            198.51.100.1\nIP6.ADDRESS[1]:                         fe80::aaaa:bbbb:cccc:dddd/64\n"
+)
+RFKILL = (
+    "0: phy0: Wireless LAN\n\tSoft blocked: no\n\tHard blocked: no\n"
+    "1: hci0: Bluetooth\n\tSoft blocked: no\n\tHard blocked: no\n"
+)
+IP_BR = (
+    "lo               UNKNOWN        127.0.0.1/8 ::1/128 \nwlan0            UP             198.51.100.23/24 fe80::aaaa:bbbb:cccc:dddd/64 \n"
+    "usb0             UNKNOWN        203.0.113.1/24 fe80::1/64 \nrmnet_data0      DOWN           \n"
+)
 BTCTL = "Controller 5C:BA:37:AA:BB:CC (public)\n\tName: duo\n\tAlias: duo\n\tPowered: yes\n\tDiscoverable: no\n"
 MMCLI = """modem.dbus-path                                  : /org/freedesktop/ModemManager1/Modem/0
 modem.generic.device-identifier                  : 0123456789abcdef
@@ -241,7 +273,23 @@ class Fake:
         self.tools = self.dir / "tools"  # only what the fake scripts call, so a real nmcli or ip can never be reached
         self.tools.mkdir()
         # ps is for real_argv off Linux (no /proc); on Linux /proc is read first and the ps link is never used.
-        for tool in ("cat", "tr", "sleep", "grep", "mv", "touch", "env", "sort", "sed", "head", "timeout", "rm", "cp", "stat", "ps"):
+        for tool in (
+            "cat",
+            "tr",
+            "sleep",
+            "grep",
+            "mv",
+            "touch",
+            "env",
+            "sort",
+            "sed",
+            "head",
+            "timeout",
+            "rm",
+            "cp",
+            "stat",
+            "ps",
+        ):
             if shutil.which(tool):
                 (self.tools / tool).symlink_to(shutil.which(tool))
         self.root = self.dir / "root"
@@ -254,9 +302,18 @@ class Fake:
         for name, out in (("mmcli", MMCLI), ("rfkill", RFKILL), ("ip", IP_BR), ("bluetoothctl", BTCTL)):
             self._script(name, CAT_TOOL.replace("@NAME@", name))
             self.put(f"{name}_out", out)
-        for name, out in (("general_status", GENERAL), ("permissions", PERMS), ("device_status", DEVICES), ("connections", CONNS),
-                          ("wifi_list", WIFI_LIST), ("show_wlan0", SHOW_WLAN0), (f"ssid_{UUID_HOME}", "802-11-wireless.ssid:HomeNet\n"),
-                          (f"ssid_{UUID_CAFE}", "802-11-wireless.ssid:Cafe\\: Free WiFi\n"), ("calls.log", ""), ("deleted", "")):
+        for name, out in (
+            ("general_status", GENERAL),
+            ("permissions", PERMS),
+            ("device_status", DEVICES),
+            ("connections", CONNS),
+            ("wifi_list", WIFI_LIST),
+            ("show_wlan0", SHOW_WLAN0),
+            (f"ssid_{UUID_HOME}", "802-11-wireless.ssid:HomeNet\n"),
+            (f"ssid_{UUID_CAFE}", "802-11-wireless.ssid:Cafe\\: Free WiFi\n"),
+            ("calls.log", ""),
+            ("deleted", ""),
+        ):
             self.put(name, out)
 
     def _script(self, name, body):
@@ -319,7 +376,10 @@ class SecretFile(unittest.TestCase):
 
                 target = "fchmod" if stage == "permissions" else "fdopen"
                 failure = BrokenWriter if stage == "write" else OSError("injected creation failure")
-                with mock.patch.object(net.tempfile, "mkstemp", side_effect=create), mock.patch.object(net.os, target, side_effect=failure):
+                with (
+                    mock.patch.object(net.tempfile, "mkstemp", side_effect=create),
+                    mock.patch.object(net.os, target, side_effect=failure),
+                ):
                     with self.assertRaises(OSError):
                         net._secret_file(PW)
                 fd, path = made[0]
@@ -353,7 +413,17 @@ class Terse(unittest.TestCase):
         self.assertIsNone(net.check_password("12345678"))
         self.assertIsNone(net.check_password("p" * 63))
         self.assertIsNone(net.check_password("ab" * 32))
-        for bad in ("", None, "short", "p" * 64, "x" * 100, "pass\nword!", "pass word\x00", "p\u00e4ssword1", "caf\u00e9caf\u00e9"):
+        for bad in (
+            "",
+            None,
+            "short",
+            "p" * 64,
+            "x" * 100,
+            "pass\nword!",
+            "pass word\x00",
+            "p\u00e4ssword1",
+            "caf\u00e9caf\u00e9",
+        ):
             self.assertIsNotNone(net.check_password(bad), repr(bad))
 
     def test_explain_is_plain_and_never_holds_the_secret(self):
@@ -414,17 +484,26 @@ class Status(unittest.TestCase):
         s = f.net().status(True)
         self.assertTrue(s["ok"])
         w = s["wifi"]
-        self.assertEqual((w["state"], w["ssid"], w["signal"], w["ip"], w["device"], w["security"]), ("connected", "HomeNet", 78, "198.51.100.23", "wlan0", "WPA2"))
+        self.assertEqual(
+            (w["state"], w["ssid"], w["signal"], w["ip"], w["device"], w["security"]),
+            ("connected", "HomeNet", 78, "198.51.100.23", "wlan0", "WPA2"),
+        )
         self.assertIn("connected to HomeNet", w["summary"])
         self.assertIn("198.51.100.23", w["summary"])
         self.assertEqual((s["bluetooth"]["state"], s["bluetooth"]["enabled"]), ("on", True))
-        self.assertEqual((s["modem"]["state"], s["modem"]["operator"], s["modem"]["tech"], s["modem"]["signal"]), ("registered", "Example Mobile", "lte", 75))
+        self.assertEqual(
+            (s["modem"]["state"], s["modem"]["operator"], s["modem"]["tech"], s["modem"]["signal"]),
+            ("registered", "Example Mobile", "lte", 75),
+        )
         self.assertIn("Example Mobile", s["modem"]["summary"])
         self.assertEqual((s["sim"]["present"], s["sim"]["locked"]), (True, False))
         self.assertEqual(s["data"]["state"], "off")
         self.assertIn("off while Wi-Fi is connected", s["data"]["summary"])
         self.assertEqual(s["airplane"]["on"], False)
-        self.assertEqual((s["usb"]["present"], s["usb"]["device"], s["usb"]["ip"], s["usb"]["state"]), (True, "usb0", "203.0.113.1", "up"))
+        self.assertEqual(
+            (s["usb"]["present"], s["usb"]["device"], s["usb"]["ip"], s["usb"]["state"]),
+            (True, "usb0", "203.0.113.1", "up"),
+        )
         self.assertEqual((s["control"]["enabled"], s["control"]["allowed"]), (True, True))
         self.assertEqual(s["control"]["ops"]["join"], "yes")
         self.assertEqual(s["tools_missing"], [])
@@ -480,7 +559,9 @@ class Status(unittest.TestCase):
     def test_rfkill_missing_and_bluetooth_on_is_not_all_radios_blocked(self):
         f = Fake(self)
         f.put("rfkill_rc", "1")  # rfkill fails: nothing tells whether Bluetooth is blocked, except BlueZ itself
-        f.put("general_status", "running:connected:none:enabled:disabled:enabled:disabled\n")  # NetworkManager: Wi-Fi and mobile data off
+        f.put(
+            "general_status", "running:connected:none:enabled:disabled:enabled:disabled\n"
+        )  # NetworkManager: Wi-Fi and mobile data off
         s = f.net().status(True)
         self.assertEqual((s["bluetooth"]["state"], s["bluetooth"]["enabled"]), ("on", True))
         self.assertNotEqual(s["airplane"]["state"], "on")
@@ -501,7 +582,9 @@ class Status(unittest.TestCase):
     def test_rfkill_missing_and_bluetooth_not_known_keeps_the_answer_unknown(self):
         f = Fake(self)
         f.put("rfkill_rc", "1")
-        f.put("bluetoothctl_out", "")  # BlueZ answers but names no controller: the radio is there, its state is not established
+        f.put(
+            "bluetoothctl_out", ""
+        )  # BlueZ answers but names no controller: the radio is there, its state is not established
         f.put("general_status", "running:connected:none:enabled:disabled:enabled:disabled\n")
         s = f.net().status(True)
         self.assertEqual(s["bluetooth"]["enabled"], None)
@@ -520,7 +603,9 @@ class Status(unittest.TestCase):
     def test_a_wifi_radio_nobody_reported_on_keeps_airplane_unknown(self):
         f = Fake(self)
         f.put("nm_down")  # NetworkManager says nothing about Wi-Fi or mobile data
-        f.put("rfkill_out", "1: hci0: Bluetooth\n\tSoft blocked: yes\n\tHard blocked: no\n")  # rfkill lists only Bluetooth, and it is blocked
+        f.put(
+            "rfkill_out", "1: hci0: Bluetooth\n\tSoft blocked: yes\n\tHard blocked: no\n"
+        )  # rfkill lists only Bluetooth, and it is blocked
         (f.bin / "mmcli").unlink()  # and this phone has no modem to be read: only the Wi-Fi radio is in doubt
         s = f.net().status(True)
         self.assertEqual(s["bluetooth"]["state"], "off")
@@ -544,7 +629,10 @@ class Status(unittest.TestCase):
         return f.net().status(True)
 
     def test_a_modem_nobody_reported_on_keeps_airplane_unknown(self):
-        for how, kw in {"mmcli fails": dict(mmcli_rc=1), "ModemManager sees no modem": dict(mmcli_rc=1, mmcli_out="error: couldn't find modem")}.items():
+        for how, kw in {
+            "mmcli fails": dict(mmcli_rc=1),
+            "ModemManager sees no modem": dict(mmcli_rc=1, mmcli_out="error: couldn't find modem"),
+        }.items():
             with self.subTest(how):
                 s = self.modem_case(**kw)
                 self.assertEqual(s["bluetooth"]["state"], "off")
@@ -573,7 +661,10 @@ class Status(unittest.TestCase):
         self.assertNotIn("all radios are blocked", s["airplane"]["summary"], "the page must not say both")
 
     def test_rfkill_listing_the_modem_decides_whatever_modemmanager_says(self):
-        both = RFKILL.replace("Soft blocked: no", "Soft blocked: yes") + "2: wwan0: Wireless WAN\n\tSoft blocked: yes\n\tHard blocked: no\n"
+        both = (
+            RFKILL.replace("Soft blocked: no", "Soft blocked: yes")
+            + "2: wwan0: Wireless WAN\n\tSoft blocked: yes\n\tHard blocked: no\n"
+        )
         s = self.modem_case(rfkill=both)  # registered per mmcli, blocked per rfkill: rfkill is the switch
         self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (True, "on"))
 
@@ -581,7 +672,9 @@ class Status(unittest.TestCase):
         f = Fake(self)
         f.put("nm_down")
         f.put("rfkill_out", RFKILL.replace("Soft blocked: no", "Soft blocked: yes"))
-        (f.bin / "mmcli").unlink()  # no ModemManager tool, and no wwan interface in the fixture: there is no modem to be unsure about
+        (
+            f.bin / "mmcli"
+        ).unlink()  # no ModemManager tool, and no wwan interface in the fixture: there is no modem to be unsure about
         s = f.net().status(True)
         self.assertIn("mmcli", s["tools_missing"])
         self.assertEqual((s["airplane"]["on"], s["airplane"]["state"]), (True, "on"))
@@ -606,7 +699,9 @@ class Status(unittest.TestCase):
         self.assertEqual(b["state"], "no controller")
         self.assertIn("sees no controller", b["summary"])
         (f.bin / "bluetoothctl").unlink()
-        b = f.net().status(True)["bluetooth"]  # rfkill shows the radio but BlueZ is not asked: do not claim it has no controller
+        b = f.net().status(True)[
+            "bluetooth"
+        ]  # rfkill shows the radio but BlueZ is not asked: do not claim it has no controller
         self.assertEqual(b["state"], "unknown")
         self.assertIn("not installed", b["summary"])
         f.put("rfkill_out", "")
@@ -629,19 +724,37 @@ class Status(unittest.TestCase):
         s = f.net().status(True)
         self.assertEqual((s["modem"]["state"], s["modem"]["present"]), ("absent", False))
         self.assertIn("unknown", s["sim"]["summary"])
-        f.put("mmcli_out", MMCLI.replace("registered", "failed", 1).replace("state-failed-reason                : --", "state-failed-reason                : sim-missing")
-              .replace("sim                                : /org/freedesktop/ModemManager1/SIM/0", "sim                                : --"))
+        f.put(
+            "mmcli_out",
+            MMCLI.replace("registered", "failed", 1)
+            .replace("state-failed-reason                : --", "state-failed-reason                : sim-missing")
+            .replace(
+                "sim                                : /org/freedesktop/ModemManager1/SIM/0",
+                "sim                                : --",
+            ),
+        )
         f.put("mmcli_rc", "0")
         s = f.net().status(True)
         self.assertEqual(s["sim"]["state"], "absent")
         self.assertIn("failed (sim-missing)", s["modem"]["summary"])
-        f.put("mmcli_out", MMCLI.replace("unlock-required                    : --", "unlock-required                    : sim-pin").replace(": registered", ": locked"))
+        f.put(
+            "mmcli_out",
+            MMCLI.replace(
+                "unlock-required                    : --", "unlock-required                    : sim-pin"
+            ).replace(": registered", ": locked"),
+        )
         s = f.net().status(True)
         self.assertEqual((s["sim"]["state"], s["sim"]["locked"]), ("locked", True))
         self.assertIn("needs a PIN", s["sim"]["summary"])
         f.put("mmcli_out", MMCLI.replace(": registered", ": searching"))
         self.assertEqual(f.net().status(True)["modem"]["summary"], "Modem: searching for a network")
-        f.put("mmcli_out", MMCLI.replace(": registered", ": initializing").replace("sim                                : /org/freedesktop/ModemManager1/SIM/0", "sim                                : --"))
+        f.put(
+            "mmcli_out",
+            MMCLI.replace(": registered", ": initializing").replace(
+                "sim                                : /org/freedesktop/ModemManager1/SIM/0",
+                "sim                                : --",
+            ),
+        )
         self.assertIn("not known yet", f.net().status(True)["sim"]["summary"])
 
     def test_mobile_data(self):
@@ -712,6 +825,7 @@ class Status(unittest.TestCase):
     def test_a_runner_that_raises_still_reads_unavailable(self):
         def boom(argv, timeout=1, stdin=None):
             raise RuntimeError("tool exploded")
+
         s = net.Net(runner=boom, root="/nonexistent", env={}).status(True)
         self.assertTrue(s["ok"])
         self.assertEqual(s["wifi"]["state"], "unavailable")
@@ -721,27 +835,29 @@ class Status(unittest.TestCase):
         tool = f.bin / "timedatectl"
         tool.write_text("#!/bin/sh\necho NTPSynchronized=no\n", encoding="utf-8")
         tool.chmod(0o755)
-        self.assertEqual(f.net().status(True)["clock"],
-                         {"state": "unsynchronized", "summary": "Clock: not synced"})
+        self.assertEqual(f.net().status(True)["clock"], {"state": "unsynchronized", "summary": "Clock: not synced"})
         tool.write_text("#!/bin/sh\necho NTPSynchronized=yes\n", encoding="utf-8")
         self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: set from the network")
         f.put("general_status", "running:connected:none:enabled:enabled:enabled:enabled\n")
         self.assertEqual(f.net().status(True)["clock"]["summary"], "Clock: no network time yet")
 
     def test_clock_query_failure_or_unknown_reply_does_not_claim_syncing(self):
-        for reply in (net.Run(1, out="NTPSynchronized=yes"), net.Run(0),
-                      net.Run(0, out="unexpected response"),
-                      net.Run(0, out="NTPSynchronized=maybe"),
-                      net.Run(0, out="NTPSynchronized=yes\nNTPSynchronized=no")):
+        for reply in (
+            net.Run(1, out="NTPSynchronized=yes"),
+            net.Run(0),
+            net.Run(0, out="unexpected response"),
+            net.Run(0, out="NTPSynchronized=maybe"),
+            net.Run(0, out="NTPSynchronized=yes\nNTPSynchronized=no"),
+        ):
             with self.subTest(reply=reply):
-                n = net.Net(runner=lambda *args, result=reply: result,
-                            root="/nonexistent", env={})
+                n = net.Net(runner=lambda *args, result=reply: result, root="/nonexistent", env={})
                 clock = n._net_clock(None, {"connectivity": "full"})
                 self.assertEqual(clock["state"], "unknown")
                 self.assertIn("could not be checked", clock["summary"])
 
         def unavailable(*args):
             raise OSError("fixture tool failure")
+
         n = net.Net(runner=unavailable, root="/nonexistent", env={})
         self.assertEqual(n._net_clock(None, {"connectivity": "full"})["state"], "unknown")
 
@@ -791,7 +907,10 @@ class Scan(unittest.TestCase):
         self.assertEqual(by["HomeNet"]["label"], "connected, signal 78%")
         self.assertEqual((by["Cafe: Free WiFi"]["secure"], by["Cafe: Free WiFi"]["known"]), (False, True))
         self.assertEqual(by["Cafe: Free WiFi"]["label"], "saved, signal 62%")
-        self.assertEqual((by["Neighbor 5G"]["known"], by["Neighbor 5G"]["supported"], by["Neighbor 5G"]["label"]), (False, True, "needs a password, signal 41%"))
+        self.assertEqual(
+            (by["Neighbor 5G"]["known"], by["Neighbor 5G"]["supported"], by["Neighbor 5G"]["label"]),
+            (False, True, "needs a password, signal 41%"),
+        )
         self.assertFalse(by["Office"]["supported"])
         self.assertIn("company or school", by["Office"]["label"])
         self.assertFalse(by["OldRouter"]["supported"])
@@ -855,7 +974,9 @@ class Join(unittest.TestCase):
     def test_wpa_join_uses_a_private_password_file_not_arguments(self):
         r = self.f.net().join("Neighbor 5G", PW)
         self.assertTrue(r["ok"], r)
-        self.assertEqual(r["message"], "Connected to Neighbor 5G. The password is kept by the phone's network service, not by OPOS.")
+        self.assertEqual(
+            r["message"], "Connected to Neighbor 5G. The password is kept by the phone's network service, not by OPOS."
+        )
         self.assertNotIn(PW, json.dumps(r))
         self.assertNotIn(PW, self.f.calls())
         self.assertNotIn(PW, self.f.read("cmdline.log"))
@@ -875,7 +996,9 @@ class Join(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("password was not accepted", r["error"])
         self.assertTrue(r["error"].endswith("Nothing was saved."))
-        self.assertNotIn("not the password", json.dumps(r))  # the fake echoes it on stderr; explain() would have to hide it
+        self.assertNotIn(
+            "not the password", json.dumps(r)
+        )  # the fake echoes it on stderr; explain() would have to hide it
         self.assertEqual(self.f.read("deleted").split(), [UUID_NEW])
         self.assertNotIn(UUID_NEW, self.f.read("connections"))
 
@@ -900,7 +1023,15 @@ class Join(unittest.TestCase):
 
     def test_bad_input_never_reaches_nmcli(self):
         n = self.f.net()
-        for ssid, pw in (("", PW), ("-x", PW), ("a\nb", PW), ("Neighbor 5G", "short"), ("Neighbor 5G", "pass\nword1"), ("Neighbor 5G", "p\u00e4ssword11"), ("x" * 40, PW)):
+        for ssid, pw in (
+            ("", PW),
+            ("-x", PW),
+            ("a\nb", PW),
+            ("Neighbor 5G", "short"),
+            ("Neighbor 5G", "pass\nword1"),
+            ("Neighbor 5G", "p\u00e4ssword11"),
+            ("x" * 40, PW),
+        ):
             self.assertFalse(n.join(ssid, pw)["ok"], (ssid, pw))
         self.assertFalse(n.join("Neighbor 5G", 12345678)["ok"])
         self.assertEqual(self.f.calls(), "")
@@ -945,9 +1076,9 @@ class Join(unittest.TestCase):
                 added.append(argv)
             if "up" in argv and "connection" in argv:
                 i = argv.index("up")
-                activated.append(argv[i + 1:i + 3])
+                activated.append(argv[i + 1 : i + 3])
                 # Two profiles already have this name. A name-based activation is ambiguous.
-                if argv[i + 1:i + 3] != ["uuid", UUID_NEW]:
+                if argv[i + 1 : i + 3] != ["uuid", UUID_NEW]:
                     return net.Run(10, err="ambiguous profile name")
                 if any(uid not in self.f.read("connections") for uid in (UUID_HOME, second)):
                     return net.Run(10, err="old profile removed before activation")
@@ -977,7 +1108,9 @@ class Join(unittest.TestCase):
         self.f.put("leave_profile")
         r = self.f.net().join("HomeNet", "not the password")
         self.assertFalse(r["ok"])
-        self.assertEqual(self.f.read("deleted").split(), [UUID_NEW], "only what the failed attempt itself left behind is deleted")
+        self.assertEqual(
+            self.f.read("deleted").split(), [UUID_NEW], "only what the failed attempt itself left behind is deleted"
+        )
         self.assertIn(UUID_HOME, self.f.read("connections"))
         self.assertNotIn(UUID_NEW, self.f.read("connections"))
         self.assertTrue(r["error"].endswith("Your saved entry for this network was kept."), r["error"])
@@ -1051,14 +1184,23 @@ class Join(unittest.TestCase):
         # "Old hotspot" may well be a saved entry for Neighbor 5G (its SSID cannot be read), and its name is not the SSID, so it is
         # invisible to the match: the attempt's own leftover is removed, and the text must not say nothing is saved
         uid = "55555555-5555-4555-8555-555555555555"
-        self.f.put("connections", self.f.read("connections") + f"Old hotspot:{uid}:wifi:\n")  # no ssid_<uuid> file: nmcli fails for it
+        self.f.put(
+            "connections", self.f.read("connections") + f"Old hotspot:{uid}:wifi:\n"
+        )  # no ssid_<uuid> file: nmcli fails for it
         self.f.put("leave_profile")
         r = self.f.net().join("Neighbor 5G", "not the password")
         self.assertFalse(r["ok"])
         self.assertNotIn("Nothing was saved", r["error"])
         self.assertNotIn("kept", r["error"], "no entry was matched, so none can be said to be kept either")
-        self.assertTrue(r["error"].endswith("OPOS could not read every saved network, so it cannot tell whether Neighbor 5G is saved."), r["error"])
-        self.assertEqual(self.f.read("deleted").split(), [UUID_NEW], "the attempt's own leftover is still removed, and only that")
+        self.assertTrue(
+            r["error"].endswith(
+                "OPOS could not read every saved network, so it cannot tell whether Neighbor 5G is saved."
+            ),
+            r["error"],
+        )
+        self.assertEqual(
+            self.f.read("deleted").split(), [UUID_NEW], "the attempt's own leftover is still removed, and only that"
+        )
         self.assertIn(uid, self.f.read("connections"))
 
     def test_nothing_was_saved_is_still_said_when_every_profile_could_be_read(self):
@@ -1071,9 +1213,15 @@ class Join(unittest.TestCase):
         self.f.put("list_fails_after", "0")  # NetworkManager lists nothing at all, before or after
         r = self.f.net().join("Neighbor 5G", "not the password")
         self.assertFalse(r["ok"])
-        self.assertTrue(r["error"].endswith("OPOS could not check whether the attempt left an entry behind."), r["error"])
+        self.assertTrue(
+            r["error"].endswith("OPOS could not check whether the attempt left an entry behind."), r["error"]
+        )
         self.assertNotIn("Nothing was saved", r["error"])
-        self.assertEqual(self.f.read("deleted"), "", "without the list from before the attempt, nothing can be told apart from what was there")
+        self.assertEqual(
+            self.f.read("deleted"),
+            "",
+            "without the list from before the attempt, nothing can be told apart from what was there",
+        )
         self.assertIn(UUID_NEW, self.f.read("connections"))
 
     def test_hidden_network(self):
@@ -1116,14 +1264,22 @@ class Join(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         self.assertFalse(os.path.exists(self.f.read("pwfile").strip()))
         with mock.patch.dict(os.environ, {"PATH": f"{self.f.bin}:{self.f.tools}"}):
-            r = net.Net(root=self.f.root, env={"OPOS_NETWORK": "1", "OPOS_NET_TTY": "1"}, sleep=lambda s: None).join("Neighbor 5G", PW)
+            r = net.Net(root=self.f.root, env={"OPOS_NETWORK": "1", "OPOS_NET_TTY": "1"}, sleep=lambda s: None).join(
+                "Neighbor 5G", PW
+            )
         self.assertTrue(r["ok"], r)
         self.assertNotIn(PW, self.f.read("cmdline.log"))
         self.assertNotIn(PW, json.dumps(r))
 
     def test_tty_mode_times_out_and_reports_missing_tools(self):
         self.f.put("join_hang")
-        r = net.run(["nmcli", "--ask", "device", "wifi", "connect", "x"], 0.5, "pw\n", path=f"{self.f.bin}:{self.f.tools}", tty=True)
+        r = net.run(
+            ["nmcli", "--ask", "device", "wifi", "connect", "x"],
+            0.5,
+            "pw\n",
+            path=f"{self.f.bin}:{self.f.tools}",
+            tty=True,
+        )
         self.assertTrue(r.timed_out)
         r = net.run(["nope-not-here"], 0.5, "pw\n", path=str(self.f.tools), tty=True)
         self.assertTrue(r.missing)
@@ -1183,7 +1339,9 @@ class LargeInventory(unittest.TestCase):
         self.assertFalse(r["ok"], r)
         self.assertNotIn("password is gone", json.dumps(r))
         self.assertIn("may remain", r["error"])
-        self.assertEqual(sorted(f.read("deleted").split()), sorted([UUID_HOME, UUID_DUP]), "what was readable is still deleted")
+        self.assertEqual(
+            sorted(f.read("deleted").split()), sorted([UUID_HOME, UUID_DUP]), "what was readable is still deleted"
+        )
 
     def test_an_unreadable_profile_does_not_turn_not_found_into_not_saved(self):
         f = crowded(Fake(self), unreadable=("Filler 05",))
@@ -1220,7 +1378,9 @@ class LargeInventory(unittest.TestCase):
         f.put("psk", "brand new pass")
         r = f.net().join("Backup Net", "brand new pass")
         self.assertTrue(r["ok"], r)
-        self.assertEqual(f.read("deleted").split(), [UUID_DUP], "the old entry is replaced, not left beside the new one")
+        self.assertEqual(
+            f.read("deleted").split(), [UUID_DUP], "the old entry is replaced, not left beside the new one"
+        )
 
     def test_the_list_cut_for_showing_is_still_cut(self):
         f = crowded(Fake(self))
@@ -1321,14 +1481,18 @@ class Web(unittest.TestCase):
             nonce = re.search(r"script-src 'nonce-([A-Za-z0-9_-]+)'", csp).group(1)
             self.assertIn(f'<script nonce="{nonce}">', html)
             self.assertIn(f'<style nonce="{nonce}">', html)
-            self.assertEqual(html.count("<script"), 2)  # the theme loader in the head and the page script, both under the nonce
+            self.assertEqual(
+                html.count("<script"), 2
+            )  # the theme loader in the head and the page script, both under the nonce
             self.assertEqual(html.count(f'<script nonce="{nonce}">'), 2)
             self.assertNotRegex(html, r"\son[a-z]+=")
             self.assertNotIn("innerHTML", html)
             self.assertIn("not kept by OPOS", html)
             self.assertIn('type="password"', html)
             self.assertIn("--hinge:42px", html)
-            self.assertIn("[hidden]{display:none!important}", html)  # labels set display, which would otherwise show their hidden rows
+            self.assertIn(
+                "[hidden]{display:none!important}", html
+            )  # labels set display, which would otherwise show their hidden rows
             self.assertIn('href="/"', html)
             self.assertEqual(fetch_token(s.port), s.token)
             h = request(s.port, "HEAD", "/network")
@@ -1376,7 +1540,14 @@ class Web(unittest.TestCase):
 
     def test_payload_shapes_are_checked(self):
         svc = self.f.net()
-        for fields in ({"ssid": 5}, {}, {"ssid": "x" * 65}, {"ssid": "ok", "password": 7}, {"ssid": "ok", "password": "p" * 129}, {"ssid": "ok", "hidden": "yes"}):
+        for fields in (
+            {"ssid": 5},
+            {},
+            {"ssid": "x" * 65},
+            {"ssid": "ok", "password": 7},
+            {"ssid": "ok", "password": "p" * 129},
+            {"ssid": "ok", "hidden": "yes"},
+        ):
             self.assertEqual(net_page.handle("net_join", fields, svc)[0], 400, fields)
         self.assertEqual(net_page.handle("net_forget", {}, svc)[0], 400)
         self.assertEqual(net_page.handle("net_wifi", {"mode": 3}, svc)[0], 400)
@@ -1396,7 +1567,11 @@ class Web(unittest.TestCase):
 
     def test_control_is_off_unless_the_install_turns_it_on(self):
         with Running() as s:
-            for a, f in (("net_join", {"ssid": "HomeNet"}), ("net_forget", {"ssid": "HomeNet"}), ("net_wifi", {"mode": "off"})):
+            for a, f in (
+                ("net_join", {"ssid": "HomeNet"}),
+                ("net_forget", {"ssid": "HomeNet"}),
+                ("net_wifi", {"mode": "off"}),
+            ):
                 code, _, j = post_action(s.port, a, **f)
                 self.assertEqual((code, j["ok"]), (200, False), a)
                 self.assertIn("switched off on this install", j["error"])
@@ -1438,14 +1613,25 @@ class Cli(unittest.TestCase):
         f = Fake(self)
         f.put("psk", PW)
         env = dict(os.environ, PYTHONPATH=str(ROOT / "src"), PATH=f"{f.bin}:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE="1")
-        p = subprocess.run([sys.executable, "-m", "opos.net", "probe"], capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run(
+            [sys.executable, "-m", "opos.net", "probe"], capture_output=True, text=True, env=env, timeout=60
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("$ nmcli -t -f RUNNING", p.stdout)
         self.assertIn("rc=0", p.stdout)
-        p = subprocess.run([sys.executable, "-m", "opos.net", "status"], capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run(
+            [sys.executable, "-m", "opos.net", "status"], capture_output=True, text=True, env=env, timeout=60
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(json.loads(p.stdout)["wifi"]["ssid"], "HomeNet")
-        p = subprocess.run([sys.executable, "-m", "opos.net", "join", "Neighbor 5G"], input="Wrong password\n", capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run(
+            [sys.executable, "-m", "opos.net", "join", "Neighbor 5G"],
+            input="Wrong password\n",
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
         self.assertEqual(p.returncode, 1)
         self.assertNotIn("Wrong password", p.stdout + p.stderr)
 
@@ -1464,12 +1650,14 @@ class Packaging(unittest.TestCase):
         self.assertEqual(rule.count("polkit.addRule"), 1)
 
     def test_systemd_dropin_turns_control_on(self):
-        self.assertEqual([l for l in self.read("packaging/duo-os/opos-network.conf").splitlines() if l and not l.startswith("#")],
-                         ["[Service]", "Environment=OPOS_NETWORK=1"])
+        self.assertEqual(
+            [l for l in self.read("packaging/duo-os/opos-network.conf").splitlines() if l and not l.startswith("#")],
+            ["[Service]", "Environment=OPOS_NETWORK=1"],
+        )
 
     def test_image_build_leaves_the_rule_out_unless_asked(self):
         b = self.read("packaging/duo-os/build-image.sh")
-        blk = b[b.index("# --- track: network"):b.index("# --- end track: network")]
+        blk = b[b.index("# --- track: network") : b.index("# --- end track: network")]
         self.assertIn("opos-network.conf", blk)
         self.assertRegex(blk, r'if \[ "\$\{OPOS_NET_POLKIT:-0\}" = 1 \]')
         self.assertNotIn("OPOS_NET_POLKIT:-1", blk)
@@ -1483,18 +1671,27 @@ class Packaging(unittest.TestCase):
 
     def test_diag_has_one_read_only_radios_block(self):
         d = self.read("packaging/duo-os/opos-diag")
-        blk = d[d.index("# --- track: network"):d.index("# --- end track: network")]
+        blk = d[d.index("# --- track: network") : d.index("# --- end track: network")]
         self.assertEqual(blk.count('echo "== radios'), 1)
         for tool in ("rfkill list", "nmcli", "mmcli", "bluetoothctl show", "general permissions"):
             self.assertIn(tool, blk)
-        for forbidden in ("connection up", "connection delete", "radio wifi", "rfkill block", "rfkill unblock", "device wifi connect", "ssh", "password"):
+        for forbidden in (
+            "connection up",
+            "connection delete",
+            "radio wifi",
+            "rfkill block",
+            "rfkill unblock",
+            "device wifi connect",
+            "ssh",
+            "password",
+        ):
             self.assertNotIn(forbidden, blk)
         self.assertNotIn("CONNECTION", blk)  # profile names are SSIDs: the dump leaves them out
         self.assertEqual(d.count("# --- track: network"), 1)
 
     def test_diag_block_runs_when_the_tools_are_missing_or_fake(self):
         d = self.read("packaging/duo-os/opos-diag")
-        blk = d[d.index("# --- track: network"):d.index("# --- end track: network")]
+        blk = d[d.index("# --- track: network") : d.index("# --- end track: network")]
         f = Fake(self)
         script = f.dir / "radios.sh"
         script.write_text("#!/bin/sh\n" + blk + "\n", newline="\n")
@@ -1504,25 +1701,44 @@ class Packaging(unittest.TestCase):
             self.assertIn("== radios", p.stdout)
             self.assertNotIn("356938035643809", p.stdout)
             self.assertNotIn("5C:BA:37", p.stdout)
-        p = subprocess.run(["/bin/sh", str(script)], capture_output=True, text=True, env={"PATH": f"{f.bin}:{f.tools}"}, timeout=60)
+        p = subprocess.run(
+            ["/bin/sh", str(script)], capture_output=True, text=True, env={"PATH": f"{f.bin}:{f.tools}"}, timeout=60
+        )
         self.assertIn("registered", p.stdout)
         self.assertIn("lte", p.stdout)
 
     def test_no_secret_or_ssid_ships_in_the_repo_files(self):
-        for name in ("src/opos/net.py", "src/opos/net_page.py", "packaging/duo-os/50-opos-network.rules", "packaging/duo-os/opos-network.conf", "docs/network.md"):
+        for name in (
+            "src/opos/net.py",
+            "src/opos/net_page.py",
+            "packaging/duo-os/50-opos-network.rules",
+            "packaging/duo-os/opos-network.conf",
+            "docs/network.md",
+        ):
             t = self.read(name)
             self.assertNotRegex(t, r"(?i)psk\s*=\s*\S|password\s*=\s*['\"][^'\"]+['\"]", name)
 
     def test_docs_state_the_limits(self):
         d = self.read("docs/network.md")
-        for phrase in ("still simulated", "OPOS_NETWORK", "OPOS_NET_POLKIT", "nmcli --ask", "not tested on the phone", "802.1X"):
+        for phrase in (
+            "still simulated",
+            "OPOS_NETWORK",
+            "OPOS_NET_POLKIT",
+            "nmcli --ask",
+            "not tested on the phone",
+            "802.1X",
+        ):
             self.assertIn(phrase, d)
         flat = " ".join(d.split())
         # the accepted posture: one owner, a token any local process can read; and how far the optional rule reaches
-        for phrase in ("any local user or process on the phone can read it and change Wi-Fi", "single-user phone",
-                       "activate, modify and delete every NetworkManager connection, mobile data and VPN profiles included",
-                       "The page token is served on `GET /network`",
-                       "keeps the old entry", "A radio whose state was not read keeps the answer at \"unknown\""):
+        for phrase in (
+            "any local user or process on the phone can read it and change Wi-Fi",
+            "single-user phone",
+            "activate, modify and delete every NetworkManager connection, mobile data and VPN profiles included",
+            "The page token is served on `GET /network`",
+            "keeps the old entry",
+            'A radio whose state was not read keeps the answer at "unknown"',
+        ):
             self.assertIn(phrase, flat)
         self.assertIn("network.md", self.read("docs/README.md"))
 

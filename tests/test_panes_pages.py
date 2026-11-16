@@ -1,11 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The three Duo OS pages keep the Jaryo text-button rules: two colours, square corners, words for labels (docs/jaryo-panes.md section 5)."""
+
 import re
 import unittest
 
 from opos import firstrun_page, net_page
 
-TOKENS = {"#1a1a1a", "#f3f0e8", "#e6e2d9", "#000"}  # the two token pairs of jaryo.css, the only colour literals a page may state
+TOKENS = {
+    "#1a1a1a",
+    "#f3f0e8",
+    "#e6e2d9",
+    "#000",
+}  # the two token pairs of jaryo.css, the only colour literals a page may state
 HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
 
@@ -56,8 +62,17 @@ class NetPage(unittest.TestCase):
         # The engine's own checkbox is blue when checked and white in the dark scheme: not two colours. The page draws its own, with the
         # panes on or off (these rules are in the page's own style, not in panes.css).
         box = re.search(r"input\[type=checkbox\]\{([^}]*)\}", self.css).group(1).split(";")
-        for decl in ("-webkit-appearance:none", "appearance:none", "width:24px", "height:24px", "border:2px solid var(--fg)", "border-radius:0",
-                     "background:var(--bg)", "color:var(--fg)", "accent-color:var(--fg)"):
+        for decl in (
+            "-webkit-appearance:none",
+            "appearance:none",
+            "width:24px",
+            "height:24px",
+            "border:2px solid var(--fg)",
+            "border-radius:0",
+            "background:var(--bg)",
+            "color:var(--fg)",
+            "accent-color:var(--fg)",
+        ):
             self.assertIn(decl, box)
         self.assertIn("input[type=checkbox]:checked{background:var(--fg)}", self.css)
 
@@ -70,7 +85,10 @@ class NetPage(unittest.TestCase):
         self.assertIn("localStorage.getItem('jaryo_theme')", self.page.split("</head>", 1)[0])
 
     def test_the_two_columns_start_where_the_first_run_page_starts_them(self):
-        self.assertIn("@media (min-width:1000px){main{display:grid;grid-template-columns:minmax(0,1fr) var(--hinge) minmax(0,1fr)", self.css)
+        self.assertIn(
+            "@media (min-width:1000px){main{display:grid;grid-template-columns:minmax(0,1fr) var(--hinge) minmax(0,1fr)",
+            self.css,
+        )
 
 
 class FirstRunPages(unittest.TestCase):

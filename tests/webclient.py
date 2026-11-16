@@ -1,32 +1,44 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """HTTP helpers for hardened server tests."""
+
 import http.client
 import json
 import re
 import socket
 import threading
 from src.opos import web
+
+
 class Running:
     """Run test server in a thread."""
+
     def __init__(self, phone=None, **kw):
         self.server = web.make_server(0, phone or web.Phone(), **kw)
         self.port = self.server.server_address[1]
         self.token = self.server.RequestHandlerClass.token
         self._t = threading.Thread(target=self.server.serve_forever, daemon=True)
+
     def __enter__(self):
         self._t.start()
         return self
+
     def __exit__(self, *exc):
         self.server.shutdown()
         self.server.server_close()
         return False
+
+
 def fetch_token(port: int) -> str:
     """Fetch page token via GET /."""
     _, _, body = request(port, "GET", "/", headers={"Host": f"127.0.0.1:{port}"})
     m = re.search(rb'<meta name="opos-token" content="([^"]+)">', body)
     assert m is not None
     return m.group(1).decode("ascii")
-def request(port: int, method: str, path: str, body: bytes | None = None, headers: dict | None = None) -> tuple[int, dict, bytes]:
+
+
+def request(
+    port: int, method: str, path: str, body: bytes | None = None, headers: dict | None = None
+) -> tuple[int, dict, bytes]:
     """Send one request and read the response."""
     assert isinstance(port, int) and 0 < port < 65536
     assert isinstance(method, str) and isinstance(path, str)
@@ -42,13 +54,21 @@ def request(port: int, method: str, path: str, body: bytes | None = None, header
         return res.status, {k.lower(): v for k, v in res.getheaders()}, res.read()
     finally:
         conn.close()
+
+
 def post_action(port: int, action: str, token: str | None = None, **fields) -> tuple[int, dict, dict | list | None]:
     """POST one JSON action to /api."""
     assert isinstance(action, str)
     tok = token if token is not None else fetch_token(port)
     assert isinstance(tok, str)
     raw_body = json.dumps({"action": action, **fields}).encode()
-    status, hdrs, body = request(port, "POST", "/api", body=raw_body, headers={"Host": f"127.0.0.1:{port}", "Content-Type": "application/json", "X-OPOS-Token": tok})
+    status, hdrs, body = request(
+        port,
+        "POST",
+        "/api",
+        body=raw_body,
+        headers={"Host": f"127.0.0.1:{port}", "Content-Type": "application/json", "X-OPOS-Token": tok},
+    )
     try:
         parsed = json.loads(body) if body else None
     except ValueError:
@@ -56,6 +76,8 @@ def post_action(port: int, action: str, token: str | None = None, **fields) -> t
     if parsed is not None and not isinstance(parsed, (dict, list)):
         parsed = None
     return status, hdrs, parsed
+
+
 def raw(port: int, data: bytes) -> bytes:
     """Send raw bytes and read until close."""
     assert isinstance(port, int) and 0 < port < 65536

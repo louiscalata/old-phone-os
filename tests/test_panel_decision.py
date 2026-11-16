@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """One final decision: owner overrides first, hard floors last, and every view and the drain read it."""
+
 import itertools
 import json
 import math
@@ -21,15 +22,17 @@ HOT = "Battery rules paused this because the phone is hot."
 def screen_paused(state):
     for line in state["screen"]:
         if line.startswith("Paused to save power: "):
-            return [n.strip() for n in line[len("Paused to save power: "):].split(", ") if n.strip()]
+            return [n.strip() for n in line[len("Paused to save power: ") :].split(", ") if n.strip()]
     return []
 
 
 class PhoneCase(unittest.TestCase):
     def setUp(self):
-        for patcher in (mock.patch("opos.web.prefs.load", side_effect=OSError),
-                        mock.patch("opos.web.assist.free_mb", return_value=4096),
-                        mock.patch("opos.web.self_rss_mb", return_value=12)):
+        for patcher in (
+            mock.patch("opos.web.prefs.load", side_effect=OSError),
+            mock.patch("opos.web.assist.free_mb", return_value=4096),
+            mock.patch("opos.web.self_rss_mb", return_value=12),
+        ):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.now = 1000.0
@@ -57,7 +60,8 @@ class PhoneCase(unittest.TestCase):
                 "http://127.0.0.1:%d/api" % server.server_address[1],
                 data=json.dumps({"action": "undo", "name": name}).encode("utf-8"),
                 headers={"Content-Type": "application/json", "X-OPOS-Token": server.RequestHandlerClass.token},
-                method="POST")
+                method="POST",
+            )
             try:
                 with urllib.request.urlopen(request) as response:
                     return response.status
@@ -79,7 +83,9 @@ class PhoneCase(unittest.TestCase):
 
     def predicted_rate(self, phone, state):
         """Percent per hour for what the screens say runs, as the time-left estimate counts it."""
-        return total_drain(DEFAULT_TASKS, paused=state["helper"]["paused"], steps=state["battery"]["steps"], health=phone.sim.health)
+        return total_drain(
+            DEFAULT_TASKS, paused=state["helper"]["paused"], steps=state["battery"]["steps"], health=phone.sim.health
+        )
 
 
 class OwnerOverridesThenHardFloors(PhoneCase):
@@ -160,7 +166,9 @@ class OwnerOverridesThenHardFloors(PhoneCase):
         phone = self.phone(level=8, health=0.4)
         phone.dash.set_in_use("maps")
         state = phone.state()
-        self.assertEqual(self.reasons(state).get("maps"), "Battery rules paused this to keep a battery reserve for calls.")
+        self.assertEqual(
+            self.reasons(state).get("maps"), "Battery rules paused this to keep a battery reserve for calls."
+        )
 
 
 class EveryViewReadsTheSameDecision(PhoneCase):
@@ -173,9 +181,18 @@ class EveryViewReadsTheSameDecision(PhoneCase):
         self.assertEqual(screen_paused(state), ["email", "maps", "photos backup"])
         self.assertEqual(state["lock_story"], "Battery low. 3 tasks paused.")
 
-    CASES = tuple(dict(zip(("level", "health", "temp_c", "charging", "goal", "in_use", "undo"), values))
-                  for values in itertools.product((100, 60, 35, 20, 8, 3), (1.0, 0.6, 0.35), (30, 50), (False, True),
-                                                  (None, "16:00"), (None, "maps"), (None, "photos backup")))
+    CASES = tuple(
+        dict(zip(("level", "health", "temp_c", "charging", "goal", "in_use", "undo"), values))
+        for values in itertools.product(
+            (100, 60, 35, 20, 8, 3),
+            (1.0, 0.6, 0.35),
+            (30, 50),
+            (False, True),
+            (None, "16:00"),
+            (None, "maps"),
+            (None, "photos backup"),
+        )
+    )
 
     def phone_for(self, case):
         phone = self.phone(case["level"], case["health"], case["temp_c"], goal=case["goal"])
@@ -195,8 +212,18 @@ class EveryViewReadsTheSameDecision(PhoneCase):
                 self.assertEqual(sorted(helper["allowed"] + paused), sorted(NAMES))
                 self.assertEqual([row["name"] for row in state["battery"]["paused"]], paused)
                 self.assertEqual(screen_paused(state), paused)
-                self.assertEqual(state["lock_story"], web.lock_story(case["level"], case["health"], case["temp_c"], case["charging"],
-                                                                     paused, phone._goal_label(), state["battery"]["goal_met"]))
+                self.assertEqual(
+                    state["lock_story"],
+                    web.lock_story(
+                        case["level"],
+                        case["health"],
+                        case["temp_c"],
+                        case["charging"],
+                        paused,
+                        phone._goal_label(),
+                        state["battery"]["goal_met"],
+                    ),
+                )
                 for name in paused:
                     self.assertIn(name, helper["why_paused"])
                 if case["temp_c"] >= 45 or (not case["charging"] and case["level"] * case["health"] < 15):
@@ -215,15 +242,23 @@ class SimulatedDrainMatchesTimeLeft(PhoneCase):
     def test_ten_percent_full_health_no_goal(self):
         phone = self.phone(level=10, health=1.0)
         state = phone.state()
-        self.assertEqual(state["battery"]["time_left"], "Rough estimate: About 52 min left")  # the demo's drain is the model's
+        self.assertEqual(
+            state["battery"]["time_left"], "Rough estimate: About 52 min left"
+        )  # the demo's drain is the model's
         rate = self.measured_rate(phone)
         self.assertAlmostEqual(rate, 11.5, places=9)
         self.assertEqual(time_left_words(10 / rate), "About 52 min left")
 
     def test_prediction_and_simulated_interval_agree(self):
-        cases = (dict(level=60, health=0.6, goal="16:00"), dict(level=42, health=1.0, goal="16:00"),
-                 dict(level=8, health=0.4), dict(level=90, health=1.0, temp_c=50), dict(level=35, health=0.6),
-                 dict(level=60, health=0.6, undo="maps"), dict(level=60, health=0.6, in_use="maps", goal="16:00"))
+        cases = (
+            dict(level=60, health=0.6, goal="16:00"),
+            dict(level=42, health=1.0, goal="16:00"),
+            dict(level=8, health=0.4),
+            dict(level=90, health=1.0, temp_c=50),
+            dict(level=35, health=0.6),
+            dict(level=60, health=0.6, undo="maps"),
+            dict(level=60, health=0.6, in_use="maps", goal="16:00"),
+        )
         for case in cases:
             with self.subTest(**case):
                 case = dict(case)
@@ -270,7 +305,7 @@ class TickInterval(PhoneCase):
 
     def test_bad_real_s_changes_nothing(self):
         phone = self.phone()
-        for bad in (-1, math.nan, math.inf, True, "1", None, 10 ** 400):
+        for bad in (-1, math.nan, math.inf, True, "1", None, 10**400):
             with self.subTest(bad=bad):
                 snap = (phone.sim.level, phone.sim.t_s, phone.clock_s, phone._last_tick_time)
                 self.now += 3
@@ -289,8 +324,10 @@ class TickInterval(PhoneCase):
     def test_a_sim_without_charge_is_an_error_not_a_drain(self):
         phone = self.phone(level=80)
         phone.charging = True
-        with mock.patch.object(phone.sim, "charge", side_effect=AttributeError("charge")), \
-                mock.patch.object(phone.sim, "advance") as advance:
+        with (
+            mock.patch.object(phone.sim, "charge", side_effect=AttributeError("charge")),
+            mock.patch.object(phone.sim, "advance") as advance,
+        ):
             self.now += 1
             with self.assertRaises(AttributeError):
                 phone.tick(1)
@@ -306,8 +343,13 @@ class TickInterval(PhoneCase):
 
 class GoalBudgetOwnsTheGoalPauses(unittest.TestCase):
     """The goal pauses are what the cumulative goal budget refuses, for any task list."""
-    TASKS = (Task("calls", Priority.ESSENTIAL, 0.5), Task("messages", Priority.ESSENTIAL, 0.3),
-             Task("nav", Priority.USEFUL, 5), Task("sync", Priority.OPTIONAL, 1))
+
+    TASKS = (
+        Task("calls", Priority.ESSENTIAL, 0.5),
+        Task("messages", Priority.ESSENTIAL, 0.3),
+        Task("nav", Priority.USEFUL, 5),
+        Task("sync", Priority.OPTIONAL, 1),
+    )
 
     def test_cheap_optional_and_expensive_useful(self):
         # Spare 5.5 %/h: nav (useful) is funded first and fits; sync (optional) then does not.
@@ -326,14 +368,23 @@ class GoalBudgetOwnsTheGoalPauses(unittest.TestCase):
 
     def test_goal_pauses_are_exactly_what_the_budget_refuses(self):
         from opos.router import fund, goal_spare
-        lists = (DEFAULT_TASKS, self.TASKS, self.TASKS + (Task("news", Priority.OPTIONAL, 2),),
-                 self.TASKS + (Task("cam", Priority.USEFUL, 0.5), Task("feed", Priority.OPTIONAL, 3)))
+
+        lists = (
+            DEFAULT_TASKS,
+            self.TASKS,
+            self.TASKS + (Task("news", Priority.OPTIONAL, 2),),
+            self.TASKS + (Task("cam", Priority.USEFUL, 0.5), Task("feed", Priority.OPTIONAL, 3)),
+        )
         for tasks in lists:
             names = [t.name for t in tasks if t.priority != Priority.ESSENTIAL]
             cost = {t.name: t.cost for t in tasks}
-            for level, health, goal, in_use in itertools.product((55, 70, 85, 100), (0.6, 1.0), (2, 4, 6, 9), [None] + names):
+            for level, health, goal, in_use in itertools.product(
+                (55, 70, 85, 100), (0.6, 1.0), (2, 4, 6, 9), [None] + names
+            ):
                 with self.subTest(tasks=names, level=level, health=health, goal=goal, in_use=in_use):
-                    tick = Runtime(tasks=tasks).step(0, float(level), health=health, temp_c=25.0, goal_hours=goal, in_use=in_use)
+                    tick = Runtime(tasks=tasks).step(
+                        0, float(level), health=health, temp_c=25.0, goal_hours=goal, in_use=in_use
+                    )
                     state = PowerState(float(level), False, health, 25.0, goal)
                     verdicts = fund(state, tasks, (in_use,) if in_use else ())
                     causes = dict(tick.causes)
@@ -358,7 +409,9 @@ class GoalBudgetOwnsTheGoalPauses(unittest.TestCase):
 class HeldRowsHaveNoUndo(PhoneCase):
     def test_battery_panel_marks_the_rows_a_floor_holds(self):
         hot = self.phone(level=100, health=1.0, temp_c=50).state()["battery"]["paused"]
-        self.assertEqual([(row["name"], row["held"]) for row in hot], [("email", True), ("maps", True), ("photos backup", True)])
+        self.assertEqual(
+            [(row["name"], row["held"]) for row in hot], [("email", True), ("maps", True), ("photos backup", True)]
+        )
         soft = self.phone().state()["battery"]["paused"]
         self.assertEqual([(row["name"], row["held"]) for row in soft], [("maps", False), ("photos backup", False)])
 
@@ -397,8 +450,11 @@ class ForegroundDoesNotFreeRulePauses(unittest.TestCase):
     """Funding the app in use first must not re-allow another task the battery rules pause (SAVER)."""
 
     TASKS = DEFAULT_TASKS[:2] + (
-        Task("small", Priority.USEFUL, 3), Task("big", Priority.USEFUL, 8),
-        Task("optA", Priority.OPTIONAL, 3), Task("optB", Priority.OPTIONAL, 4))
+        Task("small", Priority.USEFUL, 3),
+        Task("big", Priority.USEFUL, 8),
+        Task("optA", Priority.OPTIONAL, 3),
+        Task("optB", Priority.OPTIONAL, 4),
+    )
 
     def step(self, in_use):
         rt = Runtime(tasks=self.TASKS)

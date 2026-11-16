@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 import unittest
 
+
 class DuoRecoveryDocsTest(unittest.TestCase):
     def _recovery_bodies(self):
         root = Path(__file__).resolve().parent.parent
@@ -16,7 +17,7 @@ class DuoRecoveryDocsTest(unittest.TestCase):
             self.assertEqual(count, 1, f"heading {h!r} must occur exactly once")
             idx = next(i for i, line in enumerate(lines) if line == h)
             body_lines = []
-            for line in lines[idx + 1:]:
+            for line in lines[idx + 1 :]:
                 if line.startswith("## "):
                     break
                 body_lines.append(line)

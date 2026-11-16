@@ -7,6 +7,7 @@ The builder's verifier stand-in tests invocation and cleanup on failure. Separat
 tests run the real verifier's early gates and its lifecycle/final-gate blocks;
 they do not execute an image or stand in for Linux image verification.
 """
+
 import hashlib
 import io
 import json
@@ -32,7 +33,7 @@ SSHD = shutil.which("sshd") or ("/usr/sbin/sshd" if Path("/usr/sbin/sshd").exist
 
 # All generated commands act only in the TemporaryDirectory. No actual mount, root,
 # fsck, Git write, Linux ownership, image execution, listener or device is involved.
-FIXTURE_TOOL = r'''
+FIXTURE_TOOL = r"""
 import hashlib, io, json, os, shutil, sys, tarfile, tempfile
 from pathlib import Path
 work = Path(os.environ["FIXTURE_WORK"])
@@ -153,7 +154,7 @@ elif name == "python3":
     sys.exit(result.returncode)
 else:
     assert name in ("chown", "sync"), name
-'''
+"""
 
 
 class Builder(unittest.TestCase):
@@ -173,7 +174,8 @@ class Builder(unittest.TestCase):
             '[ ! -e "$FIXTURE_WORK/out.img" ] && [ ! -L "$FIXTURE_WORK/out.img" ] || exit 10\n'
             '[ -f "$1" ] || exit 9\n'
             'if [ "${FIXTURE_CREATE_OUT:-0}" = 1 ]; then ln -s "$FIXTURE_WORK/victim" "$FIXTURE_WORK/out.img"; fi\n'
-            'exit "${FIXTURE_VERIFY_STATUS:-0}"\n')
+            'exit "${FIXTURE_VERIFY_STATUS:-0}"\n'
+        )
         for name in ("tools", "src"):
             (self.pkg.parent.parent / name).symlink_to(usb.ROOT / name, target_is_directory=True)
         self.bin = self.work / "bin"
@@ -181,7 +183,21 @@ class Builder(unittest.TestCase):
         tool = self.work / "fixture-tool.py"
         tool.write_text("#!" + sys.executable + "\n" + FIXTURE_TOOL)
         tool.chmod(0o755)
-        for name in ("id", "readlink", "mktemp", "cp", "mount", "mountpoint", "losetup", "umount", "git", "sha256sum", "e2fsck", "chown", "sync"):
+        for name in (
+            "id",
+            "readlink",
+            "mktemp",
+            "cp",
+            "mount",
+            "mountpoint",
+            "losetup",
+            "umount",
+            "git",
+            "sha256sum",
+            "e2fsck",
+            "chown",
+            "sync",
+        ):
             (self.bin / name).symlink_to(tool)
         (self.bin / "python3").symlink_to(sys.executable)
         (self.work / "tmp").mkdir()
@@ -189,13 +205,22 @@ class Builder(unittest.TestCase):
         self.put("etc/os-release", 'NAME="Droidian"\nID=droidian\nID_LIKE=debian\n')
         for name in ("phosh-session", "chromium", "python3"):
             self.put("usr/bin/" + name, "fixture, never executed\n", 0o755)
-        self.put("usr/local/sbin/sfduo-composer-watchdog",
-                 "#!/bin/sh\nsystemctl try-restart phosh.service opos.service 2>/dev/null || true\n", 0o755)
+        self.put(
+            "usr/local/sbin/sfduo-composer-watchdog",
+            "#!/bin/sh\nsystemctl try-restart phosh.service opos.service 2>/dev/null || true\n",
+            0o755,
+        )
         self.put("etc/passwd", f"droidian:x:{os.getuid()}:{os.getgid()}::/home/droidian:/bin/sh\n")
         self.put("etc/group", f"droidian:x:{os.getgid()}:\n")
         self.put("etc/sudoers", "%sudo ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n")
-        for name in ("etc/default", "etc/sudoers.d", "etc/systemd/system/graphical.target.wants",
-                     "etc/systemd/system/multi-user.target.wants", "usr/sbin", "home/droidian"):
+        for name in (
+            "etc/default",
+            "etc/sudoers.d",
+            "etc/systemd/system/graphical.target.wants",
+            "etc/systemd/system/multi-user.target.wants",
+            "usr/sbin",
+            "home/droidian",
+        ):
             (self.seed / name).mkdir(parents=True, exist_ok=True)
         self.base = self.work / "base.img"
         self.out = self.work / "out.img"
@@ -220,19 +245,26 @@ class Builder(unittest.TestCase):
     def run_builder(self, release="1", **extra):
         self.pack_base()
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_")}
-        env.update(PATH=str(self.bin) + os.pathsep + os.environ["PATH"], TMPDIR=str(self.work / "tmp"),
-                   FIXTURE_WORK=str(self.work), FIXTURE_REPO=str(usb.ROOT), OPOS_RELEASE=release, OPOS_NO_SSH="1")
+        env.update(
+            PATH=str(self.bin) + os.pathsep + os.environ["PATH"],
+            TMPDIR=str(self.work / "tmp"),
+            FIXTURE_WORK=str(self.work),
+            FIXTURE_REPO=str(usb.ROOT),
+            OPOS_RELEASE=release,
+            OPOS_NO_SSH="1",
+        )
         env.update(extra)
         command = ["sh", str(self.pkg / "build-image.sh"), str(self.base), str(self.out)]
         wrappers = []
         if env.pop("FIXTURE_FAIL_REPORT", ""):
             wrappers.append('printf() { [ "$1" != "%s  %s\\n" ] || return 9; command printf "$@"; }; ')
         if env.pop("FIXTURE_FAIL_CLEANUP", ""):
-            wrappers.append('rm() { if [ -f "$FIXTURE_WORK/out.img" ] && [ "$1" = -rf ]; then return 9; fi; command rm "$@"; }; ')
+            wrappers.append(
+                'rm() { if [ -f "$FIXTURE_WORK/out.img" ] && [ "$1" = -rf ]; then return 9; fi; command rm "$@"; }; '
+            )
         if wrappers:
             command = ["sh", "-c", "".join(wrappers) + '. "$0"'] + command[1:]
-        return subprocess.run(command,
-                              env=env, text=True, capture_output=True, timeout=60)
+        return subprocess.run(command, env=env, text=True, capture_output=True, timeout=60)
 
     def events(self):
         path = self.work / "events"
@@ -273,7 +305,7 @@ class Builder(unittest.TestCase):
                 marker.rmdir() if rel == "opt/opos-releases" else marker.unlink()
 
     def test_listed_opos_os_release_without_manifest_is_refused(self):
-        for value in ('ID=opos\n', 'ID="opos" # previous OPOS\n'):
+        for value in ("ID=opos\n", 'ID="opos" # previous OPOS\n'):
             with self.subTest(os_release=value):
                 self.put("etc/os-release", 'NAME="Old Phone OS"\n' + value)
                 self.pin()
@@ -302,8 +334,8 @@ class Builder(unittest.TestCase):
             self.assertEqual(manifest["source_date_epoch"], 1794355200)
             marker = next(f for f in manifest["files"] if f["path"] == "etc/opos/build-mode")
             self.assertEqual(marker["sha256"], hashlib.sha256(b"release\n").hexdigest())
-            self.assertIn(b'ID=opos\n', archive.extractfile("./etc/os-release").read())
-            self.assertIn(b'ID=droidian\n', archive.extractfile("./usr/lib/os-release.base").read())
+            self.assertIn(b"ID=opos\n", archive.extractfile("./etc/os-release").read())
+            self.assertIn(b"ID=droidian\n", archive.extractfile("./usr/lib/os-release.base").read())
         self.assertEqual(identity.verify(self.work / "result"), manifest)
         gadget = self.work / "result" / usb.GADGET_REL
         entry = next(f for f in manifest["files"] if f["path"] == usb.GADGET_REL)
@@ -384,16 +416,26 @@ class Builder(unittest.TestCase):
         self.put("etc/opos/image.json", "reused dev fixture\n")
         self.put("usr/sbin/sshd", "fixture, never run\n", 0o755)
         self.put("lib/systemd/system/ssh.service", "[Service]\nExecStart=/usr/sbin/sshd -D $SSHD_OPTS\n")
-        (self.seed / "etc/systemd/system/multi-user.target.wants/ssh.service").symlink_to("/lib/systemd/system/ssh.service")
+        (self.seed / "etc/systemd/system/multi-user.target.wants/ssh.service").symlink_to(
+            "/lib/systemd/system/ssh.service"
+        )
         key = self.work / "owner.pub"
         key.write_text(ck.sudo.TEST_KEY)
-        p = self.run_builder(release="0", OPOS_NO_SSH="0", OPOS_OWNER_SSH_PUBKEY=str(key),
-                             OPOS_DEV_SSH_PUBKEY=str(key), OPOS_DEV_SPAN="1", OPOS_DEV_SUDO="1")
+        p = self.run_builder(
+            release="0",
+            OPOS_NO_SSH="0",
+            OPOS_OWNER_SSH_PUBKEY=str(key),
+            OPOS_DEV_SSH_PUBKEY=str(key),
+            OPOS_DEV_SPAN="1",
+            OPOS_DEV_SUDO="1",
+        )
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         result = self.work / "result"
-        for rel, value in (("etc/default/opos-kiosk", "OPOS_KIOSK_DEBUG_PORT=9222"),
-                           ("etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf", "Environment=OPOS_SPAN=675,42"),
-                           ("etc/sudoers.d/90-opos-dev", "droidian ALL=(ALL) NOPASSWD:ALL")):
+        for rel, value in (
+            ("etc/default/opos-kiosk", "OPOS_KIOSK_DEBUG_PORT=9222"),
+            ("etc/systemd/system/opos-server.service.d/30-opos-dev-span.conf", "Environment=OPOS_SPAN=675,42"),
+            ("etc/sudoers.d/90-opos-dev", "droidian ALL=(ALL) NOPASSWD:ALL"),
+        ):
             self.assertIn(value, (result / rel).read_text())
         self.assertIn("DEV IMAGE:", p.stdout)
 
@@ -463,8 +505,20 @@ class Builder(unittest.TestCase):
         alternate = self.work / "alternate.sha256"
         shutil.copyfile(self.allowlist, alternate)
         self.allowlist.write_text("0" * 64 + "  another base\n")
-        p = subprocess.run([sys.executable, "-I", "-B", str(self.pkg / "image-policy.py"), "release-base",
-                            str(self.base), str(alternate)], text=True, capture_output=True, timeout=10)
+        p = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(self.pkg / "image-policy.py"),
+                "release-base",
+                str(self.base),
+                str(alternate),
+            ],
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
@@ -562,12 +616,17 @@ class Builder(unittest.TestCase):
         owner, developer = self.work / "owner.pub", self.work / "developer.pub"
         owner.write_text(ck.sudo.TEST_KEY + "# owner comment without newline")
         import base64
+
         blob = b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00 " + bytes(reversed(range(32)))
         developer.write_text("ssh-ed25519 " + base64.b64encode(blob).decode() + " developer\n")
         self.put("usr/sbin/sshd", "fixture, never run\n", 0o755)
         self.put("lib/systemd/system/ssh.service", "[Service]\nExecStart=/usr/sbin/sshd -D $SSHD_OPTS\n")
-        (self.seed / "etc/systemd/system/multi-user.target.wants/ssh.service").symlink_to("/lib/systemd/system/ssh.service")
-        p = self.run_builder(release="0", OPOS_NO_SSH="0", OPOS_OWNER_SSH_PUBKEY=str(owner), OPOS_DEV_SSH_PUBKEY=str(developer))
+        (self.seed / "etc/systemd/system/multi-user.target.wants/ssh.service").symlink_to(
+            "/lib/systemd/system/ssh.service"
+        )
+        p = self.run_builder(
+            release="0", OPOS_NO_SSH="0", OPOS_OWNER_SSH_PUBKEY=str(owner), OPOS_DEV_SSH_PUBKEY=str(developer)
+        )
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         keys = (self.work / "result/home/droidian/.ssh/authorized_keys").read_text().splitlines()
         self.assertIn(ck.sudo.TEST_KEY.strip(), keys)
@@ -591,8 +650,13 @@ class Builder(unittest.TestCase):
         target = self.work / "fixture-mount"
         target.mkdir()
         env = dict(os.environ, FIXTURE_WORK=str(self.work))
-        p = subprocess.run([str(self.bin / "mount"), "-o", "ro,loop,noload", str(other), str(target)],
-                           env=env, text=True, capture_output=True, timeout=10)
+        p = subprocess.run(
+            [str(self.bin / "mount"), "-o", "ro,loop,noload", str(other), str(target)],
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual((target / "etc/mount-proof").read_text(), "from the image argument\n")
         p = subprocess.run([str(self.bin / "umount"), str(target)], env=env, capture_output=True, timeout=10)
@@ -604,16 +668,26 @@ class Builder(unittest.TestCase):
                 (self.bin / name).symlink_to(self.work / "fixture-tool.py")
         marker = self.seed / "etc/opos/build-mode"
         marker.parent.mkdir(parents=True, exist_ok=True)
-        env = dict(os.environ, FIXTURE_WORK=str(self.work), OPOS_RELEASE="1", TMPDIR=str(self.work / "tmp"),
-                   PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
+        env = dict(
+            os.environ,
+            FIXTURE_WORK=str(self.work),
+            OPOS_RELEASE="1",
+            TMPDIR=str(self.work / "tmp"),
+            PATH=str(self.bin) + os.pathsep + os.environ["PATH"],
+        )
         for value in (None, "dev\n"):
             with self.subTest(value=value):
                 marker.unlink(missing_ok=True)
                 if value:
                     marker.write_text(value)
                 self.pack_base()
-                p = subprocess.run(["sh", str(PKG / "verify-image.sh"), str(self.base)],
-                                   env=env, text=True, capture_output=True, timeout=20)
+                p = subprocess.run(
+                    ["sh", str(PKG / "verify-image.sh"), str(self.base)],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    timeout=20,
+                )
                 self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
                 self.assertIn("FAIL image records its build mode", p.stdout)
                 self.assertIn("image build mode" if value is None else "marked dev", p.stderr)
@@ -676,8 +750,12 @@ class Recovery(unittest.TestCase):
         pub, _ = self.recovery_root()
         main = self.root / "etc/ssh/sshd_config"
         original = main.read_text()
-        for setting in ("", "AuthorizedKeysFile .ssh/authorized_keys", "AuthorizedKeysFile %h/.ssh/authorized_keys",
-                        "AuthorizedKeysFile /home/%u/.ssh/authorized_keys"):
+        for setting in (
+            "",
+            "AuthorizedKeysFile .ssh/authorized_keys",
+            "AuthorizedKeysFile %h/.ssh/authorized_keys",
+            "AuthorizedKeysFile /home/%u/.ssh/authorized_keys",
+        ):
             with self.subTest(setting=setting):
                 main.write_text(original + setting + "\n")
                 p = self.provision(pub)
@@ -687,8 +765,12 @@ class Recovery(unittest.TestCase):
         pub, _ = self.recovery_root()
         main = self.root / "etc/ssh/sshd_config"
         original = main.read_text()
-        for setting in ("AuthorizedKeysFile none", "AuthorizedKeysFile /elsewhere/keys",
-                        "Match User droidian\n AuthorizedKeysFile none", "PubkeyAuthentication no"):
+        for setting in (
+            "AuthorizedKeysFile none",
+            "AuthorizedKeysFile /elsewhere/keys",
+            "Match User droidian\n AuthorizedKeysFile none",
+            "PubkeyAuthentication no",
+        ):
             with self.subTest(setting=setting):
                 main.write_text(original + setting + "\n")
                 p = self.provision(pub)
@@ -697,8 +779,13 @@ class Recovery(unittest.TestCase):
     def test_untraversable_or_writable_home_ancestor_and_unreadable_key_are_refused(self):
         pub, home = self.recovery_root()
         self.assertEqual(self.provision(pub).returncode, 0)
-        for path, mode in ((home, 0o600), (home / ".ssh", 0o600), (home / ".ssh/authorized_keys", 0),
-                           (home.parent, 0o777), (home.parent, 0o600)):
+        for path, mode in (
+            (home, 0o600),
+            (home / ".ssh", 0o600),
+            (home / ".ssh/authorized_keys", 0),
+            (home.parent, 0o777),
+            (home.parent, 0o600),
+        ):
             with self.subTest(path=path, mode=oct(mode)):
                 before = path.stat().st_mode & 0o777
                 path.chmod(mode)
@@ -747,6 +834,7 @@ class OutputParent(unittest.TestCase):
         parent.mkdir(mode=0o700)
         for uid in (0, 12345, 54321):
             original = Path.stat
+
             def stated(path, *args, **kwargs):
                 value = original(path, *args, **kwargs)
                 if path == parent:
@@ -754,7 +842,12 @@ class OutputParent(unittest.TestCase):
                     fields[4] = uid
                     return os.stat_result(fields)
                 return value
-            with self.subTest(uid=uid), mock.patch.dict(os.environ, SUDO_UID="12345"), mock.patch.object(Path, "stat", stated):
+
+            with (
+                self.subTest(uid=uid),
+                mock.patch.dict(os.environ, SUDO_UID="12345"),
+                mock.patch.object(Path, "stat", stated),
+            ):
                 if uid in (0, 12345):
                     with redirect_stdout(io.StringIO()):
                         self.policy["output_parent"](parent / "image")
@@ -784,14 +877,20 @@ class VerifierUnmount(unittest.TestCase):
     pack_base = Builder.pack_base
     events = Builder.events
     assert_clean = Builder.assert_clean
+
     def run_verifier(self, code=None, **extra):
         for name in ("qemu-aarch64-static", "stat"):
             (self.bin / name).symlink_to(self.work / "fixture-tool.py")
         self.put("etc/opos/build-mode", "release\n")
         self.pack_base()
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_")}
-        env.update(FIXTURE_WORK=str(self.work), OPOS_RELEASE="1", TMPDIR=str(self.work / "tmp"),
-                   PATH=str(self.bin) + os.pathsep + os.environ["PATH"], **extra)
+        env.update(
+            FIXTURE_WORK=str(self.work),
+            OPOS_RELEASE="1",
+            TMPDIR=str(self.work / "tmp"),
+            PATH=str(self.bin) + os.pathsep + os.environ["PATH"],
+            **extra,
+        )
         if code is None:
             command = ["sh", str(PKG / "verify-image.sh"), str(self.base)]
         else:
@@ -804,8 +903,8 @@ class VerifierUnmount(unittest.TestCase):
         # Execute the real lifecycle and final gate, omitting unrelated static
         # and qemu smoke checks. No replacement verifier or image code runs.
         text = (PKG / "verify-image.sh").read_text()
-        prefix = text.split('r=$mnt\n', 1)[0]
-        footer = text.rsplit('# --- qa: END\n', 1)[1]
+        prefix = text.split("r=$mnt\n", 1)[0]
+        footer = text.rsplit("# --- qa: END\n", 1)[1]
         return prefix + middle + "\n" + footer
 
     def test_real_verifier_failed_first_unmount_reports_and_retains_image(self):
@@ -836,14 +935,15 @@ class VerifierUnmount(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         pid = re.match(r"\d+", p.stderr.split("OWNED_PID=", 1)[1]).group()  # the job's own trace can interleave here
         self.assertIn("+ wait " + pid, p.stderr)
-        self.assertLess(p.stderr.index("+ wait " + pid), p.stderr.index('+ umount '))
+        self.assertLess(p.stderr.index("+ wait " + pid), p.stderr.index("+ umount "))
         self.assert_clean()
 
     def test_normal_stop_waits_for_the_owned_server(self):
         text = (PKG / "verify-image.sh").read_text()
         stop = text.split("stop_server() {", 1)[1].split("# --- servers: END", 1)[0]
-        code = self.lifecycle('stop_server() {' + stop + '\nsleep 30 &\npids=$!\n'
-                              'echo "OWNED_PID=$pids" >&2\nstop_server "$pids"\nfail=0')
+        code = self.lifecycle(
+            "stop_server() {" + stop + '\nsleep 30 &\npids=$!\necho "OWNED_PID=$pids" >&2\nstop_server "$pids"\nfail=0'
+        )
         p = self.run_verifier(code)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         pid = re.match(r"\d+", p.stderr.split("OWNED_PID=", 1)[1]).group()  # the job's own trace can interleave here
@@ -856,8 +956,12 @@ class SelftestSyntax(unittest.TestCase):
     def test_release_developer_key_is_a_path_while_boolean_zero_is_allowed(self):
         release_inputs = runpy.run_path(str(PKG / "image-policy.py"))["release_inputs"]
         for value in ("", "0", "1", "key.pub"):
-            with self.subTest(value=value), mock.patch.dict(os.environ, {
-                    "OPOS_DEV_SSH_PUBKEY": value, "OPOS_DEV_SPAN": "0", "OPOS_DEV_SUDO": "0"}, clear=True):
+            with (
+                self.subTest(value=value),
+                mock.patch.dict(
+                    os.environ, {"OPOS_DEV_SSH_PUBKEY": value, "OPOS_DEV_SPAN": "0", "OPOS_DEV_SUDO": "0"}, clear=True
+                ),
+            ):
                 if value:
                     with self.assertRaisesRegex(ValueError, "refuses"):
                         release_inputs("unused")
@@ -907,15 +1011,24 @@ class SelftestSyntax(unittest.TestCase):
             marker.parent.mkdir(parents=True)
             text = (PKG / "verify-image.sh").read_text()
             block = text.split("# --- build mode: BEGIN\n", 1)[1].split("# --- build mode: END", 1)[0]
-            code = 'fail=0; check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }; ' + block + '\nexit "$fail"\n'
+            code = (
+                'fail=0; check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }; '
+                + block
+                + '\nexit "$fail"\n'
+            )
             for mode in ("0", "1"):
                 for value in (None, "dev\n", "release\n", "release\nextra\n"):
                     with self.subTest(mode=mode, value=value):
                         marker.unlink(missing_ok=True)
                         if value is not None:
                             marker.write_text(value)
-                        p = subprocess.run(["sh", "-c", code], env=dict(os.environ, r=str(root), here=str(PKG), OPOS_RELEASE=mode),
-                                           text=True, capture_output=True, timeout=20)
+                        p = subprocess.run(
+                            ["sh", "-c", code],
+                            env=dict(os.environ, r=str(root), here=str(PKG), OPOS_RELEASE=mode),
+                            text=True,
+                            capture_output=True,
+                            timeout=20,
+                        )
                         accepted = value == "release\n" or (mode == "0" and value == "dev\n")
                         self.assertEqual(p.returncode, 0 if accepted else 1, p.stdout + p.stderr)
 
@@ -923,9 +1036,12 @@ class SelftestSyntax(unittest.TestCase):
         fake = st.Fake()
         self.addCleanup(fake.cleanup)
         for option in ("PasswordAuthentication", "KbdInteractiveAuthentication", "ChallengeResponseAuthentication"):
-            for syntax in (' = "yes"', '= "yes"', '="yes"', ' ="yes"', ' "yes"', '= yes', ' = yes', '=yes', ' =yes'):
+            for syntax in (' = "yes"', '= "yes"', '="yes"', ' ="yes"', ' "yes"', "= yes", " = yes", "=yes", " =yes"):
                 with self.subTest(option=option, syntax=syntax):
-                    fake.put("etc/ssh/sshd_config.d/20-local.conf", "Match User droidian\n " + option + syntax + " # comment\n")
+                    fake.put(
+                        "etc/ssh/sshd_config.d/20-local.conf",
+                        "Match User droidian\n " + option + syntax + " # comment\n",
+                    )
                     ctx = st.ST.Ctx(str(fake.root), [str(fake.bin)], fake.url, st.NOW, None)
                     with redirect_stdout(io.StringIO()):
                         st.ST.check_ssh(ctx)

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Everyday app shell: local store, /apps, disclosure, and a main page that stays the same until an app is named."""
+
 import http.client
 import json
 import os
@@ -31,8 +32,19 @@ def post_sample(data):
 
 
 SAMPLE = apps.App(
-    "sample", "Sample", "/sample", "A stand-in used by tests.",
-    "yes", "no", "none", "real", "sample", "OPTIONAL", 0.1, render_sample, post=post_sample,
+    "sample",
+    "Sample",
+    "/sample",
+    "A stand-in used by tests.",
+    "yes",
+    "no",
+    "none",
+    "real",
+    "sample",
+    "OPTIONAL",
+    0.1,
+    render_sample,
+    post=post_sample,
 )
 
 
@@ -75,11 +87,16 @@ def get(server, path, token=None):
 def post(server, path, payload, token):
     raw = json.dumps(payload).encode()
     conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
-    conn.request("POST", path, raw, {
-        "Content-Type": "application/json",
-        "X-OPOS-Token": token,
-        "Content-Length": str(len(raw)),
-    })
+    conn.request(
+        "POST",
+        path,
+        raw,
+        {
+            "Content-Type": "application/json",
+            "X-OPOS-Token": token,
+            "Content-Length": str(len(raw)),
+        },
+    )
     response = conn.getresponse()
     body = response.read()
     conn.close()
@@ -129,6 +146,7 @@ class StoreTests(unittest.TestCase):
 
     def _tmp(self):
         import tempfile
+
         return tempfile.TemporaryDirectory()
 
 
@@ -148,8 +166,18 @@ class CatalogTests(unittest.TestCase):
     def test_disclosure_and_order(self):
         apps.register(SAMPLE)
         album = apps.App(
-            "album", "Album", "/album", "A second stand-in.",
-            "yes", "no", "speaker", "practice", "album", "USEFUL", 0, render_sample,
+            "album",
+            "Album",
+            "/album",
+            "A second stand-in.",
+            "yes",
+            "no",
+            "speaker",
+            "practice",
+            "album",
+            "USEFUL",
+            0,
+            render_sample,
         )
         apps.register(album)
         self.assertEqual(SAMPLE.card(), "Works offline: yes. Sends data: no. Uses: none. Real or practice: real.")
@@ -167,8 +195,18 @@ class CatalogTests(unittest.TestCase):
     def test_pause_reasons_follow_the_battery_rules(self):
         apps.register(SAMPLE)
         alarms = apps.App(
-            "bell", "Bell", "/bell", "Alarm stand-in.",
-            "yes", "no", "speaker", "real", "alarms", "OPTIONAL", 0.1, render_sample,
+            "bell",
+            "Bell",
+            "/bell",
+            "Alarm stand-in.",
+            "yes",
+            "no",
+            "speaker",
+            "real",
+            "alarms",
+            "OPTIONAL",
+            0.1,
+            render_sample,
         )
         apps.register(alarms)
         self.addCleanup(apps.unregister, "bell")
@@ -242,8 +280,10 @@ class PageTests(unittest.TestCase):
             self.assertEqual(front, 200)
             self.assertIn(b"Phone", home)
             self.assertIn(b"/apps-home.js", home)
+
             def broken(_token, _nonce):
                 raise RuntimeError("broken render")
+
             SAMPLE.render = broken
             try:
                 status, body = get(server, "/sample")
@@ -267,9 +307,12 @@ class PageTests(unittest.TestCase):
 
     def test_render_does_not_open_a_connection(self):
         import socket
+
         apps.register(SAMPLE)
+
         def refuse(*_a, **_k):
             raise AssertionError("connect")
+
         with mock.patch.dict(os.environ, {"OPOS_APPS": "sample"}):
             with mock.patch.object(socket.socket, "connect", refuse), mock.patch("socket.create_connection", refuse):
                 html = apps_page.index_html("tok", "nonce")
@@ -289,6 +332,7 @@ class PageTests(unittest.TestCase):
 
 def served_switches():
     from tests.test_uxp30_budget import SWITCHES
+
     return dict(SWITCHES)
 
 

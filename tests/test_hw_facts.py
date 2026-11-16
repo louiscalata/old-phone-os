@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The Duo's hardware facts: one declared profile (src/opos/hw/device.py), the hand-written copies checked against it,
 and the read-only reader (src/opos/hw/facts.py) that compares the profile with what the kernel reports."""
+
 import ast
 import contextlib
 import dataclasses
@@ -24,8 +25,13 @@ SRC = ROOT / "src" / "opos"
 def assigned(path: Path, name: str):
     """The literal a Python file assigns to a top-level name, read with ast (the file is not imported)."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    found = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
-             for t in n.targets if isinstance(t, ast.Name) and t.id == name]
+    found = [
+        ast.literal_eval(n.value)
+        for n in tree.body
+        if isinstance(n, ast.Assign)
+        for t in n.targets
+        if isinstance(t, ast.Name) and t.id == name
+    ]
     if len(found) != 1:
         raise AssertionError("%s assigns %s %d times" % (path, name, len(found)))
     return found[0]
@@ -62,9 +68,12 @@ class ContractTest(unittest.TestCase):
 
     def test_the_posture_panel_geometry_is_read_from_the_profile(self):
         from opos.native import posture
+
         self.assertEqual((posture.PANEL_WIDTH_PX, posture.PANEL_HEIGHT_PX), self.duo.panel_px.value)
         self.assertEqual(2 * posture.PANEL_WIDTH_PX + posture.HINGE_COLUMN_PX, self.duo.output_px.value[0])
-        self.assertEqual(posture.HINGE_COLUMN_PX, 84)  # the dossier's hinge column; 42 px at scale 2 (the profile's hinge)
+        self.assertEqual(
+            posture.HINGE_COLUMN_PX, 84
+        )  # the dossier's hinge column; 42 px at scale 2 (the profile's hinge)
         self.assertEqual(posture.HINGE_COLUMN_PX / self.duo.scale.value, self.duo.hinge.value)
         # read, not a second hand-written copy: no number is written next to the three names in posture.py
         text = (SRC / "native" / "posture.py").read_text(encoding="utf-8")
@@ -76,7 +85,9 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(int(uid), self.duo.session_uid.value)
 
     def test_the_battery_reader_names_the_profile_gauge_driver(self):
-        drivers = re.findall(r'entry\.name\.startswith\("([^"]+)"\)', (SRC / "hw" / "battery.py").read_text(encoding="utf-8"))
+        drivers = re.findall(
+            r'entry\.name\.startswith\("([^"]+)"\)', (SRC / "hw" / "battery.py").read_text(encoding="utf-8")
+        )
         self.assertEqual(drivers, [self.duo.fuel_gauge_driver.value])
 
 
@@ -84,11 +95,22 @@ class ContractTest(unittest.TestCase):
 # it should read the fact from opos.hw.device, or be added here on purpose with a contract test above.
 # src/opos/native/posture.py is listed only for the lid name; it reads the panel geometry from the profile.
 LEAK_ALLOWED = {
-    "2784": {"src/opos/hw/device.py", "packaging/duo-os/opos-selftest", "packaging/duo-os/opos-server.service",
-             "packaging/duo-os/README.md"},
+    "2784": {
+        "src/opos/hw/device.py",
+        "packaging/duo-os/opos-selftest",
+        "packaging/duo-os/opos-server.service",
+        "packaging/duo-os/README.md",
+    },
     "1350": {"src/opos/hw/device.py", "packaging/duo-os/opos-server.service", "packaging/duo-os/README.md"},
-    "675,42": {"src/opos/web.py", "src/opos/span.py", "packaging/duo-os/verify-image.sh", "packaging/duo-os/opos-server.service",
-               "packaging/duo-os/README.md", "packaging/duo-os/build-image.sh", "packaging/duo-os/opos-native"},
+    "675,42": {
+        "src/opos/web.py",
+        "src/opos/span.py",
+        "packaging/duo-os/verify-image.sh",
+        "packaging/duo-os/opos-server.service",
+        "packaging/duo-os/README.md",
+        "packaging/duo-os/build-image.sh",
+        "packaging/duo-os/opos-native",
+    },
     "Surface Duo Lid": {"src/opos/hw/device.py", "src/opos/native/posture.py", "packaging/duo-os/NATIVE.md"},
     "bq27742": {"src/opos/hw/device.py", "src/opos/hw/battery.py", "packaging/duo-os/README.md"},
     "32011": {"src/opos/hw/device.py", "packaging/duo-os/POWER.md", "packaging/duo-os/opos-brightness.service"},
@@ -126,6 +148,7 @@ def duo_tree(root: Path, panel=b"1350x1800\n") -> None:
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
+
     put("proc/device-tree/model", b"Microsoft Surface Duo\x00")
     put("proc/device-tree/compatible", b"microsoft,surface-duo\x00qcom,sm8150\x00")
     put("proc/meminfo", b"MemTotal:        5765432 kB\nMemFree:          123456 kB\n")
@@ -133,10 +156,12 @@ def duo_tree(root: Path, panel=b"1350x1800\n") -> None:
     put("sys/class/drm/card0-DSI-1/modes", panel)
     put("sys/class/drm/card0-DSI-2/modes", panel)
     put("sys/class/drm/card0-Virtual-1/modes", b"")
-    put("proc/bus/input/devices",
+    put(
+        "proc/bus/input/devices",
         b'I: Bus=0000 Vendor=0000 Product=0000 Version=0000\nN: Name="qpnp_pon"\nB: EV=3\n\n'
         b'I: Bus=0000 Vendor=0000 Product=0000 Version=0000\nN: Name="Surface Duo Lid"\nB: EV=21\nB: SW=1\n\n'
-        b'I: Bus=0000 Vendor=0000 Product=0000 Version=0000\nN: Name="Surface Duo Lid Wakeup"\nB: EV=3\n\n')
+        b'I: Bus=0000 Vendor=0000 Product=0000 Version=0000\nN: Name="Surface Duo Lid Wakeup"\nB: EV=3\n\n',
+    )
     for name, kind in (("bq27742-0", b"Battery\n"), ("bq27742-1", b"Battery\n"), ("usb", b"USB\n")):
         put("sys/class/power_supply/%s/type" % name, kind)
     for name in ("panel0-backlight", "panel1-backlight"):
@@ -273,7 +298,19 @@ class ReaderTest(unittest.TestCase):
 
     def test_the_reader_has_no_write_calls(self):
         text = (SRC / "hw" / "facts.py").read_text(encoding="utf-8")
-        for call in ("write_", ".write(", '"w"', "'w'", '"a"', "mkdir", "unlink", "rmdir", "rename", "chmod", "subprocess"):
+        for call in (
+            "write_",
+            ".write(",
+            '"w"',
+            "'w'",
+            '"a"',
+            "mkdir",
+            "unlink",
+            "rmdir",
+            "rename",
+            "chmod",
+            "subprocess",
+        ):
             self.assertNotIn(call, text)
 
 
@@ -285,7 +322,7 @@ class DiagTest(unittest.TestCase):
         d = (DUO / "opos-diag").read_text(encoding="utf-8")
         self.assertEqual(d.count(self.START), 1)
         self.assertEqual(d.count(self.END), 1)
-        return d[d.index(self.START):d.index(self.END) + len(self.END)]
+        return d[d.index(self.START) : d.index(self.END) + len(self.END)]
 
     def test_the_diag_runs_the_reader_once_read_only(self):
         blk = self.block()

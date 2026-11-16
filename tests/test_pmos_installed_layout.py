@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise package functions and state checks in unprivileged temporary trees."""
+
 import importlib.util
 import os
 import shutil
@@ -41,7 +42,7 @@ def stage_package(destination):
         encoding="utf-8",
     )
     package, systemd = destination / "package", destination / "systemd"
-    script = r'''
+    script = r"""
 set -eu
 adapter_python=$6
 adapter=$7
@@ -54,12 +55,27 @@ subpkgname=opos-systemd
 builddir=$3
 package
 _systemd
-'''
+"""
     result = subprocess.run(
-        ["sh", "-c", script, "package-layout", str(PACKAGE / "APKBUILD"),
-         str(inputs), str(ROOT), str(package), str(systemd), sys.executable,
-         str(adapter)], cwd=ROOT, env=dict(os.environ, TEST_DESTDIR=str(destination)),
-        capture_output=True, text=True, timeout=30, check=False,
+        [
+            "sh",
+            "-c",
+            script,
+            "package-layout",
+            str(PACKAGE / "APKBUILD"),
+            str(inputs),
+            str(ROOT),
+            str(package),
+            str(systemd),
+            sys.executable,
+            str(adapter),
+        ],
+        cwd=ROOT,
+        env=dict(os.environ, TEST_DESTDIR=str(destination)),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
     )
     if result.returncode:
         raise AssertionError(result.stdout + result.stderr)
@@ -97,12 +113,14 @@ class SystemdStateLayoutTests(unittest.TestCase):
         self.owner = (os.getuid(), os.getgid())
 
     def prepare(self, readable=None):
-        return self.helper.prepare_state(self.home, self.owner, root_owner=self.owner,
-                                         readable=readable or (lambda path: os.access(path, os.R_OK)))
+        return self.helper.prepare_state(
+            self.home, self.owner, root_owner=self.owner, readable=readable or (lambda path: os.access(path, os.R_OK))
+        )
 
     def check(self, readable=None):
-        return self.helper.check_state(self.home, self.owner, root_owner=self.owner,
-                                       readable=readable or (lambda path: os.access(path, os.R_OK)))
+        return self.helper.check_state(
+            self.home, self.owner, root_owner=self.owner, readable=readable or (lambda path: os.access(path, os.R_OK))
+        )
 
     def test_prepare_creates_expected_directories_without_prefs_or_marker(self):
         self.prepare()
@@ -152,20 +170,20 @@ class SystemdStateLayoutTests(unittest.TestCase):
                     else:
                         os.mkfifo(target)
                     with self.assertRaises(self.helper.StateError):
-                        self.helper.prepare_state(home, self.owner, root_owner=self.owner,
-                                                  readable=lambda path: True)
+                        self.helper.prepare_state(home, self.owner, root_owner=self.owner, readable=lambda path: True)
                     self.assertEqual(sentinel.read_bytes(), b"unchanged")
                     self.assertEqual(sorted(path.name for path in outside.iterdir()), ["sentinel"])
 
     def test_wrong_directory_mode_or_owner_is_rejected_without_repair(self):
         self.prepare()
         with self.assertRaises(self.helper.StateError):
-            self.helper.check_state(self.home, self.owner,
-                                    root_owner=(self.owner[0] + 1, self.owner[1]),
-                                    readable=lambda path: True)
+            self.helper.check_state(
+                self.home, self.owner, root_owner=(self.owner[0] + 1, self.owner[1]), readable=lambda path: True
+            )
         with self.assertRaises(self.helper.StateError):
-            self.helper.check_state(self.home, (self.owner[0] + 1, self.owner[1]),
-                                    root_owner=self.owner, readable=lambda path: True)
+            self.helper.check_state(
+                self.home, (self.owner[0] + 1, self.owner[1]), root_owner=self.owner, readable=lambda path: True
+            )
         parent = self.home / ".config"
         parent.chmod(0o777)
         with self.assertRaises(self.helper.StateError):
@@ -193,8 +211,10 @@ class SystemdStateLayoutTests(unittest.TestCase):
         with self.assertRaises(self.helper.StateError):
             self.prepare(readable=lambda path: False)
         self.assertEqual(prefs.read_bytes(), b"preserve prefs")
-        self.assertEqual((prefs.stat().st_uid, prefs.stat().st_gid, prefs.stat().st_mode),
-                         (before.st_uid, before.st_gid, before.st_mode))
+        self.assertEqual(
+            (prefs.stat().st_uid, prefs.stat().st_gid, prefs.stat().st_mode),
+            (before.st_uid, before.st_gid, before.st_mode),
+        )
         self.assertEqual(outside.read_bytes(), b"keep exact bytes")
 
     def test_symlink_marker_is_rejected_without_touching_target(self):

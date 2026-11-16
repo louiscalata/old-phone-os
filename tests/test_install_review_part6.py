@@ -59,10 +59,16 @@ def _assert_isolated_shell_paths(text, tmp_path):
         raise AssertionError("shell-path scan must fail closed on unrecognized paths: %s" % sorted(set(bad)))
     probe = "/var/backups/opos-harden"
     assign_re = re.compile(r"^_hard_backups=(\"[^\"]*\"|'[^']*'|[^ \t;#|&$`<>]+)$")
-    mutate_re = re.compile(r"(^|[;\s&|`$(\|])(rm|mv|rmdir|dd|shred|mkfs|truncate|tee|chmod|chown|touch|cp|ln|mkdir|mknod|install|rsync|tar|unzip|zip|cpio|curl|wget|git)\b")
-    alias_re = re.compile(r"^\s*(?:export\s+|local\s+|declare\s+|typeset\s+)?[A-Za-z_][A-Za-z0-9_]*=.*\$\{?_hard_backups")
+    mutate_re = re.compile(
+        r"(^|[;\s&|`$(\|])(rm|mv|rmdir|dd|shred|mkfs|truncate|tee|chmod|chown|touch|cp|ln|mkdir|mknod|install|rsync|tar|unzip|zip|cpio|curl|wget|git)\b"
+    )
+    alias_re = re.compile(
+        r"^\s*(?:export\s+|local\s+|declare\s+|typeset\s+)?[A-Za-z_][A-Za-z0-9_]*=.*\$\{?_hard_backups"
+    )
     exec_re = re.compile(r"(^|[;\s&|`$(\|])(eval|exec|sudo|sh|bash|dash|xargs|env)\b")
-    readonly_re = re.compile(r"(^\s*test\b|^\s*\[|^\s*\[\[|^\s*if\b|\bthen\b|\bcase\b|/dev/null|\btest\b|\bls\b|\bstat\b|\bfind\b|\bcat\b|\bgrep\b|\bhead\b|\btail\b|\bwc\b|\bdiff\b|\bcmp\b|\bbasename\b|\bdirname\b|\bprintf\b|\becho\b|:)")
+    readonly_re = re.compile(
+        r"(^\s*test\b|^\s*\[|^\s*\[\[|^\s*if\b|\bthen\b|\bcase\b|/dev/null|\btest\b|\bls\b|\bstat\b|\bfind\b|\bcat\b|\bgrep\b|\bhead\b|\btail\b|\bwc\b|\bdiff\b|\bcmp\b|\bbasename\b|\bdirname\b|\bprintf\b|\becho\b|:)"
+    )
     found_probe_assign = False
     for line in text.splitlines():
         stripped = line.strip()
@@ -181,66 +187,70 @@ def _run_sshd_isolated(tmp_path, dropin_bytes, expected_bytes, extra="", extra_e
     cp_text = (
         "#!/bin/sh\n"
         "set -eu\n"
-        "_deny=\"" + str(deny_log) + "\"\n"
-        "_fix=\"" + etc_real + "\"\n"
-        "_opos=\"" + opos_real + "\"\n"
-        "_real=\"" + real_cp + "\"\n"
-        "_py=\"" + real_py + "\"\n"
+        '_deny="' + str(deny_log) + '"\n'
+        '_fix="' + etc_real + '"\n'
+        '_opos="' + opos_real + '"\n'
+        '_real="' + real_cp + '"\n'
+        '_py="' + real_py + '"\n'
         "_dashdash=0\n"
-        "for _a in \"$@\"; do\n"
-        "  if [ \"$_dashdash\" -eq 0 ]; then\n"
-        "    case \"$_a\" in\n"
+        'for _a in "$@"; do\n'
+        '  if [ "$_dashdash" -eq 0 ]; then\n'
+        '    case "$_a" in\n'
         "      --) _dashdash=1; continue;;\n"
         "      -p|-f) continue;;\n"
-        "      -*) printf 'denied: cp %s\\n' \"$*\" >> \"$_deny\"; exit 1;;\n"
+        '      -*) printf \'denied: cp %s\\n\' "$*" >> "$_deny"; exit 1;;\n'
         "    esac\n"
         "  fi\n"
-        "  if ! _resolved=\"$(\"$_py\" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' \"$_a\")\"; then\n"
-        "    printf 'denied: cp %s\\n' \"$*\" >> \"$_deny\"\n"
+        '  if ! _resolved="$("$_py" -c \'import os,sys; print(os.path.realpath(sys.argv[1]))\' "$_a")"; then\n'
+        '    printf \'denied: cp %s\\n\' "$*" >> "$_deny"\n'
         "    exit 1\n"
         "  fi\n"
-        "  case \"$_resolved\" in\n"
-        "    \"$_fix\"|\"$_fix\"/*|\"$_opos\"|\"$_opos\"/*) ;;\n"
-        "    *) printf 'denied: cp %s\\n' \"$*\" >> \"$_deny\"; exit 1;;\n"
+        '  case "$_resolved" in\n'
+        '    "$_fix"|"$_fix"/*|"$_opos"|"$_opos"/*) ;;\n'
+        '    *) printf \'denied: cp %s\\n\' "$*" >> "$_deny"; exit 1;;\n'
         "  esac\n"
         "done\n"
-        "exec \"$_real\" \"$@\"\n"
+        'exec "$_real" "$@"\n'
     )
     rm_text = (
         "#!/bin/sh\n"
         "set -eu\n"
-        "_deny=\"" + str(deny_log) + "\"\n"
-        "_fix=\"" + etc_real + "\"\n"
-        "_opos=\"" + opos_real + "\"\n"
-        "_real=\"" + real_rm + "\"\n"
-        "_py=\"" + real_py + "\"\n"
+        '_deny="' + str(deny_log) + '"\n'
+        '_fix="' + etc_real + '"\n'
+        '_opos="' + opos_real + '"\n'
+        '_real="' + real_rm + '"\n'
+        '_py="' + real_py + '"\n'
         "_dashdash=0\n"
-        "for _a in \"$@\"; do\n"
-        "  if [ \"$_dashdash\" -eq 0 ]; then\n"
-        "    case \"$_a\" in\n"
+        'for _a in "$@"; do\n'
+        '  if [ "$_dashdash" -eq 0 ]; then\n'
+        '    case "$_a" in\n'
         "      --) _dashdash=1; continue;;\n"
         "      -*) continue;;\n"
         "    esac\n"
         "  fi\n"
-        "  if ! _resolved=\"$(\"$_py\" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' \"$_a\")\"; then\n"
-        "    printf 'denied: rm %s\\n' \"$*\" >> \"$_deny\"\n"
+        '  if ! _resolved="$("$_py" -c \'import os,sys; print(os.path.realpath(sys.argv[1]))\' "$_a")"; then\n'
+        '    printf \'denied: rm %s\\n\' "$*" >> "$_deny"\n'
         "    exit 1\n"
         "  fi\n"
-        "  case \"$_resolved\" in\n"
-        "    \"$_fix\"|\"$_fix\"/*|\"$_opos\"|\"$_opos\"/*) ;;\n"
-        "    *) printf 'denied: rm %s\\n' \"$*\" >> \"$_deny\"; exit 1;;\n"
+        '  case "$_resolved" in\n'
+        '    "$_fix"|"$_fix"/*|"$_opos"|"$_opos"/*) ;;\n'
+        '    *) printf \'denied: rm %s\\n\' "$*" >> "$_deny"; exit 1;;\n'
         "  esac\n"
         "done\n"
-        "exec \"$_real\" \"$@\"\n"
+        'exec "$_real" "$@"\n'
     )
     (fakebin / "cp").write_text(cp_text, encoding="utf-8")
     (fakebin / "rm").write_text(rm_text, encoding="utf-8")
-    (fakebin / "head").write_text("#!/bin/sh\nset -eu\nexec \"" + real_head + "\" \"$@\"\n", encoding="utf-8")
-    (fakebin / "cmp").write_text("#!/bin/sh\nset -eu\nexec \"" + real_cmp + "\" \"$@\"\n", encoding="utf-8")
-    (fakebin / "cat").write_text("#!/bin/sh\nset -eu\nexec \"" + real_cat + "\" \"$@\"\n", encoding="utf-8")
+    (fakebin / "head").write_text('#!/bin/sh\nset -eu\nexec "' + real_head + '" "$@"\n', encoding="utf-8")
+    (fakebin / "cmp").write_text('#!/bin/sh\nset -eu\nexec "' + real_cmp + '" "$@"\n', encoding="utf-8")
+    (fakebin / "cat").write_text('#!/bin/sh\nset -eu\nexec "' + real_cat + '" "$@"\n', encoding="utf-8")
     for name in ("ufw", "iptables", "nft", "systemctl", "loginctl"):
         (fakebin / name).write_text(
-            "#!/bin/sh\nset -eu\n_deny=\"" + str(deny_log) + "\"\nprintf 'denied: " + name + " %s\\n' \"$*\" >> \"$_deny\"\nexit 1\n",
+            '#!/bin/sh\nset -eu\n_deny="'
+            + str(deny_log)
+            + "\"\nprintf 'denied: "
+            + name
+            + ' %s\\n\' "$*" >> "$_deny"\nexit 1\n',
             encoding="utf-8",
         )
     for p in fakebin.iterdir():
@@ -249,13 +259,11 @@ def _run_sshd_isolated(tmp_path, dropin_bytes, expected_bytes, extra="", extra_e
     run_path = tmp_path / "run_sshd.sh"
     run_path.write_text(
         "set -u\n"
-        "OPOS_HOME=\"" + str(opos_home) + "\"\n"
+        'OPOS_HOME="' + str(opos_home) + '"\n'
         "export OPOS_HOME\n"
-        "HOME=\"" + str(home) + "\"\n"
-        "export HOME\n"
-        + frag_rm + "\n"
-        + extra + "\n"
-        "printf \"sshd=%s\\n\" \"$_sshd\"\n",
+        'HOME="' + str(home) + '"\n'
+        "export HOME\n" + frag_rm + "\n" + extra + "\n"
+        'printf "sshd=%s\\n" "$_sshd"\n',
         encoding="utf-8",
     )
     env = dict(os.environ)
@@ -269,7 +277,13 @@ def _run_sshd_isolated(tmp_path, dropin_bytes, expected_bytes, extra="", extra_e
     denied = deny_log.read_text(encoding="utf-8") if deny_log.is_file() else ""
     m = re.search(r"sshd=(\S+)", proc.stdout)
     sshd = m.group(1) if m else ""
-    info = {"dropin": dropin_path, "expected": expected_path, "preserved": preserved_path, "etc": etc_ssh, "opos": opos_home}
+    info = {
+        "dropin": dropin_path,
+        "expected": expected_path,
+        "preserved": preserved_path,
+        "etc": etc_ssh,
+        "opos": opos_home,
+    }
     return proc, sshd, denied, info
 
 
@@ -329,7 +343,7 @@ class TestInstallReview(unittest.TestCase):
             log.write_text("", encoding="utf-8")
             for name in ("ufw", "iptables", "ip6tables", "nft", "firewall-cmd", "systemctl", "loginctl", "service"):
                 stub = stubdir / name
-                stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"" + str(log) + "\"\nexit 0\n", encoding="utf-8")
+                stub.write_text('#!/bin/sh\nprintf \'%s\\n\' "$0 $*" >> "' + str(log) + '"\nexit 0\n', encoding="utf-8")
                 stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             patched = text.replace("/etc/ssh/", str(etc_fixture) + "/")
             _assert_execution_confined(patched, tmp_path, stubdir, home, opos_home, bindir)
@@ -402,24 +416,28 @@ class TestInstallReview(unittest.TestCase):
                     extra = ""
                     extra_env = None
                     if name == "unquoted":
-                        extra = "cp \"$_sshd_expected\" " + str(sentinel) + " || true"
+                        extra = 'cp "$_sshd_expected" ' + str(sentinel) + " || true"
                     elif name == "env":
-                        extra = "cp \"$_sshd_expected\" \"$ESCAPE\" || true"
+                        extra = 'cp "$_sshd_expected" "$ESCAPE" || true'
                         extra_env = {"ESCAPE": str(sentinel)}
                     elif name == "dotdot":
-                        extra = "cp \"$_sshd_expected\" \"" + str(etc_pre) + "/../outside/sentinel\" || true"
+                        extra = 'cp "$_sshd_expected" "' + str(etc_pre) + '/../outside/sentinel" || true'
                     elif name == "symlink":
-                        extra = "cp \"$_sshd_expected\" \"" + str(link) + "/sentinel\" || true"
+                        extra = 'cp "$_sshd_expected" "' + str(link) + '/sentinel" || true'
                     elif name == "systemctl":
                         extra = "systemctl restart ssh || true"
-                    proc, sshd, denied, info = _run_sshd_isolated(tmp_path, base, base, extra=extra, extra_env=extra_env)
+                    proc, sshd, denied, info = _run_sshd_isolated(
+                        tmp_path, base, base, extra=extra, extra_env=extra_env
+                    )
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     self.assertIn("denied", denied, "rejected operation must be logged for %s" % name)
                     if name == "systemctl":
                         self.assertIn("denied: systemctl", denied)
                     else:
                         self.assertIn("denied: cp", denied)
-                    self.assertEqual(sentinel.read_bytes(), sent_bytes, "outside sentinel must remain unchanged for %s" % name)
+                    self.assertEqual(
+                        sentinel.read_bytes(), sent_bytes, "outside sentinel must remain unchanged for %s" % name
+                    )
 
     def test_sshd_copy_wrapper_rejects_destination_option(self):
         text = _read_install_sh()
@@ -435,11 +453,12 @@ class TestInstallReview(unittest.TestCase):
             sentinel.write_bytes(sent_bytes)
             base = (marker + "\nPort 2222\n").encode("utf-8")
             extra = 'cp "--target-directory=$ESCAPE" "$_sshd_expected" || true'
-            proc, sshd, denied, info = _run_sshd_isolated(tmp_path, base, base, extra=extra, extra_env={"ESCAPE": str(outside)})
+            proc, sshd, denied, info = _run_sshd_isolated(
+                tmp_path, base, base, extra=extra, extra_env={"ESCAPE": str(outside)}
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("denied: cp", denied)
             self.assertEqual(sentinel.read_bytes(), sent_bytes)
-
 
     def test_ssh_writes_stay_inside_isolated_root(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -461,7 +480,9 @@ class TestInstallReview(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 _assert_isolated_shell_paths('touch "' + sibling + '/sentinel"\n', tmp_path)
             with self.assertRaises(AssertionError):
-                _assert_isolated_shell_paths('_hard_backups="/var/backups/opos-harden"; rm -rf "$_hard_backups"\n', tmp_path)
+                _assert_isolated_shell_paths(
+                    '_hard_backups="/var/backups/opos-harden"; rm -rf "$_hard_backups"\n', tmp_path
+                )
             with tempfile.TemporaryDirectory() as other:
                 link = tmp_path / "link"
                 os.symlink(other, link)
@@ -493,15 +514,15 @@ class TestInstallReview(unittest.TestCase):
             tmp_path = pathlib.Path(tmp)
             probe = "/" + "var/" + "backups/" + "opos-harden"
             sub = "$" + "("
-            evil = "_hard_backups=\"" + sub + "rm -rf " + probe + ")\"\n"
+            evil = '_hard_backups="' + sub + "rm -rf " + probe + ')"\n'
             with self.assertRaises(AssertionError):
                 _assert_isolated_shell_paths(evil, tmp_path)
             tick = chr(96)
-            evil_tick = "_hard_backups=\"" + tick + "rm -rf " + probe + tick + "\"\n"
+            evil_tick = '_hard_backups="' + tick + "rm -rf " + probe + tick + '"\n'
             with self.assertRaises(AssertionError):
                 _assert_isolated_shell_paths(evil_tick, tmp_path)
             brace = "$" + "{"
-            evil_brace = "_hard_backups=\"" + brace + "x:-" + probe + "}\"\n"
+            evil_brace = '_hard_backups="' + brace + "x:-" + probe + '}"\n'
             with self.assertRaises(AssertionError):
                 _assert_isolated_shell_paths(evil_brace, tmp_path)
 
@@ -531,8 +552,12 @@ class TestInstallReview(unittest.TestCase):
             _assert_execution_confined(patched, tmp_path, stubdir, home, opos_home, bindir)
 
     def test_installer_execution_requires_confinement_guard(self):
-        with mock.patch(__name__ + "._assert_execution_confined", side_effect=AssertionError("confinement guard reached")) as guard:
-            with mock.patch(__name__ + ".subprocess.run", side_effect=AssertionError("subprocess reached before confinement guard")) as run_mock:
+        with mock.patch(
+            __name__ + "._assert_execution_confined", side_effect=AssertionError("confinement guard reached")
+        ) as guard:
+            with mock.patch(
+                __name__ + ".subprocess.run", side_effect=AssertionError("subprocess reached before confinement guard")
+            ) as run_mock:
                 other = TestInstallReview("test_unresolved_sshd_preserves_firewall_and_recovery_files")
                 with self.assertRaisesRegex(AssertionError, "^confinement guard reached$"):
                     other.test_unresolved_sshd_preserves_firewall_and_recovery_files()

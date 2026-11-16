@@ -22,7 +22,7 @@ class RenderBatterySync(unittest.TestCase):
         g = part.index(focus)
         b = part.index("{", g)
         e = part.index("}", b)
-        block = part[b:e + 1]
+        block = part[b : e + 1]
         self.assertIn(slider, block)
         self.assertIn(label, block)
 

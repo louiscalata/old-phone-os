@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Lock PIN: the hash, the growing wait, and the server refusing writes while locked."""
+
 import io
 import json
 import os
@@ -19,8 +20,12 @@ def lock_request(payload=None):
     handler.port = 8765
     handler.token = "t" * 32
     body = json.dumps(payload).encode()
-    handler.headers = {"Host": "127.0.0.1:8765", "Content-Type": "application/json",
-                       "X-OPOS-Token": handler.token, "Content-Length": str(len(body))}
+    handler.headers = {
+        "Host": "127.0.0.1:8765",
+        "Content-Type": "application/json",
+        "X-OPOS-Token": handler.token,
+        "Content-Length": str(len(body)),
+    }
     handler.rfile = io.BytesIO(body)
     handler.limiter = mock.Mock()
     handler.limiter.allow.return_value = True
@@ -48,7 +53,9 @@ class Hash(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.addCleanup(lockpin.reset)
         lockpin.reset()
-        with unittest.mock.patch.dict(__import__("os").environ, {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name, "OPOS_LOCK_TEST_CLOCK": "1"}):
+        with unittest.mock.patch.dict(
+            __import__("os").environ, {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name, "OPOS_LOCK_TEST_CLOCK": "1"}
+        ):
             lockpin.set_pin("1234")
             for n in range(4):
                 ok, status = lockpin.unlock("0000", 1000)
@@ -82,16 +89,16 @@ class LockCase(unittest.TestCase):
 class LockStateCharacterization(LockCase):
     def test_status_shape_and_types(self):
         status = lockpin.status(1000)
-        expected = {"ok": False, "locked": True, "has_pin": False,
-                    "wait_s": 0, "failures": 0, "enforced": True}
+        expected = {"ok": False, "locked": True, "has_pin": False, "wait_s": 0, "failures": 0, "enforced": True}
         self.assertEqual(status, expected)
         for key, value in expected.items():
             self.assertIs(type(status[key]), type(value), key)
 
     def test_off_is_not_enforced_or_blocked(self):
         with mock.patch.dict(os.environ, {"OPOS_LOCK": "0"}):
-            self.assertEqual(lockpin.status(), {"ok": True, "locked": False,
-                             "has_pin": False, "wait_s": 0, "enforced": False})
+            self.assertEqual(
+                lockpin.status(), {"ok": True, "locked": False, "has_pin": False, "wait_s": 0, "enforced": False}
+            )
             self.assertFalse(lockpin.is_locked())
             self.assertFalse(lockpin.blocks("call", "/api"))
 
@@ -115,8 +122,7 @@ class LockStateCharacterization(LockCase):
         self.assertTrue(lockpin.is_locked())
         ok, status = lockpin.unlock("", 1000)
         self.assertTrue(ok)
-        self.assertEqual(status, {"ok": True, "locked": False, "has_pin": False,
-                                  "wait_s": 0, "failures": 0})
+        self.assertEqual(status, {"ok": True, "locked": False, "has_pin": False, "wait_s": 0, "failures": 0})
 
     def test_unlocked_owner_can_replace_or_remove_pin(self):
         lockpin.set_pin("1234")
@@ -132,8 +138,7 @@ class LockStateCharacterization(LockCase):
         lockpin.set_pin("1234")
         ok, status = lockpin.unlock("9999", 1000)
         self.assertFalse(ok)
-        self.assertEqual(status, {"ok": False, "locked": True, "has_pin": True,
-                                  "wait_s": 0, "failures": 1})
+        self.assertEqual(status, {"ok": False, "locked": True, "has_pin": True, "wait_s": 0, "failures": 1})
         ok, status = lockpin.unlock("1234", 1000)
         self.assertTrue(ok)
         self.assertEqual(status["failures"], 0)
@@ -184,8 +189,9 @@ class LockStateCharacterization(LockCase):
                 self.assertFalse(ok)
                 self.assertEqual((early["failures"], early["wait_s"], early["locked"]), (failure, 1, True))
             now += status["wait_s"]
-        self.assertEqual([waits[n] for n in range(1, 15)],
-                         [0, 0, 0, 0, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680, 15360])
+        self.assertEqual(
+            [waits[n] for n in range(1, 15)], [0, 0, 0, 0, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680, 15360]
+        )
         self.assertEqual(lockpin.MAX_WAIT, 8 * 3600)
         self.assertEqual({waits[n] for n in range(15, 41)}, {28800})
         # The cap does not forgive anything: the count stays, the phone stays locked, and nothing is erased.
@@ -208,13 +214,17 @@ class LockStateCharacterization(LockCase):
                 self.assertEqual(self.saved()["wait_until"], 1_700_000_000 + 28800)
 
     def test_blocks_exemptions(self):
-        for action, path in (("stop", "/api/clock"), ("snooze", "/api/clock"),
-                             ("hang_up", "/api"), ("unlock", "/api"),
-                             ("set", "/api/lock"), ("skip", "/api/lock")):
+        for action, path in (
+            ("stop", "/api/clock"),
+            ("snooze", "/api/clock"),
+            ("hang_up", "/api"),
+            ("unlock", "/api"),
+            ("set", "/api/lock"),
+            ("skip", "/api/lock"),
+        ):
             with self.subTest(action=action, path=path):
                 self.assertFalse(lockpin.blocks(action, path))
-        for action, path in (("call", "/api"), ("send", "/api"),
-                             ("stop", "/api/notes"), ("save", "/api/clock")):
+        for action, path in (("call", "/api"), ("send", "/api"), ("stop", "/api/notes"), ("save", "/api/clock")):
             with self.subTest(action=action, path=path):
                 self.assertTrue(lockpin.blocks(action, path))
         lockpin.skip()
@@ -223,22 +233,32 @@ class LockStateCharacterization(LockCase):
     def test_redaction_and_counts(self):
         with mock.patch("opos.clock_page.snapshot", return_value={"next": {"text": "07:30"}}):
             self.assertEqual(lockpin.counts(), {"messages": 0, "missed": 0, "alarm": "07:30"})
-            snap = {"clock": "07:00", "battery": {"percent": 50, "private": "Ana"},
-                    "notice": "Ana called", "threads": [{"name": "Ana"}]}
-            self.assertEqual(lockpin.redact(snap), {"locked": True, "clock": "07:00",
-                             "battery": {"percent": 50},
-                             "lock": {"messages": 0, "missed": 0, "alarm": "07:30"}})
+            snap = {
+                "clock": "07:00",
+                "battery": {"percent": 50, "private": "Ana"},
+                "notice": "Ana called",
+                "threads": [{"name": "Ana"}],
+            }
+            self.assertEqual(
+                lockpin.redact(snap),
+                {
+                    "locked": True,
+                    "clock": "07:00",
+                    "battery": {"percent": 50},
+                    "lock": {"messages": 0, "missed": 0, "alarm": "07:30"},
+                },
+            )
         with mock.patch("opos.clock_page.snapshot", side_effect=ValueError):
             self.assertEqual(lockpin.counts(), {"messages": 0, "missed": 0, "alarm": ""})
 
     def test_http_first_run_skip_set_unlock_lock_and_errors(self):
         for payload, expected_code, locked in (
-                ({"action": "skip"}, 200, False),
-                ({"action": "lock"}, 200, True),
-                ({"action": "set", "pin": "1234"}, 200, True),
-                ({"action": "unlock", "pin": "9999", "now": 1000}, 403, True),
-                ({"action": "unlock", "pin": "1234", "now": 1000}, 200, False),
-                ({"action": "set", "pin": "5678"}, 200, True),
+            ({"action": "skip"}, 200, False),
+            ({"action": "lock"}, 200, True),
+            ({"action": "set", "pin": "1234"}, 200, True),
+            ({"action": "unlock", "pin": "9999", "now": 1000}, 403, True),
+            ({"action": "unlock", "pin": "1234", "now": 1000}, 200, False),
+            ({"action": "set", "pin": "5678"}, 200, True),
         ):
             with self.subTest(payload=payload):
                 code, body = lock_request(payload)
@@ -250,8 +270,7 @@ class LockStateCharacterization(LockCase):
                 self.assertEqual(body["locked"], locked)
         code, body = lock_request()
         self.assertEqual(code, 200, body)
-        self.assertEqual(set(body), {"ok", "locked", "has_pin", "wait_s",
-                         "failures", "enforced", "lock"})
+        self.assertEqual(set(body), {"ok", "locked", "has_pin", "wait_s", "failures", "enforced", "lock"})
         code, body = lock_request({"action": "unknown"})
         self.assertEqual(code, 400, body)
         self.assertEqual(body, {"error": "bad request"})
@@ -288,8 +307,11 @@ class LockRegressions(LockCase):
     def test_request_clock_is_ignored_without_explicit_test_switch(self):
         lockpin.set_pin("1234")
         for flag in ("", "0", "true"):
-            with self.subTest(flag=flag), mock.patch.dict(os.environ, {"OPOS_LOCK_TEST_CLOCK": flag}), \
-                    mock.patch("time.time", return_value=1_700_000_000):
+            with (
+                self.subTest(flag=flag),
+                mock.patch.dict(os.environ, {"OPOS_LOCK_TEST_CLOCK": flag}),
+                mock.patch("time.time", return_value=1_700_000_000),
+            ):
                 for _ in range(5):
                     lock_request({"action": "unlock", "pin": "9999"})
                 before = self.saved()
@@ -312,8 +334,7 @@ class LockRegressions(LockCase):
         lockpin.set_pin("1234")
         for _ in range(5):
             lockpin.unlock("9999", 1_700_000_000)
-        for now, remaining in ((1_700_000_000, 30), (1_700_000_012.75, 17),
-                               (1_700_000_030, 0), (1_700_000_040, 0)):
+        for now, remaining in ((1_700_000_000, 30), (1_700_000_012.75, 17), (1_700_000_030, 0), (1_700_000_040, 0)):
             with self.subTest(now=now), mock.patch("time.time", return_value=now):
                 self.assertEqual(lockpin.status()["wait_s"], remaining)
                 code, body = lock_request()
@@ -322,14 +343,18 @@ class LockRegressions(LockCase):
 
     def test_malformed_saved_state_falls_back_to_locked(self):
         record = lockpin.hash_pin("1234")
-        for fields in ({"locked": None}, {"locked": 0}, {"locked": ""},
-                       {"locked": False, "failures": "bad"},
-                       {"locked": False, "failures": -1},
-                       {"locked": False, "wait_until": "bad"},
-                       {"locked": False, "wait_until": float("inf")},
-                       {"locked": False, "wait_until": 10**400},
-                       {"locked": False, "record": "bad"},
-                       {"locked": False, "record": {"iterations": []}}):
+        for fields in (
+            {"locked": None},
+            {"locked": 0},
+            {"locked": ""},
+            {"locked": False, "failures": "bad"},
+            {"locked": False, "failures": -1},
+            {"locked": False, "wait_until": "bad"},
+            {"locked": False, "wait_until": float("inf")},
+            {"locked": False, "wait_until": 10**400},
+            {"locked": False, "record": "bad"},
+            {"locked": False, "record": {"iterations": []}},
+        ):
             with self.subTest(fields=fields):
                 data = dict(schema=1, record=record, failures=0, wait_until=0)
                 data.update(fields)
@@ -358,7 +383,13 @@ class Server(unittest.TestCase):
         self.addCleanup(lockpin.reset)
         lockpin.reset()
         env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name}
-        snap = {"notice": "Ana called", "contacts": [{"name": "Ana"}], "threads": [{"name": "Ana"}], "clock": "07:00", "battery": {"percent": 50}}
+        snap = {
+            "notice": "Ana called",
+            "contacts": [{"name": "Ana"}],
+            "threads": [{"name": "Ana"}],
+            "clock": "07:00",
+            "battery": {"percent": 50},
+        }
         red = lockpin.redact(snap)
         self.assertNotIn("Ana", json.dumps(red))
         self.assertEqual(red["battery"]["percent"], 50)
@@ -390,8 +421,12 @@ class LockedAnswers(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.env = {"OPOS_LOCK": "1", "OPOS_STATE_DIR": tmp.name, "OPOS_CONFIG_DIR": tmp.name,
-                    "OPOS_APPS": "clock,contacts,notes,calls"}
+        self.env = {
+            "OPOS_LOCK": "1",
+            "OPOS_STATE_DIR": tmp.name,
+            "OPOS_CONFIG_DIR": tmp.name,
+            "OPOS_APPS": "clock,contacts,notes,calls",
+        }
         self.addCleanup(lockpin.reset)
         self.addCleanup(calllog.reset)
         lockpin.reset()
@@ -425,9 +460,19 @@ class LockedAnswers(unittest.TestCase):
             token = self.open_phone(server)
             code, raw = post(server, "/api/notes", {"action": "add"}, token)
             self.assertEqual(code, 200, raw)
-            code, raw = post(server, "/api/notes", {"action": "save", "id": json.loads(raw)["id"], "text": "Buy plums for Ana"}, token)
+            code, raw = post(
+                server,
+                "/api/notes",
+                {"action": "save", "id": json.loads(raw)["id"], "text": "Buy plums for Ana"},
+                token,
+            )
             self.assertEqual(code, 200, raw)
-            code, raw = post(server, "/api/clock", {"action": "add", "hour": 7, "minute": 5, "days": [], "label": "Pills for Ana"}, token)
+            code, raw = post(
+                server,
+                "/api/clock",
+                {"action": "add", "hour": 7, "minute": 5, "days": [], "label": "Pills for Ana"},
+                token,
+            )
             self.assertEqual(code, 200, raw)
             for path, word in (("/api/contacts", b"Mom"), ("/api/notes", b"plums"), ("/api/clock", b"Pills")):
                 status, body = get(server, path, token)
@@ -453,10 +498,17 @@ class LockedAnswers(unittest.TestCase):
     def test_the_answer_to_an_allowed_locked_write_is_redacted(self):
         with running(self.env) as server:
             token = self.open_phone(server)
-            code, raw = post(server, "/api", {"action": "send", "number": "+15550123", "text": "meet at the pier"}, token)
+            code, raw = post(
+                server, "/api", {"action": "send", "number": "+15550123", "text": "meet at the pier"}, token
+            )
             self.assertEqual(code, 200, raw)
             self.assertIn(b"pier", raw)
-            code, raw = post(server, "/api/clock", {"action": "add", "hour": 7, "minute": 5, "days": [], "label": "Pills for Ana"}, token)
+            code, raw = post(
+                server,
+                "/api/clock",
+                {"action": "add", "hour": 7, "minute": 5, "days": [], "label": "Pills for Ana"},
+                token,
+            )
             self.assertEqual(code, 200, raw)
             alarm = json.loads(raw)["alarms"][0]["id"]
             self.lock_phone(server, token)
@@ -476,9 +528,18 @@ class LockedAnswers(unittest.TestCase):
 
     def test_a_ringing_alarm_shows_its_time_but_not_its_label_while_locked(self):
         from opos import clock_page
-        ringing = {"ok": True, "clock_ok": True, "now": "2026-11-14T07:05:10+00:00", "alarms": [{"id": "a", "label": "Pills for Ana"}],
-                   "ringing": {"id": "a", "label": "Pills for Ana", "text": "Alarm 07:05"}, "timer": {"label": "Ana"},
-                   "notices": ["Pills for Ana"], "recovered": "", "next": {"id": "a", "text": "Alarm 07:05", "label": "Pills for Ana", "at": "x"}}
+
+        ringing = {
+            "ok": True,
+            "clock_ok": True,
+            "now": "2026-11-14T07:05:10+00:00",
+            "alarms": [{"id": "a", "label": "Pills for Ana"}],
+            "ringing": {"id": "a", "label": "Pills for Ana", "text": "Alarm 07:05"},
+            "timer": {"label": "Ana"},
+            "notices": ["Pills for Ana"],
+            "recovered": "",
+            "next": {"id": "a", "text": "Alarm 07:05", "label": "Pills for Ana", "at": "x"},
+        }
         with running(self.env) as server, mock.patch.object(clock_page, "snapshot", return_value=ringing):
             token = self.open_phone(server)
             self.lock_phone(server, token)
@@ -502,13 +563,26 @@ class LockedAnswers(unittest.TestCase):
         handler.limiter.allow.return_value = True
         app = mock.Mock()
         with mock.patch.dict(os.environ, self.env):
-            for extra in ({"locked": False, "clock": "x", "battery": {"percent": 1}, "lock": "x", "ringing": {"text": "Alarm 07:05"}},
-                          ["Ana"], "Ana", None):
+            for extra in (
+                {
+                    "locked": False,
+                    "clock": "x",
+                    "battery": {"percent": 1},
+                    "lock": "x",
+                    "ringing": {"text": "Alarm 07:05"},
+                },
+                ["Ana"],
+                "Ana",
+                None,
+            ):
                 app.locked_json = mock.Mock(return_value=extra)
                 body = apps_page.locked_json(handler, app)
                 self.assertEqual((body["locked"], body["clock"], body["battery"]), (True, "07:05", {"percent": 50}))
                 self.assertEqual(set(body["lock"]), {"messages", "missed", "alarm"})
-                self.assertEqual(set(body) - {"locked", "clock", "battery", "lock"}, {"ringing"} if isinstance(extra, dict) else set())
+                self.assertEqual(
+                    set(body) - {"locked", "clock", "battery", "lock"},
+                    {"ringing"} if isinstance(extra, dict) else set(),
+                )
                 self.assertNotIn("Ana", json.dumps(body))
             app.locked_json = mock.Mock(side_effect=RuntimeError("Ana"))
             self.assertEqual(set(apps_page.locked_json(handler, app)), {"locked", "clock", "battery", "lock"})
@@ -516,23 +590,36 @@ class LockedAnswers(unittest.TestCase):
             handler.phone = None
             self.assertEqual(apps_page.locked_json(handler, app)["locked"], True)
             # Locked, an app's refusal is its error word and nothing else it may have put beside it.
-            for answer, sent in (((400, {"error": "id", "people": ["Ana"]}), {"error": "id"}),
-                                 ((409, {"error": ["Ana"], "note": "Ana"}), {"error": "bad request"}),
-                                 ((400, {"people": ["Ana"]}), {"error": "bad request"})):
+            for answer, sent in (
+                ((400, {"error": "id", "people": ["Ana"]}), {"error": "id"}),
+                ((409, {"error": ["Ana"], "note": "Ana"}), {"error": "bad request"}),
+                ((400, {"people": ["Ana"]}), {"error": "bad request"}),
+            ):
                 app.post = mock.Mock(return_value=answer)
                 handler._json.reset_mock()
                 with mock.patch.object(apps_page, "_api_app", return_value=app):
                     apps_page.post(handler, "/api/sample", {"action": "stop"})
                 handler._json.assert_called_once_with(sent, answer[0])
             # Unlocked, the app's answer is sent as it is.
-            with mock.patch.object(lockpin, "is_locked", return_value=False), mock.patch.object(apps_page, "_api_app", return_value=app):
+            with (
+                mock.patch.object(lockpin, "is_locked", return_value=False),
+                mock.patch.object(apps_page, "_api_app", return_value=app),
+            ):
                 handler._json.reset_mock()
                 apps_page.post(handler, "/api/sample", {"action": "stop"})
                 handler._json.assert_called_once_with({"people": ["Ana"]}, 400)
 
     def test_missed_calls_are_counted_from_the_call_log(self):
-        row = {"id": "0" * 32, "number": "+15550177", "name": "Ana", "direction": "missed",
-               "start_time": "2026-11-14T07:00:00+00:00", "duration": 0, "practice": True, "state": "ended"}
+        row = {
+            "id": "0" * 32,
+            "number": "+15550177",
+            "name": "Ana",
+            "direction": "missed",
+            "start_time": "2026-11-14T07:00:00+00:00",
+            "duration": 0,
+            "practice": True,
+            "state": "ended",
+        }
         rows = [dict(row, id="%032x" % n, start_time="2026-11-14T07:0%d:00+00:00" % (n + 1)) for n in range(2)]
         rows.append(dict(row, id="f" * 32, direction="outgoing", start_time="2026-11-14T07:09:00+00:00"))
         with mock.patch.dict(os.environ, self.env):
@@ -575,10 +662,10 @@ class PinPad(unittest.TestCase):
             status, body = get(server, "/")
             self.assertEqual(status, 200)
             text = body.decode("utf-8")
-            self.assertEqual(text.count('src=/pin.js'), 1)
-            tag = text[text.index('src=/pin.js') - 60:text.index('src=/pin.js')]
+            self.assertEqual(text.count("src=/pin.js"), 1)
+            tag = text[text.index("src=/pin.js") - 60 : text.index("src=/pin.js")]
             self.assertRegex(tag, r'<script nonce="[A-Za-z0-9_-]{16,}" $')
-            self.assertLess(text.index('src=/pin.js'), text.rindex("</body>"))
+            self.assertLess(text.index("src=/pin.js"), text.rindex("</body>"))
             status, script = get(server, "/pin.js")
             self.assertEqual(status, 200)
             self.assertEqual(script, (Path(web.__file__).with_name("web_static") / "pin.js").read_bytes())
@@ -588,7 +675,9 @@ class PinPad(unittest.TestCase):
         body = b"<html><body><p>x</p></body></html>"
         with mock.patch.dict(os.environ, {"OPOS_LOCK": "1"}):
             once = lockpin.inject_bytes(body, "n" * 22)
-            self.assertEqual(once, b'<html><body><p>x</p><script nonce="' + b"n" * 22 + b'" src=/pin.js></script></body></html>')
+            self.assertEqual(
+                once, b'<html><body><p>x</p><script nonce="' + b"n" * 22 + b'" src=/pin.js></script></body></html>'
+            )
             self.assertEqual(lockpin.inject_bytes(once, "n" * 22), once)
             for nonce in ("", None, '"><script>', "n n", "n" * 129):
                 self.assertEqual(lockpin.inject_bytes(body, nonce), body, nonce)

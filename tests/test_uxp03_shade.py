@@ -9,8 +9,8 @@ import http.client
 
 from opos.web import Phone, make_server, page
 
-JS = Path(__file__).resolve().parents[1] / 'src/opos/web_static/phone-a.js'
-NODE = shutil.which('node')
+JS = Path(__file__).resolve().parents[1] / "src/opos/web_static/phone-a.js"
+NODE = shutil.which("node")
 # The page builds window.oposUI itself and no script replaces it (a notice is stamped with its hhmm), so the stubs below go onto that object.
 HARNESS = r"""
 const fs=require('fs'),vm=require('vm');
@@ -71,28 +71,39 @@ setImmediate(()=>console.log(JSON.stringify(out)));
 
 
 class TestShade(unittest.TestCase):
-    def run_js(self, mode='normal'):
+    def run_js(self, mode="normal"):
         if not NODE:
-            self.skipTest('node not installed')
+            self.skipTest("node not installed")
         result = subprocess.run(
-            [NODE, '--unhandled-rejections=strict', '-e', HARNESS, str(JS), mode],
-            capture_output=True, text=True, timeout=30)
+            [NODE, "--unhandled-rejections=strict", "-e", HARNESS, str(JS), mode],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
     def test_shade_js_has_controls(self):
         self.assertIn(JS.read_text(), page())
         out = self.run_js()
-        self.assertEqual(out['initial'], [False, 'Helper: Off', 'false', True])
-        self.assertEqual(out['order'], ['sheet-handle', 'qs', 'time-left'])
-        self.assertEqual(out['controls'], [['qs-close', 'button'], ['qs-batt', 'button'],
-                                           ['qs-helper', 'button'], ['qs-lock', 'button'],
-                                           ['qs-settings', 'button'], ['qs-notices', None]])
-        self.assertTrue(out['same'])
-        self.assertEqual(out['count'], 1)
-        self.assertTrue(out['settingsVisible'])
-        self.assertEqual(out['calls'], ['toggle', 'close', 'lock', 'close', 'settings'])
-        self.assertEqual(out['name'], 'Recent notices')
+        self.assertEqual(out["initial"], [False, "Helper: Off", "false", True])
+        self.assertEqual(out["order"], ["sheet-handle", "qs", "time-left"])
+        self.assertEqual(
+            out["controls"],
+            [
+                ["qs-close", "button"],
+                ["qs-batt", "button"],
+                ["qs-helper", "button"],
+                ["qs-lock", "button"],
+                ["qs-settings", "button"],
+                ["qs-notices", None],
+            ],
+        )
+        self.assertTrue(out["same"])
+        self.assertEqual(out["count"], 1)
+        self.assertTrue(out["settingsVisible"])
+        self.assertEqual(out["calls"], ["toggle", "close", "lock", "close", "settings"])
+        self.assertEqual(out["name"], "Recent notices")
 
     def test_toggle_is_server_truth(self):
         server = make_server(0, Phone())
@@ -101,17 +112,21 @@ class TestShade(unittest.TestCase):
         try:
             for visible in (True, False):
                 with self.subTest(visible=visible):
-                    connection = http.client.HTTPConnection('127.0.0.1', server.server_address[1], timeout=5)
+                    connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
                     try:
                         connection.request(
-                            'POST', '/api',
-                            body=json.dumps({'action': 'visible', 'visible': visible}).encode(),
-                            headers={'Content-Type': 'application/json',
-                                     'X-OPOS-Token': server.RequestHandlerClass.token})
+                            "POST",
+                            "/api",
+                            body=json.dumps({"action": "visible", "visible": visible}).encode(),
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-OPOS-Token": server.RequestHandlerClass.token,
+                            },
+                        )
                         with connection.getresponse() as response:
                             self.assertEqual(response.status, 200)
                             state = json.load(response)
-                        self.assertIs(state['helper_visible'], visible)
+                        self.assertIs(state["helper_visible"], visible)
                     finally:
                         connection.close()
         finally:
@@ -119,20 +134,20 @@ class TestShade(unittest.TestCase):
             server.server_close()
             thread.join(timeout=5)
         out = self.run_js()
-        self.assertEqual(out['on'], ['Helper: On', 'true'])
-        self.assertEqual(out['off'], ['Helper: Off', 'false'])
+        self.assertEqual(out["on"], ["Helper: On", "true"])
+        self.assertEqual(out["off"], ["Helper: Off", "false"])
 
     def test_notice_dedup_logic(self):
         out = self.run_js()
-        self.assertEqual(out['empty'], ['No recent notices'])
-        self.assertEqual(out['dedup'], ['first'])
-        self.assertEqual(out['notices'], ['<b>sixth</b>', 'fifth', 'fourth', 'third', 'second'])
+        self.assertEqual(out["empty"], ["No recent notices"])
+        self.assertEqual(out["dedup"], ["first"])
+        self.assertEqual(out["notices"], ["<b>sixth</b>", "fifth", "fourth", "third", "second"])
 
     def test_missing_sheet_is_fail_open(self):
-        out = self.run_js('missing')
-        self.assertTrue(out['missing'])
-        self.assertTrue(out['recovered'])
+        out = self.run_js("missing")
+        self.assertTrue(out["missing"])
+        self.assertTrue(out["recovered"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@
 The SSHSIG envelope is exercised; its fake signature is deliberately not
 cryptographic evidence. Owner-key signing and real ext4 extraction are NOT_RUN.
 """
+
 import base64
 import hashlib
 import importlib.util
@@ -87,8 +88,17 @@ class ReleaseTests(unittest.TestCase):
         return rc, stdout.getvalue(), stderr.getvalue()
 
     def build(self, *extra):
-        return self.invoke("build", str(self.image), "--key", str(self.key), "--out", str(self.out),
-                           "--allowed-signers", str(self.signers), *extra)
+        return self.invoke(
+            "build",
+            str(self.image),
+            "--key",
+            str(self.key),
+            "--out",
+            str(self.out),
+            "--allowed-signers",
+            str(self.signers),
+            *extra,
+        )
 
     def verify(self):
         return self.invoke("verify", str(self.out), "--allowed-signers", str(self.signers))
@@ -103,7 +113,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual((self.out / "image.json").read_bytes(), self.manifest)
         self.assertEqual(self.verify()[0], 0)
         for name in release.FILES:
-            self.assertIn(release.identity.hash_file(self.out / name) + "  " + name, (self.out / "SHA256SUMS").read_text())
+            self.assertIn(
+                release.identity.hash_file(self.out / name) + "  " + name, (self.out / "SHA256SUMS").read_text()
+            )
         self.assertNotIn(self.key.name, {p.name for p in self.out.iterdir()})
         self.assertFalse(any("-w" in args or "-t" in args for args, _ in self.calls))
 
@@ -177,8 +189,12 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.verify()[0], 1)
 
     def test_signature_parser_refuses_other_namespaces_keys_and_malformed_data(self):
-        for sig in (b"garbage", fake_signature(b"x", namespace=b"other"), fake_signature(b"x", kind=b"ssh-rsa"),
-                    b"-----BEGIN SSH SIGNATURE-----\ninvalid!\n-----END SSH SIGNATURE-----\n"):
+        for sig in (
+            b"garbage",
+            fake_signature(b"x", namespace=b"other"),
+            fake_signature(b"x", kind=b"ssh-rsa"),
+            b"-----BEGIN SSH SIGNATURE-----\ninvalid!\n-----END SSH SIGNATURE-----\n",
+        ):
             with self.subTest(sig=sig[:30]), self.assertRaises(ValueError):
                 release.signature_format(sig)
         release.signature_format(fake_signature(b"x"))

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Shared notices stay readable beside the changing helper-status paragraph."""
+
 import html
 from html.parser import HTMLParser
 import json
@@ -23,12 +24,25 @@ class _Elements(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        item = {"tag": tag, "attrs": attrs, "text": [],
-                "parent": self.stack[-1] if self.stack else None}
+        item = {"tag": tag, "attrs": attrs, "text": [], "parent": self.stack[-1] if self.stack else None}
         if "id" in attrs:
             self.ids[attrs["id"]] = item
-        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input",
-                       "link", "meta", "param", "source", "track", "wbr"}:
+        if tag not in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+        }:
             self.stack.append(item)
 
     def handle_endtag(self, tag):
@@ -66,8 +80,10 @@ class TestAboutNotices(unittest.TestCase):
 
     def test_shared_text_is_escaped_and_not_active_markup(self):
         attack = '<img id="notice-attack" src=x onerror="alert(1)">& <script>bad()</script>'
-        with mock.patch.object(notices, "DISCLAIMER", attack), \
-                mock.patch.object(notices, "as_text", return_value=attack) as text:
+        with (
+            mock.patch.object(notices, "DISCLAIMER", attack),
+            mock.patch.object(notices, "as_text", return_value=attack) as text,
+        ):
             page = web.page()
         text.assert_called_once_with()
         parsed = _Elements(page)
@@ -99,8 +115,13 @@ class TestAboutNotices(unittest.TestCase):
         self.assertIn("min-height:48px", parsed.ids["about-notices-summary"]["attrs"]["style"])
         for attrs in re.findall(r"<script([^>]*)>", page):
             self.assertIn('nonce="test-about-nonce"', attrs)
-        for name in ("about-notices", "about-disclaimer", "about-notices-details",
-                     "about-notices-summary", "about-notices-text"):
+        for name in (
+            "about-notices",
+            "about-disclaimer",
+            "about-notices-details",
+            "about-notices-summary",
+            "about-notices-text",
+        ):
             self.assertEqual(page.count('id="' + name + '"'), 1)
 
 
@@ -156,11 +177,14 @@ class TestAboutNoticesBrowser(unittest.TestCase):
         self.assertIn("(async () => {", source)
         driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
         target = str(self.port) if self.proc is not None else "pipe"
-        env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile,
-                   TMPDIR=self.run_dir)
-        result = subprocess.run([self.node, str(driver), target, self.url,
-                                 "about_notices", self.state],
-                                capture_output=True, text=True, timeout=40, env=env)
+        env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
+        result = subprocess.run(
+            [self.node, str(driver), target, self.url, "about_notices", self.state],
+            capture_output=True,
+            text=True,
+            timeout=40,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1000:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 

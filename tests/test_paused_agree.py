@@ -7,7 +7,7 @@ from opos.web import Phone
 def _screen_paused(state):
     for line in state["screen"]:
         if line.startswith("Paused to save power: "):
-            rest = line[len("Paused to save power: "):]
+            rest = line[len("Paused to save power: ") :]
             if not rest.strip():
                 return set()
             return {p.strip() for p in rest.split(", ") if p.strip()}

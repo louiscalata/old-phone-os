@@ -36,7 +36,7 @@ class TestStepsForGoal(unittest.TestCase):
         names = [s[0] for s in SAVINGS_STEPS]
         for goal in (1, 4, 11, 100):
             result = steps_for_goal(40, goal, self.tasks, (), health=0.6)
-            self.assertEqual(list(result), names[:len(result)])
+            self.assertEqual(list(result), names[: len(result)])
 
     def test_level_zero_returns_all(self):
         self.assertEqual(steps_for_goal(0, 11, self.tasks, (), health=1.0), tuple(s[0] for s in SAVINGS_STEPS))
@@ -66,7 +66,7 @@ class TestRuntimeKeepsAlarms(unittest.TestCase):
         tick = rt.step(0.0, 40, health=0.6, goal_hours=11.0)
         self.assertTrue(len(tick.steps) > 0)
         names = [s[0] for s in SAVINGS_STEPS]
-        self.assertEqual(list(tick.steps), names[:len(tick.steps)])
+        self.assertEqual(list(tick.steps), names[: len(tick.steps)])
 
     def test_tick_default_steps(self):
         self.assertEqual(Tick.__dataclass_fields__["steps"].default, ())

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Regression tests for deploy/sparse_image.py."""
+
 import contextlib
 import hashlib
 import importlib.util
@@ -73,13 +74,14 @@ class TestSparseImage(unittest.TestCase):
             with open(sp, "rb") as f:
                 data = f.read()
             self.assertEqual(len(data), 8260)
-            self.assertEqual(struct.unpack("<IHHHHIIII", data[0:28]), (0xed26ff3a, 1, 0, 28, 12, 4096, 4, 3, 0))
+            self.assertEqual(struct.unpack("<IHHHHIIII", data[0:28]), (0xED26FF3A, 1, 0, 28, 12, 4096, 4, 3, 0))
             self.assertEqual(struct.unpack("<HHII", data[28:40]), (0xCAC1, 0, 1, 4108))
             self.assertEqual(struct.unpack("<HHII", data[4136:4148]), (0xCAC2, 0, 2, 16))
             self.assertEqual(struct.unpack("<HHII", data[4152:4164]), (0xCAC1, 0, 1, 4108))
             self.assertEqual(data[40:4136], _blk(65))
             self.assertEqual(data[4148:4152], b"\x00" * 4)
             self.assertEqual(data[4164:8260], _blk(66))
+
     def test_round_trip_and_flipped_byte(self):
         with tempfile.TemporaryDirectory() as tmp:
             raw = str(Path(tmp) / "raw.img")
@@ -92,7 +94,7 @@ class TestSparseImage(unittest.TestCase):
             res = sparse.convert(raw, sp)
             self.assertEqual(res, (4, 3))
             magic, major, minor, fhs, chs, bsz, nblk, nchk, _crc = _header(sp)
-            self.assertEqual((magic, major, minor, fhs, chs, bsz, nblk, nchk), (0xed26ff3a, 1, 0, 28, 12, 4096, 4, 3))
+            self.assertEqual((magic, major, minor, fhs, chs, bsz, nblk, nchk), (0xED26FF3A, 1, 0, 28, 12, 4096, 4, 3))
             self.assertEqual(_chunks(sp), [(0xCAC1, 1, 12 + 4096), (0xCAC2, 2, 16), (0xCAC1, 1, 12 + 4096)])
             ok, out = _check_quiet(raw, sp)
             self.assertTrue(ok)
@@ -131,7 +133,7 @@ class TestSparseImage(unittest.TestCase):
             self.assertEqual(sparse.convert(raw, sp), (0, 0))
             magic, major, minor, fhs, chs, bsz, nblk, nchk, _crc = _header(sp)
             self.assertEqual((nblk, nchk), (0, 0))
-            self.assertEqual((magic, major, minor, fhs, chs, bsz), (0xed26ff3a, 1, 0, 28, 12, 4096))
+            self.assertEqual((magic, major, minor, fhs, chs, bsz), (0xED26FF3A, 1, 0, 28, 12, 4096))
             ok, _ = _check_quiet(raw, sp)
             self.assertTrue(ok)
 
@@ -149,7 +151,14 @@ class TestSparseImage(unittest.TestCase):
             self.assertEqual(len(out.strip().split()), 2)
 
     def test_bad_usage(self):
-        bad = [[], ["convert"], ["convert", "a"], ["convert", "a", "b", "c"], ["bogus", "a", "b"], ["check", "only-one"]]
+        bad = [
+            [],
+            ["convert"],
+            ["convert", "a"],
+            ["convert", "a", "b", "c"],
+            ["bogus", "a", "b"],
+            ["check", "only-one"],
+        ]
         for args in bad:
             status, _, err = _run_cli(args)
             self.assertEqual(status, 2, args)
@@ -177,7 +186,7 @@ class TestSparseImage(unittest.TestCase):
             status, _, _ = _run_cli(["check", raw, sp])
             self.assertEqual(status, 2)
             with open(sp, "wb") as f:
-                f.write(struct.pack("<IHHHHIIII", 0xed26ff3a, 1, 0, 28, 12, 4096, 1, 1, 0))
+                f.write(struct.pack("<IHHHHIIII", 0xED26FF3A, 1, 0, 28, 12, 4096, 1, 1, 0))
                 f.write(struct.pack("<HHII", 0xCACA, 0, 1, 12 + 4096))
                 f.write(b"\x00" * 4096)
             with self.assertRaises(ValueError):
@@ -185,7 +194,7 @@ class TestSparseImage(unittest.TestCase):
             status, _, _ = _run_cli(["check", raw, sp])
             self.assertEqual(status, 2)
             with open(sp, "wb") as f:
-                f.write(good[:28 + 12 + 100])
+                f.write(good[: 28 + 12 + 100])
             with self.assertRaises(ValueError):
                 sparse.check(raw, sp)
 
@@ -199,7 +208,7 @@ class TestSparseImage(unittest.TestCase):
                 f.write(expanded_fill)
                 f.write(b"\x00" * 4096)
             with open(sp, "wb") as f:
-                f.write(struct.pack("<IHHHHIIII", 0xed26ff3a, 1, 0, 28, 12, 4096, 2, 3, 0))
+                f.write(struct.pack("<IHHHHIIII", 0xED26FF3A, 1, 0, 28, 12, 4096, 2, 3, 0))
                 f.write(struct.pack("<HHII", 0xCAC2, 0, 1, 16))
                 f.write(val)
                 f.write(struct.pack("<HHII", 0xCAC3, 0, 1, 12))

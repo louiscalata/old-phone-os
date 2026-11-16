@@ -126,7 +126,7 @@ class TestInstallReview(unittest.TestCase):
             trusted.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             trusted.chmod(trusted.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             rejected = bindir / "rejected"
-            rejected.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            rejected.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             rejected.chmod(rejected.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             probe_bin = tmp_path / "probe_bin"
             probe_bin.mkdir()
@@ -139,12 +139,16 @@ class TestInstallReview(unittest.TestCase):
             subprocess.run([str(rejected)], env=probe_env, check=True)
             self.assertTrue(marker.is_file())
             marker.unlink()
-            (home / "manifest").write_text(key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n", encoding="utf-8")
+            (home / "manifest").write_text(
+                key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n", encoding="utf-8"
+            )
             env = dict(os.environ)
             env["OPOS_HOME"] = str(home)
             env["OPOS_BIN_DIR"] = str(bindir)
             env["HOME"] = str(home)
-            proc = subprocess.run(["sh", str(install), "--uninstall", "--dry-run"], capture_output=True, text=True, env=env)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall", "--dry-run"], capture_output=True, text=True, env=env
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertFalse(marker.exists())
             self.assertIn(str(rejected), proc.stderr)
@@ -159,7 +163,7 @@ class TestInstallReview(unittest.TestCase):
             bindir.mkdir()
             marker = tmp_path / "marker2"
             rejected = bindir / "rejected"
-            rejected.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            rejected.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             rejected.chmod(rejected.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             probe_bin = tmp_path / "probe_bin"
             probe_bin.mkdir()
@@ -172,12 +176,16 @@ class TestInstallReview(unittest.TestCase):
             subprocess.run([str(rejected)], env=probe_env, check=True)
             self.assertTrue(marker.is_file())
             marker.unlink()
-            (home / "manifest").write_text(key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n", encoding="utf-8")
+            (home / "manifest").write_text(
+                key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n", encoding="utf-8"
+            )
             env = dict(os.environ)
             env["OPOS_HOME"] = str(home)
             env["OPOS_BIN_DIR"] = str(bindir)
             env["HOME"] = str(home)
-            proc = subprocess.run(["sh", str(install), "--uninstall", "--dry-run"], capture_output=True, text=True, env=env)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall", "--dry-run"], capture_output=True, text=True, env=env
+            )
             self.assertEqual(proc.returncode, 1)
             self.assertFalse(marker.exists())
             self.assertIn(str(rejected), proc.stderr)
@@ -195,10 +203,10 @@ class TestInstallReview(unittest.TestCase):
             marker = tmp_path / "marker3"
             trusted = bindir / "opos"
             trusted_log = tmp_path / "trusted.log"
-            trusted.write_text("#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"$TRUSTED_LOG\"\nexit 0\n", encoding="utf-8")
+            trusted.write_text('#!/bin/sh\nprintf \'%s\\n\' "$0 $*" >> "$TRUSTED_LOG"\nexit 0\n', encoding="utf-8")
             trusted.chmod(trusted.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             rejected = bindir / "rejected"
-            rejected.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            rejected.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             rejected.chmod(rejected.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             probe_bin = tmp_path / "probe_bin"
             probe_bin.mkdir()
@@ -215,7 +223,9 @@ class TestInstallReview(unittest.TestCase):
             venv_python.parent.mkdir(parents=True, exist_ok=True)
             venv_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            (home / "manifest").write_text(key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n", encoding="utf-8")
+            (home / "manifest").write_text(
+                key + str(rejected) + "\nvenv=" + str(home / "venv") + "\nrepo=" + str(home) + "\n", encoding="utf-8"
+            )
             for name in ("cp", "ufw", "systemctl"):
                 stub = faked / name
                 stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -226,7 +236,9 @@ class TestInstallReview(unittest.TestCase):
             env["HOME"] = str(home)
             env["PATH"] = str(faked) + os.pathsep + env.get("PATH", "")
             env["TRUSTED_LOG"] = str(trusted_log)
-            proc = subprocess.run(["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=env)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=env
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertFalse(marker.exists())
             self.assertIn(str(rejected), proc.stderr)
@@ -250,7 +262,7 @@ class TestInstallReview(unittest.TestCase):
             bindir.mkdir()
             marker = tmp_path / "marker"
             outside = tmp_path / "outside.sh"
-            outside.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 42\n", encoding="utf-8")
+            outside.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 42\n', encoding="utf-8")
             outside.chmod(0o755)
             launcher = bindir / "opos"
             os.symlink(str(outside), str(launcher))
@@ -295,7 +307,7 @@ class TestInstallReview(unittest.TestCase):
             bindir.mkdir()
             marker = tmp_path / "marker"
             rejected = bindir / "rejected"
-            rejected.write_text("#!/bin/sh\n: > \"" + str(marker) + "\"\nexit 0\n", encoding="utf-8")
+            rejected.write_text('#!/bin/sh\n: > "' + str(marker) + '"\nexit 0\n', encoding="utf-8")
             rejected.chmod(0o755)
             subprocess.run([str(rejected)], check=True)
             self.assertTrue(marker.is_file())
@@ -331,7 +343,9 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(owned.is_file())
             self.assertEqual(opos_keep.read_text(encoding="utf-8"), "home sentinel\n")
             self.assertEqual(bin_keep.read_text(encoding="utf-8"), "bin sentinel\n")
-            proc = subprocess.run(["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=env)
+            proc = subprocess.run(
+                ["sh", str(install), "--uninstall", "--force"], capture_output=True, text=True, env=env
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("force uninstall without verified recovery entry point", proc.stderr)
             self.assertFalse(marker.exists())
@@ -355,9 +369,14 @@ class TestInstallReview(unittest.TestCase):
             "test_untrusted_launcher_not_executed",
         ):
             found = [(mod, n) for mod, names in names_by_module.items() for n in names if n == name]
-            self.assertEqual(found, [("test_install_review_part5.py", name)], msg="F929: " + name + " must be defined exactly once and only in part5")
+            self.assertEqual(
+                found,
+                [("test_install_review_part5.py", name)],
+                msg="F929: " + name + " must be defined exactly once and only in part5",
+            )
         size = pathlib.Path(__file__).resolve().stat().st_size
         self.assertLess(size, 20000, msg=f"F929: test_install_review_part5.py must stay under 20000 bytes (got {size})")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless Clock flows: save 07:00, ring, snooze, stop, at three sizes in light and dark."""
+
 import json
 import os
 import shutil
@@ -100,11 +101,19 @@ class ClockBrowser(unittest.TestCase):
             cls.skip_reason = "no headless chromium or node"
             return
         cls.tmp = tempfile.mkdtemp(prefix="clock-browser-")
-        cls._old = {key: os.environ.get(key) for key in ("OPOS_APPS", "OPOS_STATE_DIR", "OPOS_CLOCK_ZONE", "OPOS_CLOCK_OK", "OPOS_CLOCK_TEST")}
-        os.environ.update({
-            "OPOS_APPS": "clock", "OPOS_STATE_DIR": cls.tmp, "OPOS_CLOCK_ZONE": "UTC",
-            "OPOS_CLOCK_OK": "1", "OPOS_CLOCK_TEST": "1",
-        })
+        cls._old = {
+            key: os.environ.get(key)
+            for key in ("OPOS_APPS", "OPOS_STATE_DIR", "OPOS_CLOCK_ZONE", "OPOS_CLOCK_OK", "OPOS_CLOCK_TEST")
+        }
+        os.environ.update(
+            {
+                "OPOS_APPS": "clock",
+                "OPOS_STATE_DIR": cls.tmp,
+                "OPOS_CLOCK_ZONE": "UTC",
+                "OPOS_CLOCK_OK": "1",
+                "OPOS_CLOCK_TEST": "1",
+            }
+        )
         clock_page.reset()
         cls.server = web.make_server(0, web.Phone())
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -145,14 +154,23 @@ class ClockBrowser(unittest.TestCase):
                 os.remove(os.path.join(self.tmp, name))
 
     def test_morning_alarm_flow(self):
-        cases = [{
-            "url": self.origin + "/clock",
-            "width": w, "height": h, "theme": theme, "scale": scale, "hand": "right",
-            "script": FLOW,
-        } for w, h, theme, scale in CASES]
+        cases = [
+            {
+                "url": self.origin + "/clock",
+                "width": w,
+                "height": h,
+                "theme": theme,
+                "scale": scale,
+                "hand": "right",
+                "script": FLOW,
+            }
+            for w, h, theme, scale in CASES
+        ]
         plan = os.path.join(self.run, "plan.json")
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            [self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=120
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1500:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 

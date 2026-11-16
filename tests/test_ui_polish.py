@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Judge-visible UI regressions, using the real static scripts in Node's VM."""
+
 import json
 from html.parser import HTMLParser
 from pathlib import Path
@@ -8,7 +9,7 @@ import subprocess
 import unittest
 
 
-STATIC = Path(__file__).resolve().parents[1] / 'src' / 'opos' / 'web_static'
+STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
 
 
 class Markup(HTMLParser):
@@ -19,10 +20,10 @@ class Markup(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        if 'id' in attrs:
-            self.ids[attrs['id']] = (tag, attrs, self.stack.copy())
-        if tag not in {'input', 'br', 'meta', 'link', 'img', 'hr'}:
-            self.stack.append((tag, attrs.get('id')))
+        if "id" in attrs:
+            self.ids[attrs["id"]] = (tag, attrs, self.stack.copy())
+        if tag not in {"input", "br", "meta", "link", "img", "hr"}:
+            self.stack.append((tag, attrs.get("id")))
 
     def handle_endtag(self, tag):
         for index in range(len(self.stack) - 1, -1, -1):
@@ -33,24 +34,23 @@ class Markup(HTMLParser):
 
 class HelperClockMarkup(unittest.TestCase):
     def test_plan_credit_is_inside_ask_next_to_plan(self):
-        html = (STATIC / 'body-4.html').read_text()
+        html = (STATIC / "body-4.html").read_text()
         tags = Markup(html).ids
-        self.assertIn(('div', 'ask'), tags['glimmer-credit'][2])
+        self.assertIn(("div", "ask"), tags["glimmer-credit"][2])
         self.assertLess(html.index('id="planbtn"'), html.index('id="glimmer-credit"'))
         self.assertLess(html.index('id="glimmer-credit"'), html.index('id="answer"'))
-        self.assertNotIn('style', tags['glimmer-credit'][1])
+        self.assertNotIn("style", tags["glimmer-credit"][1])
 
     def test_status_clock_is_quiet_and_battery_status_is_retained(self):
-        tags = Markup((STATIC / 'phone-a.html').read_text()).ids
-        self.assertEqual(tags['sb-time'][1].get('aria-live'), 'off')
-        self.assertEqual(tags['sb'][1]['role'], 'status')
-        self.assertIn(('div', 'sb'), tags['sb-batt'][2])
-        self.assertNotEqual(tags['sb-batt'][1].get('aria-live'), 'off')
+        tags = Markup((STATIC / "phone-a.html").read_text()).ids
+        self.assertEqual(tags["sb-time"][1].get("aria-live"), "off")
+        self.assertEqual(tags["sb"][1]["role"], "status")
+        self.assertIn(("div", "sb"), tags["sb-batt"][2])
+        self.assertNotEqual(tags["sb-batt"][1].get("aria-live"), "off")
 
 
 def node(script):
-    proc = subprocess.run(['node', '-e', script, str(STATIC)],
-                          capture_output=True, text=True, timeout=20)
+    proc = subprocess.run(["node", "-e", script, str(STATIC)], capture_output=True, text=True, timeout=20)
     if proc.returncode:
         raise AssertionError(proc.stderr)
     return json.loads(proc.stdout)
@@ -76,39 +76,44 @@ const plan={order:['dim screen'],engine:'Muse Glimmer',credit:'Muse Glimmer kept
 """
 
 
-@unittest.skipUnless(shutil.which('node'), 'node missing')
+@unittest.skipUnless(shutil.which("node"), "node missing")
 class HelperResetRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.result = node(HELPER_HARNESS)
 
     def test_hiding_clears_answer_and_credit_even_without_reason_change(self):
-        self.assertTrue(self.result['shown']['answer'].startswith('Plan:'))
-        self.assertEqual(self.result['shown']['credit'], 'Helper: no extra pauses; kept the plan order')
-        self.assertEqual(self.result['hidden'], {'answer': '', 'credit': 'Helper: off'})
-        self.assertEqual(self.result['reshown'], {'answer': '', 'credit': 'Helper: no extra pauses'})
+        self.assertTrue(self.result["shown"]["answer"].startswith("Plan:"))
+        self.assertEqual(self.result["shown"]["credit"], "Helper: no extra pauses; kept the plan order")
+        self.assertEqual(self.result["hidden"], {"answer": "", "credit": "Helper: off"})
+        self.assertEqual(self.result["reshown"], {"answer": "", "credit": "Helper: no extra pauses"})
 
     def test_late_plan_reply_cannot_restore_answer_after_hide(self):
-        self.assertEqual(self.result['late'], {'answer': '', 'credit': 'Helper: off'})
-        self.assertEqual(self.result['lateReshown'], {'answer': '', 'credit': 'Helper: no extra pauses'})
+        self.assertEqual(self.result["late"], {"answer": "", "credit": "Helper: off"})
+        self.assertEqual(self.result["lateReshown"], {"answer": "", "credit": "Helper: no extra pauses"})
 
     def test_late_ask_reply_cannot_restore_answer_after_hide(self):
-        harness = HELPER_HARNESS.replace('helperCall:async()=>reply',
-            'helperAsk:async()=>reply,helperCall:async()=>reply')
+        harness = HELPER_HARNESS.replace(
+            "helperCall:async()=>reply", "helperAsk:async()=>reply,helperCall:async()=>reply"
+        )
         harness = harness.replace("const pending=G('planbtn').onclick()", "const pending=G('askbtn').onclick()")
-        harness = harness.replace('release(plan)', "release({text:'Stale answer',engine:'Muse Glimmer',where:'on this device'})")
+        harness = harness.replace(
+            "release(plan)", "release({text:'Stale answer',engine:'Muse Glimmer',where:'on this device'})"
+        )
         result = node(harness)
-        self.assertEqual(result['late'], {'answer': '', 'credit': 'Helper: off'})
-        self.assertEqual(result['lateReshown'], {'answer': '', 'credit': 'Helper: no extra pauses'})
+        self.assertEqual(result["late"], {"answer": "", "credit": "Helper: off"})
+        self.assertEqual(result["lateReshown"], {"answer": "", "credit": "Helper: no extra pauses"})
 
     def test_hiding_cancels_active_helper_before_clearing_answer(self):
-        harness = HELPER_HARNESS.replace('let reply,release;', 'let reply,release,cancelled=0;')
-        harness = harness.replace('state(false);const hidden=',
-            "G('helpercancel').onclick=()=>{cancelled++;G('answer').textContent='Cancelled';G('helpercancel').onclick=null};state(false);const hidden=")
-        harness = harness.replace('{shown,hidden,reshown,late,', '{cancelled,shown,hidden,reshown,late,')
+        harness = HELPER_HARNESS.replace("let reply,release;", "let reply,release,cancelled=0;")
+        harness = harness.replace(
+            "state(false);const hidden=",
+            "G('helpercancel').onclick=()=>{cancelled++;G('answer').textContent='Cancelled';G('helpercancel').onclick=null};state(false);const hidden=",
+        )
+        harness = harness.replace("{shown,hidden,reshown,late,", "{cancelled,shown,hidden,reshown,late,")
         result = node(harness)
-        self.assertEqual(result['cancelled'], 1)
-        self.assertEqual(result['hidden'], {'answer': '', 'credit': 'Helper: off'})
+        self.assertEqual(result["cancelled"], 1)
+        self.assertEqual(result["hidden"], {"answer": "", "credit": "Helper: off"})
 
 
 PAUSED_HARNESS = r"""
@@ -139,47 +144,47 @@ console.log(JSON.stringify({stable,unrelated,stableClears,apiCalls,changed,renam
 """
 
 
-@unittest.skipUnless(shutil.which('node'), 'node missing')
+@unittest.skipUnless(shutil.which("node"), "node missing")
 class PausedRowsRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.result = node(PAUSED_HARNESS)
 
     def test_unchanged_pauses_keep_nodes_focus_and_open_details(self):
-        self.assertTrue(self.result['stable'])
-        self.assertTrue(self.result['unrelated'])
-        self.assertEqual(self.result['stableClears'], 1)
-        self.assertEqual(self.result['apiCalls'], [{'action': 'undo', 'name': 'maps'}])
+        self.assertTrue(self.result["stable"])
+        self.assertTrue(self.result["unrelated"])
+        self.assertEqual(self.result["stableClears"], 1)
+        self.assertEqual(self.result["apiCalls"], [{"action": "undo", "name": "maps"}])
 
     def test_changed_reason_and_name_refresh_rows_and_keep_open_disclosure(self):
-        self.assertTrue(self.result['changed']['rebuilt'])
-        self.assertTrue(self.result['changed']['open'])
-        self.assertIn('Muse Glimmer paused this.', self.result['changed']['markup'])
-        self.assertTrue(self.result['renamed'])
+        self.assertTrue(self.result["changed"]["rebuilt"])
+        self.assertTrue(self.result["changed"]["open"])
+        self.assertIn("Muse Glimmer paused this.", self.result["changed"]["markup"])
+        self.assertTrue(self.result["renamed"])
 
     def test_removal_clears_rows_once_and_empty_ticks_do_not_rebuild(self):
-        self.assertEqual(self.result['empty'], 0)
-        self.assertTrue(self.result['emptyStable'])
+        self.assertEqual(self.result["empty"], 0)
+        self.assertTrue(self.result["emptyStable"])
 
 
 class SliderMarkup(unittest.TestCase):
     # The page size cap is enforced once, in tests/test_uxp30_budget.py.
     def test_sliders_have_visible_associated_outputs_and_adjacent_night_note(self):
-        tags = Markup((STATIC / 'phone-b.html').read_text()).ids
-        for ident in ('bright', 'vol'):
+        tags = Markup((STATIC / "phone-b.html").read_text()).ids
+        for ident in ("bright", "vol"):
             with self.subTest(slider=ident):
-                output = tags.get(ident + '-val')
+                output = tags.get(ident + "-val")
                 self.assertIsNotNone(output)
-                self.assertEqual(output[0], 'output')
-                self.assertEqual(output[1].get('for'), ident)
-                self.assertNotIn('hidden', output[1])
+                self.assertEqual(output[0], "output")
+                self.assertEqual(output[1].get("for"), ident)
+                self.assertNotIn("hidden", output[1])
                 self.assertEqual(output[2], tags[ident][2])
-        self.assertIn('night-note', tags)
-        self.assertEqual(tags['night-note'][2], tags['bright'][2])
+        self.assertIn("night-note", tags)
+        self.assertEqual(tags["night-note"][2], tags["bright"][2])
 
     def test_meter_caption_is_rendered_visibly_from_its_caption(self):
-        css = (STATIC / 'css-1.css').read_text()
-        self.assertRegex(css, r'#meter::after\{[^}]*content:attr\(data-caption\)')
+        css = (STATIC / "css-1.css").read_text()
+        self.assertRegex(css, r"#meter::after\{[^}]*content:attr\(data-caption\)")
 
 
 BAR_HARNESS = r"""
@@ -231,70 +236,76 @@ console.log(JSON.stringify(out));
 """
 
 
-@unittest.skipUnless(shutil.which('node'), 'node missing')
+@unittest.skipUnless(shutil.which("node"), "node missing")
 class SliderNightRuntime(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.result = node(BAR_HARNESS)
 
     def test_visible_slider_outputs_initialize_update_on_input_and_reload(self):
-        self.assertEqual(self.result['initial']['brightOutput'], '85%')
-        self.assertEqual(self.result['initial']['volumeOutput'], '60%')
-        self.assertEqual(self.result['bright']['brightOutput'], '80%')
-        self.assertEqual(self.result['volume']['volumeOutput'], '25%')
-        self.assertEqual(self.result['volume']['writes'], 0)
-        self.assertEqual(self.result['reload']['brightOutput'], '80%')
-        self.assertEqual(self.result['reload']['volumeOutput'], '25%')
+        self.assertEqual(self.result["initial"]["brightOutput"], "85%")
+        self.assertEqual(self.result["initial"]["volumeOutput"], "60%")
+        self.assertEqual(self.result["bright"]["brightOutput"], "80%")
+        self.assertEqual(self.result["volume"]["volumeOutput"], "25%")
+        self.assertEqual(self.result["volume"]["writes"], 0)
+        self.assertEqual(self.result["reload"]["brightOutput"], "80%")
+        self.assertEqual(self.result["reload"]["volumeOutput"], "25%")
 
     def test_top_meter_captions_and_tone_follow_mode_on_every_state_render(self):
-        for row in self.result['tones']:
-            with self.subTest(mode=row['mode'], battery_tone=row['tone']):
-                state = row['state']
-                self.assertEqual(state['caption'], {'r': 'Brightness', 'v': 'Volume', 'b': ''}[row['mode']])
-                self.assertEqual(state['tone'], row['tone'] if row['mode'] == 'b' else '')
-                self.assertEqual(state['width'], {'r': '80%', 'v': '25%', 'b': '11%'}[row['mode']])
+        for row in self.result["tones"]:
+            with self.subTest(mode=row["mode"], battery_tone=row["tone"]):
+                state = row["state"]
+                self.assertEqual(state["caption"], {"r": "Brightness", "v": "Volume", "b": ""}[row["mode"]])
+                self.assertEqual(state["tone"], row["tone"] if row["mode"] == "b" else "")
+                self.assertEqual(state["width"], {"r": "80%", "v": "25%", "b": "11%"}[row["mode"]])
 
     def test_night_note_tracks_both_boundaries_without_mutating_saved_brightness(self):
-        for state, night in zip(self.result['night'], [False, True, True, True, True, False]):
+        for state, night in zip(self.result["night"], [False, True, True, True, True, False]):
             with self.subTest(state=state):
-                self.assertEqual(state['note'], '40% until 07:00' if night else '')
-                self.assertEqual(state['width'], '40%' if night else '85%')
-                self.assertEqual(state['brightOutput'], '85%')
-                self.assertEqual(state['bright'], '85')
-                self.assertEqual(state['store']['opos_bright'], '85')
-                self.assertEqual(state['writes'], 0)
-        self.assertEqual(self.result['nightDisabled']['note'], '')
+                self.assertEqual(state["note"], "40% until 07:00" if night else "")
+                self.assertEqual(state["width"], "40%" if night else "85%")
+                self.assertEqual(state["brightOutput"], "85%")
+                self.assertEqual(state["bright"], "85")
+                self.assertEqual(state["store"]["opos_bright"], "85")
+                self.assertEqual(state["writes"], 0)
+        self.assertEqual(self.result["nightDisabled"]["note"], "")
 
     def test_night_note_uses_demo_clock_and_survives_storage_denial(self):
-        for key in ('demoNight', 'denied'):
-            self.assertEqual(self.result[key]['note'], '40% until 07:00')
-            self.assertEqual(self.result[key]['filter'], 'brightness(0.4)')
-        self.assertEqual(self.result['demoDawn']['note'], '')
-        self.assertEqual(self.result['denied']['brightOutput'], '80%')
+        for key in ("demoNight", "denied"):
+            self.assertEqual(self.result[key]["note"], "40% until 07:00")
+            self.assertEqual(self.result[key]["filter"], "brightness(0.4)")
+        self.assertEqual(self.result["demoDawn"]["note"], "")
+        self.assertEqual(self.result["denied"]["brightOutput"], "80%")
 
     def test_night_level_and_note_use_one_constant(self):
         # Change only the shared constant in the VM; both uses must follow it.
         import re
-        source = (STATIC / 'js-3.js').read_text()
-        match = re.search(r'\b(\w+)=40\b', source)
-        self.assertIsNotNone(match, 'night level must be named once')
-        harness = BAR_HARNESS.replace("vm.runInContext(read('js-3.js'),c)",
-            "vm.runInContext(read('js-3.js').replace(" + json.dumps(match[0]) + "," +
-            json.dumps(match[1] + '=35') + "),c)")
-        changed = node(harness)['night'][1]
-        self.assertEqual(changed['note'], '35% until 07:00')
-        self.assertEqual(changed['width'], '35%')
-        self.assertEqual(changed['filter'], 'brightness(0.35)')
+
+        source = (STATIC / "js-3.js").read_text()
+        match = re.search(r"\b(\w+)=40\b", source)
+        self.assertIsNotNone(match, "night level must be named once")
+        harness = BAR_HARNESS.replace(
+            "vm.runInContext(read('js-3.js'),c)",
+            "vm.runInContext(read('js-3.js').replace("
+            + json.dumps(match[0])
+            + ","
+            + json.dumps(match[1] + "=35")
+            + "),c)",
+        )
+        changed = node(harness)["night"][1]
+        self.assertEqual(changed["note"], "35% until 07:00")
+        self.assertEqual(changed["width"], "35%")
+        self.assertEqual(changed["filter"], "brightness(0.35)")
 
     def test_brightness_change_at_night_updates_saved_output_and_restores_at_dawn(self):
-        night, dawn = self.result['savedNight'], self.result['dawn']
-        self.assertEqual(night['brightOutput'], '90%')
-        self.assertEqual(night['note'], '40% until 07:00')
-        self.assertEqual(night['store']['opos_bright'], '90')
-        self.assertEqual(night['filter'], 'brightness(0.4)')
-        self.assertEqual(dawn['note'], '')
-        self.assertEqual(dawn['filter'], 'brightness(0.9)')
-        self.assertEqual(dawn['store']['opos_bright'], '90')
+        night, dawn = self.result["savedNight"], self.result["dawn"]
+        self.assertEqual(night["brightOutput"], "90%")
+        self.assertEqual(night["note"], "40% until 07:00")
+        self.assertEqual(night["store"]["opos_bright"], "90")
+        self.assertEqual(night["filter"], "brightness(0.4)")
+        self.assertEqual(dawn["note"], "")
+        self.assertEqual(dawn["filter"], "brightness(0.9)")
+        self.assertEqual(dawn["store"]["opos_bright"], "90")
 
 
 # Reuse the acceptance driver's sandbox-compatible Chromium transport for the
@@ -329,7 +340,7 @@ from tests import test_uxr_acceptance as acceptance
 
 class PolishBrowser(unittest.TestCase):
     skip_reason = None
-    mode = 'port'
+    mode = "port"
     setUpClass = classmethod(acceptance.TestUxrAcceptance.setUpClass.__func__)
     tearDownClass = classmethod(acceptance.TestUxrAcceptance.tearDownClass.__func__)
     setUp = acceptance.TestUxrAcceptance.setUp
@@ -337,12 +348,17 @@ class PolishBrowser(unittest.TestCase):
 
     def test_native_visible_values_captions_night_note_and_helper_cancellation(self):
         import os
-        driver = Path(self.run_dir) / 'polish.js'
-        driver.write_text(acceptance.DRIVER.read_text().replace(
-            '(async () => {', NATIVE_CHECK + '\n(async () => {', 1))
-        target = str(self.port) if self.proc is not None else 'pipe'
+
+        driver = Path(self.run_dir) / "polish.js"
+        driver.write_text(acceptance.DRIVER.read_text().replace("(async () => {", NATIVE_CHECK + "\n(async () => {", 1))
+        target = str(self.port) if self.proc is not None else "pipe"
         env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
-        result = subprocess.run([self.node, str(driver), target, self.url, 'polish', self.state],
-                                capture_output=True, text=True, timeout=40, env=env)
+        result = subprocess.run(
+            [self.node, str(driver), target, self.url, "polish", self.state],
+            capture_output=True,
+            text=True,
+            timeout=40,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])['violations'], [])
+        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])

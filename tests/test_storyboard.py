@@ -3,6 +3,7 @@ import unittest
 import re
 from opos.storyboard import run
 
+
 class TestStoryboard(unittest.TestCase):
     def test_run_returns_non_empty_list(self):
         out = run(fast=True)
@@ -42,25 +43,42 @@ class TestStoryboard(unittest.TestCase):
         out = run(fast=True)
         start = out.index("== More life: last until 11 PM ==")
         end = out.index("== More life: the rule router drives the goal ==")
-        section = out[start + 1:end]
-        self.assertTrue(any(l.startswith("  Basic low-power mode: calls and messages work for about ") for l in section))
-        self.assertTrue(any(l.startswith("  Smart low-power mode: calls and messages work for about ") for l in section))
-        gain_lines = [l for l in section if l.startswith("  Gain: ") and l.endswith(" more minutes for calls and messages")]
+        section = out[start + 1 : end]
+        self.assertTrue(
+            any(l.startswith("  Basic low-power mode: calls and messages work for about ") for l in section)
+        )
+        self.assertTrue(
+            any(l.startswith("  Smart low-power mode: calls and messages work for about ") for l in section)
+        )
+        gain_lines = [
+            l for l in section if l.startswith("  Gain: ") and l.endswith(" more minutes for calls and messages")
+        ]
         self.assertTrue(gain_lines)
         m = re.search(r"  Gain: (\d+) more minutes for calls and messages", gain_lines[0])
         self.assertIsNotNone(m)
         self.assertGreater(int(m.group(1)), 0)
-        self.assertTrue(any(l.startswith("  Reaches 11 PM: yes") or l.startswith("  Reaches 11 PM: no") for l in section))
+        self.assertTrue(
+            any(l.startswith("  Reaches 11 PM: yes") or l.startswith("  Reaches 11 PM: no") for l in section)
+        )
 
     def test_more_life_router_scene_details(self):
         out = run(fast=True)
         start = out.index("== More life: the rule router drives the goal ==")
         end = out.index("== Battery falling ==")
-        section = out[start + 1:end]
-        self.assertTrue(any(l.startswith("  Basic low-power mode: calls and messages work for about ") for l in section))
-        self.assertTrue(any(l.startswith("  Rule router, last until 11 PM: calls and messages work for about ") for l in section))
+        section = out[start + 1 : end]
+        self.assertTrue(
+            any(l.startswith("  Basic low-power mode: calls and messages work for about ") for l in section)
+        )
+        self.assertTrue(
+            any(l.startswith("  Rule router, last until 11 PM: calls and messages work for about ") for l in section)
+        )
         self.assertTrue(any(l.startswith("  Router gain over basic: ") and l.endswith(" minutes") for l in section))
-        self.assertTrue(any(l.startswith("  Router reaches 11 PM: yes") or l.startswith("  Router reaches 11 PM: no") for l in section))
+        self.assertTrue(
+            any(
+                l.startswith("  Router reaches 11 PM: yes") or l.startswith("  Router reaches 11 PM: no")
+                for l in section
+            )
+        )
 
     def test_battery_lines_count_and_monotonic(self):
         out = run(fast=True)
@@ -78,7 +96,7 @@ class TestStoryboard(unittest.TestCase):
         out = run(fast=True)
         start = out.index("== Quiet by default ==")
         end = out.index("== More capabilities: the rule router, shown when you opt in ==")
-        middle = out[start + 1:end]
+        middle = out[start + 1 : end]
         pattern = re.compile(r"\b(AI|model|Governor|assistant)\b", re.I)
         for line in middle:
             self.assertIsNone(pattern.search(line))
@@ -86,14 +104,15 @@ class TestStoryboard(unittest.TestCase):
     def test_more_capabilities_helper(self):
         out = run(fast=True)
         idx = out.index("== More capabilities: the rule router, shown when you opt in ==")
-        found = any(l.startswith("  Helper") for l in out[idx + 1:])
+        found = any(l.startswith("  Helper") for l in out[idx + 1 :])
         self.assertTrue(found)
 
     def test_charging_scene(self):
         out = run(fast=True)
         idx = out.index("== Charging ==")
-        section = out[idx + 1:]
+        section = out[idx + 1 :]
         self.assertTrue(any("Charging: everything back on" in l for l in section))
+
 
 if __name__ == "__main__":
     unittest.main()

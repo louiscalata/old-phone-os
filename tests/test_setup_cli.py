@@ -20,7 +20,12 @@ class TestSetupCli(unittest.TestCase):
             home.mkdir()
             out = io.StringIO()
             with patch("opos.setup.server.main", return_value=5) as srv:
-                with patch("opos.setup.config.load", return_value=None), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=None, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.load", return_value=None),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.load", return_value=None, create=True),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 5)
                 srv.assert_called_once()
@@ -33,7 +38,12 @@ class TestSetupCli(unittest.TestCase):
             cfg = default_config()
             cfg["applied"] = True
             with patch("opos.setup.server.main") as srv:
-                with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.load", return_value=cfg),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.load", return_value=cfg, create=True),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 srv.assert_not_called()
@@ -66,7 +76,12 @@ class TestSetupCli(unittest.TestCase):
             out = io.StringIO()
             cfg = {"device_name": "desk", "services": ["a"], "goal": "g", "battery_mode": "balanced"}
             with patch("opos.setup.server.main", return_value=0) as srv:
-                with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.load", return_value=cfg),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.load", return_value=cfg, create=True),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run", "--reconfigure"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 srv.assert_called_once()
@@ -77,7 +92,12 @@ class TestSetupCli(unittest.TestCase):
             home.mkdir()
             out = io.StringIO()
             with patch("opos.setup.server.main", return_value=0) as srv:
-                with patch("opos.setup.config.load", side_effect=ConfigError("bad")), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", side_effect=ConfigError("bad"), create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.load", side_effect=ConfigError("bad")),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.load", side_effect=ConfigError("bad"), create=True),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run"], env={}, home=home, platform="linux", out=out)
                 srv.assert_called_once()
                 self.assertEqual(rc, 0)
@@ -88,7 +108,12 @@ class TestSetupCli(unittest.TestCase):
             home.mkdir()
             out = io.StringIO()
             with patch("opos.setup.server.main", return_value=0) as srv:
-                with patch("opos.setup.config.load", return_value=None), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=None, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.load", return_value=None),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.load", return_value=None, create=True),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main([], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 srv.assert_called_once()
@@ -99,8 +124,19 @@ class TestSetupCli(unittest.TestCase):
             home.mkdir()
             out = io.StringIO()
             with patch("opos.setup.server.main", return_value=0) as srv:
-                with patch("opos.setup.config.load", return_value=None), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=None, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                    cli_main(["run", "--port", "9123", "--dry-run", "--no-browser", "--config-dir", "/fake/dir"], env={}, home=home, platform="linux", out=out)
+                with (
+                    patch("opos.setup.config.load", return_value=None),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.load", return_value=None, create=True),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
+                    cli_main(
+                        ["run", "--port", "9123", "--dry-run", "--no-browser", "--config-dir", "/fake/dir"],
+                        env={},
+                        home=home,
+                        platform="linux",
+                        out=out,
+                    )
                 argv = srv.call_args[0][0] if srv.call_args[0] else srv.call_args[1].get("argv", [])
                 self.assertIn("--port", argv)
                 self.assertIn("9123", argv)
@@ -116,7 +152,12 @@ class TestSetupCli(unittest.TestCase):
             out = io.StringIO()
             env: dict[str, str] = {}
             with patch("opos.setup.server.main", return_value=0):
-                with patch("opos.setup.config.load", return_value=None), patch("opos.setup.cli.load", return_value=None, create=True), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.load", return_value=None),
+                    patch("opos.setup.cli.load", return_value=None, create=True),
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     cli_main(["run", "--config-dir", "/fake/dir"], env=env, home=home, platform="linux", out=out)
                 self.assertNotIn("OPOS_CONFIG_DIR", env)
 
@@ -125,8 +166,16 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            with patch("opos.setup.config.load", return_value=None), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=None, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(False, "down")) as h1, patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True) as h2:
+            with (
+                patch("opos.setup.config.load", return_value=None),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=None, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(False, "down")) as h1,
+                    patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True) as h2,
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 txt = out.getvalue()
@@ -140,6 +189,7 @@ class TestSetupCli(unittest.TestCase):
     def test_status_persist_marker_result(self):
         import json as _json
         import opos.setup.config as _cfgmod
+
         _sentinel = "".join(["s", "e", "n", "t", "i", "n", "e", "l", "-", "7", "q", "9"])
         _valid = [
             ("ok", "ok"),
@@ -158,7 +208,10 @@ class TestSetupCli(unittest.TestCase):
                     _before = _json.dumps(_doc).encode("utf-8")
                     _marker.write_bytes(_before)
                     _out = io.StringIO()
-                    with patch("opos.setup.config.load", return_value=None), patch("opos.setup.apply.http_health", return_value=(False, "down")):
+                    with (
+                        patch("opos.setup.config.load", return_value=None),
+                        patch("opos.setup.apply.http_health", return_value=(False, "down")),
+                    ):
                         _rc = cli_main(["status", "--config-dir", str(_cdir)], env={}, platform="linux", out=_out)
                     self.assertEqual(_rc, 0)
                     _lines = _out.getvalue().splitlines()
@@ -191,7 +244,10 @@ class TestSetupCli(unittest.TestCase):
                         _marker.write_bytes(_payload)
                         _before = _marker.read_bytes()
                     _out = io.StringIO()
-                    with patch("opos.setup.config.load", return_value=None), patch("opos.setup.apply.http_health", return_value=(False, "down")):
+                    with (
+                        patch("opos.setup.config.load", return_value=None),
+                        patch("opos.setup.apply.http_health", return_value=(False, "down")),
+                    ):
                         _rc = cli_main(["status", "--config-dir", str(_cdir)], env={}, platform="linux", out=_out)
                     self.assertEqual(_rc, 0)
                     _lines = _out.getvalue().splitlines()
@@ -209,9 +265,24 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "my-device", "services": ["svc1"], "goal": "my-goal", "battery_mode": "eco", "session_token": "not-shown-a", "ssh_key": "not-shown-b"}
-            with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(True, "up")), patch("opos.setup.cli.http_health", return_value=(True, "up"), create=True):
+            cfg = {
+                "device_name": "my-device",
+                "services": ["svc1"],
+                "goal": "my-goal",
+                "battery_mode": "eco",
+                "session_token": "not-shown-a",
+                "ssh_key": "not-shown-b",
+            }
+            with (
+                patch("opos.setup.config.load", return_value=cfg),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=cfg, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(True, "up")),
+                    patch("opos.setup.cli.http_health", return_value=(True, "up"), create=True),
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 txt = out.getvalue()
@@ -229,8 +300,16 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            with patch("opos.setup.config.load", return_value=None), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=None, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(True, "ok")) as h1, patch("opos.setup.cli.http_health", return_value=(True, "ok"), create=True) as h2:
+            with (
+                patch("opos.setup.config.load", return_value=None),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=None, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(True, "ok")) as h1,
+                    patch("opos.setup.cli.http_health", return_value=(True, "ok"), create=True) as h2,
+                ):
                     cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 called = h1.call_args or h2.call_args
                 self.assertIsNotNone(called)
@@ -245,8 +324,16 @@ class TestSetupCli(unittest.TestCase):
             home.mkdir()
             out = io.StringIO()
             cfg = {"device_name": "desk", "services": ["svc1"], "goal": "g", "battery_mode": "balanced"}
-            with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(False, "down")), patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True):
+            with (
+                patch("opos.setup.config.load", return_value=cfg),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=cfg, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(False, "down")),
+                    patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True),
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("ai_tools: none", out.getvalue())
@@ -256,9 +343,23 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["svc1"], "goal": "g", "battery_mode": "balanced", "ai_tools": {"tools": []}}
-            with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(False, "down")), patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True):
+            cfg = {
+                "device_name": "desk",
+                "services": ["svc1"],
+                "goal": "g",
+                "battery_mode": "balanced",
+                "ai_tools": {"tools": []},
+            }
+            with (
+                patch("opos.setup.config.load", return_value=cfg),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=cfg, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(False, "down")),
+                    patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True),
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("ai_tools: none", out.getvalue())
@@ -268,9 +369,23 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["svc1"], "goal": "g", "battery_mode": "balanced", "ai_tools": {"tools": ["a", "b"], "mode": "full"}}
-            with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(True, "up")), patch("opos.setup.cli.http_health", return_value=(True, "up"), create=True):
+            cfg = {
+                "device_name": "desk",
+                "services": ["svc1"],
+                "goal": "g",
+                "battery_mode": "balanced",
+                "ai_tools": {"tools": ["a", "b"], "mode": "full"},
+            }
+            with (
+                patch("opos.setup.config.load", return_value=cfg),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=cfg, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(True, "up")),
+                    patch("opos.setup.cli.http_health", return_value=(True, "up"), create=True),
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("ai_tools: a, b (full)", out.getvalue())
@@ -283,7 +398,10 @@ class TestSetupCli(unittest.TestCase):
             env = {"OPOS_TOOLS_PREFIX": str(prefix)}
             out = io.StringIO()
             with patch("opos.setup.apply.uninstall", return_value=["removed a", "removed b"]) as mock_un:
-                with patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+                with (
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["uninstall"], env=env, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 txt = out.getvalue()
@@ -304,7 +422,9 @@ class TestSetupCli(unittest.TestCase):
             env = {"OPOS_TOOLS_PREFIX": str(prefix)}
             out = io.StringIO()
             with patch("opos.setup.apply.uninstall", return_value=[]) as mock_un:
-                rc = cli_main(["uninstall", "--keep-config", "--dry-run"], env=env, home=home, platform="linux", out=out)
+                rc = cli_main(
+                    ["uninstall", "--keep-config", "--dry-run"], env=env, home=home, platform="linux", out=out
+                )
                 self.assertEqual(rc, 0)
                 kwargs = mock_un.call_args[1]
                 self.assertTrue(kwargs.get("keep_config"))
@@ -345,9 +465,22 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["a"], "goal": {"enabled": True, "time": "23:00"}, "battery_mode": "balanced"}
-            with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(False, "down")), patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True):
+            cfg = {
+                "device_name": "desk",
+                "services": ["a"],
+                "goal": {"enabled": True, "time": "23:00"},
+                "battery_mode": "balanced",
+            }
+            with (
+                patch("opos.setup.config.load", return_value=cfg),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=cfg, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(False, "down")),
+                    patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True),
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("goal: 23:00", out.getvalue())
@@ -357,9 +490,22 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["a"], "goal": {"enabled": False, "time": "23:00"}, "battery_mode": "balanced"}
-            with patch("opos.setup.config.load", return_value=cfg), patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.load", return_value=cfg, create=True), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
-                with patch("opos.setup.apply.http_health", return_value=(False, "down")), patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True):
+            cfg = {
+                "device_name": "desk",
+                "services": ["a"],
+                "goal": {"enabled": False, "time": "23:00"},
+                "battery_mode": "balanced",
+            }
+            with (
+                patch("opos.setup.config.load", return_value=cfg),
+                patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                patch("opos.setup.cli.load", return_value=cfg, create=True),
+                patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+            ):
+                with (
+                    patch("opos.setup.apply.http_health", return_value=(False, "down")),
+                    patch("opos.setup.cli.http_health", return_value=(False, "down"), create=True),
+                ):
                     rc = cli_main(["status"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("goal: off", out.getvalue())
@@ -369,8 +515,14 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["a"], "goal": {"enabled": True, "time": "23:00"}, "battery_mode": "balanced"}
+            cfg = {
+                "device_name": "desk",
+                "services": ["a"],
+                "goal": {"enabled": True, "time": "23:00"},
+                "battery_mode": "balanced",
+            }
             from opos.setup.apply import Progress
+
             try:
                 prog = Progress()
             except TypeError:
@@ -389,8 +541,15 @@ class TestSetupCli(unittest.TestCase):
                             pass
             except Exception:
                 pass
-            with patch("opos.setup.config.default_config", return_value=cfg), patch("opos.setup.config.validate", return_value=[]), patch("opos.setup.apply.apply", return_value=prog) as mock_apply:
-                with patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+            with (
+                patch("opos.setup.config.default_config", return_value=cfg),
+                patch("opos.setup.config.validate", return_value=[]),
+                patch("opos.setup.apply.apply", return_value=prog) as mock_apply,
+            ):
+                with (
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run", "--defaults", "--dry-run"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("Dry run finished. Nothing was configured or started.", out.getvalue())
@@ -406,8 +565,14 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["a"], "goal": {"enabled": True, "time": "23:00"}, "battery_mode": "balanced"}
+            cfg = {
+                "device_name": "desk",
+                "services": ["a"],
+                "goal": {"enabled": True, "time": "23:00"},
+                "battery_mode": "balanced",
+            }
             from opos.setup.apply import Progress
+
             try:
                 prog = Progress()
             except TypeError:
@@ -423,8 +588,15 @@ class TestSetupCli(unittest.TestCase):
                     prog = Progress.fail("config", "boom")
                 except Exception:
                     prog._steps = [{"label": "config", "status": "failed", "detail": "boom"}]
-            with patch("opos.setup.config.default_config", return_value=cfg), patch("opos.setup.config.validate", return_value=[]), patch("opos.setup.apply.apply", return_value=prog):
-                with patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+            with (
+                patch("opos.setup.config.default_config", return_value=cfg),
+                patch("opos.setup.config.validate", return_value=[]),
+                patch("opos.setup.apply.apply", return_value=prog),
+            ):
+                with (
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run", "--defaults"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 1)
                 txt = out.getvalue()
@@ -436,8 +608,14 @@ class TestSetupCli(unittest.TestCase):
             home = Path(td) / "home"
             home.mkdir()
             out = io.StringIO()
-            cfg = {"device_name": "desk", "services": ["a"], "goal": {"enabled": True, "time": "23:00"}, "battery_mode": "balanced"}
+            cfg = {
+                "device_name": "desk",
+                "services": ["a"],
+                "goal": {"enabled": True, "time": "23:00"},
+                "battery_mode": "balanced",
+            }
             from opos.setup.apply import Progress
+
             try:
                 prog = Progress()
             except TypeError:
@@ -456,8 +634,15 @@ class TestSetupCli(unittest.TestCase):
                             pass
             except Exception:
                 pass
-            with patch("opos.setup.config.default_config", return_value=cfg), patch("opos.setup.config.validate", return_value=[]), patch("opos.setup.apply.apply", return_value=prog):
-                with patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"), patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True):
+            with (
+                patch("opos.setup.config.default_config", return_value=cfg),
+                patch("opos.setup.config.validate", return_value=[]),
+                patch("opos.setup.apply.apply", return_value=prog),
+            ):
+                with (
+                    patch("opos.setup.config.config_path", return_value=Path(td) / "cfg"),
+                    patch("opos.setup.cli.config_path", return_value=Path(td) / "cfg", create=True),
+                ):
                     rc = cli_main(["run", "--defaults"], env={}, home=home, platform="linux", out=out)
                 self.assertEqual(rc, 0)
                 self.assertIn("Old Phone OS Interface is set up with the default settings.", out.getvalue())
@@ -472,17 +657,23 @@ class TestSetupCli(unittest.TestCase):
             (fake_root / "proc" / "device-tree" / "model").write_text(_model)
             out = io.StringIO()
             captured: dict[str, object] = {}
+
             class _Prog:
                 def snapshot(self):
                     return []
+
             import opos.setup.device as _dev_mod
+
             _orig = _dev_mod.detect_device
+
             def _fake_detect(root, config_dir=None):
                 self.assertEqual(root, "/")
                 return _orig(str(fake_root), config_dir=config_dir)
+
             def _fake_apply(cfg, **kw):
                 captured["cfg"] = cfg
                 return _Prog()
+
             with patch("opos.setup.device.detect_device", side_effect=_fake_detect):
                 with patch("opos.setup.config.validate", return_value=[]):
                     with patch("opos.setup.apply.apply", side_effect=_fake_apply):
@@ -505,17 +696,23 @@ class TestSetupCli(unittest.TestCase):
             fake_root.mkdir(parents=True)
             out = io.StringIO()
             captured: dict[str, object] = {}
+
             class _Prog:
                 def snapshot(self):
                     return []
+
             import opos.setup.device as _dev_mod
+
             _orig = _dev_mod.detect_device
+
             def _fake_detect(root, config_dir=None):
                 self.assertEqual(root, "/")
                 return _orig(str(fake_root), config_dir=config_dir)
+
             def _fake_apply(cfg, **kw):
                 captured["cfg"] = cfg
                 return _Prog()
+
             with patch("opos.setup.device.detect_device", side_effect=_fake_detect):
                 with patch("opos.setup.config.validate", return_value=[]):
                     with patch("opos.setup.apply.apply", side_effect=_fake_apply):

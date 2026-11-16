@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Simulated volume publication and HTTP/UI integration, without a browser."""
+
 import http.client
 import json
 import os
@@ -48,13 +49,19 @@ class State(unittest.TestCase):
     def test_bad_or_unreadable_reports_are_unknown(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.json"
-            for data in ("", "{", "[]", "null", '{"percent":60}',
-                         '{"simulated":false,"percent":60}',
-                         '{"simulated":true,"percent":true}',
-                         '{"simulated":true,"percent":-1}',
-                         '{"simulated":true,"percent":101}',
-                         '{"simulated":true,"percent":60.0}',
-                         '{"simulated":true,"percent":"60"}'):
+            for data in (
+                "",
+                "{",
+                "[]",
+                "null",
+                '{"percent":60}',
+                '{"simulated":false,"percent":60}',
+                '{"simulated":true,"percent":true}',
+                '{"simulated":true,"percent":-1}',
+                '{"simulated":true,"percent":101}',
+                '{"simulated":true,"percent":60.0}',
+                '{"simulated":true,"percent":"60"}',
+            ):
                 path.write_text(data)
                 self.assertIsNone(volume.read_percent(path), data)
             path.write_bytes(b"\xff")
@@ -102,6 +109,7 @@ class Http(unittest.TestCase):
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:
+
                     def request(method, route, headers=None):
                         conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
                         conn.request(method, route, headers=headers or {})
@@ -142,9 +150,13 @@ class Script(unittest.TestCase):
             self.skipTest("Node unavailable; browser was not requested")
         with mock.patch.dict(os.environ, {"OPOS_VOLUME_KEYS": "1"}):
             body = volume.inject_bytes(web.page().encode(), "n")
-        result = subprocess.run([node, str(ROOT / "tests/volume_ui_test.js"),
-                                 str(ROOT / "src/opos/web_static/volume.js")],
-                                input=body.decode(), capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            [node, str(ROOT / "tests/volume_ui_test.js"), str(ROOT / "src/opos/web_static/volume.js")],
+            input=body.decode(),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 

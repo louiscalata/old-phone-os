@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Installer regressions using local fixtures and static Windows checks."""
+
 import hashlib
 import os
 import re
@@ -34,40 +35,46 @@ class KioskOffRegression(unittest.TestCase):
         self.installed.chmod(0o755)
         rc = self.bin / "rc-update"
         rc.write_text(
-            '#!/bin/sh\n'
+            "#!/bin/sh\n"
             'printf "%s\\n" "$*" >> "$RC_LOG"\n'
             'case "$*" in\n'
             '  "show default")\n'
             '    [ "$SHOW_EXIT" -eq 0 ] || exit "$SHOW_EXIT"\n'
             '    printf " tinydm-other | default\\n"\n'
             '    if [ -s "$RC_ENABLED" ]; then printf "  tinydm | default\\n"; fi\n'
-            '    ;;\n'
+            "    ;;\n"
             '  "del tinydm default")\n'
             '    [ "$DEL_EXIT" -eq 0 ] || exit "$DEL_EXIT"\n'
             '    [ -s "$RC_ENABLED" ] || exit 1\n'
             '    : > "$RC_ENABLED"\n'
-            '    ;;\n'
-            '  *) exit 90 ;;\n'
-            'esac\n'
+            "    ;;\n"
+            "  *) exit 90 ;;\n"
+            "esac\n"
         )
         rc.chmod(0o755)
         tdm = self.bin / "tinydm-set-session"
         tdm.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$TDM_LOG"\n')
         tdm.chmod(0o755)
         self.env = dict(
-            os.environ, PATH=str(self.bin), OPOS_STATE_DIR=str(self.base),
-            OPOS_TDM=str(tdm), RC_LOG=str(self.log), RC_ENABLED=str(self.enabled),
-            SHOW_EXIT="0", DEL_EXIT="0", TDM_LOG=str(self.tdm_log),
+            os.environ,
+            PATH=str(self.bin),
+            OPOS_STATE_DIR=str(self.base),
+            OPOS_TDM=str(tdm),
+            RC_LOG=str(self.log),
+            RC_ENABLED=str(self.enabled),
+            SHOW_EXIT="0",
+            DEL_EXIT="0",
+            TDM_LOG=str(self.tdm_log),
         )
 
     def run_script(self):
         # Direct execution exercises the installed helper's shebang, without sh's fallback.
-        return subprocess.run([str(self.installed)], env=self.env,
-                              capture_output=True, text=True, timeout=10)
+        return subprocess.run([str(self.installed)], env=self.env, capture_output=True, text=True, timeout=10)
 
     def test_shebang_precedes_spdx(self):
-        self.assertEqual(KIOSK.read_text().splitlines()[:2],
-                         ["#!/bin/sh", "# SPDX-License-Identifier: GPL-3.0-or-later"])
+        self.assertEqual(
+            KIOSK.read_text().splitlines()[:2], ["#!/bin/sh", "# SPDX-License-Identifier: GPL-3.0-or-later"]
+        )
 
     def test_disable_twice_succeeds_without_second_delete(self):
         for _ in range(2):
@@ -121,7 +128,8 @@ class WindowsInstallerRegression(unittest.TestCase):
         tail = text.split("# Print commands as PowerShell literals;", 1)[1]
         branches = re.search(
             r"if \(\$DryRun\) \{(?P<dry>.*?)\n} else \{(?P<live>.*?)\n}\nif \(-not \$NoLaunch",
-            tail, re.S,
+            tail,
+            re.S,
         )
         self.assertIsNotNone(branches)
         dry, live = branches.group("dry"), branches.group("live")
@@ -157,9 +165,13 @@ class UiPostInstallRegression(unittest.TestCase):
             tdm = base / "tinydm-set-session"
             tdm.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "$TDM_LOG"\nexit {status}\n')
             tdm.chmod(0o755)
-            result = subprocess.run(["/bin/sh", str(hook)],
-                                    env=dict(os.environ, PATH=str(base), TDM_LOG=str(log)),
-                                    capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                ["/bin/sh", str(hook)],
+                env=dict(os.environ, PATH=str(base), TDM_LOG=str(log)),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             return result, log.read_text() if log.exists() else None
 
     def test_first_install_selects_kiosk(self):
@@ -188,8 +200,9 @@ class BootstrapCleanupRegression(unittest.TestCase):
             env = fixture_git_env(repo)
             git = shutil.which("git")
             # An empty bare repository needs no fixture commits or branch changes.
-            subprocess.run([git, "init", "--bare", str(repo)], env=env,
-                           capture_output=True, text=True, check=True, timeout=20)
+            subprocess.run(
+                [git, "init", "--bare", str(repo)], env=env, capture_output=True, text=True, check=True, timeout=20
+            )
             dest = base / "checkout"
             ref = "f" * 40
             env.update(OPOS_REPO_URL=str(repo), OPOS_REF=ref, OPOS_SRC_DIR=str(dest))
@@ -199,8 +212,9 @@ class BootstrapCleanupRegression(unittest.TestCase):
                 "from the release manifest, or run install.sh from a retained checkout.\n"
             )
             for _ in range(2):
-                result = subprocess.run(["/bin/sh", str(ROOT / "bootstrap.sh")], env=env,
-                                        capture_output=True, text=True, timeout=20)
+                result = subprocess.run(
+                    ["/bin/sh", str(ROOT / "bootstrap.sh")], env=env, capture_output=True, text=True, timeout=20
+                )
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertIn(message, result.stderr)
                 self.assertNotIn("destination exists", result.stderr)

@@ -64,7 +64,7 @@ class RunChecksTests(unittest.TestCase):
             "import sys\n"
             "import tests.test_setup_selftest\n"
             "from opos.setup import config\n"
-            "mod = sys.modules.get(\"opos.setup.apply\")\n"
+            'mod = sys.modules.get("opos.setup.apply")\n'
             "ok = mod is not None and mod.ensure_token is config.ensure_token and mod.save is config.save\n"
             "sys.exit(0 if ok else 1)\n"
         )
@@ -128,6 +128,7 @@ class OptimizedSelftestTests(unittest.TestCase):
             self.assertTrue(by["config"][0], checks)
             self.assertEqual(by["config"][1], "ok")
         from opos.setup.config import default_config, load, save
+
         cfg = default_config()
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "cfg.json"
@@ -182,7 +183,6 @@ class OptimizedSelftestTests(unittest.TestCase):
             self.assertIn("AssertionError", by["app"][1])
             self.assertIn("500", by["app"][1])
 
-
     def test_remaining_guards_survive_optimization(self):
         """Detect removed validations in normal and optimized Python."""
         cases = [
@@ -203,7 +203,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "    return r\n"
                 "with mock.patch('opos.setup.config.save', side_effect=_bad_save):\n"
                 "    with mock.patch('opos.setup.selftest.os', SimpleNamespace(name='posix')):\n"
-                "        print(json.dumps(stmod.run_checks()))\n"
+                "        print(json.dumps(stmod.run_checks()))\n",
             ),
             (
                 "token mismatch",
@@ -224,7 +224,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "    return real_ensure(path, *a, **k)\n"
                 "with mock.patch('opos.setup.config.ensure_token', side_effect=_fake):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
             (
                 "short token",
@@ -241,7 +241,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "    return real_ensure(path, *a, **k)\n"
                 "with mock.patch('opos.setup.config.ensure_token', side_effect=_fake):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
             (
                 "device type",
@@ -251,7 +251,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "from unittest import mock\n"
                 "with mock.patch('opos.setup.device.detect_device', return_value=[]):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
             (
                 "device keys",
@@ -261,7 +261,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "from unittest import mock\n"
                 "with mock.patch('opos.setup.device.detect_device', return_value={'id': 'test', 'name': 'test'}):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
             (
                 "service hardening",
@@ -271,7 +271,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "from unittest import mock\n"
                 "with mock.patch('opos.setup.services.render_user_unit', return_value='token-file'):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
             (
                 "service token option",
@@ -281,7 +281,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "from unittest import mock\n"
                 "with mock.patch('opos.setup.services.render_user_unit', return_value='NoNewPrivileges=yes'):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
             (
                 "wizard state status",
@@ -297,7 +297,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "        return (500, json.dumps({'device': {}}).encode())\n"
                 "    return real_get(*a, **k)\n"
                 "with mock.patch('opos.setup.selftest._get', side_effect=_fake):\n"
-                "    print(json.dumps(stmod.run_checks()))\n"
+                "    print(json.dumps(stmod.run_checks()))\n",
             ),
             (
                 "wizard state content",
@@ -313,7 +313,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "        return (200, json.dumps({}).encode())\n"
                 "    return real_get(*a, **k)\n"
                 "with mock.patch('opos.setup.selftest._get', side_effect=_fake):\n"
-                "    print(json.dumps(stmod.run_checks()))\n"
+                "    print(json.dumps(stmod.run_checks()))\n",
             ),
             (
                 "app token length",
@@ -330,7 +330,7 @@ class OptimizedSelftestTests(unittest.TestCase):
                 "    return real_ensure(path, *a, **k)\n"
                 "with mock.patch('opos.setup.config.ensure_token', side_effect=_fake):\n"
                 "    from opos.setup.selftest import run_checks\n"
-                "    print(json.dumps(run_checks()))\n"
+                "    print(json.dumps(run_checks()))\n",
             ),
         ]
         for case, target, expected, code in cases:
@@ -400,6 +400,7 @@ class NoAssertNodesTests(unittest.TestCase):
     def test_no_assert_nodes(self):
         import ast
         from pathlib import Path
+
         path = Path(selftest.__file__)
         tree = ast.parse(path.read_text())
         asserts = [n for n in ast.walk(tree) if isinstance(n, ast.Assert)]

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for harden-device.sh."""
+
 import os
 import shutil
 import stat
@@ -18,14 +19,14 @@ KEY_LINE2 = "ssh-ed25519 " + "B" * 68 + " user@host"
 NEED_BASH = shutil.which("bash") is not None
 
 
-def run(args: list[str], root: str, stdin: str = "",
-        env_extra: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run(
+    args: list[str], root: str, stdin: str = "", env_extra: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run harden script with OPOS_ROOT pinned."""
     env = {**os.environ, "OPOS_ROOT": root, "TEST": "1"}
     if env_extra:
         env.update(env_extra)
-    return subprocess.run(["bash", str(SCRIPT), *args], input=stdin,
-                          capture_output=True, text=True, env=env)
+    return subprocess.run(["bash", str(SCRIPT), *args], input=stdin, capture_output=True, text=True, env=env)
 
 
 def mode(path: Path) -> int:
@@ -76,8 +77,12 @@ class HardenDeviceTest(unittest.TestCase):
         self.assertTrue(conf.is_file())
         self.assertEqual(mode(conf), 0o644)
         text = read(conf)
-        for want in ("PasswordAuthentication no", "PermitRootLogin no",
-                     "AuthenticationMethods publickey", "AllowUsers droidian"):
+        for want in (
+            "PasswordAuthentication no",
+            "PermitRootLogin no",
+            "AuthenticationMethods publickey",
+            "AllowUsers droidian",
+        ):
             self.assertIn(want, text)
         nft = read(base / "etc/opos/firewall.nft")
         self.assertIn("policy drop", nft)
@@ -115,21 +120,18 @@ class HardenDeviceTest(unittest.TestCase):
         kf = Path(self.root) / "k.pub"
         kf.write_text(key2 + "\n", encoding="utf-8")
         for _ in range(2):
-            r = run(["--apply", "--only", "ssh", "--add-key", str(kf)],
-                    self.root, stdin="yes-apply\n")
+            r = run(["--apply", "--only", "ssh", "--add-key", str(kf)], self.root, stdin="yes-apply\n")
             self.assertEqual(r.returncode, 0)
         auth = Path(self.root) / "home/droidian/.ssh/authorized_keys"
         self.assertEqual(mode(auth), 0o600)
         self.assertEqual(read(auth).splitlines().count(key2), 1)
         bad = Path(self.root) / "bad.pub"
         bad.write_text("not a key\n", encoding="utf-8")
-        r = run(["--apply", "--only", "ssh", "--add-key", str(bad)],
-                self.root, stdin="yes-apply\n")
+        r = run(["--apply", "--only", "ssh", "--add-key", str(bad)], self.root, stdin="yes-apply\n")
         self.assertNotEqual(r.returncode, 0)
         short = Path(self.root) / "short.pub"
         short.write_text("ssh-ed25519 AAAA test@example\n", encoding="utf-8")
-        r = run(["--apply", "--only", "ssh", "--add-key", str(short)],
-                self.root, stdin="yes-apply\n")
+        r = run(["--apply", "--only", "ssh", "--add-key", str(short)], self.root, stdin="yes-apply\n")
         self.assertNotEqual(r.returncode, 0)
 
     def test_add_key_symlink_refused(self) -> None:
@@ -141,8 +143,7 @@ class HardenDeviceTest(unittest.TestCase):
         ssh = Path(self.root) / "home/droidian/.ssh"
         shutil.rmtree(ssh)
         ssh.symlink_to(real, target_is_directory=True)
-        r = run(["--apply", "--only", "ssh", "--add-key", str(kf)],
-                self.root, stdin="yes-apply\n")
+        r = run(["--apply", "--only", "ssh", "--add-key", str(kf)], self.root, stdin="yes-apply\n")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("refusing symlink", (r.stdout + r.stderr).lower())
         self.assertEqual(list(real.iterdir()), [])
@@ -156,8 +157,7 @@ class HardenDeviceTest(unittest.TestCase):
         target.write_text("x\n", encoding="utf-8")
         auth.unlink()
         auth.symlink_to(target)
-        r = run(["--apply", "--only", "ssh", "--add-key", str(kf)],
-                self.root, stdin="yes-apply\n")
+        r = run(["--apply", "--only", "ssh", "--add-key", str(kf)], self.root, stdin="yes-apply\n")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("refusing symlink", (r.stdout + r.stderr).lower())
         self.assertEqual(target.read_text(encoding="utf-8"), "x\n")
@@ -169,8 +169,7 @@ class HardenDeviceTest(unittest.TestCase):
         ssh = Path(self.root) / "home/droidian/.ssh"
         shutil.rmtree(ssh)
         ssh.write_text("file\n", encoding="utf-8")
-        r = run(["--apply", "--only", "ssh", "--add-key", str(kf)],
-                self.root, stdin="yes-apply\n")
+        r = run(["--apply", "--only", "ssh", "--add-key", str(kf)], self.root, stdin="yes-apply\n")
         self.assertNotEqual(r.returncode, 0)
 
     def test_junk_key_never_disables_password(self) -> None:
@@ -217,7 +216,9 @@ class HardenDeviceTest(unittest.TestCase):
                     r = run(["--rollback"], self.root, env_extra={"OPOS_HARDEN_TEST": "1"})
                     self.assertNotEqual(r.returncode, 0)
                     self.assertIn("bad manifest entry", r.stderr)
-                    self.assertFalse(any(line.startswith("[harden] skip (test root): systemctl") for line in r.stdout.splitlines()))
+                    self.assertFalse(
+                        any(line.startswith("[harden] skip (test root): systemctl") for line in r.stdout.splitlines())
+                    )
                     self.assertEqual(manifest.read_bytes(), before)
 
     def test_bad_env_rejected(self) -> None:
@@ -247,8 +248,7 @@ class HardenDeviceTest(unittest.TestCase):
             "OPOS_IPTABLES_LEGACY_RESTORE": str(Path(self.root) / "missing-iptables-legacy-restore"),
             "OPOS_IP6TABLES_LEGACY_RESTORE": str(Path(self.root) / "missing-ip6tables-legacy-restore"),
         }
-        r = run(["--apply", "--only", "firewall"], self.root,
-                stdin="yes-apply\n", env_extra=env)
+        r = run(["--apply", "--only", "firewall"], self.root, stdin="yes-apply\n", env_extra=env)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("nft not installed", (r.stdout + r.stderr).lower())
         for rel in rels:
@@ -287,8 +287,7 @@ class HardenDeviceTest(unittest.TestCase):
             p.write_bytes(data)
             p.chmod(0o640)
             saved[rel] = (p.read_bytes(), mode(p))
-        r = run(["--apply", "--only", "firewall"], self.root,
-                stdin="yes-apply\n", env_extra=env)
+        r = run(["--apply", "--only", "firewall"], self.root, stdin="yes-apply\n", env_extra=env)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("nft not installed", (r.stdout + r.stderr).lower())
         for rel in rels:
@@ -300,18 +299,18 @@ class HardenDeviceTest(unittest.TestCase):
 
     def test_firewall_dhcp_requests_usb_only(self) -> None:
         """DHCP requests allowed only on USB interfaces."""
-        r = run(["--apply", "--only", "firewall"], self.root,
-                stdin="yes-apply\n",
-                env_extra={"OPOS_USB_IFACES": "usb7 rndis7",
-                           "OPOS_FW_BACKEND": "nft"})
+        r = run(
+            ["--apply", "--only", "firewall"],
+            self.root,
+            stdin="yes-apply\n",
+            env_extra={"OPOS_USB_IFACES": "usb7 rndis7", "OPOS_FW_BACKEND": "nft"},
+        )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         nft = read(Path(self.root) / "etc/opos/firewall.nft")
         lines = nft.splitlines()
-        start = next(i for i, ln in enumerate(lines)
-                     if ln.strip() == "chain input {")
-        end = next(i for i in range(start, len(lines))
-                   if lines[i].strip() == "}")
-        body = [ln.strip() for ln in lines[start:end + 1]]
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == "chain input {")
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "}")
+        body = [ln.strip() for ln in lines[start : end + 1]]
         expected = [
             "chain input {",
             "type filter hook input priority 0; policy drop;",
@@ -335,8 +334,7 @@ class HardenDeviceTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         self.assertIn("NOT enabled", r.stdout)
         self.assertFalse((Path(self.root) / "etc").exists())
-        combined = read(SCRIPT) + "".join(p.read_text(encoding="utf-8")
-                                          for p in sorted(LIBDIR.glob("*.sh")))
+        combined = read(SCRIPT) + "".join(p.read_text(encoding="utf-8") for p in sorted(LIBDIR.glob("*.sh")))
         self.assertNotIn("1234", combined)
         self.assertNotIn("droidian:", combined)
 
@@ -356,8 +354,7 @@ class HardenDeviceTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, f.name)
         if shutil.which("shellcheck") is None:
             self.skipTest("shellcheck missing")
-        cmd = ["shellcheck", "-x", "-e", "SC1090,SC1091",
-               *[str(f) for f in files]]
+        cmd = ["shellcheck", "-x", "-e", "SC1090,SC1091", *[str(f) for f in files]]
         r = subprocess.run(cmd, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 

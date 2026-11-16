@@ -23,10 +23,15 @@ class TestSetupFinish(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         self.runner = mock.Mock(side_effect=AssertionError("preferences must not execute commands"))
-        self.ctx = SetupContext(repo_root=self.directory, python=sys.executable,
-                                home=self.directory, platform=sys.platform,
-                                env={"OPOS_CONFIG_DIR": str(self.directory)},
-                                dry_run=True, runner=self.runner)
+        self.ctx = SetupContext(
+            repo_root=self.directory,
+            python=sys.executable,
+            home=self.directory,
+            platform=sys.platform,
+            env={"OPOS_CONFIG_DIR": str(self.directory)},
+            dry_run=True,
+            runner=self.runner,
+        )
         self._start_server()
         self.addCleanup(self._stop_server)
 
@@ -47,21 +52,23 @@ class TestSetupFinish(unittest.TestCase):
         data = None
         if payload is not None:
             data = json.dumps(payload).encode()
-            headers.update({"Content-Type": "application/json",
-                            "Origin": self.base if origin is None else origin})
-        connection = http.client.HTTPConnection(
-            "127.0.0.1", self.server.server_address[1], timeout=2)
+            headers.update({"Content-Type": "application/json", "Origin": self.base if origin is None else origin})
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=2)
         try:
-            connection.request("GET" if payload is None else "POST", path,
-                               body=data, headers=headers)
+            connection.request("GET" if payload is None else "POST", path, body=data, headers=headers)
             response = connection.getresponse()
             return response.status, json.loads(response.read())
         finally:
             connection.close()
 
     def test_finish_persists_and_kiosk_honors_choices_after_reopen(self):
-        choices = {"theme": "dark", "text_size": "large", "device_type": "tablet",
-                   "helper": "on", "wifi": {"ssid": "private-setup-network"}}
+        choices = {
+            "theme": "dark",
+            "text_size": "large",
+            "device_type": "tablet",
+            "helper": "on",
+            "wifi": {"ssid": "private-setup-network"},
+        }
         for step, value in choices.items():
             status, _ = self._request("/setup/api/prefs", {"step": step, "value": value})
             self.assertEqual(status, 200)

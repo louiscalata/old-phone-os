@@ -2,9 +2,10 @@
 import unittest
 import opos.setup.wizard_page
 
+
 class TestUxrWizardSummary(unittest.TestCase):
     def setUp(self):
-        h = opos.setup.wizard_page.page("t"*32, "n")
+        h = opos.setup.wizard_page.page("t" * 32, "n")
         start = h.index("function buildSummary(){")
         end = h.index("function ", start + len("function buildSummary(){"))
         self.body = h[start:end]
@@ -38,6 +39,7 @@ class TestUxrWizardSummary(unittest.TestCase):
         self.assertIn('value="sms"', h)
         self.assertIn('value="worn"', h)
         self.assertIn('value="auto"', h)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,14 @@ class DuoKioskDocsTest(unittest.TestCase):
         t = p.read_text(encoding="utf-8")
         self.assertIn("## Open OPOS full-screen at login", t)
         a = t.split("## Open OPOS full-screen at login", 1)[1]
-        for s in ("install.sh --kiosk", "OPOS_KIOSK_BROWSER", "opos-kiosk.desktop", "--uninstall", "opos run --defaults", "no root"):
+        for s in (
+            "install.sh --kiosk",
+            "OPOS_KIOSK_BROWSER",
+            "opos-kiosk.desktop",
+            "--uninstall",
+            "opos run --defaults",
+            "no root",
+        ):
             self.assertIn(s, a)
 
 

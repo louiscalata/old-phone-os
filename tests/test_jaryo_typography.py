@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """JRY03 computed typography and real section rules in the existing kiosk DOM."""
+
 import json
 import os
 import subprocess
@@ -74,11 +75,14 @@ class TestJaryoTypography(unittest.TestCase):
         self.assertIn("(async () => {", source)
         driver.write_text(source.replace("(async () => {", CHECK + "\n(async () => {", 1))
         target = str(self.port) if self.proc is not None else "pipe"
-        env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile,
-                   TMPDIR=self.run_dir)
+        env = dict(os.environ, UXR_CHROME=self.chrome, UXR_PIDFILE=self.pidfile, TMPDIR=self.run_dir)
         result = subprocess.run(
             [self.node, str(driver), target, self.url, "jaryo_typography", self.state],
-            capture_output=True, text=True, timeout=60, env=env)
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1500:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 

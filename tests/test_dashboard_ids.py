@@ -34,10 +34,14 @@ class TestDashboardIds(unittest.TestCase):
         dash = Dashboard(tasks)
         dash.set_goal("23:00")
         runtime = Runtime(tasks=tasks)
+
         def view():
             # 30% at 60% health is SAVER under the battery rules, so these pauses are soft.
             tick = runtime.step(0, 30, health=0.6, goal_hours=dash.hours_to_goal(43200), undone=frozenset(dash.undone))
-            return dash.view(30, tick.decision.mode, False, 0.6, 43200, False, "", deferred=tick.decision.deferred, steps=tick.steps)
+            return dash.view(
+                30, tick.decision.mode, False, 0.6, 43200, False, "", deferred=tick.decision.deferred, steps=tick.steps
+            )
+
         view()
         paused = view()["paused"]
         self.assertTrue(paused)

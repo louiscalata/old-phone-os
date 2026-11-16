@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Duo pack level comes from the bq27742 gauges, not the PMIC node typed Battery."""
+
 import tempfile
 import unittest
 from pathlib import Path

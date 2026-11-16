@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The native shell: its toolkit-free rules always; the GTK module only where GTK 4 and PyGObject are installed."""
+
 import ast
 import re
 import tempfile
@@ -18,7 +19,14 @@ class Hinge(unittest.TestCase):
         self.assertEqual(layout.hinge_px({"OPOS_SPAN": " 675 , 0 "}), 0)
 
     def test_one_screen_or_a_malformed_span_has_no_gap(self):
-        for env in ({}, {"OPOS_SPAN": ""}, {"OPOS_SPAN": "675"}, {"OPOS_SPAN": "a,b"}, {"OPOS_SPAN": "675,42,1"}, {"OPOS_SPAN": "-1,42"}):
+        for env in (
+            {},
+            {"OPOS_SPAN": ""},
+            {"OPOS_SPAN": "675"},
+            {"OPOS_SPAN": "a,b"},
+            {"OPOS_SPAN": "675,42,1"},
+            {"OPOS_SPAN": "-1,42"},
+        ):
             with self.subTest(env=env):
                 self.assertEqual(layout.hinge_px(env), 0)
 
@@ -38,7 +46,9 @@ class Swipes(unittest.TestCase):
         for page in ("lock", "home", "app"):
             with self.subTest(page=page):
                 self.assertEqual(self.act(page, False, (300, layout.EDGE - 1), 0, 400), "shade-open")
-                self.assertIsNone(self.act(page, False, (300, layout.EDGE), 0, 400), "not from the middle of the screen")
+                self.assertIsNone(
+                    self.act(page, False, (300, layout.EDGE), 0, 400), "not from the middle of the screen"
+                )
 
     def test_an_open_shade_takes_every_swipe_and_only_up_closes_it(self):
         self.assertEqual(self.act("home", True, (300, 300), 0, -400), "shade-close")
@@ -52,7 +62,9 @@ class Swipes(unittest.TestCase):
             with self.subTest(page=page):
                 self.assertEqual(self.act(page, False, (300, self.H - 10), 0, -400), "home")
                 self.assertIsNone(self.act(page, False, (300, self.H - layout.EDGE), 0, -400), "only from the edge")
-        self.assertEqual(self.act("lock", False, (300, self.H - 10), 0, -400), "home", "on the lock screen any swipe up unlocks")
+        self.assertEqual(
+            self.act("lock", False, (300, self.H - 10), 0, -400), "home", "on the lock screen any swipe up unlocks"
+        )
 
     def test_a_sideways_swipe_from_the_middle_moves_the_buttons_to_that_side(self):
         mid = self.W / 2
@@ -61,7 +73,9 @@ class Swipes(unittest.TestCase):
                 self.assertEqual(self.act(page, False, (mid - 60, 400), 500, 10), "hand-right")
                 self.assertEqual(self.act(page, False, (mid + 60, 400), -500, 10), "hand-left")
         edge = self.HINGE / 2 + layout.MIDDLE
-        self.assertEqual(self.act("home", False, (mid + edge, 400), 500, 0), "hand-right", "the band's last pixel counts")
+        self.assertEqual(
+            self.act("home", False, (mid + edge, 400), 500, 0), "hand-right", "the band's last pixel counts"
+        )
         self.assertIsNone(self.act("home", False, (mid + edge + 1, 400), 500, 0), "outside the band nothing moves")
         self.assertIsNone(self.act("home", False, (mid, 400), 100, 500), "a mostly vertical swipe is not sideways")
         self.assertIsNone(self.act("home", False, (mid, 400), layout.FAR, 0), "a slow drag is not a swipe")
@@ -116,9 +130,11 @@ class SwipesUnchanged(unittest.TestCase):
                         for vy in vs:
                             for size in ((1392, 900, 42), (720, 1440, 0)):
                                 w, h, g = size
-                                self.assertEqual(layout.swipe_action(page, shade, start, w, h, vx, vy, g),
-                                                 old_swipe_action(page, shade, start, w, h, vx, vy, g),
-                                                 (page, shade, start, vx, vy, size))
+                                self.assertEqual(
+                                    layout.swipe_action(page, shade, start, w, h, vx, vy, g),
+                                    old_swipe_action(page, shade, start, w, h, vx, vy, g),
+                                    (page, shade, start, vx, vy, size),
+                                )
                                 n += 1
         self.assertGreater(n, 50000)
 
@@ -139,7 +155,9 @@ class Drags(unittest.TestCase):
             for x in (0, 300, self.W / 2, self.W - 1):
                 with self.subTest(page=page, x=x):
                     self.assertEqual(self.kind(page, False, (x, layout.EDGE - 1), 0, 13), "sheet-open")
-                    self.assertEqual(self.kind(page, False, (x, 0), -13, 13), "sheet-open", "exactly diagonal still counts")
+                    self.assertEqual(
+                        self.kind(page, False, (x, 0), -13, 13), "sheet-open", "exactly diagonal still counts"
+                    )
 
     def test_an_open_sheet_takes_every_upward_drag_and_nothing_else(self):
         for page in ("lock", "home", "app"):
@@ -185,13 +203,27 @@ class Drags(unittest.TestCase):
 
     def test_progress_is_clamped_to_0_and_1(self):
         H = self.H
-        cases = [("sheet-open", 0.45 * H, 1.0), ("sheet-open", 0.45 * H / 2, 0.5), ("sheet-open", 5 * H, 1.0),
-                 ("sheet-open", -100, 0.0), ("sheet-open", 0, 0.0),
-                 ("sheet-close", -0.45 * H, 1.0), ("sheet-close", -0.45 * H / 2, 0.5), ("sheet-close", -5 * H, 1.0),
-                 ("sheet-close", 100, 0.0),
-                 ("lock", -0.5 * H, 1.0), ("lock", -0.25 * H, 0.5), ("lock", -5 * H, 1.0), ("lock", 100, 0.0),
-                 ("home", -0.4 * H, 1.0), ("home", -0.2 * H, 0.5), ("home", -5 * H, 1.0), ("home", 100, 0.0),
-                 (None, -500, 0.0), ("nonsense", -500, 0.0)]
+        cases = [
+            ("sheet-open", 0.45 * H, 1.0),
+            ("sheet-open", 0.45 * H / 2, 0.5),
+            ("sheet-open", 5 * H, 1.0),
+            ("sheet-open", -100, 0.0),
+            ("sheet-open", 0, 0.0),
+            ("sheet-close", -0.45 * H, 1.0),
+            ("sheet-close", -0.45 * H / 2, 0.5),
+            ("sheet-close", -5 * H, 1.0),
+            ("sheet-close", 100, 0.0),
+            ("lock", -0.5 * H, 1.0),
+            ("lock", -0.25 * H, 0.5),
+            ("lock", -5 * H, 1.0),
+            ("lock", 100, 0.0),
+            ("home", -0.4 * H, 1.0),
+            ("home", -0.2 * H, 0.5),
+            ("home", -5 * H, 1.0),
+            ("home", 100, 0.0),
+            (None, -500, 0.0),
+            ("nonsense", -500, 0.0),
+        ]
         for kind, dy, want in cases:
             with self.subTest(kind=kind, dy=dy):
                 self.assertAlmostEqual(layout.drag_progress(kind, dy, H), want)
@@ -209,7 +241,9 @@ class Drags(unittest.TestCase):
         for kind, sign in (("sheet-open", 1), ("sheet-close", -1), ("lock", -1), ("home", -1)):
             with self.subTest(kind=kind):
                 self.assertEqual(layout.drag_release(kind, 0.0, sign * (layout.FAR + 1)), "complete")
-                self.assertEqual(layout.drag_release(kind, 0.0, sign * layout.FAR), "cancel", "FAR itself is not a flick")
+                self.assertEqual(
+                    layout.drag_release(kind, 0.0, sign * layout.FAR), "cancel", "FAR itself is not a flick"
+                )
                 self.assertEqual(layout.drag_release(kind, 0.1, -sign * 2000), "cancel", "a flick the other way")
         self.assertEqual(layout.drag_release(None, 1.0, -2000), "cancel")
 
@@ -217,8 +251,11 @@ class Drags(unittest.TestCase):
         self.assertEqual(layout.drag_velocity([]), 0.0)
         self.assertEqual(layout.drag_velocity([(1000, 0)]), 0.0)
         self.assertAlmostEqual(layout.drag_velocity([(1000, 0), (1100, -100)]), -1000.0)
-        self.assertAlmostEqual(layout.drag_velocity([(0, 0), (1000, -500), (1050, -500), (1100, -600)]), -1000.0,
-                               "only the last FLICK_MS count")
+        self.assertAlmostEqual(
+            layout.drag_velocity([(0, 0), (1000, -500), (1050, -500), (1100, -600)]),
+            -1000.0,
+            "only the last FLICK_MS count",
+        )
         self.assertEqual(layout.drag_velocity([(1000, 0), (1100, -300), (1400, -300)]), 0.0, "stopped, then lifted")
         self.assertEqual(layout.drag_velocity([(1000, 0), (1000, -300)]), 0.0, "no time passed")
 
@@ -226,8 +263,11 @@ class Drags(unittest.TestCase):
         H = self.H
         self.assertAlmostEqual(layout.drag_offset("sheet-open", 0, H), -H, msg="closed sheet: all of it above the top")
         for dy in (13, 90, 100, 405, 700):
-            self.assertAlmostEqual(layout.drag_offset("sheet-open", dy, H) - layout.drag_offset("sheet-open", 0, H), dy,
-                                   msg="the sheet moves exactly as far as the finger, not 1/SHEET_FULL times as far")
+            self.assertAlmostEqual(
+                layout.drag_offset("sheet-open", dy, H) - layout.drag_offset("sheet-open", 0, H),
+                dy,
+                msg="the sheet moves exactly as far as the finger, not 1/SHEET_FULL times as far",
+            )
             self.assertAlmostEqual(layout.drag_offset("sheet-close", -dy, H), -dy, msg="closing too")
         self.assertAlmostEqual(layout.drag_offset("sheet-open", 2 * H, H), 0, msg="never past fully shown")
         self.assertAlmostEqual(layout.drag_offset("sheet-close", -2 * H, H), -H, msg="never past fully hidden")
@@ -284,17 +324,48 @@ class FakeBlanker:
 
 class StandInShell(unittest.TestCase):
     """The shell's own handlers on a window that only records, with a stand-in toolkit. No tests of its own."""
+
     H = 900
-    BORROWED = ("page_kind", "swipe_begin", "swipe_end", "event_ms", "drag_begin", "drag_update", "drag_end",
-                "drag_cancel", "dragged", "settle", "set_shade", "lid_changed", "blank_if_closed", "start_lid",
-                "lid_closed_now", "lid_lost", "restore", "retry_restore", "restore_again", "end",
-                "watch_lid", "lid_report", "lid_gone", "lid_again", "set_posture", "hinge_changed",
-                "relight", "fit_back", "enter_back", "leave_back", "two_rows", "tilt_changed")
+    BORROWED = (
+        "page_kind",
+        "swipe_begin",
+        "swipe_end",
+        "event_ms",
+        "drag_begin",
+        "drag_update",
+        "drag_end",
+        "drag_cancel",
+        "dragged",
+        "settle",
+        "set_shade",
+        "lid_changed",
+        "blank_if_closed",
+        "start_lid",
+        "lid_closed_now",
+        "lid_lost",
+        "restore",
+        "retry_restore",
+        "restore_again",
+        "end",
+        "watch_lid",
+        "lid_report",
+        "lid_gone",
+        "lid_again",
+        "set_posture",
+        "hinge_changed",
+        "relight",
+        "fit_back",
+        "enter_back",
+        "leave_back",
+        "two_rows",
+        "tilt_changed",
+    )
 
     def setUp(self):
         import importlib
         import sys
         from tests.test_duo_native import Toolkit
+
         names = ("gi", "gi.repository", "opos.native.shell", "opos.native.screens", "opos.native.ui")
         saved = {n: sys.modules.get(n) for n in names}
 
@@ -303,6 +374,7 @@ class StandInShell(unittest.TestCase):
                 sys.modules.pop(n, None)
                 if m is not None:
                     sys.modules[n] = m
+
         self.addCleanup(restore)
         for n in names:
             sys.modules.pop(n, None)
@@ -312,7 +384,7 @@ class StandInShell(unittest.TestCase):
         sys.modules["gi"], sys.modules["gi.repository"] = gi, gi.repository
         shell = self.shell = importlib.import_module("opos.native.shell")
         shell.Gtk.EventSequenceState.CLAIMED = "claimed"
-        self.timers = []                # (ms, callback, args) handed to GLib.timeout_add
+        self.timers = []  # (ms, callback, args) handed to GLib.timeout_add
         shell.GLib.timeout_add = lambda ms, fn, *a: self.timers.append((ms, fn, a)) or len(self.timers)
         shell.GLib.idle_add = lambda fn, *a: fn(*a)
         S = shell.Shell
@@ -320,6 +392,7 @@ class StandInShell(unittest.TestCase):
 
         class NoWatcher:
             """No sensor service in these tests: the real watcher would start a thread."""
+
             def __init__(self, *a, **k):
                 pass
 
@@ -328,9 +401,10 @@ class StandInShell(unittest.TestCase):
 
             def set_paused(self, paused):
                 test.paused = paused
-        self.addCleanup(setattr, shell.hinge, "HingeWatcher", shell.hinge.HingeWatcher)   # the real module: put it back
+
+        self.addCleanup(setattr, shell.hinge, "HingeWatcher", shell.hinge.HingeWatcher)  # the real module: put it back
         shell.hinge.HingeWatcher = NoWatcher
-        self.layouts = []               # ("one", row, screen) and ("two", row, hand): what ui was asked to do with the rows
+        self.layouts = []  # ("one", row, screen) and ("two", row, hand): what ui was asked to do with the rows
         shell.one_column = lambda row, screen: self.layouts.append(("one", row, screen))
         shell.two_columns = lambda row, hand: self.layouts.append(("two", row, hand))
 
@@ -354,7 +428,7 @@ class StandInShell(unittest.TestCase):
                 self.sheet.get_reveal_child = lambda: self.sheet.revealed
                 self.sheet.set_reveal_child = lambda v: setattr(self.sheet, "revealed", v)
                 self.sheet.set_can_target = lambda v: setattr(self.sheet, "target", v)
-                test.calls = []         # what the blanker was told, in order
+                test.calls = []  # what the blanker was told, in order
                 self.blanker = FakeBlanker(test.calls)
 
             def get_width(self):
@@ -374,7 +448,7 @@ class StandInShell(unittest.TestCase):
             def set_hand(self, hand):
                 self.hands.append(hand)
 
-        for n in self.BORROWED:          # the shell's own methods, on a window that only records
+        for n in self.BORROWED:  # the shell's own methods, on a window that only records
             setattr(Win, n, S.__dict__[n])
         self.win = Win()
         self.g = Fake(t=1000, state=None)
@@ -419,10 +493,13 @@ class ShellDrags(StandInShell):
             self.assertEqual(w.page_slide.dy, dy, "the page is under the finger")
         self.assertEqual(self.g.state, "claimed")
         self.assertEqual(w.gone, [], "nothing is decided while the finger is down")
-        self.g.t += 400       # the finger stops, then lifts: no flick, but 380 px is past 40% of 450
+        self.g.t += 400  # the finger stops, then lifts: no flick, but 380 px is past 40% of 450
         w.drag_end(self.g, 0, -380)
-        self.assertEqual((w.gone, w.page_slide.dy, self.timers), (["home"], 0.0, []),
-                         "unlocked and back at rest in the same change: nothing left to animate")
+        self.assertEqual(
+            (w.gone, w.page_slide.dy, self.timers),
+            (["home"], 0.0, []),
+            "unlocked and back at rest in the same change: nothing left to animate",
+        )
         w.swipe_end(self.g, 0, -400)
         self.assertEqual(w.gone, ["home"], "the swipe does not act a second time")
 
@@ -454,14 +531,14 @@ class ShellDrags(StandInShell):
         self.assertTrue(w.sheet.revealed, "shown at once, moved by the finger")
         self.assertAlmostEqual(w.sheet_slide.dy, 81 - self.H, msg="moved 81 px, as far as the finger")
         self.g.t += 400
-        w.drag_end(self.g, 0, 81)          # 20%, stopped: back
+        w.drag_end(self.g, 0, 81)  # 20%, stopped: back
         w.swipe_end(self.g, 0, 400)
         self.assertEqual((w.sheet.revealed, w.sheet.target, w.sheet_slide.dy), (False, False, 0.0))
-        self.touch(300, 10, [(0, 50), (0, 150)], pause_ms=400)   # 37%: opens
+        self.touch(300, 10, [(0, 50), (0, 150)], pause_ms=400)  # 37%: opens
         self.assertEqual((w.sheet.revealed, w.sheet.target, w.sheet_slide.dy), (True, True, 0.0))
-        self.touch(300, 700, [(0, -13), (0, -100)], pause_ms=400)   # 25% up: stays open
+        self.touch(300, 700, [(0, -13), (0, -100)], pause_ms=400)  # 25% up: stays open
         self.assertEqual((w.sheet.revealed, w.sheet.target, w.sheet_slide.dy), (True, True, 0.0))
-        self.touch(300, 700, [(0, -13), (0, -40)], end_vy=-2000)     # a quick flick up closes it
+        self.touch(300, 700, [(0, -13), (0, -40)], end_vy=-2000)  # a quick flick up closes it
         self.assertEqual((w.sheet.revealed, w.sheet.target, w.sheet_slide.dy), (False, False, 0.0))
         self.assertEqual((w.gone, self.timers), ([], []))
 
@@ -499,7 +576,9 @@ class ShellLid(StandInShell):
     def test_the_first_report_open_changes_no_page_and_lights_the_screens(self):
         w = self.win
         w.lid_changed(False)
-        self.assertEqual((w.gone, w.page, w.lid_closed, w.posture, self.calls), ([], "lock", False, "open", ["restore"]))
+        self.assertEqual(
+            (w.gone, w.page, w.lid_closed, w.posture, self.calls), ([], "lock", False, "open", ["restore"])
+        )
 
     def test_closing_later_locks_and_closes_the_sheet(self):
         w = self.win
@@ -526,7 +605,7 @@ class ShellLid(StandInShell):
         self.g.t += 16
         w.drag_update(self.g, 0, -400)
         w.drag_end(self.g, 0, -400)
-        w.swipe_end(self.g, 0, -2000)      # on the lock screen a swipe up would unlock: it must not
+        w.swipe_end(self.g, 0, -2000)  # on the lock screen a swipe up would unlock: it must not
         self.assertEqual((w.gone, w.page, w.page_slide.dy), (["lock"], "lock", 0.0))
 
     def test_closing_during_a_sheet_drag_hides_the_sheet(self):
@@ -581,10 +660,12 @@ class ShellLid(StandInShell):
         w.blanker.failed = ["panel0-backlight: busy"]
         w.lid_changed(False)
         delays = [self.fire_one() for _ in range(40)]
-        self.assertEqual([ms for ms, _r in delays], [1000, 2000, 4000] + [5000] * 37, "then every 5 s, with no last try")
+        self.assertEqual(
+            [ms for ms, _r in delays], [1000, 2000, 4000] + [5000] * 37, "then every 5 s, with no last try"
+        )
         self.assertEqual({r for _ms, r in delays}, {False}, "each try is a one-shot timer: no busy loop")
         self.assertEqual(self.calls.count("restore"), 41)
-        w.blanker.failed = []           # the panel took the write at last
+        w.blanker.failed = []  # the panel took the write at last
         self.fire_one()
         self.assertEqual((self.timers, w.blanker.pending()), ([], False), "lit: no more tries")
 
@@ -597,7 +678,7 @@ class ShellLid(StandInShell):
         self.assertEqual(self.fire_one(), (1000, False))
         self.assertEqual((self.calls, self.timers), ([], []), "closed again meanwhile: dark is right")
         w.lid_changed(False)
-        w.blanker.blank()              # the daemon's blank while the lid is unknown, say
+        w.blanker.blank()  # the daemon's blank while the lid is unknown, say
         self.calls.clear()
         self.fire_one()
         self.assertEqual((self.calls, self.timers), ([], []), "a newer blank wins until the next restore")
@@ -612,6 +693,7 @@ class ShellLid(StandInShell):
 
     def test_with_the_real_blanker_a_panel_that_fails_for_a_minute_is_lit_once_it_takes_the_write(self):
         from opos.native import blank
+
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             run = root / "run"
@@ -622,23 +704,26 @@ class ShellLid(StandInShell):
             w = self.win
             w.blanker = blank.Blanker(root=str(root), run_dir=str(run), say=lambda t: None)
             w.lid_changed(True)
-            self.fire_one()                         # the blank
+            self.fire_one()  # the blank
             panel0 = root / "sys/class/backlight/panel0-backlight/brightness"
             panel0.unlink()
-            panel0.mkdir()                          # EISDIR stands in for a write the panel refuses for a while
+            panel0.mkdir()  # EISDIR stands in for a write the panel refuses for a while
             w.lid_changed(False)
-            for _ in range(15):                     # about a minute of failed tries: 1+2+4+12*5 s
+            for _ in range(15):  # about a minute of failed tries: 1+2+4+12*5 s
                 self.fire_one()
             self.assertTrue((run / blank.SAVED_NAME).exists(), "still dark, still saved, still trying")
             panel0.rmdir()
             panel0.write_text("0\n")
             self.fire_one()
-            self.assertEqual((panel0.read_text().strip(), (run / blank.SAVED_NAME).exists(), self.timers), ("90", False, []))
+            self.assertEqual(
+                (panel0.read_text().strip(), (run / blank.SAVED_NAME).exists(), self.timers), ("90", False, [])
+            )
 
     def real_tree(self, d):
         """Two panels at 90 and 200 and a private runtime folder under d; the window gets a real Blanker on them, with the
         shell's own guard."""
         from opos.native import blank
+
         root = Path(d)
         run = root / "run"
         run.mkdir(mode=0o700)
@@ -646,7 +731,9 @@ class ShellLid(StandInShell):
             (root / "sys/class/backlight" / p_).mkdir(parents=True)
             (root / "sys/class/backlight" / p_ / "brightness").write_text("%d\n" % v)
         w = self.win
-        w.blanker = blank.Blanker(root=str(root), run_dir=str(run), say=lambda t: None, may_blank=lambda: w.lid_closed is not False)
+        w.blanker = blank.Blanker(
+            root=str(root), run_dir=str(run), say=lambda t: None, may_blank=lambda: w.lid_closed is not False
+        )
         return [root / "sys/class/backlight" / p_ / "brightness" for p_ in blank.PANELS], run / blank.SAVED_NAME
 
     def test_a_daemon_restore_that_fails_is_tried_again(self):
@@ -655,7 +742,7 @@ class ShellLid(StandInShell):
         with tempfile.TemporaryDirectory() as d:
             (p0, p1), saved = self.real_tree(d)
             w = self.win
-            self.start_with(None)               # wires on_restore; the lid reads nothing
+            self.start_with(None)  # wires on_restore; the lid reads nothing
             w.lid_closed = None
             w.blanker.set_mode(3)
             self.assertEqual((p0.read_text().strip(), p1.read_text().strip()), ("0", "0"))
@@ -667,7 +754,9 @@ class ShellLid(StandInShell):
             p0.rmdir()
             p0.write_text("0\n")
             self.fire_one()
-            self.assertEqual((p0.read_text().strip(), p1.read_text().strip(), saved.exists(), self.timers), ("90", "200", False, []))
+            self.assertEqual(
+                (p0.read_text().strip(), p1.read_text().strip(), saved.exists(), self.timers), ("90", "200", False, [])
+            )
 
     def test_a_daemon_blank_on_screens_already_dark_stops_a_pending_retry(self):
         """R7: a restore is pending (both panels refuse the write), then the daemon blanks while the lid is unknown. Both
@@ -680,27 +769,33 @@ class ShellLid(StandInShell):
             for p_ in (p0, p1):
                 p_.unlink()
                 p_.mkdir()
-            w.lid_lost()                        # lights them now: both refuse, so a try waits
+            w.lid_lost()  # lights them now: both refuse, so a try waits
             self.assertEqual(len(self.timers), 1)
-            w.blanker.set_mode(3)               # the daemon, half a minute later: the lid is closed, it says
+            w.blanker.set_mode(3)  # the daemon, half a minute later: the lid is closed, it says
             for p_ in (p0, p1):
                 p_.rmdir()
                 p_.write_text("0\n")
             self.fire_one()
-            self.assertEqual((p0.read_text().strip(), p1.read_text().strip(), saved.exists(), self.timers), ("0", "0", True, []),
-                             "dark as the daemon asked; the next open or restore lights them")
+            self.assertEqual(
+                (p0.read_text().strip(), p1.read_text().strip(), saved.exists(), self.timers),
+                ("0", "0", True, []),
+                "dark as the daemon asked; the next open or restore lights them",
+            )
 
     def start_with(self, state):
         """start_lid with the lid reading `state`, no bus and no thread; returns the blanker handed to own()."""
         from unittest import mock
+
         shell, owned = self.shell, []
         with tempfile.TemporaryDirectory() as d:
             node = Path(d) / "event5"
             node.write_bytes(b"")
-            with mock.patch.object(shell.posture, "find_lid", lambda *a: str(node)), \
-                    mock.patch.object(shell.posture, "lid_state", lambda fd: state), \
-                    mock.patch.object(shell.posture, "LidWatcher", lambda *a: Fake(start=lambda: "watcher")), \
-                    mock.patch.object(shell.displayconfig, "own", lambda b, say: owned.append(b)):
+            with (
+                mock.patch.object(shell.posture, "find_lid", lambda *a: str(node)),
+                mock.patch.object(shell.posture, "lid_state", lambda fd: state),
+                mock.patch.object(shell.posture, "LidWatcher", lambda *a: Fake(start=lambda: "watcher")),
+                mock.patch.object(shell.displayconfig, "own", lambda b, say: owned.append(b)),
+            ):
                 self.win.start_lid()
         return owned
 
@@ -712,7 +807,7 @@ class ShellLid(StandInShell):
     def test_a_lost_lid_signal_makes_the_lid_unknown_and_lights_the_screens(self):
         w = self.win
         w.lid_changed(True)
-        self.fire_timers()                      # dark
+        self.fire_timers()  # dark
         self.calls.clear()
         w.blanker.failed = ["x"]
         self.assertIs(w.lid_lost(), False)
@@ -729,14 +824,17 @@ class ShellLid(StandInShell):
     def start(self, state, path=True):
         """start_lid with the lid reading `state` (True closed, False open, None unreadable), no bus and no thread."""
         from unittest import mock
+
         shell, owned = self.shell, []
         with tempfile.TemporaryDirectory() as d:
             node = Path(d) / "event5"
             node.write_bytes(b"")
-            with mock.patch.object(shell.posture, "find_lid", lambda *a: str(node) if path else None), \
-                    mock.patch.object(shell.posture, "lid_state", lambda fd: state), \
-                    mock.patch.object(shell.posture, "LidWatcher", lambda *a: Fake(start=lambda: "watcher")), \
-                    mock.patch.object(shell.displayconfig, "own", lambda b, say: owned.append(b)):
+            with (
+                mock.patch.object(shell.posture, "find_lid", lambda *a: str(node) if path else None),
+                mock.patch.object(shell.posture, "lid_state", lambda fd: state),
+                mock.patch.object(shell.posture, "LidWatcher", lambda *a: Fake(start=lambda: "watcher")),
+                mock.patch.object(shell.displayconfig, "own", lambda b, say: owned.append(b)),
+            ):
                 self.win.start_lid()
         self.assertEqual((owned, self.win.lid_watcher), ([self.win.blanker], "watcher"))
         return self.calls
@@ -758,6 +856,7 @@ class TheDaemonCannotDarkenAnOpenPhone(unittest.TestCase):
         import sys
         from unittest import mock
         from opos.native import blank
+
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             run = root / "run"
@@ -766,8 +865,9 @@ class TheDaemonCannotDarkenAnOpenPhone(unittest.TestCase):
                 (root / "sys/class/backlight" / p).mkdir(parents=True)
                 (root / "sys/class/backlight" / p / "brightness").write_text("%d\n" % v)
             state = {"lid": False}
-            b = blank.Blanker(root=str(root), run_dir=str(run), say=lambda t: None,
-                              may_blank=lambda: state["lid"] is not False)
+            b = blank.Blanker(
+                root=str(root), run_dir=str(run), say=lambda t: None, may_blank=lambda: state["lid"] is not False
+            )
             b.set_mode(3)
             self.assertFalse((run / blank.SAVED_NAME).exists(), "open: refused")
             state["lid"] = None
@@ -779,8 +879,11 @@ class TheDaemonCannotDarkenAnOpenPhone(unittest.TestCase):
             self.assertTrue((run / blank.SAVED_NAME).exists(), "closed: obeyed")
             state["lid"] = False
             b.set_mode(0)
-            self.assertEqual((root / "sys/class/backlight/panel0-backlight/brightness").read_text().strip(), "90",
-                             "a restore is never refused")
+            self.assertEqual(
+                (root / "sys/class/backlight/panel0-backlight/brightness").read_text().strip(),
+                "90",
+                "a restore is never refused",
+            )
         self.assertIn("may_blank=lambda: self.lid_closed is not False", SHELL.read_text(encoding="utf-8"))
         del sys, mock
 
@@ -801,7 +904,7 @@ class LidSource(unittest.TestCase):
         self.assertIn("GLib.idle_add(self.lid_report, gen, closed)", text)
         self.assertIn("return self.lid_changed(closed)", text)
         self.assertIn("GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, win.end)", text)
-        main = text[text.index("def main("):]
+        main = text[text.index("def main(") :]
         self.assertLess(main.index("finally:"), main.index("win.blanker.restore()"))
 
 
@@ -853,13 +956,18 @@ class EveryFrameIsASnapshot(unittest.TestCase):
 
     def test_animation_is_a_constant_and_it_is_off(self):
         tree = ast.parse(source("ui.py"))
-        consts = {t.id: n.value.value for n in tree.body if isinstance(n, ast.Assign) for t in n.targets
-                  if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant)}
+        consts = {
+            t.id: n.value.value
+            for n in tree.body
+            if isinstance(n, ast.Assign)
+            for t in n.targets
+            if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant)
+        }
         self.assertIs(consts["ANIMATE"], False)
 
     def test_no_css_transition_or_animation(self):
         text = source("ui.py")
-        css = text[text.index('CSS = """'):text.index('"""', text.index('CSS = """') + 9)]
+        css = text[text.index('CSS = """') : text.index('"""', text.index('CSS = """') + 9)]
         for word in ("transition", "animation", "@keyframes"):
             self.assertNotIn(word, css)
 
@@ -867,7 +975,9 @@ class EveryFrameIsASnapshot(unittest.TestCase):
         shell = source("shell.py")
         self.assertNotIn("transition_duration=MOVE_MS,", shell, "a duration must depend on ANIMATE")
         self.assertEqual(shell.count("MOVE_MS if ANIMATE else 0"), 3, "both stacks and the battery sheet")
-        self.assertIn("transition_type=Gtk.StackTransitionType.NONE", source("ui.py"), "the keyboard layers never slide")
+        self.assertIn(
+            "transition_type=Gtk.StackTransitionType.NONE", source("ui.py"), "the keyboard layers never slide"
+        )
 
     def test_every_reading_pane_scrolls_by_finger_whatever_animate_says(self):
         """kinetic_scrolling=False turns off GTK 4's touch drag and pan on a ScrolledWindow, so a list taller than the
@@ -884,15 +994,17 @@ class EveryFrameIsASnapshot(unittest.TestCase):
 
     def test_the_start_up_walk_plays_nothing_under_the_cover(self):
         shell = source("shell.py")
-        walk = shell[shell.index("    def warm(self):"):shell.index("    def leave(self")]
+        walk = shell[shell.index("    def warm(self):") : shell.index("    def leave(self")]
         self.assertNotIn("SLIDE", walk)
         self.assertNotIn("StackTransitionType", walk)
         self.assertIn("self.warming = False", walk)
 
     def test_go_while_warming_waits_instead_of_leaving_the_page_and_the_stacks_apart(self):
         shell = source("shell.py")
-        go = shell[shell.index("    def go(self, name):"):shell.index("    def warm(self):")]
-        self.assertLess(go.index("if self.warming:"), go.index("self.page = name"), "the page is not changed under the cover")
+        go = shell[shell.index("    def go(self, name):") : shell.index("    def warm(self):")]
+        self.assertLess(
+            go.index("if self.warming:"), go.index("self.page = name"), "the page is not changed under the cover"
+        )
         self.assertIn("self.wanted = name", go)
         self.assertIn("self.go(wanted)", shell, "and it is made the moment the cover goes")
 
@@ -903,10 +1015,10 @@ class DragsSettleInOneFrame(unittest.TestCase):
     def test_no_frame_clock_work_outside_the_probe_and_no_easing(self):
         shell = source("shell.py")
         self.assertEqual(shell.count("add_tick_callback("), 1, "only the --probe measurement uses the frame clock")
-        self.assertIn("if probe:", shell[:shell.index("add_tick_callback(") + 1][-200:])
+        self.assertIn("if probe:", shell[: shell.index("add_tick_callback(") + 1][-200:])
         for pattern in (r"\bease\(", r"\banimate\(", r"remove_tick_callback", r"settle_now", r"\bmotion\b"):
             self.assertIsNone(re.search(pattern, shell), pattern)
-        settle = shell[shell.index("    def settle("):shell.index("    # --- the lid")]
+        settle = shell[shell.index("    def settle(") : shell.index("    # --- the lid")]
         self.assertNotIn("timeout_add", settle)
 
 
@@ -945,29 +1057,31 @@ class TheScreensStayTrue(unittest.TestCase):
     def test_a_failed_poll_keeps_the_snapshot(self):
         shell = source("shell.py")
         self.assertNotIn("OPOS is starting", shell)
-        polled = shell[shell.index("    def polled("):shell.index("    def clock_seen(")]
+        polled = shell[shell.index("    def polled(") : shell.index("    def clock_seen(")]
         self.assertIn("self.link.failed()", polled)
         self.assertNotIn("self.snap =", polled)
 
     def test_the_draft_the_contact_and_the_alarm_are_cleared_only_by_the_servers_answer(self):
         screens = source("screens.py")
-        messages = screens[screens.index("class Messages("):screens.index("class Clock(")]
-        start = messages[messages.index("    def send_typed("):messages.index("    def sent(")]
-        self.assertNotIn("self.typed.text = \"\"", start)
-        contacts = screens[screens.index("class Contacts("):screens.index("class Notes(")]
-        save = contacts[contacts.index("    def save("):contacts.index("    def person(")]
-        self.assertLess(save.index("def done("), save.index("e.text = \"\""))
+        messages = screens[screens.index("class Messages(") : screens.index("class Clock(")]
+        start = messages[messages.index("    def send_typed(") : messages.index("    def sent(")]
+        self.assertNotIn('self.typed.text = ""', start)
+        contacts = screens[screens.index("class Contacts(") : screens.index("class Notes(")]
+        save = contacts[contacts.index("    def save(") : contacts.index("    def person(")]
+        self.assertLess(save.index("def done("), save.index('e.text = ""'))
         self.assertNotIn("self.saving", contacts, "no flag shared between one answer and the next")
-        clock = screens[screens.index("class Clock("):screens.index("class Contacts(")]
-        add = clock[clock.index("    def add_alarm("):clock.index("    def choose(")]
+        clock = screens[screens.index("class Clock(") : screens.index("class Contacts(")]
+        add = clock[clock.index("    def add_alarm(") : clock.index("    def choose(")]
         self.assertLess(add.index("def done("), add.index('self.digits = ""'))
 
     def test_notes_close_and_delete_wait_for_the_server(self):
         screens = source("screens.py")
-        notes = screens[screens.index("class Notes("):screens.index("class Calculator(")]
+        notes = screens[screens.index("class Notes(") : screens.index("class Calculator(")]
         self.assertNotIn("self.ident = None\n        self.mode()\n        self.call", notes)
         self.assertIn("if leave and self.ident == ident:", notes)
-        self.assertIn('self.want in ("add", data.get("id"))', notes, "only the note asked for last becomes the open one")
+        self.assertIn(
+            'self.want in ("add", data.get("id"))', notes, "only the note asked for last becomes the open one"
+        )
 
     def test_practice_is_said_on_messages_home_and_phone(self):
         screens = source("screens.py")
@@ -984,30 +1098,64 @@ class TheScreensStayTrue(unittest.TestCase):
 class ShellModule(unittest.TestCase):
     def test_the_source_parses_and_uses_the_shared_rules(self):
         tree = ast.parse(SHELL.read_text(encoding="utf-8"))
-        imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "opos.native.layout" for a in n.names}
-        self.assertLessEqual({"hinge_px", "swipe_action", "pane_order", "load_hand", "save_hand", "drag_kind",
-                              "drag_progress", "drag_release"}, imported)
+        imported = {
+            a.name
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom) and n.module == "opos.native.layout"
+            for a in n.names
+        }
+        self.assertLessEqual(
+            {
+                "hinge_px",
+                "swipe_action",
+                "pane_order",
+                "load_hand",
+                "save_hand",
+                "drag_kind",
+                "drag_progress",
+                "drag_release",
+            },
+            imported,
+        )
 
     def test_the_module_imports_where_gtk_is_installed(self):
         try:
             import gi
+
             gi.require_version("Gtk", "4.0")
         except (ImportError, ValueError):
             self.skipTest("GTK 4 or PyGObject is not installed here")
         from opos.native import shell
+
         self.assertEqual(shell.hinge_px({"OPOS_SPAN": "675,42"}), 42)
         self.assertTrue(callable(shell.main))
 
     def test_every_page_builds_its_class_where_gtk_is_installed(self):
         try:
             import gi
+
             gi.require_version("Gtk", "4.0")
         except (ImportError, ValueError):
             self.skipTest("GTK 4 or PyGObject is not installed here")
         from opos.native import screens
-        self.assertEqual([c.name for c in screens.PAGES],
-                         ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls",
-                          "settings", "network"])
+
+        self.assertEqual(
+            [c.name for c in screens.PAGES],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "clock",
+                "contacts",
+                "notes",
+                "calc",
+                "convert",
+                "calls",
+                "settings",
+                "network",
+            ],
+        )
 
 
 if __name__ == "__main__":

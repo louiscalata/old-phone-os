@@ -735,9 +735,33 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             w1_lite = (installer.tools_root(prefix) / "bin" / t1.binary).read_bytes()
-            installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="full",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             cur = installer.read_manifest(prefix)
             self.assertEqual(cur["mode"], "full")
             tr = installer.tools_root(prefix)
@@ -761,12 +785,35 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+            )
             w1_before = (installer.tools_root(prefix) / "bin" / t1.binary).read_bytes()
             mp_before = installer.manifest_path(prefix).read_bytes()
             snap_before = _snapshot(installer.tools_root(prefix))
             with self.assertRaises(installer.InstallError):
-                installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t2])
+                installer.install(
+                    t2,
+                    prefix=prefix,
+                    mode="full",
+                    machine="x86_64",
+                    home=home,
+                    python="python3",
+                    src_dir=Path("/fake/src"),
+                    fetch=fetch,
+                    runner=runner,
+                    profiles=[],
+                    all_tools=[t2],
+                )
             self.assertEqual((installer.tools_root(prefix) / "bin" / t1.binary).read_bytes(), w1_before)
             self.assertEqual(installer.manifest_path(prefix).read_bytes(), mp_before)
             self.assertEqual(_snapshot(installer.tools_root(prefix)), snap_before)
@@ -783,7 +830,19 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             w1_before = (installer.tools_root(prefix) / "bin" / t1.binary).read_bytes()
             mp_before = installer.manifest_path(prefix).read_bytes()
             snap_before = _snapshot(installer.tools_root(prefix))
@@ -796,7 +855,19 @@ class TestInstaller(unittest.TestCase):
 
             with mock.patch.object(launcher, "render_wrapper", side_effect=flaky):
                 with self.assertRaises(installer.InstallError):
-                    installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+                    installer.install(
+                        t2,
+                        prefix=prefix,
+                        mode="full",
+                        machine="x86_64",
+                        home=home,
+                        python="python3",
+                        src_dir=Path("/fake/src"),
+                        fetch=fetch,
+                        runner=runner,
+                        profiles=[],
+                        all_tools=[t1, t2],
+                    )
             self.assertEqual((installer.tools_root(prefix) / "bin" / t1.binary).read_bytes(), w1_before)
             self.assertEqual(installer.manifest_path(prefix).read_bytes(), mp_before)
             self.assertEqual(_snapshot(installer.tools_root(prefix)), snap_before)
@@ -810,7 +881,18 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary})
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=_fetch_ok(), runner=runner, profiles=[])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=_fetch_ok(),
+                runner=runner,
+                profiles=[],
+            )
             w_before = (installer.tools_root(prefix) / "bin" / t1.binary).read_bytes()
             mp_before = installer.manifest_path(prefix).read_bytes()
             with mock.patch.object(launcher, "render_wrapper", side_effect=RuntimeError("boom")):
@@ -832,8 +914,32 @@ class TestInstaller(unittest.TestCase):
             prof.write_text("orig-line\n", encoding="utf-8")
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[prof], all_tools=[t1, t2])
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[prof], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[prof],
+                all_tools=[t1, t2],
+            )
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[prof],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w1_before = (tr / "bin" / t1.binary).read_bytes()
             w2_before = (tr / "bin" / t2.binary).read_bytes()
@@ -857,7 +963,19 @@ class TestInstaller(unittest.TestCase):
             with mock.patch.object(Path, "write_text", fake_write_text):
                 with mock.patch.object(Path, "write_bytes", fake_write_bytes):
                     with self.assertRaises(installer.InstallError):
-                        installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[prof], all_tools=[t1, t2])
+                        installer.install(
+                            t2,
+                            prefix=prefix,
+                            mode="full",
+                            machine="x86_64",
+                            home=home,
+                            python="python3",
+                            src_dir=Path("/fake/src"),
+                            fetch=fetch,
+                            runner=runner,
+                            profiles=[prof],
+                            all_tools=[t1, t2],
+                        )
             self.assertEqual((tr / "bin" / t1.binary).read_bytes(), w1_before)
             self.assertEqual((tr / "bin" / t2.binary).read_bytes(), w2_before)
             self.assertEqual((tr / "env.sh").read_bytes(), env_before)
@@ -877,8 +995,32 @@ class TestInstaller(unittest.TestCase):
             prof.write_text("orig-line\n", encoding="utf-8")
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[prof], all_tools=[t1, t2])
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[prof], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[prof],
+                all_tools=[t1, t2],
+            )
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[prof],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w1_before = (tr / "bin" / t1.binary).read_bytes()
             w2_before = (tr / "bin" / t2.binary).read_bytes()
@@ -919,7 +1061,19 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w1_before = (tr / "bin" / t1.binary).read_bytes()
             snap_before = _snapshot(tr)
@@ -927,7 +1081,19 @@ class TestInstaller(unittest.TestCase):
             mp.write_bytes(b"not json {{{")
             bad = mp.read_bytes()
             with self.assertRaises(installer.InstallError):
-                installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+                installer.install(
+                    t2,
+                    prefix=prefix,
+                    mode="lite",
+                    machine="x86_64",
+                    home=home,
+                    python="python3",
+                    src_dir=Path("/fake/src"),
+                    fetch=fetch,
+                    runner=runner,
+                    profiles=[],
+                    all_tools=[t1, t2],
+                )
             self.assertEqual((tr / "bin" / t1.binary).read_bytes(), w1_before)
             self.assertEqual(mp.read_bytes(), bad)
             self.assertFalse((tr / "bin" / t2.binary).exists())
@@ -943,12 +1109,48 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w2_before = (tr / "bin" / t2.binary).read_bytes()
             env_before = (tr / "env.sh").read_bytes()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             self.assertEqual((tr / "bin" / t2.binary).read_bytes(), w2_before)
             self.assertEqual((tr / "env.sh").read_bytes(), env_before)
             cur = installer.read_manifest(prefix)
@@ -966,11 +1168,35 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w1_before = (tr / "bin" / t1.binary).read_text(encoding="utf-8")
             self.assertIn("python3", w1_before)
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="otherpy", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="otherpy",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             cur = installer.read_manifest(prefix)
             self.assertEqual(cur["python"], "otherpy")
             sb1 = tr / t1.id / "home"
@@ -989,12 +1215,48 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w1 = tr / "bin" / t1.binary
             w1.write_text("stale-wrapper\n", encoding="utf-8")
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             sb1 = tr / t1.id / "home"
             rb1 = sb1 / ".local" / "bin" / t1.binary
             exp1 = launcher.render_wrapper(t1, rb1, sb1, tr / "run", "lite", "python3", Path("/fake/src"))
@@ -1021,6 +1283,7 @@ class TestInstaller(unittest.TestCase):
 
     def test_default_fetch_rejects_http_final_url(self):
         """http final url is rejected"""
+
         class FakeResp:
             def __enter__(self):
                 return self
@@ -1040,6 +1303,7 @@ class TestInstaller(unittest.TestCase):
 
     def test_default_fetch_keeps_body_on_https_final_url(self):
         """https final url returns body"""
+
         class FakeResp:
             def __enter__(self):
                 return self
@@ -1243,7 +1507,9 @@ class TestInstaller(unittest.TestCase):
             self.assertEqual(_snapshot(installer.tools_root(prefix) / t1.id), t1_before)
             self.assertTrue((installer.tools_root(prefix) / t1.id / "home" / ".local" / "bin" / t1.binary).is_file())
             self.assertEqual(_snapshot(installer.tools_root(prefix) / "bin"), bin_before)
-            self.assertEqual((installer.tools_root(prefix) / "bin" / t1.binary).read_text(encoding="utf-8"), wrapper_before)
+            self.assertEqual(
+                (installer.tools_root(prefix) / "bin" / t1.binary).read_text(encoding="utf-8"), wrapper_before
+            )
             self.assertFalse((installer.tools_root(prefix) / "bin" / t2.binary).exists())
             self.assertEqual(_snapshot(installer.tools_root(prefix) / "run"), run_before)
             self.assertTrue((installer.tools_root(prefix) / "run").is_dir())
@@ -1265,6 +1531,7 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             seen = []
+
             def runner_ok(argv, env, timeout_s):
                 seen.append(Path(argv[1]).read_bytes())
                 p = Path(env["HOME"]) / ".local" / "bin" / t.binary
@@ -1272,7 +1539,19 @@ class TestInstaller(unittest.TestCase):
                 p.write_text("#!/bin/sh\necho hi\n")
                 p.chmod(0o755)
                 return 0, "ok"
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=lambda url: data, runner=runner_ok, profiles=[])
+
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=lambda url: data,
+                runner=runner_ok,
+                profiles=[],
+            )
             self.assertEqual(len(seen), 1)
             self.assertEqual(seen[0], data)
             self.assertTrue(installer.manifest_path(prefix).exists())
@@ -1282,6 +1561,7 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             seen2 = []
+
             def runner2(argv, env, timeout_s):
                 seen2.append(Path(argv[1]).read_bytes())
                 p = Path(env["HOME"]) / ".local" / "bin" / t.binary
@@ -1289,11 +1569,25 @@ class TestInstaller(unittest.TestCase):
                 p.write_text("#!/bin/sh\necho hi\n")
                 p.chmod(0o755)
                 return 0, "ok"
+
             real_write = installer.os.write
+
             def short_write(fd, b):
                 return real_write(fd, b[:7])
+
             with mock.patch.object(installer.os, "write", side_effect=short_write):
-                installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=lambda url: data, runner=runner2, profiles=[])
+                installer.install(
+                    t,
+                    prefix=prefix,
+                    mode="lite",
+                    machine="x86_64",
+                    home=home,
+                    python="python3",
+                    src_dir=Path("/fake/src"),
+                    fetch=lambda url: data,
+                    runner=runner2,
+                    profiles=[],
+                )
             self.assertEqual(len(seen2), 1)
             self.assertEqual(seen2[0], data)
             self.assertTrue((installer.tools_root(prefix) / "bin" / t.binary).exists())
@@ -1309,6 +1603,7 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             called = []
+
             def runner_ok(argv, env, timeout_s):
                 called.append(list(argv))
                 p = Path(env["HOME"]) / ".local" / "bin" / t.binary
@@ -1316,7 +1611,19 @@ class TestInstaller(unittest.TestCase):
                 p.write_text("#!/bin/sh\necho hi\n")
                 p.chmod(0o755)
                 return 0, "ok"
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=lambda url: data, runner=runner_ok, profiles=[])
+
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=lambda url: data,
+                runner=runner_ok,
+                profiles=[],
+            )
             self.assertEqual(len(called), 1)
             self.assertTrue((installer.tools_root(prefix) / t.id / "home" / ".local" / "bin" / t.binary).exists())
         with tempfile.TemporaryDirectory() as td:
@@ -1325,6 +1632,7 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             runner_calls = []
+
             def runner_fail(argv, env, timeout_s):
                 runner_calls.append(list(argv))
                 p = Path(env["HOME"]) / ".local" / "bin" / t.binary
@@ -1332,22 +1640,38 @@ class TestInstaller(unittest.TestCase):
                 p.write_text("#!/bin/sh\necho hi\n")
                 p.chmod(0o755)
                 return 0, "ok"
+
             real_write = installer.os.write
             real_close = installer.os.close
             close_calls = []
+
             def tracking_close(fd):
                 close_calls.append(fd)
                 return real_close(fd)
+
             count = {"n": 0}
+
             def failing_write(fd, b):
                 count["n"] += 1
                 if count["n"] == 1:
                     return real_write(fd, b[:5])
                 raise OSError("injected mid-write failure")
+
             with mock.patch.object(installer.os, "write", side_effect=failing_write):
                 with mock.patch.object(installer.os, "close", side_effect=tracking_close):
                     with self.assertRaises(OSError):
-                        installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=lambda url: data, runner=runner_fail, profiles=[])
+                        installer.install(
+                            t,
+                            prefix=prefix,
+                            mode="lite",
+                            machine="x86_64",
+                            home=home,
+                            python="python3",
+                            src_dir=Path("/fake/src"),
+                            fetch=lambda url: data,
+                            runner=runner_fail,
+                            profiles=[],
+                        )
             self.assertEqual(runner_calls, [])
             self.assertGreaterEqual(len(close_calls), 1)
             self.assertFalse(installer.manifest_path(prefix).exists())
@@ -1358,7 +1682,9 @@ class TestInstaller(unittest.TestCase):
         import urllib.error
 
         def opener(req, timeout=None):
-            raise urllib.error.HTTPError(req.full_url, 302, "redirect blocked", {"Location": "http://evil.example/"}, None)
+            raise urllib.error.HTTPError(
+                req.full_url, 302, "redirect blocked", {"Location": "http://evil.example/"}, None
+            )
 
         with self.assertRaises(installer.InstallError) as cm:
             installer.default_fetch("https://example.com/start", opener=opener)
@@ -1370,7 +1696,9 @@ class TestInstaller(unittest.TestCase):
         import urllib.error
 
         def opener(req, timeout=None):
-            raise urllib.error.HTTPError(req.full_url, 302, "redirect blocked", {"Location": "https://good.com/next"}, None)
+            raise urllib.error.HTTPError(
+                req.full_url, 302, "redirect blocked", {"Location": "https://good.com/next"}, None
+            )
 
         with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
             installer.default_fetch("https://example.com/start", opener=opener)
@@ -1421,7 +1749,9 @@ class TestInstaller(unittest.TestCase):
                     with mock.patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open):
                         # A bare opener follows the redirect, so the spy sees the http request;
                         # the final-address check still refuses the body.
-                        with mock.patch.object(urllib.request, "build_opener", side_effect=lambda *a, **k: real_build()):
+                        with mock.patch.object(
+                            urllib.request, "build_opener", side_effect=lambda *a, **k: real_build()
+                        ):
                             with self.assertRaisesRegex(installer.InstallError, "redirect not followed"):
                                 installer.default_fetch(start)
                 self.assertEqual(https_calls, [start])
@@ -1542,7 +1872,19 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w1_path = tr / "bin" / t1.binary
             w1_before = w1_path.read_bytes()
@@ -1574,7 +1916,19 @@ class TestInstaller(unittest.TestCase):
             with mock.patch.object(Path, "write_text", fake_write_text):
                 with mock.patch.object(Path, "write_bytes", fake_write_bytes):
                     with self.assertRaises(installer.InstallError):
-                        installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+                        installer.install(
+                            t2,
+                            prefix=prefix,
+                            mode="full",
+                            machine="x86_64",
+                            home=home,
+                            python="python3",
+                            src_dir=Path("/fake/src"),
+                            fetch=fetch,
+                            runner=runner,
+                            profiles=[],
+                            all_tools=[t1, t2],
+                        )
             self.assertEqual(w1_path.read_bytes(), w1_before)
             self.assertEqual(mp.read_bytes(), mp_before)
             self.assertNotEqual(w1_path.read_bytes(), b"")
@@ -1590,7 +1944,18 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t.id: t.binary})
             fetch = _fetch_ok()
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[])
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+            )
             env_path = installer.tools_root(prefix) / "env.sh"
             env_before = env_path.read_bytes()
             wrapper_path = installer.tools_root(prefix) / "bin" / t.binary
@@ -1622,7 +1987,19 @@ class TestInstaller(unittest.TestCase):
             with mock.patch.object(Path, "write_text", fake_write_text):
                 with mock.patch.object(Path, "write_bytes", fake_write_bytes):
                     with self.assertRaises(installer.InstallError):
-                        installer.install(t, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t])
+                        installer.install(
+                            t,
+                            prefix=prefix,
+                            mode="full",
+                            machine="x86_64",
+                            home=home,
+                            python="python3",
+                            src_dir=Path("/fake/src"),
+                            fetch=fetch,
+                            runner=runner,
+                            profiles=[],
+                            all_tools=[t],
+                        )
             self.assertEqual(env_path.read_bytes(), env_before)
             self.assertEqual(wrapper_path.read_bytes(), wrapper_before)
             self.assertEqual(installer.manifest_path(prefix).read_bytes(), mp_before)
@@ -1638,7 +2015,19 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             orig_write_text = Path.write_text
             orig_write_bytes = Path.write_bytes
             cnt = {"n": 0}
@@ -1668,7 +2057,19 @@ class TestInstaller(unittest.TestCase):
             with mock.patch.object(Path, "write_text", fake_write_text):
                 with mock.patch.object(Path, "write_bytes", fake_write_bytes):
                     with self.assertRaises(installer.InstallError) as cm:
-                        installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+                        installer.install(
+                            t2,
+                            prefix=prefix,
+                            mode="full",
+                            machine="x86_64",
+                            home=home,
+                            python="python3",
+                            src_dir=Path("/fake/src"),
+                            fetch=fetch,
+                            runner=runner,
+                            profiles=[],
+                            all_tools=[t1, t2],
+                        )
             msg = str(cm.exception).lower()
             self.assertIn("rollback", msg)
             self.assertNotEqual((installer.tools_root(prefix) / "bin" / "bina").read_bytes(), b"")
@@ -1683,7 +2084,18 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t.id: t.binary})
             fetch = _fetch_ok()
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[])
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+            )
             w_path = installer.tools_root(prefix) / "bin" / t.binary
             w_before = w_path.read_bytes()
             mp_before = installer.manifest_path(prefix).read_bytes()
@@ -1727,7 +2139,19 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             snap_before = _snapshot(tr)
             w1_path = tr / "bin" / t1.binary
@@ -1745,7 +2169,19 @@ class TestInstaller(unittest.TestCase):
 
             with mock.patch.object(Path, "read_bytes", failing_read):
                 with self.assertRaises(installer.InstallError):
-                    installer.install(t2, prefix=prefix, mode="full", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+                    installer.install(
+                        t2,
+                        prefix=prefix,
+                        mode="full",
+                        machine="x86_64",
+                        home=home,
+                        python="python3",
+                        src_dir=Path("/fake/src"),
+                        fetch=fetch,
+                        runner=runner,
+                        profiles=[],
+                        all_tools=[t1, t2],
+                    )
             self.assertEqual(w1_path.read_bytes(), w1_before)
             self.assertEqual(mp_path.read_bytes(), mp_before)
             self.assertEqual(env_path.read_bytes(), env_before)
@@ -1761,7 +2197,18 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             runner = _runner_for({t.id: t.binary})
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=_fetch_ok(), runner=runner, profiles=[])
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=_fetch_ok(),
+                runner=runner,
+                profiles=[],
+            )
             tr = installer.tools_root(prefix)
             w_path = tr / "bin" / t.binary
             w_before = w_path.read_bytes()
@@ -1788,7 +2235,18 @@ class TestInstaller(unittest.TestCase):
             home = td / "home"
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary})
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=_fetch_ok(), runner=runner, profiles=[])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=_fetch_ok(),
+                runner=runner,
+                profiles=[],
+            )
             mp = installer.manifest_path(prefix)
             cur = json.loads(mp.read_text(encoding="utf-8"))
             tr = installer.tools_root(prefix)
@@ -1800,7 +2258,10 @@ class TestInstaller(unittest.TestCase):
             out = installer.set_mode(prefix, "full", [t1])
             self.assertEqual(out[0], "mode set to full")
             for sid in stale_ids:
-                self.assertIn(f"missing catalog entry: {sid} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)", out)
+                self.assertIn(
+                    f"missing catalog entry: {sid} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)",
+                    out,
+                )
             self.assertNotEqual((tr / "bin" / t1.binary).read_bytes(), w_before)
             self.assertEqual(installer.read_manifest(prefix)["mode"], "full")
             self.assertIn(t1.id, installer.read_manifest(prefix)["tools"])
@@ -1817,15 +2278,42 @@ class TestInstaller(unittest.TestCase):
             home.mkdir()
             runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
             fetch = _fetch_ok()
-            installer.install(t1, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
-            installer.install(t2, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+            installer.install(
+                t1,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
+            installer.install(
+                t2,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=fetch,
+                runner=runner,
+                profiles=[],
+                all_tools=[t1, t2],
+            )
             tr = installer.tools_root(prefix)
             w2_before = (tr / "bin" / t2.binary).read_bytes()
             snap_t2_before = _snapshot(tr / t2.id)
             row_before = dict(installer.read_manifest(prefix)["tools"][t2.id])
             out = installer.set_mode(prefix, "full", [t1])
             self.assertEqual(out[0], "mode set to full")
-            self.assertIn(f"missing catalog entry: {t2.id} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)", out)
+            self.assertIn(
+                f"missing catalog entry: {t2.id} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)",
+                out,
+            )
             self.assertEqual((tr / "bin" / t2.binary).read_bytes(), w2_before)
             cur = installer.read_manifest(prefix)
             self.assertEqual(cur["mode"], "full")
@@ -1840,7 +2328,18 @@ class TestInstaller(unittest.TestCase):
             prefix = td / "prefix"
             home = td / "home"
             home.mkdir()
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=_fetch_ok(), runner=_runner_for({t.id: t.binary}), profiles=[])
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=_fetch_ok(),
+                runner=_runner_for({t.id: t.binary}),
+                profiles=[],
+            )
             mp = installer.manifest_path(prefix)
             cur = json.loads(mp.read_text(encoding="utf-8"))
             cur["tools"][t.id] = "not-a-dict"
@@ -1857,7 +2356,18 @@ class TestInstaller(unittest.TestCase):
             prefix = td / "prefix"
             home = td / "home"
             home.mkdir()
-            installer.install(t, prefix=prefix, mode="lite", machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=_fetch_ok(), runner=_runner_for({t.id: t.binary}), profiles=[])
+            installer.install(
+                t,
+                prefix=prefix,
+                mode="lite",
+                machine="x86_64",
+                home=home,
+                python="python3",
+                src_dir=Path("/fake/src"),
+                fetch=_fetch_ok(),
+                runner=_runner_for({t.id: t.binary}),
+                profiles=[],
+            )
             wrapper_before = (installer.tools_root(prefix) / "bin" / t.binary).read_bytes()
             entry_before = dict(installer.read_manifest(prefix)["tools"][t.id])
             base = installer.tools_root(prefix) / t.id
@@ -1886,13 +2396,40 @@ class TestInstaller(unittest.TestCase):
                     home.mkdir()
                     runner = _runner_for({t1.id: t1.binary, t2.id: t2.binary})
                     fetch = _fetch_ok()
-                    installer.install(t1, prefix=prefix, mode=orig_mode, machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
-                    installer.install(t2, prefix=prefix, mode=orig_mode, machine="x86_64", home=home, python="python3", src_dir=Path("/fake/src"), fetch=fetch, runner=runner, profiles=[], all_tools=[t1, t2])
+                    installer.install(
+                        t1,
+                        prefix=prefix,
+                        mode=orig_mode,
+                        machine="x86_64",
+                        home=home,
+                        python="python3",
+                        src_dir=Path("/fake/src"),
+                        fetch=fetch,
+                        runner=runner,
+                        profiles=[],
+                        all_tools=[t1, t2],
+                    )
+                    installer.install(
+                        t2,
+                        prefix=prefix,
+                        mode=orig_mode,
+                        machine="x86_64",
+                        home=home,
+                        python="python3",
+                        src_dir=Path("/fake/src"),
+                        fetch=fetch,
+                        runner=runner,
+                        profiles=[],
+                        all_tools=[t1, t2],
+                    )
                     tr = installer.tools_root(prefix)
                     w2_before = (tr / "bin" / t2.binary).read_bytes()
                     out = installer.set_mode(prefix, target_mode, [t1])
                     self.assertEqual(out[0], f"mode set to {target_mode}")
-                    self.assertIn(f"missing catalog entry: {t2.id} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)", out)
+                    self.assertIn(
+                        f"missing catalog entry: {t2.id} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)",
+                        out,
+                    )
                     self.assertEqual((tr / "bin" / t2.binary).read_bytes(), w2_before)
                     self.assertEqual(installer.read_manifest(prefix)["mode"], target_mode)
                     self.assertIn(t2.id, installer.read_manifest(prefix)["tools"])

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """OPOS UI package identity and source integrity."""
+
 import hashlib
 import shlex
 import unittest
@@ -21,7 +22,8 @@ class TestUiApkbuild(unittest.TestCase):
         self.assertEqual(self.vars["pkgrel"], "2")
         self.assertEqual(self.vars["_pmb_groups"], "seat")
         self.assertEqual(
-            self.vars["url"], "https://github.com/louiscalata/old-phone-os",
+            self.vars["url"],
+            "https://github.com/louiscalata/old-phone-os",
         )
         self.assertEqual(self.vars["license"], "GPL-3.0-or-later")
 
@@ -41,9 +43,15 @@ class TestUiApkbuild(unittest.TestCase):
         self.assertEqual(
             self.vars["depends"].split() + self.vars["options"].split(),
             [
-                "postmarketos-base-ui-cage", "opos", "chromium", "psmisc",
-                "!check", "pmb:drm", "pmb:default-openrc",
-                "pmb:support-openrc", "pmb:support-systemd",
+                "postmarketos-base-ui-cage",
+                "opos",
+                "chromium",
+                "psmisc",
+                "!check",
+                "pmb:drm",
+                "pmb:default-openrc",
+                "pmb:support-openrc",
+                "pmb:support-systemd",
             ],
         )
 
@@ -57,4 +65,7 @@ class TestUiApkbuild(unittest.TestCase):
             self.assertTrue(any("D" in token and "755" in token for token in tokens))
         self.assertEqual(installs[0][-2:], ["$srcdir/opos-cage.sh", "$pkgdir/etc/cage-ui/opos.sh"])
         # tinydm sources env-wayland.d before it starts cage, so the renderer default reaches the compositor.
-        self.assertEqual(installs[1][-2:], ["$srcdir/opos-tinydm-env.sh", "$pkgdir/usr/share/tinydm/env-wayland.d/50-opos-renderer.sh"])
+        self.assertEqual(
+            installs[1][-2:],
+            ["$srcdir/opos-tinydm-env.sh", "$pkgdir/usr/share/tinydm/env-wayland.d/50-opos-renderer.sh"],
+        )

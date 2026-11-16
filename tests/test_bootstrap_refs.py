@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise bootstrap against a local source fixture, with no network/service work."""
+
 import shutil
 import subprocess
 import unittest
@@ -24,7 +25,7 @@ class BootstrapReferences(unittest.TestCase):
         self.git("config", "user.name", "OPOS test fixture")
         self.git("config", "user.email", "fixture@example.invalid")
         (self.repo / "install.sh").write_text(
-            '#!/bin/sh\n'
+            "#!/bin/sh\n"
             'd="$(cd "$(dirname "$0")" && pwd -P)"\n'
             'printf "%s\\n" "$*" > "$OPOS_TEST_INSTALL_MARKER"\n'
             'cat "$d/version.txt" >> "$OPOS_TEST_INSTALL_MARKER"\n'
@@ -40,28 +41,38 @@ class BootstrapReferences(unittest.TestCase):
         self.marker = self.base / "installed"
         self.dest = self.base / "checkout"
         self.env.update(
-            HOME=str(self.base), OPOS_REPO_URL=str(self.repo),
-            OPOS_SRC_DIR=str(self.dest), OPOS_TEST_INSTALL_MARKER=str(self.marker),
+            HOME=str(self.base),
+            OPOS_REPO_URL=str(self.repo),
+            OPOS_SRC_DIR=str(self.dest),
+            OPOS_TEST_INSTALL_MARKER=str(self.marker),
         )
 
     def git(self, *args):
         return subprocess.run(
             [shutil.which("git"), "-C", str(self.repo), *args],
-            env=self.env, capture_output=True, text=True, check=True, timeout=20,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=20,
         )
 
     def run_bootstrap(self, ref):
         env = dict(self.env, OPOS_REF=ref)
-        return subprocess.run(["sh", str(SCRIPT)], check=False, env=env,
-                              capture_output=True, text=True, timeout=20)
+        return subprocess.run(["sh", str(SCRIPT)], check=False, env=env, capture_output=True, text=True, timeout=20)
 
     def test_full_commit_is_checked_out_before_install(self):
         result = self.run_bootstrap(self.first)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.marker.read_text().splitlines(), ["--yes --no-launch", "one"])
-        head = subprocess.check_output(
-            [shutil.which("git"), "-C", str(self.dest), "rev-parse", "HEAD"], env=self.env,
-        ).decode().strip()
+        head = (
+            subprocess.check_output(
+                [shutil.which("git"), "-C", str(self.dest), "rev-parse", "HEAD"],
+                env=self.env,
+            )
+            .decode()
+            .strip()
+        )
         self.assertEqual(head, self.first)
 
     def test_tag_and_branch_references_still_work(self):

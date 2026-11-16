@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Regressions for Grok model-plumbing findings G through O; no network I/O."""
+
 import contextlib
 import io
 import json
@@ -36,8 +37,10 @@ class TestGRouteBudget(unittest.TestCase):
                 raise muse.MuseError("timed out")
             return '["c", "a"]' if operation == "plan" else "Glimmer answered."
 
-        with mock.patch.object(muse.time, "monotonic", side_effect=lambda: now[0]), \
-                mock.patch.object(muse, "ask", side_effect=ask):
+        with (
+            mock.patch.object(muse.time, "monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(muse, "ask", side_effect=ask),
+        ):
             routes = assist.explain_routes(self.ENV, free=2000)
             if operation == "why":
                 result = muse.explain({}, routes, env=self.ENV)
@@ -85,8 +88,10 @@ class TestGRouteBudget(unittest.TestCase):
             now[0] = muse.HELPER_DEADLINE_S
             raise muse.MuseError("deadline expired")
 
-        with mock.patch.object(muse.time, "monotonic", side_effect=lambda: now[0]), \
-                mock.patch.object(muse, "ask", side_effect=expired) as ask:
+        with (
+            mock.patch.object(muse.time, "monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(muse, "ask", side_effect=expired) as ask,
+        ):
             result = assist.answer("word " * 20, env=self.ENV, free=2000)
         ask.assert_called_once()
         self.assertIn("The helper did not answer.", result["text"])
@@ -97,8 +102,7 @@ class TestGRouteBudget(unittest.TestCase):
 class TestHPlanLists(unittest.TestCase):
     def check_order(self, content, expected):
         route = muse.glimmer_route({})
-        result = muse.plan({}, ("a", "b", "c"), route, env={},
-                           opener=lambda *a, **k: response(content))
+        result = muse.plan({}, ("a", "b", "c"), route, env={}, opener=lambda *a, **k: response(content))
         self.assertEqual(result, expected)
         return result
 
@@ -118,13 +122,26 @@ class TestHPlanLists(unittest.TestCase):
 
 class TestIProbe(unittest.TestCase):
     def test_probe_rejects_empty_missing_or_nontext_content(self):
-        for choice in ({"message": {"content": ""}}, {}, {"message": {}},
-                       {"message": {"content": " \n "}},
-                       {"message": {"content": None}}, {"message": {"content": []}}):
+        for choice in (
+            {"message": {"content": ""}},
+            {},
+            {"message": {}},
+            {"message": {"content": " \n "}},
+            {"message": {"content": None}},
+            {"message": {"content": []}},
+        ):
             with self.subTest(choice=choice):
                 opener = lambda *a, **k: io.BytesIO(json.dumps({"choices": [choice]}).encode())
-                self.assertEqual(muse.probe(env={}, opener=opener),
-                                 {"answered": False, "error": "empty reply", "latency_s": mock.ANY, "finish_reason": None, "reply_model": None})
+                self.assertEqual(
+                    muse.probe(env={}, opener=opener),
+                    {
+                        "answered": False,
+                        "error": "empty reply",
+                        "latency_s": mock.ANY,
+                        "finish_reason": None,
+                        "reply_model": None,
+                    },
+                )
 
     def test_probe_uses_the_ask_token_budget_and_reasoning_effort(self):
         payloads = []
@@ -134,15 +151,20 @@ class TestIProbe(unittest.TestCase):
             return response("OK")
 
         muse.ask(muse.glimmer_route({}), "Reply with OK.", env={}, opener=opener)
-        self.assertEqual(muse.probe(env={}, opener=opener), {"answered": True, "latency_s": mock.ANY, "reply": "OK", "finish_reason": None, "reply_model": None})
+        self.assertEqual(
+            muse.probe(env={}, opener=opener),
+            {"answered": True, "latency_s": mock.ANY, "reply": "OK", "finish_reason": None, "reply_model": None},
+        )
         self.assertEqual(payloads[1]["max_tokens"], payloads[0]["max_tokens"])
         self.assertEqual(payloads[1].get("reasoning_effort"), payloads[0]["reasoning_effort"])
 
     def test_check_probe_exits_nonzero_for_an_empty_reply(self):
         out = io.StringIO()
-        with mock.patch.object(muse, "check", return_value={"reachable": True, "model_served": True}), \
-                mock.patch.object(muse, "_open_no_redirect", side_effect=lambda *a, **k: response("")), \
-                contextlib.redirect_stdout(out):
+        with (
+            mock.patch.object(muse, "check", return_value={"reachable": True, "model_served": True}),
+            mock.patch.object(muse, "_open_no_redirect", side_effect=lambda *a, **k: response("")),
+            contextlib.redirect_stdout(out),
+        ):
             code = muse.main(["muse", "--check", "--probe"])
         self.assertEqual(code, 1)
         self.assertFalse(json.loads(out.getvalue())["answered"])
@@ -152,14 +174,14 @@ class AdvisorFixture(unittest.TestCase):
     STATE = PowerState(90, False, 1, 25)
 
     def advisor(self, reply='{"defer":["email"]}', **kwargs):
-        return GlimmerAdvisor(Router(visible=True), route=muse.glimmer_route({}),
-                              ask=lambda *a, **k: reply, clock=lambda: 0, **kwargs)
+        return GlimmerAdvisor(
+            Router(visible=True), route=muse.glimmer_route({}), ask=lambda *a, **k: reply, clock=lambda: 0, **kwargs
+        )
 
 
 class TestJAdvisorObjects(AdvisorFixture):
     def test_scans_past_invalid_or_unrelated_objects(self):
-        for prefix in ('{note}', '{"note":"{braces}"}', '{"defer":"email"}',
-                       '{"defer":null}'):
+        for prefix in ("{note}", '{"note":"{braces}"}', '{"defer":"email"}', '{"defer":null}'):
             with self.subTest(prefix=prefix):
                 adv = self.advisor(prefix + ' {"defer":["email"]}', spawn=lambda fn: fn())
                 adv(self.STATE, DEFAULT_TASKS)
@@ -264,8 +286,9 @@ class TestLCharging(unittest.TestCase):
 
     def test_critical_charging_phone_can_ask(self):
         with mock.patch.object(muse, "ask", return_value="The phone is charging.") as ask:
-            result = assist.answer("why paused?", env={}, free=None,
-                                   context={"mode": "CRITICAL", "usable_percent": 10, "charging": True})
+            result = assist.answer(
+                "why paused?", env={}, free=None, context={"mode": "CRITICAL", "usable_percent": 10, "charging": True}
+            )
         self.assertTrue(result["ok"])
         ask.assert_called_once()
 
@@ -274,15 +297,15 @@ class TestMReserveAttribution(unittest.TestCase):
     def test_unchanged_worn_reserve_keeps_glimmer_credit(self):
         runtime = Runtime(visible=True)
         runtime.governor.decide = lambda *a: Decision(
-            Mode.CRITICAL, ("calls", "messages"), ("email", "maps", "photos backup"), "router+glimmer")
+            Mode.CRITICAL, ("calls", "messages"), ("email", "maps", "photos backup"), "router+glimmer"
+        )
         tick = runtime.step(0, reserve_level(30, 0.35) + 2, health=0.35, temp_c=30)
         self.assertTrue(tick.decision.reason.startswith("router+glimmer"), tick.decision.reason)
         self.assertIn("Helper: Muse Glimmer paused extra tasks", " ".join(tick.screen))
 
     def test_reserve_adding_pauses_keeps_reserve_reason(self):
         runtime = Runtime()
-        decision = Decision(Mode.SAVER, ("calls", "messages", "email"),
-                            ("maps", "photos backup"), "router+glimmer")
+        decision = Decision(Mode.SAVER, ("calls", "messages", "email"), ("maps", "photos backup"), "router+glimmer")
         runtime.governor.decide = lambda *a: decision
         with mock.patch("opos.runtime.rule_decide", return_value=decision):
             tick = runtime.step(0, reserve_level(30, 0.35) + 2, health=0.35, temp_c=30)
@@ -299,8 +322,9 @@ class TestNUninstall(unittest.TestCase):
             path.parent.mkdir(parents=True)
             path.write_text("keep this service definition\n", encoding="utf-8")
             # On macOS a successful `launchctl print` means the job is still loaded after bootout failed.
-            runner = mock.Mock(side_effect=lambda cmd: (0, "") if "daemon-reload" in cmd or "print" in cmd
-                               else (1, "stop denied"))
+            runner = mock.Mock(
+                side_effect=lambda cmd: (0, "") if "daemon-reload" in cmd or "print" in cmd else (1, "stop denied")
+            )
             with self.assertRaises(services.ServiceError) as raised:
                 services.uninstall_services(home, platform, runner=runner)
             self.assertEqual(path.read_text(encoding="utf-8"), "keep this service definition\n")
@@ -319,8 +343,10 @@ class TestNUninstall(unittest.TestCase):
 
 class TestOWhyFallback(unittest.TestCase):
     def test_why_fallback_preserves_the_supplied_reason(self):
-        for why in ("At this rate the battery will run out before 23:00.",
-                    "Nothing is paused; calls and messages remain on."):
+        for why in (
+            "At this rate the battery will run out before 23:00.",
+            "Nothing is paused; calls and messages remain on.",
+        ):
             with self.subTest(why=why), mock.patch.object(muse, "ask", side_effect=muse.MuseError("down")):
                 result = muse.explain({"why_paused": why}, muse.glimmer_route({}), env={})
                 self.assertEqual(result["text"], why + " Calls and messages are never paused.")

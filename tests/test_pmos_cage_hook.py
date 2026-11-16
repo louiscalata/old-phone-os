@@ -17,7 +17,10 @@ def _source_hook(extra_env, child_script='printf %s "$CAGE_UI_COMMAND"', hook=HO
     env.update(extra_env)
     return subprocess.run(
         ["sh", "-c", '. "$1" && sh -c "$2"', "sh", str(hook), child_script],
-        env=env, capture_output=True, text=True, timeout=10,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
 
 
@@ -50,7 +53,9 @@ class TestCageHook(unittest.TestCase):
 
     def test_explicit_renderer_override_is_exported(self):
         result = _source_hook(
-            {"WLR_RENDERER": "gles2"}, 'printf %s "$WLR_RENDERER"', ENV_HOOK,
+            {"WLR_RENDERER": "gles2"},
+            'printf %s "$WLR_RENDERER"',
+            ENV_HOOK,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "gles2")

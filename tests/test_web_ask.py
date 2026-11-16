@@ -10,18 +10,26 @@ import opos.muse as muse
 from opos.web import Phone
 from src.opos import web as srv
 
+
 def _post(port, token, obj):
     data = json.dumps(obj).encode()
-    req = urllib.request.Request(f"http://127.0.0.1:{port}/api", data=data, headers={"Content-Type": "application/json", "X-OPOS-Token": token}, method="POST")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api",
+        data=data,
+        headers={"Content-Type": "application/json", "X-OPOS-Token": token},
+        method="POST",
+    )
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read().decode())
 
+
 def _get(port):
     with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as r:
         return r.read().decode()
+
 
 class TestWebAsk(unittest.TestCase):
     def test_ask_visible(self):
@@ -33,11 +41,13 @@ class TestWebAsk(unittest.TestCase):
         thr.start()
         try:
             got = {}
+
             def fake(question, web=False, env=None, opener=None, free=None, context=None):
                 got["web"] = web
                 got["q"] = question
                 got["context"] = context
                 return {"ok": True, "text": "hi", "engine": "E", "where": "W", "sources": []}
+
             facts = {"mode": "normal", "reserve": 20.0}
             with patch.object(assist, "answer", side_effect=fake):
                 with patch.object(phone, "ask_facts", return_value=facts):
@@ -62,8 +72,10 @@ class TestWebAsk(unittest.TestCase):
         thr = threading.Thread(target=server.serve_forever, daemon=True)
         thr.start()
         try:
+
             def fake(question, web=False, env=None, opener=None, free=None, context=None):
                 return {"ok": True, "text": "x", "engine": "E", "where": "W", "sources": []}
+
             with patch.object(assist, "answer", side_effect=fake):
                 st, body = _post(port, token, {"action": "ask", "text": "why is the sky blue"})
                 self.assertEqual(st, 200)
@@ -80,8 +92,10 @@ class TestWebAsk(unittest.TestCase):
         thr = threading.Thread(target=server.serve_forever, daemon=True)
         thr.start()
         try:
+
             def fake(question, web=False, env=None, opener=None, free=None, context=None):
                 return {"ok": True, "text": "hi", "engine": "E", "where": "W", "sources": []}
+
             with patch.object(assist, "answer", side_effect=fake):
                 for _ in range(3):
                     st, _ = _post(port, token, {"action": "ask", "text": "why is the sky blue"})
@@ -100,8 +114,10 @@ class TestWebAsk(unittest.TestCase):
         thr = threading.Thread(target=server.serve_forever, daemon=True)
         thr.start()
         try:
+
             def fake(question, web=False, env=None, opener=None, free=None, context=None):
                 return {"ok": True, "text": "hi", "engine": "E", "where": "W", "sources": []}
+
             with patch.object(assist, "answer", side_effect=fake):
                 st, _ = _post(port, token, {"action": "ask", "text": 123})
                 self.assertEqual(st, 400)
@@ -167,16 +183,17 @@ class TestWebAsk(unittest.TestCase):
         try:
             html = _get(port)
             self.assertIn('id="ask"', html)
-            self.assertIn('askbtn', html)
+            self.assertIn("askbtn", html)
             idx = html.find("getElementById('askbtn')")
             if idx == -1:
                 idx = html.find("askbtn")
-            seg = html[idx:idx+1500]
+            seg = html[idx : idx + 1500]
             self.assertIn("textContent", seg)
             self.assertNotIn("innerHTML", seg)
         finally:
             server.shutdown()
             server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()

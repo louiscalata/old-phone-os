@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise both production Enter listeners with the real legacy Ask callback."""
+
 import json
 import shutil
 import subprocess
@@ -104,7 +105,10 @@ class HelperEnterDispatch(unittest.TestCase):
     def setUpClass(cls):
         result = subprocess.run(
             [shutil.which("node"), "-e", HARNESS, str(ROOT)],
-            capture_output=True, text=True, check=True, timeout=15,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
         )
         cls.results = json.loads(result.stdout)
 

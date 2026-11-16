@@ -22,7 +22,7 @@ class TestWizardTouch(unittest.TestCase):
         k = self.css.find("}", j)
         if k < 0:
             return None
-        return self.css[j + 1:k]
+        return self.css[j + 1 : k]
 
     def test_option_controls_are_24px(self):
         b = self.block("input[type=checkbox],input[type=radio]")
@@ -46,7 +46,7 @@ class TestWizardTouch(unittest.TestCase):
         n1 = self.html.find("\nfunction ", s + 1)
         n2 = self.html.find("\nasync function ", s + 1)
         cuts = [x for x in (n1, n2) if x >= 0]
-        body = self.html[s:min(cuts)] if cuts else self.html[s:]
+        body = self.html[s : min(cuts)] if cuts else self.html[s:]
         self.assertIn("if(i===6)buildSummary()", body)
         self.assertIn('querySelector("h2")', body)
         self.assertIn("tabIndex=-1", body)

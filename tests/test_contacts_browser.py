@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless contacts flow: add Ana, mark her a favorite, and read the practice call line."""
+
 import json
 import os
 import shutil
@@ -134,7 +135,14 @@ if(n>50){clearInterval(t);resolve(['lock never covered']);}
 },80);
 });
 """
-CASES = ((1392, 900, "light", 1), (1392, 900, "dark", 1), (675, 900, "light", 1), (675, 900, "dark", 1), (360, 640, "light", 2), (360, 640, "dark", 2))
+CASES = (
+    (1392, 900, "light", 1),
+    (1392, 900, "dark", 1),
+    (675, 900, "light", 1),
+    (675, 900, "dark", 1),
+    (360, 640, "light", 2),
+    (360, 640, "dark", 2),
+)
 
 
 class ContactsBrowser(unittest.TestCase):
@@ -184,12 +192,46 @@ class ContactsBrowser(unittest.TestCase):
         acceptance._kill(getattr(self, "proc", None))
 
     def test_add_ana_and_practice_call(self):
-        cases = [{"url": self.origin + "/contacts", "width": w, "height": h, "theme": t, "scale": s, "hand": "right", "script": FLOW, "after": AFTER} for w, h, t, s in CASES]
-        cases.append({"url": self.origin + "/?lock=0", "width": 1392, "height": 900, "theme": "light", "scale": 1, "hand": "right", "script": HOME})
-        cases.append({"url": self.origin + "/?lock=0&practice=messages&n=%2B15550101", "width": 360, "height": 640, "theme": "dark", "scale": 1, "hand": "right", "script": MESSAGES})
+        cases = [
+            {
+                "url": self.origin + "/contacts",
+                "width": w,
+                "height": h,
+                "theme": t,
+                "scale": s,
+                "hand": "right",
+                "script": FLOW,
+                "after": AFTER,
+            }
+            for w, h, t, s in CASES
+        ]
+        cases.append(
+            {
+                "url": self.origin + "/?lock=0",
+                "width": 1392,
+                "height": 900,
+                "theme": "light",
+                "scale": 1,
+                "hand": "right",
+                "script": HOME,
+            }
+        )
+        cases.append(
+            {
+                "url": self.origin + "/?lock=0&practice=messages&n=%2B15550101",
+                "width": 360,
+                "height": 640,
+                "theme": "dark",
+                "scale": 1,
+                "hand": "right",
+                "script": MESSAGES,
+            }
+        )
         plan = os.path.join(self.run, "plan.json")
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            [self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=120
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-1200:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
         self.assertEqual(list(self.phone.modem.events), [])

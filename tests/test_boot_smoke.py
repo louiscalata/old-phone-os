@@ -10,6 +10,7 @@ report a pass when QEMU is missing, when the guest panics, or when it hangs. Not
 run with stand-ins for qemu-system-aarch64 and uname.
 The fixtures under tests/fixtures/boot-logs are written by hand, in the shape of a systemd serial console (the ones with a
 marker show where the proposed unit would print it); they are to be replaced by real logs after the first run on the PC."""
+
 import hashlib
 import json
 import os
@@ -34,8 +35,14 @@ SH = shutil.which("sh")
 GOOD = "bdb339e56673771e01e232646a3185abfeebf9cf4f61b584cece7d8f3d436377"
 OTHER = "349626652bbf0bcc6a14cead3b1b1940a9dc5d58c9b36b2309c1e9dbc67093e7"
 NEGATIVE = ("Kernel panic", "Failed to start", "emergency mode", "Dependency failed", "opos-fallback")
-BAD_FIXTURES = {"panic.log": 1, "timeout.log": 3, "failed-unit.log": 1, "wrong-identity.log": 1,
-                "marker-before-panic.log": 1, "marker-in-kernel-echo.log": 3}
+BAD_FIXTURES = {
+    "panic.log": 1,
+    "timeout.log": 3,
+    "failed-unit.log": 1,
+    "wrong-identity.log": 1,
+    "marker-before-panic.log": 1,
+    "marker-in-kernel-echo.log": 3,
+}
 
 
 def read(path):
@@ -116,9 +123,13 @@ class VerdictFailsClosed(unittest.TestCase):
         line = "OPOS_BOOT_OK %s server=ok\n" % GOOD
         with tempfile.TemporaryDirectory() as d:
             log = Path(d) / "serial.log"
-            for text in (ok + line, ok.replace(line, "OPOS_BOOT_OK %s server=ok extra\n" % GOOD),
-                         ok.replace(line, "OPOS_BOOT_OK %s server=down\n" % GOOD), ok.replace(line, "OPOS_BOOT_OK %s\n" % GOOD),
-                         ok.replace(line, "OPOS_BOOT_OK %s server=ok\n" % GOOD.upper())):
+            for text in (
+                ok + line,
+                ok.replace(line, "OPOS_BOOT_OK %s server=ok extra\n" % GOOD),
+                ok.replace(line, "OPOS_BOOT_OK %s server=down\n" % GOOD),
+                ok.replace(line, "OPOS_BOOT_OK %s\n" % GOOD),
+                ok.replace(line, "OPOS_BOOT_OK %s server=ok\n" % GOOD.upper()),
+            ):
                 with self.subTest(text=text[-90:]):
                     log.write_text(text, encoding="utf-8")
                     self.assertEqual(verdict(log).returncode, 1)
@@ -126,8 +137,11 @@ class VerdictFailsClosed(unittest.TestCase):
     def test_a_marker_that_does_not_start_its_line_is_not_a_marker(self):
         with tempfile.TemporaryDirectory() as d:
             log = Path(d) / "serial.log"
-            for text in ("[    5.000000] OPOS_BOOT_OK %s server=ok\n", "echo OPOS_BOOT_OK %s server=ok\n",
-                         "Kernel command line: console=ttyAMA0 x=\"OPOS_BOOT_OK %s server=ok\"\n"):
+            for text in (
+                "[    5.000000] OPOS_BOOT_OK %s server=ok\n",
+                "echo OPOS_BOOT_OK %s server=ok\n",
+                'Kernel command line: console=ttyAMA0 x="OPOS_BOOT_OK %s server=ok"\n',
+            ):
                 with self.subTest(text=text):
                     log.write_text(text % GOOD, encoding="utf-8")
                     self.assertEqual(verdict(log).returncode, 3)
@@ -135,9 +149,17 @@ class VerdictFailsClosed(unittest.TestCase):
     def test_bad_arguments_exit_2_with_one_json_line(self):
         with tempfile.TemporaryDirectory() as d:
             missing = Path(d) / "nothing.log"
-            for log, expect in ((None, GOOD), (LOGS / "ok.log", None), (missing, GOOD), (LOGS / "ok.log", ""),
-                                (LOGS / "ok.log", "abc"), (LOGS / "ok.log", GOOD[:-1]), (LOGS / "ok.log", ".*"),
-                                (LOGS / "ok.log", GOOD.upper()), (Path(d), GOOD)):
+            for log, expect in (
+                (None, GOOD),
+                (LOGS / "ok.log", None),
+                (missing, GOOD),
+                (LOGS / "ok.log", ""),
+                (LOGS / "ok.log", "abc"),
+                (LOGS / "ok.log", GOOD[:-1]),
+                (LOGS / "ok.log", ".*"),
+                (LOGS / "ok.log", GOOD.upper()),
+                (Path(d), GOOD),
+            ):
                 with self.subTest(log=log, expect=expect):
                     p = verdict(log, expect)
                     self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
@@ -166,7 +188,9 @@ class VerdictPass(unittest.TestCase):
             log = Path(d) / "serial.log"
             log.write_bytes(ok.replace("\n", "\r\n").encode())
             self.assertEqual(verdict(log).returncode, 0)
-            log.write_text(ok + "[\x1b[0;1;31mFAILED\x1b[0m] Failed\x1b[0m to start opos-server.service\n", encoding="utf-8")
+            log.write_text(
+                ok + "[\x1b[0;1;31mFAILED\x1b[0m] Failed\x1b[0m to start opos-server.service\n", encoding="utf-8"
+            )
             self.assertEqual(verdict(log).returncode, 1)
             log.write_bytes(ok.encode() + b"\xff\xfe garbage\n")
             self.assertEqual(verdict(log).returncode, 0)
@@ -190,7 +214,11 @@ class ServerStarted(unittest.TestCase):
     """--accept server-started: the positive line is systemd's own console line for the shipped opos-server.service."""
 
     def started(self):
-        desc = [ln.split("=", 1)[1] for ln in SERVER_UNIT.read_text(encoding="utf-8").splitlines() if ln.startswith("Description=")]
+        desc = [
+            ln.split("=", 1)[1]
+            for ln in SERVER_UNIT.read_text(encoding="utf-8").splitlines()
+            if ln.startswith("Description=")
+        ]
         self.assertEqual(len(desc), 1)
         return "[  OK  ] Started opos-server.service - %s.\n" % desc[0], "[  OK  ] Started %s.\n" % desc[0]
 
@@ -208,13 +236,24 @@ class ServerStarted(unittest.TestCase):
             log = Path(d) / "serial.log"
             log.write_text(text.replace(combined, plain), encoding="utf-8")
             self.assertEqual(accept(log).returncode, 0, "systemd 252 prints the description alone")
-            log.write_text(text.replace(combined, "[\x1b[0;32m  OK  \x1b[0m] Started \x1b[0;1;39mopos-server.service\x1b[0m - "
-                                        + combined.split(" - ", 1)[1]).replace("\n", "\r\n"), encoding="utf-8")
+            log.write_text(
+                text.replace(
+                    combined,
+                    "[\x1b[0;32m  OK  \x1b[0m] Started \x1b[0;1;39mopos-server.service\x1b[0m - "
+                    + combined.split(" - ", 1)[1],
+                ).replace("\n", "\r\n"),
+                encoding="utf-8",
+            )
             self.assertEqual(accept(log).returncode, 0, "console colours and CRLF")
 
     def test_every_bad_fixture_still_fails_and_silence_is_a_timeout(self):
-        for name, code in (("panic.log", 1), ("timeout.log", 3), ("failed-unit.log", 1), ("marker-before-panic.log", 1),
-                           ("marker-in-kernel-echo.log", 3)):
+        for name, code in (
+            ("panic.log", 1),
+            ("timeout.log", 3),
+            ("failed-unit.log", 1),
+            ("marker-before-panic.log", 1),
+            ("marker-in-kernel-echo.log", 3),
+        ):
             with self.subTest(name=name):
                 p = accept(LOGS / name)
                 self.assertEqual(p.returncode, code, p.stdout + p.stderr)
@@ -228,13 +267,17 @@ class ServerStarted(unittest.TestCase):
         text = (LOGS / "server-started.log").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as d:
             log = Path(d) / "serial.log"
-            cases = {1: (text + combined, text + plain, text.replace(combined, combined + "[FAILED] Failed to start x.\n")),
-                     3: (text.replace(combined, combined.replace("opos-server.service", "opos-serverx.service")),
-                         text.replace(combined, combined.replace("battery.", "battery")),
-                         text.replace(combined, "[    5.000000] systemd[1]: " + combined.split("] ", 1)[1]),
-                         text.replace(combined, "echo " + combined),
-                         text.replace(combined, combined.replace("[  OK  ]", "[ OK ]")),
-                         text.replace(combined, "[  OK  ] Started opos-diag.service - OPOS server.\n"))}
+            cases = {
+                1: (text + combined, text + plain, text.replace(combined, combined + "[FAILED] Failed to start x.\n")),
+                3: (
+                    text.replace(combined, combined.replace("opos-server.service", "opos-serverx.service")),
+                    text.replace(combined, combined.replace("battery.", "battery")),
+                    text.replace(combined, "[    5.000000] systemd[1]: " + combined.split("] ", 1)[1]),
+                    text.replace(combined, "echo " + combined),
+                    text.replace(combined, combined.replace("[  OK  ]", "[ OK ]")),
+                    text.replace(combined, "[  OK  ] Started opos-diag.service - OPOS server.\n"),
+                ),
+            }
             for code, texts in cases.items():
                 for t in texts:
                     with self.subTest(code=code, tail=t[-100:]):
@@ -253,10 +296,18 @@ class ServerStarted(unittest.TestCase):
             self.assertEqual(p.returncode, 2, p.stdout)
             self.assertEqual(evidence(p)["verdict"], "bad-arguments")
             unit = SERVER_UNIT.read_text(encoding="utf-8")
-            (d / "opos-server.service").write_text(unit.replace("Description=", "Description=Renamed "), encoding="utf-8")
-            self.assertEqual(accept(LOGS / "server-started.log", judge=judge).returncode, 3, "the old line is no longer the server's")
+            (d / "opos-server.service").write_text(
+                unit.replace("Description=", "Description=Renamed "), encoding="utf-8"
+            )
+            self.assertEqual(
+                accept(LOGS / "server-started.log", judge=judge).returncode, 3, "the old line is no longer the server's"
+            )
             log = d / "serial.log"
-            log.write_text((LOGS / "server-started.log").read_text(encoding="utf-8").replace(" - OPOS server", " - Renamed OPOS server"))
+            log.write_text(
+                (LOGS / "server-started.log")
+                .read_text(encoding="utf-8")
+                .replace(" - OPOS server", " - Renamed OPOS server")
+            )
             self.assertEqual(accept(log, judge=judge).returncode, 0)
             for broken in (unit + "Description=Second\n", unit.replace("Description=", "Descr=")):
                 with self.subTest(broken=broken[-30:]):
@@ -273,7 +324,7 @@ class ServerStarted(unittest.TestCase):
         self.assertEqual(verdict(LOGS / "server-started.log").returncode, 3)
 
 
-FAKE_QEMU = r'''#!/bin/sh
+FAKE_QEMU = r"""#!/bin/sh
 # a stand-in for qemu-system-aarch64: records its arguments, then plays one fixture into the -serial file
 printf '%s\n' "$@" > "$FAKE_ARGS"
 log=''
@@ -287,7 +338,7 @@ case $FAKE_MODE in
     silent) exit 0 ;;
     *) cat "$FAKE_LOG" > "$log"; exit "${FAKE_STATUS:-0}" ;;
 esac
-'''
+"""
 
 
 @unittest.skipUnless(SH and os.name == "posix", "needs a POSIX sh")
@@ -315,13 +366,25 @@ class Harness(unittest.TestCase):
         if qemu:
             self.fake("qemu-system-aarch64", FAKE_QEMU)
         env = {k: v for k, v in os.environ.items() if not k.startswith(("OPOS_", "FAKE_"))}
-        env.update(FAKE_ARGS=str(self.args), FAKE_MODE=mode, FAKE_LOG=str(LOGS / fixture), FAKE_STATUS=status,
-                   TMPDIR=str(self.tmp))
+        env.update(
+            FAKE_ARGS=str(self.args),
+            FAKE_MODE=mode,
+            FAKE_LOG=str(LOGS / fixture),
+            FAKE_STATUS=status,
+            TMPDIR=str(self.tmp),
+        )
         env["PATH"] = path if path is not None else "%s:%s:/usr/bin:/bin" % (self.bin, os.path.dirname(sys.executable))
         t0 = time.monotonic()
         # Its own session, so a harness that never ends its guest is ended here with everything it started (a red test, not a hang).
-        proc = subprocess.Popen([SH, str(HARNESS)] + args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                stdin=subprocess.DEVNULL, start_new_session=True)
+        proc = subprocess.Popen(
+            [SH, str(HARNESS)] + args,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
         try:
             out, err = proc.communicate(timeout=60)
         except subprocess.TimeoutExpired:
@@ -333,7 +396,9 @@ class Harness(unittest.TestCase):
         return p
 
     def kernel_args(self, *more):
-        return ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--expect", GOOD, "--timeout", "30"] + list(more)
+        return ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--expect", GOOD, "--timeout", "30"] + list(
+            more
+        )
 
     def test_it_refuses_to_run_on_macos(self):
         uname = None if sys.platform == "darwin" else "Darwin"
@@ -356,13 +421,20 @@ class Harness(unittest.TestCase):
         self.assertFalse(self.args.exists(), "qemu was started")
 
     def test_bad_arguments_exit_2(self):
-        for args in ([], ["--kernel", str(self.kernel), "--expect", GOOD], ["--rootfs", str(self.rootfs), "--expect", GOOD],
-                     ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs)],
-                     self.kernel_args("--image", str(self.rootfs)), self.kernel_args("--timeout", "0"),
-                     self.kernel_args("--timeout", "x"), ["--kernel", str(self.tmp / "none"), "--rootfs", str(self.rootfs), "--expect", GOOD],
-                     self.kernel_args("--bogus"), self.kernel_args("--accept", "server-started"),
-                     ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--accept", "anything"],
-                     ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--expect", GOOD.upper()]):
+        for args in (
+            [],
+            ["--kernel", str(self.kernel), "--expect", GOOD],
+            ["--rootfs", str(self.rootfs), "--expect", GOOD],
+            ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs)],
+            self.kernel_args("--image", str(self.rootfs)),
+            self.kernel_args("--timeout", "0"),
+            self.kernel_args("--timeout", "x"),
+            ["--kernel", str(self.tmp / "none"), "--rootfs", str(self.rootfs), "--expect", GOOD],
+            self.kernel_args("--bogus"),
+            self.kernel_args("--accept", "server-started"),
+            ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--accept", "anything"],
+            ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--expect", GOOD.upper()],
+        ):
             with self.subTest(args=args):
                 p = self.run_harness(args)
                 self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
@@ -400,7 +472,12 @@ class Harness(unittest.TestCase):
         p = self.run_harness(self.kernel_args("--log", str(log)))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         args = self.args.read_text().splitlines()
-        for flag, value in (("-display", "none"), ("-serial", "file:" + str(log)), ("-kernel", str(self.kernel)), ("-nic", "none")):
+        for flag, value in (
+            ("-display", "none"),
+            ("-serial", "file:" + str(log)),
+            ("-kernel", str(self.kernel)),
+            ("-nic", "none"),
+        ):
             with self.subTest(flag=flag):
                 self.assertEqual(args[args.index(flag) + 1], value)
         self.assertIn("-no-reboot", args)
@@ -411,8 +488,14 @@ class Harness(unittest.TestCase):
         for word in ("panic=-1", "opos.smoke=1", "console=ttyAMA0", "root=/dev/vda"):
             self.assertIn(word, append)
         # exactly the three units QEMU virt cannot run are masked, and nothing else
-        self.assertEqual(sorted(w for w in append if w.startswith("systemd.mask=")),
-                         ["systemd.mask=android-service@hwcomposer.service", "systemd.mask=lxc@android.service", "systemd.mask=opos.service"])
+        self.assertEqual(
+            sorted(w for w in append if w.startswith("systemd.mask=")),
+            [
+                "systemd.mask=android-service@hwcomposer.service",
+                "systemd.mask=lxc@android.service",
+                "systemd.mask=opos.service",
+            ],
+        )
         self.assertEqual(json.loads([ln for ln in p.stdout.splitlines() if ln.startswith("{")][-1])["verdict"], "pass")
         # a qemu that exits non-zero after a good log does not turn the verdict into a pass or a fail it did not see
         p = self.run_harness(self.kernel_args(), status="1")
@@ -440,10 +523,21 @@ class Harness(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         args = self.args.read_text().splitlines()
         drives = [args[i + 1] for i, a in enumerate(args) if a == "-drive"]
-        self.assertEqual([d.split(",") for d in drives], [["file=" + str(self.rootfs), "format=raw", "if=virtio", "snapshot=on"]])
+        self.assertEqual(
+            [d.split(",") for d in drives], [["file=" + str(self.rootfs), "format=raw", "if=virtio", "snapshot=on"]]
+        )
 
     def test_the_server_started_source_passes_on_the_shipped_line_and_still_fails_closed(self):
-        args = ["--kernel", str(self.kernel), "--rootfs", str(self.rootfs), "--accept", "server-started", "--timeout", "30"]
+        args = [
+            "--kernel",
+            str(self.kernel),
+            "--rootfs",
+            str(self.rootfs),
+            "--accept",
+            "server-started",
+            "--timeout",
+            "30",
+        ]
         p = self.run_harness(args, fixture="server-started.log")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         ev = json.loads([ln for ln in p.stdout.splitlines() if ln.startswith("{")][-1])
@@ -464,17 +558,29 @@ class Harness(unittest.TestCase):
 class Docs(unittest.TestCase):
     def test_the_readme_states_the_scope_and_that_nothing_was_run(self):
         readme = " ".join(read("packaging/duo-os/README.md").split())
-        section = readme[readme.index("## Boot smoke test (QEMU, PC only)"):]
-        section = section[:section.index(" ## ", 5)]
-        for phrase in ("--accept server-started", "--expect", "OPOS_BOOT_OK", "opos.smoke=1", "no hwcomposer", "qemu-boot-smoke.sh",
-                       "boot-smoke-verdict.py", "NOT_RUN", "exit 3", "PROPOSAL", "Louis's yes", "snapshot=on"):
+        section = readme[readme.index("## Boot smoke test (QEMU, PC only)") :]
+        section = section[: section.index(" ## ", 5)]
+        for phrase in (
+            "--accept server-started",
+            "--expect",
+            "OPOS_BOOT_OK",
+            "opos.smoke=1",
+            "no hwcomposer",
+            "qemu-boot-smoke.sh",
+            "boot-smoke-verdict.py",
+            "NOT_RUN",
+            "exit 3",
+            "PROPOSAL",
+            "Louis's yes",
+            "snapshot=on",
+        ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, section)
 
     def test_the_readme_section_keeps_the_file_wrapping(self):
         text = read("packaging/duo-os/README.md")
-        section = text[text.index("## Boot smoke test (QEMU, PC only)"):]
-        section = section[:section.index("\n## ", 5)]
+        section = text[text.index("## Boot smoke test (QEMU, PC only)") :]
+        section = section[: section.index("\n## ", 5)]
         self.assertEqual([ln for ln in section.splitlines() if len(ln) > 120], [])
 
     def test_the_proposed_marker_unit_is_not_shipped_or_installed(self):

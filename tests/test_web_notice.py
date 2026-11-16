@@ -40,7 +40,11 @@ class TestNoticeFor(unittest.TestCase):
         self.assertEqual(notice_for("in call", True, False), "In call")
         self.assertEqual(notice_for("call ended", False, False), "Call ended")
         self.assertEqual(notice_for("sent", False, False), "Message sent")
-        for status, in_call in (("error: number not valid", True), ("error: already in a call", True), ("error: battery empty, charge the phone to call", False)):
+        for status, in_call in (
+            ("error: number not valid", True),
+            ("error: already in a call", True),
+            ("error: battery empty, charge the phone to call", False),
+        ):
             self.assertEqual(notice_for(status, in_call, True), notice_for(status, in_call, False))
         self.assertEqual(notice_for("message received", False, True), "New message")
 
@@ -129,10 +133,13 @@ class TestPhoneNotice(unittest.TestCase):
         class RealishModem:
             def dial(self, number):
                 self.number = number
+
             def hang_up(self):
                 pass
+
             def send_sms(self, number, text):
                 pass
+
         p = Phone()
         p.essentials.modem = RealishModem()
         p.call("911")
@@ -151,6 +158,7 @@ class TestPhoneNotice(unittest.TestCase):
 
 class _OtherModem:
     """Stands for a modem that is not the screen's simulation."""
+
     def dial(self, number):
         pass
 
@@ -226,8 +234,13 @@ class TestPageNotice(unittest.TestCase):
 
     def test_a_call_is_a_boxed_bold_notice_and_hang_up_is_the_inverted_fill(self):
         h = page()
-        box = re.search(r'#notice\[data-tone=call\]:not\(\[hidden\]\)\{([^}]+)\}', h).group(1)
-        for declaration in ("font-size:1.25rem", "font-weight:700", "border:3px double var(--jaryo-fg)", "text-align:left"):
+        box = re.search(r"#notice\[data-tone=call\]:not\(\[hidden\]\)\{([^}]+)\}", h).group(1)
+        for declaration in (
+            "font-size:1.25rem",
+            "font-weight:700",
+            "border:3px double var(--jaryo-fg)",
+            "text-align:left",
+        ):
             self.assertIn(declaration, box)
         hang = "#notice[data-tone=call]~#controls [data-go=hang_up]"
         self.assertIn(hang + "{background:var(--jaryo-fg);color:var(--jaryo-bg)}", h)

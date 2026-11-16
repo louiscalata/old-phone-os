@@ -3,6 +3,7 @@
 on PATH and a fake browser kiosk. The fake python3 answers the server wait and the GTK check, and for the shell itself
 reads one line of a plan per start ("status seconds"); when the plan is spent it ends the script with SIGTERM.
 Also the line in opos-session that chooses the launcher, and the exit statuses the shell promises the launcher."""
+
 import ast
 import contextlib
 import io
@@ -72,7 +73,7 @@ exit "$1"
     "sleep": '#!/bin/sh\necho "$1" >> "$T/sleeps"\nread -r c < "$T/clock"\necho $((c + $1)) > "$T/clock"\n',
     "logger": '#!/bin/sh\necho "$*" >> "$T/logger.log"\n',
     "kiosk": '#!/bin/sh\necho "kiosk pid $$ span ${OPOS_SPAN-unset} tried ${OPOS_NATIVE_TRIED-unset}" >> "$T/kiosk.log"\n'
-             'echo "${OPOS_NATIVE_RESTORE_FAILED-unset}" >> "$T/kiosk.failed"\nexit 0\n',
+    'echo "${OPOS_NATIVE_RESTORE_FAILED-unset}" >> "$T/kiosk.failed"\nexit 0\n',
 }
 
 
@@ -94,14 +95,20 @@ class NativeLauncherTest(unittest.TestCase):
         (self.t / "py_fails").write_text("0\n")
         self.config = self.home / ".config" / "opos"
         self.config.mkdir(parents=True)
-        (self.config / "firstrun.json").write_text("{}\n")      # first-run setup is done; the tests of that remove it
+        (self.config / "firstrun.json").write_text("{}\n")  # first-run setup is done; the tests of that remove it
 
     def run_native(self, plan, env=None, defaults=None, returncode=0):
         (self.t / "plan").write_text("".join("%s %s\n" % p for p in plan))
-        e = {"PATH": "%s:/usr/bin:/bin" % self.bin, "T": str(self.t), "HOME": str(self.home),
-             "OPOS_NATIVE_DEFAULTS": str(defaults or self.t / "no-such-defaults"), "OPOS_NATIVE_BROWSER": str(self.bin / "kiosk"),
-             "XDG_RUNTIME_DIR": str(self.t), "OPOS_NATIVE_START_S": "0",  # 0: the start watcher has its own tests below
-             "OPOS_NATIVE_APPS_CONF": str(self.t / "no-such-apps-conf")}
+        e = {
+            "PATH": "%s:/usr/bin:/bin" % self.bin,
+            "T": str(self.t),
+            "HOME": str(self.home),
+            "OPOS_NATIVE_DEFAULTS": str(defaults or self.t / "no-such-defaults"),
+            "OPOS_NATIVE_BROWSER": str(self.bin / "kiosk"),
+            "XDG_RUNTIME_DIR": str(self.t),
+            "OPOS_NATIVE_START_S": "0",  # 0: the start watcher has its own tests below
+            "OPOS_NATIVE_APPS_CONF": str(self.t / "no-such-apps-conf"),
+        }
         e.update(env or {})
         r = subprocess.run(["sh", str(NATIVE)], env=e, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, returncode, r.stderr)
@@ -149,7 +156,7 @@ class NativeLauncherTest(unittest.TestCase):
         self.run_native([(1, 100)], returncode=-signal.SIGTERM)
         self.assertEqual(self.runs()[0]["APPS"], "unset", "absent: as on the server, no apps")
         conf = self.t / "20-opos-apps.conf"
-        conf.write_text("Environment=OPOS_APPS=clock;reboot\nEnvironment=\"OPOS_APPS=notes\"\n")
+        conf.write_text('Environment=OPOS_APPS=clock;reboot\nEnvironment="OPOS_APPS=notes"\n')
         (self.t / "count").unlink()
         self.run_native([(1, 100)], env={"OPOS_NATIVE_APPS_CONF": str(conf)}, returncode=-signal.SIGTERM)
         self.assertEqual(self.runs()[-1]["APPS"], "", "only a plain list is taken; anything else is no apps")
@@ -157,19 +164,27 @@ class NativeLauncherTest(unittest.TestCase):
     def test_an_opos_apps_already_set_is_kept(self):
         conf = self.t / "20-opos-apps.conf"
         conf.write_text("Environment=OPOS_APPS=clock\n")
-        self.run_native([(1, 100)], env={"OPOS_NATIVE_APPS_CONF": str(conf), "OPOS_APPS": "notes"}, returncode=-signal.SIGTERM)
+        self.run_native(
+            [(1, 100)], env={"OPOS_NATIVE_APPS_CONF": str(conf), "OPOS_APPS": "notes"}, returncode=-signal.SIGTERM
+        )
         self.assertEqual(self.runs()[0]["APPS"], "notes")
 
     def test_every_handover_to_the_browser_lights_the_screens_first(self):
-        for plan, why, n in (([(10, 500)], "the owner chose", 1), ([(11, 5)], "the PIN lock", 1),
-                             ([(1, 2)] * 3, "three quick ends", 3)):
+        for plan, why, n in (
+            ([(10, 500)], "the owner chose", 1),
+            ([(11, 5)], "the PIN lock", 1),
+            ([(1, 2)] * 3, "three quick ends", 3),
+        ):
             with self.subTest(why=why):
                 for f in ("count", "restore.log", "kiosk.log", "shell.log"):
                     (self.t / f).unlink(missing_ok=True)
                 self.run_native(plan)
-                self.assertEqual(self.read("restore.log"), ["--restore /opt/opos/src 0"] * n,
-                                 "from the installed release, before the browser started (and after each unclean end"
-                                 " that was not handed over: the last is restored once, by the handover)")
+                self.assertEqual(
+                    self.read("restore.log"),
+                    ["--restore /opt/opos/src 0"] * n,
+                    "from the installed release, before the browser started (and after each unclean end"
+                    " that was not handed over: the last is restored once, by the handover)",
+                )
                 self.assertEqual(self.kiosk_started(), 1)
 
     def test_a_restore_that_could_not_light_the_screens_is_logged_and_the_browser_still_starts(self):
@@ -177,8 +192,10 @@ class NativeLauncherTest(unittest.TestCase):
         self.run_native([(10, 500)])
         self.assertEqual(len(self.read("restore.log")), 1)
         self.assertEqual(self.kiosk_started(), 1, "the handover is never stopped")
-        self.assertTrue(any("could not light both screens before the browser takes over" in m for m in self.read("logger.log")),
-                        self.read("logger.log"))
+        self.assertTrue(
+            any("could not light both screens before the browser takes over" in m for m in self.read("logger.log")),
+            self.read("logger.log"),
+        )
         self.assertEqual(self.read("kiosk.failed"), ["1"], "the kiosk is told, so it keeps trying in the background")
 
     def test_a_restore_that_lit_the_screens_tells_the_kiosk_nothing_is_left(self):
@@ -189,13 +206,19 @@ class NativeLauncherTest(unittest.TestCase):
         """Round 6: a shell that ended with 0 or 143 lit the screens itself only if the panels took the write; when they
         refused it, they stay dark. The launcher restores after every end (a no-op when nothing is dark)."""
         self.run_native([(0, 100), (143, 100), (0, 100)], returncode=-signal.SIGTERM)
-        self.assertEqual(self.read("restore.log"), ["--restore /opt/opos/src 0"] * 3, "after every end, 0 and 143 included")
+        self.assertEqual(
+            self.read("restore.log"), ["--restore /opt/opos/src 0"] * 3, "after every end, 0 and 143 included"
+        )
 
     def test_a_shell_that_ended_any_other_way_lights_the_screens_before_the_pause(self):
         """R5: a shell killed outright (KILL, a crash) while the lid was closed leaves the screens dark; the launcher lights
         them before its 2 s pause and the wait for the server, not only at the next start."""
-        (self.bin / "sleep").write_text(FAKES["sleep"].replace(
-            'echo "$1" >> "$T/sleeps"', 'echo "$1 $(cat "$T/restore.log" 2>/dev/null | wc -l | tr -d " ")" >> "$T/sleeps"'))
+        (self.bin / "sleep").write_text(
+            FAKES["sleep"].replace(
+                'echo "$1" >> "$T/sleeps"',
+                'echo "$1 $(cat "$T/restore.log" 2>/dev/null | wc -l | tr -d " ")" >> "$T/sleeps"',
+            )
+        )
         self.run_native([(137, 100), (0, 100), (1, 100), (143, 100)], returncode=-signal.SIGTERM)
         self.assertEqual(self.read("restore.log"), ["--restore /opt/opos/src 0"] * 4, "after every end (round 6)")
         self.assertEqual(self.read("sleeps"), ["2 1", "2 2", "2 3", "2 4"], "each before the pause that follows it")
@@ -204,7 +227,9 @@ class NativeLauncherTest(unittest.TestCase):
             (self.t / f).unlink(missing_ok=True)
         self.run_native([(139, 100)], returncode=-signal.SIGTERM)
         self.assertEqual(len(self.read("restore.log")), 1)
-        self.assertTrue(any("after the shell ended with status 139" in m for m in self.read("logger.log")), self.read("logger.log"))
+        self.assertTrue(
+            any("after the shell ended with status 139" in m for m in self.read("logger.log")), self.read("logger.log")
+        )
         self.assertEqual(len(self.runs()), 1, "a failed restore never stops the next start")
 
     def test_the_span_comes_from_the_defaults_file(self):
@@ -219,15 +244,22 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_the_defaults_file_is_read_never_run(self):
         d, nl = self.t / "defaults", chr(10)
-        for text, span in (("OPOS_SPAN=675,42" + nl + "exit 3" + nl, "675,42"), ("exit 0" + nl + "OPOS_SPAN=675,42" + nl, "675,42"),
-                           ("OPOS_SPAN=1,2" + nl + "OPOS_SPAN=675,42" + nl, "675,42"), ("OPOS_SPAN=$(reboot)" + nl, "unset"),
-                           ("OPOS_SPAN=675,42; touch " + str(self.t / "ran") + nl, "unset"), ("# OPOS_SPAN=675,42" + nl, "unset")):
+        for text, span in (
+            ("OPOS_SPAN=675,42" + nl + "exit 3" + nl, "675,42"),
+            ("exit 0" + nl + "OPOS_SPAN=675,42" + nl, "675,42"),
+            ("OPOS_SPAN=1,2" + nl + "OPOS_SPAN=675,42" + nl, "675,42"),
+            ("OPOS_SPAN=$(reboot)" + nl, "unset"),
+            ("OPOS_SPAN=675,42; touch " + str(self.t / "ran") + nl, "unset"),
+            ("# OPOS_SPAN=675,42" + nl, "unset"),
+        ):
             with self.subTest(text=text):
                 (self.t / "count").unlink(missing_ok=True)
                 (self.t / "shell.log").unlink(missing_ok=True)
                 d.write_text(text)
                 self.run_native([(1, 100)], defaults=d, env={"OPOS_SPAN": "9,9"}, returncode=-signal.SIGTERM)
-                self.assertEqual(self.runs()[0]["SPAN"], span, "only the file decides, and only a line of the right shape")
+                self.assertEqual(
+                    self.runs()[0]["SPAN"], span, "only the file decides, and only a line of the right shape"
+                )
                 self.assertFalse((self.t / "ran").exists())
 
     def test_the_owners_time_zone_is_read_at_every_start_and_a_bad_one_is_ignored(self):
@@ -249,9 +281,11 @@ class NativeLauncherTest(unittest.TestCase):
         self.assertEqual(len(self.runs()), 1)
 
     def test_the_wait_is_before_every_start_not_only_the_first(self):
-        (self.t / "server_dies").write_text("")      # the server goes down each time the shell starts
+        (self.t / "server_dies").write_text("")  # the server goes down each time the shell starts
         self.run_native([(1, 100), (1, 100), (1, 100)], returncode=-signal.SIGTERM)
-        self.assertEqual(self.read("sleeps"), ["2", "1", "2", "1", "2", "1"], "2 s after each end, then one wait for the server")
+        self.assertEqual(
+            self.read("sleeps"), ["2", "1", "2", "1", "2", "1"], "2 s after each end, then one wait for the server"
+        )
 
     def test_a_server_that_never_answers_does_not_stop_the_shell(self):
         (self.t / "py_fails").write_text("500\n")
@@ -291,7 +325,9 @@ class NativeLauncherTest(unittest.TestCase):
         other.mkdir()
         (other / "firstrun.json").write_text("{}\n")
         self.run_native([(1, 100)], env={"OPOS_CONFIG_DIR": str(other)}, returncode=-signal.SIGTERM)
-        self.assertEqual((len(self.runs()), self.kiosk_started()), (1, 0), "OPOS_CONFIG_DIR wins, as it does for the server")
+        self.assertEqual(
+            (len(self.runs()), self.kiosk_started()), (1, 0), "OPOS_CONFIG_DIR wins, as it does for the server"
+        )
 
     def test_the_launcher_never_tells_anyone_to_restart_the_phone_or_the_compositor(self):
         text = NATIVE.read_text(encoding="utf-8")
@@ -310,11 +346,24 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_the_browser_takes_over_the_same_process(self):
         (self.t / "plan").write_text("10 5" + chr(10))
-        r = subprocess.Popen(["sh", str(NATIVE)], env={
-            "PATH": "%s:/usr/bin:/bin" % self.bin, "T": str(self.t), "HOME": str(self.home), "XDG_RUNTIME_DIR": str(self.t),
-            "OPOS_NATIVE_START_S": "0", "OPOS_NATIVE_DEFAULTS": str(self.t / "none"), "OPOS_NATIVE_BROWSER": str(self.bin / "kiosk")})
+        r = subprocess.Popen(
+            ["sh", str(NATIVE)],
+            env={
+                "PATH": "%s:/usr/bin:/bin" % self.bin,
+                "T": str(self.t),
+                "HOME": str(self.home),
+                "XDG_RUNTIME_DIR": str(self.t),
+                "OPOS_NATIVE_START_S": "0",
+                "OPOS_NATIVE_DEFAULTS": str(self.t / "none"),
+                "OPOS_NATIVE_BROWSER": str(self.bin / "kiosk"),
+            },
+        )
         self.assertEqual(r.wait(timeout=60), 0)
-        self.assertEqual(self.read("kiosk.log"), ["kiosk pid %d span unset tried 1" % r.pid], "exec, not a child: phoc's client stays one process")
+        self.assertEqual(
+            self.read("kiosk.log"),
+            ["kiosk pid %d span unset tried 1" % r.pid],
+            "exec, not a child: phoc's client stays one process",
+        )
 
     def test_three_quick_ends_in_a_row_start_the_browser(self):
         self.run_native([(1, 2), (1, 2), (1, 2), (1, 2)])
@@ -347,7 +396,9 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_being_asked_to_start_again_is_not_a_quick_end(self):
         self.run_native([(143, 2)] * 5, returncode=-signal.SIGTERM)
-        self.assertEqual((len(self.runs()), self.kiosk_started()), (5, 0), "an update or a new time zone ends the shell with SIGTERM")
+        self.assertEqual(
+            (len(self.runs()), self.kiosk_started()), (5, 0), "an update or a new time zone ends the shell with SIGTERM"
+        )
 
     def test_but_six_such_ends_within_ten_minutes_still_start_the_browser(self):
         self.run_native([(143, 2)] * 8)
@@ -362,10 +413,15 @@ class NativeLauncherTest(unittest.TestCase):
         self.assertFalse((self.t / "opos-native-ready").exists())
 
     def test_a_shell_that_says_it_is_ready_is_left_alone(self):
-        (self.bin / "sleep").write_text("#!/bin/sh" + chr(10) + "exec /bin/sleep 0.2" + chr(10))   # real pauses for this one
+        (self.bin / "sleep").write_text(
+            "#!/bin/sh" + chr(10) + "exec /bin/sleep 0.2" + chr(10)
+        )  # real pauses for this one
         self.run_native([("ready", 0)], env={"OPOS_NATIVE_START_S": "3"}, returncode=-signal.SIGTERM)
         self.assertFalse([line for line in self.read("logger.log") if "had not put its window up" in line])
-        self.assertTrue(any("ended with status 1" in line for line in self.read("logger.log")), "it ended by itself, not by the watcher")
+        self.assertTrue(
+            any("ended with status 1" in line for line in self.read("logger.log")),
+            "it ended by itself, not by the watcher",
+        )
 
     def test_a_missing_browser_ends_the_client_with_status_1(self):
         self.run_native([(10, 5)], env={"OPOS_NATIVE_BROWSER": str(self.t / "no-such-kiosk")}, returncode=1)
@@ -388,38 +444,70 @@ class TheKioskHandsOver(unittest.TestCase):
             for name, body in FAKES.items():
                 (t / "bin" / name).write_text(body)
                 (t / "bin" / name).chmod(0o755)
+
             # a launcher that says who it is and goes back to the real kiosk the way opos-native does
             def script(path, *lines):
                 path.write_text("\n".join(("#!/bin/sh",) + lines) + "\n")
                 path.chmod(0o755)
-            script(t / "native", 'echo "native pid $$" >> "$T/order"', "OPOS_NATIVE_TRIED=1", "export OPOS_NATIVE_TRIED", 'exec sh "$KIOSK"')
+
+            script(
+                t / "native",
+                'echo "native pid $$" >> "$T/order"',
+                "OPOS_NATIVE_TRIED=1",
+                "export OPOS_NATIVE_TRIED",
+                'exec sh "$KIOSK"',
+            )
             script(t / "bin" / "chromium", 'echo "chromium parent $PPID" >> "$T/order"', 'kill -TERM "$PPID"')
             script(t / "bin" / "pgrep", "exit 1")
-            env = {"PATH": "%s:/usr/bin:/bin" % (t / "bin"), "T": str(t), "HOME": str(t), "XDG_RUNTIME_DIR": str(t), "KIOSK": str(KIOSK),
-                   "OPOS_KIOSK_DEFAULTS": str(t / "none"), "OPOS_NATIVE": str(t / "native"), "OPOS_NATIVE_OFF": str(t / "native-off")}
+            env = {
+                "PATH": "%s:/usr/bin:/bin" % (t / "bin"),
+                "T": str(t),
+                "HOME": str(t),
+                "XDG_RUNTIME_DIR": str(t),
+                "KIOSK": str(KIOSK),
+                "OPOS_KIOSK_DEFAULTS": str(t / "none"),
+                "OPOS_NATIVE": str(t / "native"),
+                "OPOS_NATIVE_OFF": str(t / "native-off"),
+            }
             (t / "clock").write_text("1000" + chr(10))
             r = subprocess.Popen(["sh", str(KIOSK)], env=env)
             self.assertEqual(r.wait(timeout=60), -signal.SIGTERM)
-            self.assertEqual((t / "order").read_text().splitlines(), ["native pid %d" % r.pid, "chromium parent %d" % r.pid],
-                             "one process throughout: the launcher, then the browser kiosk, never the launcher twice")
-            self.assertFalse((t / "restore.log").exists(), "handed back by the launcher: it has lit the screens already")
+            self.assertEqual(
+                (t / "order").read_text().splitlines(),
+                ["native pid %d" % r.pid, "chromium parent %d" % r.pid],
+                "one process throughout: the launcher, then the browser kiosk, never the launcher twice",
+            )
+            self.assertFalse(
+                (t / "restore.log").exists(), "handed back by the launcher: it has lit the screens already"
+            )
             # switched off: the launcher is never started, so the kiosk lights the screens itself before Chromium
             (t / "order").unlink()
             (t / "native-off").write_text("")
             r = subprocess.Popen(["sh", str(KIOSK)], env=env)
             self.assertEqual(r.wait(timeout=60), -signal.SIGTERM)
             self.assertEqual((t / "order").read_text().splitlines(), ["chromium parent %d" % r.pid])
-            self.assertEqual((t / "restore.log").read_text().splitlines(), ["--restore /opt/opos/src 0"],
-                             "a shell killed while the lid was closed cannot leave the browser on dark screens")
+            self.assertEqual(
+                (t / "restore.log").read_text().splitlines(),
+                ["--restore /opt/opos/src 0"],
+                "a shell killed while the lid was closed cannot leave the browser on dark screens",
+            )
 
     def test_the_session_script_is_untouched_and_the_kiosk_names_the_launcher(self):
         self.assertEqual(SESSION.read_text(encoding="utf-8").count("-E /usr/libexec/opos/opos-kiosk <&3 3<&- &"), 1)
         kiosk = KIOSK.read_text(encoding="utf-8")
         self.assertIn("native=${OPOS_NATIVE-/usr/libexec/opos/opos-native}", kiosk)
         self.assertIn('[ ! -e "${OPOS_NATIVE_OFF:-/etc/opos/native-off}" ]', kiosk)
-        self.assertLess(kiosk.index('exec "$native"'), kiosk.index("unset OPOS_KIOSK_DEBUG_PORT"), "before the kiosk does anything of its own")
+        self.assertLess(
+            kiosk.index('exec "$native"'),
+            kiosk.index("unset OPOS_KIOSK_DEBUG_PORT"),
+            "before the kiosk does anything of its own",
+        )
         native = NATIVE.read_text(encoding="utf-8")
-        self.assertLess(native.index("export OPOS_NATIVE_TRIED"), native.index('exec "$browser"'), "or the kiosk would hand the process straight back")
+        self.assertLess(
+            native.index("export OPOS_NATIVE_TRIED"),
+            native.index('exec "$browser"'),
+            "or the kiosk would hand the process straight back",
+        )
 
     def test_both_scripts_are_plain_posix_shell_with_unix_line_ends(self):
         for path in (NATIVE, SESSION, KIOSK):
@@ -429,17 +517,31 @@ class TheKioskHandsOver(unittest.TestCase):
 
     def test_the_shell_promises_the_statuses_the_launcher_reads(self):
         tree = ast.parse(SHELL.read_text(encoding="utf-8"))
-        consts = {t.id: n.value.value for n in tree.body if isinstance(n, ast.Assign) for t in n.targets
-                  if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant)}
+        consts = {
+            t.id: n.value.value
+            for n in tree.body
+            if isinstance(n, ast.Assign)
+            for t in n.targets
+            if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant)
+        }
         self.assertEqual((consts["LEAVE"], consts["BROKEN"], consts["LOCKED"]), (10, 3, 11))
         self.assertIn('if [ "$rc" -eq 10 ]; then', NATIVE.read_text(encoding="utf-8"))
         self.assertIn('if [ "$rc" -eq 11 ]; then', NATIVE.read_text(encoding="utf-8"))
-        self.assertIn("self.shell.leave)", (SHELL.parent / "screens.py").read_text(encoding="utf-8"), "the Settings button ends with LEAVE")
-        self.assertIn("OPOS_NATIVE_READY=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/opos-native-ready", NATIVE.read_text(encoding="utf-8"))
+        self.assertIn(
+            "self.shell.leave)",
+            (SHELL.parent / "screens.py").read_text(encoding="utf-8"),
+            "the Settings button ends with LEAVE",
+        )
+        self.assertIn(
+            "OPOS_NATIVE_READY=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/opos-native-ready",
+            NATIVE.read_text(encoding="utf-8"),
+        )
         shell = SHELL.read_text(encoding="utf-8")
         self.assertIn("logic.Ready(self.say_ready)", shell, "the shell says so, once, through logic.Ready")
         for need in ('"mapped"', '"warmed"', '"painted"'):
-            self.assertIn("self.ready.mark(%s)" % need, shell, "and only after the window is mapped, warm and has drawn a frame")
+            self.assertIn(
+                "self.ready.mark(%s)" % need, shell, "and only after the window is mapped, warm and has drawn a frame"
+            )
 
 
 BUILD = DUO / "build-image.sh"
@@ -449,7 +551,7 @@ VERIFY = DUO / "verify-image.sh"
 def between(path, start, end):
     text = path.read_text(encoding="utf-8")
     i = text.index(start)
-    return text[i:text.index(end, i) + len(end)]
+    return text[i : text.index(end, i) + len(end)]
 
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
@@ -466,7 +568,9 @@ class ImageIntegration(unittest.TestCase):
     def run_sh(self, text, **env):
         script = self.t / "block.sh"
         script.write_text("set -eu\n" + text)
-        return subprocess.run(["sh", str(script)], env={"PATH": "/usr/bin:/bin", **env}, capture_output=True, text=True, timeout=60)
+        return subprocess.run(
+            ["sh", str(script)], env={"PATH": "/usr/bin:/bin", **env}, capture_output=True, text=True, timeout=60
+        )
 
     def build_native(self):
         block = between(BUILD, "# --- native shell: BEGIN", "# --- native shell: END")
@@ -477,29 +581,43 @@ class ImageIntegration(unittest.TestCase):
         self.build_native()
         launcher, defaults = self.r / "usr/libexec/opos/opos-native", self.r / "etc/default/opos-native"
         self.assertEqual(launcher.read_bytes(), NATIVE.read_bytes())
-        self.assertEqual((oct(launcher.stat().st_mode & 0o777), oct(defaults.stat().st_mode & 0o777)), ("0o755", "0o644"))
-        self.assertEqual([ln for ln in defaults.read_text(encoding="utf-8").splitlines() if not ln.startswith("#")], ["OPOS_SPAN=675,42"])
+        self.assertEqual(
+            (oct(launcher.stat().st_mode & 0o777), oct(defaults.stat().st_mode & 0o777)), ("0o755", "0o644")
+        )
+        self.assertEqual(
+            [ln for ln in defaults.read_text(encoding="utf-8").splitlines() if not ln.startswith("#")],
+            ["OPOS_SPAN=675,42"],
+        )
 
     def test_the_span_file_says_what_the_server_unit_says(self):
         unit = (DUO / "opos-server.service").read_text(encoding="utf-8")
         self.build_native()
-        line = [ln for ln in (self.r / "etc/default/opos-native").read_text(encoding="utf-8").splitlines() if not ln.startswith("#")][0]
+        line = [
+            ln
+            for ln in (self.r / "etc/default/opos-native").read_text(encoding="utf-8").splitlines()
+            if not ln.startswith("#")
+        ][0]
         self.assertIn("Environment=" + line + "\n", unit)
 
     def test_it_is_not_written_inside_the_dev_span_block_and_that_block_is_unchanged(self):
         text = BUILD.read_text(encoding="utf-8")
-        dev = text[text.index("# --- dev span: BEGIN"):text.index("# --- dev span: END")]
+        dev = text[text.index("# --- dev span: BEGIN") : text.index("# --- dev span: END")]
         self.assertNotIn("opos-native", dev)
         self.assertLess(text.index("# --- native shell: END"), text.index("# --- dev span: BEGIN"))
         self.assertEqual(text.count("# --- native shell: BEGIN"), 1)
 
     def verify_native(self):
         block = between(VERIFY, "# --- track native:", 'check "pgrep and pkill')
-        block = block[:block.index('check "pgrep and pkill')]
+        block = block[: block.index('check "pgrep and pkill')]
         script = self.t / "verify.sh"
-        script.write_text('r=%s; w=$r/etc/systemd/system; k=$r/usr/libexec/opos/opos-kiosk; fail=0\n'
-                          'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\nexit $fail\n' % (self.r, block))
-        return subprocess.run(["sh", str(script)], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=60)
+        script.write_text(
+            "r=%s; w=$r/etc/systemd/system; k=$r/usr/libexec/opos/opos-kiosk; fail=0\n"
+            'check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n%s\nexit $fail\n'
+            % (self.r, block)
+        )
+        return subprocess.run(
+            ["sh", str(script)], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=60
+        )
 
     def image(self):
         self.build_native()
@@ -508,8 +626,19 @@ class ImageIntegration(unittest.TestCase):
         shutil.copy(DUO / "opos-server.service", self.r / "etc/systemd/system/opos-server.service")
         n = self.r / "opt/opos/src/opos/native"
         n.mkdir(parents=True)
-        for name in ("shell.py", "screens.py", "logic.py", "netlogic.py", "layout.py", "ui.py", "posture.py", "blank.py", "displayconfig.py",
-                     "hinge.py", "facing.py"):
+        for name in (
+            "shell.py",
+            "screens.py",
+            "logic.py",
+            "netlogic.py",
+            "layout.py",
+            "ui.py",
+            "posture.py",
+            "blank.py",
+            "displayconfig.py",
+            "hinge.py",
+            "facing.py",
+        ):
             shutil.copy(SHELL.parent / name, n / name)
 
     def test_a_good_image_passes_every_native_check(self):
@@ -535,7 +664,7 @@ class ImageIntegration(unittest.TestCase):
 
     def test_an_image_without_the_network_screens_rules_fails(self):
         self.image()
-        (self.r / "opt/opos/src/opos/native/netlogic.py").unlink()     # screens.py imports it: the shell would not start
+        (self.r / "opt/opos/src/opos/native/netlogic.py").unlink()  # screens.py imports it: the shell would not start
         self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
 
     def test_an_image_without_the_hinge_or_the_facing_reader_fails(self):
@@ -544,7 +673,7 @@ class ImageIntegration(unittest.TestCase):
                 shutil.rmtree(self.r)
                 (self.r / "usr/libexec/opos").mkdir(parents=True)
                 self.image()
-                (self.r / "opt/opos/src/opos/native" / name).unlink()     # the shell imports both
+                (self.r / "opt/opos/src/opos/native" / name).unlink()  # the shell imports both
                 self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
 
     def test_the_assistants_screen_in_an_image_fails(self):
@@ -560,7 +689,9 @@ class ImageIntegration(unittest.TestCase):
                 d.write_text(body, encoding="utf-8")
                 self.assertIn("FAIL the native shell's defaults file", self.verify_native().stdout)
         d.unlink()
-        self.assertNotIn("FAIL the native shell's defaults", self.verify_native().stdout, "no file is fine: one window with no gap")
+        self.assertNotIn(
+            "FAIL the native shell's defaults", self.verify_native().stdout, "no file is fine: one window with no gap"
+        )
 
     def test_gtk_in_the_image_is_noted(self):
         self.image()
@@ -615,6 +746,7 @@ class Window(Thing):
 
 class App:
     """A Gtk.Application that runs `activate` once and returns what the test told it to."""
+
     status, last = 0, None
 
     def __init__(self, *a, **k):
@@ -646,6 +778,7 @@ class ShellMain(unittest.TestCase):
                 sys.modules.pop(n, None)
                 if m is not None:
                     sys.modules[n] = m
+
         self.addCleanup(restore)
         for n in names:
             sys.modules.pop(n, None)
@@ -654,6 +787,7 @@ class ShellMain(unittest.TestCase):
         gi.repository = Toolkit("gi.repository")
         sys.modules["gi"], sys.modules["gi.repository"] = gi, gi.repository
         import importlib
+
         self.shell = importlib.import_module("opos.native.shell")
         self.shell.Gtk.Application = App
         self.shell.Gio.ApplicationFlags.NON_UNIQUE = "non-unique"
@@ -666,13 +800,16 @@ class ShellMain(unittest.TestCase):
             w = Thing()
             w.leaving = leaving
             return w
+
         self.shell.Shell = build
 
     def test_a_window_that_cannot_be_built_ends_with_broken_and_leaves_nothing_behind(self):
         self.made(error=RuntimeError("a page could not be built"))
         with contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertEqual(self.shell.main(["shell"]), self.shell.BROKEN)
-        self.assertEqual((App.last.quits, Window.destroyed), (1, 1), "the half-built window is destroyed and the application ends")
+        self.assertEqual(
+            (App.last.quits, Window.destroyed), (1, 1), "the half-built window is destroyed and the application ends"
+        )
         self.assertIn("a page could not be built", err.getvalue(), "and the reason is in the log")
 
     def test_the_owners_choice_ends_with_leave(self):
@@ -700,7 +837,9 @@ class ShellMain(unittest.TestCase):
             self.shell.Shell.say_ready({"OPOS_NATIVE_READY": str(path)})
             self.assertTrue(path.is_file())
             with contextlib.redirect_stderr(io.StringIO()) as err:
-                self.assertFalse(self.shell.Shell.say_ready({"OPOS_NATIVE_READY": str(Path(d) / "no" / "such" / "folder")}))
+                self.assertFalse(
+                    self.shell.Shell.say_ready({"OPOS_NATIVE_READY": str(Path(d) / "no" / "such" / "folder")})
+                )
             self.assertIn("cannot write the ready file", err.getvalue(), "a failed write is in the log, not swallowed")
             self.assertFalse(self.shell.Shell.say_ready({}))
 
