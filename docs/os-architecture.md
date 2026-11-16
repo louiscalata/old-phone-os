@@ -59,7 +59,7 @@ flowchart TD
 | Updater | OPOS | `packaging/duo-os/updater/`, `tools/opos-release.py` | Signed bundles, rollback (`docs/ota-update.md`). |
 | Image, identity and release policy | OPOS | `build-image.sh`, `image-policy.py`, `verify-image.sh` | Hashed manifest, pinned bases, `OPOS_RELEASE=1`. |
 | Self-test and diagnostics | OPOS | `opos-selftest`, `opos-diag` | Fail-closed results on the phone (`docs/duo-acceptance.md`); NOT_RUN until run there. |
-| Device profile | OPOS | `src/opos/hw/` | Holds a name, radios and a modem flag today; the Duo's geometry is still written in several places. |
+| Device profile | OPOS | `src/opos/hw/` | `src/opos/hw/device.py` declares the Duo's facts once. The native shell's `posture.py` reads its panel geometry from it; the hand-written copies (the server unit's span, `opos-selftest`, the lid name, the brightness unit) are checked against it, and a leak test fails a new file that repeats a Duo token (`tests/test_hw_facts.py`). |
 
 ## Boot sequence
 

@@ -10,9 +10,10 @@ without one (the service is not running) it says only "closed" or "open".
 What the device dossier records about the hardware (stock Android 12L read on 2026-10-31, read-only; Notion "Surface Duo
 Dossier for OPOS", section 04): the hinge turns 360 degrees and has no angle encoder. A sensor core (SLPI) computes the
 angle from an accelerometer, gyroscope and magnetometer in each half, and two hall switches mark "closed" and "fully
-folded back"; Android reports the result as hinge-angle sensor type 36, 0 to 360 degrees, sent on change. The two panels
-are 1350 x 1800 pixels each with an 84-pixel hinge column between them (2784 x 1800), which is the 42 px gap of
-OPOS_SPAN=675,42 at scale 2. Android's own folding state has only two values, HALF_OPENED and FLAT (folding_state()).
+folded back"; Android reports the result as hinge-angle sensor type 36, 0 to 360 degrees, sent on change. The dossier's
+panel size and hinge column (section 05) agree with the device profile, which declares them once: PANEL_WIDTH_PX,
+PANEL_HEIGHT_PX and HINGE_COLUMN_PX below are read from opos.hw.device, not written here. Android's own folding state
+has only two values, HALF_OPENED and FLAT (folding_state()).
 Two things in the dossier are still hypotheses: how the angle is measured, and that a hall switch is the lid input. The
 lid switch here does work; the angle was read on one phone on 2026-11-14 (peer-measured by the PC session, not
 reproduced from the Mac) and followed a fold from 0 to about 180.
@@ -26,6 +27,8 @@ import select
 import struct
 import sys
 import threading
+
+from opos.hw import device as _device
 
 EV_SYN, SYN_REPORT, SYN_DROPPED = 0, 0, 3
 EV_SW = 5
@@ -114,7 +117,10 @@ def lid_state(fd):
     return bool(buf[SW_LID // 8] & (1 << (SW_LID % 8)))
 
 
-PANEL_WIDTH_PX, PANEL_HEIGHT_PX, HINGE_COLUMN_PX = 1350, 1800, 84      # from the dossier, section 05
+# The Duo's panel geometry, from the device profile (one panel's size; the hinge column is what the composed output
+# leaves between the two panels). The zones and HYST below are the shell's own choice, not hardware facts.
+PANEL_WIDTH_PX, PANEL_HEIGHT_PX = _device.SURFACE_DUO.panel_px.value
+HINGE_COLUMN_PX = _device.SURFACE_DUO.output_px.value[0] - 2 * PANEL_WIDTH_PX
 HINGE_RANGE = (0, 360)      # degrees the hinge angle sensor reports (Android sensor type 36)
 # Hinge angle in degrees, as the phone's sensor service reports it: 0 closed, about 180 flat, 360 folded back on itself.
 # Each zone is held until the angle leaves it by HYST degrees, so a hand that wobbles on a border never flickers.

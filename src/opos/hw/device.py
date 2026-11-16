@@ -8,7 +8,8 @@ marks it measured here. A boot's opos-diag (python3 -m opos.hw.facts) compares e
 reports: model, compatible, panels, panel_px, lid_name, fuel_gauge_driver, fuel_gauges and backlights. It does not read output_px,
 scale, span, hinge or session_uid. The copies already written by hand elsewhere (the server unit's OPOS_SPAN, opos-selftest's
 OUTPUT_PX and OUTPUT_SCALE, posture.LID_NAME, the brightness unit's runtime directory) are checked against this file by
-tests/test_hw_facts.py; they are not read from it.
+tests/test_hw_facts.py; they are not read from it. The native shell's posture.py reads its panel geometry from here
+(panel_px, and the hinge column that output_px leaves between the panels).
 """
 from __future__ import annotations
 

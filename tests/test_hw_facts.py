@@ -60,6 +60,17 @@ class ContractTest(unittest.TestCase):
     def test_the_lid_name_is_the_profile_lid_name(self):
         self.assertEqual(assigned(SRC / "native" / "posture.py", "LID_NAME"), self.duo.lid_name.value)
 
+    def test_the_posture_panel_geometry_is_read_from_the_profile(self):
+        from opos.native import posture
+        self.assertEqual((posture.PANEL_WIDTH_PX, posture.PANEL_HEIGHT_PX), self.duo.panel_px.value)
+        self.assertEqual(2 * posture.PANEL_WIDTH_PX + posture.HINGE_COLUMN_PX, self.duo.output_px.value[0])
+        self.assertEqual(posture.HINGE_COLUMN_PX, 84)  # the dossier's hinge column; 42 px at scale 2 (the profile's hinge)
+        self.assertEqual(posture.HINGE_COLUMN_PX / self.duo.scale.value, self.duo.hinge.value)
+        # read, not a second hand-written copy: no number is written next to the three names in posture.py
+        text = (SRC / "native" / "posture.py").read_text(encoding="utf-8")
+        self.assertIn("_device.SURFACE_DUO.panel_px.value", text)
+        self.assertNotRegex(text, r"(?m)^(PANEL_WIDTH_PX|PANEL_HEIGHT_PX|HINGE_COLUMN_PX)\b[^#\n]*=[^#\n]*\b\d{2,}\b")
+
     def test_the_brightness_unit_uid_is_the_profile_uid(self):
         uid = unit_value(DUO / "opos-brightness.service", r"^Environment=OPOS_BRIGHTNESS_DIR=/run/user/(\d+)$")
         self.assertEqual(int(uid), self.duo.session_uid.value)
@@ -71,9 +82,11 @@ class ContractTest(unittest.TestCase):
 
 # Duo-only tokens and the files that may hold them. A new file in src/opos or packaging/duo-os that repeats one fails:
 # it should read the fact from opos.hw.device, or be added here on purpose with a contract test above.
+# src/opos/native/posture.py is listed only for the lid name; it reads the panel geometry from the profile.
 LEAK_ALLOWED = {
     "2784": {"src/opos/hw/device.py", "packaging/duo-os/opos-selftest", "packaging/duo-os/opos-server.service",
              "packaging/duo-os/README.md"},
+    "1350": {"src/opos/hw/device.py", "packaging/duo-os/opos-server.service", "packaging/duo-os/README.md"},
     "675,42": {"src/opos/web.py", "src/opos/span.py", "packaging/duo-os/verify-image.sh", "packaging/duo-os/opos-server.service",
                "packaging/duo-os/README.md", "packaging/duo-os/build-image.sh", "packaging/duo-os/opos-native"},
     "Surface Duo Lid": {"src/opos/hw/device.py", "src/opos/native/posture.py", "packaging/duo-os/NATIVE.md"},
@@ -99,7 +112,7 @@ class LeakTest(unittest.TestCase):
 
     def test_the_profile_holds_each_token_it_declares(self):
         text = (SRC / "hw" / "device.py").read_text(encoding="utf-8")
-        for token in ("2784", "Surface Duo Lid", "bq27742", "32011"):
+        for token in ("2784", "1350", "Surface Duo Lid", "bq27742", "32011"):
             self.assertIn(token, text)
 
     def test_the_reader_and_the_diag_hold_none(self):
