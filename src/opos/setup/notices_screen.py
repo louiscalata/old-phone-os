@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Install notices, readable before setup applies any changes."""
+
 import html
 
 from opos import notices
@@ -24,26 +25,33 @@ STYLE = """
 
 def fragment():
     data = notices.notices()
-    parts = ['<section id="jaryo-notices" aria-labelledby="jaryo-notices-title">',
-             '<header>Old Phone OS Interface · First run</header>',
-             '<h2 id="jaryo-notices-title" tabindex="-1">About this software</h2>',
-             '<p>Read before you continue. This setup runs within your existing operating system.</p>',
-             f'<p class="notice-warning">{html.escape(data["disclaimer"])}</p>',
-             f'<p>{html.escape(notices.INSTALL_SCOPE)}</p>']
+    parts = [
+        '<section id="jaryo-notices" aria-labelledby="jaryo-notices-title">',
+        "<header>Old Phone OS Interface · First run</header>",
+        '<h2 id="jaryo-notices-title" tabindex="-1">About this software</h2>',
+        "<p>Read before you continue. This setup runs within your existing operating system.</p>",
+        f'<p class="notice-warning">{html.escape(data["disclaimer"])}</p>',
+        f"<p>{html.escape(notices.INSTALL_SCOPE)}</p>",
+    ]
     # Risks remain visible; native disclosures need no script or network.
     for title, fields in (
-        ('Before installing', ('risks', 'restore_stock')),
-        ('Privacy and tested devices', ('privacy', 'tested_devices')),
-        ('About this build', ('version', 'build', 'license', 'source_url',
-                              'third_party', 'affiliation', 'contact', 'copyright')),
+        ("Before installing", ("risks", "restore_stock")),
+        ("Privacy and tested devices", ("privacy", "tested_devices")),
+        (
+            "About this build",
+            ("version", "build", "license", "source_url", "third_party", "affiliation", "contact", "copyright"),
+        ),
     ):
-        opened = ' open' if fields[0] == 'risks' else ''
-        parts.append(f'<details{opened}><summary>{title}</summary><dl>')
+        opened = " open" if fields[0] == "risks" else ""
+        parts.append(f"<details{opened}><summary>{title}</summary><dl>")
         for key in fields:
             value = data[key]
-            text = ('<ul>' + ''.join(f'<li>{html.escape(str(v))}</li>' for v in value) + '</ul>'
-                    if isinstance(value, (list, tuple)) else html.escape(str(value)))
+            text = (
+                "<ul>" + "".join(f"<li>{html.escape(str(v))}</li>" for v in value) + "</ul>"
+                if isinstance(value, (list, tuple))
+                else html.escape(str(value))
+            )
             parts.append(f'<dt data-notice="{key}">{html.escape(notices._TITLES[key])}</dt><dd>{text}</dd>')
-        parts.append('</dl></details>')
+        parts.append("</dl></details>")
     parts.append('<footer><a id="notices-continue" href="#profile">Continue to setup</a></footer></section>')
-    return ''.join(parts)
+    return "".join(parts)

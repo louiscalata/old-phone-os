@@ -7,6 +7,7 @@ docs/NOTICES.md is generated from markdown() and kept in sync by tests/test_noti
 Every PRIVACY and TESTED_DEVICES line is checked in docs/notices-verification.md.
 Stdlib only; no network modules.
 """
+
 import contextlib
 import json
 import os
@@ -21,10 +22,7 @@ DISCLAIMER = (
     "operating system and may erase data; back up first and use at your own risk."
 )
 
-INSTALL_SCOPE = (
-    "The replacement warning is for OS flashing; per-user install.sh installs OPOS "
-    "within the existing OS."
-)
+INSTALL_SCOPE = "The replacement warning is for OS flashing; per-user install.sh installs OPOS within the existing OS."
 
 # pyproject.toml owns the version; packages copy it into their generated metadata.
 VERSION = project_version()
@@ -39,6 +37,7 @@ def _build():
     # Optional release metadata: any failure falls back to OPOS_BUILD.
     with contextlib.suppress(Exception):
         from opos import _build_info  # written by a release build, absent in the repo
+
         cands.append(getattr(_build_info, "BUILD", ""))
     cands.append(os.environ.get("OPOS_BUILD", ""))
     for c in cands:
@@ -99,8 +98,35 @@ PRIVACY = (
 CONTACT = "See the project repository for support."
 COPYRIGHT = "© 2026 Louis Calata"
 
-FIELDS = ("disclaimer", "version", "build", "license", "source_url", "third_party", "affiliation", "tested_devices", "risks", "restore_stock", "privacy", "contact", "copyright")
-_TITLES = {"version": "Version", "build": "Build", "license": "License", "source_url": "Source", "third_party": "Third-party notices", "affiliation": "Affiliation", "tested_devices": "Tested devices", "risks": "Risks", "restore_stock": "Restore the original system", "privacy": "Privacy", "contact": "Contact", "copyright": "Copyright"}
+FIELDS = (
+    "disclaimer",
+    "version",
+    "build",
+    "license",
+    "source_url",
+    "third_party",
+    "affiliation",
+    "tested_devices",
+    "risks",
+    "restore_stock",
+    "privacy",
+    "contact",
+    "copyright",
+)
+_TITLES = {
+    "version": "Version",
+    "build": "Build",
+    "license": "License",
+    "source_url": "Source",
+    "third_party": "Third-party notices",
+    "affiliation": "Affiliation",
+    "tested_devices": "Tested devices",
+    "risks": "Risks",
+    "restore_stock": "Restore the original system",
+    "privacy": "Privacy",
+    "contact": "Contact",
+    "copyright": "Copyright",
+}
 
 
 def notices():
@@ -141,7 +167,7 @@ MD_HEADER = (
     "<!-- SPDX-License-Identifier: GPL-3.0-or-later -->\n"
     "<!-- Generated from src/opos/notices.py by `python -m opos.notices --markdown`; do not edit by hand. "
     "Shared with the installer workstream: the .exe/.dmg installers import opos.notices or run "
-    "`python -m opos.notices` (JSON). Build shows \"unpublished\" here; a release build fills it in. "
+    '`python -m opos.notices` (JSON). Build shows "unpublished" here; a release build fills it in. '
     "Evidence for each privacy and tested-device line: docs/notices-verification.md. -->\n"
 )
 

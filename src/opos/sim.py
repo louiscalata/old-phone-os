@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 "Battery-drain simulations for normal and end-of-life batteries."
+
 from opos.eol import brownout, load_amps
+
 DRAIN_PER_HOUR = {"NORMAL": 12.0, "SAVER": 5.0, "CRITICAL": 2.0}
 
 
 class DrainSim:
     "Simulates battery drain, heating and charging over accelerated time."
+
     def __init__(self, level=40.0, health=0.6, temp_c=30.0, speed=60.0, r0=None):
         self.level = level
         self.health = health

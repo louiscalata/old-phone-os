@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Render and install user-level services for Old Phone OS Interface."""
+
 from __future__ import annotations
 
 import math
@@ -13,7 +14,29 @@ from pathlib import Path
 
 UNIT_NAME = "opos-server.service"
 LAUNCHD_LABEL = "org.oldphoneos.opos"
-SYSTEM_ONLY = frozenset({"User", "Group", "StateDirectory", "StateDirectoryMode", "InaccessiblePaths", "ReadOnlyPaths", "ProtectHome", "PrivateDevices", "IPAddressDeny", "IPAddressAllow", "MemoryDenyWriteExecute", "SystemCallFilter", "ProtectProc", "ProcSubset", "ProtectClock", "ProtectKernelLogs", "RestrictRealtime", "CapabilityBoundingSet", "AmbientCapabilities"})
+SYSTEM_ONLY = frozenset(
+    {
+        "User",
+        "Group",
+        "StateDirectory",
+        "StateDirectoryMode",
+        "InaccessiblePaths",
+        "ReadOnlyPaths",
+        "ProtectHome",
+        "PrivateDevices",
+        "IPAddressDeny",
+        "IPAddressAllow",
+        "MemoryDenyWriteExecute",
+        "SystemCallFilter",
+        "ProtectProc",
+        "ProcSubset",
+        "ProtectClock",
+        "ProtectKernelLogs",
+        "RestrictRealtime",
+        "CapabilityBoundingSet",
+        "AmbientCapabilities",
+    }
+)
 # Model-route settings copied from the setup environment into the installed
 # service. Keys, tokens and other secrets are never on this list.
 ROUTE_SETTINGS = ("OPOS_GLIMMER_URL", "OPOS_LAN_URL", "OPOS_LOCAL_URL", "OPOS_GLIMMER_ROUTING", "OPOS_MUSE_TIMEOUT")
@@ -149,7 +172,14 @@ def read_unit_template(repo_root: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def render_user_unit(template: str, repo_root: Path, python: str, config_dir: Path, port: int = 8765, env: Mapping[str, str] | None = None) -> str:
+def render_user_unit(
+    template: str,
+    repo_root: Path,
+    python: str,
+    config_dir: Path,
+    port: int = 8765,
+    env: Mapping[str, str] | None = None,
+) -> str:
     """Render the system unit template as a hardened user unit.
 
     env is the setup environment; only accepted model-route settings from it are written.
@@ -211,7 +241,9 @@ def render_user_unit(template: str, repo_root: Path, python: str, config_dir: Pa
     return "\n".join(rendered).rstrip("\n") + "\n"
 
 
-def render_launchd_plist(repo_root: Path, python: str, config_dir: Path, port: int = 8765, env: Mapping[str, str] | None = None) -> str:
+def render_launchd_plist(
+    repo_root: Path, python: str, config_dir: Path, port: int = 8765, env: Mapping[str, str] | None = None
+) -> str:
     """Render a launchd agent plist for the web service.
 
     env is the setup environment; only accepted model-route settings from it are written.
@@ -222,9 +254,22 @@ def render_launchd_plist(repo_root: Path, python: str, config_dir: Path, port: i
     route, _ = route_environment(env)
     data = {
         "Label": LAUNCHD_LABEL,
-        "ProgramArguments": [interpreter, "-m", "opos.web", "--port", str(port), "--token-file", str(config / "session.token")],
+        "ProgramArguments": [
+            interpreter,
+            "-m",
+            "opos.web",
+            "--port",
+            str(port),
+            "--token-file",
+            str(config / "session.token"),
+        ],
         "WorkingDirectory": root,
-        "EnvironmentVariables": {"PYTHONPATH": f"{root}/src", "PYTHONDONTWRITEBYTECODE": "1", "OPOS_CONFIG_DIR": str(config), **route},
+        "EnvironmentVariables": {
+            "PYTHONPATH": f"{root}/src",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "OPOS_CONFIG_DIR": str(config),
+            **route,
+        },
         "RunAtLoad": True,
         "KeepAlive": True,
         "StandardOutPath": str(config / "logs" / "stdout.log"),
@@ -270,7 +315,17 @@ def _run(runner: Runner, cmd: list[str], actions: list[str]) -> None:
     actions.append(f"ran: {' '.join(cmd)}")
 
 
-def install_services(repo_root: Path, python: str, config_dir: Path, home: Path, platform: str, port: int = 8765, dry_run: bool = False, runner: Runner | None = None, env: Mapping[str, str] | None = None) -> list[str]:
+def install_services(
+    repo_root: Path,
+    python: str,
+    config_dir: Path,
+    home: Path,
+    platform: str,
+    port: int = 8765,
+    dry_run: bool = False,
+    runner: Runner | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[str]:
     """Install and start the user service for the current platform.
 
     Accepted model-route settings in env (the setup environment) are written into the service.

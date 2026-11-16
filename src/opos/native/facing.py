@@ -8,9 +8,10 @@ is the one facing up or toward the user, and z below -0.35 g means the left one 
 0) it cannot tell, and the screen the owner touched last stays. A verdict must hold for HOLD_S seconds before it
 replaces the one in force, so moving the phone about does not flip the screens.
 """
+
 from __future__ import annotations
 
-G = 1024.0                  # one g in the sensor's units
+G = 1024.0  # one g in the sensor's units
 THRESHOLD = 0.35 * G
 HOLD_S = 0.8
 LEFT, RIGHT = "left", "right"
@@ -33,14 +34,14 @@ class Facing:
 
     def __init__(self, fallback=None, hold_s=HOLD_S):
         self.hold_s, self.fallback = hold_s, fallback
-        self.current = None         # the verdict in force: LEFT, RIGHT or None
+        self.current = None  # the verdict in force: LEFT, RIGHT or None
         self._candidate, self._since = None, 0.0
 
     def update(self, z, now):
         """Feed one reading taken at `now`; returns the screen to keep lit (the fallback while there is no verdict)."""
         v = verdict(z)
         if v is None:
-            self._candidate = None      # an unclear reading breaks a run, but the verdict in force stays
+            self._candidate = None  # an unclear reading breaks a run, but the verdict in force stays
         elif v == self.current:
             self._candidate = None
         elif v != self._candidate:

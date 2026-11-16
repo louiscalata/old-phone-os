@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Calculator. The arithmetic runs in the page. Nothing is stored."""
+
 from pathlib import Path
 
 from opos import appdoc, apps
@@ -23,7 +24,9 @@ _THUMB = """
 </div>
 <p id="copy-line" role="status"></p>
 """
-_SCRIPT = _JS + r"""
+_SCRIPT = (
+    _JS
+    + r"""
 var expr='', tape=[];
 function G(i){return document.getElementById(i)}
 function show(text){G('result').textContent=text;}
@@ -38,6 +41,7 @@ expr+=k;show(expr);
 };
 show('0');
 """
+)
 
 
 def render(token, nonce):
@@ -48,9 +52,21 @@ def snapshot():
     return {"ok": True}
 
 
-apps.register(apps.App(
-    "calc", "Calculator", "/calc",
-    "Add, subtract, multiply and divide on this phone.",
-    "yes", "no", "none", "real", "calculator", "USEFUL", 0,
-    render, snapshot, None,
-))
+apps.register(
+    apps.App(
+        "calc",
+        "Calculator",
+        "/calc",
+        "Add, subtract, multiply and divide on this phone.",
+        "yes",
+        "no",
+        "none",
+        "real",
+        "calculator",
+        "USEFUL",
+        0,
+        render,
+        snapshot,
+        None,
+    )
+)

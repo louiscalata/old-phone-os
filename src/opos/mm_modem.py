@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """ModemManager modem foundation."""
+
 from __future__ import annotations
 
 import contextlib
@@ -21,11 +22,9 @@ SMS = "org.freedesktop.ModemManager1.Sms"
 class Bus(Protocol):
     """D-Bus call interface used by modem helpers."""
 
-    def call(self, bus_name: str, path: str, interface: str, method: str, *args: Any) -> Any:
-        ...
+    def call(self, bus_name: str, path: str, interface: str, method: str, *args: Any) -> Any: ...
 
-    def get(self, bus_name: str, path: str, interface: str, prop: str) -> Any:
-        ...
+    def get(self, bus_name: str, path: str, interface: str, prop: str) -> Any: ...
 
 
 _ESCAPES = {
@@ -286,11 +285,11 @@ def to_gvariant(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
-        if -2 ** 31 <= value <= 2 ** 31 - 1:
+        if -(2**31) <= value <= 2**31 - 1:
             return str(value)
-        if -2 ** 63 <= value <= 2 ** 63 - 1:
+        if -(2**63) <= value <= 2**63 - 1:
             return "int64 " + str(value)
-        if 2 ** 63 <= value <= 2 ** 64 - 1:
+        if 2**63 <= value <= 2**64 - 1:
             return "uint64 " + str(value)
         raise ValueError("integer out of GVariant range: " + str(value))
     if isinstance(value, str):

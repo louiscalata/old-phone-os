@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Benchmark battery policies on DrainSim."""
+
 import random
 import sys
 
@@ -52,6 +53,7 @@ def model_policy(model_path=None, *args, **kwargs):
 
     return policy
 
+
 EVAL_TASKS = DEFAULT_TASKS + (
     Task("app in use", Priority.ESSENTIAL, 1.0),
     Task("alarms", Priority.ESSENTIAL, 0.1),
@@ -92,18 +94,19 @@ def scenarios(n, seed):
     rng = random.Random(seed)
     out = []
     for _ in range(n):
-        out.append({
-            "level": rng.uniform(20, 100),
-            "health": rng.uniform(0.4, 1.0),
-            "temp_c": rng.uniform(20, 40),
-        })
+        out.append(
+            {
+                "level": rng.uniform(20, 100),
+                "health": rng.uniform(0.4, 1.0),
+                "temp_c": rng.uniform(20, 40),
+            }
+        )
     return out
 
 
 def run(policy, scenario, tick_s=60.0, max_min=24 * 60):
     """Simulate one scenario."""
-    sim = DrainSim(level=scenario["level"], health=scenario["health"],
-                   temp_c=scenario["temp_c"], speed=1.0)
+    sim = DrainSim(level=scenario["level"], health=scenario["health"], temp_c=scenario["temp_c"], speed=1.0)
     starved = 0
     useful_min = 0.0
     elapsed = 0

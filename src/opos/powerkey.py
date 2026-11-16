@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A Duo blank is a lease, justified again on each nonblocking input-loop tick."""
+
 from __future__ import annotations
 
 import fcntl
@@ -52,8 +53,7 @@ def parse_event(data: bytes) -> InputEvent:
 
 def expire_press(state: PressState, now_us: int) -> tuple[PressState, bool]:
     """Recover once for a lost release/long hold; suppress its eventual release."""
-    if (state.pressed_at is not None and not state.cancelled
-            and now_us - state.pressed_at > SHORT_PRESS_US):
+    if state.pressed_at is not None and not state.cancelled and now_us - state.pressed_at > SHORT_PRESS_US:
         return PressState(state.pressed_at, state.last_toggle, True), True
     return state, False
 
@@ -123,11 +123,17 @@ def write_panel_power(root, value: int) -> bool:
 def shell_active() -> bool:
     """Unit-active is a fallible lease probe, not compositor readiness."""
     try:
-        return subprocess.run(
-            ["systemctl", "is-active", "--quiet", "opos.service"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=0.5, check=False,
-        ).returncode == 0
+        return (
+            subprocess.run(
+                ["systemctl", "is-active", "--quiet", "opos.service"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=0.5,
+                check=False,
+            ).returncode
+            == 0
+        )
     except (OSError, subprocess.SubprocessError):
         return False
 
@@ -209,8 +215,7 @@ class PowerKey:
         """Rejustify a blank, retry recovery, and choose the next select timeout."""
         self.press, expired = expire_press(self.press, int(self.clock() * 1_000_000))
         powers = self.read()
-        if (expired or self.recovery_pending
-                or (powers != LIT and (powers != BLANK or not self.active()))):
+        if expired or self.recovery_pending or (powers != LIT and (powers != BLANK or not self.active())):
             powers = self.light()
         pending_press = self.press.pressed_at is not None and not self.press.cancelled
         if powers != LIT or self.recovery_pending or pending_press or self.dropped:
@@ -230,8 +235,11 @@ def open_input(root):
 
 
 def run(root="/", is_active=shell_active, *, controller=None, wait=select.select, open_device=open_input):
-    daemon = controller if controller is not None else PowerKey(
-        lambda: read_panels(root), lambda value: write_panel_power(root, value), is_active)
+    daemon = (
+        controller
+        if controller is not None
+        else PowerKey(lambda: read_panels(root), lambda value: write_panel_power(root, value), is_active)
+    )
     stream = None
     data = b""
     input_error = None
@@ -262,8 +270,8 @@ def run(root="/", is_active=shell_active, *, controller=None, wait=select.select
                     input_error = None
                     data += chunk
                 if len(data) >= INPUT_EVENT.size:
-                    daemon.event(parse_event(data[:INPUT_EVENT.size]))
-                    data = data[INPUT_EVENT.size:]
+                    daemon.event(parse_event(data[: INPUT_EVENT.size]))
+                    data = data[INPUT_EVENT.size :]
                     # Return through tick even between events already buffered.
             except (OSError, EOFError, ValueError) as exc:
                 error = str(exc)

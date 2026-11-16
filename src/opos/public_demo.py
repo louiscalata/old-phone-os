@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Explicit public, ephemeral simulation. Never start this through opos.web."""
+
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from http.cookies import CookieError, SimpleCookie
@@ -21,9 +22,27 @@ IDLE_SECONDS = 15 * 60
 MAX_SPEED = 60
 MAX_MESSAGES = 100
 MAX_IPS = 4096
-ACTIONS = frozenset({"battery", "temp", "call", "hang_up", "send", "receive", "open",
-                     "visible", "sim", "tick", "charge", "goal", "undo", "in_use",
-                     "explain", "plan", "ask"})
+ACTIONS = frozenset(
+    {
+        "battery",
+        "temp",
+        "call",
+        "hang_up",
+        "send",
+        "receive",
+        "open",
+        "visible",
+        "sim",
+        "tick",
+        "charge",
+        "goal",
+        "undo",
+        "in_use",
+        "explain",
+        "plan",
+        "ask",
+    }
+)
 
 
 def parse_hosts(value):
@@ -36,10 +55,12 @@ def parse_hosts(value):
         host = raw.strip()
         name, sep, port = host.partition(":")
         labels = name.split(".")
-        if (len(host) > 253 or not name or
-                any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", p)
-                    for p in labels) or
-                (sep and (not re.fullmatch(r"[0-9]{1,5}", port) or not 1 <= int(port) <= 65535))):
+        if (
+            len(host) > 253
+            or not name
+            or any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", p) for p in labels)
+            or (sep and (not re.fullmatch(r"[0-9]{1,5}", port) or not 1 <= int(port) <= 65535))
+        ):
             raise ValueError("OPOS_PUBLIC_HOSTS must contain exact hosts, without schemes, paths or wildcards")
         result.add(host)
     return frozenset(result)
@@ -47,6 +68,7 @@ def parse_hosts(value):
 
 class DemoPhone(web.Phone):
     """Reuse the simulation with no host preferences, diagnostics or helper routes."""
+
     def __init__(self):
         super().__init__(visible=True)  # Runtime constructs only the deterministic Router.
         self.modem.events = deque(maxlen=MAX_MESSAGES)
@@ -59,8 +81,7 @@ class DemoPhone(web.Phone):
     def state(self):
         state = super().state()
         battery = state["battery"]
-        if (battery["goal_met"] and not state["charging"] and
-                not battery["goal_note"] and battery["calls_until"]):
+        if battery["goal_met"] and not state["charging"] and not battery["goal_note"] and battery["calls_until"]:
             battery["goal_note"] = "Calls and messages until ~" + battery["calls_until"]
         return state
 
@@ -81,8 +102,12 @@ class DemoPhone(web.Phone):
         if not self.visible:
             return {"error": "helper hidden"}
         if action == "plan":
-            return {"order": list(state["battery"]["steps"]), "engine": "rules",
-                    "where": "battery rules", "credit": "Based on current battery rules."}
+            return {
+                "order": list(state["battery"]["steps"]),
+                "engine": "rules",
+                "where": "battery rules",
+                "credit": "Based on current battery rules.",
+            }
         text = state["helper"]["why_paused"]
         if action == "ask":
             question = question.strip()
@@ -91,10 +116,10 @@ class DemoPhone(web.Phone):
             if re.search(r"\b(?:until|by)\b", question, re.I):
                 text = self._deadline_reply(question, state)
             elif not re.search(r"\b(?:why|battery|power|paus\w*|calls?|messages?)\b", question, re.I):
-                text = ("I can explain this simulated battery and its paused tasks. "
-                        "Try asking: Will calls last until 4 PM?")
-        return {"ok": True, "text": text,
-                "engine": "rules", "where": "battery rules", "sources": []}
+                text = (
+                    "I can explain this simulated battery and its paused tasks. Try asking: Will calls last until 4 PM?"
+                )
+        return {"ok": True, "text": text, "engine": "rules", "where": "battery rules", "sources": []}
 
     def _deadline_reply(self, question, state):
         match = re.search(r"\b(?:until|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", question, re.I)
@@ -102,8 +127,7 @@ class DemoPhone(web.Phone):
             return "Use a time like 16:00 or 4 PM so I can compare it with the battery estimate."
         hour, minute, suffix = match.groups()
         hour, minute = int(hour), int(minute or 0)
-        if (minute > 59 or (suffix and not 1 <= hour <= 12) or
-                (not suffix and (hour > 23 or match.group(2) is None))):
+        if minute > 59 or (suffix and not 1 <= hour <= 12) or (not suffix and (hour > 23 or match.group(2) is None)):
             return "Use a time like 16:00 or 4 PM so I can compare it with the battery estimate."
         if suffix:
             hour = hour % 12 + (12 if suffix.lower() == "pm" else 0)
@@ -134,6 +158,7 @@ class Session:
 
 class Sessions:
     """Bounded idle-expiring LRU. In-flight references are bounded by server connections."""
+
     def __init__(self, capacity=MAX_SESSIONS, idle=IDLE_SECONDS, clock=time.monotonic):
         if not 1 <= capacity <= MAX_SESSIONS or not 0 < idle <= IDLE_SECONDS:
             raise ValueError("invalid session limits")
@@ -161,6 +186,7 @@ class Sessions:
 
 class IPLimits:
     """Bounded token buckets: fail closed at capacity, reclaim only idle entries."""
+
     def __init__(self, rate=8.0, burst=40, capacity=MAX_IPS, clock=time.monotonic):
         self.rate, self.burst, self.capacity, self.clock = rate, burst, capacity, clock
         self.items = OrderedDict()
@@ -187,30 +213,46 @@ class IPLimits:
 def landing(token, nonce, demo=False):
     """Compose around the unchanged phone page; its byte budget stays independent."""
     page = web.page(token, nonce, demo=demo)
-    page = page.replace('<a id=upd href=/update>Updates</a>', '', 1)  # Settings' link to the software-updates page: this server has none
-    page = page.replace("</head>", '<meta name="description" content="Try a simulated phone that saves battery for calls and messages. A hackathon interface prototype, not an operating system; not run on a physical phone."><meta property="og:title" content="Old Phone OS Interface"><meta property="og:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Old Phone OS Interface"><meta name="twitter:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta property="og:type" content="website">' + "</head>", 1)
-    page = page.replace('<div id="about-notices">', '<div id="about-notices">'
-                        '<p id="public-about">This public simulation runs on a web server. '
-                        'It makes no model calls, changes no device settings and places no real calls. '
-                        'The notices below describe the separate installable OPOS prototype.</p>', 1)
-    page = page.replace('License, privacy and tested limits</summary>',
-                        'Installed OPOS notices</summary>', 1)
+    page = page.replace(
+        "<a id=upd href=/update>Updates</a>", "", 1
+    )  # Settings' link to the software-updates page: this server has none
+    page = page.replace(
+        "</head>",
+        '<meta name="description" content="Try a simulated phone that saves battery for calls and messages. A hackathon interface prototype, not an operating system; not run on a physical phone."><meta property="og:title" content="Old Phone OS Interface"><meta property="og:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Old Phone OS Interface"><meta name="twitter:description" content="Explore simulated battery, calls and messages. Not an operating system; not run on a physical phone."><meta property="og:type" content="website">'
+        + "</head>",
+        1,
+    )
+    page = page.replace(
+        '<div id="about-notices">',
+        '<div id="about-notices">'
+        '<p id="public-about">This public simulation runs on a web server. '
+        "It makes no model calls, changes no device settings and places no real calls. "
+        "The notices below describe the separate installable OPOS prototype.</p>",
+        1,
+    )
+    page = page.replace("License, privacy and tested limits</summary>", "Installed OPOS notices</summary>", 1)
     assets = Path(__file__).with_name("public_static")
     css = (assets / "public-demo.css").read_text(encoding="utf-8")
     script = (assets / "public-demo.js").read_text(encoding="utf-8")
     intro = (assets / "public-demo.html").read_text(encoding="utf-8")
     page = page.replace("</head>", f'<style nonce="{nonce}">{css}</style></head>', 1)
-    page = page.replace("<body>", '<body class="public-demo">' + intro +
-                        '<main id="try-phone"><div class="public-device" aria-label="Simulated phone">', 1)
+    page = page.replace(
+        "<body>",
+        '<body class="public-demo">'
+        + intro
+        + '<main id="try-phone"><div class="public-device" aria-label="Simulated phone">',
+        1,
+    )
     page = page.replace('<div id="demo"', '</div><div id="demo"', 1)
     # Install token rotation before the phone scripts start their initial fetch.
     marker = f'<script nonce="{nonce}">'
-    page = page.replace(marker, f'</main>{marker}{script}</script>{marker}', 1)
+    page = page.replace(marker, f"</main>{marker}{script}</script>{marker}", 1)
     return page
 
 
 class Handler(web.Handler):
     """Reuse deadlines / bounded server plumbing, never the local route dispatcher."""
+
     server_version = "OPOS"
     sys_version = ""
 
@@ -273,9 +315,12 @@ class Handler(web.Handler):
         if origins and origins != [f"{scheme}://{host}"]:
             self._deny(403, "origin not allowed", "origin")
             return False
-        navigation = (self.command == "GET" and self.path in ("/", "/?demo=1") and
-                      self._one("Sec-Fetch-Mode") == "navigate" and
-                      self._one("Sec-Fetch-Dest") == "document")
+        navigation = (
+            self.command == "GET"
+            and self.path in ("/", "/?demo=1")
+            and self._one("Sec-Fetch-Mode") == "navigate"
+            and self._one("Sec-Fetch-Dest") == "document"
+        )
         if self.headers.get("Sec-Fetch-Site") == "cross-site" and not navigation:
             self._deny(403, "cross-site request", "origin")
             return False
@@ -346,8 +391,11 @@ class Handler(web.Handler):
             sid = cookie[COOKIE].value if COOKIE in cookie else ""
             self.sid, self.session, self.fresh = self.sessions.get(sid)
             nonce = secure.new_token()
-            self._respond(landing(self.session.token, nonce, self.path.endswith("demo=1")).encode(),
-                          content_type="text/html; charset=utf-8", nonce=nonce)
+            self._respond(
+                landing(self.session.token, nonce, self.path.endswith("demo=1")).encode(),
+                content_type="text/html; charset=utf-8",
+                nonce=nonce,
+            )
         elif self.path == "/api/state":
             if self._session():
                 with self.session.lock:
@@ -395,7 +443,9 @@ class Handler(web.Handler):
                 if action in {"ask", "plan", "explain"}:
                     snap.update(session.phone.reply(action, data.get("text", "")))
             elif action in {"ask", "plan", "explain"}:
-                snap = session.phone.reply(action, data.get("text", ""))  # 'web' is ignored; no network capability exists.
+                snap = session.phone.reply(
+                    action, data.get("text", "")
+                )  # 'web' is ignored; no network capability exists.
             else:
                 try:
                     valid = web.apply_phone_action(session.phone, data)
@@ -424,6 +474,7 @@ class Handler(web.Handler):
 
 class PublicServer(web._Server):
     """Retain bounded admission without HTTPServer's reverse-DNS startup lookup."""
+
     def server_bind(self):
         socketserver.TCPServer.server_bind(self)
         self.server_name = self.server_address[0]
@@ -433,8 +484,10 @@ class PublicServer(web._Server):
 def make_server(port, hosts, *, trust_proxy=False, sessions=None, ip_limits=None):
     """The sole explicit public bind path. Does not call or weaken web.make_server."""
     allowed = parse_hosts(hosts)
+
     class Bound(Handler):
         pass
+
     Bound.hosts = allowed
     Bound.trust_proxy = trust_proxy
     Bound.sessions = sessions if sessions is not None else Sessions()
@@ -447,12 +500,16 @@ def main():
         port = int(os.environ.get("PORT", "8080"))
         if not 1 <= port <= 65535:
             raise ValueError("PORT must be 1 to 65535")
-        server = make_server(port, os.environ.get("OPOS_PUBLIC_HOSTS", ""),
-                             trust_proxy=os.environ.get("OPOS_TRUST_PROXY") == "1")
+        server = make_server(
+            port, os.environ.get("OPOS_PUBLIC_HOSTS", ""), trust_proxy=os.environ.get("OPOS_TRUST_PROXY") == "1"
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     first_host = os.environ.get("OPOS_PUBLIC_HOSTS", "").split(",")[0].strip()
-    print(f"OPOS public simulation listening on 0.0.0.0:{port}; open {first_host}/ in a browser (Ctrl-C to stop)", flush=True)
+    print(
+        f"OPOS public simulation listening on 0.0.0.0:{port}; open {first_host}/ in a browser (Ctrl-C to stop)",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -6,6 +6,7 @@ sent" only inside the server. While that is so, the page must say practice, not 
 must never pretend to reach an emergency number. web.py keeps one-line hooks into this module (notice_for, Phone.call,
 Phone.state); everything here is plain text and arithmetic.
 """
+
 from opos.essentials import normalize_number
 from opos.ui import ScreenModem
 

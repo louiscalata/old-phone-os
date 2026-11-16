@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fast install-time self-test for Old Phone OS Interface."""
+
 from __future__ import annotations
 import contextlib
 import http.client
@@ -14,12 +15,14 @@ from typing import Any
 
 Check = tuple[str, bool, str]
 
+
 def _fmt(e: Exception) -> str:
     """Format failure detail without leaking paths."""
     if isinstance(e, AssertionError):
         m = str(e)
         return f"{type(e).__name__}: {m}" if m else type(e).__name__
     return type(e).__name__
+
 
 def _get(host: str, port: int, path: str, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
     """Perform HTTP GET."""
@@ -31,12 +34,14 @@ def _get(host: str, port: int, path: str, headers: dict[str, str] | None = None)
     c.close()
     return s, d
 
+
 def _serve(srv: Any) -> threading.Thread:
     """Serve server in background."""
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     time.sleep(0.15)
     return t
+
 
 def run_checks(repo_root: Path | None = None) -> list[Check]:
     """Run all self-tests."""
@@ -61,11 +66,13 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             import opos.setup.apply  # noqa: F401
             import opos.setup.server  # noqa: F401
             import opos.setup.wizard_page  # noqa: F401
+
             out.append(("imports", True, "ok"))
         except Exception as e:
             out.append(("imports", False, _fmt(e)))
         try:
             from opos.setup.config import default_config, load, save
+
             cfg = default_config()
             p = tdp / "cfg.json"
             save(cfg, p)
@@ -79,6 +86,7 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             out.append(("config", False, _fmt(e)))
         try:
             from opos.setup.config import ensure_token
+
             pp = tdp / "tok"
             a = ensure_token(pp)
             b = ensure_token(pp)
@@ -89,6 +97,7 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             out.append(("token", False, _fmt(e)))
         try:
             from opos.setup.device import detect_device
+
             d = detect_device("/", config_dir=tdp)  # type: ignore[call-arg]
             if not isinstance(d, dict) or not all(k in d for k in ("id", "name", "source")):
                 raise AssertionError("device missing required keys")
@@ -97,6 +106,7 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             out.append(("device", False, _fmt(e)))
         try:
             from opos.setup.services import read_unit_template, render_launchd_plist, render_user_unit
+
             tpl = read_unit_template(repo_root)
             unit = render_user_unit(tpl, repo_root, sys.executable, tdp, port=8765)
             _ = render_launchd_plist(repo_root, sys.executable, tdp, port=8765)
@@ -107,14 +117,24 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             out.append(("services", False, _fmt(e)))
         try:
             from opos.setup.server import SetupContext, make_server
-            ctx = SetupContext(repo_root=repo_root, python=sys.executable, home=tdp, platform=sys.platform, env={"OPOS_CONFIG_DIR": str(tdp)}, dry_run=True)
+
+            ctx = SetupContext(
+                repo_root=repo_root,
+                python=sys.executable,
+                home=tdp,
+                platform=sys.platform,
+                env={"OPOS_CONFIG_DIR": str(tdp)},
+                dry_run=True,
+            )
             srv = make_server(0, ctx, host="127.0.0.1")
             _serve(srv)
             port = srv.server_address[1]
             s1, _ = _get("127.0.0.1", port, "/", headers={"Host": f"127.0.0.1:{port}"})
             if s1 != 200:
                 raise AssertionError(f"wizard root status {s1} != 200")
-            s2, body = _get("127.0.0.1", port, "/setup/api/state", headers={"Host": f"127.0.0.1:{port}", "X-OPOS-Token": srv.token})
+            s2, body = _get(
+                "127.0.0.1", port, "/setup/api/state", headers={"Host": f"127.0.0.1:{port}", "X-OPOS-Token": srv.token}
+            )
             if s2 != 200:
                 raise AssertionError(f"wizard state status {s2} != 200")
             if "device" not in json.loads(body):
@@ -130,6 +150,7 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
         try:
             from opos.setup.config import ensure_token as et2
             from opos.web import Phone, make_server as make_app
+
             tok = et2(tdp / "app-token")
             srv2 = make_app(0, Phone(), host="127.0.0.1", token=tok)
             _serve(srv2)
@@ -149,6 +170,7 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             out.append(("app", False, _fmt(e)))
     return out
 
+
 def main(argv: list[str] | None = None) -> int:
     """Run CLI."""
     cs = run_checks()
@@ -159,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             ok = False
     print("self-test passed" if ok else "self-test FAILED")
     return 0 if ok else 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

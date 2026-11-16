@@ -51,7 +51,9 @@ def default_fetch(url: str, max_bytes: int = 2_000_000, timeout_s: float = 30.0,
             final = r.geturl() if hasattr(r, "geturl") else url
             # A custom opener could follow a redirect; only the requested https host is accepted.
             if not isinstance(final, str) or not final.startswith("https://") or _origin(final) != _origin(url):
-                raise InstallError(f"redirect not followed: {url} ended at {_printable(final)}; OPOS downloads installers only from the catalog URL")
+                raise InstallError(
+                    f"redirect not followed: {url} ended at {_printable(final)}; OPOS downloads installers only from the catalog URL"
+                )
             data = r.read(max_bytes + 1)
     except InstallError:
         raise
@@ -60,7 +62,9 @@ def default_fetch(url: str, max_bytes: int = 2_000_000, timeout_s: float = 30.0,
         with contextlib.suppress(Exception):
             e.close()
         if 300 <= e.code < 400:
-            raise InstallError(f"redirect not followed: {url} answered HTTP {e.code} to {_printable(location or 'another address')}; OPOS downloads installers only from the catalog URL, so update installer_url and installer_sha256") from e
+            raise InstallError(
+                f"redirect not followed: {url} answered HTTP {e.code} to {_printable(location or 'another address')}; OPOS downloads installers only from the catalog URL, so update installer_url and installer_sha256"
+            ) from e
         raise InstallError(f"HTTP {e.code} from {url}") from e
     except Exception as e:
         raise InstallError(str(e)) from e
@@ -87,13 +91,23 @@ def _check_digest(tool: Tool, path: str) -> None:
     got = h.hexdigest()
     if got != tool.installer_sha256:
         when = f" (measured {tool.installer_sha256_checked})" if tool.installer_sha256_checked else ""
-        raise InstallError(f"the vendor installer changed: {tool.installer_url} now has sha256 {got[:16]}..., the catalog lists {tool.installer_sha256[:16]}...{when}; nothing was run. Review the new script, then update installer_sha256 in the catalog.")
+        raise InstallError(
+            f"the vendor installer changed: {tool.installer_url} now has sha256 {got[:16]}..., the catalog lists {tool.installer_sha256[:16]}...{when}; nothing was run. Review the new script, then update installer_sha256 in the catalog."
+        )
 
 
 def default_runner(argv: Sequence[str], env: Mapping[str, str], timeout_s: float) -> tuple[int, str]:
     """run subprocess without shell"""
     try:
-        cp = subprocess.run(list(argv), env=dict(env), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout_s, text=True)
+        cp = subprocess.run(
+            list(argv),
+            env=dict(env),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_s,
+            text=True,
+        )
         return cp.returncode, (cp.stdout or "")[-2000:]
     except subprocess.TimeoutExpired:
         return 124, "timed out"
@@ -135,7 +149,12 @@ def _inside(child: Path, parent: Path) -> bool:
 
 def _runner_env(sandbox: Path, extra: Mapping[str, str]) -> dict[str, str]:
     """env for vendor installer"""
-    e: dict[str, str] = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(sandbox), "LANG": "C.UTF-8", "TERM": "dumb"}
+    e: dict[str, str] = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(sandbox),
+        "LANG": "C.UTF-8",
+        "TERM": "dumb",
+    }
     e.update(extra)
     return e
 
@@ -186,7 +205,23 @@ def _remove_fresh_dir(tid_dir: Path, tr: Path, had: bool) -> None:
             shutil.rmtree(tid_dir)
 
 
-def install(tool: Tool, *, prefix: Path, mode: str, machine: str, home: Path, python: str, src_dir: Path, fetch: Fetch = default_fetch, runner: Runner = default_runner, free_mb_fn: Callable[[Path], int] = place.free_mb, profiles: Sequence[Path] | None = None, dry_run: bool = False, force: bool = False, all_tools: Sequence[Tool] | None = None) -> list[str]:
+def install(
+    tool: Tool,
+    *,
+    prefix: Path,
+    mode: str,
+    machine: str,
+    home: Path,
+    python: str,
+    src_dir: Path,
+    fetch: Fetch = default_fetch,
+    runner: Runner = default_runner,
+    free_mb_fn: Callable[[Path], int] = place.free_mb,
+    profiles: Sequence[Path] | None = None,
+    dry_run: bool = False,
+    force: bool = False,
+    all_tools: Sequence[Tool] | None = None,
+) -> list[str]:
     """install tool and update manifest"""
     if mode not in place.MODES:
         raise InstallError(f"unknown mode: {mode}")
@@ -261,7 +296,11 @@ def install(tool: Tool, *, prefix: Path, mode: str, machine: str, home: Path, py
         raise InstallError(str(e)) from e
     if dry_run:
         # Kept short: setup shows at most 300 characters of this joined list, and the sign-in line comes last.
-        return [f"would install {tool.id} to {prefix}", f"would fetch {tool.installer_url} and run it only if its sha256 matches", f"Sign in yourself: {tool.signin}"]
+        return [
+            f"would install {tool.id} to {prefix}",
+            f"would fetch {tool.installer_url} and run it only if its sha256 matches",
+            f"Sign in yourself: {tool.signin}",
+        ]
     _ensure_dirs(sandbox, tid_dir, bin_dir, run_dir)
     need_fetch = force or not (real_bin.is_file() and os.access(real_bin, os.X_OK))
     if need_fetch:
@@ -336,7 +375,14 @@ def install(tool: Tool, *, prefix: Path, mode: str, machine: str, home: Path, py
         if x not in seen:
             seen.add(x)
             merged.append(x)
-    new_manifest = {"version": 1, "mode": mode, "python": python, "src_dir": str(src_dir), "profiles": merged, "tools": tools_dict}
+    new_manifest = {
+        "version": 1,
+        "mode": mode,
+        "python": python,
+        "src_dir": str(src_dir),
+        "profiles": merged,
+        "tools": tools_dict,
+    }
     mp = manifest_path(prefix)
     try:
         old_bytes = mp.read_bytes() if mp.is_file() else None
@@ -466,7 +512,9 @@ def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
         raise InstallError(msg) from e
     out = [f"mode set to {mode}"]
     for tid in missing:
-        out.append(f"missing catalog entry: {tid} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)")
+        out.append(
+            f"missing catalog entry: {tid} (wrapper left unchanged; restore this tool's original catalog entry, including installer_url, then rerun the mode command)"
+        )
     return out
 
 

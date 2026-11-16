@@ -4,6 +4,7 @@
 Also installed verbatim at /usr/libexec/opos/image_identity.py, outside the
 application release, for opos-version and the image acceptance checks.
 """
+
 import argparse
 import hashlib
 import json
@@ -18,8 +19,14 @@ from pathlib import Path, PurePosixPath
 HEX = re.compile(r"[0-9a-f]{64}")
 REV = re.compile(r"[0-9a-f]{40}")
 VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z._+-]{0,63}")
-REQUIRED = {"etc/os-release", "usr/lib/os-release.base", "etc/issue", "etc/hostname",
-            "usr/bin/opos-version", "usr/libexec/opos/image_identity.py"}
+REQUIRED = {
+    "etc/os-release",
+    "usr/lib/os-release.base",
+    "etc/issue",
+    "etc/hostname",
+    "usr/bin/opos-version",
+    "usr/libexec/opos/image_identity.py",
+}
 
 
 def canonical(data):
@@ -58,8 +65,9 @@ def parse_manifest(data):
     if not isinstance(m.get("home_url"), str) or not m["home_url"].startswith("https://"):
         raise ValueError("invalid repository URL")
     switches = m.get("switches")
-    if not isinstance(switches, dict) or not all(isinstance(k, str) and k.startswith("OPOS_") and isinstance(v, str)
-                                               for k, v in switches.items()):
+    if not isinstance(switches, dict) or not all(
+        isinstance(k, str) and k.startswith("OPOS_") and isinstance(v, str) for k, v in switches.items()
+    ):
         raise ValueError("invalid baked switches")
     files = m.get("files")
     if not isinstance(files, list) or not 1 <= len(files) <= 100000:
@@ -69,9 +77,16 @@ def parse_manifest(data):
         if not isinstance(f, dict) or f.get("type") not in ("file", "symlink"):
             raise ValueError("invalid file record")
         p = f.get("path")
-        if (not isinstance(p, str) or not p or PurePosixPath(p).is_absolute() or
-                any(x in ("", ".", "..") for x in p.split("/")) or "\x00" in p or
-                "\\" in p or p in seen or p == "etc/opos/image.json"):
+        if (
+            not isinstance(p, str)
+            or not p
+            or PurePosixPath(p).is_absolute()
+            or any(x in ("", ".", "..") for x in p.split("/"))
+            or "\x00" in p
+            or "\\" in p
+            or p in seen
+            or p == "etc/opos/image.json"
+        ):
             raise ValueError("unsafe or duplicate manifest path")
         seen.add(p)
         if not isinstance(f.get("sha256"), str) or not HEX.fullmatch(f["sha256"]):
@@ -149,8 +164,12 @@ def record(root, name):
     mode = p.lstat().st_mode
     if stat.S_ISLNK(mode):
         target = os.readlink(p)
-        return {"path": name, "type": "symlink", "target": target,
-                "sha256": hashlib.sha256(target.encode("utf-8")).hexdigest()}
+        return {
+            "path": name,
+            "type": "symlink",
+            "target": target,
+            "sha256": hashlib.sha256(target.encode("utf-8")).hexdigest(),
+        }
     if not stat.S_ISREG(mode):
         raise ValueError("not a regular file: " + name)
     return {"path": name, "type": "file", "sha256": hash_file(p)}
@@ -163,9 +182,16 @@ def ancestry(fields):
 def verify(root="/", *, unreadable=None):
     m = parse_manifest(rooted(root, "etc/opos/image.json").read_bytes())
     current = os_release(rooted(root, "etc/os-release").read_text(encoding="utf-8"))
-    want = {"NAME": "Old Phone OS", "ID": "opos", "ID_LIKE": ancestry(m["base"]["os_release"]),
-            "VERSION": m["version"], "VERSION_ID": m["version"], "BUILD_ID": m["build_id"],
-            "PRETTY_NAME": "Old Phone OS " + m["version"], "HOME_URL": m["home_url"]}
+    want = {
+        "NAME": "Old Phone OS",
+        "ID": "opos",
+        "ID_LIKE": ancestry(m["base"]["os_release"]),
+        "VERSION": m["version"],
+        "VERSION_ID": m["version"],
+        "BUILD_ID": m["build_id"],
+        "PRETTY_NAME": "Old Phone OS " + m["version"],
+        "HOME_URL": m["home_url"],
+    }
     for key, value in want.items():
         if current.get(key) != value:
             raise ValueError("os-release " + key + " differs from image manifest")
@@ -192,10 +218,18 @@ def facts(root="/", kernel=None):
     try:
         current = os_release(rooted(root, "etc/os-release").read_text(encoding="utf-8"))
         m = parse_manifest(rooted(root, "etc/opos/image.json").read_bytes())
-        if current.get("ID") != "opos" or current.get("VERSION_ID") != m["version"] or current.get("BUILD_ID") != m["build_id"]:
+        if (
+            current.get("ID") != "opos"
+            or current.get("VERSION_ID") != m["version"]
+            or current.get("BUILD_ID") != m["build_id"]
+        ):
             raise ValueError("OS identity and manifest disagree")
-        return {"version": current["VERSION_ID"], "revision": m["revision"],
-                "base": m["base"]["os_release"]["NAME"], "kernel": kernel or platform.release()}
+        return {
+            "version": current["VERSION_ID"],
+            "revision": m["revision"],
+            "base": m["base"]["os_release"]["NAME"],
+            "kernel": kernel or platform.release(),
+        }
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -208,8 +242,10 @@ def main(argv=None):
     try:
         if a.command == "check":
             m = verify(a.root)
-            print("PASS identity: ID=opos, preserved base, %d file hashes; %s %s" %
-                  (len(m["files"]), m["version"], m["build_id"]))
+            print(
+                "PASS identity: ID=opos, preserved base, %d file hashes; %s %s"
+                % (len(m["files"]), m["version"], m["build_id"])
+            )
         else:
             f = facts(a.root)
             if f is None:

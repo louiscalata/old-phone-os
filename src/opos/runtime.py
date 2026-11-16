@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The final decision: the policy's soft pauses, then the owner's overrides, then the hard floors."""
+
 from dataclasses import dataclass
 from opos.governor import PowerState, Priority, Task, Governor, Decision, Mode, rule_decide
 from opos.battery import Sample, DrainEstimator, hours_left, essentials_reserve
@@ -24,13 +25,19 @@ HARD_FLOORS = ("reserve", "hot", "low")
 # Soft causes, which the owner's Undo and foreground use may override: "goal", "optional"
 # (usable battery under 80 percent), "horizon" (not enough for the next 4 hours), "rules"
 # (the battery rules' SAVER mode), "glimmer" (Muse Glimmer's extra pause) and "other".
-_ROUTER_CAUSES = {"would miss your goal": "goal", "battery below 80 percent": "optional",
-                  "not enough for the next 4 hours": "horizon", "too hot": "hot"}
+_ROUTER_CAUSES = {
+    "would miss your goal": "goal",
+    "battery below 80 percent": "optional",
+    "not enough for the next 4 hours": "horizon",
+    "too hot": "hot",
+}
 _ORDER = {Mode.NORMAL: 0, Mode.SAVER: 1, Mode.CRITICAL: 2}
+
 
 def _goal_refused(verdicts):
     """Names the goal budget does not fund."""
     return {name for name, (ok, why) in verdicts.items() if not ok and why == GOAL_MISS}
+
 
 @dataclass(frozen=True)
 class Tick:
@@ -47,6 +54,7 @@ class Tick:
     def held(self):
         """Paused tasks a hard floor refuses; Undo and foreground use do not change these."""
         return tuple(name for name, cause in self.causes if cause in HARD_FLOORS)
+
 
 class Runtime:
     def __init__(self, visible=False, tasks=DEFAULT_TASKS):
@@ -98,8 +106,11 @@ class Runtime:
         h_left = hours_left(level, rate) if rate and rate != 0 else float("inf")
         waived = goal_hours is not None and not charging and temp_c < HOT_C
         held = {}
-        floors = (("reserve", level <= essentials_reserve(None) or (level <= reserve and not waived)),
-                  ("hot", temp_c >= HOT_C), ("low", rules.mode == Mode.CRITICAL))
+        floors = (
+            ("reserve", level <= essentials_reserve(None) or (level <= reserve and not waived)),
+            ("hot", temp_c >= HOT_C),
+            ("low", rules.mode == Mode.CRITICAL),
+        )
         for floor, active in floors:
             if active:
                 for name in names:
@@ -123,14 +134,29 @@ class Runtime:
             before_reserve = final
             final = apply_reserve(final, level, temp_c, health, self.tasks)
             final = Decision(final.mode, self._ordered(final.allowed), self._ordered(final.deferred), final.reason)
-            if before_reserve.reason.startswith("router+glimmer") and not set(final.deferred).difference(before_reserve.deferred):
+            if before_reserve.reason.startswith("router+glimmer") and not set(final.deferred).difference(
+                before_reserve.deferred
+            ):
                 final = Decision(final.mode, final.allowed, final.deferred, before_reserve.reason)
         causes = self._causes(final, held, verdicts, rules, goal_paused)
-        if final.reason.startswith("router+glimmer") and overridden - set(held) and "glimmer" not in dict(causes).values():
+        if (
+            final.reason.startswith("router+glimmer")
+            and overridden - set(held)
+            and "glimmer" not in dict(causes).values()
+        ):
             # The owner turned Glimmer's only extra pauses back on: the battery rules decide again.
-            final = Decision(final.mode, final.allowed, final.deferred, f"router: allowed {len(final.allowed)}, deferred {len(final.deferred)}")
+            final = Decision(
+                final.mode,
+                final.allowed,
+                final.deferred,
+                f"router: allowed {len(final.allowed)}, deferred {len(final.deferred)}",
+            )
         # The fewest saving steps that, with the final pauses, fit the goal.
-        steps = steps_for_goal(level, goal_hours, self.tasks, final.deferred, health) if goal_hours is not None and not charging else ()
+        steps = (
+            steps_for_goal(level, goal_hours, self.tasks, final.deferred, health)
+            if goal_hours is not None and not charging
+            else ()
+        )
         budget = budget_for(final.mode, temp_c)
         screen = home_screen(level, final, visible=self.visible)
         drain = total_drain(self.tasks, paused=final.deferred, steps=steps, health=health)

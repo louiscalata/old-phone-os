@@ -5,6 +5,7 @@ Separate pages, not part of the main page (which is at its size budget). Touch o
 needs the keyboard. On the 1392 px wide two-panel screen the page keeps its text in the left panel and its controls in
 the right one, so nothing sits on the 42 px hinge. Styled with the main page's Jaryo colors and type.
 """
+
 from html import escape
 
 from opos import secure
@@ -223,7 +224,11 @@ function(x){msg('The time zones could not load ('+x.message+').')});
 
 
 def _page(title, token, body, script, nonce):
-    head = _HEAD.replace("@@TOKEN@@", escape(token, quote=True)).replace("@@TITLE@@", escape(title)).replace("@@CSS@@", CSS)
+    head = (
+        _HEAD.replace("@@TOKEN@@", escape(token, quote=True))
+        .replace("@@TITLE@@", escape(title))
+        .replace("@@CSS@@", CSS)
+    )
     return secure.add_nonce(head + body + "<script>" + _COMMON_JS + script + "</script>\n</body>\n</html>\n", nonce)
 
 

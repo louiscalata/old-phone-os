@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Single-page setup wizard for Old Phone OS Interface."""
+
 from __future__ import annotations
 import html
 import re
@@ -503,17 +504,22 @@ def _with_headings(fragment: str) -> str:
     Choice steps are fieldsets named by a legend. HTML lets a legend contain a heading, so the
     legend wraps an h3: the group keeps its name and the step keeps a real heading to focus.
     """
-    return _LEGEND.sub(lambda m: '<legend><h3 tabindex="-1">' + m.group(1) + '</h3></legend>', fragment)
+    return _LEGEND.sub(lambda m: '<legend><h3 tabindex="-1">' + m.group(1) + "</h3></legend>", fragment)
 
 
 def page(token: str, nonce: str) -> str:
     """Return full HTML with token meta and nonced script/style."""
     esc: str = html.escape(token, quote=True)
-    h: str = _TEMPLATE.replace("<title>Old Phone OS Interface setup</title>", f'<meta name="opos-token" content="{esc}"><title>Old Phone OS Interface setup</title>')
+    h: str = _TEMPLATE.replace(
+        "<title>Old Phone OS Interface setup</title>",
+        f'<meta name="opos-token" content="{esc}"><title>Old Phone OS Interface setup</title>',
+    )
     # JRY33: the install notices come first, before step s1; they need no script.
-    h = h.replace('<section class="step panel" id="s1">', notices_screen.fragment() + '<section class="step panel" id="s1">', 1)
-    h = h.replace('</main>', _with_headings(jaryo_steps.fragment()) + '\n</main>', 1)
-    h = h.replace('</style>', notices_screen.STYLE + jaryo_steps.STYLE + _JARYO_STYLE + '\n</style>', 1)
+    h = h.replace(
+        '<section class="step panel" id="s1">', notices_screen.fragment() + '<section class="step panel" id="s1">', 1
+    )
+    h = h.replace("</main>", _with_headings(jaryo_steps.fragment()) + "\n</main>", 1)
+    h = h.replace("</style>", notices_screen.STYLE + jaryo_steps.STYLE + _JARYO_STYLE + "\n</style>", 1)
     # JARYO_SCRIPT is the one personal-steps runtime (JRY22 recovery, JRY32 edition and JRY34 PIN).
-    h = h.replace('load();updMeter();\n</script>', JARYO_SCRIPT + '\nload();updMeter();\n</script>', 1)
+    h = h.replace("load();updMeter();\n</script>", JARYO_SCRIPT + "\nload();updMeter();\n</script>", 1)
     return secure.add_nonce(h, nonce)

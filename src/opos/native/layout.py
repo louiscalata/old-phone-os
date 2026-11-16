@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The parts of the native shell that need no toolkit: the hinge gap, which hand, and what a swipe or a drag means. Pure functions."""
+
 from __future__ import annotations
 
 import json
@@ -7,21 +8,21 @@ import os
 import re
 from pathlib import Path
 
-EDGE = 48     # a swipe that starts this close to an edge is an edge swipe (logical pixels)
-FAR = 80      # how fast a swipe must be to count (the toolkit reports a velocity in pixels per second)
+EDGE = 48  # a swipe that starts this close to an edge is an edge swipe (logical pixels)
+FAR = 80  # how fast a swipe must be to count (the toolkit reports a velocity in pixels per second)
 MIDDLE = 110  # a sideways swipe that starts this close to the hinge (or the middle of one screen) moves the buttons
 
 # Drags that follow the finger (drag_kind and the functions after it). Travel is a fraction of the window's height.
 # Following the finger is direct manipulation, not animation: each frame shows the surface where the finger has put it,
 # and letting go settles in one frame (no easing, no coasting, no spring). Only the decision uses the release speed.
-SLOP = 12           # the finger must move this far (logical pixels) before a drag is decided
-SHEET_FULL = 0.45   # battery sheet: progress (for the release decision) is the travel over this much of the height
-UNLOCK_FULL = 0.5   # lock screen: this much travel upward is a full unlock
-HOME_FULL = 0.4     # bottom edge: this much travel upward is a full trip Home
-SHEET_DONE = 0.35   # let go at or past this much progress and the sheet opens (or closes)
-UNLOCK_DONE = 0.4   # ... and the lock screen unlocks
-HOME_DONE = 0.3     # ... and the page goes Home
-FLICK_MS = 150      # the release velocity is measured over the last this many milliseconds of the drag
+SLOP = 12  # the finger must move this far (logical pixels) before a drag is decided
+SHEET_FULL = 0.45  # battery sheet: progress (for the release decision) is the travel over this much of the height
+UNLOCK_FULL = 0.5  # lock screen: this much travel upward is a full unlock
+HOME_FULL = 0.4  # bottom edge: this much travel upward is a full trip Home
+SHEET_DONE = 0.35  # let go at or past this much progress and the sheet opens (or closes)
+UNLOCK_DONE = 0.4  # ... and the lock screen unlocks
+HOME_DONE = 0.3  # ... and the page goes Home
+FLICK_MS = 150  # the release velocity is measured over the last this many milliseconds of the drag
 
 HANDS = ("right", "left")
 

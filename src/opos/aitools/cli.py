@@ -11,6 +11,7 @@ from opos.aitools import wizard
 
 _SRC_DIR = Path(__file__).resolve().parents[2]
 
+
 def _supply_dir(env: Mapping[str, str]) -> Path:
     """Resolve supply dir."""
     v = env.get("OPOS_POWER_SUPPLY_DIR")
@@ -18,15 +19,18 @@ def _supply_dir(env: Mapping[str, str]) -> Path:
         return Path(v)
     return power.SUPPLY_DIR
 
+
 @dataclass
 class _Ctx:
     """Context for subcommands."""
+
     env: Mapping[str, str]
     home: Path
     machine: str
     emit: Callable[..., None]
     fetch: Callable[..., object] | None
     runner: Callable[..., object] | None
+
 
 def _cmd_list(ctx: _Ctx, args: argparse.Namespace) -> int:
     """List tools."""
@@ -38,6 +42,7 @@ def _cmd_list(ctx: _Ctx, args: argparse.Namespace) -> int:
     for t in tools:
         ctx.emit(f"{t.id}: {t.name} - {t.signin}")
     return 0
+
 
 def _cmd_install(ctx: _Ctx, args: argparse.Namespace) -> int:
     """Install tools."""
@@ -64,7 +69,19 @@ def _cmd_install(ctx: _Ctx, args: argparse.Namespace) -> int:
         if ctx.runner is not None:
             kwargs["runner"] = ctx.runner
         try:
-            report = installer.install(tool, prefix=prefix, mode=args.mode, machine=ctx.machine, home=ctx.home, python=sys.executable, src_dir=_SRC_DIR, free_mb_fn=place.free_mb, dry_run=args.dry_run, force=args.force, **kwargs)  # type: ignore[arg-type]
+            report = installer.install(
+                tool,
+                prefix=prefix,
+                mode=args.mode,
+                machine=ctx.machine,
+                home=ctx.home,
+                python=sys.executable,
+                src_dir=_SRC_DIR,
+                free_mb_fn=place.free_mb,
+                dry_run=args.dry_run,
+                force=args.force,
+                **kwargs,
+            )  # type: ignore[arg-type]
         except installer.InstallError as e:
             ctx.emit(f"error: {e}", True)
             return 1
@@ -74,6 +91,7 @@ def _cmd_install(ctx: _Ctx, args: argparse.Namespace) -> int:
         for line in report:
             ctx.emit(line)
     return 0
+
 
 def _cmd_mode(ctx: _Ctx, args: argparse.Namespace) -> int:
     """Change mode."""
@@ -92,6 +110,7 @@ def _cmd_mode(ctx: _Ctx, args: argparse.Namespace) -> int:
         ctx.emit(line)
     return 0
 
+
 def _cmd_uninstall(ctx: _Ctx, args: argparse.Namespace) -> int:
     """Uninstall tools."""
     prefix = args.prefix if args.prefix is not None else place.choose_prefix(ctx.env, ctx.home)
@@ -105,6 +124,7 @@ def _cmd_uninstall(ctx: _Ctx, args: argparse.Namespace) -> int:
     if any(l.startswith("could not remove") for l in report):
         return 1
     return 0
+
 
 def _cmd_status(ctx: _Ctx, args: argparse.Namespace) -> int:
     """Show status."""
@@ -131,6 +151,7 @@ def _cmd_status(ctx: _Ctx, args: argparse.Namespace) -> int:
         ctx.emit("sessions: 0")
     return 0
 
+
 def _cmd_guard(ctx: _Ctx, args: argparse.Namespace) -> int:
     """Run guard."""
     try:
@@ -138,6 +159,7 @@ def _cmd_guard(ctx: _Ctx, args: argparse.Namespace) -> int:
     except Exception as e:
         ctx.emit(f"error: {e}", True)
         return 1
+
 
 def _cmd_power(ctx: _Ctx, args: argparse.Namespace) -> int:
     """Report power."""
@@ -155,16 +177,19 @@ def _cmd_power(ctx: _Ctx, args: argparse.Namespace) -> int:
     ctx.emit("battery")
     return 1
 
+
 def main(argv=None, *, env=None, home=None, machine=None, out=None, fetch=None, runner=None) -> int:
     """CLI entry point."""
     env_map = env if env is not None else os.environ
     home_path = home if home is not None else Path.home()
     machine_str = machine if machine is not None else platform.machine()
+
     def emit(msg: str, err: bool = False) -> None:
         if out is not None:
             out.write(msg + "\n")
         else:
             print(msg, file=sys.stderr if err else sys.stdout)
+
     ctx = _Ctx(env=env_map, home=home_path, machine=machine_str, emit=emit, fetch=fetch, runner=runner)
     parser = argparse.ArgumentParser(prog="python -m opos.aitools")
     sub = parser.add_subparsers(dest="cmd")

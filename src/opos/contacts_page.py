@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local contacts. The practice phone still refuses a real call. Demo rows appear only in an empty book."""
+
 import os
 import uuid
 from pathlib import Path
@@ -13,9 +14,30 @@ _BOOK = None
 _MAX = 500
 _LABELS = ("Mobile", "Home", "Work")
 _DEMO = (
-    {"name": "Mom", "numbers": [{"number": "+15550100", "label": "Mobile"}], "note": "", "favorite": False, "ice": False, "demo": True},
-    {"name": "Clinic", "numbers": [{"number": "+15550142", "label": "Work"}], "note": "", "favorite": False, "ice": False, "demo": True},
-    {"name": "Work", "numbers": [{"number": "+15550199", "label": "Work"}], "note": "", "favorite": False, "ice": False, "demo": True},
+    {
+        "name": "Mom",
+        "numbers": [{"number": "+15550100", "label": "Mobile"}],
+        "note": "",
+        "favorite": False,
+        "ice": False,
+        "demo": True,
+    },
+    {
+        "name": "Clinic",
+        "numbers": [{"number": "+15550142", "label": "Work"}],
+        "note": "",
+        "favorite": False,
+        "ice": False,
+        "demo": True,
+    },
+    {
+        "name": "Work",
+        "numbers": [{"number": "+15550199", "label": "Work"}],
+        "note": "",
+        "favorite": False,
+        "ice": False,
+        "demo": True,
+    },
 )
 
 _CSS = """
@@ -143,8 +165,12 @@ def name_for(number, practice=False):
 
 def _public(row):
     return {
-        "id": row.get("id") or "", "name": row.get("name") or "", "numbers": list(row.get("numbers") or []),
-        "note": row.get("note") or "", "favorite": bool(row.get("favorite")), "ice": bool(row.get("ice")),
+        "id": row.get("id") or "",
+        "name": row.get("name") or "",
+        "numbers": list(row.get("numbers") or []),
+        "note": row.get("note") or "",
+        "favorite": bool(row.get("favorite")),
+        "ice": bool(row.get("ice")),
         "demo": bool(row.get("demo")),
     }
 
@@ -157,8 +183,12 @@ def snapshot(note="", skipped=0, file_line=""):
         practice = True
     people = sorted(people, key=lambda row: (not row.get("favorite"), (row.get("name") or "").lower()))
     return {
-        "ok": True, "people": [_public(row) for row in people], "practice": practice,
-        "recovered": recovered or note, "skipped": skipped, "file_line": file_line,
+        "ok": True,
+        "people": [_public(row) for row in people],
+        "practice": practice,
+        "recovered": recovered or note,
+        "skipped": skipped,
+        "file_line": file_line,
         "call": CALL,
     }
 
@@ -234,10 +264,16 @@ def _import(people, note):
             number = person["numbers"][0]["number"]
             if number in known or len(people) >= _MAX:
                 continue
-            people.append({
-                "id": uuid.uuid4().hex[:8], "name": person["name"], "numbers": person["numbers"],
-                "note": person.get("note") or "", "favorite": False, "ice": False,
-            })
+            people.append(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "name": person["name"],
+                    "numbers": person["numbers"],
+                    "note": person.get("note") or "",
+                    "favorite": False,
+                    "ice": False,
+                }
+            )
             known.add(number)
             added += 1
     _save(people)
@@ -260,9 +296,21 @@ def render(token, nonce):
     return appdoc.render("Contacts", token, nonce, _LIST, _THUMB, _SCRIPT, _CSS)
 
 
-apps.register(apps.App(
-    "contacts", "Contacts", "/contacts",
-    "The people kept on this phone.",
-    "yes", "no", "none", "real", "contacts", "USEFUL", 0,
-    render, snapshot, post,
-))
+apps.register(
+    apps.App(
+        "contacts",
+        "Contacts",
+        "/contacts",
+        "The people kept on this phone.",
+        "yes",
+        "no",
+        "none",
+        "real",
+        "contacts",
+        "USEFUL",
+        0,
+        render,
+        snapshot,
+        post,
+    )
+)

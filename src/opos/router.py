@@ -1,22 +1,27 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Battery-aware routing of tasks by power, heat, and goals."""
+
 from opos.governor import PowerState, Priority, Mode, Decision
 from opos.power import SAVINGS_STEPS, feature_drain
 
-HORIZON_H = 4.0 # hours a useful task must be funded for
-OPTIONAL_FLOOR = 80.0 # effective battery percent an optional task needs
-COST_WEIGHT = 2.0 # how strongly a task's cost counts
-HOT_C = 45.0 # temperature where non-essential work stops, charging or not
+HORIZON_H = 4.0  # hours a useful task must be funded for
+OPTIONAL_FLOOR = 80.0  # effective battery percent an optional task needs
+COST_WEIGHT = 2.0  # how strongly a task's cost counts
+HOT_C = 45.0  # temperature where non-essential work stops, charging or not
 
-GOAL_BASE_DRAIN = sum(feature_drain(tuple(s[0] for s in SAVINGS_STEPS), 1.0).values()) + 0.8 # percent per hour with every saving step applied, plus 0.8 for calls, messages and alarms
+GOAL_BASE_DRAIN = (
+    sum(feature_drain(tuple(s[0] for s in SAVINGS_STEPS), 1.0).values()) + 0.8
+)  # percent per hour with every saving step applied, plus 0.8 for calls, messages and alarms
 _FUND_ORDER = {Priority.USEFUL: 0, Priority.OPTIONAL: 1}
 GOAL_MISS = "would miss your goal"
+
 
 def goal_spare(state: PowerState):
     """Percent per hour a goal leaves for non-essential tasks, or None without a goal."""
     if state.goal_hours is None:
         return None
     return state.level * state.health / max(float(state.goal_hours), 0.5) - GOAL_BASE_DRAIN
+
 
 def fund(state: PowerState, tasks, first=()):
     """Return {name: (allowed, why)} for tasks, funding a goal budget once for all of them.
@@ -45,7 +50,9 @@ def fund(state: PowerState, tasks, first=()):
         elif spare is not None:
             queue.append(t)
         elif t.priority == Priority.OPTIONAL:
-            out[t.name] = (True, "battery above 80 percent") if eff >= OPTIONAL_FLOOR else (False, "battery below 80 percent")
+            out[t.name] = (
+                (True, "battery above 80 percent") if eff >= OPTIONAL_FLOOR else (False, "battery below 80 percent")
+            )
         elif t.priority == Priority.USEFUL:
             ok = eff / (5.0 + COST_WEIGHT * t.cost) >= HORIZON_H
             out[t.name] = (True, "enough for the next 4 hours") if ok else (False, "not enough for the next 4 hours")
@@ -58,12 +65,15 @@ def fund(state: PowerState, tasks, first=()):
         out[t.name] = (True, "fits your goal") if ok else (False, GOAL_MISS)
     return out
 
+
 def afford(state: PowerState, task):
     """Return whether battery can fund task on its own, and why."""
     return fund(state, (task,))[task.name]
 
+
 class Router:
     """Convert task affordability into a Decision."""
+
     def __init__(self, visible=False):
         self.visible = visible
 

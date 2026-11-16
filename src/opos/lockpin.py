@@ -5,6 +5,7 @@ with every further wrong try and stops growing at 8 hours. Nothing is erased, ho
 The server starts enforcing only when OPOS_LOCK=1. With the variable unset, the phone behaves as before.
 There is no emergency button: practice mode cannot place that call, and a real one has not been tested.
 """
+
 import hashlib
 import hmac
 import json
@@ -41,7 +42,7 @@ def script_bytes():
 
 def inject_bytes(body, nonce):
     """Add the PIN pad's tag to the home page while OPOS_LOCK=1. The same bytes otherwise; page() never grows."""
-    if not active() or not isinstance(body, (bytes, bytearray)) or b'src=/pin.js' in body:
+    if not active() or not isinstance(body, (bytes, bytearray)) or b"src=/pin.js" in body:
         return body
     if not secure._nonce_ok(nonce):
         return body
@@ -72,18 +73,26 @@ def _read():
     data.setdefault("failures", 0)
     data.setdefault("wait_until", 0)
     try:
-        if (type(data["locked"]) is not bool or type(data["failures"]) is not int
-                or data["failures"] < 0 or type(data["wait_until"]) not in (int, float)
-                or not math.isfinite(data["wait_until"]) or data["wait_until"] < 0):
+        if (
+            type(data["locked"]) is not bool
+            or type(data["failures"]) is not int
+            or data["failures"] < 0
+            or type(data["wait_until"]) not in (int, float)
+            or not math.isfinite(data["wait_until"])
+            or data["wait_until"] < 0
+        ):
             raise ValueError("lock state")
     except (ValueError, OverflowError):
         data.update(locked=True, failures=0, wait_until=0)
     if "record" in data:
         try:
             record = data["record"]
-            if (not isinstance(record, dict) or type(record.get("iterations")) is not int
-                    or not 0 < record["iterations"] <= 2**31 - 1
-                    or len(bytes.fromhex(record["hash"])) != 32):
+            if (
+                not isinstance(record, dict)
+                or type(record.get("iterations")) is not int
+                or not 0 < record["iterations"] <= 2**31 - 1
+                or len(bytes.fromhex(record["hash"])) != 32
+            ):
                 raise ValueError("PIN record")
             bytes.fromhex(record["salt"])
         except (KeyError, TypeError, ValueError):
@@ -141,8 +150,12 @@ def _state(data, now):
 
 def _transition(state, event, data, now, pin=None):
     """Return (allowed, new data). All lock transition policy lives here."""
-    if (event in {"set", "skip"} and state in {"LOCKED_PIN", "WAITING"}
-            or event in {"unlock_ok", "unlock_wrong"} and state == "WAITING"):
+    if (
+        event in {"set", "skip"}
+        and state in {"LOCKED_PIN", "WAITING"}
+        or event in {"unlock_ok", "unlock_wrong"}
+        and state == "WAITING"
+    ):
         return False, data
     changed = dict(data)
     if event == "set":
@@ -240,6 +253,7 @@ def _missed():
     """Missed calls kept by the Call log app. Nothing when that app is off or its log cannot be read."""
     try:
         from opos import apps, calllog
+
         if "calls" not in (apps.names_from() or []):
             return 0
         value = calllog.snapshot().get("missed_count")
@@ -257,6 +271,7 @@ def counts():
     alarm = ""
     try:
         from opos import clock_page
+
         nxt = (clock_page.snapshot() or {}).get("next") or {}
         alarm = nxt.get("text") or ""
     except Exception:
