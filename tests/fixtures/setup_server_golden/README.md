@@ -35,6 +35,21 @@ cases preserve the in-flight state. Synthetic `FixtureAbortError` values test
 that narrow exception catches propagate process-control-like exceptions without
 raising an actual interrupt or exit.
 
+The `json_recursion` input names `decoder_error: recursion` and carries a small
+valid object. Only while delegating to the real `secure.read_json_body`, the
+driver replaces `json.loads` with a callable that records its text and
+`parse_constant` argument, then raises `RecursionError`. The real reader checks
+headers, reads and decodes the body, catches that error and produces `BodyError`;
+the real handler maps it to exact HTTP400 `{"error": "bad json"}` bytes. The
+decoder patch ends before response rendering or any other JSON operation.
+An ordinary object containing eight nested arrays separately exercises successful
+decoding and validation. Decoder recursion limits differ between Python versions;
+a deeply nested valid document cannot portably select the decoder-error path.
+Focused controls check the actual reader call and decoder event order, patch
+restoration, refusal before decoding, an unknown route, a wrong response status
+and removal of the production reader's recursion catch. Response bytes, statuses
+and effect order remain exact; the corpus accepts only the recorded result.
+
 The page body is recorded in full with fixed session and nonce values. The
 notice version and build are pinned to `0.1.0` and `unpublished`, isolating the
 factory from release metadata and environment differences. Rendering stays
@@ -47,7 +62,9 @@ Run the new tests from the repository root with a private temporary directory:
 ```sh
 PYTHONPATH=src python3 -m unittest tests.test_setup_server_golden tests.test_setup_server_lifecycle_golden
 PYTHONPATH=src python3 -m tests.fixtures.setup_server_golden.record --check
-PYTHONPATH=src python3 -m tests.fixtures.setup_server_golden.check --output "$TMPDIR/setup-golden-check.json"
+PYTHONPATH=src python3 -m tests.fixtures.setup_server_golden.check \
+  --driver-revision 4e8c4895a47c673484291f95bb9759558ab04ef2 \
+  --output "$TMPDIR/setup-golden-check.json"
 ```
 
 Set `TMPDIR` to an existing private directory before running these commands.
@@ -62,5 +79,11 @@ GET-only API route, accept `/index.html`, remove progress-state publication or
 publish a detached holder. It requires every mutation to differ from the
 corpus, checks unmodified controls before and after mutation, and compares the
 pinned and current factories on the corpus plus deterministic extra inputs.
-The mutation catalog requires the recorded production source. These focused
-mutations are regression checks, not a comprehensive mutation-coverage claim.
+Those six original witnesses remain in a catalog of 42 mutations covering
+security gates, routing, response fidelity, body-reader delegation and lifecycle
+effects. The differential adds 3,000 generated inputs and also compares the
+current driver with the driver from `--driver-revision` for every ordinary
+input, excluding only the newly explicit decoder-failure input. The prior
+driver is loaded from local Git objects in a temporary directory. The mutation
+catalog requires the recorded production source. These focused mutations are
+regression checks, not a comprehensive mutation-coverage claim.

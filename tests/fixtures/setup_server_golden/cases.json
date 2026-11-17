@@ -7723,8 +7723,361 @@
         {
           "path": "/setup/api/validate",
           "method": "POST",
-          "payload": {},
-          "raw_base64": "eyJ2IjpbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tdXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV19"
+          "payload": {
+            "config": {}
+          }
+        }
+      ],
+      "decoder_error": "recursion",
+      "expected": {
+        "calls": [
+          {
+            "call": "check_bind",
+            "args": [
+              "127.0.0.1"
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "new_token",
+            "args": [],
+            "kwargs": {}
+          },
+          {
+            "call": "limiter.init",
+            "args": [
+              20.0,
+              60
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "config_dir",
+            "args": [
+              {
+                "OPOS_CONFIG_DIR": "<state>/state"
+              },
+              "linux"
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "slots.init",
+            "args": [
+              16
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "server.init",
+            "args": [
+              [
+                "127.0.0.1",
+                0
+              ]
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "server.return",
+            "args": [
+              [
+                "127.0.0.1",
+                43123
+              ]
+            ],
+            "kwargs": {
+              "session": "fixture-token"
+            }
+          },
+          {
+            "call": "server.progress",
+            "args": [
+              null
+            ],
+            "kwargs": {
+              "finished": null
+            }
+          },
+          {
+            "call": "slots.acquire",
+            "args": [],
+            "kwargs": {
+              "blocking": false,
+              "allowed": true
+            }
+          },
+          {
+            "call": "socket.settimeout",
+            "args": [
+              10
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "socket.makefile",
+            "args": [
+              "rb",
+              -1
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "clock",
+            "args": [
+              0.0
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "clock",
+            "args": [
+              0.0
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "socket.settimeout",
+            "args": [
+              10
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "clock",
+            "args": [
+              0.0
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "timer.init",
+            "args": [
+              10.0
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "timer.start",
+            "args": [],
+            "kwargs": {
+              "daemon": true
+            }
+          },
+          {
+            "call": "clock",
+            "args": [
+              0.0
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "socket.settimeout",
+            "args": [
+              10
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "host_ok",
+            "args": [
+              "127.0.0.1:43123",
+              43123
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "token_ok",
+            "args": [
+              "fixture-token",
+              "fixture-token"
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "origin_ok",
+            "args": [
+              "http://127.0.0.1:43123",
+              43123
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "json_type_ok",
+            "args": [
+              "application/json"
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "limiter.allow",
+            "args": [
+              "127.0.0.1"
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "clock",
+            "args": [
+              0.0
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "socket.settimeout",
+            "args": [
+              10
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "body.decode",
+            "args": [
+              [
+                [
+                  "Host",
+                  "127.0.0.1:43123"
+                ],
+                [
+                  "X-OPOS-Token",
+                  "fixture-token"
+                ],
+                [
+                  "Origin",
+                  "http://127.0.0.1:43123"
+                ],
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Content-Length",
+                  "14"
+                ]
+              ]
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "body.read",
+            "args": [
+              14
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "json.loads",
+            "args": [
+              "{\"config\": {}}"
+            ],
+            "kwargs": {
+              "parse_constant": true
+            }
+          },
+          {
+            "call": "security_headers",
+            "args": [],
+            "kwargs": {}
+          },
+          {
+            "call": "timer.cancel",
+            "args": [],
+            "kwargs": {}
+          },
+          {
+            "call": "slots.release",
+            "args": [],
+            "kwargs": {}
+          },
+          {
+            "call": "server.progress",
+            "args": [
+              null
+            ],
+            "kwargs": {
+              "finished": null
+            }
+          }
+        ],
+        "responses": [
+          {
+            "status": 400,
+            "headers": [
+              [
+                "X-Content-Type-Options",
+                "nosniff"
+              ],
+              [
+                "X-Frame-Options",
+                "DENY"
+              ],
+              [
+                "Referrer-Policy",
+                "no-referrer"
+              ],
+              [
+                "Cross-Origin-Opener-Policy",
+                "same-origin"
+              ],
+              [
+                "Cross-Origin-Resource-Policy",
+                "same-origin"
+              ],
+              [
+                "Cache-Control",
+                "no-store"
+              ],
+              [
+                "Permissions-Policy",
+                "camera=(), microphone=(), geolocation=()"
+              ],
+              [
+                "Content-Type",
+                "application/json"
+              ],
+              [
+                "Content-Length",
+                "21"
+              ]
+            ],
+            "body_base64": "eyJlcnJvciI6ICJiYWQganNvbiJ9",
+            "exception": null
+          }
+        ],
+        "files": {},
+        "exception": null,
+        "slots_held": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "json_nested_success",
+      "group": "http",
+      "requests": [
+        {
+          "path": "/setup/api/validate",
+          "method": "POST",
+          "payload": {
+            "config": {
+              "nested": [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              0
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            }
+          }
         }
       ],
       "expected": {
@@ -7950,7 +8303,7 @@
                 ],
                 [
                   "Content-Length",
-                  "2406"
+                  "41"
                 ]
               ]
             ],
@@ -7959,7 +8312,32 @@
           {
             "call": "body.read",
             "args": [
-              2406
+              41
+            ],
+            "kwargs": {}
+          },
+          {
+            "call": "validate",
+            "args": [
+              {
+                "nested": [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                0
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              }
             ],
             "kwargs": {}
           },
@@ -8026,10 +8404,10 @@
               ],
               [
                 "Content-Length",
-                "53"
+                "26"
               ]
             ],
-            "body_base64": "eyJvayI6IGZhbHNlLCAiZXJyb3JzIjogWyJjb25maWcgbXVzdCBiZSBhbiBvYmplY3QiXX0=",
+            "body_base64": "eyJvayI6IHRydWUsICJlcnJvcnMiOiBbXX0=",
             "exception": null
           }
         ],

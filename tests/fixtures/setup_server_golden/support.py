@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Deterministic in-memory driver shared by the setup factory golden tests.
 
-Only connection I/O, scheduling, clock/entropy and external state discovery are
-replaced. Security parsing and preference persistence use their real code.
+Connection I/O, scheduling, clock/entropy and external state discovery are
+controlled. The named recursion case injects only the JSON decoder failure;
+security parsing and preference persistence otherwise use their real code.
 The corpus was recorded from pinned, unmodified source; expected values are
 never assembled by this driver. Temporary path substitution applies only to
 recorded call arguments, never to response or file bytes.
@@ -286,7 +287,14 @@ class Driver:
     def body_decode(self, stream, headers):
         self.record("body.decode", list(headers.items()))
         self.fail("body_decode")
+        if self.case.get("decoder_error") == "recursion":
+            with mock.patch.object(setup.secure.json, "loads", self.decoder_recursion):
+                return self.real_body_decode(stream, headers)
         return self.real_body_decode(stream, headers)
+
+    def decoder_recursion(self, text, *, parse_constant):
+        self.record("json.loads", text, parse_constant=callable(parse_constant))
+        raise RecursionError("fixture decoder recursion")
 
     def progress(self):
         self.fail("progress_init")
