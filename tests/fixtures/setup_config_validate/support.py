@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.machinery
 import importlib.util
 import json
 import math
@@ -17,6 +18,13 @@ from types import SimpleNamespace
 from unittest import mock
 
 ERROR_TYPES = {error.__name__: error for error in (ValueError, TypeError, RuntimeError)}
+
+
+class FreshSourceLoader(importlib.machinery.SourceFileLoader):
+    """Compile source after the worker's hash seed is active, ignoring bytecode."""
+
+    def get_code(self, fullname):
+        return compile(Path(self.path).read_bytes(), self.path, "exec", dont_inherit=True)
 
 
 class ScriptedString(str):
@@ -182,8 +190,11 @@ def main():
     args = parser.parse_args()
     if os.environ.get("PYTHONHASHSEED") != args.seed:
         raise RuntimeError("Set the hash seed before starting the replay interpreter")
-    spec = importlib.util.spec_from_file_location("golden_config", args.source)
+    source = os.path.abspath(args.source)
+    loader = FreshSourceLoader("golden_config", source)
+    spec = importlib.util.spec_from_file_location(loader.name, source, loader=loader)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     cases = json.loads(args.cases.read_text(encoding="utf-8"))["cases"]
     sys.setrecursionlimit(300)
