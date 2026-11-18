@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import os
 import pathlib
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from opos.battery import essentials_reserve
 from opos.governor import Decision, Mode, Priority, Task
 from opos.reserve import WORN_REASON, reserve_level
@@ -25,9 +26,20 @@ def worn_level():
 
 
 def allow_all(rt):
-    rt.governor.decide = lambda state, tasks: Decision(
+    rt.governor.decide = lambda state, tasks, *, pause_inference=False: Decision(
         Mode.NORMAL, tuple(t.name for t in tasks), (), "router: allow all"
     )
+
+
+class TestRuntimeHeatLimit(unittest.TestCase):
+    def test_only_a_warm_phone_skips_the_advisor(self):
+        for on_phone, temp_c, expected_calls in (("1", 39.9, 1), ("1", 40, 0), ("0", 40, 1)):
+            with self.subTest(on_phone=on_phone, temp_c=temp_c), patch.dict(os.environ, OPOS_ON_PHONE=on_phone):
+                rt = Runtime(tasks=TASKS)
+                advisor = Mock(wraps=rt.governor.advisor)
+                rt.governor.advisor = advisor
+                rt.step(0, 80, temp_c=temp_c)
+                self.assertEqual(advisor.call_count, expected_calls)
 
 
 class TestRuntimeGoalReserve(unittest.TestCase):
