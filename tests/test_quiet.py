@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Quiet hours, the notice cap, and a file that cannot be read."""
+
 import os
 import tempfile
 import unittest
@@ -33,7 +34,7 @@ class Quiet(unittest.TestCase):
         with self.assertRaises(ValueError):
             inbox.set_quiet(True, "25:00", "07:00")
         for n in range(inbox.CAP + 5):
-            inbox.add("system", "Notice %d" % n)
+            inbox.add("system", f"Notice {n}")
         snap = inbox.snapshot()
         self.assertEqual(len(snap["items"]), inbox.CAP)
         self.assertEqual(snap["items"][0]["text"], "Notice 5")

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Headless notices: a dismiss button and quiet hours, at three sizes."""
+
 import json
 import os
 import shutil
@@ -28,7 +29,14 @@ if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
 return out;
 });
 """
-CASES = ((1392, 900, "light", 1), (1392, 900, "dark", 1), (675, 900, "light", 1), (675, 900, "dark", 1), (360, 640, "light", 2), (360, 640, "dark", 2))
+CASES = (
+    (1392, 900, "light", 1),
+    (1392, 900, "dark", 1),
+    (675, 900, "light", 1),
+    (675, 900, "dark", 1),
+    (360, 640, "light", 2),
+    (360, 640, "dark", 2),
+)
 
 
 class NoticesBrowser(unittest.TestCase):
@@ -46,7 +54,7 @@ class NoticesBrowser(unittest.TestCase):
         cls.server = web.make_server(0, web.Phone())
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
-        cls.origin = "http://127.0.0.1:%d" % cls.server.server_address[1]
+        cls.origin = f"http://127.0.0.1:{cls.server.server_address[1]}"
 
     @classmethod
     def tearDownClass(cls):
@@ -76,10 +84,23 @@ class NoticesBrowser(unittest.TestCase):
         acceptance._kill(getattr(self, "proc", None))
 
     def test_dismiss_and_quiet_hours(self):
-        cases = [{"url": self.origin + "/notices", "width": w, "height": h, "theme": t, "scale": s, "hand": "right", "script": FLOW} for w, h, t, s in CASES]
+        cases = [
+            {
+                "url": self.origin + "/notices",
+                "width": w,
+                "height": h,
+                "theme": t,
+                "scale": s,
+                "hand": "right",
+                "script": FLOW,
+            }
+            for w, h, t, s in CASES
+        ]
         plan = os.path.join(self.run, "plan.json")
         Path(plan).write_text(json.dumps({"cases": cases}), encoding="utf-8")
-        result = subprocess.run([self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90)
+        result = subprocess.run(
+            [self.node, str(DRIVER), str(self.port), plan], capture_output=True, text=True, timeout=90
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-800:])
         self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1])["violations"], [])
 

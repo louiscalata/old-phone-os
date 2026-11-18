@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The notice list and quiet hours. Alarms always ring."""
+
 from opos import appdoc, apps, inbox
 
 _LIST = """<h1>Notices</h1><ul id="rows"></ul><button id="clear" type="button">Clear all</button>"""
@@ -27,7 +28,12 @@ window.oposNotices={refresh:function(){return api().then(paint)}};
 
 def render(token, nonce):
     return appdoc.render(
-        "Notices", token, nonce, _LIST, _THUMB, _SCRIPT,
+        "Notices",
+        token,
+        nonce,
+        _LIST,
+        _THUMB,
+        _SCRIPT,
         "#clear,#qon{min-height:48px;display:block;width:100%}",
     )
 
@@ -50,9 +56,21 @@ def post(data):
     return 200, inbox.snapshot()
 
 
-apps.register(apps.App(
-    "notices", "Notices", "/notices",
-    "A list of notices and quiet hours. Alarms still ring.",
-    "yes", "no", "speaker", "real", "notices", "USEFUL", 0,
-    render, inbox.snapshot, post,
-))
+apps.register(
+    apps.App(
+        "notices",
+        "Notices",
+        "/notices",
+        "A list of notices and quiet hours. Alarms still ring.",
+        "yes",
+        "no",
+        "speaker",
+        "real",
+        "notices",
+        "USEFUL",
+        0,
+        render,
+        inbox.snapshot,
+        post,
+    )
+)

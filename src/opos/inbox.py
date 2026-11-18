@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A local notice list and quiet hours. Alarms are never silenced. No network."""
+
 import os
 import re
 from datetime import datetime
@@ -25,7 +26,9 @@ def _store():
 
 
 def _load():
-    data, note = _store().read_json("inbox.json", {"items": [], "quiet": {"from": "22:00", "to": "07:00", "on": False}, "next": 1})
+    data, note = _store().read_json(
+        "inbox.json", {"items": [], "quiet": {"from": "22:00", "to": "07:00", "on": False}, "next": 1}
+    )
     items = data.get("items") if isinstance(data.get("items"), list) else []
     quiet = data.get("quiet") if isinstance(data.get("quiet"), dict) else {}
     try:
