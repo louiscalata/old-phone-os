@@ -29,6 +29,12 @@ class PollIntervalTests(unittest.TestCase):
         self.assertEqual(poll_ms("CRITICAL", 1535, False), 5000)
         self.assertEqual(poll_ms("CRITICAL", 0, False), 5000)
 
+    def test_warm_battery_slows_poll_outside_calls(self):
+        self.assertEqual(poll_ms("NORMAL", None, False, 39.9), 1000)
+        self.assertEqual(poll_ms("NORMAL", None, False, 40), 5000)
+        self.assertEqual(poll_ms("CRITICAL", None, False, 40), 5000)
+        self.assertEqual(poll_ms("NORMAL", None, True, 50), 1000)
+
     def test_poll_call_overrides(self):
         for mode in MODES:
             for free in (None, 0, 1535, 1536, 8192):
@@ -73,6 +79,16 @@ class PollIntervalTests(unittest.TestCase):
                 self.assertEqual(phone.state()["poll_ms"], 1000)
             phone.set_battery(3)
             self.assertIn(phone.state()["poll_ms"], (3000, 5000))
+
+    def test_state_warm_battery_slows_poll(self):
+        with mock.patch.object(web.assist, "free_mb", return_value=8192):
+            phone = web.Phone()
+            phone.sim.health = 1.0
+            phone.set_battery(100)
+            phone.set_temp(39.9)
+            self.assertEqual(phone.state()["poll_ms"], 1000)
+            phone.set_temp(40)
+            self.assertEqual(phone.state()["poll_ms"], 5000)
 
 
 if __name__ == "__main__":
