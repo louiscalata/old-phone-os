@@ -141,7 +141,7 @@ class ConverterPage(unittest.TestCase):
 class Packaging(unittest.TestCase):
     def test_the_duo_drop_in_and_the_runtime_list_carry_the_converter(self):
         conf = (ROOT / "packaging/duo-os/opos-apps.conf").read_text(encoding="utf-8")
-        self.assertIn("Environment=OPOS_APPS=clock,contacts,notes,calc,calls,convert", conf.splitlines())
+        self.assertIn("Environment=OPOS_APPS=clock,contacts,notes,calc,calls,convert,notices", conf.splitlines())
         listed = (ROOT / "packaging/pmos/runtime-files.txt").read_text(encoding="utf-8").splitlines()
         for path in ("src/opos/convert.py", "src/opos/convert_page.py"):
             self.assertIn(path, listed)

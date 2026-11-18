@@ -241,11 +241,11 @@ class WaveGate(unittest.TestCase):
             self.assertLessEqual(size, WAVE_GATE, f"{name} is over the wave gate ({message})")
 
     def test_the_served_duo_image_home_page_fits_the_wave_gate_with_and_without_the_lock(self):
-        # The image adds volume keys and the six apps to the six switches; the owner may also turn on the PIN lock.
+        # The image adds volume keys and the seven apps; the owner may also turn on the PIN lock.
         duo = duo_image_switches()
         self.assertLessEqual(set(SWITCHES), set(duo))
         self.assertEqual(duo["OPOS_VOLUME_KEYS"], "1")
-        self.assertEqual(duo["OPOS_APPS"], "clock,contacts,notes,calc,calls,convert")
+        self.assertEqual(duo["OPOS_APPS"], "clock,contacts,notes,calc,calls,convert,notices")
         for lock in ("", "1"):
             with self.subTest(lock=lock), mock.patch.dict(os.environ, {"OPOS_LOCK": lock}):
                 body = served_home_page(duo)

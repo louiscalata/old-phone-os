@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from opos import lockpin, web
+from opos import inbox, lockpin, web
 from tests.test_apps_shell import get, post, running
 from tests.test_uxp30_budget import SWITCHES, WAVE_GATE, served_home_page
 
@@ -19,10 +19,11 @@ APPS = {
     "calc": ("/calc",),
     "calls": ("/calls", "/api/calls"),
     "convert": ("/convert", "/api/convert"),
+    "notices": ("/notices", "/api/notices"),
 }
 ROUTES = ("/apps",) + tuple(path for paths in APPS.values() for path in paths)
 NAMED = ",".join(APPS)
-DUO = "clock,contacts,notes,calc,calls,convert"
+DUO = "clock,contacts,notes,calc,calls,convert,notices"
 
 
 class AppRoutes(unittest.TestCase):
@@ -38,17 +39,20 @@ class AppRoutes(unittest.TestCase):
                         self.assertEqual(post(server, path, {}, token)[0], 404, path)
 
     def test_each_app_answers_alone_and_the_others_stay_off(self):
-        for name, own in APPS.items():
-            with self.subTest(app=name), running({"OPOS_APPS": name}) as server:
-                token = server.RequestHandlerClass.token
-                self.assertEqual(get(server, "/apps")[0], 200)
-                for path in own:
-                    self.assertEqual(get(server, path, token)[0], 200, path)
-                for other, paths in APPS.items():
-                    if other == name:
-                        continue
-                    for path in paths:
-                        self.assertEqual(get(server, path, token)[0], 404, path)
+        inbox.reset()
+        self.addCleanup(inbox.reset)
+        with tempfile.TemporaryDirectory() as state:
+            for name, own in APPS.items():
+                with self.subTest(app=name), running({"OPOS_APPS": name, "OPOS_STATE_DIR": state}) as server:
+                    token = server.RequestHandlerClass.token
+                    self.assertEqual(get(server, "/apps")[0], 200)
+                    for path in own:
+                        self.assertEqual(get(server, path, token)[0], 200, path)
+                    for other, paths in APPS.items():
+                        if other == name:
+                            continue
+                        for path in paths:
+                            self.assertEqual(get(server, path, token)[0], 404, path)
 
     def test_the_page_grows_by_one_tag_for_the_whole_set(self):
         self.assertEqual(WAVE_GATE, 102000)
