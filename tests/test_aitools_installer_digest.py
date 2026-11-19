@@ -335,7 +335,7 @@ class SetupDryRunTests(unittest.TestCase):
         runner = functools.partial(wizard.install_selected, free_mb_fn=lambda _p: 10**6)
         # The phone's default prefix, and a longer one like a macOS account named first.last.
         if sys.platform == "win32":
-            prefixes = (r"C:\Users\user\.local\share\opos", r"C:\Users\firstname.lastname\.local\share\opos")
+            prefixes = (r"C:\opos\user\.local\share\opos", r"C:\opos\firstname.lastname\.local\share\opos")
         else:
             prefixes = ("/" + "home/user/.local/share/opos", "/" + "Users/firstname.lastname/.local/share/opos")
         for prefix in prefixes:
