@@ -594,7 +594,7 @@ def check_references(g):
     for who, name in references(g):
         seen.add(name)
         if name not in g.units and name not in INHERITED:
-            problems.append(f"{who}: {name} is neither shipped in {PKG_REL} nor listed in INHERITED")
+            problems.append(f"{who}: {name} is neither shipped in {PKG_REL.as_posix()} nor listed in INHERITED")
     for name in INHERITED:
         if name in g.units:
             problems.append(f"INHERITED lists {name}, which OPOS ships")

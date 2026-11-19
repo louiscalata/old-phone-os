@@ -829,6 +829,7 @@ class Download(Env):
         self.assertTrue(c.wait(10))
         return c
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_happy_path_leaves_one_complete_bundle_and_nothing_else(self):
         b = self.publish(7)
         c = self.run_job()
