@@ -45,11 +45,11 @@ def load(path=None):
     empty = {"schema": 1, "answers": {}, "skipped": [], "applied": False}
     try:
         text = path.read_text(encoding="utf-8")
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return empty
     try:
         data = json.loads(text)
-    except Exception:
+    except (ValueError, RecursionError):
         return empty
     if not isinstance(data, dict):
         return empty
