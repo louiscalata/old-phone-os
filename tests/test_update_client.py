@@ -779,6 +779,9 @@ class Redirects(Env):
 class Tls(Env):
     def test_a_self_signed_certificate_is_not_accepted(self):
         d = self.tmp.name
+        config = os.path.join(d, "openssl.cnf")
+        with open(config, "w", encoding="utf-8") as f:
+            f.write("[req]\ndistinguished_name=dn\nx509_extensions=v3\n[dn]\n[v3]\nsubjectAltName=IP:127.0.0.1\n")
         subprocess.run(
             [
                 "openssl",
@@ -795,8 +798,10 @@ class Tls(Env):
                 "1",
                 "-subj",
                 "/CN=localhost",
-                "-addext",
-                "subjectAltName=IP:127.0.0.1",
+                "-config",
+                config,
+                "-extensions",
+                "v3",
             ],
             check=True,
             capture_output=True,

@@ -402,6 +402,8 @@ class PageBytes(unittest.TestCase):
                         undo()
 
         # The first-run home page depends on the machine's time zone, so the bytes are only fixed in a fixed zone.
+        if not hasattr(time, "tzset"):
+            self.skipTest("time.tzset is unavailable on this Python build")
         with mock.patch.dict(os.environ, dict(dict.fromkeys(switches, ""), TZ="UTC")):
             time.tzset()
             self.addCleanup(time.tzset)
