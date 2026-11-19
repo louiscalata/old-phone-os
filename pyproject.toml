@@ -167,8 +167,7 @@ max-complexity = 15
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "src/opos/goalsim.py" = ["C901", "I001"]
 # B905: existing bugbear finding; diagnose and repair separately from layout.
-# C901: existing complexity; restructuring needs a behavior review.
-"src/opos/hw/battery.py" = ["B905", "C901"]
+"src/opos/hw/battery.py" = ["B905"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "src/opos/hw/facts.py" = ["UP031"]
 # C901: existing complexity; restructuring needs a behavior review.
