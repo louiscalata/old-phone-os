@@ -35,7 +35,11 @@ extend-include = ["packaging/duo-os/opos-selftest", "packaging/duo-os/updater/op
 # Export paths may be ignored by the containing workspace; only explicit scopes are checked.
 respect-gitignore = false
 force-exclude = true
-extend-exclude = [
+
+[tool.ruff.format]
+# Linted (LOU-84) but kept out of the formatter: each file below keeps exact source bytes or literals that a test or a
+# package pin asserts. TODO(LOU-84): reformat each one in its own reviewed pull request together with its test.
+exclude = [
     # APKBUILD SHA-512 pin; regenerate only in a packaging review.
     "packaging/pmos/opos/opos-systemd-state.py",
     # test_selftest.py asserts a single-line argparse source expression.
@@ -49,8 +53,6 @@ extend-exclude = [
     # its unconditional decoy-rule guard reads and matches its own assertion as one source line.
     "tests/test_20-firewall_review.py",
 ]
-
-[tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
@@ -1113,3 +1115,38 @@ max-complexity = 15
 # UP017: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tools/opos-release.py" = ["B904", "B905", "C901", "E741", "N818", "UP017", "UP031"]
+# TODO(LOU-84): files that were ruff-excluded until LOU-84; exact file/code pairs, source bytes unchanged.
+# B023: existing bugbear finding; diagnose and repair separately from layout.
+# I001: existing import order; sorting changes AST order and needs a separate review.
+# N818: existing names and framework overrides; renaming is outside formatting.
+# S310: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.
+# UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
+"packaging/duo-os/opos-selftest" = ["B023", "I001", "N818", "S310", "UP031"]
+# B007: existing bugbear finding; diagnose and repair separately from layout.
+# B904: existing bugbear finding; diagnose and repair separately from layout.
+# C901: existing complexity; restructuring needs a behavior review.
+# E741: existing pycodestyle finding; non-format repair is outside this lane.
+# N818: existing names and framework overrides; renaming is outside formatting.
+# S103: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.
+# UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
+"packaging/duo-os/updater/opos-updater" = ["B007", "B904", "C901", "E741", "N818", "S103", "UP031"]
+# I001: existing import order; sorting changes AST order and needs a separate review.
+# N806: existing names and framework overrides; renaming is outside formatting.
+# S110: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.
+# S310: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.
+# UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
+"src/opos/native/shell.py" = ["I001", "N806", "S110", "S310", "UP031"]
+# B007: existing bugbear finding; diagnose and repair separately from layout.
+# B023: existing bugbear finding; diagnose and repair separately from layout.
+# C901: existing complexity; restructuring needs a behavior review.
+# F401: existing pyflakes finding; removing or changing code is outside formatting.
+# F841: existing pyflakes finding; removing or changing code is outside formatting.
+# I001: existing import order; sorting changes AST order and needs a separate review.
+# N999: existing names and framework overrides; renaming is outside formatting.
+# UP022: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
+"tests/test_20-firewall_review.py" = ["B007", "B023", "C901", "F401", "F841", "I001", "N999", "UP022"]
+# I001: existing import order; sorting changes AST order and needs a separate review.
+# N812: existing names and framework overrides; renaming is outside formatting.
+# S105: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.
+# UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
+"tests/test_duo_dev_sudo.py" = ["I001", "N812", "S105", "UP031"]
