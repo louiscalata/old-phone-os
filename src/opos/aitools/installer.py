@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import contextlib
+import dataclasses
 import hashlib
 import json
 import os
@@ -205,6 +206,342 @@ def _remove_fresh_dir(tid_dir: Path, tr: Path, had: bool) -> None:
             shutil.rmtree(tid_dir)
 
 
+@dataclasses.dataclass(frozen=True)
+class _Layout:
+    """paths install() uses for one tool"""
+
+    tr: Path
+    tid_dir: Path
+    sandbox: Path
+    real_bin: Path
+    bin_dir: Path
+    wrapper: Path
+    run_dir: Path
+    env_file: Path
+
+
+def _layout(prefix: Path, tool: Tool) -> _Layout:
+    """paths for tool under prefix"""
+    tr = tools_root(prefix)
+    sandbox = tr / tool.id / "home"
+    bin_dir = tr / "bin"
+    return _Layout(
+        tr=tr,
+        tid_dir=tr / tool.id,
+        sandbox=sandbox,
+        real_bin=sandbox / ".local" / "bin" / tool.binary,
+        bin_dir=bin_dir,
+        wrapper=bin_dir / tool.binary,
+        run_dir=tr / "run",
+        env_file=tr / "env.sh",
+    )
+
+
+def _refuse_early(tool: Tool, prefix: Path, mode: str, machine: str, free_mb_fn: Callable[[Path], int]) -> None:
+    """mode, preflight and catalog digest checks, in that order, before anything is read or written"""
+    if mode not in place.MODES:
+        raise InstallError(f"unknown mode: {mode}")
+    probs = place.preflight(tool, prefix, machine, free_mb_fn)
+    if probs:
+        raise InstallError("; ".join(probs))
+    bad_digest = digest_problem(tool)
+    if bad_digest:
+        raise InstallError(bad_digest + ". Nothing was downloaded.")
+
+
+def _lookup(tool: Tool, all_tools: Sequence[Tool] | None) -> dict[str, Tool]:
+    """catalog entries by id; all_tools wins over tool for the same id"""
+    lookup: dict[str, Tool] = {tool.id: tool}
+    if all_tools is not None:
+        for t in all_tools:
+            lookup[t.id] = t
+    return lookup
+
+
+def _other_bins(lay: _Layout, tid: str, meta: dict, t: Tool) -> tuple[Path, Path]:
+    """sandbox and real binary of another installed tool, from its manifest entry"""
+    sb = Path(meta.get("sandbox", str(lay.tr / tid / "home")))
+    return sb, sb / ".local" / "bin" / t.binary
+
+
+def _others_need_regen(
+    prev: dict,
+    prev_tools: dict,
+    regen_ids: list[str],
+    lookup: Mapping[str, Tool],
+    lay: _Layout,
+    mode: str,
+    python: str,
+    src_dir: Path,
+) -> bool:
+    """whether the other tools' wrappers differ from what this mode, python and src_dir render"""
+    if prev.get("mode") != mode or prev.get("python") != python or str(prev.get("src_dir", "")) != str(src_dir):
+        return True
+    for tid in regen_ids:
+        if tid not in lookup:
+            continue
+        t = lookup[tid]
+        sb, rb = _other_bins(lay, tid, prev_tools[tid], t)
+        wp = lay.tr / "bin" / t.binary
+        try:
+            exp = launcher.render_wrapper(t, rb, sb, lay.run_dir, mode, python, src_dir)
+        except Exception:
+            return True
+        try:
+            cur_text = wp.read_text(encoding="utf-8") if wp.is_file() else None
+        except Exception:
+            cur_text = None
+        if cur_text != exp:
+            return True
+    return False
+
+
+def _regen_plan(
+    tool: Tool,
+    prev: dict,
+    prev_tools: dict,
+    lookup: Mapping[str, Tool],
+    lay: _Layout,
+    mode: str,
+    python: str,
+    src_dir: Path,
+) -> tuple[list[str], bool]:
+    """ids of the other installed tools, and whether their wrappers are rewritten; refuses a missing catalog entry"""
+    regen_ids = [tid for tid in prev_tools if tid != tool.id and isinstance(prev_tools.get(tid), dict)]
+    regen_needed = bool(regen_ids) and _others_need_regen(
+        prev, prev_tools, regen_ids, lookup, lay, mode, python, src_dir
+    )
+    changing = bool(prev_tools) and bool(regen_ids) and regen_needed
+    if changing:
+        missing = [tid for tid in regen_ids if tid not in lookup]
+        if missing:
+            raise InstallError(f"missing catalog entry: {missing[0]}")
+    return regen_ids, changing
+
+
+def _plan_writes(
+    tool: Tool,
+    lay: _Layout,
+    changing: bool,
+    regen_ids: list[str],
+    lookup: Mapping[str, Tool],
+    prev_tools: dict,
+    mode: str,
+    python: str,
+    src_dir: Path,
+) -> tuple[dict[Path, str], str]:
+    """render every wrapper (other tools first, this tool last) and env.sh, before anything is written"""
+    planned: dict[Path, str] = {}
+    try:
+        if changing:
+            for tid in regen_ids:
+                t = lookup[tid]
+                sb, rb = _other_bins(lay, tid, prev_tools[tid], t)
+                planned[lay.tr / "bin" / t.binary] = launcher.render_wrapper(
+                    t, rb, sb, lay.run_dir, mode, python, src_dir
+                )
+        planned[lay.wrapper] = launcher.render_wrapper(
+            tool, lay.real_bin, lay.sandbox, lay.run_dir, mode, python, src_dir
+        )
+        etext = launcher.render_env(lay.bin_dir)
+    except InstallError:
+        raise
+    except Exception as e:
+        raise InstallError(str(e)) from e
+    return planned, etext
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    """write all of data to fd and close it; a failed write closes fd and re-raises"""
+    try:
+        off = 0
+        while off < len(data):
+            n = os.write(fd, data[off:])
+            if n == 0:
+                raise OSError("short write: incomplete installer")
+            off += n
+    except Exception:
+        with contextlib.suppress(Exception):
+            os.close(fd)
+        raise
+    else:
+        os.close(fd)
+
+
+def _run_checked(tool: Tool, sp: str, lay: _Layout, runner: Runner) -> None:
+    """run the downloaded installer at sp only if its sha256 matches, then require the binary"""
+    # Hash the file the interpreter will read, before it is made executable or run.
+    _check_digest(tool, sp)
+    os.chmod(sp, 0o700)
+    env = _runner_env(lay.sandbox, tool.installer_env)
+    rc, out = runner([tool.interpreter, sp, *tool.installer_args], env, 900.0)
+    if rc != 0:
+        raise InstallError(f"installer failed ({rc}): {out}")
+    if not (lay.real_bin.is_file() and os.access(lay.real_bin, os.X_OK)):
+        raise InstallError(f"installer did not create {lay.real_bin}")
+
+
+def _undo_fresh_fetch(prefix: Path, lay: _Layout, had: bool) -> None:
+    """after a failed first download or run: remove the tool dir, and the shared dirs if no tool is installed"""
+    if had:
+        return
+    _remove_fresh_dir(lay.tid_dir, lay.tr, had)
+    with contextlib.suppress(Exception):
+        c2 = read_manifest(prefix)
+        if not c2.get("tools"):
+            for p in (lay.bin_dir, lay.run_dir, lay.tr):
+                with contextlib.suppress(OSError):
+                    p.rmdir()
+
+
+def _fetch_and_run(tool: Tool, prefix: Path, lay: _Layout, fetch: Fetch, runner: Runner, had: bool) -> None:
+    """download the installer to a temp file in the tool dir, check it, run it; the temp file never survives"""
+    sp = ""
+    try:
+        data = fetch(tool.installer_url)
+        fd, sp = tempfile.mkstemp(dir=str(lay.tid_dir))
+        _write_all(fd, data)
+        _run_checked(tool, sp, lay, runner)
+    except Exception:
+        _undo_fresh_fetch(prefix, lay, had)
+        raise
+    finally:
+        with contextlib.suppress(Exception):
+            if sp:
+                os.unlink(sp)
+
+
+def _default_profiles(home: Path) -> list[Path]:
+    """~/.profile, plus ~/.bashrc when it exists"""
+    cands: list[Path] = [home / ".profile"]
+    brc = home / ".bashrc"
+    if brc.is_file():
+        cands.append(brc)
+    return cands
+
+
+def _add_profile_blocks(profiles: Sequence[Path], env_file: Path) -> list[str]:
+    """add the env block to each profile; return those that now hold it"""
+    got: list[str] = []
+    for p in profiles:
+        launcher.add_profile_block(p, env_file)
+        with contextlib.suppress(Exception):
+            if launcher.BEGIN in p.read_text(encoding="utf-8", errors="ignore"):
+                got.append(str(p))
+    return got
+
+
+def _merged_profiles(prev: dict, got: list[str]) -> list[str]:
+    """profiles already in the manifest, then the new ones, without repeats"""
+    old_profiles = prev.get("profiles", []) if isinstance(prev.get("profiles"), list) else []
+    merged: list[str] = []
+    seen: set[str] = set()
+    for x in list(old_profiles) + got:
+        if x not in seen:
+            seen.add(x)
+            merged.append(x)
+    return merged
+
+
+def _next_manifest(
+    tool: Tool,
+    lay: _Layout,
+    prev: dict,
+    prev_tools: dict,
+    changing: bool,
+    regen_ids: list[str],
+    got: list[str],
+    mode: str,
+    python: str,
+    src_dir: Path,
+) -> dict:
+    """the manifest after this install"""
+    tools_dict = dict(prev_tools)
+    tools_dict[tool.id] = {"binary": tool.binary, "sandbox": str(lay.sandbox), "signin": tool.signin, "mode": mode}
+    if changing:
+        for tid in regen_ids:
+            existing = tools_dict.get(tid)
+            if isinstance(existing, dict):
+                updated = dict(existing)
+                updated["mode"] = mode
+                tools_dict[tid] = updated
+    merged = _merged_profiles(prev, got)
+    return {
+        "version": 1,
+        "mode": mode,
+        "python": python,
+        "src_dir": str(src_dir),
+        "profiles": merged,
+        "tools": tools_dict,
+    }
+
+
+def _read_backups(
+    mp: Path, planned: Mapping[Path, str], lay: _Layout, had: bool
+) -> tuple[bytes | None, dict[Path, bytes | None]]:
+    """current manifest, wrapper and env.sh bytes (None when absent); a read error aborts before any write"""
+    try:
+        old_bytes = mp.read_bytes() if mp.is_file() else None
+    except OSError as e:
+        _remove_fresh_dir(lay.tid_dir, lay.tr, had)
+        raise InstallError(str(e)) from e
+    backups: dict[Path, bytes | None] = {}
+    for p in list(planned) + [lay.env_file]:
+        try:
+            backups[p] = p.read_bytes() if p.is_file() else None
+        except OSError as e:
+            _remove_fresh_dir(lay.tid_dir, lay.tr, had)
+            raise InstallError(str(e)) from e
+    return old_bytes, backups
+
+
+def _rollback(
+    backups: Mapping[Path, bytes | None], env_file: Path, mp: Path, old_bytes: bytes | None, manifest_replaced: bool
+) -> list[str]:
+    """restore backed-up files in write order; return what could not be restored"""
+    rollback_errors: list[str] = []
+    for p, b in backups.items():
+        try:
+            if b is None:
+                if p.is_file() or p.is_symlink():
+                    p.unlink()
+            else:
+                file_mode = 0o644 if p == env_file else 0o755
+                _atomic_write_bytes(p, b, file_mode)
+        except Exception as re:
+            rollback_errors.append(f"{p}: {re}")
+    if manifest_replaced:
+        try:
+            if old_bytes is None:
+                if mp.is_file() or mp.is_symlink():
+                    mp.unlink()
+            else:
+                _atomic_write_bytes(mp, old_bytes, 0o600)
+        except Exception as re:
+            rollback_errors.append(f"{mp}: {re}")
+    return rollback_errors
+
+
+def _commit(prefix: Path, lay: _Layout, planned: Mapping[Path, str], etext: str, new_manifest: dict, had: bool) -> None:
+    """write wrappers, env.sh, then the manifest; on failure restore them all and report"""
+    mp = manifest_path(prefix)
+    old_bytes, backups = _read_backups(mp, planned, lay, had)
+    manifest_replaced = False
+    try:
+        for p, text in planned.items():
+            _atomic_write_text(p, text, 0o755)
+        _atomic_write_text(lay.env_file, etext, 0o644)
+        _atomic_manifest(mp, new_manifest)
+        manifest_replaced = True
+    except Exception as e:
+        rollback_errors = _rollback(backups, lay.env_file, mp, old_bytes, manifest_replaced)
+        _remove_fresh_dir(lay.tid_dir, lay.tr, had)
+        msg = str(e)
+        if rollback_errors:
+            msg += f" (rollback failed: {'; '.join(rollback_errors)})"
+        raise InstallError(msg) from e
+
+
 def install(
     tool: Tool,
     *,
@@ -223,77 +560,16 @@ def install(
     all_tools: Sequence[Tool] | None = None,
 ) -> list[str]:
     """install tool and update manifest"""
-    if mode not in place.MODES:
-        raise InstallError(f"unknown mode: {mode}")
-    probs = place.preflight(tool, prefix, machine, free_mb_fn)
-    if probs:
-        raise InstallError("; ".join(probs))
-    bad_digest = digest_problem(tool)
-    if bad_digest:
-        raise InstallError(bad_digest + ". Nothing was downloaded.")
-    tr = tools_root(prefix)
-    sandbox = tr / tool.id / "home"
-    real_bin = sandbox / ".local" / "bin" / tool.binary
-    bin_dir = tr / "bin"
-    wrapper = bin_dir / tool.binary
-    run_dir = tr / "run"
-    env_file = tr / "env.sh"
-    tid_dir = tr / tool.id
-    if tid_dir.is_symlink() or sandbox.is_symlink():
-        raise InstallError(f"refusing symlink: {tid_dir if tid_dir.is_symlink() else sandbox}")
+    _refuse_early(tool, prefix, mode, machine, free_mb_fn)
+    lay = _layout(prefix, tool)
+    if lay.tid_dir.is_symlink() or lay.sandbox.is_symlink():
+        raise InstallError(f"refusing symlink: {lay.tid_dir if lay.tid_dir.is_symlink() else lay.sandbox}")
     prev = read_manifest(prefix)
     prev_tools = dict(prev.get("tools", {})) if isinstance(prev.get("tools"), dict) else {}
     had = tool.id in prev_tools
-    lookup: dict[str, Tool] = {tool.id: tool}
-    if all_tools is not None:
-        for t in all_tools:
-            lookup[t.id] = t
-    regen_ids = [tid for tid in prev_tools if tid != tool.id and isinstance(prev_tools.get(tid), dict)]
-    regen_needed = False
-    if regen_ids:
-        if prev.get("mode") != mode or prev.get("python") != python or str(prev.get("src_dir", "")) != str(src_dir):
-            regen_needed = True
-        else:
-            for tid in regen_ids:
-                if tid not in lookup:
-                    continue
-                t = lookup[tid]
-                meta = prev_tools[tid]
-                sb = Path(meta.get("sandbox", str(tr / tid / "home")))
-                rb = sb / ".local" / "bin" / t.binary
-                wp = tr / "bin" / t.binary
-                try:
-                    exp = launcher.render_wrapper(t, rb, sb, run_dir, mode, python, src_dir)
-                except Exception:
-                    regen_needed = True
-                    break
-                try:
-                    cur_text = wp.read_text(encoding="utf-8") if wp.is_file() else None
-                except Exception:
-                    cur_text = None
-                if cur_text != exp:
-                    regen_needed = True
-                    break
-    changing = bool(prev_tools) and bool(regen_ids) and regen_needed
-    if changing:
-        missing = [tid for tid in regen_ids if tid not in lookup]
-        if missing:
-            raise InstallError(f"missing catalog entry: {missing[0]}")
-    planned: dict[Path, str] = {}
-    try:
-        if changing:
-            for tid in regen_ids:
-                t = lookup[tid]
-                meta = prev_tools[tid]
-                sb = Path(meta.get("sandbox", str(tr / tid / "home")))
-                rb = sb / ".local" / "bin" / t.binary
-                planned[tr / "bin" / t.binary] = launcher.render_wrapper(t, rb, sb, run_dir, mode, python, src_dir)
-        planned[wrapper] = launcher.render_wrapper(tool, real_bin, sandbox, run_dir, mode, python, src_dir)
-        etext = launcher.render_env(bin_dir)
-    except InstallError:
-        raise
-    except Exception as e:
-        raise InstallError(str(e)) from e
+    lookup = _lookup(tool, all_tools)
+    regen_ids, changing = _regen_plan(tool, prev, prev_tools, lookup, lay, mode, python, src_dir)
+    planned, etext = _plan_writes(tool, lay, changing, regen_ids, lookup, prev_tools, mode, python, src_dir)
     if dry_run:
         # Kept short: setup shows at most 300 characters of this joined list, and the sign-in line comes last.
         return [
@@ -301,135 +577,16 @@ def install(
             f"would fetch {tool.installer_url} and run it only if its sha256 matches",
             f"Sign in yourself: {tool.signin}",
         ]
-    _ensure_dirs(sandbox, tid_dir, bin_dir, run_dir)
-    need_fetch = force or not (real_bin.is_file() and os.access(real_bin, os.X_OK))
+    _ensure_dirs(lay.sandbox, lay.tid_dir, lay.bin_dir, lay.run_dir)
+    need_fetch = force or not (lay.real_bin.is_file() and os.access(lay.real_bin, os.X_OK))
     if need_fetch:
-        sp = ""
-        try:
-            data = fetch(tool.installer_url)
-            fd, sp = tempfile.mkstemp(dir=str(tid_dir))
-            try:
-                off = 0
-                while off < len(data):
-                    n = os.write(fd, data[off:])
-                    if n == 0:
-                        raise OSError("short write: incomplete installer")
-                    off += n
-            except Exception:
-                with contextlib.suppress(Exception):
-                    os.close(fd)
-                raise
-            else:
-                os.close(fd)
-            # Hash the file the interpreter will read, before it is made executable or run.
-            _check_digest(tool, sp)
-            os.chmod(sp, 0o700)
-            env = _runner_env(sandbox, tool.installer_env)
-            rc, out = runner([tool.interpreter, sp, *tool.installer_args], env, 900.0)
-            if rc != 0:
-                raise InstallError(f"installer failed ({rc}): {out}")
-            if not (real_bin.is_file() and os.access(real_bin, os.X_OK)):
-                raise InstallError(f"installer did not create {real_bin}")
-        except Exception:
-            if not had:
-                with contextlib.suppress(Exception):
-                    if tid_dir.is_dir() and not tid_dir.is_symlink() and _inside(tid_dir, tr):
-                        shutil.rmtree(tid_dir)
-                with contextlib.suppress(Exception):
-                    c2 = read_manifest(prefix)
-                    if not c2.get("tools"):
-                        for p in (bin_dir, run_dir, tr):
-                            with contextlib.suppress(OSError):
-                                p.rmdir()
-            raise
-        finally:
-            with contextlib.suppress(Exception):
-                if sp:
-                    os.unlink(sp)
+        _fetch_and_run(tool, prefix, lay, fetch, runner, had)
     if profiles is None:
-        cands: list[Path] = [home / ".profile"]
-        brc = home / ".bashrc"
-        if brc.is_file():
-            cands.append(brc)
-        profiles = cands
-    got: list[str] = []
-    for p in profiles:
-        launcher.add_profile_block(p, env_file)
-        with contextlib.suppress(Exception):
-            if launcher.BEGIN in p.read_text(encoding="utf-8", errors="ignore"):
-                got.append(str(p))
-    cur = prev
-    tools_dict = dict(prev_tools)
-    tools_dict[tool.id] = {"binary": tool.binary, "sandbox": str(sandbox), "signin": tool.signin, "mode": mode}
-    if changing:
-        for tid in regen_ids:
-            existing = tools_dict.get(tid)
-            if isinstance(existing, dict):
-                updated = dict(existing)
-                updated["mode"] = mode
-                tools_dict[tid] = updated
-    old_profiles = cur.get("profiles", []) if isinstance(cur.get("profiles"), list) else []
-    merged: list[str] = []
-    seen: set[str] = set()
-    for x in list(old_profiles) + got:
-        if x not in seen:
-            seen.add(x)
-            merged.append(x)
-    new_manifest = {
-        "version": 1,
-        "mode": mode,
-        "python": python,
-        "src_dir": str(src_dir),
-        "profiles": merged,
-        "tools": tools_dict,
-    }
-    mp = manifest_path(prefix)
-    try:
-        old_bytes = mp.read_bytes() if mp.is_file() else None
-    except OSError as e:
-        _remove_fresh_dir(tid_dir, tr, had)
-        raise InstallError(str(e)) from e
-    backups: dict[Path, bytes | None] = {}
-    for p in list(planned) + [env_file]:
-        try:
-            backups[p] = p.read_bytes() if p.is_file() else None
-        except OSError as e:
-            _remove_fresh_dir(tid_dir, tr, had)
-            raise InstallError(str(e)) from e
-    manifest_replaced = False
-    try:
-        for p, text in planned.items():
-            _atomic_write_text(p, text, 0o755)
-        _atomic_write_text(env_file, etext, 0o644)
-        _atomic_manifest(mp, new_manifest)
-        manifest_replaced = True
-    except Exception as e:
-        rollback_errors: list[str] = []
-        for p, b in backups.items():
-            try:
-                if b is None:
-                    if p.is_file() or p.is_symlink():
-                        p.unlink()
-                else:
-                    mode = 0o644 if p == env_file else 0o755
-                    _atomic_write_bytes(p, b, mode)
-            except Exception as re:
-                rollback_errors.append(f"{p}: {re}")
-        if manifest_replaced:
-            try:
-                if old_bytes is None:
-                    if mp.is_file() or mp.is_symlink():
-                        mp.unlink()
-                else:
-                    _atomic_write_bytes(mp, old_bytes, 0o600)
-            except Exception as re:
-                rollback_errors.append(f"{mp}: {re}")
-        _remove_fresh_dir(tid_dir, tr, had)
-        msg = str(e)
-        if rollback_errors:
-            msg += f" (rollback failed: {'; '.join(rollback_errors)})"
-        raise InstallError(msg) from e
-    return [f"installed {tool.id} to {prefix}", f"wrapper {wrapper}", f"Sign in yourself: {tool.signin}"]
+        profiles = _default_profiles(home)
+    got = _add_profile_blocks(profiles, lay.env_file)
+    new_manifest = _next_manifest(tool, lay, prev, prev_tools, changing, regen_ids, got, mode, python, src_dir)
+    _commit(prefix, lay, planned, etext, new_manifest, had)
+    return [f"installed {tool.id} to {prefix}", f"wrapper {lay.wrapper}", f"Sign in yourself: {tool.signin}"]
 
 
 def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
