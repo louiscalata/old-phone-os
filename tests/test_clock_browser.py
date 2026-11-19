@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -153,6 +154,7 @@ class ClockBrowser(unittest.TestCase):
             if name.endswith(".json"):
                 os.remove(os.path.join(self.tmp, name))
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_morning_alarm_flow(self):
         cases = [
             {

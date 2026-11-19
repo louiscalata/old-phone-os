@@ -1662,6 +1662,8 @@ class InstallerCloseTest(unittest.TestCase):
 
             def fake_close(fd):
                 if fd == captured.get("fd"):
+                    # Close first, then report failure. Windows cannot unlink a file whose handle is still open.
+                    orig_close(fd)
                     raise OSError("simulated delayed storage failure on close")
                 return orig_close(fd)
 

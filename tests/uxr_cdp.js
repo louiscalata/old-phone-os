@@ -51,7 +51,7 @@ async function connect() {
     for (let i; (i = buf.indexOf(0)) >= 0; buf = buf.subarray(i + 1)) onMessage(JSON.parse(buf.subarray(0, i).toString()));
   });
   raw = s => child.stdio[3].write(s + '\0');
-  return () => { try { child.kill('SIGKILL'); } catch (e) {} try { fs.rmSync(udd, { recursive: true, force: true }); } catch (e) {} };
+  return () => { try { if (process.platform === 'win32') { child.kill(); try { require('child_process').spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {stdio: 'ignore'}); } catch (e2) {} } else { child.kill('SIGKILL'); } } catch (e) {} try { fs.rmSync(udd, { recursive: true, force: true }); } catch (e) {} };
 }
 async function ev(expression) {
   const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });

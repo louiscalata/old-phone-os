@@ -89,6 +89,7 @@ class ClockPage(unittest.TestCase):
         )
         return log
 
+    @unittest.skipIf(sys.platform == "win32", "needs a POSIX-shell paplay stub on PATH")
     def test_the_clock_thread_path_plays_the_ramp_through_paplay(self):
         log = self._stub('printf \'%s\\n\' "$*" >> "$OPOS_PAPLAY_LOG"')
         event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")

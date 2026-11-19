@@ -155,7 +155,11 @@ class Findings(unittest.TestCase):
     def test_7_dev_sudo_adds_a_persistent_screen_warning_without_changing_html(self):
         before = panes.inject("<head></head><body>phone</body>", "n1", {"OPOS_PANES": "1"})
         original = Path.exists
-        with mock.patch.object(Path, "exists", lambda p: str(p) == "/etc/sudoers.d/90-opos-dev" or original(p)):
+
+        def _is_dev_sudo(p):
+            return str(p).replace("\\", "/").endswith("/etc/sudoers.d/90-opos-dev")
+
+        with mock.patch.object(Path, "exists", lambda p: _is_dev_sudo(p) or original(p)):
             css = panes.css_text(env={"OPOS_PANES": "1"})
         self.assertIn('content:"DEV: passwordless sudo for droidian"', css)
         self.assertIn("position:fixed", css)
@@ -164,7 +168,7 @@ class Findings(unittest.TestCase):
         def closed(
             p,
         ):  # what Path.exists does before Python 3.14 when /etc/sudoers.d is 0750 and the server is not root
-            if str(p) == "/etc/sudoers.d/90-opos-dev":
+            if _is_dev_sudo(p):
                 raise PermissionError(13, "Permission denied", str(p))
             return original(p)
 
