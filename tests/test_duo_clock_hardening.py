@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Clock verification keeps recovery keys separate from developer-only state."""
 
+import sys
 import unittest
 
 from tests import test_duo_os_clock as clock
@@ -12,6 +13,7 @@ class ClockKeyRoles(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_an_owner_key_does_not_enable_the_clock_drop_in_a_marked_image(self):
         f = self.fixture
         for mode in ("release", "dev"):
@@ -28,6 +30,7 @@ class ClockKeyRoles(unittest.TestCase):
                 )
                 self.assertIn("FAIL no developer key: the time-file drop is not enabled", f.verify_fail(r))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_a_marked_dev_image_still_requires_the_clock_drop(self):
         f = self.fixture
         r = f.rootfs()

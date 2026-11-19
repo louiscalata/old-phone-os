@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -151,6 +152,7 @@ class SetModeCharacterization(_Base):
                 installer.set_mode(self.prefix, "full", [TA, TB])
         self.assertIs(cm.exception, err)
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_render_arguments_and_defaults(self):
         self.write_manifest({"tools": {"tool-a": {}, "tool-b": {"sandbox": "/sb/b"}}})
         calls = []
@@ -216,6 +218,7 @@ class SetModeCharacterization(_Base):
 
     # --- success ----------------------------------------------------------------------------------
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_success_writes_wrappers_and_manifest(self):
         m = self.two_tool_manifest()
         m["tools"]["tool-c"] = {"binary": "binc"}
@@ -265,6 +268,7 @@ class SetModeCharacterization(_Base):
         os.chmod(self.bin / "bina", 0o700)
         return self.mp.read_bytes()
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_manifest_write_failure_restores_wrappers(self):
         before = self.prepare_rollback()
         err = OSError("disk full")

@@ -6,6 +6,7 @@ import re
 import shlex
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -441,6 +442,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             env=_probe_env(PATH=bin_dir + ":" + os.environ.get("PATH", "")),
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_start_capture_delete_removes_first_exact_rule(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, state4, state6, cmd4, cmd6, _ = self._make_legacy_start_capture(tmp)
@@ -466,6 +468,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                     with open(state, encoding="utf-8") as handle:
                         self.assertEqual(handle.read(), after_second)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_start_capture_honors_exact_command_arguments(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, state4, state6, cmd4, cmd6, _ = self._make_legacy_start_capture(tmp)
@@ -567,6 +570,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         )
         return proc
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_start_capture_check_detects_missing_input_jump(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, _, _, cmd4, _, _ = self._make_legacy_start_capture(tmp)
@@ -596,6 +600,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_probe_paths_are_not_shell_interpreted(self):
         with tempfile.TemporaryDirectory() as tmp:
             inner = "touch" + _chr(36) + "{IFS}canary"
@@ -636,6 +641,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertEqual(proc.stdout.strip(), "iptables-legacy")
             self.assertFalse(os.path.exists(os.path.join(tmp, "canary")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_auto_falls_back_when_ruleset_check_rejects(self):
         with tempfile.TemporaryDirectory() as bin_dir:
             _write_exe(
@@ -671,6 +677,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             self.assertEqual(proc.stdout.strip(), "iptables-legacy")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_stop_reports_removal_failure_xyz_placeholder_never_used(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -766,6 +773,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             proc = self._run_generated_legacy_stop(cap_file, bin_dir)
             self.assertNotEqual(proc.returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_apply_verifies_first_input_rule_after_policy(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -857,6 +865,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("INPUT jump missing", proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_stop_fails_when_inspection_unreliable(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -942,6 +951,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("cannot inspect", proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_proves_opos_absence_from_complete_listing(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -1026,6 +1036,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             proc = self._run_generated_legacy_stop(cap_file, bin_dir)
             self.assertNotEqual(proc.returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_ipv6_dhcpv6_client_restricted(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -1297,6 +1308,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         open_line = base + " " + nul + dq + verdict + chr(32) + mark + tail + " -j " + allow
         self.assertFalse(_nft_dhcpv6_ok(open_line, sport6, dport6, iface, ll), msg=open_line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_stop_fails_on_late_inspection_errors(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -1445,6 +1457,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                     self.assertNotEqual(proc.returncode, 0, msg=label + ":" + proc.stdout + proc.stderr)
                     self.assertIn("cannot inspect", proc.stderr, msg=label)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_ignores_similar_names_and_comments(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -1567,6 +1580,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertIn(decoy_fwd, proc.stdout, msg=tool)
                 self.assertIn(comment, proc.stdout, msg=tool)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_removes_owned_and_preserves_unrelated(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -1798,6 +1812,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 )
                 self.assertIn(unrelated_fwd, proc.stdout, msg=tool)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_requires_both_families_cleaned(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -2000,6 +2015,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             )
             self.assertIn(hook_in, proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_last_forward_chain_entry(self):
         hook_in = "OPOS" + "_" + "INPUT"
         hook_fwd = "OPOS" + "_" + "FORWARD"
@@ -2053,6 +2069,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     _mock_string(ast.parse(expression, mode="eval").body, "OPOS_INPUT", "OPOS_FORWARD")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unrelated_mutations_rejected_not_silently_kept(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -2322,6 +2339,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertIn("*nft*' -f '*", body)
         self.assertNotIn("*nft* -f *", body)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_switch_clears_stale_backend_refuses_without_verified_ssh(self):
         proc, logged, backend, prev = self._run_switch("nft", "iptables-legacy")
         self.assertNotEqual(proc.returncode, 0, msg=proc.stderr)
@@ -2369,6 +2387,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertFalse(_nft_table_cleanup_exact("delete table " + fam + " " + tab + und, fam, tab))
         self.assertFalse(_nft_table_cleanup_exact(base + chr(32) + chr(32), fam, tab) is False)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_switch_legacy_to_nft_refuses_without_verified_ssh(self):
         proc, logged, backend, prev = self._run_switch("iptables-legacy", "nft")
         self.assertNotEqual(proc.returncode, 0, msg=proc.stderr)
@@ -2377,6 +2396,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertEqual(backend, "iptables-legacy")
         self.assertEqual(prev, "")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_switch_cleanup_failure_refused_before_mutation(self):
         cases = [("nft", "iptables-legacy"), ("iptables-legacy", "nft")]
         for previous, current in cases:
@@ -2389,6 +2409,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertEqual(backend, previous)
                 self.assertEqual(prev, "")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_cleanup_keeps_old_backend_and_recovery(self):
         import shutil
 
@@ -2449,6 +2470,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertEqual(backend, "nft")
         self.assertEqual(prev, "nft")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_saved_backend_rejects_corrupt_without_overwrite(self):
         import shutil
 
@@ -2523,6 +2545,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_stop_missing_or_unexecutable_fails_migration(self):
         import shutil
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -2582,6 +2605,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertEqual(backend, "iptables-legacy", msg=leaf)
             self.assertEqual(prev, "iptables-legacy", msg=leaf)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_mutations_restricted_to_opos_targets(self):
 
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -2906,6 +2930,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertFalse(_nft_dhcpv6_ok(ipt, sport6, dport6, iface, ll), msg=ipt)
         self.assertFalse(_nft_dhcpv6_ok(nft, sport6, dport6, iface, ll), msg=nft)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_saved_backend_rejects_dangling_and_lookup_failure(self):
         import shutil
 
@@ -2950,6 +2975,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_saved_backend_fails_on_denied_lookups(self):
         import shutil
 
@@ -3007,6 +3033,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_saved_backend_proves_absence_under_nonenglish_diagnostics(self):
         import shutil
 
@@ -3096,6 +3123,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_stop_removes_installed_hooks_preserving_unrelated(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -3327,6 +3355,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertNotIn(hook_fwd, raw, msg=tool)
                 self.assertIn(unrelated, raw, msg=tool)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_check_requires_exact_chain_target_and_args(self):
         chin = "OPOS" + "_" + "INPUT"
         chfwd = "OPOS" + "_" + "FORWARD"
@@ -3394,6 +3423,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 )
                 self.assertNotEqual(proc.returncode, 0, msg=" ".join(args))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_chain_rejects_nonempty_or_referenced(self):
         chin = "OPOS" + "_" + "INPUT"
         chfwd = "OPOS" + "_" + "FORWARD"
@@ -3450,6 +3480,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertIn("-A " + chfwd + " -j DROP", proc.stdout)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_models_policy_and_compares_unrelated(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -3809,6 +3840,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             dropped = [line for line in base if line != rule]
             self.assertNotEqual(_surviving_snapshot(dropped, owned), snap, msg=rule)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_chain_ignores_decoy_jump_reference(self):
         chin = "OPOS" + "_" + "INPUT"
         extra = _chr(95) + "EXTRA"
@@ -3838,6 +3870,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertIn("-A INPUT -j " + decoy, lines)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_exact_only_preserves_prefixed_jump(self):
         chin = "OPOS" + "_" + "INPUT"
         extra = _chr(95) + "EXTRA"
@@ -3873,6 +3906,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertIn("-A INPUT -j " + decoy, lines, msg=" ".join(args))
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_chain_deletion_requires_empty_and_unreferenced(self):
         chin = "OPOS" + "_" + "INPUT"
         chfwd = "OPOS" + "_" + "FORWARD"
@@ -3943,6 +3977,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, msg=label + ":" + proc.stderr)
                 self.assertTrue(os.path.exists(os.path.join(state, gone_mark)), msg=label)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_chain_fixtures_distinguish_prefix_decoy(self):
         chin = "OPOS" + "_" + "INPUT"
         chfwd = "OPOS" + "_" + "FORWARD"
@@ -4102,6 +4137,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertEqual(stripped.index(rule), stripped.index(decl) + 1)
         self.assertEqual(lines[stripped.index(decl)][:len(lines[stripped.index(decl)]) - len(lines[stripped.index(decl)].lstrip())], lines[stripped.index(rule)][:len(lines[stripped.index(rule)]) - len(lines[stripped.index(rule)].lstrip())])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_dry_run_skips_live_verification(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -4175,6 +4211,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                     self.assertFalse(line.startswith("-S"), msg=line)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_cold_boot_ipv6_failure_retains_safe_filtering_and_blocks_network(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -4446,6 +4483,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertNotIn("-F OPOS_INPUT", line)
                 self.assertNotIn("-F OPOS_FORWARD", line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_requires_live_ssh_and_rolls_back(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -4527,6 +4565,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertNotIn("stop", logged)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_removes_one_duplicate_jump_per_invocation(self):
         chin = "OPOS" + "_" + "INPUT"
         with tempfile.TemporaryDirectory() as tmp:
@@ -4547,6 +4586,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 remaining = [line.strip() for line in handle.read().splitlines() if line.strip()]
             self.assertEqual(remaining, [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_last_jump_empties_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, state4, _, cmd4, _, _ = self._make_legacy_start_capture(tmp)
@@ -4576,6 +4616,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_rejects_invalid_jump_option_and_preserves_state(self):
         chin = "OPOS" + "_" + "INPUT"
         with tempfile.TemporaryDirectory() as tmp:
@@ -4610,6 +4651,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             with open(state, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_rejects_unowned_and_preserves_owned_for_rollback(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -4680,6 +4722,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertIn("-A " + hook_in + " -j DROP", saved)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stop_reports_jump_flush_chain_failure_per_family(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -4928,6 +4971,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertNotEqual(proc.returncode, 0, msg=label + ":" + proc.stdout + proc.stderr)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_shared_mock_delete_preserves_prefixed_decoy(self):
         chin = "OPOS" + "_" + "INPUT"
         extra = _chr(95) + "EXTRA"
@@ -4951,6 +4995,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertNotIn(target_line, lines)
             self.assertIn(decoy_line, lines)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_shared_mock_delete_requires_match_and_successful_commit(self):
         chin = "OPOS" + "_" + "INPUT"
         unrelated = "UNREL" + "ATED"
@@ -4979,6 +5024,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 with open(state, encoding="utf-8") as handle:
                     self.assertEqual(handle.read(), seed)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_shared_mock_delete_rejects_existing_empty_state(self):
         hook = "OPOS" + "_" + "INPUT"
         with tempfile.TemporaryDirectory() as tmp:
@@ -4993,6 +5039,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             with open(state, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_start_moves_input_jump_first(self):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -5136,6 +5183,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
                 self.assertNotEqual(proc.returncode, 0, msg=flag)
 
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_migration_guard_requires_ssh_accept(self):
         import shutil
 
@@ -5311,6 +5359,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertLess(ipt_line.find(ipt_excl), ipt_line.find("OPOS_INPUT"))
         self.assertLess(ipt_line.find(ipt_excl), ipt_line.find("--dport"))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_nft_migration_guard_requires_terminal_accept_verdict(self):
         script = Path(__file__).resolve().parents[1] / "deploy" / "harden.d" / "20-firewall.sh"
         text = script.read_text(encoding="utf-8")
@@ -5375,6 +5424,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
         self.assertLess(quote_pos, line.find("accept"))
         self.assertLess(quote_pos, line.find("drop"))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_final_entry_empties_state_and_propagates_failures(self):
         chin = "OPOS" + "_" + "INPUT"
         with tempfile.TemporaryDirectory() as tmp:

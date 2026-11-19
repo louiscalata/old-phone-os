@@ -154,6 +154,7 @@ class Script(unittest.TestCase):
         cls.text = SCRIPT.read_text(encoding="utf-8")
         cls.code = "\n".join(line for line in cls.text.splitlines() if not line.lstrip().startswith("#"))
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_it_is_a_safe_posix_script(self):
         lines = self.text.splitlines()
         self.assertEqual(lines[0], "#!/bin/sh")

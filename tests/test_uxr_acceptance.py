@@ -39,6 +39,8 @@ except ImportError:  # Windows has no pwd module
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE / "uxr_cdp.js"
 VERBOSE = os.environ.get("OPOS_UXR_VERBOSE") == "1"
+# Windows has no SIGKILL; os.kill with SIGTERM there terminates the process outright.
+KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 # test_touch_targets: selector -> (min CSS px, reason). Default minimum is 48.
 ALLOW_SIZE = {
@@ -139,7 +141,7 @@ def _launch(chrome, tmp):
 def _kill(proc):
     if proc is not None and proc.poll() is None:
         try:
-            os.kill(proc.pid, signal.SIGKILL)
+            os.kill(proc.pid, KILL)
         except OSError:
             pass
         proc.wait(timeout=10)
@@ -204,7 +206,7 @@ class TestUxrAcceptance(unittest.TestCase):
         _kill(self.proc)
         try:
             pid = int(Path(self.pidfile).read_text())
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, KILL)
         except (OSError, ValueError):
             pass
 

@@ -156,6 +156,8 @@ class Fake:
     def pulse(self, rel):
         """Leave a Unix socket file at rel, bound by its bare name because a temporary path can be longer than a socket address may be."""
         f = self.root / rel.lstrip("/")
+        if not hasattr(socket, "AF_UNIX"):
+            raise unittest.SkipTest("needs AF_UNIX sockets, which Python does not expose on Windows")
         f.parent.mkdir(parents=True, exist_ok=True)
         here, s = os.getcwd(), socket.socket(socket.AF_UNIX)
         try:
@@ -2122,6 +2124,7 @@ class ImageWiring(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^# --- qa: END", text, re.M)), 1)
         return m.group(1)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_scripts_parse(self):
         for p in (BUILD, VERIFY):
             r = subprocess.run(["sh", "-n", str(p)], capture_output=True, text=True)
@@ -2139,6 +2142,7 @@ class ImageWiring(unittest.TestCase):
         if r.returncode == 0 and r.stdout.strip():
             self.assertTrue(r.stdout.startswith("100755"), "commit it executable: git update-index --chmod=+x")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_build_block_installs_the_script_and_a_wrapper(self):
         b = self.block(BUILD)
         self.assertIn('install -m 0755 "$here/opos-selftest" "$r/usr/libexec/opos/opos-selftest"', b)

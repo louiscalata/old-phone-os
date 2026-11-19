@@ -9,6 +9,7 @@ import json
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,7 @@ class TileSizeMarkupTests(unittest.TestCase):
         ]
         self.assertEqual(checkboxes, list(APPS))
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_chosen_sizes_persist_independently_of_favourites(self):
         selected = {"phone": "wide", "messages": "small", "helper": "medium", "settings": "wide"}
         value = {"favourites": ["settings"], "sizes": selected}

@@ -7,6 +7,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class State(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_atomic_publication_readback_permissions_and_cleanup(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.json"

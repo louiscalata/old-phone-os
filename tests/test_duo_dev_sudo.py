@@ -149,6 +149,7 @@ class StaticPins(unittest.TestCase):
         self.assertNotIn('"sudo"', t)
         self.assertNotRegex(t, r"subprocess\.\w+\(\[?['\"]sudo")
 
+    @unittest.skipIf(sys.platform == "win32", "needs fcntl (POSIX only)")
     def test_release_builder_and_updater_reject_both_dev_only_files(self):
         import importlib.machinery
         import importlib.util

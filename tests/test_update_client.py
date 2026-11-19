@@ -17,6 +17,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -1341,6 +1342,7 @@ class RollbackRequest(Env):
                 with self.assertRaises(uc.UpdateError):
                     self.client().request_rollback()
 
+    @unittest.skipIf(sys.platform == "win32", "symlink semantics differ on Windows")
     def test_planted_symlink_is_not_followed(self):
         self.state(2, previous=["1-bbbbbbbbbbbb"])
         victim = os.path.join(self.tmp.name, "victim")
@@ -2199,6 +2201,7 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
 
 
 class Defaults(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_production_paths(self):
         p = uc.Paths()
         self.assertEqual(

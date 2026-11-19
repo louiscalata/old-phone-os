@@ -170,6 +170,7 @@ class SystemdUnitTests(unittest.TestCase):
     def render(self, env):
         return render_user_unit(TEMPLATE, Path("/opt/owner/opos"), "/usr/bin/python3", Path("/opt/owner/cfg"), env=env)
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_unset_renders_as_before(self) -> None:
         base = render_user_unit(TEMPLATE, Path("/opt/owner/opos"), "/usr/bin/python3", Path("/opt/owner/cfg"))
         self.assertEqual(self.render(None), base)
@@ -180,6 +181,7 @@ class SystemdUnitTests(unittest.TestCase):
             {"PYTHONPATH": "/opt/owner/opos/src", "PYTHONDONTWRITEBYTECODE": "1", "OPOS_CONFIG_DIR": "/opt/owner/cfg"},
         )
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_route_settings_written_to_service_section(self) -> None:
         unit = self.render({**ROUTE, **SECRETS})
         env = _service_env(unit)
@@ -190,6 +192,7 @@ class SystemdUnitTests(unittest.TestCase):
         self.assertNotIn("BASETEN_API_KEY", unit)
         self.assertNotIn("OPOS_SPARK_OPEN", unit)
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_escaping(self) -> None:
         unit = self.render({"OPOS_GLIMMER_URL": AWKWARD_URL})
         self.assertIn('Environment="OPOS_GLIMMER_URL=http://127.0.0.1:1235/v1%%2Fa\\"b\\\\c&<d>"\n', unit)
@@ -248,6 +251,7 @@ class InstallServicesTests(unittest.TestCase):
         self.home = self.base / "home"
         self.home.mkdir()
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_linux_unit_keeps_route_and_reports_what_it_left_out(self) -> None:
         env = {**ROUTE, "OPOS_LAN_URL": "http://8.8.8.8:1234/v1"}
         actions = install_services(

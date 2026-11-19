@@ -4,6 +4,7 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -349,6 +350,7 @@ class SSHReviewTests(unittest.TestCase):
         self.assertIn("probe", pre)
         self.assertIn("USEDNS_LINES", pre)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_p028_contextual_probe_rollback_and_order(self):
         body = self.body
         probe_lines = [ln for ln in body.splitlines() if "sshd" in ln and "-T" in ln and "-C" in ln and "run" in ln]
@@ -358,6 +360,7 @@ class SSHReviewTests(unittest.TestCase):
         self.assertIn("addr=$caddr", probe)
         _check_all(body)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_r019_behavioral_checks_reject_mutations(self):
         _check_all(self.body)
         restore_mut = self.body.replace('cp -p "$BACKUP_DIR$conf" "$(p "$conf")"', ":")
@@ -388,6 +391,7 @@ class SSHReviewTests(unittest.TestCase):
         self.assertEqual(run_mock.call_count, 1)
         self.assertEqual(run_mock.call_args.kwargs.get("timeout"), 10)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_s033_restore_requires_backup_of_existing_live_config(self):
         _check_restore_with_backup(self.body)
         pre = _bash_prelude()
@@ -397,6 +401,7 @@ class SSHReviewTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 _check_restore_with_backup(self.body)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_p028_usedns_guard_acceptance_and_rollback(self):
         body = self.body
         lines = body.splitlines()
@@ -495,6 +500,7 @@ class SSHReviewTests(unittest.TestCase):
                             else:
                                 self.assertFalse(os.path.exists(drop), name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_step_ssh_accepts_usedns_no(self):
         repo = Path(__file__).resolve().parent.parent
         script_text = (repo / "deploy" / "harden.d" / "10-ssh.sh").read_text()

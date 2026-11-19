@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +23,7 @@ class TestGuardStagedFiles(unittest.TestCase):
         os.chdir(self._orig_cwd)
         self._tmp.cleanup()
 
+    @unittest.skipIf(sys.platform == "win32", "Windows file names cannot contain a newline")
     def test_staged_preserves_spaces_nonascii_newline(self):
         names = [
             "normal.txt",
