@@ -67,13 +67,13 @@ def _play(emit, fast):
         if name is None:
             try:
                 name = t[0]
-            except Exception:
+            except (TypeError, IndexError, KeyError):
                 continue
         cost = getattr(t, "cost", None)
         if cost is None:
             try:
                 cost = t[2]
-            except Exception:
+            except (TypeError, IndexError, KeyError):
                 cost = 0
         task_cost[name] = cost
     sim = DrainSim(level=40.0, health=0.6, temp_c=30.0, speed=60.0)
