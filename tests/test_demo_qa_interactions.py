@@ -9,7 +9,6 @@ import unittest
 from opos.public_demo import DemoPhone
 from tests.test_helper_enter_dispatch import HARNESS, ROOT
 
-
 PRELUDE = HARNESS.split("(async()=>{", 1)[0].replace(
     "return{ids,doc,posts,flush,open,key,send,state}", "return{ctx,ids,doc,posts,flush,open,key,send,state}"
 )

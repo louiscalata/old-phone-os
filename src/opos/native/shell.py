@@ -60,11 +60,37 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from opos.native import blank, displayconfig, facing, hinge, logic, posture, screens  # noqa: E402
-from opos.native.layout import (SLOP, active_screen, drag_kind, drag_offset, drag_progress, drag_release,  # noqa: E402
-                                drag_velocity, hinge_px, load_hand, pane_order, panel_to_darken, save_hand, screen_at,
-                                swipe_action, touch_ignored)
-from opos.native.ui import (ANIMATE, CSS, MOVE_MS, Slide, bar, button, column, label, one_column, reading,  # noqa: E402
-                            two_columns, two_panes)
+from opos.native.layout import (  # noqa: E402
+    SLOP,
+    active_screen,
+    drag_kind,
+    drag_offset,
+    drag_progress,
+    drag_release,
+    drag_velocity,
+    hinge_px,
+    load_hand,
+    pane_order,
+    panel_to_darken,
+    save_hand,
+    screen_at,
+    swipe_action,
+    touch_ignored,
+)
+from opos.native.ui import (  # noqa: E402
+    ANIMATE,
+    CSS,
+    MOVE_MS,
+    Slide,
+    bar,
+    button,
+    column,
+    label,
+    one_column,
+    reading,
+    two_columns,
+    two_panes,
+)
 
 # The OPOS server, on loopback: OPOS_SERVER_URL when it is exactly http://127.0.0.1:PORT, else the phone's own port
 # (logic.server_url; a refused value is said once in the log and never used). Never OPOS_LOCAL_URL: that is the Helper's

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import re
 import unittest
+
 import opos.dashboard
 import opos.governor
 import opos.runtime

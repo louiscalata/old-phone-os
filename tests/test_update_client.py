@@ -25,9 +25,9 @@ import unittest
 import urllib.request
 from unittest import mock
 
-from opos import fonts, notices, update_client as uc, update_page
+from opos import fonts, notices, update_page
+from opos import update_client as uc
 from tests import webclient
-
 
 _saved = []
 

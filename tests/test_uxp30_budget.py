@@ -4,12 +4,12 @@
 import http.client
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import tempfile
 import threading
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from opos import firstrun, web

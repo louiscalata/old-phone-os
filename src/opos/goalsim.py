@@ -2,11 +2,10 @@
 import math
 
 from opos.benchmark_model import _load_model, resolve_model_path
+from opos.eol import BURST_A, EOL_PROFILE, brownout, load_amps
 from opos.power import static_low_power, total_drain
-from opos.runtime import DEFAULT_TASKS, Priority, Runtime, Task
-from opos.eol import EOL_PROFILE, BURST_A, brownout, load_amps
 from opos.reserve import call_possible, should_shutdown
-
+from opos.runtime import DEFAULT_TASKS, Priority, Runtime, Task
 
 KNOWN_STEPS = ("dim screen", "batch sync", "model")
 

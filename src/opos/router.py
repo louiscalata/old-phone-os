@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Battery-aware routing of tasks by power, heat, and goals."""
 
-from opos.governor import PowerState, Priority, Mode, Decision
+from opos.governor import Decision, Mode, PowerState, Priority
 from opos.power import SAVINGS_STEPS, feature_drain
 
 HORIZON_H = 4.0  # hours a useful task must be funded for

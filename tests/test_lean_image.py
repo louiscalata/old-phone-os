@@ -5,7 +5,6 @@ from pathlib import Path
 
 from tests.pmos_lint import function_body
 
-
 ROOT = Path(__file__).resolve().parent.parent
 OPOS_DEPENDS = {"python3", "modemmanager", "polkit", "dbus"}
 UI_DEPENDS = {"postmarketos-base-ui-cage", "opos", "chromium", "psmisc"}

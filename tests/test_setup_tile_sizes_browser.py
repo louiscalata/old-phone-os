@@ -20,9 +20,9 @@ from pathlib import Path
 from unittest import mock
 
 from opos import web
-from opos.setup import prefs, server as setup_server
+from opos.setup import prefs
+from opos.setup import server as setup_server
 from tests import test_uxr_acceptance as browser
-
 
 DRIVER = r"""
 'use strict';

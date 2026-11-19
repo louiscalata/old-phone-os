@@ -12,7 +12,6 @@ from opos import assist, muse, web
 from opos.advisor import GlimmerAdvisor
 from tests import test_glimmer_credit as credit
 
-
 GLIMMER = muse.glimmer_route({})
 FACTS = {
     "mode": "CRITICAL",

@@ -2,6 +2,7 @@
 import os
 import unittest
 from unittest.mock import Mock, patch
+
 from opos.battery import essentials_reserve
 from opos.governor import Decision, Mode, Priority, Task
 from opos.reserve import WORN_REASON, reserve_level

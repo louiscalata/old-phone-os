@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import hashlib
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from tests.install_script_stubs import InstallStubs
 

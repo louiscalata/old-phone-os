@@ -4,8 +4,8 @@
 import ipaddress
 import json
 import socket
-import sys
 import ssl
+import sys
 import threading
 import time
 import unittest

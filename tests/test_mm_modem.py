@@ -4,29 +4,29 @@
 import ast
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
-from unittest.mock import call
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from opos.essentials import Essentials
-from opos.mm_modem import CALL
-from opos.mm_modem import FakeModem
-from opos.mm_modem import MMModem
-from opos.mm_modem import MESSAGING
-from opos.mm_modem import MM
-from opos.mm_modem import MM_PATH
-from opos.mm_modem import OM
-from opos.mm_modem import SMS
-from opos.mm_modem import VOICE
-from opos.mm_modem import _parse_array
-from opos.mm_modem import _parse_dict
-from opos.mm_modem import _parse_string
-from opos.mm_modem import _parse_tuple
-from opos.mm_modem import _parse_variant
-from opos.mm_modem import _skip_ws
-from opos.mm_modem import find_modem
-from opos.mm_modem import parse_gvariant
-from opos.mm_modem import to_gvariant
+from opos.mm_modem import (
+    CALL,
+    MESSAGING,
+    MM,
+    MM_PATH,
+    OM,
+    SMS,
+    VOICE,
+    FakeModem,
+    MMModem,
+    _parse_array,
+    _parse_dict,
+    _parse_string,
+    _parse_tuple,
+    _parse_variant,
+    _skip_ws,
+    find_modem,
+    parse_gvariant,
+    to_gvariant,
+)
 
 
 class ModemFoundationTests(unittest.TestCase):
@@ -1056,6 +1056,7 @@ class GdbusBusTests(unittest.TestCase):
 
     def test_r011_adapter_timeout_and_nonzero_errors(self):
         import subprocess
+
         from opos.mm_modem import GdbusBus
 
         for method in ("call", "get"):
@@ -1185,8 +1186,7 @@ class FakeModemEssentialsTests(unittest.TestCase):
 
 class DefaultModemTests(unittest.TestCase):
     def test_f2043_default_modem_selection(self):
-        from opos.mm_modem import GdbusBus
-        from opos.mm_modem import default_modem
+        from opos.mm_modem import GdbusBus, default_modem
 
         gdbus = "/usr/bin/gdbus"
         socket = "/run/dbus/system_bus_socket"

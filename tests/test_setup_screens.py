@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import html
-import re
-import unittest
 import json
+import re
 import shutil
 import subprocess
+import unittest
 from html.parser import HTMLParser
 from unittest.mock import patch
+
 from opos import notices
-from opos.setup import wizard_page, jaryo_steps, jaryo_steps_js
+from opos.setup import jaryo_steps, jaryo_steps_js, wizard_page
 
 
 class TestSetupScreens(unittest.TestCase):

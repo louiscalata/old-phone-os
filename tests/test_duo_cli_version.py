@@ -2,10 +2,12 @@
 """Version flag regression coverage for setup CLI."""
 
 from __future__ import annotations
+
 import contextlib
 import io
 import unittest
 import unittest.mock
+
 from opos.setup import cli
 
 

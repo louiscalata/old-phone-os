@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.demo import run, LogModem
+
+from opos.demo import LogModem, run
 from opos.home import is_quiet
 
 

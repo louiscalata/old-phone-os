@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
+
 import contextlib
 import json
 import os
 import tempfile
 from pathlib import Path
+
 from opos.setup.config import config_dir
 
 # Navigation and resume order. The lock PIN step follows Wi-Fi (design decision 6); Helper stays last.

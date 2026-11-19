@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import unittest
 import os
 import sys
-from opos.ui import render, ScreenModem, main
+import unittest
+
 from opos.runtime import Runtime
+from opos.ui import ScreenModem, main, render
 
 
 class TestUI(unittest.TestCase):

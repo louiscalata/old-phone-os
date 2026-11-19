@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local call storage and modem events, without sockets, models or a phone."""
 
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 import json
 import os
-from pathlib import Path
 import stat
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from opos import calllog, contacts_page, web

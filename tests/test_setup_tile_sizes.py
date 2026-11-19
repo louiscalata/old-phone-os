@@ -14,7 +14,8 @@ import unittest
 from pathlib import Path
 
 from opos.setup import prefs, wizard_page
-from tests.test_jaryo_setup_recovery import _Dom, _script, RUNTIME as _RECOVERY_RUNTIME
+from tests.test_jaryo_setup_recovery import RUNTIME as _RECOVERY_RUNTIME
+from tests.test_jaryo_setup_recovery import _Dom, _script
 
 NODE = shutil.which("node")
 APPS = ("phone", "messages", "helper", "settings")

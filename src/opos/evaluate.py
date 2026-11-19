@@ -5,8 +5,8 @@ import random
 import sys
 
 from opos.benchmark_model import _load_model, resolve_model_path
+from opos.governor import Decision, Mode, PowerState, Priority, Task, rule_decide
 from opos.runtime import DEFAULT_TASKS, Runtime
-from opos.governor import PowerState, Priority, Task, Mode, Decision, rule_decide
 from opos.sim import DrainSim
 
 

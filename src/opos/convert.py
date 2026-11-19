@@ -2,7 +2,7 @@
 """Length, mass, volume and temperature. The factors are fixed. Nothing is stored or sent."""
 
 import re
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 # ASCII digits only, an optional sign and an optional fraction: no exponent, no "1.", no ".5".
 _NUM = re.compile(r"[+-]?[0-9]+(\.[0-9]+)?")

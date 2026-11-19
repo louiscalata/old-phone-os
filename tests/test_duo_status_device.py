@@ -2,10 +2,12 @@
 """Status prefers detected device over saved stub."""
 
 from __future__ import annotations
+
 import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
 from opos.setup.cli import main as cli_main
 
 

@@ -2,6 +2,7 @@
 """Apply and uninstall orchestration for first-run wizard."""
 
 from __future__ import annotations
+
 import contextlib
 import json
 import os
@@ -15,6 +16,7 @@ import urllib.request
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Mapping
+
 from opos.setup.config import config_dir, config_path, ensure_token, save, token_path, validate
 from opos.setup.services import Runner, ServiceError, install_services, uninstall_services
 

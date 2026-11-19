@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from opos.power import feature_drain, plan_reason, time_left_words, total_drain
 import re
+
 from opos.eol import is_worn
+from opos.power import feature_drain, plan_reason, time_left_words, total_drain
 
 # A daily goal counts as reached for 8 hours after its time, then targets the same time the next day.
 GOAL_GRACE_H = 8.0

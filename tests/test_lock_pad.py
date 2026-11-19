@@ -6,11 +6,11 @@ server's own answer says the phone is unlocked, and that showing the cover locks
 """
 
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import unittest
+from pathlib import Path
 
 JS = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static" / "pin.js"
 NODE = shutil.which("node")

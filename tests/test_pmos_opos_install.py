@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
 from pathlib import Path
+
 from tests.pmos_lint import function_body
 
 APKBUILD = Path(__file__).resolve().parent.parent / "packaging/pmos/opos/APKBUILD"

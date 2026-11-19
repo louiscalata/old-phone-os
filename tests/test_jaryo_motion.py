@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
-import json, shutil, subprocess, sys, tempfile, unittest
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 from tests import portable

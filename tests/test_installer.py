@@ -1574,8 +1574,9 @@ class InstallerCloseTest(unittest.TestCase):
     def _make_tool(self):
         """Create a minimal tool for installer tests."""
         try:
-            from opos.aitools.catalog import Tool
             import inspect
+
+            from opos.aitools.catalog import Tool
 
             sig = inspect.signature(Tool)
             kwargs = {}

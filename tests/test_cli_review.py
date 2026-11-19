@@ -2,10 +2,12 @@
 """Regression tests for setup CLI device detection handling."""
 
 from __future__ import annotations
+
 import io
 import unittest
 from pathlib import Path
 from unittest import mock
+
 import opos.setup.cli
 
 

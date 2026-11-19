@@ -13,7 +13,6 @@ from unittest import mock
 from opos.aitools import installer, launcher
 from opos.aitools.catalog import Tool
 
-
 FAKE_HOME = "/" + "home/real"
 
 

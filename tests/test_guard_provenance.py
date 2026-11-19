@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import hashlib
 import importlib.util
 import os
 import re
-import hashlib
-import unittest
 import subprocess
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

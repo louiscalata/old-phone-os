@@ -13,7 +13,8 @@ from html import unescape
 from pathlib import Path
 from unittest import mock
 
-from opos import appdoc, apps, apps_page, store as storemod, web
+from opos import appdoc, apps, apps_page, web
+from opos import store as storemod
 from opos.home import is_quiet
 from tests.test_panes_pages import TOKENS, css_hexes, style_of
 from tests.test_uxp30_budget import WAVE_GATE, served_home_page

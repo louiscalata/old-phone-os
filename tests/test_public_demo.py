@@ -1,22 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise the public boundary over real sockets, with no outbound client capability."""
 
-from contextlib import ExitStack, contextmanager
-from http.cookies import SimpleCookie
 import io
 import json
-import sys
 import os
-from pathlib import Path
 import re
-import socket
 import shutil
+import socket
 import subprocess
+import sys
 import threading
 import unittest
+from contextlib import ExitStack, contextmanager
+from http.cookies import SimpleCookie
+from pathlib import Path
 from unittest import mock
 
-from opos import public_demo as public, secure, web
+from opos import public_demo as public
+from opos import secure, web
 
 
 class Clock:

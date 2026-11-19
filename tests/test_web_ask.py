@@ -2,9 +2,10 @@
 import json
 import threading
 import unittest
-import urllib.request
 import urllib.error
+import urllib.request
 from unittest.mock import patch
+
 import opos.assist as assist
 import opos.muse as muse
 from opos.web import Phone

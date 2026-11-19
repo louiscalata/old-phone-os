@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.governor import PowerState, Priority, Task, Mode, Governor
+
+from opos.governor import Governor, Mode, PowerState, Priority, Task
 from opos.power import SAVINGS_STEPS, total_drain
-from opos.router import Router, afford, GOAL_BASE_DRAIN
+from opos.router import GOAL_BASE_DRAIN, Router, afford
 from opos.runtime import DEFAULT_TASKS, Runtime
 
 ALL_STEPS = tuple(s[0] for s in SAVINGS_STEPS)

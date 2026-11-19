@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import urllib.error
+
 import opos.assist as assist
 import opos.muse as muse
 from opos.governor import Decision, Mode, Priority

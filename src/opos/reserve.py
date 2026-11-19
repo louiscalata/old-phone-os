@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from opos.eol import is_worn, r0_for_health, call_reserve, shutdown_floor, max_safe_amps, MIN_CALL_A
+from opos.eol import MIN_CALL_A, call_reserve, is_worn, max_safe_amps, r0_for_health, shutdown_floor
 from opos.governor import Decision, Mode, Priority
 from opos.power import KEEP
 

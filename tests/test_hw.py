@@ -179,6 +179,7 @@ class TestHW(unittest.TestCase):
 
     def test_f026_missing_cpu_frequency_preserves_positive_drain(self):
         from unittest.mock import patch
+
         from opos.power import FEATURE_COST, feature_drain, total_drain
 
         with (

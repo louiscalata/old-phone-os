@@ -10,7 +10,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "deploy" / "harden-device.sh"
 LIBDIR = REPO / "deploy" / "harden.d"

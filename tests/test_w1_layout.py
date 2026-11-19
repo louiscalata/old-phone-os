@@ -99,8 +99,8 @@ class HelperLog(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from tests import test_uxp31_helper_screen as h
         from opos import assist
+        from tests import test_uxp31_helper_screen as h
 
         script = h.HARNESS.replace("const S={", "const S={" + HELPER_FOLLOWS, 1)
         assert script != h.HARNESS, (

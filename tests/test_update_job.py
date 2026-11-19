@@ -11,7 +11,8 @@ import threading
 import unittest
 from unittest import mock
 
-from opos import update_client as uc, web
+from opos import update_client as uc
+from opos import web
 from tests.test_update_client import Env, no_network, tar_bundle
 
 

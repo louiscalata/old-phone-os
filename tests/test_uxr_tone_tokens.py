@@ -9,6 +9,7 @@ tests pin now is the truth that remains: no tone colour reaches the screen, and 
 
 import re
 import unittest
+
 import opos.web
 
 TONES = ["low", "normal", "full", "charging"]

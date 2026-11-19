@@ -2,6 +2,7 @@
 """Run the Old Phone OS Interface setup command line with python -m opos.setup."""
 
 from __future__ import annotations
+
 from opos.setup.cli import main
 
 if __name__ == "__main__":

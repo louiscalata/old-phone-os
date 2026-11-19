@@ -2,10 +2,10 @@
 """OpenRC setup state contract and fail-closed startup control flow."""
 
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from opos.setup import config
 

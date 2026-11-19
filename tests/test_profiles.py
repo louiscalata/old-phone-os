@@ -4,8 +4,8 @@
 import contextlib
 import io
 import unittest
-from opos import evaluate
-from opos import profiles
+
+from opos import evaluate, profiles
 from opos.evaluate import EVAL_TASKS
 from opos.governor import PowerState
 from opos.router import Router

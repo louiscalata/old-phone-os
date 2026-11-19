@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The actual app handlers and script, without a listening socket or browser."""
 
-from io import BytesIO
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import threading
-from types import SimpleNamespace
 import unittest
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from opos import apps, calllog, calls_page, contacts_page, firstrun, web

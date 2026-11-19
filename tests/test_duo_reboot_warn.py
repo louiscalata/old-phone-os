@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-import opos.setup.cli
 
+import opos.setup.cli
 
 EXPECTED = (
     "warning: Surface Duo detected. If this kernel was RAM-booted from a PC with fastboot boot, do not run reboot or systemctl reboot: the phone would start the stock kernel and be stranded.\n"

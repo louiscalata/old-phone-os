@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
-from pathlib import Path
 import re
 import unittest
+from pathlib import Path
 
 
 class DuoRecoveryDocsTest(unittest.TestCase):

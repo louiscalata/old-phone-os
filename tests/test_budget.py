@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.budget import Budget, BUDGETS, budget_for, allows_app
+
+from opos.budget import BUDGETS, Budget, allows_app, budget_for
 from opos.governor import Mode
 
 

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import http.client
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import threading
 import unittest
-import http.client
+from pathlib import Path
 
 from opos.web import Phone, make_server, page
 

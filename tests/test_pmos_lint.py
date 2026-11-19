@@ -2,6 +2,7 @@
 import pathlib
 import tempfile
 import unittest
+
 from tests.pmos_lint import apkbuild_vars, function_body
 
 

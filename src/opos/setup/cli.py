@@ -2,6 +2,7 @@
 """Command line interface for Old Phone OS Interface setup."""
 
 from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -9,6 +10,7 @@ import stat
 import sys
 from pathlib import Path
 from typing import Mapping, TextIO
+
 import opos.hw.detect
 import opos.setup.apply
 import opos.setup.config

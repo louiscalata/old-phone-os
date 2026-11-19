@@ -10,6 +10,7 @@ import time
 import unittest
 from copy import deepcopy
 from unittest import mock
+
 from src.opos import web
 from src.opos.essentials import Message
 from tests import webclient

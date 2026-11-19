@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
+
 from opos import power
-from opos.governor import Task, Priority
+from opos.governor import Priority, Task
 
 
 class TestPower(unittest.TestCase):

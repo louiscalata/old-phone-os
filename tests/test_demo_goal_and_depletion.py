@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
 from unittest import mock
-import opos.web as web
+
 import opos.muse as muse
 import opos.setup.config as setup_config
+import opos.web as web
 
 
 class TestDemoGoalAndDepletion(unittest.TestCase):

@@ -21,7 +21,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import fonts, span as spanmod, web
+from opos import fonts, web
+from opos import span as spanmod
 from opos.span import Span, apply, parse, rewrites, squeeze, variables
 from opos.web import Phone, page
 from tests import test_uxp21_profiles as profiles

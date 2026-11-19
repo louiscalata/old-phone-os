@@ -3,9 +3,9 @@ import math
 import unittest
 from unittest import mock
 
+import opos.runtime as runtime_mod
 from opos.budget import budget_for
 from opos.governor import Decision, Mode, Priority
-import opos.runtime as runtime_mod
 from opos.runtime import Runtime
 
 

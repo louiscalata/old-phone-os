@@ -14,8 +14,8 @@ Test seams (arguments, never environment): --root, --bin, --url, --now.
 """
 import argparse
 import fnmatch
-import ipaddress
 import importlib.util
+import ipaddress
 import json
 import os
 import re

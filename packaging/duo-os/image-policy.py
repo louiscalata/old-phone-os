@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Image policy and explicit SSH disabling. Host OpenSSH only parses; it never listens or logs in."""
 
+import ctypes
 import glob
 import hashlib
-import ctypes
 import os
-from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 
 def require(ok, message):

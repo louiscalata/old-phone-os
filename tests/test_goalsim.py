@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest.mock
+
 from opos.goalsim import KNOWN_STEPS, simulate
 from opos.runtime import DEFAULT_TASKS, Priority, Task
 

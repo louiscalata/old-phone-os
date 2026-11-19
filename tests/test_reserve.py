@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.reserve import apply_reserve, shape_burst, should_shutdown, call_possible, reserve_level, WORN_REASON
-from opos.governor import Decision, Mode, Priority, Task
+
 from opos.eol import BURST_A, brownout, r0_for_health
+from opos.governor import Decision, Mode, Priority, Task
+from opos.reserve import WORN_REASON, apply_reserve, call_possible, reserve_level, shape_burst, should_shutdown
 
 tasks = (
     Task("calls", Priority.ESSENTIAL, 0.5),

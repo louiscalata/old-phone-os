@@ -2,12 +2,12 @@
 import json
 import socket
 import sys
-import time
-import threading
 import tempfile
+import threading
+import time
 import unittest
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import opos.secure

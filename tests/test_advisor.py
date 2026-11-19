@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.router import Router
-from opos.governor import PowerState, Task, Priority, Mode
+
 from opos import muse
 from opos.advisor import GlimmerAdvisor
+from opos.governor import Mode, PowerState, Priority, Task
+from opos.router import Router
 
 
 class TestAdvisor(unittest.TestCase):

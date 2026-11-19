@@ -9,8 +9,8 @@ from unittest import mock
 
 from opos.advisor import GlimmerAdvisor
 from opos.web import Phone, lock_story, page
-from tests.test_uxp11_lock_shade import HARNESS as LOCK_HARNESS, JS, NODE
-
+from tests.test_uxp11_lock_shade import HARNESS as LOCK_HARNESS
+from tests.test_uxp11_lock_shade import JS, NODE
 
 HARNESS = LOCK_HARNESS.split("const out={},render=", 1)[0]
 HARNESS = HARNESS.replace("'lock-notice','unlock'", "'lock-notice','lock-story','unlock'")

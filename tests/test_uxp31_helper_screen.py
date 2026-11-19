@@ -6,8 +6,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from opos.web import page
 from opos import assist
+from opos.web import page
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
 STD = "The helper did not reply."

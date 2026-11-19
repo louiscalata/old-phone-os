@@ -6,8 +6,8 @@ import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from opos.aitools import catalog, installer, place, power, sessions
-from opos.aitools import wizard
+
+from opos.aitools import catalog, installer, place, power, sessions, wizard
 
 _SRC_DIR = Path(__file__).resolve().parents[2]
 

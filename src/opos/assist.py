@@ -11,6 +11,7 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
 from . import muse
 
 PHONE_LAUNCHER = "/usr/bin/opos-kiosk"  # installed by the opos postmarketOS package only

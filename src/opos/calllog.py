@@ -6,11 +6,11 @@ and ended update the same row. An unfinished row has no known duration. There is
 no modem control here and no HTTP action that can insert a call or mark it real.
 """
 
-from datetime import datetime, timezone
 import math
 import os
 import re
 import threading
+from datetime import datetime, timezone
 
 from opos import apps
 from opos.call_events import CallEvent

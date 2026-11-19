@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import unittest
 import json
 import re
+import unittest
+
 import opos.dashboard
-import opos.runtime
 import opos.governor
+import opos.runtime
 
 
 class TestDashboard(unittest.TestCase):

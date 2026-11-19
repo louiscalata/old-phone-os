@@ -25,8 +25,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from opos.setup import config
-from opos.setup import wizard_page
+from opos.setup import config, wizard_page
 from opos.setup.cli import main as cli_main
 from opos.web import page
 

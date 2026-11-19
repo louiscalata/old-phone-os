@@ -9,7 +9,6 @@ from pathlib import Path
 
 from tests import test_uxr_acceptance as acceptance
 
-
 CHECK = r"""
 CHECKS.jaryo_typography = async function() {
   const out=[];

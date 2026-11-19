@@ -2,8 +2,10 @@
 """Single-page setup wizard for Old Phone OS Interface."""
 
 from __future__ import annotations
+
 import html
 import re
+
 from opos import secure
 from opos.setup import jaryo_steps, notices_screen
 

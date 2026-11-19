@@ -3,13 +3,14 @@
 
 import os
 from dataclasses import dataclass
-from opos.governor import PowerState, Priority, Task, Governor, Decision, Mode, rule_decide
-from opos.battery import Sample, DrainEstimator, hours_left, essentials_reserve
+
+from opos.battery import DrainEstimator, Sample, essentials_reserve, hours_left
 from opos.budget import budget_for
+from opos.governor import Decision, Governor, Mode, PowerState, Priority, Task, rule_decide
 from opos.home import home_screen
-from opos.router import GOAL_MISS, HOT_C, Router, fund
 from opos.power import KEEP, steps_for_goal, total_drain
 from opos.reserve import apply_reserve, reserve_keeps
+from opos.router import GOAL_MISS, HOT_C, Router, fund
 
 DEFAULT_TASKS = (
     Task("calls", Priority.ESSENTIAL, 0.5),

@@ -6,11 +6,10 @@ dimming reads the simulated clock and leaves that label alone.
 """
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
-
+from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
 

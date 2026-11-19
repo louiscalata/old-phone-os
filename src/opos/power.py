@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 FEATURE_COST = {"screen": 6.0, "radio": 1.5, "sync": 2.5, "model": 0.8}
 SAVINGS_STEPS = (

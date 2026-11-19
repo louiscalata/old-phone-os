@@ -6,10 +6,9 @@ import hashlib
 import importlib.util
 import io
 import struct
-from pathlib import Path
 import tempfile
 import unittest
-
+from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
 _MOD_PATH = _REPO / "deploy" / "sparse_image.py"

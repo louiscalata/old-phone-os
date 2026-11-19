@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos.setup.server import make_server, SetupContext
+from opos.setup.server import SetupContext, make_server
 
 
 class TestSetupFailureCleanup(unittest.TestCase):

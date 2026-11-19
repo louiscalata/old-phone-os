@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.sim import DrainSim, DRAIN_PER_HOUR
+
+from opos.sim import DRAIN_PER_HOUR, DrainSim
 
 
 class TestDrainSim(unittest.TestCase):

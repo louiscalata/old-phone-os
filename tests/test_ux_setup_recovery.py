@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import html.parser
 import unittest
+
 from opos.setup.wizard_page import page
 
 

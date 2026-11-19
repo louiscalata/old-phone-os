@@ -2,14 +2,13 @@
 """Demo clocks share simulated time; native clocks keep local time."""
 
 import json
-from html.parser import HTMLParser
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
+from html.parser import HTMLParser
+from pathlib import Path
 
 from opos.web import Phone, page
-
 
 STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
 NODE = shutil.which("node")

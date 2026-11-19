@@ -1913,8 +1913,8 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn(ok_mark, proc.stdout)
 
     def test_rollback_publication_rejects_destination_replaced_after_staging(self):
-        import tempfile
         import pathlib
+        import tempfile
 
         with tempfile.TemporaryDirectory() as td:
             tmp_path = pathlib.Path(td)
@@ -2057,7 +2057,9 @@ class TestInstallReview(unittest.TestCase):
         self.assertLess(mv_idx, rmdir_idx)
 
     def test_rollback_retention_rejects_replaced_staging_file(self):
-        import os, stat, tempfile
+        import os
+        import stat
+        import tempfile
         from pathlib import Path
 
         tmp = tempfile.TemporaryDirectory()
@@ -9355,8 +9357,8 @@ class TestInstallReview(unittest.TestCase):
         self.assertTrue(_line_path_violations(line), "commands after esac must be inspected: %r" % line)
 
     def test_dropin_removal_keeps_backup_when_restore_fails(self):
-        import tempfile
         import pathlib
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             proc, bak, bak_bytes, dest, dropin = _run_sshd_dropin_restore(pathlib.Path(tmp), 1)
@@ -9368,8 +9370,8 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(dropin.exists())
 
     def test_dropin_removal_restores_config_before_deleting_backup(self):
-        import tempfile
         import pathlib
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             proc, bak, bak_bytes, dest, dropin = _run_sshd_dropin_restore(pathlib.Path(tmp), 0)

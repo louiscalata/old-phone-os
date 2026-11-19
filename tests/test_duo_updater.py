@@ -12,6 +12,7 @@ import errno
 import gzip
 import hashlib
 import http.client
+import http.server
 import importlib.machinery
 import importlib.util
 import io
@@ -32,7 +33,6 @@ import threading
 import time
 import tracemalloc
 import unittest
-import http.server
 from unittest import mock
 
 if not sys.platform.startswith("linux"):

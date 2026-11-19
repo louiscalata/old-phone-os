@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The status bar says what is true (interface plan W1-05): a simulated battery, an unreadable one and a guessed clock are named."""
 
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from opos import statusbar, web

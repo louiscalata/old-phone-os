@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+
 from opos.aitools import catalog
 from opos.aitools.catalog import CatalogError
 

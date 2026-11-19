@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from opos import volume
-from opos.powerkey import INPUT_EVENT, EV_KEY, EV_SYN, SYN_DROPPED, SYN_REPORT, parse_event
+from opos.powerkey import EV_KEY, EV_SYN, INPUT_EVENT, SYN_DROPPED, SYN_REPORT, parse_event
 
 DEVICES = {"qpnp_pon": 114, "gpio-keys": 115}
 STEP = 5

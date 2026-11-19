@@ -188,6 +188,7 @@ class TestSetupCli(unittest.TestCase):
 
     def test_status_persist_marker_result(self):
         import json as _json
+
         import opos.setup.config as _cfgmod
 
         _sentinel = "".join(["s", "e", "n", "t", "i", "n", "e", "l", "-", "7", "q", "9"])

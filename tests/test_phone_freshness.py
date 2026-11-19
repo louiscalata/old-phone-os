@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
+from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "src/opos/web_static"
 NODE = shutil.which("node")

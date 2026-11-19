@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 
 class InstallSshdSandboxTests(unittest.TestCase):
