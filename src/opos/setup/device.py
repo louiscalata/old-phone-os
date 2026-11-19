@@ -84,7 +84,7 @@ def calibration_present(config_dir: Path) -> bool:
     """Check calibration file."""
     try:
         return (config_dir / "drain-calibration.json").is_file()
-    except Exception:
+    except (OSError, TypeError, ValueError):
         return False
 
 
