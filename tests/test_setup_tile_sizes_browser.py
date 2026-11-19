@@ -207,7 +207,13 @@ class SetupTileSizesBrowser(unittest.TestCase):
         self.setup = self.start_server(setup_server.make_server(0, self.ctx))
         self.driver = self.root / "tile-browser.js"
         self.driver.write_text(DRIVER)
-        self.proc, self.cdp_port = browser._launch(self.chrome, str(self.root))
+        try:
+            self.proc, self.cdp_port = browser._launch(self.chrome, str(self.root))
+        except RuntimeError as err:
+            text = str(err)
+            if "Cannot start http server for devtools" in text or "0x277A" in text:
+                self.skipTest("Chromium DevTools HTTP server could not bind on this host")
+            raise
         self.addCleanup(self.close_browser)
         self.evidence = []
 
