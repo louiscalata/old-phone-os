@@ -162,8 +162,8 @@ def _num(v, lo, hi):
         raise ValueError("bad number")
     try:
         v = float(v)
-    except (OverflowError, ValueError, TypeError):
-        raise ValueError("bad number")
+    except (OverflowError, ValueError, TypeError) as err:
+        raise ValueError("bad number") from err
     if not math.isfinite(v) or not lo <= v <= hi:
         raise ValueError("bad number")
     return v
@@ -731,8 +731,8 @@ class Phone:
             raise ValueError("bad real_s")
         try:
             real_s = float(real_s)
-        except OverflowError:
-            raise ValueError("bad real_s")
+        except OverflowError as err:
+            raise ValueError("bad real_s") from err
         if not math.isfinite(real_s) or real_s < 0:
             raise ValueError("bad real_s")
         now = time.monotonic()
@@ -1630,7 +1630,7 @@ def main(argv=None):
             _validate_token(token)
         except Exception:
             print("opos: cannot read session token", file=sys.stderr)
-            raise SystemExit(2)
+            raise SystemExit(2) from None
     phone = Phone(visible=_install_helper_visible(args.visible), live_battery=live)
     if live is not None and not phone.clock_ok:
         print(
