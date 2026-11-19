@@ -81,3 +81,16 @@ Compare each complete outcome with its selected receipt using Python 3.13
 as the primary interpreter and installed Python 3.12, 3.14 and 3.15 as
 references. Preserve the original inputs, primary receipts, provenance
 and existing overrides when adding another observed interpreter variant.
+
+## Re-verification after the LOU-84 refactor
+
+`src/opos/setup/config.py` was refactored without a behaviour change
+(LOU-84: `validate` split into ordered check helpers). No receipt,
+input, override or recorded message was changed. Only
+`generated_from.sha256` now names the refactored source. The receipts
+themselves still come from revision `1eddeb87…` (`generated_from.revision`
+is unchanged). Before updating the hash, the complete golden and ordering
+replays (580 cases under seeds `0`, `17` and `123`) passed unchanged
+against the refactored source on Python 3.15. CI then re-checks them on
+the hosted interpreters. Any future outcome difference still needs a
+full recapture and diagnosis.
