@@ -198,8 +198,8 @@ class SensorBus:
                 self.GLib.Variant("(six)", (ACCEL, sid, os.getpid())),
                 "(b)",
             )
-        except Exception:
-            pass
+        except (OSError, self.GLib.Error):
+            pass  # best-effort release on stop: a gone service or bus ends its sessions anyway
 
     def close(self):
         self.close_accel()
@@ -218,7 +218,7 @@ class SensorBus:
                 self.GLib.Variant("(six)", (SENSOR, sid, os.getpid())),
                 "(b)",
             )
-        except Exception:
+        except (OSError, self.GLib.Error):
             pass  # the service may be gone already; its sessions go with it
 
 
@@ -352,8 +352,8 @@ class HingeWatcher:
             closer = getattr(bus, "close_accel", None)
             if closer is not None:
                 closer()
-        except Exception:
-            pass
+        except OSError:
+            pass  # best-effort close of a failed accelerometer; the failure itself was said by the caller
         self._tell_tilt(reason)
         self._tilt_lost()
 
@@ -407,16 +407,16 @@ class HingeWatcher:
                     try:
                         if bus is not None:
                             bus.close()
-                    except Exception:
-                        pass
+                    except OSError:
+                        pass  # best-effort close of a lost bus before reconnecting; the loss was already handled above
                     bus = None
             if self._stop.wait(self.retry_s):
                 break
         try:
             if bus is not None:
                 bus.close()
-        except Exception:
-            pass
+        except OSError:
+            pass  # best-effort close on watcher exit
 
     def _drain_accel(self, bus):
         try:
@@ -433,8 +433,8 @@ class HingeWatcher:
             try:
                 if closer is not None:
                     closer()
-            except Exception:
-                pass
+            except OSError:
+                pass  # best-effort close; the accelerometer is marked closed either way
             self._accel_open = False
             self._accel_retry_at = 0.0  # on resume it is opened at once
         self._wake.clear()
