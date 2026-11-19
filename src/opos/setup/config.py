@@ -375,7 +375,7 @@ def save(cfg: dict, path: Path | None = None) -> Path:
         path.parent.chmod(0o700)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, sort_keys=True)
             f.write("\n")
         os.chmod(tmp_name, 0o600)
@@ -431,7 +431,7 @@ def ensure_token(path: Path | None = None) -> str:
         path.parent.chmod(0o700)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(token)
         os.chmod(tmp_name, 0o600)
         os.replace(tmp_name, path)
