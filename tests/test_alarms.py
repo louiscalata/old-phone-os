@@ -5,13 +5,16 @@ import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from opos.alarms import Book, Event, first_valid, next_fire
 from opos.home import is_quiet
 
-UTC = ZoneInfo("UTC")
-NY = ZoneInfo("America/New_York")
+try:
+    UTC = ZoneInfo("UTC")
+    NY = ZoneInfo("America/New_York")
+except ZoneInfoNotFoundError:  # e.g. Windows without the tzdata package
+    raise unittest.SkipTest("no IANA time zone database on this host") from None
 
 
 def at(zone, year, month, day, hour, minute, fold=0):

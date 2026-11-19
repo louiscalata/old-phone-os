@@ -644,7 +644,8 @@ class ReadersAndChecks(unittest.TestCase):
         self.assertEqual(private.stat().st_mode & 0o777, 0o600)
 
     @unittest.skipUnless(
-        os.geteuid() == 0, "requires root to create a root-owned mode-0600 fixture and drop to an unprivileged UID"
+        getattr(os, "geteuid", lambda: -1)() == 0,
+        "requires POSIX root to create a root-owned mode-0600 fixture and drop to an unprivileged UID",
     )
     def test_root_owned_private_file_root_verification_and_unprivileged_selftest(self):
         private = self.root / "etc/opos/monitor.env"

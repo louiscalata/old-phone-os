@@ -11,7 +11,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import powerkey, volume, volumekey
+try:
+    from opos import powerkey, volume, volumekey
+except ModuleNotFoundError as exc:  # opos.powerkey imports fcntl, which is Linux/POSIX-only
+    if exc.name != "fcntl":
+        raise
+    raise unittest.SkipTest("opos.powerkey needs fcntl (POSIX only)") from exc
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging/duo-os"

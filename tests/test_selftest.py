@@ -541,7 +541,10 @@ class IdentityCompatibility(unittest.TestCase):
                 self.assertEqual(r.rc, 1, r.text)
                 self.assertEqual(r.status("identity.image"), "FAIL", r.text)
 
-    @unittest.skipIf(os.geteuid() == 0, "requires an unprivileged UID to exercise filesystem permission denial")
+    @unittest.skipIf(
+        not hasattr(os, "geteuid") or os.geteuid() == 0,
+        "requires a POSIX unprivileged UID to exercise filesystem permission denial",
+    )
     def test_unreadable_private_file_warns_and_readable_hash_mismatch_still_fails(self):
         from opos import image_identity
 
@@ -1837,7 +1840,10 @@ class AlarmSound(PieceCase):
         self.assertEqual(r.status("alarm.sound"), "PASS", r.ev("alarm.sound"))
         self.assertIn("/run/user/32011/pulse/native", r.ev("alarm.sound"))
 
-    @unittest.skipIf(os.geteuid() == 0, "os.access is always true for root")
+    @unittest.skipIf(
+        not hasattr(os, "geteuid") or os.geteuid() == 0,
+        "requires a POSIX non-root UID; os.access is always true for root",
+    )
     def test_a_socket_the_selftest_user_cannot_open_warns(self):
         sock = self.f.root / "run/user/32011/pulse/native"
         sock.chmod(0o000)

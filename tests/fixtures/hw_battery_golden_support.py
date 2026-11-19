@@ -92,10 +92,11 @@ def _run_with_tree(module, case, root, base, entries):
 
     def relative(path):
         # Refuse any accidental access outside this case's temporary tree.
-        return str(path.relative_to(root))
+        # POSIX separators so the recorded labels match on Windows too.
+        return path.relative_to(root).as_posix()
 
     def helper(name, original, path):
-        label = str(path.relative_to(base))
+        label = path.relative_to(base).as_posix()
         relative(path)
         calls.append([name, label])
         fault = case.get("helper_faults", {}).get(f"{name}:{label}")

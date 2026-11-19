@@ -20,7 +20,6 @@ per violation on stdout (tests/uxr_report.sh).
 import glob
 import json
 import os
-import pwd
 import re
 import shutil
 import signal
@@ -31,6 +30,11 @@ import unittest
 from pathlib import Path
 
 from opos.web import Phone, page
+
+try:
+    import pwd
+except ImportError:  # Windows has no pwd module
+    pwd = None
 
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE / "uxr_cdp.js"
@@ -59,6 +63,8 @@ KNOWN_GAPS = {}
 
 
 def _real_home():
+    if pwd is None:
+        return str(Path.home())
     return pwd.getpwuid(os.getuid()).pw_dir
 
 
