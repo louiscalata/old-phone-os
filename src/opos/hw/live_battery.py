@@ -55,7 +55,7 @@ def _termux_status(run=subprocess.run, which=shutil.which):
     try:
         r = run([exe], capture_output=True, text=True, timeout=_TERMUX_TIMEOUT_S, check=False)
         data = json.loads(r.stdout)
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("percentage"), (int, float)):
         return None
@@ -77,7 +77,7 @@ def _model(run=subprocess.run):
         return run(
             ["getprop", "ro.product.model"], capture_output=True, text=True, timeout=5, check=False
         ).stdout.strip()
-    except Exception:
+    except (OSError, subprocess.SubprocessError, AttributeError):
         return ""
 
 

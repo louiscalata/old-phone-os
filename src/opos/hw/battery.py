@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
+
+_log = logging.getLogger("opos.hw")
 
 
 def _read_text(path: Path) -> str | None:
@@ -12,7 +15,7 @@ def _read_text(path: Path) -> str | None:
         if not path.is_file():
             return None
         return path.read_text(encoding="utf-8", errors="ignore").strip()
-    except Exception:
+    except (OSError, ValueError):
         return None
 
 
@@ -22,7 +25,7 @@ def _read_int(path: Path) -> int | None:
         return None
     try:
         return int(txt)
-    except Exception:
+    except ValueError:
         return None
 
 
@@ -120,7 +123,8 @@ def read_battery(root: str | Path = "/") -> dict:
                     w_ef.append(ef)
                     w_cn.append(cn)
                     w_cf.append(cf)
-                except Exception:
+                except Exception as err:  # one odd supply entry must not hide the others
+                    _log.debug("battery: skipped %s (%s)", entry.name, type(err).__name__)
                     continue
     health: float | None = None
     health_coverage: float | None = None
@@ -228,10 +232,7 @@ def _net_ifaces(root_path: Path) -> list[str]:
         p = root_path / "sys/class/net"
         if p.is_dir():
             for e in p.iterdir():
-                try:
-                    result.append(e.name)
-                except Exception:
-                    continue
+                result.append(e.name)
     return result
 
 
@@ -245,7 +246,8 @@ def _rfkill_types(root_path: Path) -> list[str]:
                     t = _read_text(e / "type")
                     if t:
                         result.append(t)
-                except Exception:
+                except Exception as err:  # one odd rfkill entry must not hide the others
+                    _log.debug("battery: skipped rfkill %s (%s)", e.name, type(err).__name__)
                     continue
     return result
 

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import logging
 import os
 
 from opos.hw import store
 from opos.hw.store import Battery, Profile
+
+_log = logging.getLogger("opos.hw")
 
 
 def detect(root: str = "/") -> Profile | None:
@@ -22,9 +25,7 @@ def detect(root: str = "/") -> Profile | None:
                 decoded = decoded.replace("\x00", "").strip()
                 text = decoded
                 break
-            except OSError:
-                continue
-            except Exception:
+            except (OSError, ValueError):
                 continue
         if text is None:
             return detect_generic(root)
@@ -35,7 +36,8 @@ def detect(root: str = "/") -> Profile | None:
             if name.lower() in lower:
                 return profile
         return detect_generic(root)
-    except Exception:
+    except Exception as err:  # detection falls back to the generic profile
+        _log.debug("detect: falling back to generic (%s)", type(err).__name__)
         return detect_generic(root)
 
 
@@ -73,7 +75,8 @@ def detect_generic(root: str = "/") -> Profile:
             found.append("lte")
         radios = tuple(found)
         return Profile(name="Generic phone", radios=radios, battery=Battery(None), modem="lte" in radios)
-    except Exception:
+    except Exception as err:  # an unreadable tree still yields a usable profile
+        _log.debug("detect_generic: no radios (%s)", type(err).__name__)
         return Profile(name="Generic phone", radios=(), battery=Battery(None), modem=False)
 
 
