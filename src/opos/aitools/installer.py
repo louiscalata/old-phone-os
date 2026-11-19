@@ -589,20 +589,11 @@ def install(
     return [f"installed {tool.id} to {prefix}", f"wrapper {lay.wrapper}", f"Sign in yourself: {tool.signin}"]
 
 
-def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
-    """update wrappers for new mode"""
-    if mode not in place.MODES:
-        raise InstallError(f"unknown mode: {mode}")
-    cur = read_manifest(prefix)
-    if not cur or not cur.get("tools"):
-        raise InstallError("nothing installed")
-    tr = tools_root(prefix)
+def _render_mode_wrappers(
+    entries: Sequence[tuple[str, object]], lookup: Mapping[str, Tool], tr: Path, mode: str, py: str, sd: Path
+) -> dict[Path, str]:
+    """render the wrapper of every manifest entry with a catalog tool, before anything is written"""
     run_dir = tr / "run"
-    lookup = {t.id: t for t in tools}
-    py = cur.get("python", "python3")
-    sd = Path(cur.get("src_dir", "."))
-    entries = list(cur["tools"].items())
-    missing = [tid for tid, _ in entries if tid not in lookup]
     planned: dict[Path, str] = {}
     try:
         for tid, meta in entries:
@@ -618,7 +609,11 @@ def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
         raise
     except Exception as e:
         raise InstallError(str(e)) from e
-    mp = manifest_path(prefix)
+    return planned
+
+
+def _read_mode_backups(mp: Path, planned: Mapping[Path, str]) -> tuple[bytes, dict[Path, bytes | None]]:
+    """current manifest and wrapper bytes (None when a wrapper is absent); a read error aborts before any write"""
     try:
         old_bytes = mp.read_bytes()
     except OSError as e:
@@ -629,44 +624,90 @@ def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
             backups[p] = p.read_bytes() if p.is_file() else None
         except OSError as e:
             raise InstallError(str(e)) from e
+    return old_bytes, backups
+
+
+def _apply_mode(
+    cur: dict, entries: Sequence[tuple[str, object]], lookup: Mapping[str, Tool], mode: str, prev_mode: object
+) -> None:
+    """set mode on the manifest and on entries with a catalog tool; others without a mode inherit prev_mode"""
+    tools_map = cur.get("tools")
+    if isinstance(tools_map, dict):
+        for tid, meta in entries:
+            entry = tools_map.get(tid)
+            if not isinstance(entry, dict) or not isinstance(meta, dict):
+                continue
+            if tid in lookup:
+                entry["mode"] = mode
+            elif "mode" not in entry and isinstance(prev_mode, str):
+                entry["mode"] = prev_mode
+    cur["mode"] = mode
+
+
+def _rollback_mode(
+    backups: Mapping[Path, bytes | None], mp: Path, old_bytes: bytes, manifest_replaced: bool
+) -> list[str]:
+    """restore backed-up wrappers in write order, then the manifest if it was replaced; return what failed"""
+    rollback_errors: list[str] = []
+    for p, b in backups.items():
+        try:
+            if b is None:
+                if p.is_file() or p.is_symlink():
+                    p.unlink()
+            else:
+                _atomic_write_bytes(p, b, 0o755)
+        except Exception as re:
+            rollback_errors.append(f"{p}: {re}")
+    if manifest_replaced:
+        try:
+            _atomic_write_bytes(mp, old_bytes, 0o600)
+        except Exception as re:
+            rollback_errors.append(f"{mp}: {re}")
+    return rollback_errors
+
+
+def _commit_mode(
+    prefix: Path,
+    cur: dict,
+    entries: Sequence[tuple[str, object]],
+    lookup: Mapping[str, Tool],
+    planned: Mapping[Path, str],
+    mode: str,
+) -> None:
+    """write wrappers, then the updated manifest; on failure restore them and report"""
+    mp = manifest_path(prefix)
+    old_bytes, backups = _read_mode_backups(mp, planned)
     prev_mode = cur.get("mode")
     manifest_replaced = False
     try:
         for p, text in planned.items():
             _atomic_write_text(p, text, 0o755)
-        tools_map = cur.get("tools")
-        if isinstance(tools_map, dict):
-            for tid, meta in entries:
-                entry = tools_map.get(tid)
-                if not isinstance(entry, dict) or not isinstance(meta, dict):
-                    continue
-                if tid in lookup:
-                    entry["mode"] = mode
-                elif "mode" not in entry and isinstance(prev_mode, str):
-                    entry["mode"] = prev_mode
-        cur["mode"] = mode
+        _apply_mode(cur, entries, lookup, mode, prev_mode)
         _atomic_manifest(mp, cur)
         manifest_replaced = True
     except Exception as e:
-        rollback_errors: list[str] = []
-        for p, b in backups.items():
-            try:
-                if b is None:
-                    if p.is_file() or p.is_symlink():
-                        p.unlink()
-                else:
-                    _atomic_write_bytes(p, b, 0o755)
-            except Exception as re:
-                rollback_errors.append(f"{p}: {re}")
-        if manifest_replaced:
-            try:
-                _atomic_write_bytes(mp, old_bytes, 0o600)
-            except Exception as re:
-                rollback_errors.append(f"{mp}: {re}")
+        rollback_errors = _rollback_mode(backups, mp, old_bytes, manifest_replaced)
         msg = str(e)
         if rollback_errors:
             msg += f" (rollback failed: {'; '.join(rollback_errors)})"
         raise InstallError(msg) from e
+
+
+def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
+    """update wrappers for new mode"""
+    if mode not in place.MODES:
+        raise InstallError(f"unknown mode: {mode}")
+    cur = read_manifest(prefix)
+    if not cur or not cur.get("tools"):
+        raise InstallError("nothing installed")
+    tr = tools_root(prefix)
+    lookup = {t.id: t for t in tools}
+    py = cur.get("python", "python3")
+    sd = Path(cur.get("src_dir", "."))
+    entries = list(cur["tools"].items())
+    missing = [tid for tid, _ in entries if tid not in lookup]
+    planned = _render_mode_wrappers(entries, lookup, tr, mode, py, sd)
+    _commit_mode(prefix, cur, entries, lookup, planned, mode)
     out = [f"mode set to {mode}"]
     for tid in missing:
         out.append(
@@ -675,26 +716,16 @@ def set_mode(prefix: Path, mode: str, tools: Sequence[Tool]) -> list[str]:
     return out
 
 
-def uninstall(prefix: Path, *, dry_run: bool = False) -> list[str]:
-    """remove installed tools"""
-    mp = manifest_path(prefix)
-    if not mp.exists():
-        return ["nothing to remove"]
-    cur = read_manifest(prefix)
-    if not cur:
-        return ["nothing to remove"]
-    tr = tools_root(prefix)
+def _refuse_uninstall(tr: Path, prefix: Path) -> None:
+    """refuse a symlinked tools root, then one outside prefix"""
     if tr.is_symlink():
         raise InstallError(f"refusing to remove symlink {tr}")
     if not _inside(tr, prefix):
         raise InstallError(f"refusing to remove {tr} not inside {prefix}")
-    profs = cur.get("profiles", []) if isinstance(cur.get("profiles"), list) else []
-    if dry_run:
-        out: list[str] = []
-        for s in profs:
-            out.append(f"would remove profile block from {s}")
-        out.append(f"would remove {tr}")
-        return out
+
+
+def _remove_profiles(profs: Sequence[str]) -> list[str]:
+    """remove the env block from each profile; failures are reported, not raised"""
     out: list[str] = []
     for s in profs:
         p = Path(s)
@@ -707,19 +738,48 @@ def uninstall(prefix: Path, *, dry_run: bool = False) -> list[str]:
                     out.append(f"removed profile block from {p}")
         except Exception as e:
             out.append(f"could not remove profile block from {s}: {e}")
+    return out
+
+
+def _remove_tools_root(tr: Path, prefix: Path) -> list[str]:
+    """remove the tools root if it is still a real directory inside prefix; failures are reported"""
     try:
         if tr.is_dir() and not tr.is_symlink() and _inside(tr, prefix):
             shutil.rmtree(tr)
-            out.append(f"removed {tr}")
-        elif tr.exists():
-            out.append(f"could not remove {tr}: not a directory")
+            return [f"removed {tr}"]
+        if tr.exists():
+            return [f"could not remove {tr}: not a directory"]
     except Exception as e:
-        out.append(f"could not remove {tr}: {e}")
+        return [f"could not remove {tr}: {e}"]
+    return []
+
+
+def _remove_empty_prefix(prefix: Path) -> list[str]:
+    """remove prefix if it is an empty real directory; failures are reported"""
     try:
         if prefix.is_dir() and not prefix.is_symlink():
             if not any(prefix.iterdir()):
                 prefix.rmdir()
-                out.append(f"removed {prefix}")
+                return [f"removed {prefix}"]
     except Exception as e:
-        out.append(f"could not remove {prefix}: {e}")
+        return [f"could not remove {prefix}: {e}"]
+    return []
+
+
+def uninstall(prefix: Path, *, dry_run: bool = False) -> list[str]:
+    """remove installed tools"""
+    mp = manifest_path(prefix)
+    if not mp.exists():
+        return ["nothing to remove"]
+    cur = read_manifest(prefix)
+    if not cur:
+        return ["nothing to remove"]
+    tr = tools_root(prefix)
+    _refuse_uninstall(tr, prefix)
+    profs = cur.get("profiles", []) if isinstance(cur.get("profiles"), list) else []
+    if dry_run:
+        return [f"would remove profile block from {s}" for s in profs] + [f"would remove {tr}"]
+    out = _remove_profiles(profs)
+    out += _remove_tools_root(tr, prefix)
+    out += _remove_empty_prefix(prefix)
     return out
