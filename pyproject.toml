@@ -148,11 +148,10 @@ max-complexity = 15
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "src/opos/convert.py" = ["I001", "UP031"]
-# B904: existing bugbear finding; diagnose and repair separately from layout.
 # B905: existing bugbear finding; diagnose and repair separately from layout.
 # C901: existing complexity; restructuring needs a behavior review.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"src/opos/dashboard.py" = ["B904", "B905", "C901", "I001"]
+"src/opos/dashboard.py" = ["B905", "C901", "I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "src/opos/demo.py" = ["I001"]
 # B905: existing bugbear finding; diagnose and repair separately from layout.
@@ -286,13 +285,12 @@ max-complexity = 15
 # C901: existing complexity; restructuring needs a behavior review.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "src/opos/volumekey.py" = ["C901", "I001"]
-# B904: existing bugbear finding; diagnose and repair separately from layout.
 # C901: existing complexity; restructuring needs a behavior review.
 # E402: existing pycodestyle finding; non-format repair is outside this lane.
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # N815: existing names and framework overrides; renaming is outside formatting.
-"src/opos/web.py" = ["B904", "C901", "E402", "E731", "I001", "N815"]
+"src/opos/web.py" = ["C901", "E402", "E731", "I001", "N815"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/duo_identity_fixture.py" = ["I001"]
 # S324: existing security finding; security repairs need separate review.

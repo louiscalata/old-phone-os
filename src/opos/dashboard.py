@@ -63,8 +63,8 @@ class Dashboard:
             h_str, m_str = hhmm.split(":")
             h = int(h_str)
             m = int(m_str)
-        except Exception:
-            raise ValueError
+        except Exception as err:
+            raise ValueError from err
         if not (0 <= h <= 23 and 0 <= m <= 59):
             raise ValueError
         self.goal = f"{h:02d}:{m:02d}"
@@ -81,8 +81,8 @@ class Dashboard:
                 if 0 <= idx < len(self.tasks):
                     return self.tasks[idx].name
                 raise ValueError
-            except Exception:
-                raise ValueError
+            except Exception as err:
+                raise ValueError from err
         if name in names:
             return name
         raise ValueError
