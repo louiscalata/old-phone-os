@@ -54,6 +54,10 @@ class BuildIdentity(unittest.TestCase):
         self.put("usr/local/sbin/sfduo-usb-gadget.sh", b"#!/bin/sh\ntrue\n")
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("OPOS_") and k != "SOURCE_DATE_EPOCH"}
         self.env["SOURCE_DATE_EPOCH"] = "1794093790"
+        pybin = self.t / "pybin"
+        pybin.mkdir()
+        (pybin / "python3").symlink_to(sys.executable)
+        self.env["PATH"] = str(pybin) + os.pathsep + self.env.get("PATH", os.defpath)
 
     def put(self, name, data):
         p = self.root / name
