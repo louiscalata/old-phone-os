@@ -6,7 +6,7 @@ const {spawn} = require('child_process');
 const [chrome, url, stateFile] = process.argv.slice(2);
 const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'jaryo-motion-'));
-const child = spawn(chrome, ['--headless', '--no-sandbox', '--disable-gpu',
+const child = spawn(chrome, ['--headless', '--use-mock-keychain', '--password-store=basic', '--no-sandbox', '--disable-gpu',
   '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check',
   '--user-data-dir=' + profile, 'about:blank'], {stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe']});
 let seq = 0, buffer = Buffer.alloc(0), session;

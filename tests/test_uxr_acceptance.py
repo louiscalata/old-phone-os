@@ -98,6 +98,8 @@ def _launch(chrome, tmp):
             [
                 chrome,
                 "--headless",
+                "--use-mock-keychain",
+                "--password-store=basic",
                 "--no-sandbox",
                 "--disable-gpu",
                 "--remote-debugging-port=0",

@@ -41,7 +41,7 @@ async function connect() {
     return () => { try { ws.close(); } catch (e) {} };
   }
   const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'uxr-pipe-'));
-  const child = spawn(process.env.UXR_CHROME, ['--headless', '--no-sandbox', '--disable-gpu', '--single-process',
+  const child = spawn(process.env.UXR_CHROME, ['--headless', '--use-mock-keychain', '--password-store=basic', '--no-sandbox', '--disable-gpu', '--single-process',
     '--remote-debugging-pipe', '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check', 'about:blank'],
     { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
   if (process.env.UXR_PIDFILE) fs.writeFileSync(process.env.UXR_PIDFILE, String(child.pid));
