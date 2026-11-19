@@ -31,7 +31,12 @@ from tests import test_duo_usb_hardening as usb
 from tests import test_selftest as st
 
 PKG = usb.PKG
-SSHD = shutil.which("sshd") or ("/usr/sbin/sshd" if Path("/usr/sbin/sshd").exists() else None)
+# Apple's sshd -T parses the image configuration differently.
+SSHD = (
+    shutil.which("sshd") or ("/usr/sbin/sshd" if Path("/usr/sbin/sshd").exists() else None)
+    if sys.platform.startswith("linux")
+    else None
+)
 
 # All generated commands act only in the TemporaryDirectory. No actual mount, root,
 # fsck, Git write, Linux ownership, image execution, listener or device is involved.
