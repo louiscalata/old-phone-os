@@ -22,6 +22,7 @@ import unittest
 from pathlib import Path
 
 from tests import portable
+from tests.host_tools import needs_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -177,6 +178,7 @@ class TheRule(unittest.TestCase):
 
 
 @unittest.skipUnless(SH and os.name == "posix", "needs a POSIX sh")
+@needs_tools("sha256sum")
 class BuildBlocks(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

@@ -23,6 +23,7 @@ from unittest import mock
 
 from opos import net, net_page
 from src.opos import web
+from tests.host_tools import needs_tools
 
 if sys.platform == "win32":
     raise unittest.SkipTest("the fake tools are shell scripts and the runner reads /proc")
@@ -1689,6 +1690,7 @@ class Packaging(unittest.TestCase):
         self.assertNotIn("CONNECTION", blk)  # profile names are SSIDs: the dump leaves them out
         self.assertEqual(d.count("# --- track: network"), 1)
 
+    @needs_tools("timeout")
     def test_diag_block_runs_when_the_tools_are_missing_or_fake(self):
         d = self.read("packaging/duo-os/opos-diag")
         blk = d[d.index("# --- track: network") : d.index("# --- end track: network")]
