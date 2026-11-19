@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Outside QA regressions through the real public dispatcher, without sockets."""
 
-from html.parser import HTMLParser
 import threading
-from types import SimpleNamespace
 import unittest
+from html.parser import HTMLParser
+from types import SimpleNamespace
 from unittest import mock
 
-from opos import public_demo as public, web
+from opos import public_demo as public
+from opos import web
 from tests import test_public_demo as transport
 
 

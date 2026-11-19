@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import importlib.util
-import unittest
-import subprocess
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
+import unittest
 
 spec = importlib.util.spec_from_file_location("check", "guard/check.py")
 check = importlib.util.module_from_spec(spec)

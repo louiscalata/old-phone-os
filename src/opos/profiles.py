@@ -3,6 +3,7 @@
 
 import random
 import sys
+
 from opos.evaluate import EVAL_TASKS, router_policy, rules_policy, static_low_power
 from opos.governor import PowerState, Priority
 from opos.power import KEEP

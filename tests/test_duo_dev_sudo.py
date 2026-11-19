@@ -6,8 +6,8 @@ root. `build-image.sh` therefore has a dev-only knob, `OPOS_DEV_SUDO=1`, that wo
 /etc/sudoers.d/90-opos-dev (0440 root:root, exactly `droidian ALL=(ALL) NOPASSWD:ALL`). `verify-image.sh` checks the file both ways, and
 `opos-selftest` WARNs (`dev.sudo`) when it is there. The blocks of both scripts are run here against a scratch root file system, the way the dev-span,
 clock and OTA blocks are; no image, mount or qemu is involved. Nothing here installs or runs sudo."""
-import os
 import base64
+import os
 import re
 import shutil
 import stat as statmod
@@ -153,6 +153,7 @@ class StaticPins(unittest.TestCase):
         import importlib.machinery
         import importlib.util
         from unittest import mock
+
         from tests.test_opos_release import rel
 
         loader = importlib.machinery.SourceFileLoader("opos_dev_boundary_updater", str(PKG / "updater/opos-updater"))

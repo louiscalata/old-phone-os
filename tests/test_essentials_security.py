@@ -3,6 +3,7 @@
 
 import unittest
 from unittest import mock
+
 import opos.essentials as ess_mod
 from opos.essentials import Essentials
 

@@ -2,10 +2,11 @@
 import json
 import re
 import unittest
-from opos.dashboard import Dashboard
-from opos.governor import Mode, Task, Priority
-from opos.runtime import Runtime
+
 import opos.power
+from opos.dashboard import Dashboard
+from opos.governor import Mode, Priority, Task
+from opos.runtime import Runtime
 
 
 class TestDashboardIds(unittest.TestCase):

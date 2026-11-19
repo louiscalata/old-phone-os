@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 from opos import assist
 
-
 QUESTION = "Battery is low. What should the phone pause first?"
 ORIGINAL_PREFIX = "Answer in at most four short sentences. If sources are listed, use only them and cite them as [1], [2]. If you do not know, say so.\n"
 FACTS_PREFIX = "Answer in at most four short sentences. Use the phone facts for questions about the phone and any listed sources for other information; cite sources as [1], [2]. When asked why something is paused, off or not working, the why_paused fact is the reason: restate it in plain words. If neither the facts nor the sources covers the question, say you do not know.\n"

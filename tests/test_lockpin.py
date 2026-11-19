@@ -4,9 +4,9 @@
 import io
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from opos import calllog, lockpin, web

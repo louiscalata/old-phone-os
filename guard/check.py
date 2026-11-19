@@ -3,7 +3,13 @@
 """Local repository check for the Meta hackathon: each commit's Provenance ID must appear in docs/provenance.md on a line naming a Meta model, and src/, deploy/ and the top-level install files are scanned for listed non-Meta model names (src/ and deploy/ also for hosts outside an allow-list). It cannot certify contest eligibility or who wrote a change. Stdlib only, no network.
 Usage: check.py [--staged] [--push]   Config: guard.json in the git common dir (untracked)."""
 
-import hashlib, json, os, re, stat, subprocess, sys
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
 import urllib.parse
 
 KICKOFF = 1793041200  # 2026-10-26 12:00 PDT

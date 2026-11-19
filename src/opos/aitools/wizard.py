@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+
 from opos.aitools import catalog, installer, place
 
 _FALLBACK_PREFIXES = (Path("/userdata") / "opos",)

@@ -2,13 +2,13 @@
 """Shared notices stay readable beside the changing helper-status paragraph."""
 
 import html
-from html.parser import HTMLParser
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import unittest
+from html.parser import HTMLParser
+from pathlib import Path
 from unittest import mock
 
 from opos import notices, web

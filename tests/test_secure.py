@@ -3,6 +3,7 @@
 
 import io
 import unittest
+
 from opos import secure
 
 

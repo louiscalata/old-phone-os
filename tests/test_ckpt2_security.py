@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Offline regression fixtures for the eight ckpt2 security findings; no sockets or devices."""
 
-import io
 import hashlib
+import io
 import os
 import re
 import subprocess
@@ -14,8 +14,10 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from opos import panes, firstrun, web
-from tests import test_duo_usb_hardening as usb, test_duo_dev_sudo as sudo, test_selftest as st
+from opos import firstrun, panes, web
+from tests import test_duo_dev_sudo as sudo
+from tests import test_duo_usb_hardening as usb
+from tests import test_selftest as st
 
 PKG = usb.PKG
 

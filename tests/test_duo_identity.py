@@ -18,9 +18,10 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from opos import image_identity as identity, notices, update_page
+from opos import image_identity as identity
+from opos import notices, update_page
 from opos.version import project_version
-from tests.duo_identity_fixture import add_identity, REVISION
+from tests.duo_identity_fixture import REVISION, add_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging/duo-os"
@@ -576,6 +577,7 @@ class ReadersAndChecks(unittest.TestCase):
 
     def test_ota_tree_reports_current_application_version_with_or_without_image_identity(self):
         from importlib import metadata
+
         from opos.setup import cli
 
         release = self.root / "opt/opos-releases/1-test"

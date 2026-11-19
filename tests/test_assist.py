@@ -7,12 +7,11 @@ import re
 import sys
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, "src")
-from opos import assist
-from opos import muse
+from opos import assist, muse
 
 
 class FakeResp:

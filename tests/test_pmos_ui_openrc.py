@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 APKBUILD = ROOT / "packaging" / "pmos" / "postmarketos-ui-opos" / "APKBUILD"
 POST_INSTALL = ROOT / "packaging" / "pmos" / "postmarketos-ui-opos" / "postmarketos-ui-opos-openrc.post-install"

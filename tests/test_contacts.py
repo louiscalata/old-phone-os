@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.contacts import Contact, Book, threads, thread, DEMO_CONTACTS
+
+from opos.contacts import DEMO_CONTACTS, Book, Contact, thread, threads
 from opos.essentials import Message
 
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from opos.governor import PowerState, Priority, Task, Governor
 from opos.essentials import Essentials
+from opos.governor import Governor, PowerState, Priority, Task
 from opos.home import home_screen
 
 

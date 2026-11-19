@@ -12,7 +12,8 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-from opos.setup import apply as apply_mod, cli, config
+from opos.setup import apply as apply_mod
+from opos.setup import cli, config
 from tests.test_security_fixes import handler, response, result
 
 

@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Explicit public, ephemeral simulation. Never start this through opos.web."""
 
-from collections import OrderedDict, deque
-from dataclasses import dataclass, field
-from http.cookies import CookieError, SimpleCookie
 import ipaddress
 import json
 import os
-from pathlib import Path
 import re
 import socketserver
 import threading
 import time
+from collections import OrderedDict, deque
+from dataclasses import dataclass, field
+from http.cookies import CookieError, SimpleCookie
+from pathlib import Path
 
 from opos import secure, web
 

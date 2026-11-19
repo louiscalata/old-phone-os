@@ -2,6 +2,7 @@
 """Fast install-time self-test for Old Phone OS Interface."""
 
 from __future__ import annotations
+
 import contextlib
 import http.client
 import json
@@ -58,14 +59,14 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
         except Exception as e:
             out.append(("python", False, _fmt(e)))
         try:
-            import opos.web  # noqa: F401
             import opos.secure  # noqa: F401
+            import opos.setup.apply  # noqa: F401
             import opos.setup.config  # noqa: F401
             import opos.setup.device  # noqa: F401
-            import opos.setup.services  # noqa: F401
-            import opos.setup.apply  # noqa: F401
             import opos.setup.server  # noqa: F401
+            import opos.setup.services  # noqa: F401
             import opos.setup.wizard_page  # noqa: F401
+            import opos.web  # noqa: F401
 
             out.append(("imports", True, "ok"))
         except Exception as e:
@@ -149,7 +150,8 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             out.append(("wizard", False, _fmt(e)))
         try:
             from opos.setup.config import ensure_token as et2
-            from opos.web import Phone, make_server as make_app
+            from opos.web import Phone
+            from opos.web import make_server as make_app
 
             tok = et2(tdp / "app-token")
             srv2 = make_app(0, Phone(), host="127.0.0.1", token=tok)

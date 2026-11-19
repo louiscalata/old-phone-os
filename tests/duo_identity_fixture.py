@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A labelled, simulated image identity for selftest and display tests. No image or phone."""
 
-from pathlib import Path
 import tomllib
+from pathlib import Path
+
 from opos import image_identity as identity
 
 ROOT = Path(__file__).resolve().parents[1]

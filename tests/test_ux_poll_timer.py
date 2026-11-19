@@ -8,7 +8,6 @@ from pathlib import Path
 
 from opos.web import page
 
-
 # These are source checks on the assembled page script, not browser execution.
 # The optional stub check runs js-8.js under node with fake timers and DOM.
 JS8 = Path(__file__).resolve().parent.parent / "src" / "opos" / "web_static" / "js-8.js"

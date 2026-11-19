@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
+
 import opos.router as router
 from opos.advisor import GlimmerAdvisor
 from opos.web import Phone, _route_with_glimmer

@@ -10,7 +10,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 _OPOS_DELETE_HOOKS = {"INPUT": "OPOS_INPUT", "FORWARD": "OPOS_FORWARD"}
 _OPOS_OWNED_CHAINS = frozenset(["OPOS_INPUT", "OPOS_FORWARD"])
 

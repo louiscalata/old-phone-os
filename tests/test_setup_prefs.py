@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import unittest, tempfile
 import io
 import json
-from pathlib import Path
 import os
+import tempfile
+import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+
 from opos.setup import prefs
 from opos.setup.server import SetupContext, make_server
 

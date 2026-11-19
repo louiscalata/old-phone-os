@@ -2,6 +2,7 @@
 """Device detection for first-run wizard."""
 
 from __future__ import annotations
+
 import contextlib
 import re
 from pathlib import Path

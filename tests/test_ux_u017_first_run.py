@@ -4,7 +4,6 @@ import unittest
 
 from tests.web_source import web_text
 
-
 COPY = "Old Phone OS Interface keeps calls and messages working. Pull down from the top edge for details."
 
 

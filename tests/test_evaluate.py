@@ -3,8 +3,9 @@ import json
 import os
 import tempfile
 import unittest.mock
+
 from opos import evaluate
-from opos.governor import PowerState, Priority, Decision, Mode
+from opos.governor import Decision, Mode, PowerState, Priority
 
 
 class TestEvaluate(unittest.TestCase):

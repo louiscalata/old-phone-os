@@ -396,6 +396,7 @@ function pickZone(p, region, city) {
         """Choose a time zone, a goal and the Helper, take the Wi-Fi link, come back: the page is on the Wi-Fi step with every
         answer, and Finish sends them all."""
         import json
+
         from opos import firstrun_page
 
         payload = json.dumps(

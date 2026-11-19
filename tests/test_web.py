@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
 import socket
+import threading
 import time
 import unittest
-import threading
-import urllib.request
 import urllib.error
-import json
+import urllib.request
 from unittest import mock
+
 from opos import web
-from opos.web import Phone, make_server
 from opos.setup import config as setup_config
+from opos.web import Phone, make_server
 
 
 def _assert_connection_closed(testcase, sock, start, budget):
@@ -153,6 +154,7 @@ class TestServer(unittest.TestCase):
     def test_slow_response_survives_deadline(self):
         """Deadline covers read, not response."""
         import time
+
         from opos import web as webmod
 
         old = webmod.Handler.DEADLINE
@@ -187,6 +189,7 @@ class TestServer(unittest.TestCase):
         """Incomplete headers are cut off by the deadline."""
         import socket
         import time
+
         from opos import web as webmod
 
         old = webmod.Handler.DEADLINE
@@ -214,6 +217,7 @@ class TestServer(unittest.TestCase):
         """POST body that never finishes is cut off by the deadline."""
         import socket
         import time
+
         from opos import web as webmod
 
         old = webmod.Handler.DEADLINE
@@ -251,6 +255,7 @@ class TestServer(unittest.TestCase):
     def test_deadline_cuts_trickling_headers(self):
         import socket
         import time
+
         from opos import web as webmod
 
         old_deadline = webmod.Handler.DEADLINE
@@ -305,6 +310,7 @@ class TestServer(unittest.TestCase):
     def test_deadline_cuts_trickling_body(self):
         import socket
         import time
+
         from opos import web as webmod
 
         old_deadline = webmod.Handler.DEADLINE

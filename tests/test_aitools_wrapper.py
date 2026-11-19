@@ -8,8 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-from opos.aitools import launcher
-from opos.aitools import power
+from opos.aitools import launcher, power
 from opos.aitools.catalog import Tool
 
 

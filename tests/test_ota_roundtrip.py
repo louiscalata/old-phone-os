@@ -40,7 +40,8 @@ from unittest import mock
 if not sys.platform.startswith("linux"):
     raise unittest.SkipTest("the updater is Linux-only (flock, O_NOFOLLOW, systemd)")
 
-from opos import update_client as uc, web
+from opos import update_client as uc
+from opos import web
 
 ROOT = Path(__file__).resolve().parent.parent
 PKG = ROOT / "packaging" / "duo-os"

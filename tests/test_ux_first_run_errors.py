@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
-import unittest
 import pathlib
 import shutil
 import subprocess
 import sys
+import unittest
 
 
 class TestRenderErrorNotice(unittest.TestCase):
@@ -25,7 +25,8 @@ class TestRenderErrorNotice(unittest.TestCase):
         harness = prefix + "\n" + sentinel + "\n}\n"
 
         def build_secret():
-            import random, string
+            import random
+            import string
 
             chars = string.ascii_letters + string.digits
             return "".join(random.choice(chars) for _ in range(32))
@@ -74,7 +75,8 @@ runTests().then(()=>{ process.exit(0); }).catch(e=>{ console.error(e); process.e
             timeout=5,
         )
         # Actually write file directly
-        import tempfile, os
+        import os
+        import tempfile
 
         fd, path = tempfile.mkstemp(suffix=".js")
         try:

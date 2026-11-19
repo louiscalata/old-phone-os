@@ -6,12 +6,13 @@ import http.client
 import io
 import json
 import os
-from pathlib import Path
 import unittest
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
-from opos import advisor as advisor_mod, assist, muse
+from opos import advisor as advisor_mod
+from opos import assist, muse
 from opos.advisor import GlimmerAdvisor
 from opos.governor import PowerState, Priority
 from opos.router import Router

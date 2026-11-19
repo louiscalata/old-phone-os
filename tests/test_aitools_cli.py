@@ -12,8 +12,8 @@ import time
 import unittest
 import unittest.mock
 from pathlib import Path
-from opos.aitools import cli, installer, launcher
-from opos.aitools import power
+
+from opos.aitools import cli, installer, launcher, power
 
 _FAKE_SCRIPT = b"#!/bin/sh\necho hi\n"
 

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from pathlib import Path
 import contextlib
 import os
 import shlex
 import tempfile
+from pathlib import Path
+
 from opos.aitools.catalog import Tool
 
 BEGIN = "# >>> opos coding tools >>>"

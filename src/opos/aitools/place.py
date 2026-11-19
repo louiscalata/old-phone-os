@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
+
 import os
 import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+
 from opos.aitools.catalog import Tool
 
 MODES = ("lite", "full")

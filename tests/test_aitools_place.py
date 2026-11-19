@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
+
 import collections
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-from opos.aitools import catalog
-from opos.aitools import place
+
+from opos.aitools import catalog, place
 
 
 def _tool(archs: tuple[str, ...] = ("aarch64", "x86_64"), min_free_mb: int = 10) -> catalog.Tool:

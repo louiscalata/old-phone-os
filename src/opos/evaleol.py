@@ -3,13 +3,12 @@
 
 import random
 import sys
-from opos.eol import BURST_A, MIN_CALL_A
-from opos.governor import PowerState, Decision, Mode
+
+from opos.eol import BURST_A, MIN_CALL_A, load_amps
+from opos.evaluate import EVAL_TASKS, router_policy, rules_policy, static_low_power
+from opos.governor import Decision, Mode, PowerState
 from opos.reserve import apply_reserve, shape_burst, should_shutdown
-from opos.sim import eol_sim
-from opos.evaluate import EVAL_TASKS, rules_policy, static_low_power, router_policy
-from opos.eol import load_amps
-from opos.sim import DRAIN_PER_HOUR
+from opos.sim import DRAIN_PER_HOUR, eol_sim
 
 SERVICES = (
     ("calls", "calls", "call", 60),

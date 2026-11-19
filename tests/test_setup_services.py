@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
+
 import os
-import sys
 import plistlib
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
 from opos.setup.services import (
     LAUNCHD_LABEL,
     SYSTEM_ONLY,

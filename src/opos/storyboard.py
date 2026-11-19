@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 import sys
 import time
-import math
+
 from opos.essentials import Essentials
 from opos.goalsim import simulate
 from opos.home import is_quiet
-from opos.runtime import DEFAULT_TASKS, Runtime, Task, Priority
+from opos.power import important_hours, plan, static_low_power
+from opos.runtime import DEFAULT_TASKS, Priority, Runtime, Task
 from opos.sim import DrainSim
 from opos.ui import ScreenModem
-from opos.power import static_low_power, plan, important_hours
 
 TAGLINE = "We're giving more capabilities and life to an old phone."
 

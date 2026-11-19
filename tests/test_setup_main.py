@@ -2,8 +2,8 @@
 """Test the opos.setup module entry point."""
 
 import os
-import sys
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path

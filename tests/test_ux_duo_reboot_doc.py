@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
+import re
 import unittest
 from pathlib import Path
-import re
+
 import opos.setup.cli
 
 

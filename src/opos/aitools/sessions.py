@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Session tracking and power-aware pausing."""
 
-from dataclasses import dataclass
-from pathlib import Path
 import contextlib
 import os
 import signal
 import sys
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
+
 from opos.aitools import power
 from opos.aitools.installer import read_manifest
 from opos.battery import DrainEstimator, Sample, essentials_reserve

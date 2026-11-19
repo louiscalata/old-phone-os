@@ -5,7 +5,8 @@ import subprocess
 import unittest
 
 from opos.web import page
-from tests.test_uxp03_shade import HARNESS as BASE, JS, NODE
+from tests.test_uxp03_shade import HARNESS as BASE
+from tests.test_uxp03_shade import JS, NODE
 
 HARNESS = BASE.split("const hook=c.oposHooks[0],out={};", 1)[0]
 HARNESS = HARNESS.replace(

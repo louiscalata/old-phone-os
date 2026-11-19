@@ -12,7 +12,6 @@ from unittest import mock
 
 from opos import assist, muse
 
-
 # Not a pause or time-left question: those go to the battery rules before the local model (assist.rules_answer).
 QUESTION = "Which apps can I use right now?"
 FACTS = {"mode": "SAVER", "paused": ["email"], "why_paused": "The battery is worn, so email is paused."}

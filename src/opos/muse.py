@@ -8,8 +8,8 @@ import re
 import sys
 import time
 import urllib.error
-import urllib.request
 import urllib.parse
+import urllib.request
 from dataclasses import dataclass, replace
 
 

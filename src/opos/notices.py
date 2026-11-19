@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+
 from opos.version import project_version
 
 # Owner's words, exact. Never paraphrase (docs/jaryo.md section 11).

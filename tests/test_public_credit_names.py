@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
-from pathlib import Path
 import re
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from opos import notices
-
 
 ROOT = Path(__file__).resolve().parent.parent
 NAMES = re.compile(r"\b(?:Jev|Nisi|AGIW|Astra|Sol|Fable|Opus)\b")

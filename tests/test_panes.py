@@ -15,7 +15,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import fonts, osk, panes, span as spanmod
+from opos import fonts, osk, panes
+from opos import span as spanmod
 from opos.span import Span
 from opos.web import page
 from tests import webclient

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later;
-import unittest
 import os
-import tempfile
 import subprocess
+import tempfile
+import unittest
 
 
 class TestGuardStagedFiles(unittest.TestCase):

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from pathlib import Path
 import importlib.util
 import unittest
+from pathlib import Path
 
 _root = Path(__file__).resolve().parents[1]
 _guard_spec = importlib.util.spec_from_file_location("opos_guard_check_pmos", str(_root / "guard" / "check.py"))

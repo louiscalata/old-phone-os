@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import unittest
-import time
 import json
-import urllib.request
-import urllib.error
-import threading
 import re
+import threading
+import time
+import unittest
+import urllib.error
+import urllib.request
+
 import opos.web
 
 

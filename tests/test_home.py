@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
+
+from opos.governor import Decision, Mode
 from opos.home import home_screen, is_quiet
-from opos.governor import Mode, Decision
 
 
 class TestHome(unittest.TestCase):

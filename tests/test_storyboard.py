@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import unittest
 import re
+import unittest
+
 from opos.storyboard import run
 
 

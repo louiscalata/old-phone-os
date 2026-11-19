@@ -3,13 +3,13 @@
 
 import base64
 import json
-from html.parser import HTMLParser
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from html.parser import HTMLParser
+from pathlib import Path
 from unittest import mock
 
 from opos.advisor import GlimmerAdvisor

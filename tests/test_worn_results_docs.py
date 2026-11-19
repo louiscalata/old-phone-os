@@ -128,8 +128,9 @@ class TestWornResultsDocs(unittest.TestCase):
 
     def test_event_classification_and_shutdown_accounting(self):
         from unittest.mock import patch
+
         import opos.eol as eol
-        from opos.evaleol import basic_policy, run_eol, benchmark_eol
+        from opos.evaleol import basic_policy, benchmark_eol, run_eol
 
         brownout_scenario = {"level": 5.0, "health": 0.35, "temp_c": 0.0}
         brownout_result = run_eol(basic_policy, brownout_scenario, aware=False, max_min=1)
@@ -157,7 +158,9 @@ class TestWornResultsDocs(unittest.TestCase):
 
     def test_benchmark_event_percentages_mixed_batch(self):
         from unittest.mock import patch
-        from opos.evaleol import benchmark_eol, basic_policy, run_eol as real_run_eol
+
+        from opos.evaleol import basic_policy, benchmark_eol
+        from opos.evaleol import run_eol as real_run_eol
 
         sample_result = real_run_eol(
             basic_policy, {"level": 100.0, "health": 1.0, "temp_c": 25.0}, aware=False, max_min=1

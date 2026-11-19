@@ -16,7 +16,6 @@ from opos.setup import apply as apply_mod
 from opos.setup import cli, config, server
 from opos.setup.apply import Progress
 
-
 STEPS = (
     ("config", "Save your preferences"),
     ("token", "Create the session token"),

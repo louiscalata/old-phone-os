@@ -8,9 +8,9 @@ off the edge of the bar. The fit is measured in a real browser (skipped where th
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import unittest
+from pathlib import Path
 
 from opos.web import page
 from tests import test_uxr_acceptance as acceptance

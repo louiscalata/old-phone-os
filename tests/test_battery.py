@@ -2,7 +2,8 @@
 import ast
 import unittest
 from pathlib import Path
-from opos.battery import Sample, DrainEstimator, hours_left, essentials_reserve
+
+from opos.battery import DrainEstimator, Sample, essentials_reserve, hours_left
 
 
 class TestBattery(unittest.TestCase):
@@ -47,6 +48,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_present_excludes_absent(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -66,6 +68,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_present_missing_preserves_telemetry(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -83,6 +86,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_combined_capacity_missing_cap_uses_telemetry(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -103,6 +107,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_combined_capacity_weighted(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -123,6 +128,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_direct_energy(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -140,6 +146,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_direct_charge(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -157,6 +164,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_direct_energy_overreport_clamped(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -174,6 +182,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_present_missing_capacity_no_direct(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -189,6 +198,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_incomplete_weights_conservative_bound(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -208,6 +218,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_mixed_measurement_health_and_coverage(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -239,6 +250,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_unequal_capacity_health_weighted(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -260,6 +272,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_charge_health_validates_pairs(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         valid = [
@@ -304,6 +317,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_mixed_energy_preferred_no_voltage(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -327,6 +341,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_mixed_capacity_energy_preferred(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -346,6 +361,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_mixed_capacity_invalid_energy_falls_back_to_charge(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         cases = [None, "invalid", "0"]
@@ -369,6 +385,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_mixed_capacity_across_units_not_summed(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:
@@ -391,6 +408,7 @@ class TestBatteryHw(unittest.TestCase):
     def test_F028_unknown_topology_does_not_invent_pack_totals(self):
         import tempfile
         from pathlib import Path
+
         from opos.hw.battery import read_battery
 
         with tempfile.TemporaryDirectory() as td:

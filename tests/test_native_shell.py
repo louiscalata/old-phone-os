@@ -364,6 +364,7 @@ class StandInShell(unittest.TestCase):
     def setUp(self):
         import importlib
         import sys
+
         from tests.test_duo_native import Toolkit
 
         names = ("gi", "gi.repository", "opos.native.shell", "opos.native.screens", "opos.native.ui")
@@ -855,6 +856,7 @@ class TheDaemonCannotDarkenAnOpenPhone(unittest.TestCase):
     def test_the_guard(self):
         import sys
         from unittest import mock
+
         from opos.native import blank
 
         with tempfile.TemporaryDirectory() as d:

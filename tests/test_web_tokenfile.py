@@ -11,9 +11,10 @@ import threading
 import time
 import unittest
 import unittest.mock
+
+import opos.web
 from opos import tokenfile
 from opos.web import Phone, make_server
-import opos.web
 
 
 class TestWebTokenFile(unittest.TestCase):

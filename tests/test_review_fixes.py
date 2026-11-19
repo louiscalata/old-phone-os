@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
+
 from opos.power import steps_for_goal
-from opos.runtime import Task, Priority, Runtime, DEFAULT_TASKS
+from opos.runtime import DEFAULT_TASKS, Priority, Runtime, Task
 
 
 class TestReviewFixes(unittest.TestCase):

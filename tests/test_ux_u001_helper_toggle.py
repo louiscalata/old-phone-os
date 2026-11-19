@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
+
 from opos.home import is_quiet
 from opos.web import page
 

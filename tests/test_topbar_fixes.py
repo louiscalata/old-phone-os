@@ -2,11 +2,10 @@
 """Pointer ownership, cancellation and accessible names for the real top bar."""
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
-
+from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
 

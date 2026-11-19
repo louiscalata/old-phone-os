@@ -2,8 +2,8 @@
 """Fail if a deploy hardening directive is removed."""
 
 import os
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEPLOY = ROOT / "deploy"

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.web_source import web_text
 from tests import web_source
+from tests.web_source import web_text
 
 
 class TestWebSource(unittest.TestCase):

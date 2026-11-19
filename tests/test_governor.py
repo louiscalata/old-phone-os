@@ -2,7 +2,8 @@
 import ast
 import unittest
 from pathlib import Path
-from opos.governor import PowerState, Mode, Priority, Task, Decision, rule_decide, Governor, heat_limit
+
+from opos.governor import Decision, Governor, Mode, PowerState, Priority, Task, heat_limit, rule_decide
 
 
 class TestRuleDecide(unittest.TestCase):

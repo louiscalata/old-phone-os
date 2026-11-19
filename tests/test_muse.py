@@ -2,9 +2,9 @@
 import ast
 import http.server
 import json
+import pathlib
 import re
 import sys
-import pathlib
 import threading
 import unittest
 import urllib.parse
@@ -12,23 +12,23 @@ import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 from unittest import mock
+
 import opos.muse as muse_mod
 from opos.muse import (
-    Route,
-    glimmer_route,
+    FACT_KEYS,
     SPARK_OPEN,
+    MuseError,
+    Route,
+    ask,
+    check,
     choose,
+    explain,
+    facts,
+    glimmer_route,
     is_hard,
     label,
-    MuseError,
-    ask,
-    FACT_KEYS,
-    facts,
-    explain,
     plan,
-    check,
 )
-
 
 PRIVATE_TEST_HOST = "192.0.2.10"
 
@@ -336,7 +336,7 @@ class TestMuse(unittest.TestCase):
         self.assertFalse(is_hard(5, 5))
 
     def test_timeout_s_default(self):
-        from opos.muse import timeout_s, DEFAULT_TIMEOUT
+        from opos.muse import DEFAULT_TIMEOUT, timeout_s
 
         self.assertEqual(timeout_s({}), DEFAULT_TIMEOUT)
         self.assertEqual(timeout_s({}), 120.0)

@@ -13,20 +13,22 @@ import io
 import json
 import os
 import re
-from pathlib import Path
 import runpy
-import signal
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest import mock
 
 from opos import image_identity as identity
-from tests import test_ckpt2_security as ck, test_duo_usb_hardening as usb, test_selftest as st
+from tests import test_ckpt2_security as ck
+from tests import test_duo_usb_hardening as usb
+from tests import test_selftest as st
 
 PKG = usb.PKG
 SSHD = shutil.which("sshd") or ("/usr/sbin/sshd" if Path("/usr/sbin/sshd").exists() else None)

@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Public QA regressions for real state, SVG rendering and scoped markup."""
 
-from html.parser import HTMLParser
 import json
 import math
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
+from html.parser import HTMLParser
+from pathlib import Path
 from unittest import mock
 
 from opos import public_demo, web
 from opos.dashboard import Dashboard
-
 
 STATIC = Path(__file__).parents[1] / "src/opos/web_static"
 NODE = shutil.which("node")

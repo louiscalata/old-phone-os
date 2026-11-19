@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
-import sys
 import subprocess
+import sys
 import unittest
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -9,9 +9,9 @@ src = os.path.join(root, "src")
 if src not in sys.path:
     sys.path.insert(0, src)
 
-from opos.runtime import Runtime, DEFAULT_TASKS
-from opos.reserve import reserve_level, WORN_REASON
 from opos.governor import Mode
+from opos.reserve import WORN_REASON, reserve_level
+from opos.runtime import DEFAULT_TASKS, Runtime
 
 
 class TestRuntimeOrder(unittest.TestCase):

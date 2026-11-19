@@ -3,10 +3,10 @@
 
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
+from pathlib import Path
 
 from opos.web import page
 from tests import test_uxr_acceptance as acceptance

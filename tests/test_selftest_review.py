@@ -2,6 +2,7 @@
 """Regression: non-AssertionError details must not leak paths."""
 
 from __future__ import annotations
+
 import os
 import unittest
 from pathlib import Path
@@ -66,7 +67,8 @@ class SelftestDetailTest(unittest.TestCase):
                 app_server.server_close.assert_called_once_with()
 
     def test_apply_keeps_real_config_functions(self) -> None:
-        from opos.setup import apply as apply_mod, config as config_mod
+        from opos.setup import apply as apply_mod
+        from opos.setup import config as config_mod
 
         self.assertEqual(
             (apply_mod.save is config_mod.save, apply_mod.ensure_token is config_mod.ensure_token), (True, True)

@@ -7,7 +7,6 @@ Import their original module names so case IDs and mock targets stay unchanged.
 import importlib
 import unittest
 
-
 _REVIEW_MODULES = (
     "tests.test_10-ssh_review",
     "tests.test_20-firewall_review",

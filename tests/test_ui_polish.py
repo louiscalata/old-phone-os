@@ -2,12 +2,11 @@
 """Judge-visible UI regressions, using the real static scripts in Node's VM."""
 
 import json
-from html.parser import HTMLParser
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
-
+from html.parser import HTMLParser
+from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "opos" / "web_static"
 

@@ -11,8 +11,8 @@ Incoming calls that end before connected are missed. Duplicate events are safe.
 The observer must never prevent the modem from placing or ending a call.
 """
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

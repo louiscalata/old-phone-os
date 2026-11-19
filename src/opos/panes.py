@@ -17,7 +17,8 @@ import os
 import re
 from pathlib import Path
 
-from opos import secure, span as spanmod
+from opos import secure
+from opos import span as spanmod
 
 _STATIC = Path(__file__).with_name("panes_static")
 _NONCE_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")

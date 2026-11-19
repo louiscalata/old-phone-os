@@ -2,6 +2,7 @@
 """Run coding tools CLI via python -m opos.aitools."""
 
 from __future__ import annotations
+
 from opos.aitools.cli import main
 
 if __name__ == "__main__":
