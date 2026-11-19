@@ -4,6 +4,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,7 +49,7 @@ def _scan(repo: str, env: dict | None = None) -> Tuple[int, str]:
     e = dict(os.environ)
     if env:
         e.update(env)
-    r = subprocess.run(["python3", "guard/historyscan.py"], cwd=repo, capture_output=True, text=True, env=e)
+    r = subprocess.run([sys.executable, "guard/historyscan.py"], cwd=repo, capture_output=True, text=True, env=e)
     return r.returncode, r.stdout + r.stderr
 
 
@@ -165,7 +166,7 @@ class HistoryScanTest(unittest.TestCase):
     def test_bad_repo_fails_closed(self) -> None:
         """Bad repo exits nonzero with FAIL and no traceback."""
         r = subprocess.run(
-            ["python3", str(_root() / "guard" / "historyscan.py"), "--repo", "/nonexistent-x"],
+            [sys.executable, str(_root() / "guard" / "historyscan.py"), "--repo", "/nonexistent-x"],
             capture_output=True,
             text=True,
         )
@@ -282,7 +283,9 @@ class HistoryScanTest(unittest.TestCase):
                 wt = os.path.join(tmp2, "wt")
                 _git(tmp, "worktree", "add", wt)
                 r = subprocess.run(
-                    ["python3", str(_root() / "guard" / "historyscan.py"), "--repo", wt], capture_output=True, text=True
+                    [sys.executable, str(_root() / "guard" / "historyscan.py"), "--repo", wt],
+                    capture_output=True,
+                    text=True,
                 )
                 out = r.stdout + r.stderr
                 self.assertEqual(r.returncode, 0)
