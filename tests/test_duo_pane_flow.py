@@ -10,7 +10,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from opos import web
+from opos import apps, web
 from tests import test_uxr_acceptance as acceptance
 
 DRIVER = Path(__file__).resolve().parent / "apps_cdp.js"
@@ -77,6 +77,28 @@ class PaneFlow(unittest.TestCase):
         )
         self.assertIn("675", text)
         self.assertIn("717", text)
+
+    def test_the_panes_table_names_each_app_once(self):
+        # No browser: load each registered app the way apps.py does, then parse the doc table.
+        text = (Path(__file__).resolve().parents[1] / "docs/jaryo-panes.md").read_text(encoding="utf-8")
+        self.assertIn("## Everyday app panes", text)
+        section = text.split("## Everyday app panes", 1)[1]
+        rows = {}
+        for line in section.splitlines():
+            if not line.startswith("|"):
+                continue
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) == 6 and cells[0] not in ("App", "---"):
+                rows.setdefault(cells[0], []).append(cells)
+        loaded = apps.enabled({"OPOS_APPS": ",".join(apps.MODULES)})
+        expected = {app.title for app in loaded} | {"Apps index"}
+        self.assertEqual(set(rows), expected)
+        for title, found in rows.items():
+            with self.subTest(app=title):
+                self.assertEqual(len(found), 1)
+                self.assertIn(found[0][1], ("list-detail", "companion pane"))
+                for cell in found[0]:
+                    self.assertNotIn("extended canvas", cell)
 
     def test_no_control_crosses_the_hinge(self):
         if self.skip_reason:
