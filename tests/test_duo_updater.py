@@ -880,7 +880,7 @@ class TestRejections(EnvCase):
 
     def test_signature_over_a_different_manifest(self):
         good = make_bundle(6)
-        mb, sig = None, None
+        _mb, sig = None, None
         with tarfile.open(fileobj=io.BytesIO(good)) as tf:
             sig = tf.extractfile("manifest.json.sig").read()
         mine = json.dumps(good_manifest()).encode()
@@ -2256,7 +2256,6 @@ class TestBoot(EnvCase):
         self.assertEqual(e.state()["failed"], [7])
 
     def test_tampered_staged_release_is_refused_at_boot(self):
-        e = self.env
         for label, tamper in (
             ("file content", lambda d: wr(os.path.join(d, "src/opos/web.py"), b"# evil\n", "ab")),
             ("extra file", lambda d: wr(os.path.join(d, "src/opos/evil.py"), "x")),
@@ -3590,7 +3589,6 @@ class TestProbeDeadline(EnvCase):
                 self.assertLess(time.monotonic() - t0, 3.0, msg)
 
     def test_the_probe_deadline_covers_both_requests_together(self):
-        e = self.env
         t = self.trickle("body")
         t0 = time.monotonic()
         ok, msg = U.probe_http("127.0.0.1", t.port, 1.0)

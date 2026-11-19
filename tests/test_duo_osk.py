@@ -2,10 +2,8 @@
 """Packaging of the Duo OS on-screen keyboard: the unit files, the opt-in launcher run for real with a fake keyboard, build and verify blocks, docs."""
 
 import os
-import re
 import shutil
 import socket
-import stat
 import subprocess
 import sys
 import tempfile

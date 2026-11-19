@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from opos import apps, apps_page, calllog, calls_page, contacts_page, firstrun, web
+from opos import apps, calllog, calls_page, contacts_page, firstrun, web
 from opos.home import is_quiet
 from tests.test_apps_shell import visible
 from tests.test_calllog import event

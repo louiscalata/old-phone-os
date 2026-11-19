@@ -18,7 +18,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -27,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from opos import firstrun, fonts, osk, web  # noqa: E402
-from tests.test_selftest import Fake, SERVER_ENV  # noqa: E402
+from tests.test_selftest import Fake  # noqa: E402
 from tests.test_uxp30_budget import WAVE_GATE  # noqa: E402
 
 ORIG_PAGE = web.page  # before any run of the first-run hook

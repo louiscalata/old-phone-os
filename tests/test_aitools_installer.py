@@ -2,7 +2,6 @@
 import hashlib
 import json
 import os
-import shutil
 import stat
 import sys
 import tempfile
@@ -1076,7 +1075,7 @@ class TestInstaller(unittest.TestCase):
             )
             tr = installer.tools_root(prefix)
             w1_before = (tr / "bin" / t1.binary).read_bytes()
-            snap_before = _snapshot(tr)
+            _snapshot(tr)
             mp = installer.manifest_path(prefix)
             mp.write_bytes(b"not json {{{")
             bad = mp.read_bytes()

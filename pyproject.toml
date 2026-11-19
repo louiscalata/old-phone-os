@@ -78,9 +78,8 @@ max-complexity = 15
 # E401: existing pycodestyle finding; non-format repair is outside this lane.
 # E402: existing pycodestyle finding; non-format repair is outside this lane.
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
-# F811: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"guard/check.py" = ["B904", "C901", "E401", "E402", "E741", "F811", "I001"]
+"guard/check.py" = ["B904", "C901", "E401", "E402", "E741", "I001"]
 # C901: existing complexity; restructuring needs a behavior review.
 # UP006: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP035: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
@@ -178,9 +177,8 @@ max-complexity = 15
 # C901: existing complexity; restructuring needs a behavior review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "src/opos/image_identity.py" = ["C901", "UP031"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"src/opos/lockpin.py" = ["F401", "I001"]
+"src/opos/lockpin.py" = ["I001"]
 # C901: existing complexity; restructuring needs a behavior review.
 "src/opos/mm_modem.py" = ["C901"]
 # C901: existing complexity; restructuring needs a behavior review.
@@ -297,10 +295,9 @@ max-complexity = 15
 "src/opos/web.py" = ["B904", "C901", "E402", "E731", "I001", "N815"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/duo_identity_fixture.py" = ["I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # S324: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/fixtures/fake_ssh.py" = ["F401", "S324", "UP031"]
+"tests/fixtures/fake_ssh.py" = ["S324", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/install_script_stubs.py" = ["I001"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
@@ -318,15 +315,12 @@ max-complexity = 15
 "tests/test_aitools_catalog.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_aitools_cli.py" = ["I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S110: existing security finding; security repairs need separate review.
-"tests/test_aitools_installer.py" = ["F401", "F841", "I001", "S110"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
+"tests/test_aitools_installer.py" = ["I001", "S110"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S108: existing security finding; security repairs need separate review.
-"tests/test_aitools_place.py" = ["F401", "I001", "S108"]
+"tests/test_aitools_place.py" = ["I001", "S108"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S108: existing security finding; security repairs need separate review.
 "tests/test_aitools_profile.py" = ["I001", "S108"]
@@ -344,16 +338,14 @@ max-complexity = 15
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_apps_shell.py" = ["I001"]
 # B023: existing bugbear finding; diagnose and repair separately from layout.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_assist.py" = ["B023", "F401", "I001"]
+"tests/test_assist.py" = ["B023", "I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # N802: existing names and framework overrides; renaming is outside formatting.
 "tests/test_battery.py" = ["I001", "N802"]
 # B007: existing bugbear finding; diagnose and repair separately from layout.
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-"tests/test_battery_claims.py" = ["B007", "E731", "F401"]
+"tests/test_battery_claims.py" = ["B007", "E731"]
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
 # N802: existing names and framework overrides; renaming is outside formatting.
 "tests/test_boot_graph.py" = ["E741", "N802"]
@@ -361,37 +353,29 @@ max-complexity = 15
 "tests/test_boot_smoke.py" = ["UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_budget.py" = ["I001"]
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
-"tests/test_calc.py" = ["F841"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_calc_browser.py" = ["UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_calllog.py" = ["I001"]
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S106: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_calls_page.py" = ["E731", "F401", "I001", "S106", "UP031"]
+"tests/test_calls_page.py" = ["E731", "I001", "S106", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_ckpt2_security.py" = ["I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S110: existing security finding; security repairs need separate review.
-"tests/test_cli_review.py" = ["F401", "F841", "I001", "S110"]
+"tests/test_cli_review.py" = ["I001", "S110"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_clock_browser.py" = ["UP031"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # S103: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_clock_page.py" = ["F401", "S103", "UP031"]
+"tests/test_clock_page.py" = ["S103", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_contacts.py" = ["I001"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_contacts_browser.py" = ["UP031"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-"tests/test_contacts_page.py" = ["F401"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_dashboard.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
@@ -453,10 +437,9 @@ max-complexity = 15
 # S104: existing security finding; security repairs need separate review.
 # S108: existing security finding; security repairs need separate review.
 "tests/test_duo_exposure.py" = ["S104", "S108"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_duo_final.py" = ["F401", "I001", "UP031"]
+"tests/test_duo_final.py" = ["I001", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_duo_identity.py" = ["I001", "UP031"]
@@ -473,8 +456,7 @@ max-complexity = 15
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_duo_os_clock.py" = ["UP031"]
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-"tests/test_duo_osk.py" = ["E741", "F401"]
+"tests/test_duo_osk.py" = ["E741"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_duo_pane_flow.py" = ["UP031"]
 # B007: existing bugbear finding; diagnose and repair separately from layout.
@@ -506,9 +488,8 @@ max-complexity = 15
 "tests/test_duo_rootfs_install.py" = ["B905", "I001"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_duo_sensorfwd.py" = ["UP031"]
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_duo_sparse_image.py" = ["F841", "I001"]
+"tests/test_duo_sparse_image.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S108: existing security finding; security repairs need separate review.
 "tests/test_duo_status_device.py" = ["I001", "S108"]
@@ -516,7 +497,6 @@ max-complexity = 15
 # B023: existing bugbear finding; diagnose and repair separately from layout.
 # B905: existing bugbear finding; diagnose and repair separately from layout.
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S103: existing security finding; security repairs need separate review.
 # S106: existing security finding; security repairs need separate review.
@@ -524,13 +504,12 @@ max-complexity = 15
 # S604: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP041: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_duo_updater.py" = ["B007", "B023", "B905", "E741", "F841", "I001", "S103", "S106", "S324", "S604", "UP031", "UP041"]
+"tests/test_duo_updater.py" = ["B007", "B023", "B905", "E741", "I001", "S103", "S106", "S324", "S604", "UP031", "UP041"]
 # B905: existing bugbear finding; diagnose and repair separately from layout.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # N806: existing names and framework overrides; renaming is outside formatting.
 # N812: existing names and framework overrides; renaming is outside formatting.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_duo_usb_hardening.py" = ["B905", "F401", "N806", "N812", "UP031"]
+"tests/test_duo_usb_hardening.py" = ["B905", "N806", "N812", "UP031"]
 # B008: existing bugbear finding; diagnose and repair separately from layout.
 # S108: existing security finding; security repairs need separate review.
 # S310: existing security finding; security repairs need separate review.
@@ -555,19 +534,17 @@ max-complexity = 15
 "tests/test_glimmer_credit.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_goal_hours.py" = ["I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_goal_steps.py" = ["F401", "I001"]
+"tests/test_goal_steps.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S108: existing security finding; security repairs need separate review.
 "tests/test_goalsim.py" = ["I001", "S108"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_goalsim_eol.py" = ["I001"]
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # UP028: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_governor.py" = ["E731", "F841", "I001", "UP028"]
+"tests/test_governor.py" = ["E731", "I001", "UP028"]
 # B023: existing bugbear finding; diagnose and repair separately from layout.
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
 # I001: existing import order; sorting changes AST order and needs a separate review.
@@ -600,16 +577,14 @@ max-complexity = 15
 # UP035: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_historyscan.py" = ["UP006", "UP035"]
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_home.py" = ["E741", "F401", "I001"]
+"tests/test_home.py" = ["E741", "I001"]
 # B009: existing bugbear finding; diagnose and repair separately from layout.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # N811: existing names and framework overrides; renaming is outside formatting.
 "tests/test_hw.py" = ["B009", "I001", "N811"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_hw_facts.py" = ["F401", "UP031"]
+"tests/test_hw_facts.py" = ["UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_hyphenated_review_suites.py" = ["I001"]
 # B905: existing bugbear finding; diagnose and repair separately from layout.
@@ -618,13 +593,12 @@ max-complexity = 15
 # C901: existing complexity; restructuring needs a behavior review.
 # E401: existing pycodestyle finding; non-format repair is outside this lane.
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S103: existing security finding; security repairs need separate review.
 # S105: existing security finding; security repairs need separate review.
 # S108: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_install_review.py" = ["B007", "C901", "E401", "E741", "F841", "I001", "S103", "S105", "S108", "UP031"]
+"tests/test_install_review.py" = ["B007", "C901", "E401", "E741", "I001", "S103", "S105", "S108", "UP031"]
 # S108: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_review_part2.py" = ["S108", "UP031"]
@@ -638,10 +612,9 @@ max-complexity = 15
 # B904: existing bugbear finding; diagnose and repair separately from layout.
 # B905: existing bugbear finding; diagnose and repair separately from layout.
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_installer.py" = ["B023", "B904", "B905", "E731", "F841", "I001", "UP031"]
+"tests/test_installer.py" = ["B023", "B904", "B905", "E731", "I001", "UP031"]
 # S310: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_inuse.py" = ["S310", "UP031"]
@@ -686,17 +659,14 @@ max-complexity = 15
 # B023: existing bugbear finding; diagnose and repair separately from layout.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_monitor_wiring.py" = ["B007", "B023", "UP031"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_muse.py" = ["F401", "I001", "UP031"]
+"tests/test_muse.py" = ["I001", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_muse_check_probe.py" = ["I001"]
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-# F811: existing pyflakes finding; removing or changing code is outside formatting.
 # N806: existing names and framework overrides; renaming is outside formatting.
-"tests/test_native_back.py" = ["E731", "F401", "F811", "N806"]
+"tests/test_native_back.py" = ["E731", "N806"]
 # B905: existing bugbear finding; diagnose and repair separately from layout.
 # N806: existing names and framework overrides; renaming is outside formatting.
 # S314: existing security finding; security repairs need separate review.
@@ -715,12 +685,11 @@ max-complexity = 15
 # E731: existing pycodestyle finding; non-format repair is outside this lane.
 # N806: existing names and framework overrides; renaming is outside formatting.
 "tests/test_native_mutation_kills.py" = ["E731", "N806"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # N805: existing names and framework overrides; renaming is outside formatting.
 # S105: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP032: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_native_net.py" = ["F401", "N805", "S105", "UP031", "UP032"]
+"tests/test_native_net.py" = ["N805", "S105", "UP031", "UP032"]
 # C901: existing complexity; restructuring needs a behavior review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_native_net_fuzz.py" = ["C901", "UP031"]
@@ -838,8 +807,7 @@ max-complexity = 15
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_profiles.py" = ["I001"]
 # C901: existing complexity; restructuring needs a behavior review.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
-"tests/test_provenance_summary.py" = ["C901", "F841"]
+"tests/test_provenance_summary.py" = ["C901"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_public_credit_names.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
@@ -849,35 +817,30 @@ max-complexity = 15
 "tests/test_public_demo_qa.py" = ["I001"]
 # B007: existing bugbear finding; diagnose and repair separately from layout.
 # B905: existing bugbear finding; diagnose and repair separately from layout.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_published_numbers.py" = ["B007", "B905", "F401", "I001"]
+"tests/test_published_numbers.py" = ["B007", "B905", "I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_python_version_guard.py" = ["I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_reserve.py" = ["F401", "I001"]
+"tests/test_reserve.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_review_fixes.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_router.py" = ["I001"]
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_runtime.py" = ["F841", "I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
+"tests/test_runtime.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_runtime_goal_reserve.py" = ["F401", "I001"]
+"tests/test_runtime_goal_reserve.py" = ["I001"]
 # E402: existing pycodestyle finding; non-format repair is outside this lane.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_runtime_order.py" = ["E402", "I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S104: existing security finding; security repairs need separate review.
 "tests/test_secure.py" = ["I001", "S104"]
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # N802: existing names and framework overrides; renaming is outside formatting.
 # S102: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_selftest.py" = ["F841", "N802", "S102", "UP031"]
+"tests/test_selftest.py" = ["N802", "S102", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_selftest_review.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
@@ -948,10 +911,8 @@ max-complexity = 15
 "tests/test_timezone.py" = ["UP017", "UP031"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_topbar_fixes.py" = ["I001"]
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-# F811: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
-"tests/test_ui.py" = ["F401", "F811", "I001"]
+"tests/test_ui.py" = ["I001"]
 # B905: existing bugbear finding; diagnose and repair separately from layout.
 # E402: existing pycodestyle finding; non-format repair is outside this lane.
 # I001: existing import order; sorting changes AST order and needs a separate review.
@@ -972,11 +933,10 @@ max-complexity = 15
 "tests/test_ux_duo_reboot_doc.py" = ["I001"]
 # E401: existing pycodestyle finding; non-format repair is outside this lane.
 # E722: existing pycodestyle finding; non-format repair is outside this lane.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S110: existing security finding; security repairs need separate review.
 # W291: existing whitespace finding not repaired by the formatter.
-"tests/test_ux_first_run_errors.py" = ["E401", "E722", "F841", "I001", "S110", "W291"]
+"tests/test_ux_first_run_errors.py" = ["E401", "E722", "I001", "S110", "W291"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "tests/test_ux_first_run_offline.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
@@ -1067,11 +1027,10 @@ max-complexity = 15
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_w1_layout.py" = ["I001", "UP031"]
 # B023: existing bugbear finding; diagnose and repair separately from layout.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S310: existing security finding; security repairs need separate review.
 # UP041: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_web.py" = ["B023", "F841", "I001", "S310", "UP041"]
+"tests/test_web.py" = ["B023", "I001", "S310", "UP041"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # S310: existing security finding; security repairs need separate review.
 "tests/test_web_ask.py" = ["I001", "S310"]
@@ -1137,12 +1096,10 @@ max-complexity = 15
 # B007: existing bugbear finding; diagnose and repair separately from layout.
 # B023: existing bugbear finding; diagnose and repair separately from layout.
 # C901: existing complexity; restructuring needs a behavior review.
-# F401: existing pyflakes finding; removing or changing code is outside formatting.
-# F841: existing pyflakes finding; removing or changing code is outside formatting.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # N999: existing names and framework overrides; renaming is outside formatting.
 # UP022: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_20-firewall_review.py" = ["B007", "B023", "C901", "F401", "F841", "I001", "N999", "UP022"]
+"tests/test_20-firewall_review.py" = ["B007", "B023", "C901", "I001", "N999", "UP022"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 # N812: existing names and framework overrides; renaming is outside formatting.
 # S105: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.

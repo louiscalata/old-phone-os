@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
-from opos import alarm_sound, apps, apps_page, clock_page, web
+from opos import alarm_sound, apps, clock_page
 from opos.alarms import Event
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible

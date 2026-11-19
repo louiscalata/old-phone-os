@@ -284,7 +284,6 @@ class TestGovernorAdvisorValidation(unittest.TestCase):
         tasks = [e, u, o]
 
         def adv(s, t):
-            first = tuple(x.name for x in t)
             second = tuple(x.name for x in t)
             return Decision(Mode.NORMAL, second, (), "advisor")
 

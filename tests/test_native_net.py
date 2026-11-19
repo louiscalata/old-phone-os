@@ -19,7 +19,7 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from opos.native import logic, netlogic
+from opos.native import netlogic
 from opos.native.netlogic import Secret
 
 ROOT = Path(__file__).resolve().parents[1]

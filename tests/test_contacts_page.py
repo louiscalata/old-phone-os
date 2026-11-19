@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from opos import contacts_page, vcard, web
+from opos import contacts_page, vcard
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible
 from tests.test_panes_pages import TOKENS, css_hexes, style_of

@@ -27,7 +27,6 @@ class TestUI(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform.startswith("linux") and not os.environ.get("DISPLAY"), "a window would open")
     def test_main_without_display_does_not_raise(self):
-        from opos.ui import main
 
         main([])
 

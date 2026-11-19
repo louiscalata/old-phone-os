@@ -30,7 +30,7 @@ class TestRenderErrorNotice(unittest.TestCase):
             chars = string.ascii_letters + string.digits
             return "".join(random.choice(chars) for _ in range(32))
 
-        secret = build_secret()
+        build_secret()
         harness_js = (
             """
 const document = {
@@ -67,7 +67,7 @@ async function runTests(){
 runTests().then(()=>{ process.exit(0); }).catch(e=>{ console.error(e); process.exit(1); });
 """
         )
-        proc = subprocess.run(
+        subprocess.run(
             [sys.executable, "-c", 'import sys; open("/tmp/harness.js","w").write(sys.stdin.read())'],
             input=harness_js.encode(),
             capture_output=True,

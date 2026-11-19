@@ -11,7 +11,7 @@ import types
 import unittest
 from pathlib import Path
 
-from opos.native import blank, layout, posture
+from opos.native import layout, posture
 from tests.test_native_blank import Tree, _broken
 from tests.test_native_shell import SHELL, FakeBlanker, StandInShell
 
@@ -558,8 +558,6 @@ class ShellBack(StandInShell):
     def test_a_hinge_watcher_that_cannot_start_leaves_the_lid_and_both_screens(self):
         """No thread can be made, say: one log line, the lid watcher stays the one started, nothing is darkened."""
         import io
-        import tempfile
-        from pathlib import Path
         from unittest import mock
 
         shell, w = self.shell, self.win

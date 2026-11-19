@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
-import pathlib
 import unittest
 from unittest.mock import Mock, patch
 from opos.battery import essentials_reserve

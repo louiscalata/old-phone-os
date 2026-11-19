@@ -2300,7 +2300,7 @@ class Acceptance(unittest.TestCase):
     def test_braces_and_quotes_balance(self):
         s = re.sub(r"@'.*?'@|@\".*?\"@", "", self.text, flags=re.S)
         s = re.sub(r"<#.*?#>", "", s, flags=re.S)
-        out, i, depth = [], 0, {"{": 0, "(": 0, "[": 0}
+        _out, i, depth = [], 0, {"{": 0, "(": 0, "[": 0}
         pairs = {"}": "{", ")": "(", "]": "["}
         while i < len(s):
             ch = s[i]

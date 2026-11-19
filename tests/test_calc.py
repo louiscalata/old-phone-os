@@ -40,8 +40,6 @@ class Calc(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("no node")
-        script = self.id()
-        path = Path(self.id().replace(".", "_") + ".js")
         # Keep the script next to the test run, not in the repo.
         import tempfile
 

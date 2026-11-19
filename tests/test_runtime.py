@@ -21,8 +21,8 @@ class TestRuntime(unittest.TestCase):
     def test_falling_level_finite_hours_left(self):
         rt = Runtime(visible=False)
         t0 = rt.step(0, 50)
-        t1 = rt.step(360, 49)
-        t2 = rt.step(720, 48)
+        rt.step(360, 49)
+        rt.step(720, 48)
         t3 = rt.step(1080, 47)
         self.assertIsNotNone(t0.hours_left)
         self.assertTrue(math.isinf(t0.hours_left))
