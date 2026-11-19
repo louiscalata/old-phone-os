@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -11,10 +12,12 @@ class TestConfirmReboot(unittest.TestCase):
         self.warn = "WARNING: the phone will reboot several times during setup. Do not unplug it or press buttons until it says Done.\n"
         self.prompt = "Type reboot and press Enter to continue:\n"
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_yes(self):
         p = subprocess.run(["/bin/sh", self.script, "--yes"], input="", capture_output=True, text=True)
         self.assertEqual((p.returncode, p.stdout, p.stderr), (0, self.warn, ""))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_confirmation_cases(self):
         cases = [
             ([], "reboot\n", (0, self.warn + self.prompt, "")),

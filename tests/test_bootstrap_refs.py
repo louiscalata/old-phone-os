@@ -3,6 +3,7 @@
 
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -61,6 +62,7 @@ class BootstrapReferences(unittest.TestCase):
         env = dict(self.env, OPOS_REF=ref)
         return subprocess.run(["sh", str(SCRIPT)], check=False, env=env, capture_output=True, text=True, timeout=20)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_full_commit_is_checked_out_before_install(self):
         result = self.run_bootstrap(self.first)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -75,6 +77,7 @@ class BootstrapReferences(unittest.TestCase):
         )
         self.assertEqual(head, self.first)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_tag_and_branch_references_still_work(self):
         for reference, expected in (("fixture-tag", "one"), ("main", "two")):
             with self.subTest(reference=reference):
@@ -83,17 +86,20 @@ class BootstrapReferences(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(self.marker.read_text().splitlines()[-1], expected)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_invalid_reference_fails_before_clone_or_install(self):
         result = self.run_bootstrap("--upload-pack=unexpected")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.dest.exists())
         self.assertFalse(self.marker.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unreachable_commit_does_not_run_installer(self):
         result = self.run_bootstrap("f" * 40)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.marker.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_repository_option_is_not_executed_as_a_git_option(self):
         sentinel = self.base / "unexpected"
         self.env["OPOS_REPO_URL"] = "--upload-pack=touch " + str(sentinel)

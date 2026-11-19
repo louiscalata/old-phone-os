@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,6 +46,7 @@ class TestKioskOff(unittest.TestCase):
     def run_script(self, *args):
         return subprocess.run(["/bin/sh", self.script, *args], env=self.env, capture_output=True, text=True, timeout=10)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore(self):
         Path(os.path.join(self.state, "prev-session")).write_text("/usr/share/wayland-sessions/phosh.desktop\n")
         result = subprocess.run(["/bin/sh", self.script], env=self.env, capture_output=True, text=True)
@@ -53,6 +55,7 @@ class TestKioskOff(unittest.TestCase):
             (0, "kiosk: OFF (takes effect after reboot)\n", "", "-s /usr/share/wayland-sessions/phosh.desktop\n"),
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_no_previous_session_disables_tinydm(self):
         for manager, arguments in (
             ("rc-update", "show default\ndel tinydm default\n"),
@@ -75,6 +78,7 @@ class TestKioskOff(unittest.TestCase):
                     self.service_log.unlink()
                     (self.bin / manager).unlink()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_failure_is_reported(self):
         prev = Path(self.state) / "prev-session"
         prev.write_text("/usr/share/wayland-sessions/phosh.desktop\n")
@@ -86,6 +90,7 @@ class TestKioskOff(unittest.TestCase):
         self.assertEqual(prev.read_text(), "/usr/share/wayland-sessions/phosh.desktop\n")
         self.assertFalse(self.service_log.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_disable_failure_is_reported(self):
         for manager in ("rc-update", "systemctl"):
             with self.subTest(manager=manager):
@@ -98,6 +103,7 @@ class TestKioskOff(unittest.TestCase):
                 self.service_log.unlink()
                 (self.bin / manager).unlink()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_no_service_manager_fails(self):
         result = self.run_script()
         self.assertEqual(
@@ -106,6 +112,7 @@ class TestKioskOff(unittest.TestCase):
         )
         self.assertFalse(Path(self.tdm_log).exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_with_previous_session(self):
         prev = os.path.join(self.state, "prev-session")
         Path(prev).write_text("/usr/share/wayland-sessions/phosh.desktop\n")
@@ -121,6 +128,7 @@ class TestKioskOff(unittest.TestCase):
         self.assertFalse(self.service_log.exists())
         self.assertEqual(Path(prev).read_text(), "/usr/share/wayland-sessions/phosh.desktop\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_without_previous_session(self):
         self.service_stub("rc-update")
         for case in ("missing", "empty"):
@@ -140,6 +148,7 @@ class TestKioskOff(unittest.TestCase):
                 self.assertFalse(self.service_log.exists())
                 self.assertEqual({p.name: p.read_bytes() for p in Path(self.state).iterdir()}, before)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unknown_argument(self):
         result = subprocess.run(["/bin/sh", self.script, "--bogus"], env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)

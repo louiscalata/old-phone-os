@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -93,6 +94,7 @@ class TestStageLocalSource(unittest.TestCase):
         self.assertEqual(len(tokens) % 2, 0)
         return dict(zip(tokens[1::2], tokens[::2]))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_tarball_uses_literal_archive_name_and_root(self):
         repo, out, script = self._make_repo()
         self._assert_success(self._run(repo, out, script))
@@ -107,6 +109,7 @@ class TestStageLocalSource(unittest.TestCase):
                 archive.getmember(SOURCE_ROOT + "/src/opos/__init__.py"),
             )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_tarball_preserves_license_notices_and_runtime_bytes(self):
         repo, out, script = self._make_repo()
         runtime = b"# fixture runtime\n__version__ = 'unchanged'\n"
@@ -122,6 +125,7 @@ class TestStageLocalSource(unittest.TestCase):
                         (repo / relative).read_bytes(),
                     )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_local_checksum_matches_local_tar_and_preserves_auxiliary_digests(self):
         repo, out, script = self._make_repo()
         caller = repo / "packaging/pmos/opos/APKBUILD"
@@ -137,6 +141,7 @@ class TestStageLocalSource(unittest.TestCase):
             with self.subTest(source=name):
                 self.assertEqual(after[name], before[name])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_only_staged_archive_url_is_removed_and_caller_is_unchanged(self):
         repo, out, script = self._make_repo()
         before = self._snapshot(repo)
@@ -152,6 +157,7 @@ class TestStageLocalSource(unittest.TestCase):
         )
         self.assertFalse(list(out.glob(".srcpack.*")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_bytecode_is_not_packed(self):
         repo, out, script = self._make_repo()
         cache = repo / "src/opos/__pycache__"
@@ -168,6 +174,7 @@ class TestStageLocalSource(unittest.TestCase):
             )
         self.assertTrue((cache / "module.pyc").exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_default_mode_copies_even_minimal_recipe_without_local_validation(self):
         repo, out, script = self._make_repo()
         caller = repo / "packaging/pmos/opos/APKBUILD"
@@ -176,6 +183,7 @@ class TestStageLocalSource(unittest.TestCase):
         self.assertEqual((out / "main/opos/APKBUILD").read_bytes(), caller.read_bytes())
         self.assertFalse(list(out.rglob("*.tar.gz")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unsafe_or_ambiguous_metadata_is_rejected_without_execution(self):
         cases = (
             ("_source_archive", '"../escape.tar.gz"'),
@@ -215,6 +223,7 @@ class TestStageLocalSource(unittest.TestCase):
                 self.assertFalse((out / "escape").exists())
                 self.assertFalse(list(out.glob(".srcpack.*")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_license_or_notice_stops_local_staging(self):
         for missing in ("LICENSE", "THIRD_PARTY.md"):
             with self.subTest(missing=missing):
@@ -225,6 +234,7 @@ class TestStageLocalSource(unittest.TestCase):
                 self.assertFalse((out / "main/opos" / ARCHIVE).exists())
                 self.assertFalse(list(out.glob(".srcpack.*")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_indented_export_and_readonly_duplicates_are_rejected(self):
         for key, value in (
             ("_source_archive", "../escape.tar.gz"),
@@ -245,6 +255,7 @@ class TestStageLocalSource(unittest.TestCase):
                     self.assertFalse((out / "escape").exists())
                     self.assertFalse(list(out.glob(".srcpack.*")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_untracked_source_and_metadata_do_not_enter_archive(self):
         repo, out, script = self._make_repo()
         (repo / "src/opos/untracked.py").write_text("not part of the declared release inputs\n")

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import hashlib
+import sys
 import unittest
 from pathlib import Path
 
@@ -82,6 +83,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
             self.assertEqual(entry["folder_mode"], 0o700)
         self.assert_no_private_copy_left()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_default_prints_plan_and_runs_nothing(self):
         result = self.run_install()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -107,15 +109,18 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(sum("fastboot boot" in line and "boot image.img" in line for line in lines), 1)
         self.assertEqual([line for line in lines if "reboot" in line], ["+ adb reboot bootloader"])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_yes_requires_explicit_userdata_erasure_token(self):
         self.assert_refused(self.run_install("--yes"), "--erase-userdata")
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_erasure_token_alone_stays_a_dry_run(self):
         result = self.run_install("--erase-userdata")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_empty_and_directory_images_refuse_before_device_access(self):
         for index in range(3):
             for kind in ("missing", "empty", "directory"):
@@ -132,18 +137,21 @@ class TestDuoRootfsInstall(unittest.TestCase):
                         path.rmdir()
                     path.write_bytes(path.name.encode() + b" contents\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_each_supplied_sha256_must_match(self):
         for flag in ("--twrp-sha256", "--boot-sha256", "--rootfs-sha256"):
             with self.subTest(flag=flag):
                 self.assert_refused(self.run_install("--yes", "--erase-userdata", flag, "0" * 64), "SHA-256")
                 self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_invalid_sha256_refuses(self):
         for value in ("", "bad", "z" * 64, "0" * 63, "0" * 65):
             with self.subTest(value=value):
                 self.assert_refused(self.run_install("--yes", "--erase-userdata", "--rootfs-sha256", value), "SHA-256")
                 self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unavailable_or_failing_hash_check_refuses(self):
         for name in ("sha256sum", "shasum"):
             (self.stub.bin / name).unlink(missing_ok=True)
@@ -152,21 +160,25 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assert_refused(self.run_install("--yes", "--erase-userdata"), "SHA-256")
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_hash_command_failure_is_not_hidden_by_output(self):
         self.stub.write_tool("sha256sum", "#!/bin/sh\nprintf '%s  image\\n' " + "0" * 64 + "\nexit 1\n")
         self.assert_refused(self.run_install("--yes", "--erase-userdata", "--rootfs-sha256", "0" * 64), "SHA-256")
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_single_fastboot_device_is_required(self):
         for listing in ("", "\n", "unknown", "fixture\toffline\n", "first\tfastboot\nsecond\tfastboot\n"):
             with self.subTest(listing=listing):
                 self.stub.env["STUB_DEVICES"] = listing
                 self.assert_refused(self.run_install("--yes", "--erase-userdata"), "one fastboot device")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_device_listing_failure_refuses(self):
         self.stub.env["STUB_FAIL"] = "devices"
         self.assert_refused(self.run_install("--yes", "--erase-userdata"), "device")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_product_mismatch_missing_malformed_or_ambiguous_refuses(self):
         for response in (
             "",
@@ -181,10 +193,12 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.stub.env["STUB_PRODUCT"] = response
                 self.assert_refused(self.run_install("--yes", "--erase-userdata"), "product")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_product_query_refuses(self):
         self.stub.env["STUB_FAIL"] = "getvar product"
         self.assert_refused(self.run_install("--yes", "--erase-userdata"), "product")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_valid_images_hashes_and_product_precede_format_and_pin_target(self):
         self.stub.env["STUB_PRODUCT"] = "(bootloader) product: surfaceduo\r\nFinished. Total time: 0.1s\n"
         options = ["--yes", "--erase-userdata"]
@@ -222,6 +236,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         for call in self.stub.calls()[1:]:
             self.assertEqual(call[1:3], ["-s", self.stub.device])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_transcript_shows_the_real_commands_and_selected_device(self):
         result = self.run_install("--yes", "--erase-userdata")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -260,6 +275,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
     # The last device command before the erase is the unlocked query.
     LAST_BEFORE_ERASE = "getvar unlocked"
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_each_image_replaced_before_the_erase_refuses_before_the_erase(self):
         for index, label in enumerate(("TWRP image", "boot image", "rootfs image")):
             with self.subTest(image=label):
@@ -269,6 +285,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.assert_refused_before_erase(self.run_checked(), f"{label} changed after it was checked")
                 self.images[index].write_bytes(original)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_each_private_copy_replaced_before_the_erase_refuses_before_the_erase(self):
         for name, label in (("twrp.img", "TWRP image"), ("boot.img", "boot image")):
             with self.subTest(copy=name):
@@ -276,12 +293,14 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.replace_during(self.LAST_BEFORE_ERASE, self.private_copy(name))
                 self.assert_refused_before_erase(self.run_checked(), f"{label} changed after it was checked")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_twrp_file_replaced_after_the_erase_boots_the_checked_copy(self):
         self.replace_during("format:ext4 userdata", self.images[0])
         result = self.run_checked()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_booted_checked_copies(self.hashes[0], self.hashes[1])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_boot_file_replaced_after_the_erase_boots_the_checked_copy(self):
         for command in (f"push {self.images[2]} /data/rootfs.img", "reboot bootloader"):
             with self.subTest(during=command):
@@ -294,6 +313,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.assert_booted_checked_copies(self.hashes[0], self.hashes[1])
                 self.images[1].write_bytes(original)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_twrp_copy_replaced_while_userdata_is_erased_is_never_booted(self):
         self.replace_during("format:ext4 userdata", self.private_copy("twrp.img"))
         result = self.run_checked()
@@ -303,6 +323,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(self.stub.booted(), [])
         self.assert_no_private_copy_left()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_boot_copy_replaced_during_the_push_is_never_booted(self):
         self.replace_during(f"push {self.images[2]} /data/rootfs.img", self.private_copy("boot.img"))
         result = self.run_checked()
@@ -311,6 +332,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual([entry["sha256"] for entry in self.stub.booted()], [self.hashes[0]])
         self.assertNotIn(["adb", "reboot", "bootloader"], self.stub.commands())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_boot_copy_replaced_during_reboot_to_bootloader_is_never_booted(self):
         self.replace_during("reboot bootloader", self.private_copy("boot.img"))
         result = self.run_checked()
@@ -319,6 +341,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(self.stub.commands()[-1], ["fastboot", "getvar", "product"])
         self.assertEqual([entry["sha256"] for entry in self.stub.booted()], [self.hashes[0]])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rootfs_replaced_while_userdata_is_erased_is_never_pushed(self):
         self.replace_during("format:ext4 userdata", self.images[2])
         result = self.run_checked()
@@ -327,6 +350,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertNotIn("push", [call[1] for call in self.stub.commands()])
         self.assertEqual([entry["sha256"] for entry in self.stub.booted()], [self.hashes[0]])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rootfs_replaced_during_the_push_is_never_booted(self):
         rootfs = self.images[2]
         self.replace_during(f"push {rootfs} /data/rootfs.img", rootfs)
@@ -340,6 +364,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual([entry["sha256"] for entry in self.stub.booted()], [self.hashes[0]])
         self.assertNotIn(["adb", "reboot", "bootloader"], self.stub.commands())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_product_after_the_reboot_must_be_the_product_checked_before_the_erase(self):
         for response in (
             "product: otherphone\n",
@@ -361,12 +386,14 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.assertEqual([entry["sha256"] for entry in self.stub.booted()], [self.hashes[0]])
                 self.assert_no_private_copy_left()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_same_product_after_the_reboot_boots_the_kernel(self):
         self.stub.env["STUB_PRODUCT_AFTER_REBOOT"] = "(bootloader) product: surfaceduo\r\n"
         result = self.run_checked()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_booted_checked_copies(self.hashes[0], self.hashes[1])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_bootloader_must_report_unlocked_before_the_erase(self):
         for response in (
             "unlocked: no\n",
@@ -384,15 +411,18 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.stub.env["STUB_UNLOCKED"] = response
                 self.assert_refused_before_erase(self.run_checked(), "unlocked")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_unlocked_query_refuses_before_the_erase(self):
         self.stub.env["STUB_FAIL"] = "getvar unlocked"
         self.assert_refused_before_erase(self.run_checked(), "unlocked")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unlocked_answer_in_bootloader_form_is_accepted(self):
         self.stub.env["STUB_UNLOCKED"] = "(bootloader) unlocked: yes\r\nFinished. Total time: 0.1s\n"
         result = self.run_checked()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_current_slot_must_be_a_before_the_erase(self):
         for response in (
             "current-slot: b\n",
@@ -411,10 +441,12 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.assert_refused(self.run_checked(), "slot")
                 self.assertNotIn(["fastboot", "getvar", "unlocked"], self.stub.commands())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_current_slot_query_refuses_before_the_erase(self):
         self.stub.env["STUB_FAIL"] = "getvar current-slot"
         self.assert_refused(self.run_checked(), "slot")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_battery_must_read_20_percent_or_more_before_the_erase(self):
         for response in (
             "battery-level: 19\n",
@@ -437,10 +469,12 @@ class TestDuoRootfsInstall(unittest.TestCase):
                 self.assert_refused(self.run_checked(), "battery")
                 self.assertNotIn(["fastboot", "getvar", "unlocked"], self.stub.commands())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_battery_query_refuses_before_the_erase(self):
         self.stub.env["STUB_FAIL"] = "getvar battery-level"
         self.assert_refused(self.run_checked(), "battery")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_battery_of_20_percent_or_more_in_bootloader_form_is_accepted(self):
         for response in (
             "(bootloader) battery-level: 20\r\nFinished. Total time: 0.1s\n",
@@ -463,6 +497,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(self.stub.calls(), [])
         return result
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_compressed_or_sparse_rootfs_refuses_before_device_access(self):
         for name, magic in MAGICS.items():
             with self.subTest(format=name):
@@ -481,6 +516,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         # A file shorter than the xz magic, which ends in a zero byte, is not xz.
         self.refuse_rootfs(MAGICS["xz"][:-1], "too short to hold an ext4 superblock")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rootfs_without_ext4_superblock_refuses_before_device_access(self):
         self.refuse_rootfs(bytes(4096), "no ext4 superblock magic (0xEF53) at byte 1080")
         self.refuse_rootfs(b"rootfs image.img contents\n", "too short to hold an ext4 superblock")
@@ -495,10 +531,12 @@ class TestDuoRootfsInstall(unittest.TestCase):
         # A file that just holds the magic is long enough to be checked further.
         self.refuse_rootfs(bytes(1080) + b"\x53\xef", "no blocks")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_truncated_rootfs_refuses_before_device_access(self):
         self.refuse_rootfs(ext4_image(b"x", blocks=8, length=8 * 1024 - 1), "truncated")
         self.refuse_rootfs(ext4_image(b"x", blocks=2, log_block_size=2, length=4096), "truncated")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_impossible_ext4_superblock_refuses_before_device_access(self):
         for kwargs, reason in (
             ({"log_block_size": 7, "length": 4096}, "impossible block size"),
@@ -509,22 +547,26 @@ class TestDuoRootfsInstall(unittest.TestCase):
             with self.subTest(reason=reason):
                 self.refuse_rootfs(ext4_image(b"x", **kwargs), reason)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_raw_ext4_rootfs_with_4096_byte_blocks_and_spare_length_is_accepted(self):
         self.images[2].write_bytes(ext4_image(b"x", blocks=2, log_block_size=2, length=3 * 4096))
         self.stub.set_rootfs(self.images[2])
         result = self.run_install("--yes", "--erase-userdata")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_private_folder_failure_refuses_before_device_access(self):
         self.stub.write_tool("mktemp", "#!/bin/sh\nexit 1\n")
         self.assert_refused(self.run_checked(), "private folder")
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_private_copy_refuses_before_device_access(self):
         self.stub.write_tool("cp", "#!/bin/sh\nexit 1\n")
         self.assert_refused(self.run_checked(), "private copy")
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_short_private_copy_refuses_before_device_access(self):
         # A copy that is not the named file must not pass on the copy's own hash.
         self.stub.write_tool("cp", "#!/bin/sh\nprintf 'other bytes\\n' > \"$2\"\n")
@@ -532,6 +574,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assert_refused(result, "private copy")
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_copy_with_matching_hash_but_wrong_size_never_boots_final_image(self):
         self.stub.env["ROOTFS_SIZE"] = str(int(self.stub.env["ROOTFS_SIZE"]) + 1)
         result = self.run_install("--yes", "--erase-userdata")
@@ -541,6 +584,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual([entry["sha256"] for entry in self.stub.booted()], [self.hashes[0]])
         self.assertNotIn(["adb", "reboot", "bootloader"], self.stub.commands())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_yes_stops_at_first_write_failure(self):
         self.stub.env["STUB_FAIL"] = "format:ext4 userdata"
         result = self.run_install("--yes", "--erase-userdata")
@@ -551,6 +595,7 @@ class TestDuoRootfsInstall(unittest.TestCase):
         self.assertEqual(self.stub.booted(), [])
         self.assert_no_private_copy_left()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_copy_verification_never_boots_final_image(self):
         self.stub.env["STUB_HASH"] = "0" * 64
         result = self.run_install("--yes", "--erase-userdata")

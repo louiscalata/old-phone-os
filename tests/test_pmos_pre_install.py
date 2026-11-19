@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import shlex
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -42,6 +43,7 @@ class TestPreInstall(unittest.TestCase):
             ],
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_shell_syntax(self):
         proc = subprocess.run(["sh", "-n", str(HOOK)], capture_output=True)
         self.assertEqual(proc.returncode, 0)

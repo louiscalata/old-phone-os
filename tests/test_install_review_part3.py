@@ -4,6 +4,7 @@ import pathlib
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -20,6 +21,7 @@ def _read_install_sh() -> str:
 
 
 class TestInstallReview(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_dry_run_outcomes(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -203,6 +205,7 @@ class TestInstallReview(unittest.TestCase):
                 call_log.exists() and call_log.read_bytes().strip(), "recovery entry point must not run in dry-run"
             )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_preserves_tree_shape_modes_and_link_targets(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -298,6 +301,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(os.path.islink(link_probe))
             self.assertEqual(link_probe.read_bytes(), link_content.encode("utf-8"))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_expected_treated_as_unverified_and_preserved(self):
         text = _read_install_sh()
         start = text.index('_sshd="skipped"')

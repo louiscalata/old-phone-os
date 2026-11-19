@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -50,6 +51,7 @@ class InstallSshdSandboxTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return proc, target, dropin, dest, backup
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dropin_symlink_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc, target, dropin, dest, backup = self.run_restore(Path(tmp), "symlink")
@@ -60,6 +62,7 @@ class InstallSshdSandboxTests(unittest.TestCase):
             self.assertEqual(dest.read_bytes(), b"live configuration\n")
             self.assertTrue(backup.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_managed_dropin_restores_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc, target, dropin, dest, backup = self.run_restore(Path(tmp))
@@ -68,6 +71,7 @@ class InstallSshdSandboxTests(unittest.TestCase):
             self.assertFalse(backup.exists())
             self.assertIn("restore-status=succeeded", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_non_opos_dropin_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc, target, dropin, dest, backup = self.run_restore(Path(tmp), "unmanaged")
@@ -75,6 +79,7 @@ class InstallSshdSandboxTests(unittest.TestCase):
             self.assertIn("refusing to overwrite non-OPOS file:", proc.stderr)
             self.assertIn("restore-status=failed", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_config_symlink_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc, target, dropin, dest, backup = self.run_restore(Path(tmp), config_symlink=True)
@@ -84,6 +89,7 @@ class InstallSshdSandboxTests(unittest.TestCase):
             self.assertIn("refusing to write sshd config through symlink:", proc.stderr)
             self.assertIn("restore-status=failed", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_preserved_dangling_symlink_not_written_through(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as away:
             victim = Path(away) / "python3.12"
@@ -97,6 +103,7 @@ class InstallSshdSandboxTests(unittest.TestCase):
             self.assertIn("(preserved at %s)" % preserved, proc.stderr)
             self.assertIn("restore-status=failed", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_preserved_numbered_dangling_symlink_skipped(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as away:
             first, second = Path(away) / "first", Path(away) / "python3.12"

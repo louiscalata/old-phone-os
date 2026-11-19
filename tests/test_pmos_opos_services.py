@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,12 +34,14 @@ class TestOposServices(unittest.TestCase):
             )
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_post_install(self):
         text = POSTINSTALL.read_text()
         self.assertIn("rc-update add opos-firstboot default", text)
         result = subprocess.run(["sh", "-n", str(POSTINSTALL)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_firstboot_returns_helper_status_even_when_logging_succeeds(self):
         for status in (0, 7):
             for marker_exists in (False, True):
@@ -73,6 +76,7 @@ start
                     self.assertIn(f"eend: {status}\n", result.stdout)
                     self.assertEqual("first boot complete" in result.stdout, status == 0 and marker_exists)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_post_install_propagates_each_rc_update_failure(self):
         for failed_call, expected_calls in (
             ("opos-firstboot", "add opos-firstboot default\n"),
@@ -94,6 +98,7 @@ start
                 self.assertEqual(result.returncode, 0 if failed_call == "none" else 8, result.stderr)
                 self.assertEqual(log.read_text(), expected_calls)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stage_copies_easy(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

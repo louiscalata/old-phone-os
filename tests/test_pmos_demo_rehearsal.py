@@ -2,6 +2,7 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -16,6 +17,7 @@ def _run(args, repo, aports):
 
 
 class DemoRehearsalTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_steps_point_at_real_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             demo = _run(["/bin/sh", "packaging/pmos/qemu-demo.sh"], REPO, tmp)
@@ -31,6 +33,7 @@ class DemoRehearsalTest(unittest.TestCase):
             for name in ("opos", "postmarketos-ui-opos"):
                 self.assertTrue(os.path.isfile(os.path.join(REPO, "packaging/pmos", name, "APKBUILD")))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_help(self):
         with tempfile.TemporaryDirectory() as tmp:
             demo = _run(["/bin/sh", "packaging/pmos/qemu-demo.sh", "--help"], REPO, tmp)

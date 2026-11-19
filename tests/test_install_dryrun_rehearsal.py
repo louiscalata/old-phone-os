@@ -2,12 +2,14 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 class TestInstallDryRunRehearsal(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_writes_nothing(self):
         root = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory() as home:

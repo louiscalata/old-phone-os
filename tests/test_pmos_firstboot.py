@@ -2,6 +2,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,6 +34,7 @@ class TestFirstboot(unittest.TestCase):
         env.update(extra)
         return subprocess.run(["/bin/sh", self.script], env=env, capture_output=True, text=True)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_selects_once(self):
         first = self.run_script()
         marker_after_first = os.path.exists(os.path.join(self.state, "firstboot-done"))
@@ -50,10 +52,12 @@ class TestFirstboot(unittest.TestCase):
             ),
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_selection_failure(self):
         p = self.run_script(FAKE_EXIT="1")
         self.assertEqual((p.returncode, os.path.exists(os.path.join(self.state, "firstboot-done"))), (1, False))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_state_dir_uncreatable(self):
         Path(os.path.join(self.tmp, "blocker")).write_text("x")
         p = self.run_script(OPOS_STATE_DIR=str(os.path.join(self.tmp, "blocker", "state")))

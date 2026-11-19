@@ -4,6 +4,7 @@ import pathlib
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -20,6 +21,7 @@ def _read_install_sh() -> str:
 
 
 class TestInstallReview(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_launcher_traversal_symlink_and_relative_rejected(self):
         text = _read_install_sh()
         self.assertRegex(text, r"\*/\./\*", "must reject dot path parts")
@@ -112,6 +114,7 @@ class TestInstallReview(unittest.TestCase):
             )
             self.assertNotIn("would run " + rel, proc.stdout + proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_untrusted_launcher_not_executed(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         key = "".join(["launch", "er="])
@@ -249,6 +252,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn(str(trusted), logged)
             self.assertIn("uninstall", logged)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_trusted_path_symlink_outside_not_executed(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         key = "".join(["launch", "er="])
@@ -292,6 +296,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(outside.read_bytes(), outside_bytes)
             self.assertEqual(stat.S_IMODE(outside.stat().st_mode), outside_mode)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_trusted_launcher_refuses_then_force_cleans_safely(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         key = "".join(["launch", "er="])

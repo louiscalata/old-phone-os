@@ -3,6 +3,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -170,6 +171,7 @@ class TestReliable(unittest.TestCase):
         self.assertEqual(out["close"], [False])
         self.assertEqual(out["unlock"], [True, False])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_kiosk_writes_boot_timing(self):
         text = KIOSK.read_text()
         self.assertIn("timing_file=${XDG_RUNTIME_DIR:-}/opos-boot-timing", text)

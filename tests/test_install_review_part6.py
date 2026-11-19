@@ -5,6 +5,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -288,6 +289,7 @@ def _run_sshd_isolated(tmp_path, dropin_bytes, expected_bytes, extra="", extra_e
 
 
 class TestInstallReview(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "scans POSIX shell paths; Windows temp paths do not match")
     def test_unresolved_sshd_preserves_firewall_and_recovery_files(self):
         text = _read_install_sh()
         m_dropin = re.search(r'_sshd_dropin="([^"]+)"', text)
@@ -364,6 +366,7 @@ class TestInstallReview(unittest.TestCase):
             preserved_path = pathlib.Path(preserved_template.replace("$OPOS_HOME", str(opos_home)))
             self.assertFalse(preserved_path.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_snippet_confined_to_isolation_with_allowlist(self):
         text = _read_install_sh()
         m_marker = re.search(r'_sshd_marker="([^"]+)"', text)
@@ -391,6 +394,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(info["preserved"].read_bytes(), dropin_bytes)
             self.assertEqual(denied, "", "preservation inside isolation must not be denied")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_isolation_rejects_escape_operands_and_services(self):
         text = _read_install_sh()
         m_marker = re.search(r'_sshd_marker="([^"]+)"', text)
@@ -439,6 +443,7 @@ class TestInstallReview(unittest.TestCase):
                         sentinel.read_bytes(), sent_bytes, "outside sentinel must remain unchanged for %s" % name
                     )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_copy_wrapper_rejects_destination_option(self):
         text = _read_install_sh()
         m_marker = re.search(r'_sshd_marker="([^"]+)"', text)
@@ -460,6 +465,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("denied: cp", denied)
             self.assertEqual(sentinel.read_bytes(), sent_bytes)
 
+    @unittest.skipIf(sys.platform == "win32", "scans POSIX shell paths; Windows temp paths do not match")
     def test_ssh_writes_stay_inside_isolated_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
@@ -490,6 +496,7 @@ class TestInstallReview(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     _assert_isolated_shell_paths(escape, tmp_path)
 
+    @unittest.skipIf(sys.platform == "win32", "scans POSIX shell paths; Windows temp paths do not match")
     def test_shell_path_scan_rejects_unquoted_normalized_and_expansion_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
@@ -526,6 +533,7 @@ class TestInstallReview(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 _assert_isolated_shell_paths(evil_brace, tmp_path)
 
+    @unittest.skipIf(sys.platform == "win32", "scans POSIX shell paths; Windows temp paths do not match")
     def test_execution_requires_full_confinement(self):
         text = _read_install_sh()
         with tempfile.TemporaryDirectory() as tmp:

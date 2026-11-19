@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import sys
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,7 @@ class TestEasyInstall(unittest.TestCase):
     def run_install(self, *options, answer=""):
         return self.stub.run(SCRIPT, [*options, self.image], answer)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run(self):
         result = self.run_install()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -24,6 +26,7 @@ class TestEasyInstall(unittest.TestCase):
         self.assertNotIn("step 3", result.stdout)
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_flash_says_up_front_that_it_does_not_flash_and_asks_nothing(self):
         # No answer changes the outcome, and no typed confirmation is requested.
         for answer in ("", "flash\n", "no\n"):
@@ -39,12 +42,14 @@ class TestEasyInstall(unittest.TestCase):
                 self.assertIn("refusing to flash", result.stderr)
                 self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_yes_is_no_longer_accepted(self):
         result = self.run_install("--flash", "--yes")
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("usage:", result.stderr)
         self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_flash_refuses_after_the_checks_and_issues_no_device_command(self):
         # Even a Surface Duo or several attached devices must not be written to.
         for devices in (None, "first\tfastboot\nsecond\tfastboot\n"):
@@ -58,6 +63,7 @@ class TestEasyInstall(unittest.TestCase):
                 self.assertIn("refusing to flash", result.stderr)
                 self.assertEqual(self.stub.calls(), [])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_invalid_image_stops_at_the_check(self):
         for kind in ("missing", "empty", "directory"):
             with self.subTest(kind=kind):
@@ -75,6 +81,7 @@ class TestEasyInstall(unittest.TestCase):
                     self.image.rmdir()
                 self.image.write_bytes(b"fixture")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unreadable_image_check_cannot_be_hidden_by_pipeline(self):
         self.stub.write_tool("od", "#!/bin/sh\nexit 1\n")
         result = self.run_install("--flash")

@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -755,6 +756,7 @@ class ServicesRollbackTest(unittest.TestCase):
         with open(os.path.join(base, names[-1], "MANIFEST"), encoding="utf-8") as f:
             return f.read()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_apply_then_rollback_restores_all_states(self):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
@@ -778,6 +780,7 @@ class ServicesRollbackTest(unittest.TestCase):
         for unit, want in UNITS.items():
             self.assertEqual(self.state_of(unit), want, msg="rollback must restore " + unit)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_activity_assertions_reject_inactive_manifest_lines(self):
         orig = self.manifest_text
 
@@ -792,6 +795,7 @@ class ServicesRollbackTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "active svc-ea.service"):
                 self.test_apply_then_rollback_restores_all_states()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_owner_drift_preserved_after_rollback(self):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
@@ -810,6 +814,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertEqual(self.state_of("svc-ea.service"), (True, True))
         self.assertEqual(self.state_of("svc-da.service"), (False, True))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rollback_rejects_active_path_traversal(self):
         backup = os.path.join(self.root, "var", "backups", "opos-harden", "20260101T000000Z")
         os.makedirs(backup, exist_ok=True)
@@ -820,6 +825,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertIn("bad manifest entry", proc.stderr)
         self.assertNotIn("systemctl", self.stub_calls())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_owner_active_drift_preserved_after_rollback(self):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
@@ -835,6 +841,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertEqual(self.state_of("svc-da.service"), (False, True))
         self.assertEqual(self.state_of("svc-di.service"), (False, False))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_owner_enable_drift_preserved_after_rollback_for_svc_da(self):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
@@ -849,6 +856,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertEqual(self.state_of("svc-ei.service"), (True, False))
         self.assertEqual(self.state_of("svc-di.service"), (False, False))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_owner_start_drift_preserved_after_rollback_for_svc_di(self):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
@@ -863,6 +871,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertEqual(self.state_of("svc-ei.service"), (True, False))
         self.assertEqual(self.state_of("svc-da.service"), (False, True))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_subprocess_env_is_allowlisted_and_mutating_commands_resolve_inside_stub(self):
         leak_key = "OPOS_TEST_" + "LEAK_MARKER"
         os.environ[leak_key] = "LEAKED-" + "MARKER"
@@ -882,6 +891,7 @@ class ServicesRollbackTest(unittest.TestCase):
         finally:
             os.environ.pop(leak_key, None)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_guard_rejects_command_resolving_outside_stub(self):
         outside_bin = os.path.join(self.tmp.name, "outside-bin")
         os.makedirs(outside_bin, exist_ok=True)
@@ -894,6 +904,7 @@ class ServicesRollbackTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "id must resolve inside stub:"):
             _assert_resolves_inside_stub(copied_env, self.bindir)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_env_allowlist_rejects_unexpected_opos_key(self):
         fresh = _build_env(self.bindir, self.root, self.statedir, self.tmp.name)
         bad_key = "OPOS_UNEXPECTED_" + "HOST_SECRET"
@@ -902,6 +913,7 @@ class ServicesRollbackTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, bad_key):
                 self.test_subprocess_env_is_allowlisted_and_mutating_commands_resolve_inside_stub()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_home_and_tmpdir_are_isolated_under_temp_root(self):
         home = self.env.get("HOME")
         self.assertIsNotNone(home)
@@ -918,6 +930,7 @@ class ServicesRollbackTest(unittest.TestCase):
             self.assertNotEqual(tmpdir, host_tmpdir)
         self.assertTrue(os.path.isdir(tmpdir))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sandbox_base_keeps_derived_dirs_inside_temp(self):
         tmp_base = self.tmp.name
         for variant in (tmp_base, self.root + os.sep):
@@ -932,6 +945,7 @@ class ServicesRollbackTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _build_env(self.bindir, self.root, self.statedir, os.path.sep)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_child_process_sees_isolated_home_and_tmpdir(self):
         home = self.env["HOME"]
         tmpdir = self.env["TMPDIR"]
@@ -960,6 +974,7 @@ class ServicesRollbackTest(unittest.TestCase):
             for observed in tmpdirs:
                 self.assertNotEqual(observed, host_tmpdir)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stray_test_env_does_not_force_test_mode(self):
         env = dict(self.env)
         env["TEST"] = "1"
@@ -969,6 +984,7 @@ class ServicesRollbackTest(unittest.TestCase):
         for unit in UNITS:
             self.assertEqual(self.state_of(unit), (False, False), msg="stray TEST must not force test mode for " + unit)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stray_test_env_without_override_keeps_real_root_mode(self):
         env = dict(self.env)
         env["TEST"] = "1"
@@ -981,6 +997,7 @@ class ServicesRollbackTest(unittest.TestCase):
         for unit, want in UNITS.items():
             self.assertEqual(self.state_of(unit), want, msg="stray TEST must not suppress inspection for " + unit)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_invalid_harden_test_value_rejected(self):
         env = dict(self.env)
         env["OPOS_HARDEN_TEST"] = "2"
@@ -1001,6 +1018,7 @@ class ServicesRollbackTest(unittest.TestCase):
         ]
         self.assertEqual(mutating, [], msg="rejection must precede mutating stub calls: " + "\n".join(calls))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f004_effective_sshd_probe_gates_reload(self):
         user = "droi" + "dian"
         ssh_dir = os.path.join(self.root, "home", user, "".join([".", "ssh"]))
@@ -1104,6 +1122,7 @@ class ServicesRollbackTest(unittest.TestCase):
                         idx_reload = next(i for i, ln in enumerate(calls) if "reload" in ln)
                         self.assertLess(idx_t, idx_reload, msg="\n".join(calls))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f005_ssh_effective_context(self):
         user = "droi" + "dian"
         ssh_dir = os.path.join(self.root, "home", user, "".join([".", "ssh"]))
@@ -1231,6 +1250,7 @@ class ServicesRollbackTest(unittest.TestCase):
         with open(self.calls, encoding="utf-8") as f:
             return f.read()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_harden_test_mode_invokes_no_stubs(self):
         env = dict(self.env)
         env["OPOS_HARDEN_TEST"] = "1"
@@ -1245,6 +1265,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertIn("TEST", combined, msg="apply output must report test mode: " + detail)
         self.assertNotIn("chmod 0700", combined, msg="apply output must not report live chmod: " + detail)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_live_apply_chmods_backup_directory(self):
         apply = run_harden(["--apply", "--only", "services"], self.env, "yes-apply\n")
         self.assertEqual(apply.returncode, 0, msg=apply.stdout + apply.stderr)
@@ -1259,6 +1280,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertIn(expected, calls, msg="missing chmod entry: " + str(calls))
         self.assertEqual(calls.count(expected), 1, msg="expected one chmod entry: " + str(calls))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_generic_stubs_reject_unexpected_invocations(self):
         for cmd in _harden_mutating_commands():
             if cmd in ("systemctl", "id"):
@@ -1277,6 +1299,7 @@ class ServicesRollbackTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         self.assertIn("chmod 0700 " + tgt, self.stub_calls().splitlines())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_run_harden_rejects_untrusted_stub_path_before_subprocess(self):
         other = os.path.join(self.tmp.name, "other_bin")
         shutil.copytree(self.bindir, other)

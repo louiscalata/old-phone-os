@@ -2,6 +2,7 @@
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -35,6 +36,7 @@ def _check_placement(case):
 
 
 class DuoInstallRebootWarnTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_duo_model_warns(self):
         cases = [
             ("proc/device-tree/model", "Microsoft Surface Duo"),
@@ -50,6 +52,7 @@ class DuoInstallRebootWarnTest(unittest.TestCase):
                     self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", _WARNING))
         _check_placement(self)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_other_and_missing_model_silent(self):
         def _prep(td, files):
             for rel, label in files:

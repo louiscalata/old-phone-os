@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 class TestStage(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stages_both_package_contents(self):
         script = pathlib.Path(__file__).resolve().parent.parent / "packaging/pmos/stage-aports.sh"
         text = script.read_text()

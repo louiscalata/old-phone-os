@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -34,16 +35,19 @@ class TestCageHook(unittest.TestCase):
         self.assertIn("export CAGE_UI_COMMAND", lines)
         self.assertTrue(lines[0].startswith("# SPDX-License-Identifier: GPL-3.0-or-later"))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sourcing_defaults_to_opos_kiosk(self):
         r = _source_hook({})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout, "/usr/bin/opos-kiosk")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_existing_value_wins(self):
         r = _source_hook({"CAGE_UI_COMMAND": "/bin/true"})
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stdout, "/bin/true")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_renderer_defaults_to_pixman_and_is_exported(self):
         for extra in ({}, {"WLR_RENDERER": ""}):
             with self.subTest(env=extra):
@@ -51,6 +55,7 @@ class TestCageHook(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, "pixman")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_explicit_renderer_override_is_exported(self):
         result = _source_hook(
             {"WLR_RENDERER": "gles2"},

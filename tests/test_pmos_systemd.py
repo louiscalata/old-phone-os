@@ -5,6 +5,7 @@ import configparser
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,6 +92,7 @@ class TestSystemdUnit(unittest.TestCase):
             )
             return result, events.read_text().splitlines() if events.exists() else []
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_hook_prepares_then_enables_without_starting(self):
         result, events = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -104,6 +106,7 @@ class TestSystemdUnit(unittest.TestCase):
         )
         self.assertNotIn("--now", "\n".join(events))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_hook_propagates_prepare_reload_and_enable_failures(self):
         for failure, count in (
             ("python3:/usr/libexec/opos-systemd-state", 1),
@@ -115,6 +118,7 @@ class TestSystemdUnit(unittest.TestCase):
                 self.assertEqual(result.returncode, 27, result.stderr)
                 self.assertEqual(len(events), count)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_shell_syntax(self):
         proc = subprocess.run(["sh", "-n", str(PACKAGE / "opos-systemd.post-install")], check=False)
         self.assertEqual(proc.returncode, 0)

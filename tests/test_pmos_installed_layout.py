@@ -83,6 +83,7 @@ _systemd
 
 
 class InstalledPackageLayoutTests(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_actual_package_functions_ship_units_and_state_helper(self):
         with tempfile.TemporaryDirectory() as temporary:
             package, systemd = stage_package(temporary)
@@ -122,6 +123,7 @@ class SystemdStateLayoutTests(unittest.TestCase):
             self.home, self.owner, root_owner=self.owner, readable=readable or (lambda path: os.access(path, os.R_OK))
         )
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_prepare_creates_expected_directories_without_prefs_or_marker(self):
         self.prepare()
         for relative, mode in (("", 0o755), (".config", 0o755), (".config/opos", 0o750)):
@@ -130,11 +132,13 @@ class SystemdStateLayoutTests(unittest.TestCase):
         self.assertFalse((self.home / ".config/opos/prefs.json").exists())
         self.check()
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_check_does_not_create_missing_state(self):
         with self.assertRaises(self.helper.StateError):
             self.check()
         self.assertFalse(self.home.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_existing_prefs_and_root_marker_are_preserved(self):
         self.prepare()
         prefs, marker = self.home / ".config/opos/prefs.json", self.home / "firstboot-done"
@@ -147,6 +151,7 @@ class SystemdStateLayoutTests(unittest.TestCase):
         self.check()
         self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mode) for path in before})
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_unsafe_directory_types_are_rejected_without_following(self):
         for relative in ("", ".config", ".config/opos"):
             for kind in ("symlink", "dangling", "file", "fifo"):
@@ -174,6 +179,7 @@ class SystemdStateLayoutTests(unittest.TestCase):
                     self.assertEqual(sentinel.read_bytes(), b"unchanged")
                     self.assertEqual(sorted(path.name for path in outside.iterdir()), ["sentinel"])
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_wrong_directory_mode_or_owner_is_rejected_without_repair(self):
         self.prepare()
         with self.assertRaises(self.helper.StateError):
@@ -190,6 +196,7 @@ class SystemdStateLayoutTests(unittest.TestCase):
             self.prepare()
         self.assertEqual(parent.stat().st_mode & 0o777, 0o777)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_prefs_symlink_nonregular_and_unreadable_are_rejected(self):
         self.prepare()
         prefs = self.home / ".config/opos/prefs.json"
@@ -217,6 +224,7 @@ class SystemdStateLayoutTests(unittest.TestCase):
         )
         self.assertEqual(outside.read_bytes(), b"keep exact bytes")
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX pwd module")
     def test_symlink_marker_is_rejected_without_touching_target(self):
         self.prepare()
         outside = Path(self.temporary.name) / "marker-target"

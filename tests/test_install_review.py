@@ -1408,6 +1408,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertEqual(nested[spans2[0][0] : spans2[0][1]], "$(outer$(inner))")
         self.assertFalse(spans2[0][2])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f1116_command_substitution_operands(self):
         ds = chr(36)
         lp = chr(40)
@@ -1562,6 +1563,7 @@ class TestInstallReview(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "unconfined path operation"):
                     _assert_snippet_confined(snippet)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_remove_clone_preserves_clean_checkout_without_ownership_record(self):
         text = _read_install_sh()
 
@@ -1685,6 +1687,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertNotIn("==> removed " + str(clone), proc.stdout.splitlines(), name)
                         self.assertNotIn("==> would remove " + str(clone), proc.stdout.splitlines(), name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_remove_clone_preserves_owner_created_commit(self):
         text = _read_install_sh()
 
@@ -1820,6 +1823,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(dict(os.environ), before)
             self.assertEqual(dict(os.environ), seed)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rollback_publication_rejects_concurrent_destination(self):
         text = _read_install_sh()
 
@@ -1912,6 +1916,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(leftovers, [])
             self.assertIn(ok_mark, proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rollback_publication_rejects_destination_replaced_after_staging(self):
         import pathlib
         import tempfile
@@ -1929,6 +1934,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(any(".opos-harden-rollback." in p.name for p in home.iterdir()))
             self.assertNotIn("hardening rollback retained at ", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "preexec_fn is POSIX-only")
     def test_cleanup_preserves_exit_and_signal_status(self):
         text = _read_install_sh()
         start = text.index("cleanup() {")
@@ -1986,6 +1992,7 @@ class TestInstallReview(unittest.TestCase):
                     if is_signal:
                         self.assertFalse(continuation.exists(), "signal must stop execution")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rollback_retention_partial_copy_failure_leaves_nothing(self):
         import tempfile
 
@@ -2056,6 +2063,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertLess(exist_idx, mv_idx)
         self.assertLess(mv_idx, rmdir_idx)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rollback_retention_rejects_replaced_staging_file(self):
         import os
         import stat
@@ -2269,6 +2277,7 @@ class TestInstallReview(unittest.TestCase):
         head = text[anchor : anchor + 400]
         self.assertRegex(head, r'do_uninstall\(\) \{\n\s*UVENV=""')
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_dry_run_removes_home_once(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         for name, use_external in (("internal", False), ("external", True)):
@@ -2320,6 +2329,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertEqual(internal_marker.read_bytes(), internal_bytes, name)
                     self.assertEqual(external_marker.read_bytes(), external_bytes, name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_ignores_manifest_launcher(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -2356,6 +2366,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("warning", proc.stderr.lower())
             self.assertNotIn("would run " + str(other), proc.stdout + proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_rejects_replaced_recorded_launcher(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         for flags in ([], ["--force"], ["--dry-run"]):
@@ -2441,6 +2452,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("==> would run " + str(launcher) + " uninstall --dry-run", proc.stdout.splitlines())
             self.assertFalse(marker.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_manifest_launcher_execution_gate(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         cases = ["outside", "dotdot", "symlink", "directory", "default_launcher", "empty_opos_home"]
@@ -2519,6 +2531,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertEqual(proc.returncode, 1, diag)
                         self.assertFalse(mal_marker.exists(), diag)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f992_sshd_leaves_unverified_customized_active_config(self):
         text = _read_install_sh()
         uninstall = text.index("do_uninstall() {")
@@ -2570,6 +2583,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertIn("manual sshd drop-in restoration required", proc.stderr, name)
                     self.assertIn(str(active_dropin), proc.stderr, name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_steps_report_failures_and_preserve_sshd_backup(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall() {")
@@ -2644,6 +2658,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(bak.read_bytes(), sentinel)
             self.assertEqual(dest.read_bytes(), b"".join([b"dest-bytes-", b"31"]))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_preserves_prior_firewall_failure(self):
         text = _read_install_sh()
         leaf = "".join(["fire", "wall.state"])
@@ -2745,6 +2760,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertTrue(fail_mark is not None)
         self.assertTrue(ok_mark is not None)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_reports_skipped_sshd_and_retains_backup(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall() {")
@@ -2829,6 +2845,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(state.exists())
             self.assertFalse(unit.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_skipped_sshd_preserves_existing_backup(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall() {")
@@ -2903,6 +2920,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(dest.read_bytes(), dest_before)
             self.assertEqual(bak.read_bytes(), sentinel)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_dry_run_lists_exact_actions(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall()")
@@ -3009,6 +3027,7 @@ class TestInstallReview(unittest.TestCase):
                     for key, value in before.items():
                         self.assertEqual(pathlib.Path(key).read_bytes(), value)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_stub_execution_is_detectable(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
@@ -3120,6 +3139,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse((tmp_path / "staged.tmp").exists())
             self.assertFalse(dropin.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_probe_outcomes_never_mutate(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         table_line = "".join(["table inet opos_", "filter"])
@@ -3328,6 +3348,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(current, missing_two)
             self.assertNotEqual(saved, current)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_preserves_firewall_state_and_service_unit(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         state_leaf = "".join(["fire", "wall.state"])
@@ -3384,6 +3405,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(state.read_bytes(), state_bytes)
             self.assertEqual(unit.read_bytes(), unit_bytes)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_repo_canonicalized_and_mismatch_reported(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -3464,6 +3486,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("repo mismatch: run the uninstaller from the original checkout", proc.stderr.splitlines())
             self.assertNotIn(recorded, proc.stdout + proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_live_recovery_canonicalizes_repo_and_preserves_mismatches(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -3553,6 +3576,7 @@ class TestInstallReview(unittest.TestCase):
                     if not with_launcher:
                         self.assertFalse(launcher.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_repo_mismatch_diagnostics_hide_recorded_path(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         want = "repo mismatch: run the uninstaller from the original checkout"
@@ -3620,6 +3644,7 @@ class TestInstallReview(unittest.TestCase):
                 "recovery python -m must not import caller cwd: %r" % line,
             )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_launcher_recovers_with_system_python(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -3701,6 +3726,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertTrue((home / "manifest").is_file(), "manifest must be retained on recovery failure")
                     self.assertTrue(venv_dir.is_dir(), "venv directory must be retained on recovery failure")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_recovery_ownership_all_branches(self):
         root = pathlib.Path(__file__).resolve().parents[1]
         install = root / "install.sh"
@@ -3862,6 +3888,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertIn('canon_repo "$UREPO"', verified_block)
         self.assertIn('canon_repo "$ROOT"', verified_block)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_linger_advice_requires_opos_ownership(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -3903,6 +3930,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn(advice, proc.stdout + proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_linger_advice_real_uninstall_requires_ownership(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -3959,6 +3987,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn(advice, proc.stdout + proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_recovery_stub_positive_control(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = pathlib.Path(tmp) / "home"
@@ -3982,6 +4011,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(proc.returncode, 1, "stub must fail without recovery entry point")
             self.assertFalse(marker.is_file(), "stub must not create marker without recovery entry point")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_verified_recovery_blocks_each_failed_guard(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -4137,6 +4167,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertIn("==> restore summary:", live_proc.stdout, name)
                     self.assertFalse(live_marker.is_file(), name + " must not execute recovery")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_refuses_untrusted_sshd_backup(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         dest_literal = "/etc/ssh/" + "sshd_config"
@@ -4237,6 +4268,7 @@ class TestInstallReview(unittest.TestCase):
                     calls = call_log.read_text(encoding="utf-8").splitlines()
                     self.assertEqual(calls, [], "no firewall/service calls allowed")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_block_snippet_restores_trusted_backup(self):
         """Run only the extracted restore snippet, not install.sh --uninstall.
 
@@ -4499,6 +4531,7 @@ class TestInstallReview(unittest.TestCase):
         want = header + body
         self.assertEqual(_uninstall_restore_block(text), want)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_cmp_preserves_error_diagnostics(self):
         text = _read_install_sh()
         restore_block = _uninstall_restore_block(text)
@@ -4527,6 +4560,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertGreater(proc.returncode, 1)
             self.assertNotEqual(proc.stderr, "")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_firewall_restore_returns_failure_and_keeps_state(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -4574,6 +4608,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(manifest.exists())
             self.assertTrue(venv_dir.exists(), "venv must be retained when restore fails")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_ufw_disable_and_reload_failures_preserve_state_independently(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         state_name = "".join(["fire", "wall.state"])
@@ -4645,6 +4680,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertIn("disable", calls, name)
                     self.assertIn("reload", calls, name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_backup_restore_requires_trusted_valid_backup(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -4786,6 +4822,7 @@ class TestInstallReview(unittest.TestCase):
         forbidden = set(["token_prefix", "private_ip", "home_path", "key_name", "octet"])
         self.assertTrue(stored.isdisjoint(forbidden), stored & forbidden)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_restores_sshd_firewall_and_service(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -4855,6 +4892,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertIn("".join(["fire", "wall=failed"]), line)
         self.assertIn("service=failed", line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_restores_sshd_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
@@ -4965,6 +5003,7 @@ class TestInstallReview(unittest.TestCase):
             result = _prepare_fallback_restore_snippet(dropin, dest)
             self.assertTrue(result)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_steps_report_summary(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -5031,6 +5070,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertNotEqual(good_line, bad_line, "summary must reflect the restoration outcome")
         self.assertNotEqual(bad.returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_summary_reports_mixed_outcomes(self):
         text = _read_install_sh()
         start = text.index('    _sshd="skipped"')
@@ -5084,6 +5124,7 @@ class TestInstallReview(unittest.TestCase):
         for tool in ("cp", "mv", "rm", "mktemp", "stat", "sshd"):
             self.assertIn(tool, block)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_reports_firewall_and_service_independently(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -5152,6 +5193,7 @@ class TestInstallReview(unittest.TestCase):
                 self.assertIn("".join(["fire", "wall=" + want_fw]), line)
                 self.assertIn("service=" + want_svc, line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_service_cleanup_outcomes(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -5274,6 +5316,7 @@ class TestInstallReview(unittest.TestCase):
         run_case("disable_other_failure", True, 0, "", 1, "boom", 0, "failed", True, True, 1)
         run_case("reload_failure", True, 0, "", 0, "", 1, "failed", True, True, 1)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_probe_preserves_unit_and_reports_failed(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -5328,6 +5371,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(any("disable" in c for c in calls))
             self.assertFalse(any("daemon-reload" in c for c in calls))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_probe_without_unit_file_reports_failed(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -5379,6 +5423,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(any("disable" in c for c in calls))
             self.assertFalse(any("daemon-reload" in c for c in calls))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_failures_surface_stderr_and_fail(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         diags = {
@@ -5484,6 +5529,7 @@ class TestInstallReview(unittest.TestCase):
                     else:
                         self.assertIn("service=failed", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_dir_validation_and_trailing_slash(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -5542,6 +5588,7 @@ class TestInstallReview(unittest.TestCase):
             proc = run_with(home, "/", "/")
             self.assertNotIn("would run recovery entry point", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_real_uninstall_preserves_unrelated_sentinels(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -5715,6 +5762,7 @@ class TestInstallReview(unittest.TestCase):
                 )
                 self.assertEqual(home_sentinel.read_bytes(), b"".join([b"senti", b"nel-home-", b"8"]))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_dir_validation_isolated(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -5773,6 +5821,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertNotIn("would run recovery entry point", proc.stdout, msg)
                     self.assertNotIn("would run recovery entry point", proc.stderr, msg)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_custom_bin_launcher_is_named_when_fallback_refuses_it(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -5829,6 +5878,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("not removing", proc.stderr)
             self.assertIn(str(custom_launcher), proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_stages_before_atomic_replace(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -5967,6 +6017,7 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_stages_before_replacing_active_config(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -6110,6 +6161,7 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_stages_validates_and_replaces_atomically(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -6265,6 +6317,7 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_preserves_live_copy_until_verified(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -6417,6 +6470,7 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_retry_preserves_original_live_copy(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -6499,6 +6553,7 @@ class TestInstallReview(unittest.TestCase):
             mv_lines = [line for line in ops.read_text(encoding="utf-8").splitlines() if line.startswith("mv ")]
             self.assertEqual(len(mv_lines), 1)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_rejects_directory_and_verifies_install(self):
         text = _read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
@@ -6666,6 +6721,7 @@ class TestInstallReview(unittest.TestCase):
             finally:
                 tmp.cleanup()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_routes_restore_privileges(self):
         text = _read_install_sh()
         begin_marker = "# BEGIN fallback service cleanup"
@@ -6827,6 +6883,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertEqual(root_unit.read_bytes(), root_bytes)
                         self.assertEqual(user_unit.read_bytes(), user_bytes)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the POSIX cut tool")
     def test_service_failure_diagnostics_hide_resolved_home(self):
         text = _read_install_sh()
         begin_marker = "# BEGIN fallback service cleanup"
@@ -6940,6 +6997,7 @@ class TestInstallReview(unittest.TestCase):
                     rm_calls = rm_log.read_text(encoding="utf-8")
                     self.assertEqual(rm_calls, "", name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_systemctl_preserves_unit_and_reports_failed(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -7033,6 +7091,7 @@ class TestInstallReview(unittest.TestCase):
                             found += 1
         self.assertEqual(found, 2, "expected two bounded uninstall runs")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_firewall_restore_preserves_state_for_retry(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         state_name = "".join(["fire", "wall.state"])
@@ -7085,6 +7144,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn(ok_mark, proc.stdout)
             self.assertFalse(state.exists(), "state file must be removed after successful retry")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_verified_recovery_enforces_each_prerequisite(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -7161,6 +7221,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertNotIn("would run recovery entry point", proc.stdout, label)
                     self.assertFalse(marker.is_file(), label + " recovery python must not execute")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_verified_recovery_actual_uninstall_marker_control(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -7289,6 +7350,7 @@ class TestInstallReview(unittest.TestCase):
                             msg,
                         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_untrusted_launcher_warning_omits_control_characters(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         first = "".join(["reject", "ed-"])
@@ -7364,6 +7426,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertIn(dry_line.strip(), proc.stdout.splitlines())
                         self.assertIn(run_line.strip(), proc.stdout.splitlines())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_reject_unquoted_and_dynamic(self):
         text = _read_install_sh()
         unquoted, dynamic = _scan_installer_paths(text)
@@ -7421,6 +7484,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertEqual(unquoted, [], "filesystem ops must quote every path operand")
         self.assertEqual(dynamic, [], "filesystem ops must not use dynamically built paths")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_regression_probes_and_installer_check_share_scanner(self):
         probe = 'rm -rf "$BASE/$SUFFIX"\n'
         uq, dyn = _scan_installer_paths(probe)
@@ -7434,6 +7498,7 @@ class TestInstallReview(unittest.TestCase):
             probed = [c.args[0] for c in scan_mock.call_args_list if "$SUFFIX" in c.args[0]]
             self.assertTrue(probed)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_reject_split_positional_and_special_parameters(self):
         from unittest.mock import patch
 
@@ -7450,6 +7515,7 @@ class TestInstallReview(unittest.TestCase):
         with patch("tests.test_install_review._read_install_sh", return_value='rm -rf "$BASE"/static-leaf'):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_catch_unsafe_command_after_continuation_separator(self):
         from unittest.mock import patch
 
@@ -7461,6 +7527,7 @@ class TestInstallReview(unittest.TestCase):
                     with self.assertRaisesRegex(AssertionError, "filesystem ops must quote every path operand"):
                         self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_quoted_hash_does_not_hide_command(self):
         from unittest.mock import patch
 
@@ -7484,6 +7551,7 @@ class TestInstallReview(unittest.TestCase):
         with patch("tests.test_install_review._read_install_sh", return_value=comment_snippet):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_catch_escaped_space_operands(self):
         q = chr(34)
         bs = chr(92)
@@ -7493,6 +7561,7 @@ class TestInstallReview(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "must not use dynamically built paths"):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_catch_continued_operands(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -7507,6 +7576,7 @@ class TestInstallReview(unittest.TestCase):
         with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_catch_continued_wildcard_operands(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -7531,6 +7601,7 @@ class TestInstallReview(unittest.TestCase):
         glued = "rm" + chr(92) + chr(10) + "bar"
         self.assertEqual(_join_continuations(glued), "rmbar")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_continuation_blank_and_comment_lines_preserve_boundaries(self):
         bs = chr(92)
         nl = chr(10)
@@ -7553,6 +7624,7 @@ class TestInstallReview(unittest.TestCase):
                 with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe_payload):
                     self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_comment_backslash_does_not_swallow_command(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -7562,6 +7634,7 @@ class TestInstallReview(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_subst_comment_backslash_does_not_swallow_command(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -7579,6 +7652,7 @@ class TestInstallReview(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_inline_comment_and_single_quote_continuations(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -7612,6 +7686,7 @@ class TestInstallReview(unittest.TestCase):
         with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_heredoc_quote_does_not_swallow_command(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -7655,6 +7730,7 @@ class TestInstallReview(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _assert_snippet_confined(snippet)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_reject_bare_glob_and_tilde(self):
         tilde_x = "~" + "/x"
         tilde_y = "~" + "/y"
@@ -7717,6 +7793,7 @@ class TestInstallReview(unittest.TestCase):
                 self.assertIn(s, _strip_shell_comment(line))
                 self.assertTrue(_line_path_violations(line), "must flag: %r" % line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_disabled_firewall_requires_exact_saved_state(self):
         text = _read_install_sh()
         leaf = "".join(["fire", "wall.state"])
@@ -7808,6 +7885,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertEqual(saved.read_bytes(), before, "malformed snapshot must be preserved")
                     self.assertFalse(log.exists(), "malformed snapshot must make no UFW calls")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_replacement_restores_disabled_firewall_and_expected_service(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         fw_leaf = "".join(["fire", "wall.state"])
@@ -7896,6 +7974,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(fw_state.exists())
             self.assertFalse(unit.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_force_hardening_retains_rollback_outside_checkout(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -7968,6 +8047,7 @@ class TestInstallReview(unittest.TestCase):
                 (clone / "deploy" / "harden-device.sh").is_file(), "checkout must be preserved without ownership record"
             )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_refuses_unverified_destination(self):
         text = _read_install_sh()
 
@@ -8072,6 +8152,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(dest.read_bytes(), helper_bytes)
             self.assertEqual(stat.S_IMODE(os.stat(str(dest)).st_mode), 0o700)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_cleans_partial_copy_for_retry(self):
         text = _read_install_sh()
 
@@ -8122,6 +8203,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(dest.is_symlink())
             self.assertEqual(dest.read_bytes(), helper_bytes)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_rejects_directory_and_temp_replacement(self):
         text = _read_install_sh()
 
@@ -8252,6 +8334,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(foreign.read_bytes(), foreign_bytes)
             self.assertEqual(stat.S_IMODE(os.stat(str(foreign)).st_mode), foreign_mode)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_directory_contents_unchanged(self):
         text = _read_install_sh()
 
@@ -8319,6 +8402,7 @@ class TestInstallReview(unittest.TestCase):
                         _snapshot_tree(foreign), before_foreign, "foreign directory must match including added entries"
                     )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_rejects_concurrent_destination_replacement(self):
         text = _read_install_sh()
 
@@ -8365,6 +8449,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(dest.is_symlink())
             self.assertEqual(os.readlink(str(dest)), str(victim))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_invalid_firewall_state_preserves_recovery_evidence(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         state_leaf = "".join(["fire", "wall.state"])
@@ -8430,6 +8515,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertTrue(opos_home.is_dir(), name)
                     self.assertEqual(state.read_bytes(), data, name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_firewall_respects_recorded_state(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         state_leaf = "".join(["fire", "wall.state"])
@@ -8497,6 +8583,7 @@ class TestInstallReview(unittest.TestCase):
                         calls = []
                     self.assertEqual(calls, want_calls, name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_tmp_prefix_candidates_resolve_and_contain(self):
         with tempfile.TemporaryDirectory() as tmp:
             with tempfile.TemporaryDirectory() as out:
@@ -8521,6 +8608,7 @@ class TestInstallReview(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0)
                 self.assertIn("ok", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_tmp_execution_path_rejects_traversal_and_symlink(self):
         with tempfile.TemporaryDirectory() as outer:
             outer_path = pathlib.Path(outer)
@@ -8548,6 +8636,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(done.is_file())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_tmp_execution_sites_reject_hostile_paths(self):
         src = pathlib.Path(__file__).read_text(encoding="utf-8")
         tree = ast.parse(src)
@@ -8620,6 +8709,7 @@ class TestInstallReview(unittest.TestCase):
                     getattr(self, site)()
                     self.assertFalse(bypass_marker.exists(), "site must not execute hostile payload for " + site)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_preserves_owner_checkout_contents(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -8706,6 +8796,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(tracked.is_file(), "modified tracked file must survive")
             self.assertEqual(tracked.read_bytes(), tracked_after)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_preserves_each_owner_condition_independently(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
 
@@ -8840,6 +8931,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(name=name):
                 run_case(name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_preserves_untracked_owner_when_status_hides_them(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -8932,6 +9024,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(tracked.is_file())
             self.assertEqual(tracked.read_bytes(), tracked_before)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_force_uninstall_targets_real_service(self):
         text = _read_install_sh()
         block = _uninstall_restore_block(text)
@@ -8979,6 +9072,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(keep.read_bytes(), keep_bytes)
             self.assertIn("sshd=skipped firewall=skipped service=succeeded", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_preserves_checkout_when_git_inspection_fails(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         for name in ("rev_parse_fails", "git_missing"):
@@ -9062,6 +9156,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertTrue(owned.is_file(), "owner file must survive")
                     self.assertEqual(owned.read_bytes(), owned_bytes)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_preserves_valid_checkout_regardless_of_git_validation(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         for outcome in ("success", "failure"):
@@ -9356,6 +9451,7 @@ class TestInstallReview(unittest.TestCase):
         )
         self.assertTrue(_line_path_violations(line), "commands after esac must be inspected: %r" % line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dropin_removal_keeps_backup_when_restore_fails(self):
         import pathlib
         import tempfile
@@ -9369,6 +9465,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(dest.read_bytes(), b"dest-" + b"bytes-61")
             self.assertFalse(dropin.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dropin_removal_restores_config_before_deleting_backup(self):
         import pathlib
         import tempfile
@@ -9382,6 +9479,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(bak.exists() or bak.is_symlink())
             self.assertFalse(dropin.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_verifies_recorded_content_and_preserves_admin_edits(self):
         text = _read_install_sh()
         start = text.index('    _sshd="skipped"')
@@ -9449,6 +9547,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertIn("sshd=failed", proc.stdout, name)
                         self.assertEqual(bak.read_bytes(), bak_bytes, name)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_preserved_snapshot_does_not_overwrite_existing(self):
         text = _read_install_sh()
         start = text.index('    _sshd="skipped"')
@@ -9685,6 +9784,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertTrue(_line_path_violations(line), "nested construct must not hide deletion: %r" % line)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_production_paths_arithmetic_and_quote_do_not_mask(self):
         text = _read_install_sh()
         self.test_production_paths_reject_unquoted_and_dynamic()
@@ -9737,6 +9837,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertIn("rm -rf $TARGET/rest", masked)
         self.assertEqual(_scan_installer_paths(fixture), (["rm -rf $TARGET/rest"], []))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_completed_arithmetic_heredoc_substitution_preserves_shift_and_deletion(self):
         nl = chr(10)
         lt = chr(60)
@@ -9881,6 +9982,7 @@ class TestInstallReview(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "unsupported case in command substitution"):
                     _assert_snippet_confined(snippet)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retained_rollback_restores_state_after_checkout_removal(self):
         text = _read_install_sh()
 
@@ -9952,6 +10054,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(live_path.read_bytes(), backup_bytes)
             self.assertFalse(os.path.lexists(str(created_path)))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_uninstall_preserves_unverified_service_unit(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         with tempfile.TemporaryDirectory() as tmp:
@@ -10018,6 +10121,7 @@ class TestInstallReview(unittest.TestCase):
             _assert_snippet_confined(line)
         self.assertEqual(_strip_shell_comment("echo ok # trailing"), "echo ok ")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retain_uses_stable_tmp_handles(self):
         text = _read_install_sh()
         start = text.index("retain_hardening_rollback() {")
@@ -10073,6 +10177,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertFalse(os.path.lexists(str(dest)))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retained_rollback_instruction_quotes_path(self):
         text = _read_install_sh()
 
@@ -10118,6 +10223,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(check.returncode, 0, check.stderr)
             self.assertEqual(check.stdout, str(dest))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retained_rollback_quoting_preserves_apostrophe_herein(self):
         import shlex
 

@@ -3,6 +3,7 @@ import http.server
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -84,6 +85,7 @@ class TestKioskWait(unittest.TestCase):
         )
         self.assertNotRegex(exec_line, r"OPOS_KIOSK_URL|\$url")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_runs_and_proceeds_when_server_is_down(self):
         # Port 9 (discard) on loopback: nothing listens, so every probe fails.
         r, took = self._run(OPOS_KIOSK_WAIT="2", OPOS_KIOSK_URL="http://127.0.0.1:9/")
@@ -91,6 +93,7 @@ class TestKioskWait(unittest.TestCase):
         self.assertEqual(r.stdout, "")
         self.assertLess(took, 10)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_proceeds_immediately_when_server_is_up(self):
         srv = http.server.HTTPServer(("127.0.0.1", 0), _Quiet)
         self.addCleanup(srv.server_close)
@@ -103,6 +106,7 @@ class TestKioskWait(unittest.TestCase):
         self.assertEqual(r.stdout, "")
         self.assertLess(took, 5)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_waits_for_late_server_then_launches(self):
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
@@ -134,6 +138,7 @@ class TestKioskWait(unittest.TestCase):
         self.assertIn("--kiosk", ran)
         self.assertIn(URL, ran)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_stalled_server_hits_deadline_and_launches(self):
         srv = _serve(_Stall)
         self.addCleanup(self._stop, srv)

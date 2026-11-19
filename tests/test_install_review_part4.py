@@ -5,6 +5,7 @@ import pathlib
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -21,6 +22,7 @@ def _read_install_sh() -> str:
 
 
 class TestInstallReview(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_cleanup_ignores_inherited_staging_root(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         if not install.is_file():
@@ -54,6 +56,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(sentinel.is_file(), "sentinel must remain")
             self.assertEqual(sentinel.read_text(encoding="utf-8"), sentinel_content)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_cleanup_only_removes_direct_staging_directory(self):
         text = _read_install_sh()
         m = re.search(r"cleanup\(\)\s*\{.*?\n\}", text, re.DOTALL)
@@ -182,6 +185,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertIsInstance(kw.value.value, (int, float))
                     self.assertGreater(kw.value.value, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_edited_marked_dropin_preserved_and_unresolved(self):
         text = _read_install_sh()
         m_dropin = re.search(r'_sshd_dropin="([^"]+)"', text)
