@@ -3,11 +3,12 @@
 
 import json
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
 
-from opos import inbox, lockpin, web
+from opos import apps, apps_page, inbox, lockpin, web
 from tests.test_apps_shell import get, post, running
 from tests.test_uxp30_budget import SWITCHES, WAVE_GATE, served_home_page
 
@@ -27,6 +28,47 @@ DUO = "clock,contacts,notes,calc,calls,convert,notices"
 
 
 class AppRoutes(unittest.TestCase):
+    def test_every_registered_module_is_in_the_gate_table(self):
+        self.assertEqual(set(APPS), set(apps.MODULES), "a new module needs a row in APPS")
+
+    def test_each_module_registers_the_expected_path(self):
+        with mock.patch.dict(os.environ, {"OPOS_APPS": NAMED}):
+            enabled = apps.enabled()
+        by_id = {app.id: app for app in enabled}
+        for name in apps.MODULES:
+            with self.subTest(app=name):
+                self.assertIn(name, APPS)
+                self.assertIn(name, by_id, "the module did not register its app")
+                self.assertEqual(by_id[name].path, APPS[name][0])
+
+    def test_the_index_has_one_link_for_each_named_app(self):
+        app_paths = {paths[0] for paths in APPS.values()}
+
+        def app_links(html):
+            return [link for link in re.findall(r'href="([^"]+)"', html) if link in app_paths]
+
+        token, nonce = "t" * 43, "n" * 22
+        with mock.patch.dict(os.environ, {"OPOS_APPS": NAMED}):
+            every = apps_page.index_html(token, nonce)
+        links = app_links(every)
+        for name, paths in APPS.items():
+            with self.subTest(app=name):
+                self.assertEqual(links.count(paths[0]), 1)
+        self.assertEqual(len(links), len(APPS))
+        with mock.patch.dict(os.environ, {"OPOS_APPS": "clock"}):
+            one = apps_page.index_html(token, nonce)
+        self.assertEqual(app_links(one), [APPS["clock"][0]])
+
+    def test_the_served_home_page_has_no_app_path(self):
+        """Each app reaches home through the one /apps-home.js tag, never through its own path."""
+        every = served_home_page({"OPOS_APPS": NAMED})
+        self.assertEqual(every.count(b"/apps-home.js"), 1)
+        for name, paths in APPS.items():
+            for path in paths:
+                with self.subTest(app=name, path=path):
+                    # The served page has no app path today. The paths live in the script and on /apps.
+                    self.assertEqual(every.count(path.encode()), 0)
+
     def test_every_route_is_off_when_no_app_is_named(self):
         for env in ({}, {"OPOS_APPS": ""}):
             with self.subTest(env=env), running(env) as server:
