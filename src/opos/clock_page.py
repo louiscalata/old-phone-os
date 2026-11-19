@@ -5,12 +5,13 @@ The schedule is opos.alarms. This module is the page and the /api/clock actions.
 A test may POST action "tick" only when OPOS_CLOCK_TEST=1.
 """
 
+import logging
 import os
 import re
 import threading
 import time
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from opos import alarm_sound, alarms, appdoc, apps
 from opos.store import default_root
@@ -136,7 +137,7 @@ def zone():
     name = os.environ.get("OPOS_CLOCK_ZONE") or "UTC"
     try:
         return ZoneInfo(name)
-    except Exception:
+    except (ZoneInfoNotFoundError, ValueError, OSError):
         return ZoneInfo("UTC")
 
 
@@ -305,8 +306,8 @@ def start_thread():
             time.sleep(30)
             try:
                 _cycle()
-            except Exception:
-                pass
+            except Exception as err:  # keep the re-check thread alive; leave a trace
+                logging.getLogger("opos.clock").debug("clock re-check failed: %s", type(err).__name__)
 
     _THREAD = threading.Thread(target=loop, name="opos-clock", daemon=True)
     _THREAD.start()

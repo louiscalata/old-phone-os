@@ -80,10 +80,10 @@ def _env(path=None):
 def _kill(p):
     try:
         os.killpg(p.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
-    except Exception:
+    except (OSError, AttributeError):  # already gone, not ours, or no killpg on this platform
         try:
             p.kill()
-        except Exception:
+        except OSError:
             pass
 
 
@@ -166,8 +166,8 @@ def run(argv, timeout=READ_S, stdin=None, *, path=None, tty=False):
         _kill(p)
         try:
             p.communicate(timeout=2)
-        except Exception:
-            pass
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass  # the run already timed out; this only reaps it
         return Run(124, timed_out=True)
     except Exception:
         _kill(p)
