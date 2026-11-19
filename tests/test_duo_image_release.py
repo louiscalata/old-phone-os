@@ -129,7 +129,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_completed_notes_are_signed_too(self):
         notes = self.t / "notes.txt"
-        notes.write_text("Owner's completed notes\n")
+        notes.write_bytes(b"Owner's completed notes\n")
         self.assertEqual(self.build("--notes", str(notes))[0], 0)
         self.assertEqual((self.out / "RELEASE_NOTES.txt").read_bytes(), notes.read_bytes())
         (self.out / "RELEASE_NOTES.txt").write_text("edited after signing\n")

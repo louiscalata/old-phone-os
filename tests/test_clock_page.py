@@ -158,6 +158,7 @@ class ClockPage(unittest.TestCase):
             clock_page._cycle()
         self.assertFalse(os.path.exists(log))
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_a_locked_phone_shows_the_ring_without_its_label_and_stop_and_snooze_end_the_beep(self):
         from opos import lockpin
 
@@ -242,6 +243,7 @@ class ClockPage(unittest.TestCase):
             self.assertIn(b"Pills for Ana", raw)
             self.assertIsNone(json.loads(raw)["ringing"])
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_ring_snooze_stop_and_a_clock_that_is_not_set(self):
         with running(self.env) as server:
             token = server.RequestHandlerClass.token
@@ -330,6 +332,7 @@ console.log('ok');
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("ok", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_tick_is_refused_without_the_test_hook_and_the_main_page_does_not_grow(self):
         before = page()
         env = dict(self.env, OPOS_CLOCK_TEST="0")
