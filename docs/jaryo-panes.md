@@ -585,3 +585,6 @@ Microsoft's archived dual-screen patterns are list-detail (also called master-de
 | Contacts | list-detail | search and the names | the person and Call | stacked | stacked |
 | Notes | list-detail | the titles | the note and New note | stacked | stacked |
 | Calculator | companion pane | the result and the tape | the keys | stacked, result above the keys | stacked |
+| Call log | list-detail | Call log heading, Search calls, the recovered and empty notes, and calls grouped by day | About this log, the missed count, status, Refresh, Clear all calls, its confirmation, and Home | stacked, calls above the log controls | stacked |
+| Converter | companion pane | Converter heading, the result, the conversion line, the measure chips, and errors | the Amount field, From and To chips, and Home | stacked, result above the controls | stacked |
+| Notices | companion pane | Notices heading, the notices with Dismiss, and Clear all | Quiet hours, the alarms and Favorites notes, From and To times, the toggle, status, and Home | stacked, notices above Quiet hours | stacked |
