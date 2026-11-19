@@ -2,7 +2,7 @@
 import unittest
 from opos.reserve import apply_reserve, shape_burst, should_shutdown, call_possible, reserve_level, WORN_REASON
 from opos.governor import Decision, Mode, Priority, Task
-from opos.eol import BURST_A, MIN_CALL_A, brownout, r0_for_health
+from opos.eol import BURST_A, brownout, r0_for_health
 
 tasks = (
     Task("calls", Priority.ESSENTIAL, 0.5),

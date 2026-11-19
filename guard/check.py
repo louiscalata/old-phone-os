@@ -268,7 +268,6 @@ def old_index(roots):
 
 
 import fnmatch
-import os
 
 MAX_BYTES = 5 * 1024 * 1024
 BLOB_PATTERNS = ["*.img", "*.img.*", "rootfs*", "*.deb", "*.apk", "*.zip", "*.tar*", "*.zst", "*.bin"]

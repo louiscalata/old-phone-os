@@ -3,10 +3,6 @@
 
 from __future__ import annotations
 import io
-import json
-import os
-import tempfile
-import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -197,7 +193,7 @@ class CliStatusMarkerTest(unittest.TestCase):
                 _mock.patch("opos.setup.config.load", return_value={"applied": True}),
                 _mock.patch("opos.setup.apply.http_health", return_value=(False, None)),
             ):
-                rc = opos.setup.cli.main(["status"], env={}, home=_Path.cwd(), platform="linux", out=out)
+                opos.setup.cli.main(["status"], env={}, home=_Path.cwd(), platform="linux", out=out)
             self.assertIn("persist: unverified", out.getvalue())
             self.assertNotIn("persist: ok", out.getvalue())
 

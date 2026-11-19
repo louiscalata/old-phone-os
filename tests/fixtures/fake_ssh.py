@@ -16,7 +16,6 @@ import socket
 import struct
 import sys
 import threading
-import time
 import zlib
 
 SC = json.load(open(os.environ["OPOS_FAKE_SSH"], encoding="utf-8"))

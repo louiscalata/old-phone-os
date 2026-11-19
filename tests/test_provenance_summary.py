@@ -325,7 +325,6 @@ class TestProvenanceSummary(unittest.TestCase):
                     lo = min(paid_route.start(), local_route.start())
                     hi = max(paid_route.end(), local_route.end())
                     between = sent[lo:hi]
-                    after_paid = sent[paid_route.end() :]
                     if re.search(r"\bunpaid\b", sent, re.IGNORECASE):
                         pass
                     elif re.search(

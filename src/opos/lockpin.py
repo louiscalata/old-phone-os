@@ -8,7 +8,6 @@ There is no emergency button: practice mode cannot place that call, and a real o
 
 import hashlib
 import hmac
-import json
 import math
 import os
 from pathlib import Path

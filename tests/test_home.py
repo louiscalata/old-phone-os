@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos.home import home_screen, is_quiet, BANNED
+from opos.home import home_screen, is_quiet
 from opos.governor import Mode, Decision
 
 

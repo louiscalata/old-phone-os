@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """W1-07: the battery claims are true (health nobody read, a one-point graph, a goal nobody set, a modelled time left)."""
 
-import re
 import unittest
 from pathlib import Path
 from unittest import mock

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 import collections
-import os
-import shutil
 import sys
 import tempfile
 import unittest

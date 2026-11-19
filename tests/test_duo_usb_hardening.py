@@ -7,7 +7,6 @@ on any interface (Wi-Fi included once one is joined). `build-image.sh` (block "u
 `verify-image.sh` checks both; `opos-selftest` `ssh.auth` says "key-only everywhere" for the result. The blocks are run here against a scratch root file system,
 the way the dev-span, dev-sudo, clock and OTA blocks are; no image, mount or qemu is involved. Nothing here touches a phone."""
 
-import difflib
 import os
 import re
 import shutil

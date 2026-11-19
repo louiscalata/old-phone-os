@@ -2547,7 +2547,6 @@ class TestInstallReview(unittest.TestCase):
                     bak = opos_home / ("sshd_config" + ".bak")
                     bak.write_bytes(b"Port 22\n")
                     expected = opos_home / "sshd_dropin.expected"
-                    legacy = opos_home / "sshd_dropin"
                     if name == "mismatched_expected":
                         expected.write_bytes((marker + "Port 2222\n").encode())
                     self.assertFalse(expected.is_file() and name == "missing_expected")

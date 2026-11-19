@@ -9,7 +9,7 @@ import re
 import unittest
 from unittest.mock import patch
 
-from opos import eol, evaleol, profiles
+from opos import evaleol, profiles
 from opos.evaluate import router_policy, rules_policy, static_low_power
 
 ROOT = Path(__file__).resolve().parents[1]

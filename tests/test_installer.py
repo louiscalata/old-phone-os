@@ -1459,7 +1459,6 @@ class UninstallRecoveryTest(unittest.TestCase):
             launcher = launcher_path(env)
             manifest = Path(env["OPOS_HOME"]) / "manifest"
             venv_python = Path(env["OPOS_HOME"]) / "venv" / "bin" / "python"
-            config_dir = Path(env["OPOS_CONFIG_DIR"])
             launcher_bytes = launcher.read_bytes()
             manifest_bytes = manifest.read_bytes()
             configs_before = {p: p.read_bytes() for p in config_files(env)}

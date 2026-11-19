@@ -395,7 +395,7 @@ class TestMain(unittest.TestCase):
                     return srv
 
                 with mock.patch.object(setup_config, "load") as m_load:
-                    with mock.patch.object(web, "_route_with_glimmer") as m_route:
+                    with mock.patch.object(web, "_route_with_glimmer"):
                         with mock.patch.object(web, "make_server", side_effect=fake_make_server):
                             if isinstance(load_side, Exception):
                                 m_load.side_effect = load_side

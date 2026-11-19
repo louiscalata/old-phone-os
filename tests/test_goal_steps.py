@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
-from opos import power
 from opos.power import SAVINGS_STEPS, steps_for_goal
 from opos.runtime import DEFAULT_TASKS, Priority, Runtime, Task, Tick
 

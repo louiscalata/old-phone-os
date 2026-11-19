@@ -128,7 +128,7 @@ class TestSparseImage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             raw = str(Path(tmp) / "raw.img")
             sp = str(Path(tmp) / "out.sp")
-            with open(raw, "wb") as f:
+            with open(raw, "wb"):
                 pass
             self.assertEqual(sparse.convert(raw, sp), (0, 0))
             magic, major, minor, fhs, chs, bsz, nblk, nchk, _crc = _header(sp)

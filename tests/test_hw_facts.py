@@ -15,7 +15,6 @@ import unittest
 from pathlib import Path
 
 from opos.hw import device, facts
-from opos.hw.store import builtin_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging" / "duo-os"

@@ -2584,7 +2584,6 @@ class FirewallBackendReviewTest(unittest.TestCase):
             self.assertEqual(prev, "iptables-legacy", msg=leaf)
 
     def test_stop_mutations_restricted_to_opos_targets(self):
-        import re
 
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
@@ -4616,7 +4615,6 @@ class FirewallBackendReviewTest(unittest.TestCase):
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(repo, "deploy", "harden.d", "20-firewall.sh")
         hook_in = "OPOS" + "_" + "INPUT"
-        hook_fwd = "OPOS" + "_" + "FORWARD"
         dot = chr(46)
         colon = chr(58)
         doc_a = dot.join([str(203), str(0), str(113), str(7)])

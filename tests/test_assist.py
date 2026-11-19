@@ -8,7 +8,6 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, "src")
