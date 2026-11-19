@@ -252,7 +252,7 @@ def _handle_status(args: argparse.Namespace, env: dict[str, str], platform: str,
     persist = "unverified"
     try:
         p = cfg_path.parent / "persist-marker.json"
-        flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(p, flags)
         try:
             st = os.fstat(fd)
