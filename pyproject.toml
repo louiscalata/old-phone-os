@@ -196,7 +196,8 @@ max-complexity = 15
 # UP035: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "src/opos/setup/cli.py" = ["C901", "UP035"]
 # C901: existing complexity; restructuring needs a behavior review.
-"src/opos/setup/config.py" = ["C901"]
+# config.py is sha256-pinned by tests/fixtures/setup_config_validate/cases.json; keep its import block as-is.
+"src/opos/setup/config.py" = ["C901", "I001"]
 # C901: existing complexity; restructuring needs a behavior review.
 "src/opos/setup/jaryo_steps.py" = ["C901"]
 # C901: existing complexity; restructuring needs a behavior review.
