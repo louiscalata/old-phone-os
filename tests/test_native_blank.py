@@ -87,6 +87,7 @@ class Clock:
 
 
 class Blanking(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_blank_then_restore_gives_back_each_panels_own_value(self):
         t = Tree(self, (37, 211))
         self.assertTrue(t.blanker.blank())
@@ -97,6 +98,7 @@ class Blanking(unittest.TestCase):
         self.assertFalse(t.saved.exists())
         self.assertEqual(t.said, [])
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_second_blank_keeps_the_values_saved_by_the_first_and_darkens_a_panel_that_came_back_on(self):
         t = Tree(self, (90, 200))
         self.assertTrue(t.blanker.blank())
@@ -121,6 +123,7 @@ class Blanking(unittest.TestCase):
         self.assertEqual(t.snapshot(), before)
         self.assertFalse(t.saved.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_dark_or_unreadable_panel_is_saved_as_its_default(self):
         t = Tree(self, (0, 120))
         self.assertTrue(t.blanker.blank())
@@ -169,6 +172,7 @@ class Blanking(unittest.TestCase):
         self.assertFalse(t.blanker.restore(), "nothing dark, nothing written")
         self.assertEqual(t.snapshot(), before)
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_missing_panel_is_never_created_and_counts_as_failed(self):
         t = Tree(self, (75,), panels=("panel1-backlight",))
         self.assertTrue(t.blanker.blank())
@@ -183,6 +187,7 @@ class Blanking(unittest.TestCase):
         self.assertTrue(t.saved.exists(), "kept: the missing panel may come back dark and must be lit then")
         self.assertTrue(t.blanker.pending())
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_panel_missing_for_a_moment_during_a_restore_is_lit_when_it_comes_back(self):
         t = Tree(self, (33, 44))
         t.blanker.blank()
@@ -209,6 +214,7 @@ class Blanking(unittest.TestCase):
         p.unlink()
         p.mkdir()
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_write_failure_is_said_once_and_never_raised(self):
         t = Tree(self, (90, 200))
         self.broken(t)
@@ -217,6 +223,7 @@ class Blanking(unittest.TestCase):
         self.assertEqual(len(t.said), 1)
         self.assertIn("panel0-backlight", t.said[0])
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_failed_restore_keeps_the_saved_file_for_a_later_try(self):
         t = Tree(self, (33, 44))
         t.blanker.blank()
@@ -239,6 +246,7 @@ class Blanking(unittest.TestCase):
         self.assertEqual(t.values(), (90, 200), "never dark without the values saved first")
         self.assertEqual(len(t.said), 1)
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_modes(self):
         t = Tree(self, (90, 200))
         b = t.blanker
@@ -302,6 +310,7 @@ class Safety(unittest.TestCase):
         t.blanker.restore()
         self.assertEqual(t.values(), (90, 100), "an unreadable maximum is not a reason to stay dark")
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_crash_between_saving_and_writing_leaves_the_screens_lit_and_restorable(self):
         t = Tree(self, (37, 211))
         real = t.blanker._write
@@ -316,6 +325,7 @@ class Safety(unittest.TestCase):
         t.blanker.restore()
         self.assertEqual((t.values(), t.saved.exists()), ((37, 211), False))
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_killed_while_dark_then_restored_from_the_file_alone(self):
         t = Tree(self, (37, 211))
         t.blanker.blank()
@@ -323,6 +333,7 @@ class Safety(unittest.TestCase):
         self.assertTrue(fresh.restore())
         self.assertEqual(t.values(), (37, 211))
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_saved_file_that_appears_meanwhile_is_never_replaced(self):
         t = Tree(self, (90, 200))
         real = t.blanker._save
@@ -379,6 +390,7 @@ class Safety(unittest.TestCase):
         t.blanker.set_mode(3)
         self.assertEqual(t.snapshot(), before)
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_failed_restore_is_listed_so_the_shell_can_try_again(self):
         t = Tree(self, (33, 44))
         t.blanker.blank()
@@ -427,6 +439,7 @@ class Safety(unittest.TestCase):
         gone.blanker.restore()
         self.assertEqual(gone.blanker.failed, ["panel1-backlight: missing"])
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_blank_on_screens_already_dark_still_counts_as_deliberate(self):
         """R7: the saved file is there and both panels read 0 (or cannot be read). A second blank writes nothing, but it is
         still a request for dark, so a pending restore retry must see the counter move and stop."""
@@ -451,6 +464,7 @@ class Safety(unittest.TestCase):
         refused.blanker.blank()
         self.assertEqual(refused.blanker.blanks, 0, "a refused blank is not one")
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_mode_0_goes_through_on_restore_when_set(self):
         """R3: the owner's restore (with its retries) handles the lid daemon's PowerSaveMode 0."""
         t = Tree(self, (90, 200))
@@ -463,6 +477,7 @@ class Safety(unittest.TestCase):
         t.blanker.set_mode(0)
         self.assertEqual(t.values(), (90, 200))
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_the_command_line_restore_can_keep_trying_slowly_for_longer(self):
         """R4: `--restore --for 120` is the kiosk's background retry: bounded, and at a low rate."""
         import contextlib
@@ -502,6 +517,7 @@ class Safety(unittest.TestCase):
                 self.assertEqual(blank.main(bad, make=self.fail), 0, bad)
         self.assertIn("usage", err.getvalue())
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_the_command_line_restore_tries_again_for_a_few_seconds(self):
         import contextlib
         import io
@@ -616,6 +632,7 @@ class Safety(unittest.TestCase):
         p.chmod(0o644)
         self.assertEqual(t.values(), blank.DEFAULTS, "lit, although it could not be read")
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_refused_blank_reports_mode_0_and_an_accepted_one_its_mode(self):
         """Residual 2: a PowerSaveMode of 1 to 3 that is refused (the lid reads open) leaves the screens lit, so the mode
         reported is 0, not the refused request. Every request still reaches blank() or restore(), so nothing that lights
@@ -695,6 +712,7 @@ class PowerSave(unittest.TestCase):
         self.assertTrue(s.set("PowerSaveMode", 3))
         self.assertEqual(s.get("PowerSaveMode"), 3, "never None: the property always has an int")
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_the_value_follows_a_real_blanker_and_the_screens_match_it(self):
         """With a real Blanker in a fake tree: a refused 3 reads 0 with the panels lit, an accepted 3 reads 3 with them
         dark, and a 0 reads 0 with them lit again."""
