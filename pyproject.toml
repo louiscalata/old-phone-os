@@ -107,8 +107,6 @@ max-complexity = 15
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "src/opos/aitools/cli.py" = ["E741", "I001"]
-# C901: existing complexity; restructuring needs a behavior review.
-"src/opos/aitools/installer.py" = ["C901"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
 "src/opos/aitools/launcher.py" = ["I001"]
 # I001: existing import order; sorting changes AST order and needs a separate review.
