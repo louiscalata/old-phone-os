@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
 import opos.setup.config as setup_config
@@ -151,6 +152,43 @@ class TestDemoDay(unittest.TestCase):
         self.assertEqual(last_before["clock"], "15:59")
         self.assertTrue(last_before["battery"]["goal_met"])
         self.assertIsNotNone(at_goal)
+
+    def test_readme_noon_to_1600_wording_matches_rules_only_run(self):
+        # Keep the README battery wording honest against the official replay on
+        # this tree: 8% at 16:00, goal met. Do not treat a missed goal as current.
+        phone = self.phone()
+        phone.set_sim(True, 60)
+        state = phone.state()
+        at_goal = None
+        while phone.clock_s < 16.5 * 3600:
+            state = self.step(phone, 1)
+            if at_goal is None and phone.clock_s >= 16 * 3600:
+                at_goal = state
+        percent = at_goal["battery"]["percent"]
+        self.assertGreater(percent, 0)
+        self.assertTrue(at_goal["battery"]["goal_met"])
+        readme = Path("README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            f"displayed **{percent}% at 16:00; goal met (`goal_met=true`)**",
+            readme,
+        )
+        self.assertIn(
+            f"the separate four-hour rules-only run displayed {percent}% and met the goal.",
+            readme,
+        )
+        self.assertIn(
+            f"At 16:00 it displayed **{percent}% and met the goal (`goal_met=true`)**",
+            readme,
+        )
+        for stale in (
+            "0% at 16:00",
+            "goal not met",
+            "goal_met=false",
+            "missed the goal",
+            "did not meet the goal",
+            "displayed 0%",
+        ):
+            self.assertNotIn(stale, readme)
 
     def test_fresh_battery_after_goal_keeps_everything_on(self):
         phone = self.phone()
