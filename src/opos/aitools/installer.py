@@ -148,6 +148,16 @@ def _inside(child: Path, parent: Path) -> bool:
         return False
 
 
+def _manifest_sandbox(tr: Path, tid: str, meta: Mapping) -> Path:
+    """sandbox recorded in a manifest entry; it must be a string that resolves inside the tools root"""
+    raw = meta.get("sandbox")
+    if raw is None:
+        return tr / tid / "home"
+    if not isinstance(raw, str) or not raw or "\0" in raw or not _inside(Path(raw), tr):
+        raise InstallError(f"bad sandbox in manifest entry: {tid}")
+    return Path(raw)
+
+
 def _runner_env(sandbox: Path, extra: Mapping[str, str]) -> dict[str, str]:
     """env for vendor installer"""
     e: dict[str, str] = {
@@ -260,7 +270,7 @@ def _lookup(tool: Tool, all_tools: Sequence[Tool] | None) -> dict[str, Tool]:
 
 def _other_bins(lay: _Layout, tid: str, meta: dict, t: Tool) -> tuple[Path, Path]:
     """sandbox and real binary of another installed tool, from its manifest entry"""
-    sb = Path(meta.get("sandbox", str(lay.tr / tid / "home")))
+    sb = _manifest_sandbox(lay.tr, tid, meta)
     return sb, sb / ".local" / "bin" / t.binary
 
 
@@ -602,7 +612,7 @@ def _render_mode_wrappers(
             t = lookup[tid]
             if not isinstance(meta, dict):
                 raise InstallError(f"bad manifest entry: {tid}")
-            sandbox = Path(meta.get("sandbox", str(tr / tid / "home")))
+            sandbox = _manifest_sandbox(tr, tid, meta)
             real_bin = sandbox / ".local" / "bin" / t.binary
             planned[tr / "bin" / t.binary] = launcher.render_wrapper(t, real_bin, sandbox, run_dir, mode, py, sd)
     except InstallError:
