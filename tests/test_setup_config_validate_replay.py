@@ -92,7 +92,8 @@ def validate(value):
             validate.__code__.co_filename]
 """
         with tempfile.TemporaryDirectory(prefix="validate-context-") as directory:
-            source = Path(directory) / "config.py"
+            # Relative paths in the worker use the physical working directory.
+            source = Path(directory).resolve() / "config.py"
             source.write_text(source_text, encoding="utf-8")
             corpus = source.with_name("cases.json")
             corpus.write_text(json.dumps({"cases": [{"input": {}}]}), encoding="utf-8")
