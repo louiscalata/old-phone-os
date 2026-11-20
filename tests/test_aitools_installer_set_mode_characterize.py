@@ -83,7 +83,7 @@ class SetModeCharacterization(_Base):
             "profiles": ["/p"],
             "tools": {
                 "tool-a": {"binary": "bina", "sandbox": str(self.sb("tool-a")), "mode": "lite"},
-                "tool-b": {"binary": "binb", "sandbox": "/elsewhere/b", "mode": "lite"},
+                "tool-b": {"binary": "binb", "sandbox": str(self.tr / "tool-b" / "alt"), "mode": "lite"},
             },
         }
         m.update(extra)
@@ -117,7 +117,9 @@ class SetModeCharacterization(_Base):
                 self.assertFalse(self.bin.exists())
 
     def test_bad_entry_for_known_tool_refused_before_any_write(self):
-        self.write_manifest({"mode": "lite", "tools": {"tool-a": {"sandbox": "/x"}, "tool-b": "junk"}})
+        self.write_manifest(
+            {"mode": "lite", "tools": {"tool-a": {"sandbox": str(self.sb("tool-a"))}, "tool-b": "junk"}}
+        )
         before = self.mp.read_bytes()
         with self.assertRaises(installer.InstallError) as cm:
             installer.set_mode(self.prefix, "full", [TA, TB])
@@ -154,7 +156,7 @@ class SetModeCharacterization(_Base):
 
     @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_render_arguments_and_defaults(self):
-        self.write_manifest({"tools": {"tool-a": {}, "tool-b": {"sandbox": "/sb/b"}}})
+        self.write_manifest({"tools": {"tool-a": {}, "tool-b": {"sandbox": str(self.tr / "tool-b" / "alt")}}})
         calls = []
 
         def fake(t, rb, sb, rd, mode, py, sd):
@@ -164,11 +166,12 @@ class SetModeCharacterization(_Base):
         with mock.patch.object(launcher, "render_wrapper", side_effect=fake):
             installer.set_mode(self.prefix, "full", [TB, TA])
         sa = self.sb("tool-a")
+        alt = self.tr / "tool-b" / "alt"
         self.assertEqual(
             calls,
             [
                 ("tool-a", sa / ".local" / "bin" / "bina", sa, self.run_dir, "full", "python3", Path(".")),
-                ("tool-b", Path("/sb/b/.local/bin/binb"), Path("/sb/b"), self.run_dir, "full", "python3", Path(".")),
+                ("tool-b", alt / ".local" / "bin" / "binb", alt, self.run_dir, "full", "python3", Path(".")),
             ],
         )
         self.assertEqual((self.bin / "bina").read_text(encoding="utf-8"), "wrapper tool-a\n")
@@ -487,6 +490,44 @@ class UninstallCharacterization(_Base):
             with self.assertRaises(KeyboardInterrupt):
                 installer.uninstall(self.prefix)
         self.assertTrue(self.tr.exists())
+
+
+class ManifestSandboxContainment(_Base):
+    """a manifest sandbox must resolve inside the tools root"""
+
+    def _refused(self, sandbox):
+        self.write_manifest({"mode": "lite", "tools": {"tool-a": {"sandbox": sandbox}}})
+        before = self.mp.read_bytes()
+        with self.assertRaises(installer.InstallError) as cm:
+            installer.set_mode(self.prefix, "full", [TA])
+        self.assertEqual(str(cm.exception), "bad sandbox in manifest entry: tool-a")
+        self.assertFalse(self.bin.exists())
+        self.assertEqual(self.mp.read_bytes(), before)
+
+    def test_absolute_outside_refused(self):
+        self._refused("/elsewhere/a")
+
+    def test_dotdot_escape_refused(self):
+        self._refused(str(self.tr / "tool-a" / ".." / ".." / "out"))
+
+    def test_nul_and_non_string_refused(self):
+        self._refused(str(self.sb("tool-a")) + "\0x")
+        self._refused(["x"])
+        self._refused("")
+
+    @unittest.skipIf(sys.platform == "win32", "symlinks need privileges on Windows")
+    def test_symlink_escape_refused(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        link = self.tr / "tool-a" / "link"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(outside, target_is_directory=True)
+        self._refused(str(link / "home"))
+
+    def test_inside_and_default_accepted(self):
+        self.write_manifest({"tools": {"tool-a": {"sandbox": str(self.sb("tool-a"))}}})
+        self.assertEqual(installer.set_mode(self.prefix, "full", [TA]), ["mode set to full"])
+        self.assertEqual(installer._manifest_sandbox(self.tr, "tool-a", {}), self.sb("tool-a"))
 
 
 if __name__ == "__main__":
