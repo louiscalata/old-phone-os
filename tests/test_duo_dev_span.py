@@ -17,6 +17,7 @@ from pathlib import Path
 
 from tests import portable
 from tests import test_selftest as TS
+from tests.host_tools import needs_tools
 from tests.test_duo_dev_sudo import TEST_KEY
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +107,7 @@ class StaticPins(unittest.TestCase):
 
 
 @unittest.skipUnless(SH and os.name == "posix", "needs a POSIX sh")
+@needs_tools("sha256sum")
 class BuildBlocks(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -211,6 +213,7 @@ class BuildBlocks(unittest.TestCase):
 
 
 @unittest.skipUnless(SH and PY and os.name == "posix", "needs a POSIX sh and python3")
+@needs_tools("sha256sum")
 class VerifyBlock(unittest.TestCase):
     """The verify-image.sh block against a scratch root file system built with the real unit, the real network drop-in and, for a dev image,
     the drop-in the build block writes. The image's python3 under qemu is this builder's python3 on the repository sources."""

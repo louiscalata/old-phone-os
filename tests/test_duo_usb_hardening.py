@@ -17,6 +17,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.host_tools import LINUX_HOST
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 PKG = ROOT / "packaging" / "duo-os"
@@ -134,6 +136,8 @@ def make_root(root, gadget=GADGET, gadget_mode=0o755, dropin=DROPIN_PORT, dropin
 
 
 def run_build(r, extra=""):
+    if not LINUX_HOST:
+        raise unittest.SkipTest("the build block checks the image with a Linux host's sshd -T")
     script = Path(r).parent / ("build-%d.sh" % os.getpid())
     script.write_text(
         "set -eu\nr=%s\nhere=%s\n%s\n%secho BLOCK-DONE\n" % (r, PKG, block(*BUILD_BLOCK), extra), encoding="utf-8"
@@ -422,6 +426,9 @@ class BuildBlock(unittest.TestCase):
                 self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
                 self.assertIn("another sshd setting turns a password login on", p.stderr)
 
+    @unittest.skipUnless(
+        LINUX_HOST, "compares against a Linux host's sshd -T; Apple's sshd parses the image config differently"
+    )
     @unittest.skipUnless(shutil.which("sshd") or os.path.exists("/usr/sbin/sshd"), "needs sshd")
     @unittest.skipUnless(shutil.which("ssh-keygen"), "needs ssh-keygen")
     def test_sshd_itself_takes_no_password_from_the_usb_subnet_or_anywhere_after_the_edit(self):

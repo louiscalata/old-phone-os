@@ -53,7 +53,12 @@ class InstallStubs:
         ):
             target = shutil.which(name)
             if target:
-                (self.bin / name).symlink_to(target)
+                if sys.platform == "darwin" and name == "shasum":
+                    script = self.bin / name
+                    script.write_text(f'#!/bin/sh\nexec {target} "$@"\n')
+                    script.chmod(0o755)
+                else:
+                    (self.bin / name).symlink_to(target)
         source = """import glob, hashlib, json, os, pathlib, sys
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]

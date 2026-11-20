@@ -25,6 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
+from tests.host_tools import needs_tools
+
 ROOT = Path(__file__).resolve().parents[1]
 SELFTEST = ROOT / "packaging/duo-os/opos-selftest"
 BUILD = ROOT / "packaging/duo-os/build-image.sh"
@@ -2143,6 +2145,7 @@ class ImageWiring(unittest.TestCase):
             self.assertTrue(r.stdout.startswith("100755"), "commit it executable: git update-index --chmod=+x")
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
+    @needs_tools("sha256sum")
     def test_build_block_installs_the_script_and_a_wrapper(self):
         b = self.block(BUILD)
         self.assertIn('install -m 0755 "$here/opos-selftest" "$r/usr/libexec/opos/opos-selftest"', b)

@@ -16,6 +16,7 @@ from unittest import mock
 
 from opos.web import clock_ok
 from tests import portable
+from tests.host_tools import needs_tools
 
 PKG = Path(__file__).resolve().parents[1] / "packaging" / "duo-os"
 SH = shutil.which("sh")
@@ -750,6 +751,7 @@ class ImageBlocksTests(unittest.TestCase):
         self.assertEqual(os.readlink(r / link), "/etc/systemd/system/opos-clock-set.path")
         self.assertIn("DEV IMAGE", out)
 
+    @needs_tools("sha256sum")
     def test_the_manifest_lists_the_clock_files_including_the_path_unit(self):
         r = self.rootfs()
         self.build(r, self.repo(max(MIN, self.now_minus(60))))
