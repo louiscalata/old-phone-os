@@ -99,12 +99,29 @@ if [ "$free_kb" -lt "$need_kb" ]; then
   exit 1
 fi
 backup=""
-trap 's=$?; set +e; if [ "$s" -ne 0 ] && [ -n "$backup" ] && [ -d "$backup" ]; then cd "$HOME" || true; rm -rf "$HOME/opos" && mv "$backup" "$HOME/opos" && echo "push-to-duo: install failed, restored previous deployment" >&2; fi; rmdir "$HOME/.opos-push.lock"; exit "$s"' EXIT
+created_install=0
+rollback_install() {
+  status=$?
+  set +e
+  if [ "$status" -ne 0 ]; then
+    cd "$HOME" || true
+    if [ "$created_install" -eq 1 ]; then
+      rm -rf "$HOME/opos"
+    fi
+    if [ -n "$backup" ] && [ ! -e "$HOME/opos" ] && [ ! -L "$HOME/opos" ]; then
+      mv "$backup" "$HOME/opos" && echo "push-to-duo: install failed, restored previous deployment" >&2
+    fi
+  fi
+  rmdir "$HOME/.opos-push.lock"
+  exit "$status"
+}
+trap rollback_install EXIT
 stamp=$(date +%Y%m%d-%H%M%S)
 if [ -e "$HOME/opos" ]; then
   mv "$HOME/opos" "$HOME/opos.bak-$stamp" && backup="$HOME/opos.bak-$stamp"
 fi
 mkdir "$HOME/opos"
+created_install=1
 tar -xzf "$stage/opos-push.tgz" -C "$HOME/opos"
 rm -rf "$stage"
 cd "$HOME/opos"

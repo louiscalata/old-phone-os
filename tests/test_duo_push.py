@@ -197,34 +197,39 @@ class DuoPushTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.dirname(local_archive)))
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
-    def test_failed_install_restores_previous_deployment(self):
-        import os
-        import tarfile
+    def test_failed_install_restores_preinstall_state(self):
         import tempfile
 
         text = SCRIPT.read_text()
         body = text.split("<<'REMOTE'\n", 1)[1].split("\nREMOTE\n", 1)[0]
-        with tempfile.TemporaryDirectory() as top:
-            home = os.path.join(top, "home")
-            os.mkdir(home)
-            prev = os.path.join(home, "opos")
-            os.mkdir(prev)
-            with open(os.path.join(prev, "marker.txt"), "w") as handle:
-                handle.write("old")
-            stage = os.path.join(top, "stage")
-            os.mkdir(stage)
-            installer = os.path.join(top, "install.sh")
-            with open(installer, "w") as handle:
-                handle.write("exit 1\n")
-            archive = os.path.join(stage, "opos-push.tgz")
-            with tarfile.open(archive, "w:gz") as tar:
-                tar.add(installer, arcname="install.sh")
-            env = os.environ.copy()
-            env["HOME"] = home
-            proc = subprocess.run(["sh", "-s", "--", stage], input=body, capture_output=True, text=True, env=env)
-            self.assertEqual(proc.returncode, 1)
-            with open(os.path.join(home, "opos", "marker.txt")) as handle:
-                self.assertEqual(handle.read(), "old")
-            self.assertFalse(os.path.exists(os.path.join(home, "opos", "install.sh")))
-            self.assertFalse(any(name.startswith("opos.bak-") for name in os.listdir(home)))
-            self.assertFalse(os.path.exists(os.path.join(home, ".opos-push.lock")))
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as top:
+                self.check_failed_install(body, pathlib.Path(top), existing)
+
+    def check_failed_install(self, body, top, existing):
+        import os
+        import tarfile
+
+        home = top / "home"
+        home.mkdir()
+        previous = home / "opos"
+        marker = previous / "marker.txt"
+        if existing:
+            previous.mkdir()
+            marker.write_text("old")
+        stage = top / "stage"
+        stage.mkdir()
+        installer = top / "install.sh"
+        installer.write_text("exit 1\n")
+        with tarfile.open(stage / "opos-push.tgz", "w:gz") as tar:
+            tar.add(installer, arcname="install.sh")
+        env = {**os.environ, "HOME": str(home)}
+        proc = subprocess.run(["sh", "-s", "--", str(stage)], input=body, capture_output=True, text=True, env=env)
+        self.assertEqual(proc.returncode, 1)
+        if existing:
+            self.assertEqual(marker.read_text(), "old")
+            self.assertFalse((previous / "install.sh").exists())
+        else:
+            self.assertFalse(previous.exists())
+        self.assertFalse(list(home.glob("opos.bak-*")))
+        self.assertFalse((home / ".opos-push.lock").exists())
