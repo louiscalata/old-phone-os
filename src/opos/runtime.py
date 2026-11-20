@@ -8,7 +8,7 @@ from opos.battery import DrainEstimator, Sample, essentials_reserve, hours_left
 from opos.budget import budget_for
 from opos.governor import Decision, Governor, Mode, PowerState, Priority, Task, rule_decide
 from opos.home import home_screen
-from opos.power import KEEP, steps_for_goal, total_drain
+from opos.power import KEEP, keep_goal_steps, steps_for_goal, total_drain
 from opos.reserve import apply_reserve, reserve_keeps
 from opos.router import GOAL_MISS, HOT_C, Router, fund
 
@@ -64,8 +64,14 @@ class Runtime:
         self.tasks = tuple(tasks)
         self.estimator = DrainEstimator()
         self.governor = Governor(advisor=Router(visible=visible))
+        # Savings steps already applied for the current goal; cleared when the
+        # goal is reached, the goal changes, or charging starts.
+        self._goal_steps = ()
+        self._goal_key = None
 
-    def step(self, t_s, level, charging=False, health=1.0, temp_c=25.0, goal_hours=None, *, in_use=None, undone=()):
+    def step(
+        self, t_s, level, charging=False, health=1.0, temp_c=25.0, goal_hours=None, *, in_use=None, undone=(), goal=None
+    ):
         """Decide what runs now.
 
         Soft pauses (the policy's, and the goal budget's) come first, then the owner's
@@ -153,16 +159,26 @@ class Runtime:
                 final.deferred,
                 f"router: allowed {len(final.allowed)}, deferred {len(final.deferred)}",
             )
-        # The fewest saving steps that, with the final pauses, fit the goal.
-        steps = (
-            steps_for_goal(level, goal_hours, self.tasks, final.deferred, health)
-            if goal_hours is not None and not charging
-            else ()
-        )
+        steps = self._sticky_goal_steps(level, goal_hours, charging, final.deferred, health, goal)
         budget = budget_for(final.mode, temp_c)
         screen = home_screen(level, final, visible=self.visible)
         drain = total_drain(self.tasks, paused=final.deferred, steps=steps, health=health)
         return Tick(final, budget, screen, h_left, reserve, steps, causes, drain)
+
+    def _sticky_goal_steps(self, level, goal_hours, charging, deferred, health, goal):
+        """Keep already-applied savings steps while this goal is still ahead."""
+        if goal_hours is None or charging:
+            self._goal_steps = ()
+            self._goal_key = None
+            return ()
+        key = goal if goal is not None else True
+        if key != self._goal_key:
+            self._goal_steps = ()
+            self._goal_key = key
+        needed = steps_for_goal(level, goal_hours, self.tasks, deferred, health)
+        steps = keep_goal_steps(self._goal_steps, needed)
+        self._goal_steps = steps
+        return steps
 
     def _ordered(self, names):
         """Names in task order, then any unknown names sorted."""

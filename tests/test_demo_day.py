@@ -100,6 +100,58 @@ class TestDemoDay(unittest.TestCase):
         self.assertLessEqual(len(sequence) - 1, 4, f"5 s transition sequence: {sequence!r}")
         self.assertLess(maximum_temp, 45)
 
+    def test_demo_rules_only_run_arrives_with_charge(self):
+        # Official rules-only noon-to-16:00 replay: savings steps must not shrink,
+        # drain must not rise when CRITICAL pauses email, and the panel must still
+        # show charge when the goal time is reached.
+        phone = self.phone()
+        phone.set_sim(True, 60)
+        state = phone.state()
+        last_before = None
+        at_goal = None
+        previous_steps = tuple(state["battery"]["steps"])
+        previous_mode = state["helper"]["mode"]
+        previous_drain = phone._tick_obj.drain_per_h
+        saver_steps = previous_steps
+        saver_drain = previous_drain
+        saw_critical = False
+        while phone.clock_s < 16.5 * 3600:
+            charging = state["charging"]
+            state = self.step(phone, 1)
+            tick = phone._tick_obj
+            steps = tuple(tick.steps)
+            if phone.clock_s < 16 * 3600:
+                if not charging:
+                    self.assertGreaterEqual(
+                        len(steps),
+                        len(previous_steps),
+                        f"{state['clock']}: steps shrank from {previous_steps!r} to {steps!r}",
+                    )
+                    if previous_steps:
+                        self.assertEqual(steps[: len(previous_steps)], previous_steps)
+                if previous_mode != "CRITICAL" and state["helper"]["mode"] == "CRITICAL":
+                    saw_critical = True
+                    self.assertIn("email", state["helper"]["paused"])
+                    self.assertEqual(steps[: len(saver_steps)], saver_steps)
+                    self.assertLessEqual(tick.drain_per_h, saver_drain)
+                if state["helper"]["mode"] != "CRITICAL":
+                    saver_steps = steps
+                    saver_drain = tick.drain_per_h
+                previous_steps = steps
+                previous_mode = state["helper"]["mode"]
+                last_before = state
+            elif at_goal is None:
+                at_goal = state
+                at_level = phone.sim.level
+                self.assertGreater(at_level, 0.5)
+                self.assertGreater(at_goal["battery"]["percent"], 0)
+                self.assertTrue(at_goal["battery"]["goal_met"])
+                self.assert_reached_story(phone, at_goal)
+        self.assertTrue(saw_critical)
+        self.assertEqual(last_before["clock"], "15:59")
+        self.assertTrue(last_before["battery"]["goal_met"])
+        self.assertIsNotNone(at_goal)
+
     def test_fresh_battery_after_goal_keeps_everything_on(self):
         phone = self.phone()
         phone.clock_s = 16 * 3600 + 60
