@@ -348,6 +348,7 @@ class Phone:
                 goal_hours=hours,
                 in_use=self.dash.in_use,
                 undone=undone,
+                goal=self.dash.goal,
             )
 
         tick = step(frozenset(self.dash.undone))

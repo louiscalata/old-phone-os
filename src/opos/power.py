@@ -10,6 +10,9 @@ SAVINGS_STEPS = (
     ("slow background polling", "radio", 0.7),
 )
 KEEP = frozenset({"calls", "messages", "alarms"})
+# Displayed percent is round(level); at the goal time, goal_met requires percent > 0,
+# so a plan must arrive at this level or above (0.5 rounds to 1%).
+GOAL_ARRIVE_LEVEL = 0.5
 
 
 @dataclass(frozen=True)
@@ -51,18 +54,33 @@ def steps_for_goal(level, goal_h, tasks, paused, health=1.0):
     names = tuple(s[0] for s in SAVINGS_STEPS)
     if goal_h is None or goal_h <= 0:
         return ()
-    if level <= 0:
+    if level <= GOAL_ARRIVE_LEVEL:
         return names
     try:
         paused_set = set(paused)
     except TypeError:
         paused_set = set()
-    target = level / goal_h
+    target = (level - GOAL_ARRIVE_LEVEL) / goal_h
     for n in range(len(names) + 1):
         prefix = names[:n]
         if total_drain(tasks, paused_set=paused_set, steps=prefix, health=health) <= target:
             return prefix
     return names
+
+
+def keep_goal_steps(saved, needed):
+    """The longer SAVINGS_STEPS prefix; already-applied steps are never dropped."""
+    names = tuple(s[0] for s in SAVINGS_STEPS)
+
+    def prefix_len(steps):
+        n = 0
+        for step, name in zip(tuple(steps or ()), names, strict=False):
+            if step != name:
+                break
+            n += 1
+        return n
+
+    return names[: max(prefix_len(saved), prefix_len(needed))]
 
 
 def time_left_words(hours):
