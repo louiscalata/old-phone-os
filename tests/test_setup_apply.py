@@ -262,6 +262,51 @@ class ApplyTests(BaseCase):
         self.assertEqual(progress.snapshot()[0]["status"], "failed")
 
 
+class ApplyHardeningTests(BaseCase):
+    def test_bad_port_is_rejected_before_any_write(self) -> None:
+        for bad in ("8765\nExecStartPre=/bin/true", "--help", True, 0, 65536, -1, 8765.0, None):
+            with self.subTest(port=bad):
+                progress = self.run_apply(port=bad)
+                steps = self.by_id(progress)
+                self.assertEqual(steps["config"]["status"], "failed")
+                self.assertIn("port", steps["config"]["detail"])
+                self.assertEqual(steps["services"]["status"], "skipped")
+                self.assertEqual(self.runner.commands, [])
+                self.assertFalse(config_path(self.env, "linux").exists())
+                self.assertFalse(token_path(self.env, "linux").exists())
+
+    def test_valid_port_still_applies(self) -> None:
+        progress = self.run_apply(port=65535)
+        self.assertTrue(progress.ok())
+
+    def test_unexpected_error_does_not_leave_steps_running(self) -> None:
+        class Flaky(Progress):
+            def __init__(self) -> None:
+                super().__init__()
+                self.raised = 0
+
+            def finish(self, step_id, detail=""):
+                if step_id == "token" and self.raised == 0:
+                    self.raised = 1
+                    raise RuntimeError("boom")
+                super().finish(step_id, detail)
+
+            def fail(self, step_id, detail):
+                if step_id == "token" and self.raised == 1:
+                    self.raised = 2
+                    raise RuntimeError("boom again")
+                super().fail(step_id, detail)
+
+        progress = self.run_apply(progress=Flaky())
+        steps = self.by_id(progress)
+        self.assertEqual(steps["token"]["status"], "failed")
+        self.assertEqual(steps["token"]["detail"], "RuntimeError")
+        for sid in ("key", "services", "health", "tools"):
+            self.assertIn(steps[sid]["status"], ("skipped", "failed"))
+        self.assertTrue(progress.done())
+        self.assertFalse(progress.ok())
+
+
 class ToolsApplyTests(BaseCase):
     def test_tools_skipped_when_no_ai_tools(self) -> None:
         progress = self.run_apply()

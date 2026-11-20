@@ -159,6 +159,27 @@ def http_health(
     return False, f"no answer on port {port} after {timeout_s:g} s"
 
 
+def _port_error(port: object) -> str | None:
+    """Return why a port cannot be written into a service file or health URL, else None."""
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        return "port must be a whole number from 1 to 65535"
+    return None
+
+
+@contextlib.contextmanager
+def _settle_on_error(prog: Progress):
+    """Never raise, and never leave a step running or pending after an unexpected error."""
+    try:
+        yield
+    except Exception as exc:
+        for step in prog.snapshot():
+            with contextlib.suppress(Exception):
+                if step["status"] == StepState.RUNNING.value:
+                    prog.fail(step["id"], type(exc).__name__)
+                elif step["status"] == StepState.PENDING.value:
+                    prog.skip(step["id"], "skipped after an earlier failure")
+
+
 def apply(
     cfg: dict,
     *,
@@ -178,13 +199,16 @@ def apply(
     prog = progress if progress is not None else Progress()
     failed = False
     token = None
-    with contextlib.suppress(Exception):
+    with _settle_on_error(prog):
         if failed:
             prog.skip("config", "skipped after an earlier failure")
         else:
             prog.start("config")
             try:
                 errs = validate(cfg)
+                port_err = _port_error(port)
+                if port_err:
+                    errs = [*errs, port_err]
                 if errs:
                     prog.fail("config", "; ".join(errs))
                     failed = True
