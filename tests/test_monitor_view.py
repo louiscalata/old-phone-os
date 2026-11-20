@@ -3,6 +3,7 @@
 
 import json
 import re
+import sys
 import threading
 import unittest
 import unittest.mock
@@ -443,6 +444,7 @@ class LocalProbeTests(unittest.TestCase):
         ):
             self.assertEqual(monitor.local_models_url({"OPOS_LOCAL_URL": bad}), ("127.0.0.1", 8080, "/v1/models"), bad)
 
+    @unittest.skipIf(sys.platform == "win32", "Windows retries refused loopback connections for about 2 s")
     @unittest.skipUnless(_loopback_ok(), "cannot bind 127.0.0.1 here")
     def test_nothing_listening_is_none_and_garbage_is_unknown(self):
         import socket

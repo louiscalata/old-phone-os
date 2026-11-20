@@ -4,6 +4,7 @@
 import importlib.util
 import os
 import stat
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -38,6 +39,7 @@ class RuntimeSourceArchive(unittest.TestCase):
     def build(self):
         return builder.create_archive(self.root, self.output, "old-phone-os-source")
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_declared_bytes_modes_and_license_inputs_are_present(self):
         self.build()
         with tarfile.open(self.output, "r:gz") as archive:

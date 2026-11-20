@@ -3,6 +3,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,6 +34,7 @@ class TestPostInstall(unittest.TestCase):
         nonempty = [l for l in _lines() if l.strip() != ""]
         self.assertEqual(nonempty[-1].strip(), "exit 0")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_session_selection_status_is_preserved(self):
         for status in (0, 7):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
@@ -51,6 +53,7 @@ class TestPostInstall(unittest.TestCase):
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertEqual(log.read_text(), "-s /usr/share/wayland-sessions/cage-ui.desktop\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_posix_syntax(self):
         self.assertTrue(HOOK.is_file())
         result = subprocess.run(["sh", "-n", str(HOOK)], capture_output=True, text=True)

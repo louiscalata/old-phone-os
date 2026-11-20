@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -27,6 +28,7 @@ class OpenrcServerRunlevelTests(unittest.TestCase):
         self.assertTrue(SERVER.is_file())
         self.assertIn('name="opos-server"', SERVER.read_text())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_posix_syntax(self):
         result = subprocess.run(["sh", "-n", str(POSTINSTALL)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

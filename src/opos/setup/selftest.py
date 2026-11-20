@@ -109,7 +109,9 @@ def run_checks(repo_root: Path | None = None) -> list[Check]:
             from opos.setup.services import read_unit_template, render_launchd_plist, render_user_unit
 
             tpl = read_unit_template(repo_root)
-            unit = render_user_unit(tpl, repo_root, sys.executable, tdp, port=8765)
+            # render_user_unit is a systemd unit: it rejects whitespace in paths.
+            # Use fixed POSIX paths so a Windows venv or TEMP with spaces still checks the renderer.
+            unit = render_user_unit(tpl, repo_root, "/usr/bin/python3", Path("/var/lib/opos"), port=8765)
             _ = render_launchd_plist(repo_root, sys.executable, tdp, port=8765)
             if "NoNewPrivileges=yes" not in unit or "token-file" not in unit:
                 raise AssertionError("services unit missing required entries")

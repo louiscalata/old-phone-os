@@ -121,7 +121,7 @@ def save(state, path=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             json.dump(state, f, indent=2, sort_keys=True)
             f.write("\n")
         os.chmod(tmp_name, 0o600)

@@ -2,6 +2,7 @@
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -63,6 +64,7 @@ class TestDuoInstallSudo(unittest.TestCase):
         target = adir / "opos-kiosk.desktop"
         return proc, adir, target
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f2182_kiosk_write_and_uninstall(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = pathlib.Path(tmp)
@@ -81,6 +83,7 @@ class TestDuoInstallSudo(unittest.TestCase):
             self.assertEqual(proc.returncode, 0)
             self.assertEqual(target.read_bytes(), unmarked)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f2182_kiosk_dry_run_help_and_missing_browser(self):
         with self.subTest("dry-run"):
             with tempfile.TemporaryDirectory() as tmp:

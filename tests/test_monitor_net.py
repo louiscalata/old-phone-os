@@ -375,6 +375,7 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(word, "REFUSED")
         self.assertIn("certificate", text)
 
+    @unittest.skipIf(sys.platform == "win32", "Windows retries refused loopback connections for about 2 s")
     @needs_loopback
     def test_nothing_listening_is_unreachable(self):
         with socket.socket() as probe:
@@ -514,6 +515,7 @@ class DeadlineTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "timeout", name)
             self.assertLess(time.monotonic() - started, self.TOTAL + 1.0, name)
 
+    @unittest.skipIf(sys.platform == "win32", "Windows retries refused loopback connections for about 2 s")
     def test_a_tls_handshake_that_never_completes_is_cut_too(self):
         try:
             hold = Hold()
@@ -692,6 +694,7 @@ class LocalhostProbeTests(unittest.TestCase):
         found = [(socket.AF_INET, ("127.0.0.1", p)) for p in ports]
         return mock.patch.object(monitor, "_loopback_addresses", lambda host, port: found)
 
+    @unittest.skipIf(sys.platform == "win32", "Windows retries refused loopback connections for about 2 s")
     def test_only_unanimous_refusal_is_none(self):
         with self.addresses(self.closed, self.closed):
             self.assertEqual(monitor.probe_local(self.env), ("none", []))
@@ -817,6 +820,7 @@ class LocalhostProbeTests(unittest.TestCase):
         ):
             self.assertEqual(monitor.probe_local(self.env), ("model", ["m1"]))
 
+    @unittest.skipIf(sys.platform == "win32", "Windows retries refused loopback connections for about 2 s")
     def test_the_first_address_that_answers_decides(self):
         server = Recorder(json_reply({"data": [{"id": "m1"}]}))
         self.addCleanup(server.close)

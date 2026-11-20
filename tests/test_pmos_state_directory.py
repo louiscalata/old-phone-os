@@ -3,6 +3,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,6 +43,7 @@ printf 'RESULT:%s\n' "$result"
             )
             return result.stdout.splitlines(), Path(temporary)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_service_and_default_wizard_resolve_same_config(self):
         lines, _ = self.run_hook()
         values = dict(line.split(":", 1) for line in lines if line.startswith(("HOME_VALUE:", "CONFIG_VALUE:")))
@@ -52,6 +54,7 @@ printf 'RESULT:%s\n' "$result"
             config.config_dir({"HOME": values["HOME_VALUE"], "OPOS_CONFIG_DIR": values["CONFIG_VALUE"]}, "linux"),
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_each_failed_path_check_stops_before_later_changes(self):
         for failed in range(1, 5):
             with self.subTest(failed_check=failed):
@@ -59,6 +62,7 @@ printf 'RESULT:%s\n' "$result"
                 self.assertEqual(sum(line.startswith("CALL:") for line in lines), failed)
                 self.assertIn("RESULT:1", lines)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_success_keeps_parent_root_and_only_config_leaf_service_owned(self):
         lines, temporary = self.run_hook()
         state_home = temporary / "state"
@@ -74,6 +78,7 @@ printf 'RESULT:%s\n' "$result"
         )
         self.assertIn("RESULT:0", lines)
 
+    @unittest.skipIf(sys.platform == "win32", "os.mkfifo is POSIX-only")
     def test_invalid_state_path_is_rejected_before_checkpath(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

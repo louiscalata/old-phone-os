@@ -2,6 +2,7 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +25,7 @@ class TestPmosUiOpenrc(unittest.TestCase):
         self.assertIsNotNone(re.search(r'depends="networkmanager-openrc openrc"', text))
         self.assertIsNotNone(re.search(r'mkdir -p "\$subpkgdir"', text))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_post_install_syntax(self):
         result = subprocess.run(["sh", "-n", str(POST_INSTALL)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -45,6 +47,7 @@ class TestPmosUiOpenrc(unittest.TestCase):
         env["OPOS_INTERFACES"] = str(ifaces)
         return subprocess.run(["sh", str(POST_INSTALL)], env=env, capture_output=True, text=True)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_creates_loopback_when_unparseable_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "rc.log"
@@ -59,6 +62,7 @@ class TestPmosUiOpenrc(unittest.TestCase):
             self.assertIn("auto lo", content)
             self.assertIn("add networkmanager default", log.read_text(encoding="utf-8"))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_preserves_orig_when_unparseable_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "rc.log"
@@ -76,6 +80,7 @@ class TestPmosUiOpenrc(unittest.TestCase):
             self.assertIn("iface lo inet loopback", content)
             self.assertIn("add networkmanager default", log.read_text(encoding="utf-8"))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_leaves_valid_file_untouched(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "rc.log"

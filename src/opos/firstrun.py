@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import os
+import posixpath
 import re
 import secrets
 import subprocess
@@ -267,7 +268,7 @@ def restart_kiosk(env=None, run=subprocess.run):
     Fixed argument list, no shell, nothing from a request in it. Returns whether a process was signalled.
     """
     env = os.environ if env is None else env
-    profile = os.path.join(env.get("HOME") or str(Path.home()), *KIOSK_PROFILE)
+    profile = posixpath.join(env.get("HOME") or str(Path.home()), *KIOSK_PROFILE)
     argv = ["pkill", "-TERM", "-f", "--", "--user-data-dir=" + _ere(profile) + "( |$)"]
     if hasattr(os, "getuid"):
         argv[2:2] = ["-u", str(os.getuid())]

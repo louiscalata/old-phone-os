@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,7 @@ class TestKiosk(unittest.TestCase):
         self.launcher = Path(__file__).resolve().parents[1] / "packaging/pmos/opos/opos-kiosk"
         self.text = self.launcher.read_text()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_chromium_launch(self):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
@@ -30,6 +32,7 @@ class TestKiosk(unittest.TestCase):
         r = subprocess.run(["sh", str(self.launcher)], capture_output=True, text=True, env=env)
         self.assertEqual((r.returncode, r.stdout.splitlines(), r.stderr), (0, ARGS, ""))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_posix_syntax(self):
         r = subprocess.run(["sh", "-n", str(self.launcher)], capture_output=True)
         self.assertEqual(r.returncode, 0)

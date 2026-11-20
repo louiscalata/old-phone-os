@@ -117,6 +117,7 @@ class BuildIdentity(unittest.TestCase):
         self.installs()
         return self.finish()
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_preserves_symlinked_base_without_following_it_outside_image(self):
         self.build()
         self.assertEqual((self.root / "usr/lib/os-release").read_bytes(), self.original)
@@ -134,6 +135,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual((self.root / "etc/hostname").read_text(), "opos\n")
         self.assertIn("Old Phone OS " + project_version(), (self.root / "etc/issue").read_text())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unchanged_powerkey_files_are_still_in_the_image_inventory(self):
         paths = (
             "usr/libexec/opos/opos-unblank",
@@ -152,6 +154,7 @@ class BuildIdentity(unittest.TestCase):
         manifest = json.loads(self.finish())
         self.assertTrue(set(paths) <= {entry["path"] for entry in manifest["files"]})
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_exact_inputs_give_identical_manifest_bytes_on_repeated_finish(self):
         first = self.build()
         os.utime(self.root / "etc/issue", (1, 1))
@@ -159,6 +162,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(first, identity.canonical(json.loads(first)))
         self.assertNotIn(str(self.t).encode(), first)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fresh_roots_with_identical_inputs_have_identical_manifests(self):
         first = self.build()
         import shutil
@@ -171,6 +175,7 @@ class BuildIdentity(unittest.TestCase):
         self.put("usr/local/sbin/sfduo-usb-gadget.sh", b"#!/bin/sh\ntrue\n")
         self.assertEqual(first, self.build())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_base_hash_time_and_effective_switches_are_recorded(self):
         m = json.loads(self.build())
         self.assertEqual(m["base"]["sha256"], hashlib.sha256(self.base.read_bytes()).hexdigest())
@@ -184,6 +189,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(m["switches"]["OPOS_DEV_SSH_PUBKEY"], "0")
         self.assertEqual(m["switches"]["OPOS_UPDATE_URL"], "")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_build_mode_is_hashed_deterministically_and_tampering_fails(self):
         first = self.build()
         m = json.loads(first)
@@ -194,6 +200,7 @@ class BuildIdentity(unittest.TestCase):
         with self.assertRaises(ValueError):
             identity.verify(self.root)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_gadget_fails_finish_like_missing_watchdog(self):
         self.prepare()
         self.installs()
@@ -210,12 +217,14 @@ class BuildIdentity(unittest.TestCase):
                 finally:
                     path.write_bytes(data)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_omitted_epoch_build_uses_selected_ref_commit_time(self):
         self.env.pop("SOURCE_DATE_EPOCH")
         m = json.loads(self.build())
         self.assertEqual(m["source_date_epoch"], 1794000000)
         self.assertEqual(identity.verify(self.root), m)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_invalid_explicit_epoch_and_no_shell_execution_from_base(self):
         script = block("build-image.sh", "identity epoch") + block("build-image.sh", "identity prepare")
         for value in ("", "-1", "tomorrow", "1.2", "253402300800"):
@@ -228,6 +237,7 @@ class BuildIdentity(unittest.TestCase):
         self.build()
         self.assertFalse(marker.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_absolute_dropin_link_reads_image_target_instead_of_builder(self):
         self.prepare()
         self.installs()
@@ -240,6 +250,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(m["switches"]["OPOS_TEST"], "image")
         self.assertEqual(host.read_text(encoding="utf-8"), "Environment=OPOS_TEST=builder\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_absolute_dropin_directory_link_is_resolved_in_image(self):
         self.prepare()
         self.installs()
@@ -251,6 +262,7 @@ class BuildIdentity(unittest.TestCase):
         self.put("etc/opos/dropins/90-test.conf", b"Environment=OPOS_TEST=image-only\n")
         self.assertEqual(json.loads(self.finish())["switches"]["OPOS_TEST"], "image-only")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_utf8_inputs_have_identical_manifests_in_non_utf8_locale(self):
         self.put("etc/passwd", "droidian:x:32011:32011:Simul\u00e9:/srv/droidian:/bin/sh\n".encode("utf-8"))
         self.prepare()
@@ -280,6 +292,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual((self.root / "etc/opos/image.json").read_bytes(), expected)
         self.assertEqual(json.loads(expected)["switches"]["OPOS_TEST"], "caf\u00e9")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_covers_runtime_config_helpers_symlinks_and_changed_base_files(self):
         self.prepare()
         self.installs()
@@ -295,6 +308,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(len(m["files"]), len(files))
         identity.verify(self.root)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unchanged_wifi_compat_file_is_still_in_the_image_inventory(self):
         self.put(WIFI_COMPAT, WIFI_COMPAT_BYTES).chmod(0o644)
         m = json.loads(self.build())
@@ -327,6 +341,7 @@ class BuildIdentity(unittest.TestCase):
         check = 'fail=0\ncheck() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }\n'
         return self.shell(stat + check + block("verify-image.sh", "wifi compat") + "\nexit $fail\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_wifi_compat_build_writes_exact_bytes_in_dev_and_release_and_keeps_the_base_scan_setting(self):
         scan = self.put(
             "etc/NetworkManager/conf.d/99-wifi-disable-random-mac.conf", b"[device]\nwifi.scan-rand-mac-address=no\n"
@@ -347,6 +362,7 @@ class BuildIdentity(unittest.TestCase):
                 self.assertEqual(p.stdout.count("PASS Wi-Fi compatibility:"), 1)
                 self.assertNotIn("FAIL", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_wifi_compat_build_replaces_an_inherited_link_without_changing_its_target(self):
         target = self.put("etc/NetworkManager/base.conf", b"base setting\n")
         conf = target.parent / "conf.d/90-opos-wifi-compat.conf"
@@ -357,11 +373,13 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(conf.read_bytes(), WIFI_COMPAT_BYTES)
         self.assertEqual(target.read_bytes(), b"base setting\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_wifi_compat_verification_rejects_a_missing_file(self):
         p = self.wifi_verify()
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_wifi_compat_verification_rejects_wrong_mode_or_owner(self):
         conf = self.put(WIFI_COMPAT, WIFI_COMPAT_BYTES)
         for mode, owner in ((0o600, "0:0"), (0o664, "0:0"), (0o4644, "0:0"), (0o644, "1000:0"), (0o644, "0:1000")):
@@ -371,6 +389,7 @@ class BuildIdentity(unittest.TestCase):
                 self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
                 self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_wifi_compat_verification_rejects_any_changed_bytes(self):
         for data in (
             WIFI_COMPAT_BYTES + b"wifi.cloned-mac-address=permanent\n",
@@ -385,6 +404,7 @@ class BuildIdentity(unittest.TestCase):
                 self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
                 self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_wifi_compat_verification_rejects_a_link_or_directory(self):
         target = self.put("etc/NetworkManager/base.conf", WIFI_COMPAT_BYTES)
         target.chmod(0o644)
@@ -400,6 +420,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("FAIL Wi-Fi compatibility:", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_optional_switches_and_config_are_baked_without_builder_paths(self):
         self.env.update(OPOS_DEV_SSH_PUBKEY="/not-recorded/login.pub", OPOS_DEV_USB_SHELL="1", OPOS_NET_POLKIT="1")
         self.prepare()
@@ -419,6 +440,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual(s["OPOS_UPDATE_URL"], "https://updates.example.org/latest.json")
         self.assertNotIn(b"/not-recorded", raw)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_plain_base_and_missing_id_like(self):
         (self.root / "etc/os-release").unlink()
         self.original = b'NAME="Example Base"\nID=example\n'
@@ -427,6 +449,7 @@ class BuildIdentity(unittest.TestCase):
         fields = identity.os_release((self.root / "etc/os-release").read_text())
         self.assertEqual(fields["ID_LIKE"], "example")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rebuild_preserves_upstream_identity_and_hashes_identical_installs(self):
         first = json.loads(self.build())
         self.prepare()
@@ -435,6 +458,7 @@ class BuildIdentity(unittest.TestCase):
         self.assertEqual((self.root / "usr/lib/os-release.base").read_bytes(), self.original)
         self.assertEqual(second["files"], first["files"])
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_verify_shell_block_accepts_build_then_rejects_corruption(self):
         self.build()
         prelude = (
@@ -614,6 +638,7 @@ class ReadersAndChecks(unittest.TestCase):
                     )
                     manifest.write_text(json.dumps({"version": "0.2.0", "revision": REVISION}), encoding="utf-8")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_permission_denied_is_incomplete_coverage_only_for_unprivileged_opt_in(self):
         private = self.root / "etc/opos/monitor.env"
         private.write_bytes(b"# simulated private configuration\n")
@@ -644,7 +669,8 @@ class ReadersAndChecks(unittest.TestCase):
         self.assertEqual(private.stat().st_mode & 0o777, 0o600)
 
     @unittest.skipUnless(
-        os.geteuid() == 0, "requires root to create a root-owned mode-0600 fixture and drop to an unprivileged UID"
+        getattr(os, "geteuid", lambda: -1)() == 0,
+        "requires POSIX root to create a root-owned mode-0600 fixture and drop to an unprivileged UID",
     )
     def test_root_owned_private_file_root_verification_and_unprivileged_selftest(self):
         private = self.root / "etc/opos/monitor.env"

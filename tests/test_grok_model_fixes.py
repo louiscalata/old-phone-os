@@ -4,6 +4,7 @@
 import contextlib
 import io
 import json
+import sys
 import tempfile
 import threading
 import unittest
@@ -337,6 +338,7 @@ class TestNUninstall(unittest.TestCase):
     def test_linux_failed_stop_preserves_unit(self):
         self.check_failed_stop("linux")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_darwin_failed_stop_preserves_plist(self):
         self.check_failed_stop("darwin")
 

@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -88,6 +89,7 @@ class ClockPage(unittest.TestCase):
         )
         return log
 
+    @unittest.skipIf(sys.platform == "win32", "needs a POSIX-shell paplay stub on PATH")
     def test_the_clock_thread_path_plays_the_ramp_through_paplay(self):
         log = self._stub('printf \'%s\\n\' "$*" >> "$OPOS_PAPLAY_LOG"')
         event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
@@ -99,6 +101,7 @@ class ClockPage(unittest.TestCase):
         self.assertTrue(lines[-1].startswith("--volume %d " % (70 * 655)), lines[-1])
         self.assertTrue(all(line.endswith("alarm.wav") for line in lines))
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_stop_on_the_page_ends_a_ramp_that_is_playing(self):
         log = self._stub('printf \'%s\\n\' "$*" >> "$OPOS_PAPLAY_LOG"\nexec sleep 30')
         self.enterContext(
@@ -133,6 +136,7 @@ class ClockPage(unittest.TestCase):
             self.assertEqual(len(seen.read().splitlines()), 1)
         self.assertIsNone(clock_page._player().proc)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_stop_silences_even_when_nothing_is_ringing(self):
         player = clock_page._player()
         before = player.generation
@@ -141,6 +145,7 @@ class ClockPage(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertEqual(player.generation, before + 1)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_a_stop_between_the_tick_and_the_ramp_wins(self):
         log = self._stub('printf \'%s\\n\' "$*" >> "$OPOS_PAPLAY_LOG"')
         event = Event("ring", "alarm", "a", datetime.fromisoformat(FIRE), "Alarm 07:00")
@@ -154,6 +159,7 @@ class ClockPage(unittest.TestCase):
             clock_page._cycle()
         self.assertFalse(os.path.exists(log))
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_a_locked_phone_shows_the_ring_without_its_label_and_stop_and_snooze_end_the_beep(self):
         from opos import lockpin
 
@@ -238,6 +244,7 @@ class ClockPage(unittest.TestCase):
             self.assertIn(b"Pills for Ana", raw)
             self.assertIsNone(json.loads(raw)["ringing"])
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_ring_snooze_stop_and_a_clock_that_is_not_set(self):
         with running(self.env) as server:
             token = server.RequestHandlerClass.token
@@ -326,6 +333,7 @@ console.log('ok');
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("ok", proc.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_tick_is_refused_without_the_test_hook_and_the_main_page_does_not_grow(self):
         before = page()
         env = dict(self.env, OPOS_CLOCK_TEST="0")
@@ -373,6 +381,7 @@ class ClockSnapshot(unittest.TestCase):
         self.assertEqual(code, 200, snap)
         return snap
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_one_shot_snapshot_ring_next_tick_snooze_stop_and_reload(self):
         snap = self.send("add", hour=7, minute=0, label="Kitchen")
         row = snap["alarms"][0]
@@ -416,6 +425,7 @@ class ClockSnapshot(unittest.TestCase):
         self.assertFalse(snap["alarms"][0]["enabled"])
         self.assertIsNone(snap["next"])
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_unknown_clock_snapshot_and_missed_restart(self):
         self.send("add", hour=7, minute=0)
         before = clock_page.book().last_seen
@@ -431,6 +441,7 @@ class ClockSnapshot(unittest.TestCase):
         self.assertFalse(snap["alarms"][0]["enabled"])
         self.assertEqual(snap["notices"], ["Missed alarm 07:00"])
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_toggle_off_removes_upcoming_snooze_and_does_not_ring_later(self):
         ident = self.send("add", hour=7, minute=0)["alarms"][0]["id"]
         self.send("tick", now=FIRE)
@@ -443,6 +454,7 @@ class ClockSnapshot(unittest.TestCase):
         self.assertIsNone(snap["next"])
         self.assertFalse(snap["alarms"][0]["enabled"])
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_snooze_of_an_alarm_that_never_rang_is_a_bad_request(self):
         before = self.send("add", hour=7, minute=0)
         code, result = clock_page.post({"action": "snooze", "id": before["alarms"][0]["id"]})

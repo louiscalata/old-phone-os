@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import sys
 import threading
 import unittest
 from contextlib import contextmanager
@@ -105,6 +106,7 @@ def post(server, path, payload, token):
 
 
 class StoreTests(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_round_trip_mode_and_corrupt_recovery(self):
         folder = Path(self.enterContext(self._tmp()))
         saved = storemod.Store(folder)
@@ -126,6 +128,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(note2, "")
         self.assertFalse(list(folder.glob(".contacts.json.tmp")))
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_wrong_schema_is_set_aside_and_oversize_is_refused(self):
         folder = Path(self.enterContext(self._tmp()))
         saved = storemod.Store(folder)

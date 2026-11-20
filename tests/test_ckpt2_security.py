@@ -37,6 +37,7 @@ class Findings(unittest.TestCase):
             timeout=30,
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_1_inherited_usb_shell_does_not_survive_the_builder_helper_call(self):
         r = self.root
         unit = r / "lib/systemd/system/telnet.service"
@@ -53,6 +54,7 @@ class Findings(unittest.TestCase):
         self.assertFalse(os.path.lexists(wants / "telnet.service"))
         self.assertTrue((r / "etc/inetd.conf").read_text().startswith("# opos-closed "))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_2_build_rejects_a_quoted_password_match(self):
         (self.root / "etc/ssh/sshd_config.d/20-local.conf").write_text(
             "Match Address " + usb.USB_NET + '\n PasswordAuthentication "yes"\n'
@@ -60,6 +62,7 @@ class Findings(unittest.TestCase):
         p = usb.run_build(self.root)
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_2_verifier_rejects_a_quoted_password_match(self):
         self.assertEqual(usb.run_build(self.root).returncode, 0)
         (self.root / "etc/ssh/sshd_config.d/20-local.conf").write_text(
@@ -67,12 +70,14 @@ class Findings(unittest.TestCase):
         )
         self.assertNotEqual(usb.run_verify(self.root).returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_2_verifier_requires_the_global_include(self):
         self.assertEqual(usb.run_build(self.root).returncode, 0)
         (self.root / "etc/ssh/sshd_config").write_text("UsePAM yes\n")
         p = usb.run_verify(self.root)
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_3_verifier_rejects_authentication_disabling_defaults(self):
         (self.root / "etc/sudoers.d").mkdir()
         (self.root / "etc/sudoers").write_text("%sudo ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n")
@@ -96,16 +101,19 @@ class Findings(unittest.TestCase):
             **env,
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_4_an_owner_key_is_required_before_copying(self):
         p = self.preflight(OPOS_OWNER_SSH_PUBKEY="", OPOS_DEV_SSH_PUBKEY="", OPOS_ALLOW_NO_SSH="0")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("OPOS_OWNER_SSH_PUBKEY", p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_4_an_empty_owner_key_is_refused_before_copying(self):
         p = self.preflight(OPOS_OWNER_SSH_PUBKEY="/dev/null", OPOS_DEV_SSH_PUBKEY="", OPOS_ALLOW_NO_SSH="0")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertNotIn("REACHED-COPY", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_4_an_empty_developer_key_cannot_substitute_for_owner_recovery(self):
         p = self.preflight(OPOS_OWNER_SSH_PUBKEY="", OPOS_DEV_SSH_PUBKEY="/dev/null", OPOS_ALLOW_NO_SSH="0")
         self.assertEqual(p.returncode, 2, p.stderr)
@@ -147,7 +155,11 @@ class Findings(unittest.TestCase):
     def test_7_dev_sudo_adds_a_persistent_screen_warning_without_changing_html(self):
         before = panes.inject("<head></head><body>phone</body>", "n1", {"OPOS_PANES": "1"})
         original = Path.exists
-        with mock.patch.object(Path, "exists", lambda p: str(p) == "/etc/sudoers.d/90-opos-dev" or original(p)):
+
+        def _is_dev_sudo(p):
+            return str(p).replace("\\", "/").endswith("/etc/sudoers.d/90-opos-dev")
+
+        with mock.patch.object(Path, "exists", lambda p: _is_dev_sudo(p) or original(p)):
             css = panes.css_text(env={"OPOS_PANES": "1"})
         self.assertIn('content:"DEV: passwordless sudo for droidian"', css)
         self.assertIn("position:fixed", css)
@@ -156,7 +168,7 @@ class Findings(unittest.TestCase):
         def closed(
             p,
         ):  # what Path.exists does before Python 3.14 when /etc/sudoers.d is 0750 and the server is not root
-            if str(p) == "/etc/sudoers.d/90-opos-dev":
+            if _is_dev_sudo(p):
                 raise PermissionError(13, "Permission denied", str(p))
             return original(p)
 
@@ -187,6 +199,7 @@ class Findings(unittest.TestCase):
             timeout=30,
         )
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_2_other_include_paths_are_checked_in_both_scripts(self):
         main = self.root / "etc/ssh/sshd_config"
         main.write_text(main.read_text() + "Include extra.conf\n")
@@ -198,6 +211,7 @@ class Findings(unittest.TestCase):
         self.assertEqual(usb.run_build(self.root).returncode, 0)
         self.assertEqual(self.policy("ssh").returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_2_native_sshd_rejects_invalid_config_and_disabled_public_keys(self):
         self.assertEqual(usb.run_build(self.root).returncode, 0)
         main = self.root / "etc/ssh/sshd_config"
@@ -206,6 +220,7 @@ class Findings(unittest.TestCase):
             main.write_text(clean + setting + "\n")
             self.assertNotEqual(self.policy("ssh").returncode, 0, setting)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_3_builder_rejects_inherited_defaults_and_external_includes(self):
         (self.root / "etc/sudoers.d").mkdir()
         (self.root / "etc/sudoers").write_text("%sudo ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n")
@@ -252,6 +267,7 @@ class Findings(unittest.TestCase):
             **env,
         )
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_4_recovery_repairs_home_and_rejects_bad_permissions_and_missing_startup(self):
         pub, home = self.recovery_root()
         home.chmod(0o777)
@@ -267,6 +283,7 @@ class Findings(unittest.TestCase):
         (self.root / "etc/systemd/system/multi-user.target.wants/ssh.service").unlink()
         self.assertNotEqual(self.policy("recovery").returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_4_explicit_no_ssh_is_required_and_has_no_authorized_key(self):
         p = self.preflight(OPOS_OWNER_SSH_PUBKEY="", OPOS_DEV_SSH_PUBKEY="", OPOS_ALLOW_NO_SSH="1")
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -278,6 +295,7 @@ class Findings(unittest.TestCase):
         self.assertFalse((home / ".ssh/authorized_keys").exists())
         self.assertTrue((self.root / "etc/opos/no-ssh").is_file())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_4_recovery_refuses_linked_ancestors_before_writing_keys(self):
         pub, home = self.recovery_root()
         outside = Path(self.tmp.name) / "outside"
@@ -287,6 +305,7 @@ class Findings(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0, p.stderr)
         self.assertFalse((outside / ".ssh/authorized_keys").exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_5_release_refuses_inherited_dev_inputs_and_installed_dev_files(self):
         for name, value in (
             ("OPOS_DEV_SSH_PUBKEY", "/dev/null"),
@@ -313,6 +332,7 @@ class Findings(unittest.TestCase):
             self.assertNotEqual(self.policy("release").returncode, 0, rel)
             path.unlink()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_5_owner_provisioning_replaces_inherited_keys_without_enabling_devtools(self):
         pub, home = self.recovery_root()
         (home / ".ssh/authorized_keys").write_text("inherited developer key\n")

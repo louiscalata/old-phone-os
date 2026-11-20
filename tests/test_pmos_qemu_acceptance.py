@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import pathlib
 import subprocess
+import sys
 import unittest
 
 
@@ -14,6 +15,7 @@ class TestQemuAcceptance(unittest.TestCase):
         result = subprocess.run(["sh", "-s", "--", *args], input=self.script, capture_output=True, text=True, timeout=5)
         return (result.returncode, result.stdout, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_default_plan(self):
         self.assertEqual(
             self.run_script(),
@@ -24,8 +26,10 @@ class TestQemuAcceptance(unittest.TestCase):
             ),
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_help(self):
         self.assertEqual(self.run_script("--help"), (0, "usage: qemu-acceptance.sh [--help]\n", ""))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_unknown_option(self):
         self.assertEqual(self.run_script("--bogus"), (2, "", "usage: qemu-acceptance.sh [--help]\n"))

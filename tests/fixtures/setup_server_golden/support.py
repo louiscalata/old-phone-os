@@ -15,6 +15,7 @@ import base64
 import contextlib
 import io
 import json
+import os
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -171,7 +172,8 @@ class Driver:
         if isinstance(value, Path):
             return self.normalize(str(value))
         if isinstance(value, str) and value.startswith(str(self.root)):
-            return "<state>" + value[len(str(self.root)) :]
+            # Record POSIX separators so the corpus matches on Windows too.
+            return "<state>" + value[len(str(self.root)) :].replace(os.sep, "/")
         if isinstance(value, (list, tuple)):
             return [self.normalize(item) for item in value]
         if isinstance(value, dict):
@@ -403,7 +405,7 @@ class Driver:
             except (Exception, FixtureAbortError) as exc:
                 error = exception_record(exc)
         files = {
-            str(path.relative_to(self.root)): base64.b64encode(path.read_bytes()).decode("ascii")
+            path.relative_to(self.root).as_posix(): base64.b64encode(path.read_bytes()).decode("ascii")
             for path in sorted(self.root.rglob("*"))
             if path.is_file()
         }

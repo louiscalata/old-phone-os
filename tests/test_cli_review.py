@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -46,6 +47,7 @@ class CliDetectionTest(unittest.TestCase):
 
 
 class CliStatusMarkerTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "os.mkfifo is POSIX-only")
     def test_status_fifo_marker_is_unverified(self):
         import io as _io
         import os as _os
@@ -111,6 +113,7 @@ class CliStatusMarkerTest(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, stdout)
             self.assertIn("persist: unverified", stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "os.mkfifo is POSIX-only")
     def test_status_marker_swap_race_is_unverified(self):
         import io as _io
         import os as _os

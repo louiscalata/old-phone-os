@@ -4,6 +4,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -64,16 +65,19 @@ class OposBenchTest(unittest.TestCase):
             timeout=10,
         )
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_help(self):
         result = self.run_bench("--help")
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, USAGE, ""))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_bad_arg(self):
         for args in [("bad",), ("--help", "extra")]:
             with self.subTest(args=args):
                 result = self.run_bench(*args)
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (2, "", USAGE))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_bad_sample(self):
         for sample in ("abc", "", "-1", "61", "1.5"):
             with self.subTest(sample=sample):
@@ -81,6 +85,7 @@ class OposBenchTest(unittest.TestCase):
                 result = self.run_bench()
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (2, "", USAGE))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_full_fixture(self):
         self.apk()
         self.write("proc/meminfo", "MemTotal: 2048000 kB\nMemAvailable: 1024000 kB\n")
@@ -98,6 +103,7 @@ class OposBenchTest(unittest.TestCase):
         expected = ["1", "12.3", "cage", "1000", "11.1", "3", "apk", "3", "openrc"]
         self.assertEqual(result.stdout, "".join(f"{k}={v}\n" for k, v in zip(KEYS, expected)))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_empty_root_all_na(self):
         result = self.run_bench()
         self.assertEqual(result.returncode, 0)
@@ -116,6 +122,7 @@ class OposBenchTest(unittest.TestCase):
         self.write(f"proc/{pid}/comm", name + "\n")
         self.write(f"proc/{pid}/stat", f"{pid} ({stat_name or name}) S " + "0 " * 18 + f"{ticks} 0\n")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_boot_priority_and_smallest_starttime(self):
         self.process(1, "agetty", 100)
         self.process(42, "cage", 2400)
@@ -126,6 +133,7 @@ class OposBenchTest(unittest.TestCase):
         self.assertEqual(values["boot_to_login_src"], "cage")
         self.assertEqual(values["boot_to_login_s"], "12.3")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_boot_match_without_stat_preserves_priority(self):
         self.write("proc/42/comm", "cage\n")
         self.process(43, "agetty", 100)
@@ -133,11 +141,13 @@ class OposBenchTest(unittest.TestCase):
         self.assertEqual(values["boot_to_login_src"], "cage")
         self.assertEqual(values["boot_to_login_s"], "NA")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_hz_fallback(self):
         self.process(42, "login", 1234)
         self.env["OPOS_BENCH_HZ"] = "invalid"
         self.assertEqual(self.values()["boot_to_login_s"], "12.3")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_cpu_unavailable_or_nonincreasing(self):
         self.write("proc/stat", "cpu  100 0 100 700 100 0 0 0\n")
         for content in (None, "cpu  100 0 100 700 100 0 0 0\n", "cpu  0 0 0 1 0 0 0 0\n", "intr 123\n"):
@@ -148,12 +158,14 @@ class OposBenchTest(unittest.TestCase):
                 self.env["OPOS_BENCH_STAT2"] = str(path)
                 self.assertEqual(self.values()["idle_cpu_pct"], "NA")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_meminfo_requires_both_fields(self):
         for content in ("MemTotal: 2048000 kB\n", "MemAvailable: 1024000 kB\n"):
             with self.subTest(content=content):
                 self.write("proc/meminfo", content)
                 self.assertEqual(self.values()["idle_ram_mb"], "NA")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_dpkg_fallback_and_apk_priority(self):
         path = self.bin / "dpkg-query"
         path.write_text("#!/bin/sh\nprintf '.\\n.\\n'\n")
@@ -169,6 +181,7 @@ class OposBenchTest(unittest.TestCase):
         path.write_text("#!/bin/sh\nprintf 'partial\\n'\nexit 1\n")
         path.chmod(0o755)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_failed_apk_reports_na(self):
         self.failing("apk")
         values = self.values()
@@ -179,6 +192,7 @@ class OposBenchTest(unittest.TestCase):
         path.write_text("#!/bin/sh\nprintf 'a.service enabled\\nb.service enabled\\n'\n")
         path.chmod(0o755)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     @unittest.skipIf(os.path.isdir("/etc/runlevels"), "host uses OpenRC runlevels")
     def test_failed_systemctl_reports_na(self):
         self.failing("systemctl")
@@ -186,11 +200,13 @@ class OposBenchTest(unittest.TestCase):
         values = self.values()
         self.assertEqual((values["init"], values["enabled_services"]), ("systemd", "NA"))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_systemd_only_without_fake_root(self):
         self.systemctl()
         values = self.values()
         self.assertEqual((values["init"], values["enabled_services"]), ("none", "NA"))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     @unittest.skipIf(os.path.isdir("/etc/runlevels"), "host uses OpenRC runlevels")
     def test_systemd_fallback_on_live_root(self):
         self.systemctl()
@@ -198,6 +214,7 @@ class OposBenchTest(unittest.TestCase):
         values = self.values()
         self.assertEqual((values["init"], values["enabled_services"]), ("systemd", "2"))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX host tools on PATH")
     def test_empty_runlevels(self):
         (self.root / "etc/runlevels").mkdir(parents=True)
         values = self.values()

@@ -4,6 +4,7 @@
 import os
 import stat
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -40,6 +41,7 @@ class CloseExposure(unittest.TestCase):
     def run_script(self, **env):
         subprocess.run(["sh", str(SCRIPT), str(self.root)], check=True, env={**os.environ, **env})
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_default_binds_loopback_and_closes_the_shell(self):
         self.run_script()
         adbd = (self.root / "etc/systemd/system/adbd.service").read_text(encoding="utf-8")
@@ -64,12 +66,14 @@ class CloseExposure(unittest.TestCase):
         self.assertEqual(mode, 0o755)
         self.assertTrue((self.root / "etc/systemd/system/multi-user.target.wants/opos-debug-port.service").is_symlink())
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_inherited_dev_gate_cannot_keep_the_shell(self):
         self.run_script(OPOS_DEV_USB_SHELL="1")
         self.assertEqual((self.root / "etc/opos/usb-shell.conf").read_text(encoding="utf-8"), "enabled=0\n")
         self.assertFalse(os.path.lexists(self.root / "etc/systemd/system/multi-user.target.wants/telnet.service"))
         self.assertTrue((self.root / "etc/inetd.conf").read_text(encoding="utf-8").startswith("# opos-closed "))
 
+    @unittest.skipIf(sys.platform == "win32", "uses POSIX absolute paths")
     def test_a_second_run_stays_on_loopback(self):
         self.run_script()
         self.run_script()
@@ -79,6 +83,7 @@ class CloseExposure(unittest.TestCase):
 
 
 class ExposureWiring(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_build_calls_the_script_and_the_kiosk_stays_on_loopback(self):
         build = (DUO / "build-image.sh").read_text(encoding="utf-8")
         self.assertIn('sh "$here/close-exposure.sh" "$r"', build)

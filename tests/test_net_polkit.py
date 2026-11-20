@@ -4,6 +4,7 @@
 import json
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -64,22 +65,27 @@ const context = {polkit: {
     addRule: callback => callbacks.push(callback),
     Result: {YES: "YES"},
 }};
-vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), context);
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), context);
 if (callbacks.length !== 1) throw new Error("expected one polkit rule");
-const results = JSON.parse(process.argv[2]).map(test => {
+const results = JSON.parse(fs.readFileSync(process.argv[3], "utf8")).map(test => {
     const subject = {user: test.user};
     if (test.system_unit !== null) subject.system_unit = test.system_unit;
     return callbacks[0]({id: test.action}, subject) === context.polkit.Result.YES;
 });
 process.stdout.write(JSON.stringify(results));
 """
-        result = subprocess.run(
-            [NODE, "-e", driver, str(RULE), json.dumps(cases)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            stdin=subprocess.DEVNULL,
-        )
+        with tempfile.TemporaryDirectory() as td:
+            script = Path(td) / "driver.js"
+            cases_path = Path(td) / "cases.json"
+            script.write_text(driver, encoding="utf-8")
+            cases_path.write_text(json.dumps(cases), encoding="utf-8")
+            result = subprocess.run(
+                [NODE, str(script), str(RULE), str(cases_path)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
         decisions = json.loads(result.stdout)
         self.assertEqual(len(decisions), len(cases))

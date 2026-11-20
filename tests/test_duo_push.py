@@ -2,17 +2,20 @@
 import pathlib
 import re
 import subprocess
+import sys
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "deploy" / "push-to-duo.sh"
 
 
 class DuoPushTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_target_exits_2(self):
         proc = subprocess.run(["sh", str(SCRIPT), "--dry-run"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 2)
         self.assertIn("usage: push-to-duo.sh", proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_dry_run_ipv6_link_local_forms(self):
         proc = subprocess.run(["sh", str(SCRIPT), "--dry-run", "admin@fe80::1%8"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0)
@@ -49,6 +52,7 @@ class DuoPushTest(unittest.TestCase):
         self.assertLess(lock_mkdir, install)
         self.assertLess(lock_trap, install)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_script_text_static(self):
         text = SCRIPT.read_text()
         self.assertEqual(text.splitlines()[1], "# SPDX-License-Identifier: GPL-3.0-or-later")
@@ -88,6 +92,7 @@ class DuoPushTest(unittest.TestCase):
         self.assertIn('rm -f "$stage/opos-push.tgz"', body)
         self.assertIn('tar -xzf "$stage/opos-push.tgz"', body)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_deployment_propagates_installer_failure(self):
         import os
         import stat
@@ -191,6 +196,7 @@ class DuoPushTest(unittest.TestCase):
             self.assertFalse(os.path.exists(local_archive))
             self.assertFalse(os.path.exists(os.path.dirname(local_archive)))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_failed_install_restores_previous_deployment(self):
         import os
         import tarfile

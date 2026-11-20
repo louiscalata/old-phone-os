@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Security checks for Essentials messaging."""
 
+import sys
 import unittest
 from unittest import mock
 
@@ -349,6 +350,7 @@ class TestEssentialsSecurity(unittest.TestCase):
         self.assertEqual(self.e.retry_outbox(), 0)
         self.assertEqual(len(self.e.outbox), 2)
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_f016_message_operations_do_not_write_files(self) -> None:
         """Send, retry, and receive write no files."""
         import builtins

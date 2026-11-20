@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -80,6 +81,7 @@ class AppRoutes(unittest.TestCase):
                     if path.startswith("/api/"):
                         self.assertEqual(post(server, path, {}, token)[0], 404, path)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_each_app_answers_alone_and_the_others_stay_off(self):
         inbox.reset()
         self.addCleanup(inbox.reset)

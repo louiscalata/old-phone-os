@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import re
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -27,6 +28,7 @@ class DocsScriptPathsTest(unittest.TestCase):
     def test_minimum_paths_found(self):
         self.assertGreaterEqual(len(find_paths()), 3)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sh_syntax_ok(self):
         for p in find_paths():
             if p.endswith(".sh") and (ROOT / p).is_file():

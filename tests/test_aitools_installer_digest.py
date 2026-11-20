@@ -334,7 +334,11 @@ class SetupDryRunTests(unittest.TestCase):
         (shipped,) = catalog.load(ROOT / "deploy" / "ai-tools.json")
         runner = functools.partial(wizard.install_selected, free_mb_fn=lambda _p: 10**6)
         # The phone's default prefix, and a longer one like a macOS account named first.last.
-        for prefix in ("/" + "home/user/.local/share/opos", "/" + "Users/firstname.lastname/.local/share/opos"):
+        if sys.platform == "win32":
+            prefixes = (r"C:\opos\user\.local\share\opos", r"C:\opos\firstname.lastname\.local\share\opos")
+        else:
+            prefixes = ("/" + "home/user/.local/share/opos", "/" + "Users/firstname.lastname/.local/share/opos")
+        for prefix in prefixes:
             with self.subTest(prefix=prefix), tempfile.TemporaryDirectory() as td:
                 home = Path(td) / "home"
                 home.mkdir()

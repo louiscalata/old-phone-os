@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -49,6 +50,7 @@ def _run_hardener(extra_env, extra_args=None):
 
 
 class HardenLegacyTestVarTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_test_warns_when_new_var_unset(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc = _run_hardener({"TEST": "1", "OPOS_ROOT": tmp})
@@ -57,6 +59,7 @@ class HardenLegacyTestVarTest(unittest.TestCase):
         self.assertIn("OPOS_HARDEN_TEST", proc.stderr)
         self.assertIn("ignor", proc.stderr.lower())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_no_legacy_warning_when_new_var_set(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc = _run_hardener({"TEST": "1", "OPOS_HARDEN_TEST": "1", "OPOS_ROOT": tmp})
@@ -65,12 +68,14 @@ class HardenLegacyTestVarTest(unittest.TestCase):
 
 
 class HardenCheckPreservesTemporaryRootTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_legacy_test_check_preserves_temporary_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc = _run_hardener({"TEST": "1", "OPOS_ROOT": tmp}, ["--only", "no-such-step"])
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             self.assertIn("TEST is ignored", proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_check_mode_preserves_populated_temporary_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             etc_dir = os.path.join(tmp, "etc")
@@ -123,6 +128,7 @@ def _run_apply_with_isolated_root(extra_env):
 
 
 class HardenAmbiguousLegacyRejectionTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_ambiguous_legacy_request_warns_and_hardens_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             etc_dir = os.path.join(tmp, "etc")

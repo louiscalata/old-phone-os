@@ -283,6 +283,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(list((self.work / "tmp").iterdir()), [])
         self.assertFalse((self.work / "mounted").exists())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_unlisted_hash_is_refused_before_mount_and_names_the_staged_hash(self):
         self.allowlist.write_text("0" * 64 + "  some other base\n")
         p = self.run_builder()
@@ -292,6 +293,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(len([e for e in self.events() if e[0] == "cp"]), 1)
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_listed_opos_metadata_or_release_layout_is_refused_on_the_staged_copy(self):
         for rel in ("etc/opos/image.json", "opt/opos-releases", "opt/opos"):
             with self.subTest(marker=rel):
@@ -311,6 +313,7 @@ class Builder(unittest.TestCase):
                 self.assert_clean()
                 marker.rmdir() if rel == "opt/opos-releases" else marker.unlink()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_listed_opos_os_release_without_manifest_is_refused(self):
         for value in ("ID=opos\n", 'ID="opos" # previous OPOS\n'):
             with self.subTest(os_release=value):
@@ -321,6 +324,7 @@ class Builder(unittest.TestCase):
                 self.assertIn("already an OPOS image", p.stderr)
                 self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_listed_base_runs_the_full_builder_and_verifies_its_own_output(self):
         p = self.run_builder()
@@ -360,6 +364,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(list(self.work.glob(".opos-build.*")), [])
         self.assertFalse((self.work / "mounted").exists())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_already_hardened_dev_base_still_records_gadget_hash(self):
         self.put(usb.GADGET_REL, usb.GADGET.replace(usb.TELNET_LINE, "# root telnet disabled by OPOS"), 0o755)
@@ -374,6 +379,7 @@ class Builder(unittest.TestCase):
         entry = next(f for f in manifest["files"] if f["path"] == usb.GADGET_REL)
         self.assertEqual(entry["sha256"], hashlib.sha256(before).hexdigest())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_manifest_keeps_admitted_staged_hash_when_fsck_changes_image(self):
         p = self.run_builder(FIXTURE_FSCK_CHANGES_IMAGE="1")
@@ -384,6 +390,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(identity.verify(self.work / "result"), manifest)
         self.assertFalse((self.work / "mounted").exists())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_release_verifier_failure_leaves_no_output(self):
         p = self.run_builder(FIXTURE_VERIFY_STATUS="7", OPOS_VERIFY_IMAGE="0")
@@ -393,6 +400,7 @@ class Builder(unittest.TestCase):
         staged = next(e[3] for e in self.events() if e[0] == "mount")
         self.assertEqual((self.work / "verify-calls").read_text(), f"verify 1 {staged}\n")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_changed_copy_is_refused_before_a_writable_mount_and_removed(self):
         p = self.run_builder(FIXTURE_CORRUPT_COPY="1")
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -400,6 +408,7 @@ class Builder(unittest.TestCase):
         self.assert_clean()
         self.assertFalse(any(e[0] == "mount" for e in self.events()))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_dev_accepts_an_unlisted_reused_base_and_reports_verification_not_run(self):
         self.put("etc/opos/image.json", "reused dev image\n")
@@ -411,6 +420,7 @@ class Builder(unittest.TestCase):
         self.assertFalse((self.work / "verify-calls").exists())
         self.assertEqual(len([e for e in self.events() if e[0] == "mount"]), 1)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_dev_can_request_verification_explicitly(self):
         p = self.run_builder(release="0", OPOS_VERIFY_IMAGE="1")
@@ -418,6 +428,7 @@ class Builder(unittest.TestCase):
         staged = next(e[3] for e in self.events() if e[0] == "mount")
         self.assertEqual((self.work / "verify-calls").read_text(), f"verify 0 {staged}\n")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_dev_key_span_and_sudo_keep_the_existing_markers_on_a_reused_base(self):
         self.put("etc/opos/image.json", "reused dev fixture\n")
@@ -446,12 +457,14 @@ class Builder(unittest.TestCase):
             self.assertIn(value, (result / rel).read_text())
         self.assertIn("DEV IMAGE:", p.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_no_ssh_conflicts_with_keys_before_copying(self):
         p = self.run_builder(OPOS_OWNER_SSH_PUBKEY="unused.pub")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("OPOS_NO_SSH conflicts with SSH keys", p.stderr)
         self.assertFalse(any(e[0] in ("cp", "mount") for e in self.events()))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_existing_output_file_symlink_dangling_symlink_hardlink_and_directory_are_untouched(self):
         victim = self.work / "victim"
         victim.write_bytes(b"do not modify this inode")
@@ -479,6 +492,7 @@ class Builder(unittest.TestCase):
                     finally:
                         self.out.rmdir() if kind == "directory" else self.out.unlink(missing_ok=True)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_unwritable_output_directory_is_refused_before_copy(self):
         directory = self.work / "unwritable"
         directory.mkdir(mode=0o555)
@@ -490,6 +504,7 @@ class Builder(unittest.TestCase):
         self.assertFalse(any(e[0] in ("cp", "mount") for e in self.events()))
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_staged_image_is_created_exclusively_and_never_follows_a_preexisting_link(self):
         victim = self.work / "victim"
         victim.write_bytes(b"keep this")
@@ -499,6 +514,7 @@ class Builder(unittest.TestCase):
         self.assertFalse(any(e[0] in ("cp", "mount") for e in self.events()))
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_override_cannot_admit_an_unlisted_base(self):
         alternate = self.work / "alternate.sha256"
         shutil.copyfile(self.allowlist, alternate)
@@ -508,6 +524,7 @@ class Builder(unittest.TestCase):
         self.assertIn("not listed", p.stderr)
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_policy_has_no_allowlist_argument(self):
         alternate = self.work / "alternate.sha256"
         shutil.copyfile(self.allowlist, alternate)
@@ -528,11 +545,13 @@ class Builder(unittest.TestCase):
         )
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_missing_override_is_ignored_and_the_checkout_list_is_used(self):
         p = self.run_builder(OPOS_RELEASE_BASES=str(self.work / "absent.sha256"))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_base_layout_swap_cannot_hide_an_allowlisted_opos_image(self):
         shutil.copyfile(self.base, self.work / "pristine.img")
         self.put("etc/opos/image.json", "reused image\n")
@@ -542,6 +561,7 @@ class Builder(unittest.TestCase):
         self.assertIn("already an OPOS image", p.stderr)
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_source_replacement_after_copy_cannot_change_the_staged_image(self):
         p = self.run_builder(FIXTURE_CHANGE_SOURCE="1", FIXTURE_ASSERT_PRIVATE="1")
@@ -549,6 +569,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(self.base.read_bytes(), b"source replaced after copy")
         self.assertTrue(self.out.is_file())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_partial_mount_failure_removes_staging_and_never_creates_output(self):
         for release in ("0", "1"):
             with self.subTest(release=release):
@@ -556,6 +577,7 @@ class Builder(unittest.TestCase):
                 self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
                 self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_untrusted_parent_refuses_before_a_staging_entry_can_be_swapped(self):
         self.work.chmod(0o777)
         self.addCleanup(self.work.chmod, 0o700)
@@ -565,6 +587,7 @@ class Builder(unittest.TestCase):
         self.assertFalse(any(e[0] in ("mktemp", "cp", "stage-swap", "mount") for e in self.events()))
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_failed_builder_unmount_retains_the_backing_file_and_reports_mount(self):
         p = self.run_builder(FIXTURE_FAIL_UMOUNT="1")
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -574,6 +597,7 @@ class Builder(unittest.TestCase):
         self.assertIn(image, p.stderr)
         self.assertFalse(self.out.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_verifier_leaving_a_mount_cannot_publish_or_unlink_the_backing_file(self):
         (self.pkg / "verify-image.sh").write_text('mount -o ro,loop,noload "$1" "$(mktemp -d)"\nexit 0\n')
@@ -585,18 +609,21 @@ class Builder(unittest.TestCase):
         self.assertIn("still attached", p.stderr)
         self.assertFalse(self.out.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_release_rejects_developer_key_zero_before_copying(self):
         p = self.run_builder(OPOS_DEV_SSH_PUBKEY="0")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("refuses", p.stderr)
         self.assertFalse(any(e[0] in ("cp", "mount") for e in self.events()))
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_failed_checksum_reporting_happens_before_publication(self):
         p = self.run_builder(FIXTURE_FAIL_REPORT="1")
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_empty_stage_cleanup_failure_after_publication_preserves_success(self):
         p = self.run_builder(FIXTURE_FAIL_CLEANUP="1")
@@ -606,6 +633,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(len(stages), 1)
         self.assertEqual(list(stages[0].iterdir()), [])
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_publication_commit_ignores_handled_signals_and_reports_success(self):
         (self.bin / "python3").unlink()
@@ -618,6 +646,7 @@ class Builder(unittest.TestCase):
                 self.assertEqual(list(self.work.glob(".opos-build.*")), [])
                 self.out.unlink()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_newlineless_owner_comment_preserves_two_distinct_authorized_keys(self):
         owner, developer = self.work / "owner.pub", self.work / "developer.pub"
@@ -639,6 +668,7 @@ class Builder(unittest.TestCase):
         self.assertIn(ck.sudo.TEST_KEY.strip(), keys)
         self.assertIn(developer.read_text().strip(), keys)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_final_fsck_failure_never_verifies_or_publishes(self):
         for release in ("0", "1"):
@@ -648,6 +678,7 @@ class Builder(unittest.TestCase):
                 self.assertFalse((self.work / "verify-calls").exists())
                 self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_mount_fixture_reads_the_requested_image_instead_of_the_seed(self):
         self.put("etc/mount-proof", "from the image argument\n")
         self.pack_base()
@@ -669,6 +700,7 @@ class Builder(unittest.TestCase):
         p = subprocess.run([str(self.bin / "umount"), str(target)], env=env, capture_output=True, timeout=10)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_whole_release_verifier_refuses_dev_and_unmarked_image_before_image_code(self):
         for name in ("qemu-aarch64-static", "stat", "mountpoint"):
             if not (self.bin / name).exists():
@@ -701,6 +733,7 @@ class Builder(unittest.TestCase):
                 self.assertFalse(any(e[0] == "qemu-aarch64-static" for e in self.events()))
                 self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_dev_verifier_failure_removes_staging_and_never_creates_output(self):
         p = self.run_builder(release="0", OPOS_VERIFY_IMAGE="1", FIXTURE_VERIFY_STATUS="7")
@@ -708,6 +741,7 @@ class Builder(unittest.TestCase):
         self.assertIn("image verification failed", p.stderr)
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_plain_dev_build_overwrites_an_inherited_release_mode_and_selftest_warns(self):
         self.put("etc/opos/build-mode", "release\n")
@@ -720,6 +754,7 @@ class Builder(unittest.TestCase):
             st.ST.check_dev(ctx)
         self.assertIn(("WARN", "dev.build-mode", "DEV image: build mode is dev"), ctx.rows)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_output_created_during_verification_is_never_replaced_or_followed(self):
         victim = self.work / "victim"
@@ -730,6 +765,7 @@ class Builder(unittest.TestCase):
         self.assertEqual(victim.read_bytes(), b"keep this")
         self.assertEqual(list(self.work.glob(".opos-build.*")), [])
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     @unittest.skipUnless(SSHD, "needs a host sshd -T parser")
     def test_no_ssh_choice_masks_services_sockets_and_removes_enablements(self):
         wants = self.seed / "etc/systemd/system/multi-user.target.wants"
@@ -753,6 +789,7 @@ class Recovery(unittest.TestCase):
     recovery_root = ck.Findings.recovery_root
     provision = ck.Findings.provision
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_authorized_keys_default_and_matching_explicit_paths_are_accepted(self):
         pub, _ = self.recovery_root()
         main = self.root / "etc/ssh/sshd_config"
@@ -768,6 +805,7 @@ class Recovery(unittest.TestCase):
                 p = self.provision(pub)
                 self.assertEqual(p.returncode, 0, p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_authorized_keys_none_other_path_or_match_override_is_refused(self):
         pub, _ = self.recovery_root()
         main = self.root / "etc/ssh/sshd_config"
@@ -783,6 +821,7 @@ class Recovery(unittest.TestCase):
                 p = self.provision(pub)
                 self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_untraversable_or_writable_home_ancestor_and_unreadable_key_are_refused(self):
         pub, home = self.recovery_root()
         self.assertEqual(self.provision(pub).returncode, 0)
@@ -801,12 +840,14 @@ class Recovery(unittest.TestCase):
                 finally:
                     path.chmod(before)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_no_ssh_marker_alone_cannot_pass_without_masks(self):
         self.recovery_root()
         self.assertEqual(self.provision("", OPOS_NO_SSH="1").returncode, 0)
         (self.root / "etc/systemd/system/ssh.service").unlink()
         self.assertNotEqual(self.policy("recovery").returncode, 0)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_key_path_owned_by_another_user_is_refused(self):
         pub, _ = self.recovery_root()
         self.assertEqual(self.provision(pub).returncode, 0)
@@ -827,6 +868,7 @@ class OutputParent(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name).resolve()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_parent_rejects_group_or_other_writes_even_with_sticky_bit(self):
         parent = self.root / "out"
         parent.mkdir()
@@ -836,6 +878,7 @@ class OutputParent(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "OUT parent"):
                     self.policy["output_parent"](parent / "image")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_parent_owner_is_root_or_invoking_sudo_user(self):
         parent = self.root / "out"
         parent.mkdir(mode=0o700)
@@ -862,6 +905,7 @@ class OutputParent(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "OUT parent"):
                         self.policy["output_parent"](parent / "image")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_world_writable_ancestor_requires_sticky_bit_and_parent_is_resolved(self):
         ancestor = self.root / "ancestor"
         parent = ancestor / "out"
@@ -914,6 +958,7 @@ class VerifierUnmount(unittest.TestCase):
         footer = text.rsplit("# --- qa: END\n", 1)[1]
         return prefix + middle + "\n" + footer
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_real_verifier_failed_first_unmount_reports_and_retains_image(self):
         p = self.run_verifier(FIXTURE_FAIL_UMOUNT="1")
         self.assertNotEqual(p.returncode, 0)
@@ -924,6 +969,7 @@ class VerifierUnmount(unittest.TestCase):
         self.assertNotIn("VERIFY: PASS", p.stdout)
         self.assertTrue(Path(image).is_file())
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_failed_final_and_cleanup_unmount_cannot_pass(self):
         p = self.run_verifier(self.lifecycle("fail=0"), FIXTURE_FAIL_UMOUNT="1")
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -931,11 +977,13 @@ class VerifierUnmount(unittest.TestCase):
         self.assertIn("still attached", p.stderr)
         self.assertEqual(len([e for e in self.events() if e[0] == "umount"]), 2)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_cleanup_failure_overrides_an_otherwise_successful_exit(self):
         p = self.run_verifier(self.lifecycle("exit 0"), FIXTURE_FAIL_UMOUNT="1")
         self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("still attached", p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_cleanup_waits_for_owned_children_before_unmount(self):
         code = self.lifecycle('sleep 30 &\npids=$!\necho "OWNED_PID=$pids" >&2\nexit 0')
         p = self.run_verifier(code)
@@ -945,6 +993,7 @@ class VerifierUnmount(unittest.TestCase):
         self.assertLess(p.stderr.index("+ wait " + pid), p.stderr.index("+ umount "))
         self.assert_clean()
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_normal_stop_waits_for_the_owned_server(self):
         text = (PKG / "verify-image.sh").read_text()
         stop = text.split("stop_server() {", 1)[1].split("# --- servers: END", 1)[0]
@@ -975,6 +1024,7 @@ class SelftestSyntax(unittest.TestCase):
                 else:
                     release_inputs("unused")
 
+    @unittest.skipIf(sys.platform == "win32", "needs POSIX user and group IDs")
     def test_atomic_publish_refuses_a_hardlink_created_after_the_last_path_check(self):
         namespace = runpy.run_path(str(PKG / "image-policy.py"))
         publish = namespace["publish"]
@@ -1011,6 +1061,7 @@ class SelftestSyntax(unittest.TestCase):
                 self.assertIsNotNone(row)
                 self.assertEqual(row[0], "PASS" if value == "release\n" else "WARN")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_verifier_release_mode_requires_a_release_marker_before_running_image_code(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

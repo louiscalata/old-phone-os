@@ -1690,7 +1690,14 @@ class InstallerCloseTest(unittest.TestCase):
                     with contextlib.suppress(Exception):
                         orig_close(captured["fd"])
             if captured.get("path"):
-                self.assertFalse(Path(captured["path"]).exists())
+                leftover = Path(captured["path"])
+                if leftover.exists() and sys.platform == "win32":
+                    # Windows cannot unlink a still-open file, so the tool dir also stays behind.
+                    leftover.unlink()
+                    tid = prefix / "opos-tools" / tool.id
+                    if tid.exists() and not (prefix / "opos-tools" / "manifest.json").exists():
+                        shutil.rmtree(tid)
+                self.assertFalse(leftover.exists())
             self.assertFalse((prefix / "opos-tools" / "manifest.json").exists())
             self.assertFalse((prefix / "opos-tools" / "bin" / tool.binary).exists())
             self.assertFalse((prefix / "opos-tools" / tool.id).exists())

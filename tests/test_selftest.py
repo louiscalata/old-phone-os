@@ -158,6 +158,8 @@ class Fake:
     def pulse(self, rel):
         """Leave a Unix socket file at rel, bound by its bare name because a temporary path can be longer than a socket address may be."""
         f = self.root / rel.lstrip("/")
+        if not hasattr(socket, "AF_UNIX"):
+            raise unittest.SkipTest("needs AF_UNIX sockets, which Python does not expose on Windows")
         f.parent.mkdir(parents=True, exist_ok=True)
         here, s = os.getcwd(), socket.socket(socket.AF_UNIX)
         try:
@@ -543,7 +545,10 @@ class IdentityCompatibility(unittest.TestCase):
                 self.assertEqual(r.rc, 1, r.text)
                 self.assertEqual(r.status("identity.image"), "FAIL", r.text)
 
-    @unittest.skipIf(os.geteuid() == 0, "requires an unprivileged UID to exercise filesystem permission denial")
+    @unittest.skipIf(
+        not hasattr(os, "geteuid") or os.geteuid() == 0,
+        "requires a POSIX unprivileged UID to exercise filesystem permission denial",
+    )
     def test_unreadable_private_file_warns_and_readable_hash_mismatch_still_fails(self):
         from opos import image_identity
 
@@ -1839,7 +1844,10 @@ class AlarmSound(PieceCase):
         self.assertEqual(r.status("alarm.sound"), "PASS", r.ev("alarm.sound"))
         self.assertIn("/run/user/32011/pulse/native", r.ev("alarm.sound"))
 
-    @unittest.skipIf(os.geteuid() == 0, "os.access is always true for root")
+    @unittest.skipIf(
+        not hasattr(os, "geteuid") or os.geteuid() == 0,
+        "requires a POSIX non-root UID; os.access is always true for root",
+    )
     def test_a_socket_the_selftest_user_cannot_open_warns(self):
         sock = self.f.root / "run/user/32011/pulse/native"
         sock.chmod(0o000)
@@ -2118,6 +2126,7 @@ class ImageWiring(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^# --- qa: END", text, re.M)), 1)
         return m.group(1)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_scripts_parse(self):
         for p in (BUILD, VERIFY):
             r = subprocess.run(["sh", "-n", str(p)], capture_output=True, text=True)
@@ -2135,6 +2144,7 @@ class ImageWiring(unittest.TestCase):
         if r.returncode == 0 and r.stdout.strip():
             self.assertTrue(r.stdout.startswith("100755"), "commit it executable: git update-index --chmod=+x")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     @needs_tools("sha256sum")
     def test_build_block_installs_the_script_and_a_wrapper(self):
         b = self.block(BUILD)

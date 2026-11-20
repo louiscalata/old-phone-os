@@ -479,6 +479,7 @@ class ImageWiring(unittest.TestCase):
     def read(self, name):
         return (DUO / name).read_text(encoding="utf-8")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_every_script_parses(self):
         for n in ("build-image.sh", "verify-image.sh", "opos-diag", "opos-osk", "opos-kiosk", "opos-session"):
             r = subprocess.run(["sh", "-n", str(DUO / n)], capture_output=True, text=True)
@@ -547,6 +548,7 @@ class ImageWiring(unittest.TestCase):
         self.assertRegex(u, r"(?m)^Environment=OPOS_ON_PHONE=1$")
         self.assertRegex(self.read("opos-network.conf"), r"(?m)^Environment=OPOS_NETWORK=1$")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_the_verify_requires_etc_opos_to_be_root_owned_with_mode_0755(self):
         # Run the verify script's own check line against a stand-in root file system. A shim for stat answers the mode, the owner
         # and the group, which an unprivileged test cannot set (and a drive that does not keep modes could not hold).

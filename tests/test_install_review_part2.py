@@ -5,6 +5,7 @@ import pathlib
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -21,6 +22,7 @@ def _read_install_sh() -> str:
 
 
 class TestInstallReview(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rejected_launcher_warns_falls_back_or_stops(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         key = "".join(["launch", "er="])
@@ -128,6 +130,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertIn("revert by hand", proc.stderr.lower())
             self.assertNotIn("would run " + str(rejected), proc.stdout + proc.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_firewall_respects_recorded_state(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         cases = [
@@ -228,6 +231,7 @@ class TestInstallReview(unittest.TestCase):
         publish = re.search(r"mv\s+-f[^\n]*\$[{]?_sshd_tmp[}]?[^\n]*" + re.escape(dest), after_validate)
         self.assertIsNotNone(publish, "mv -f must publish $_sshd_tmp to destination")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_partial_write_preserves_sshd_config(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall() {")
@@ -405,6 +409,7 @@ class TestInstallReview(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self._assert_sshd_staging_path_contract(dest_mutant)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_reload_requires_successful_validation(self):
         text = _read_install_sh()
         anchor = text.index("do_uninstall() {")
@@ -510,6 +515,7 @@ class TestInstallReview(unittest.TestCase):
             _, mutated_fail = run_case(1, suffix=probe)
             check_guarded(mutated_fail, False)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_install_reload_requires_successful_validation(self):
         script = pathlib.Path(__file__).resolve().parents[1] / "deploy" / "harden.d" / "10-ssh.sh"
         text = script.read_text(encoding="utf-8")

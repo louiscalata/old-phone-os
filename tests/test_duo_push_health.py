@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,7 @@ class DuoPushHealthTest(unittest.TestCase):
         self.assertTrue(after.startswith("printf"))
         self.assertIn(health, after)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_no_curl_wget_url_or_python_snippet(self):
         a = "c" + "u" + "r" + "l"
         b = "w" + "g" + "e" + "t"

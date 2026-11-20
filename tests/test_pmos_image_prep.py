@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -16,11 +17,14 @@ class TestImagePrep(unittest.TestCase):
             p = subprocess.run(["/bin/sh", "-s", "--", "--check", str(img)], input=text, capture_output=True, text=True)
             return (p.returncode, p.stdout, p.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sparse_header(self):
         self.assertEqual(self.run_image(bytes.fromhex("3aff26ed")), (0, "format: sparse\n", ""))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_raw_header(self):
         self.assertEqual(self.run_image(b"\x00\x00\x00\x00"), (0, "format: raw\n", ""))
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_image(self):
         self.assertEqual(self.run_image(None), (2, "", "no such image\n"))

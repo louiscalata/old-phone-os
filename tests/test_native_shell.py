@@ -3,6 +3,7 @@
 
 import ast
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -692,6 +693,7 @@ class ShellLid(StandInShell):
         w.restore()
         self.assertEqual(len(self.timers), 1)
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_with_the_real_blanker_a_panel_that_fails_for_a_minute_is_lit_once_it_takes_the_write(self):
         from opos.native import blank
 
@@ -737,6 +739,7 @@ class ShellLid(StandInShell):
         )
         return [root / "sys/class/backlight" / p_ / "brightness" for p_ in blank.PANELS], run / blank.SAVED_NAME
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_daemon_restore_that_fails_is_tried_again(self):
         """R3: the lid is unknown (no watcher), the daemon blanks (3), a panel refuses the write, the daemon restores (0).
         That restore goes through Shell.restore, so it is tried again until the panel takes the write."""
@@ -759,6 +762,7 @@ class ShellLid(StandInShell):
                 (p0.read_text().strip(), p1.read_text().strip(), saved.exists(), self.timers), ("90", "200", False, [])
             )
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_a_daemon_blank_on_screens_already_dark_stops_a_pending_retry(self):
         """R7: a restore is pending (both panels refuse the write), then the daemon blanks while the lid is unknown. Both
         panels already read 0, so that blank writes nothing, but dark is what was asked: the retry must not relight."""
@@ -853,6 +857,7 @@ class TheDaemonCannotDarkenAnOpenPhone(unittest.TestCase):
     """The shell's blanker refuses the lid daemon's blank while its own lid switch reads open (a late or repeated 3
     after the lid opened would otherwise leave both screens dark), and obeys it when the lid is closed or unknown."""
 
+    @unittest.skipIf(sys.platform == "win32", "the runtime-folder mode check needs POSIX permissions")
     def test_the_guard(self):
         import sys
         from unittest import mock

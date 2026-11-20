@@ -2,6 +2,7 @@
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,7 @@ def _run(args, extra_env):
 
 
 class TestQemuDemo(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_help_and_unknown_arguments(self):
         result = _run(["--help"], {})
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "usage: qemu-demo.sh [--help]\n", ""))
@@ -30,6 +32,7 @@ class TestQemuDemo(unittest.TestCase):
                     (result.returncode, result.stdout, result.stderr), (2, "", "usage: qemu-demo.sh [--help]\n")
                 )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_plan_stages_locally_before_init_checksum_and_build(self):
         with tempfile.TemporaryDirectory() as directory:
             result = _run([], {"OPOS_APORTS_DIR": directory})
@@ -56,6 +59,7 @@ class TestQemuDemo(unittest.TestCase):
             self.assertNotIn("--src", result.stdout)
             self.assertEqual(commands[9], "pmbootstrap qemu --image-size=2G -m 2048 --no-gl")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_ssh_uses_ipv4_loopback_and_plan_has_no_flashing_command(self):
         result = _run([], {})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -63,6 +67,7 @@ class TestQemuDemo(unittest.TestCase):
         self.assertNotIn("flasher", result.stdout)
         self.assertNotIn("--disk", result.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_device_override_is_limited_to_qemu(self):
         result = _run([], {"OPOS_QEMU_DEVICE": "qemu-amd64"})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -73,6 +78,7 @@ class TestQemuDemo(unittest.TestCase):
                 self.assertEqual(rejected.returncode, 2)
                 self.assertFalse(rejected.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_path_metacharacters_are_printed_as_one_quoted_argument(self):
         path = "/srv/a b/$X/it's-a-checkout"
         result = _run([], {"OPOS_APORTS_DIR": path})
@@ -81,6 +87,7 @@ class TestQemuDemo(unittest.TestCase):
         self.assertEqual(shlex.split(command)[-1], path)
         self.assertIn(shlex.quote(path), command)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_empty_environment_uses_home_defaults(self):
         with tempfile.TemporaryDirectory() as home:
             result = _run([], {"HOME": home})

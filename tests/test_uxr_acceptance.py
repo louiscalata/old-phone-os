@@ -20,7 +20,6 @@ per violation on stdout (tests/uxr_report.sh).
 import glob
 import json
 import os
-import pwd
 import re
 import shutil
 import signal
@@ -32,9 +31,16 @@ from pathlib import Path
 
 from opos.web import Phone, page
 
+try:
+    import pwd
+except ImportError:  # Windows has no pwd module
+    pwd = None
+
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE / "uxr_cdp.js"
 VERBOSE = os.environ.get("OPOS_UXR_VERBOSE") == "1"
+# Windows has no SIGKILL; os.kill with SIGTERM there terminates the process outright.
+KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 # test_touch_targets: selector -> (min CSS px, reason). Default minimum is 48.
 ALLOW_SIZE = {
@@ -59,6 +65,8 @@ KNOWN_GAPS = {}
 
 
 def _real_home():
+    if pwd is None:
+        return str(Path.home())
     return pwd.getpwuid(os.getuid()).pw_dir
 
 
@@ -133,7 +141,7 @@ def _launch(chrome, tmp):
 def _kill(proc):
     if proc is not None and proc.poll() is None:
         try:
-            os.kill(proc.pid, signal.SIGKILL)
+            os.kill(proc.pid, KILL)
         except OSError:
             pass
         proc.wait(timeout=10)
@@ -198,7 +206,7 @@ class TestUxrAcceptance(unittest.TestCase):
         _kill(self.proc)
         try:
             pid = int(Path(self.pidfile).read_text())
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, KILL)
         except (OSError, ValueError):
             pass
 

@@ -4,6 +4,7 @@
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -455,6 +456,7 @@ class LockedAnswers(unittest.TestCase):
             self.assertNotIn(word, text)
         return body
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_locked_app_reads_have_no_names_notes_or_labels(self):
         with running(self.env) as server:
             token = self.open_phone(server)
@@ -495,6 +497,7 @@ class LockedAnswers(unittest.TestCase):
             status, body = get(server, "/api/contacts", token)
             self.assertIn(b"Mom", body)
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_the_answer_to_an_allowed_locked_write_is_redacted(self):
         with running(self.env) as server:
             token = self.open_phone(server)

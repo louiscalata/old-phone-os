@@ -566,7 +566,12 @@ class UninstallTests(BaseCase):
                     tools_uninstaller=lambda **kwargs: [],
                 )
                 self.assertTrue(link.is_symlink())
-                self.assertEqual(os.readlink(link), str(real))
+                got, want = os.readlink(link), str(real)
+                if got.startswith("\\\\?\\"):
+                    got = got[4:]
+                if want.startswith("\\\\?\\"):
+                    want = want[4:]
+                self.assertEqual(os.path.normcase(os.path.normpath(got)), os.path.normcase(os.path.normpath(want)))
                 for path, data in seeded.items():
                     self.assertEqual(path.read_bytes(), data)
                 for line in lines:

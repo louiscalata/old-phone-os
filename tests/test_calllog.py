@@ -4,6 +4,7 @@
 import json
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -115,6 +116,7 @@ class LocalCalls(unittest.TestCase):
             self.finish(3, at=START + 2)
             self.assertEqual(calllog.snapshot()["missed_count"], 0)
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_private_permissions_and_atomic_replacement_order(self):
         import opos.store as store
 
@@ -154,6 +156,7 @@ class LocalCalls(unittest.TestCase):
         calllog.record(event(2))
         self.assertEqual(len(calllog.snapshot()["calls"]), 2)
 
+    @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_corrupt_files_are_kept_private_and_recovery_notice_is_visible(self):
         invalids = [
             b"not json",

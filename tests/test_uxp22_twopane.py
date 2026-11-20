@@ -111,10 +111,17 @@ const child = spawn(chrome, ['--headless', '--use-mock-keychain', '--password-st
 // Own the process group so Linux's Chrome children cannot outlive cleanup.
 async function closeBrowser() {
   if (child.pid) {
-    try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+    try {
+      if (process.platform === 'win32') {
+        try { process.kill(child.pid); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+        try { require('child_process').spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {stdio: 'ignore'}); } catch (e) {}
+      } else {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+      }
+    } catch (e) { if (e.code !== 'ESRCH') throw e; }
     if (child.exitCode === null && child.signalCode === null) {
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Chromium did not exit after SIGKILL')), 10000);
+        const timeout = setTimeout(() => reject(new Error('Chromium did not exit after kill')), 10000);
         child.once('exit', () => { clearTimeout(timeout); resolve(); });
       });
     }

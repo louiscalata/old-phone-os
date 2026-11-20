@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +77,7 @@ class KioskOffRegression(unittest.TestCase):
             KIOSK.read_text().splitlines()[:2], ["#!/bin/sh", "# SPDX-License-Identifier: GPL-3.0-or-later"]
         )
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_disable_twice_succeeds_without_second_delete(self):
         for _ in range(2):
             result = self.run_script()
@@ -84,12 +86,14 @@ class KioskOffRegression(unittest.TestCase):
         self.assertEqual(self.enabled.read_text(), "")
         self.assertFalse(self.tdm_log.exists())
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_similarly_named_service_is_not_tinydm(self):
         self.enabled.write_text("")
         result = self.run_script()
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, OFF, ""))
         self.assertEqual(self.log.read_text(), "show default\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_runlevel_query_failure_is_preserved(self):
         self.env["SHOW_EXIT"] = "7"
         result = self.run_script()
@@ -97,6 +101,7 @@ class KioskOffRegression(unittest.TestCase):
         self.assertEqual(self.log.read_text(), "show default\n")
         self.assertEqual(self.enabled.read_text(), "tinydm\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_delete_failure_is_preserved(self):
         self.env["DEL_EXIT"] = "9"
         result = self.run_script()
@@ -104,6 +109,7 @@ class KioskOffRegression(unittest.TestCase):
         self.assertEqual(self.log.read_text(), "show default\ndel tinydm default\n")
         self.assertEqual(self.enabled.read_text(), "tinydm\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_direct_execution_restores_previous_session(self):
         previous = "/usr/share/wayland-sessions/phosh.desktop"
         (self.base / "prev-session").write_text(previous + "\n")
@@ -174,16 +180,19 @@ class UiPostInstallRegression(unittest.TestCase):
             )
             return result, log.read_text() if log.exists() else None
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_first_install_selects_kiosk(self):
         result, log = self.run_hook(completed=False, status=0)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(log, "-s /usr/share/wayland-sessions/cage-ui.desktop\n")
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_upgrade_after_firstboot_keeps_session(self):
         result, log = self.run_hook(completed=True, status=7)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIsNone(log)
 
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_first_install_failure_is_preserved(self):
         result, log = self.run_hook(completed=False, status=7)
         self.assertEqual(result.returncode, 7, result.stderr)
@@ -192,6 +201,7 @@ class UiPostInstallRegression(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("git"), "git unavailable")
 class BootstrapCleanupRegression(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_bogus_commit_removes_clone_and_allows_retry(self):
         with fresh_sandbox() as tmp:
             base = Path(tmp)

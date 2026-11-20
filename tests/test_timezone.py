@@ -78,6 +78,7 @@ class ZoneList(unittest.TestCase):
             self.skipTest("cannot create symlinks here")
         self.assertEqual((["Europe/Berlin"], "system"), tzmod.zones(self.d))
 
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database (tzdata)")
     def test_the_scan_is_remembered_until_the_database_changes(self):
         make_tree(self.d, ["Europe/Berlin", "Asia/Kolkata"])
         with mock.patch.object(tzmod, "_scan", wraps=tzmod._scan) as scan:

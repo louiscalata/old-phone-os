@@ -238,7 +238,7 @@ def apply(
                             tmp = Path(tmp_name)
                             with contextlib.suppress(Exception):
                                 os.fchmod(fd, 0o600)
-                            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
                                 fd = None
                                 f.write(f"{k_val}\n")
                             os.replace(tmp, kpath)
