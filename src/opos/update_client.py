@@ -183,8 +183,8 @@ def _loads(raw: bytes):
 
     try:
         return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=bad)
-    except (UnicodeDecodeError, ValueError, RecursionError):
-        raise ValueError("not valid JSON")
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise ValueError("not valid JSON") from exc
 
 
 def _read_small(path: str, cap: int = MAX_SMALL) -> bytes:
@@ -228,8 +228,8 @@ def check_url(url, allow_lan_http: bool = False) -> urllib.parse.SplitResult:
     try:
         u = urllib.parse.urlsplit(url)
         port = u.port
-    except ValueError:
-        raise ValueError("the address is not valid")
+    except ValueError as exc:
+        raise ValueError("the address is not valid") from exc
     if u.scheme not in ("https", "http") or not u.hostname:
         raise ValueError("the address must start with https://")
     if port == 0 or "@" in u.netloc:
@@ -247,8 +247,8 @@ def parse_config(raw: bytes) -> Config | None:
     """None when the file names no source; UpdateError when it is unusable."""
     try:
         d = _loads(raw)
-    except ValueError:
-        raise UpdateError("bad_config", "The update source file is not valid JSON.")
+    except ValueError as exc:
+        raise UpdateError("bad_config", "The update source file is not valid JSON.") from exc
     if not isinstance(d, dict):
         raise UpdateError("bad_config", "The update source file must be a JSON object.")
     flags = {}
@@ -263,7 +263,7 @@ def parse_config(raw: bytes) -> Config | None:
     try:
         check_url(url, flags["allow_lan_http"])
     except ValueError as e:
-        raise UpdateError("bad_config", f"The update address cannot be used: {e}.")
+        raise UpdateError("bad_config", f"The update address cannot be used: {e}.") from e
     return Config(url, **flags)
 
 
@@ -273,8 +273,8 @@ def load_config(path: str) -> Config | None:
         raw = _read_small(path)
     except FileNotFoundError:
         return None
-    except (OSError, ValueError):
-        raise UpdateError("bad_config", "The update source file cannot be read.")
+    except (OSError, ValueError) as exc:
+        raise UpdateError("bad_config", "The update source file cannot be read.") from exc
     return parse_config(raw)
 
 
@@ -294,8 +294,8 @@ def parse_index(raw: bytes, base_url: str, allow_lan_http: bool = False, max_bun
         raise ValueError("url is not valid")
     try:
         full = check_url(urllib.parse.urljoin(base_url, rel), allow_lan_http)
-    except ValueError:
-        raise ValueError("url is not allowed")
+    except ValueError as exc:
+        raise ValueError("url is not allowed") from exc
     if _origin(full) != _origin(urllib.parse.urlsplit(base_url)):
         raise ValueError("url points to another host")
     sha = d.get("sha256")
@@ -537,9 +537,9 @@ class UpdateClient:
             raise
         except urllib.error.HTTPError as e:
             e.close()
-            raise UpdateError("fetch", f"The update server answered {int(e.code)}.", 502)
+            raise UpdateError("fetch", f"The update server answered {int(e.code)}.", 502) from e
         except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as e:
-            raise _net_error(e)
+            raise _net_error(e) from e
         if resp.status != 200:
             resp.close()
             raise UpdateError("fetch", f"The update server answered {int(resp.status)}.", 502)
@@ -571,7 +571,7 @@ class UpdateClient:
             try:
                 piece = read(min(CHUNK, limit + 1 - total))
             except (OSError, http.client.HTTPException) as e:
-                raise _net_error(e)
+                raise _net_error(e) from e
             if not piece:
                 return
             total += len(piece)
@@ -590,7 +590,7 @@ class UpdateClient:
         try:
             return parse_index(raw, base, cfg.allow_lan_http, self.limits.max_bundle)
         except ValueError as e:
-            raise UpdateError("bad_index", f"The update list from the source cannot be used: {e}.", 502)
+            raise UpdateError("bad_index", f"The update list from the source cannot be used: {e}.", 502) from e
 
     def _verdict(self, serial: int, version: str) -> tuple[bool, str]:
         """Is an offered serial newer than what is installed? Root repeats this check; this only avoids waste."""
@@ -792,8 +792,8 @@ class UpdateClient:
                     os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
                     0o660,
                 )
-            except OSError:
-                raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
+            except OSError as exc:
+                raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500) from exc
             done = False
             try:
                 with os.fdopen(fd, "wb") as f:
@@ -886,27 +886,27 @@ class UpdateClient:
             fd = os.open(part if cancel else path, flags, 0o660)
         except FileExistsError:
             return {"requested": True, "already": True}
-        except FileNotFoundError:
-            raise UpdateError("inbox", "The update inbox is missing.", 503)
-        except OSError:
-            raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
+        except FileNotFoundError as exc:
+            raise UpdateError("inbox", "The update inbox is missing.", 503) from exc
+        except OSError as exc:
+            raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500) from exc
         try:
             if cancel:
                 os.write(fd, CANCEL_STAGED)
             os.fsync(fd)
-        except OSError:
+        except OSError as exc:
             os.close(fd)
             with contextlib.suppress(OSError):
                 os.unlink(part if cancel else path)
-            raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
+            raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500) from exc
         os.close(fd)
         if cancel:
             try:
                 os.replace(part, path)  # the whole text is there before root can see a file of this name
-            except OSError:
+            except OSError as exc:
                 with contextlib.suppress(OSError):
                     os.unlink(part)
-                raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500)
+                raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500) from exc
         self._sync_dir(self.paths.inbox)
         return {"requested": True, "already": False, **({"cancel": True} if cancel else {})}
 

@@ -107,7 +107,7 @@ def public_key_fields(data, name):
     try:
         data.decode("utf-8")
     except UnicodeDecodeError:
-        raise bad
+        raise bad from None  # `bad` already says why; the decode error would only repeat key-file bytes
     lines = [
         l for l in data.splitlines() if l.strip() and not l.lstrip().startswith(b"#")
     ]  # bytes: ASCII line ends and blanks only
@@ -118,7 +118,7 @@ def public_key_fields(data, name):
             kind, b64 = fields[0].decode("ascii"), fields[1].decode("ascii")  # a UnicodeDecodeError is a ValueError
             blob = base64.b64decode(b64, validate=True)
         except (IndexError, ValueError):
-            raise bad
+            raise bad from None  # same shared `bad`; the parse error would only repeat key-file text
         parts, i = [], 0  # the blob is a run of length-prefixed strings: the type name, then the key's numbers
         while i + 4 <= len(blob) and i + 4 + int.from_bytes(blob[i : i + 4], "big") <= len(blob):
             n = int.from_bytes(blob[i : i + 4], "big")
@@ -230,7 +230,7 @@ def parse_manifest(raw):
     try:
         return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=const)
     except (ValueError, RecursionError) as exc:
-        raise Refused("manifest is not valid UTF-8 JSON: %s" % exc)
+        raise Refused("manifest is not valid UTF-8 JSON: %s" % exc) from exc
 
 
 def check_manifest(m):
@@ -249,8 +249,8 @@ def check_manifest(m):
     _str(m["created"], "created", STAMP)
     try:
         datetime.datetime.strptime(m["created"], "%Y-%m-%dT%H:%M:%SZ")
-    except ValueError:
-        raise Refused("manifest: created is not a real date")
+    except ValueError as exc:
+        raise Refused("manifest: created is not a real date") from exc
     _int(m["requires_base"], "requires_base", 1, 10**6)
     if m["scope"] not in SCOPES:
         raise Refused("manifest: scope must be one of %s" % ", ".join(SCOPES))
@@ -313,7 +313,7 @@ class Bundle:
                 if len(members) > len(MEMBERS):
                     raise Refused("bundle has more than %d members" % len(MEMBERS))
         except (OSError, tarfile.TarError) as exc:
-            raise Refused("not a plain tar bundle: %s" % exc)
+            raise Refused("not a plain tar bundle: %s" % exc) from exc
         if tuple(m.name for m in members) != MEMBERS:
             raise Refused(
                 "bundle members must be exactly %s, in that order; found %s"
@@ -425,7 +425,7 @@ def check_payload(fh, m):
             if rest.count(0) != len(rest) or len(rest) == 1 << 20:
                 raise Refused("payload has data after the tar end")
     except (tarfile.TarError, OSError, EOFError, ValueError) as exc:
-        raise Refused("payload.tar.gz is not a valid gzip tar: %s" % exc)
+        raise Refused("payload.tar.gz is not a valid gzip tar: %s" % exc) from exc
     if seen != set(want):
         raise Refused("payload lacks %s" % ", ".join(sorted(set(want) - seen)[:5]))
 
@@ -537,15 +537,15 @@ def read_dir(root, overlays, revision, created):
                 file=sys.stderr,
             )
     except Refused as exc:
-        raise Refused("%s (give --revision and --created for a directory outside git)" % exc)
+        raise Refused("%s (give --revision and --created for a directory outside git)" % exc) from exc
     return src, rev, stamp, root
 
 
 def parse_stamp(text):
     try:
         return calendar.timegm(datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").timetuple())
-    except ValueError:
-        raise Refused("%r is not a UTC time like 2026-11-08T12:00:00Z" % text)
+    except ValueError as exc:
+        raise Refused("%r is not a UTC time like 2026-11-08T12:00:00Z" % text) from exc
 
 
 def stamp_text(epoch):
@@ -564,7 +564,7 @@ def make_payload(entries, mtime):
                 try:
                     tf.addfile(t, io.BytesIO(data))
                 except ValueError as exc:
-                    raise Refused("%s: %s" % (path, exc))
+                    raise Refused("%s: %s" % (path, exc)) from exc
     return raw.getvalue()
 
 
@@ -717,7 +717,7 @@ def cmd_build(a):
         os.replace(tmp, target)
     except Refused as exc:
         tmp.unlink(missing_ok=True)
-        raise Refused("the bundle just built failed its own check: %s" % exc)
+        raise Refused("the bundle just built failed its own check: %s" % exc) from exc
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
