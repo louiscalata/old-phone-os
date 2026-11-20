@@ -42,7 +42,7 @@ Open **http://127.0.0.1:8765/?demo=1** for the unlocked simulator controls. **Le
 
 The public demo sends entered numbers, messages and questions to its hosted server. Use fictional information. It makes no real calls and uses no AI model.
 
-In this demo the battery, calls and messages are simulated; the Surface Duo routes that read a real battery are described under [Limits](#limits), and on-phone Muse inference is untested. The noon panel's estimate is a snapshot: a separate recorded rules-only noon-to-16:00 run, with no model or owner overrides, displayed **0% at 16:00; goal not met (`goal_met=false`)**.
+In this demo the battery, calls and messages are simulated; the Surface Duo routes that read a real battery are described under [Limits](#limits), and on-phone Muse inference is untested. The noon panel's estimate is a snapshot: a separate recorded rules-only noon-to-16:00 run, with no model or owner overrides, reached 4 PM at about **8% with the goal met (`goal_met=true`)**.
 
 ## Try the battery features
 
@@ -64,7 +64,7 @@ The call reserve above is separate from the **worn-battery reserve**: the latter
 Demo walkthrough:
 
 1. Open `http://127.0.0.1:8765/?demo=1`; the controls start unlocked. Use the table above for the battery tour.
-2. The demo starts at noon, 60% charge, 60% health: about 36% usable, goal 16:00. The rules pause maps and photos backup toward that goal; calls, messages and email stay on. The lock screen calls health below 80% worn, but the worn-battery reserve needs health below 50%, which these controls cannot change. The panel is a snapshot; the separate four-hour rules-only run displayed 0% and missed the goal. With a configured Muse Glimmer server and the helper shown, its background advisor may also pause email; it cannot turn maps back on.
+2. The demo starts at noon, 60% charge, 60% health: about 36% usable, goal 16:00. The rules pause maps and photos backup toward that goal; calls, messages and email stay on. The lock screen calls health below 80% worn, but the worn-battery reserve needs health below 50%, which these controls cannot change. The panel is a snapshot; the four-hour rules-only run reaches 4 PM at about 8% with the goal met. At the critical floor, email is also paused and the earlier savings steps are kept. With a configured Muse Glimmer server and the helper shown, its background advisor may also pause email; it cannot turn maps back on.
 3. At the initial 60%, open the top battery bar and **Undo** maps before dragging Battery down. Close details, click **Start simulation**, watch the demo time and battery change, then **Pause simulation**.
 4. At 20%, enter `+15550100` and a message, then click **Simulate incoming text**. Click **Call**, then **Hang up**. These actions are simulated.
 5. Restore Battery to 60% and click **Show helper** if hidden. Without a model answer, **Why?** explains the battery rules and **Plan** keeps its fixed saving order. **Ask** reports that no model answered; use Why? for a rules explanation. At 20%, desktop Ask instead returns the resting explanation. The public demo's Ask always answers from rules.
@@ -171,7 +171,7 @@ This check only lists the endpoint's advertised model IDs and `model_served` (wh
 
 ## Simulation results
 
-In the separate recorded rules-only noon-to-16:00 demo run (60% starting charge, 60% health, no model or owner overrides), the noon panel estimated about 4 h 14 min left. At 16:00 it displayed **0% and did not meet the goal (`goal_met=false`)**. This is distinct from the profile averages below.
+In the separate recorded rules-only noon-to-16:00 demo run (60% starting charge, 60% health, no model or owner overrides), the noon panel estimated about 4 h 14 min left. At 16:00 it displayed **8% and met the goal (`goal_met=true`)**. This is distinct from the profile averages below.
 
 The profile table varies a simulated battery-drain model across six profiles, without burst current; burst shaping applies only to the separate worn-battery hours evaluation below. These results do not establish battery savings or cut-out rates on real phones. All numbers below simulate the deterministic rule router against fixed rules, with no AI model involved; they are not measurements on a real phone.
 
