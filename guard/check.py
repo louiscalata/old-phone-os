@@ -167,9 +167,9 @@ def files(staged):
         for f in paths:
             try:
                 mode = os.stat(f).st_mode
-            except OSError:
+            except OSError as exc:
                 print(f"GUARD FAIL: audit input unavailable: {f}", file=sys.stderr)
-                raise SystemExit(1)
+                raise SystemExit(1) from exc
             if stat.S_ISREG(mode):
                 kept.append(f)
         paths = kept

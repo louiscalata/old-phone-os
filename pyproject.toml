@@ -73,12 +73,11 @@ max-complexity = 15
 # a new occurrence of an ignored code in the same file is also ignored. Remove entries in cleanup PRs.
 # C901: existing complexity; restructuring needs a behavior review.
 "deploy/sparse_image.py" = ["C901"]
-# B904: existing bugbear finding; diagnose and repair separately from layout.
 # C901: existing complexity; restructuring needs a behavior review.
 # E401: existing pycodestyle finding; non-format repair is outside this lane.
 # E402: existing pycodestyle finding; non-format repair is outside this lane.
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
-"guard/check.py" = ["B904", "C901", "E401", "E402", "E741"]
+"guard/check.py" = ["C901", "E401", "E402", "E741"]
 # C901: existing complexity; restructuring needs a behavior review.
 # UP006: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP035: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
@@ -185,8 +184,6 @@ max-complexity = 15
 # N815: existing names and framework overrides; renaming is outside formatting.
 # S104: existing security finding; security repairs need separate review.
 "src/opos/public_demo.py" = ["C901", "N815", "S104"]
-# B904: existing bugbear finding; diagnose and repair separately from layout.
-"src/opos/secure.py" = ["B904"]
 # C901: existing complexity; restructuring needs a behavior review.
 # UP035: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP042: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
@@ -215,9 +212,8 @@ max-complexity = 15
 "src/opos/tokenfile.py" = ["UP031"]
 # B030: existing bugbear finding; diagnose and repair separately from layout.
 "src/opos/ui.py" = ["B030"]
-# B904: existing bugbear finding; diagnose and repair separately from layout.
 # S310: existing security finding; security repairs need separate review.
-"src/opos/update_client.py" = ["B904", "S310"]
+"src/opos/update_client.py" = ["S310"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "src/opos/update_page.py" = ["UP031"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
@@ -733,14 +729,13 @@ max-complexity = 15
 "tests/test_web_tokenfile.py" = ["N806", "S106", "UP031"]
 # UP041: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/webclient.py" = ["UP041"]
-# B904: existing bugbear finding; diagnose and repair separately from layout.
 # B905: existing bugbear finding; diagnose and repair separately from layout.
 # C901: existing complexity; restructuring needs a behavior review.
 # E741: existing pycodestyle finding; non-format repair is outside this lane.
 # N818: existing names and framework overrides; renaming is outside formatting.
 # UP017: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tools/opos-release.py" = ["B904", "B905", "C901", "E741", "N818", "UP017", "UP031"]
+"tools/opos-release.py" = ["B905", "C901", "E741", "N818", "UP017", "UP031"]
 # TODO(LOU-84): files that were ruff-excluded until LOU-84; exact file/code pairs, source bytes unchanged.
 # B023: existing bugbear finding; diagnose and repair separately from layout.
 # N818: existing names and framework overrides; renaming is outside formatting.

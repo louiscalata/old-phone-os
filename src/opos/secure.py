@@ -93,16 +93,16 @@ def read_json_body(rfile: BinaryIO, headers: Any, limit: int = MAX_BODY) -> dict
         raise BodyError(400, "short body")
     try:
         text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        raise BodyError(400, "bad json")
+    except UnicodeDecodeError as exc:
+        raise BodyError(400, "bad json") from exc
 
     def _bad(_v: str) -> Any:
         raise ValueError("bad constant")
 
     try:
         value = json.loads(text, parse_constant=_bad)
-    except (ValueError, RecursionError):
-        raise BodyError(400, "bad json")
+    except (ValueError, RecursionError) as exc:
+        raise BodyError(400, "bad json") from exc
     if not isinstance(value, dict):
         raise BodyError(400, "bad request")
     return value

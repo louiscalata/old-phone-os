@@ -208,6 +208,15 @@ class SecureTest(unittest.TestCase):
         self.assertEqual(secure.clean_text("abc", 0), "")
         self.assertEqual(secure.clean_text("abc", -1), "")
 
+    def test_bad_json_keeps_its_cause(self) -> None:
+        """A rejected body is a 400 BodyError that names the parse error as its cause."""
+        for body in (b"\xff", b"{", b"NaN"):
+            with self.subTest(body=body):
+                with self.assertRaises(secure.BodyError) as ctx:
+                    secure.read_json_body(_rf(body), _hd(str(len(body))))
+                self.assertEqual((ctx.exception.status, ctx.exception.message), (400, "bad json"))
+                self.assertIsInstance(ctx.exception.__cause__, (UnicodeDecodeError, ValueError))
+
 
 if __name__ == "__main__":
     """Run the test suite."""
