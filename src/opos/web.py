@@ -1419,7 +1419,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(lockpin.status())
                 return
             if action == "unlock":
-                ok, status = lockpin.unlock("" if data.get("pin") is None else str(data.get("pin")), data.get("now"))
+                pin = data.get("pin")
+                if pin is None:
+                    pin = ""
+                if not isinstance(pin, str):  # no coercion: 1234, [1234] or {} are not a PIN
+                    self._json({"error": "bad request"}, 400)
+                    return
+                ok, status = lockpin.unlock(pin, data.get("now"))
                 self._json(status, 200 if ok else 403)
                 return
         except ValueError:

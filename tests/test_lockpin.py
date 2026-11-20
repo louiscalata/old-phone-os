@@ -135,6 +135,17 @@ class LockStateCharacterization(LockCase):
         self.assertFalse(lockpin.has_pin())
         self.assertFalse(lockpin.is_locked())
 
+    def test_unlock_refuses_a_pin_that_is_not_a_string(self):
+        lockpin.set_pin("1234")
+        for bad in (1234, [1234], ["1", "2", "3", "4"], {"pin": "1234"}, True):
+            code, body = lock_request({"action": "unlock", "pin": bad})
+            self.assertEqual((code, body), (400, {"error": "bad request"}), bad)
+        self.assertTrue(lockpin.is_locked())
+        self.assertEqual(self.saved()["failures"], 0)
+        code, body = lock_request({"action": "unlock", "pin": "1234"})
+        self.assertEqual(code, 200)
+        self.assertFalse(body["locked"])
+
     def test_wrong_then_correct_pin_and_explicit_lock(self):
         lockpin.set_pin("1234")
         ok, status = lockpin.unlock("9999", 1000)
