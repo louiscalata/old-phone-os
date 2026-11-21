@@ -44,6 +44,11 @@ their original scope. Plans are intentions, not promises.
 
 ## Simulated or not yet verified
 
+- PR #34 proposed boot radio diagnostics and radio restart controls. The boot watch checks
+  `wlan0`, oFono’s `/ril_0` and the SM8150 audio DSP without changing radio state.
+  [Boot evidence](packaging/duo-os/README.md#boot-evidence-persistent-journal-and-opos-diag)
+  describes the recorded states. The Duo result and the proposed restart controls remain open.
+
 - November 13 native Network screen ([NATIVE.md](packaging/duo-os/NATIVE.md#the-network-screen)): Settings in the
   native shell opens Wi-Fi and the radios through the server's existing `net_*` actions. This build has not been run
   on the phone. The owner's November 13 check on the Duo (real GTK, only the status and scan requests sent) was of the
