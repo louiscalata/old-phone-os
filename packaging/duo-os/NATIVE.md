@@ -159,6 +159,10 @@ refreshes the offer. **Download…** opens a review with the offered release, si
 fingerprint. If the source now offers a different bundle, OPOS asks for a fresh review. Releases without a verified
 download digest have no native download control. The existing updater still verifies a bundle before staging or applying it.
 
+When the installed root updater supports reviewed requests, the page can also ask to drop a named staged update or
+return to a named previous release. The updater rechecks the installed and target releases before acting. The root
+updater and its systemd path unit are image components. An application-only update cannot add that support.
+
 ## The Network screen
 
 Settings has a Network link (Home has no tile for it). The screen shows the radios in the server's own sentences
