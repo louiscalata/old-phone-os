@@ -40,6 +40,28 @@ def can_check(snapshot):
     )
 
 
+def download_offer(snapshot):
+    check = mapping(snapshot.get("check"))
+    review = check.get("review")
+    if (
+        not can_check(snapshot)
+        or snapshot.get("stalled")
+        or mapping(snapshot.get("rollback")).get("staged") is not None
+        or check.get("ok") is not True
+        or check.get("newer") is not True
+        or not isinstance(review, str)
+        or not review
+    ):
+        return None
+    size = _size(check.get("size")) or "size unknown"
+    host = source_host(mapping(snapshot.get("source"))) or "the configured source"
+    words = (
+        f"Download {check.get('version')} (update {check.get('serial')}, {size}) from {host}? "
+        "The updater may restart OPOS after applying it or stage it for the next start."
+    )
+    return review, words
+
+
 def _size(value):
     return size_words(value) if type(value) is int and value >= 0 else None
 

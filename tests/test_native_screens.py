@@ -346,6 +346,37 @@ class Screens(unittest.TestCase):
         page.leave()
         self.assertEqual(removed, [2])
 
+    def test_updates_download_requires_a_current_review_and_posts_its_exact_token(self):
+        page = self.page(self.screens.SetUpdates)
+        self.shell.core.post = lambda action, **fields: self.shell.core.app(action, fields)
+        base = {"available": True, "source": {"configured": True, "url": "https://updates.example/latest"}}
+        first = {**base, "check": {"newer": True, "ok": True, "version": "1.0", "serial": 1, "review": "old"}}
+        newer = {**base, "check": {"newer": True, "ok": True, "version": "2.0", "serial": 2, "review": "new"}}
+        self.shell.core.answers = [first, newer]
+        page.enter()
+        self.flush()
+        self.assertTrue(page.download_b.visible)
+        page.confirm_download()
+        page.review_download()
+        self.assertIn("1.0", page.review_text.label)
+        page.cancel_review()
+        page.confirm_download()
+        self.assertEqual(len(self.work), 0)
+        page.review_download()
+        page.refresh()
+        self.flush()
+        self.assertEqual(page.actions.visible_child_name, "actions")
+        page.confirm_download()
+        self.assertEqual(len(self.work), 0)
+        page.review_download()
+        self.assertIn("2.0", page.review_text.label)
+        self.shell.core.answers = [dict(base, ok=True)]
+        page.confirm_download()
+        page.confirm_download()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("update_download", {"expected": "new"}))
+        self.assertEqual(len(self.shell.core.sent), 3)
+
     # --- Date & time ----------------------------------------------------------------------------------------------
 
     def test_settings_time_zone_uses_the_existing_endpoint_without_a_home_tile(self):

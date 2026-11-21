@@ -1923,6 +1923,40 @@ class Routes(Env):
         s, _, j = self.post(run, "update_rollback")
         self.assertEqual((s, j["code"]), (409, "no_rollback"))  # state has no earlier version
 
+    def test_guarded_route_downloads_only_the_reviewed_bundle(self):
+        self.conf()
+        self.state(0)
+        self.publish(7)
+        client = self.client()
+        run = self.serve(client)
+        _, _, checked = self.post(run, "update_check")
+        first = checked["check"]["review"]
+        replacement = self.publish(7, bundle=tar_bundle(8))
+        s, _, refused = self.post(run, "update_download", expected=first)
+        self.assertEqual((s, refused["code"]), (409, "review_changed"))
+        self.assertEqual(self.src.hits, ["/latest.json", "/latest.json"])
+        self.assertEqual(self.inbox(), [])
+        fresh = json.loads(self.get_json(run)[2])["check"]["review"]
+        self.assertNotEqual(first, fresh)
+        s, _, _ = self.post(run, "update_download", expected=fresh)
+        self.assertEqual(s, 200)
+        self.assertTrue(client.wait(5))
+        self.assertEqual(self.inbox(), ["opos-7.opos-update"])
+        with open(os.path.join(self.paths.inbox, self.inbox()[0]), "rb") as f:
+            self.assertEqual(f.read(), replacement)
+
+    def test_an_index_without_bundle_digest_has_no_guarded_review(self):
+        self.conf()
+        self.state(0)
+        self.publish(7, sha=False)
+        run = self.serve()
+        status, _, checked = self.post(run, "update_check")
+        self.assertEqual(status, 200)
+        self.assertNotIn("review", checked["check"])
+        status, _, refused = self.post(run, "update_download", expected="a" * 64)
+        self.assertEqual((status, refused["code"]), (409, "review_changed"))
+        self.assertEqual(self.inbox(), [])
+
     def test_rollback_through_the_route(self):
         self.state(2, previous=["1-aaaaaaaaaaaa"])
         run = self.serve()

@@ -1295,11 +1295,21 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(429, "too many requests", "rate")
             return
         if a in _UPDATE_ACTIONS:
-            if self.updater is None or len(data) != 1:
+            extra = set(data) - {"action"}
+            expected = data.get("expected")
+            guarded = (
+                a == "update_download"
+                and extra == {"expected"}
+                and isinstance(expected, str)
+                and len(expected) == 64
+                and all(c in "0123456789abcdef" for c in expected)
+            )
+            if self.updater is None or (extra and not guarded):
                 self._deny(400, "bad request", "shape")
                 return
             try:
-                getattr(self.updater, _UPDATE_ACTIONS[a])()
+                operation = getattr(self.updater, _UPDATE_ACTIONS[a])
+                operation(expected=expected) if guarded else operation()
             except update_client.UpdateError as e:
                 self._json({"error": e.message, "code": e.code}, e.status)
                 return

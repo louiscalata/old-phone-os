@@ -1694,21 +1694,28 @@ class SetUpdates(SettingsSection):
     POLL_MS = 2000
 
     def build(self):
-        self.active, self.checking = False, False
-        self.visit, self.timer = 0, None
+        self.active, self.sending = False, False
+        self.visit, self.timer, self.armed = 0, None, None
         self.status = label("", "mid")
         self.check_b = button("Check now", self.check, "main")
         self.refresh_b = button("Refresh status", self.refresh, "side")
         self.settings_b = self.back_to_settings()
+        self.download_b = button("Download…", self.review_download, "side")
+        self.review_text = label("", "mid")
+        self.confirm_b = button("Yes, download", self.confirm_download, "main")
+        self.cancel_b = button("Cancel", self.cancel_review, "side")
         read = reading(label(self.title, "head"), self.status, self.note)
-        act = column(bottom=(self.refresh_b, bar(self.settings_b, self.check_b)))
+        act = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        act.add_named(column(bottom=(self.download_b, self.refresh_b, bar(self.settings_b, self.check_b))), "actions")
+        act.add_named(column(bottom=(self.review_text, bar(self.cancel_b, self.confirm_b))), "review")
+        self.actions = act
         self.paint(None)
         return read, act
 
     def fetch(self, data):
         if data is None:
             return self.shell.core.app("update")
-        return self.shell.core.post("update_check")
+        return self.shell.core.post(data["action"], **{k: v for k, v in data.items() if k != "action"})
 
     def enter(self):
         self.visit += 1
@@ -1719,18 +1726,19 @@ class SetUpdates(SettingsSection):
 
     def leave(self):
         self.active = False
+        self.armed = None
         self.seq.accept(self.seq.issue(), floor=True)
         if self.timer is not None:
             GLib.source_remove(self.timer)
             self.timer = None
 
     def refresh(self):
-        if self.active and not self.checking:
+        if self.active and not self.sending:
             self.refresh_b.set_sensitive(False)
             self.call()
 
     def got(self, data):
-        if self.active and not self.checking:
+        if self.active and not self.sending:
             self.paint(data if isinstance(data, dict) else {})
             self.keep_polling()
 
@@ -1746,21 +1754,52 @@ class SetUpdates(SettingsSection):
     def paint(self, data):
         self.data = data
         self.status.set_label("\n".join(updatelogic.state_lines(data)))
-        self.check_b.set_sensitive(not self.checking and updatelogic.can_check(data or {}))
-        self.refresh_b.set_sensitive(not self.checking)
+        self.check_b.set_sensitive(not self.sending and updatelogic.can_check(data or {}))
+        self.refresh_b.set_sensitive(not self.sending)
+        offer = updatelogic.download_offer(data or {})
+        self.download_b.set_visible(offer is not None)
+        self.download_b.set_sensitive(not self.sending)
+        if self.armed and self.armed != offer:
+            self.armed = None
+            self.say("The available update changed. Review it again.")
+        self.show_review()
+
+    def show_review(self):
+        self.review_text.set_label(self.armed[1] if self.armed else "")
+        self.actions.set_visible_child_name("review" if self.armed else "actions")
+
+    def review_download(self):
+        if self.active and not self.sending:
+            self.armed = updatelogic.download_offer(self.data or {})
+            self.show_review()
+
+    def cancel_review(self):
+        self.armed = None
+        self.show_review()
+
+    def confirm_download(self):
+        offer = updatelogic.download_offer(self.data or {})
+        if not self.active or self.sending or not self.armed or self.armed != offer:
+            return
+        token, _ = offer
+        self.cancel_review()
+        self.send("update_download", "Asking for the reviewed download…", expected=token)
 
     def check(self):
-        if not self.active or self.checking or not updatelogic.can_check(self.data or {}):
+        if not self.active or self.sending or not updatelogic.can_check(self.data or {}):
             return
-        self.checking = True
-        self.paint(self.data)
         host = updatelogic.source_host(updatelogic.mapping(self.data.get("source")))
-        self.say(f"Checking {host or 'the update source'}…")
-        visit = self.visit
-        self.call({"action": "update_check"}, lambda data, fresh: self.checked(visit, data, fresh))
+        self.send("update_check", f"Checking {host or 'the update source'}…")
 
-    def checked(self, visit, data, fresh):
-        self.checking = False
+    def send(self, action, doing, **fields):
+        self.sending = True
+        self.paint(self.data)
+        self.say(doing)
+        visit = self.visit
+        self.call(dict(fields, action=action), lambda data, fresh: self.acted(visit, data, fresh))
+
+    def acted(self, visit, data, fresh):
+        self.sending = False
         if not self.active:
             return
         if visit != self.visit:
@@ -1771,7 +1810,7 @@ class SetUpdates(SettingsSection):
             self.got(data)
         else:
             error = data.get("error") if isinstance(data, dict) else None
-            self.say(error or "The update check could not be confirmed.")
+            self.say(error or "The updater did not confirm the request.")
             self.refresh()
 
 

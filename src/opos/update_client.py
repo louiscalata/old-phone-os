@@ -167,6 +167,14 @@ class Index:
     size: int | None = None
 
 
+def download_review(cfg: Config, idx: Index) -> str | None:
+    """Fingerprint the offer the owner sees, with the verified download digest as the artifact identity."""
+    if idx.sha256 is None:
+        return None
+    public_offer = (urllib.parse.urlsplit(cfg.url).hostname, idx.serial, idx.version, idx.size, idx.sha256)
+    return hashlib.sha256(json.dumps(public_offer).encode("ascii")).hexdigest()
+
+
 def _loads(raw: bytes):
     """Strict JSON: UTF-8, no NaN or Infinity, no duplicate keys."""
 
@@ -488,8 +496,11 @@ class UpdateClient:
         with self._lock:
             check = dict(self._check) if self._check else None
             job = dict(self._job)
+            reviewed = self._download_review
         if check and check["ok"]:  # the answer may have changed since the check (an update was applied)
             check["newer"], check["message"] = self._verdict(check["serial"], check["version"])
+            if check["newer"] and reviewed is not None:
+                check["review"] = reviewed
         requested = avail and os.path.lexists(os.path.join(self.paths.inbox, ROLLBACK_REQUEST))
         earlier = bool(st and st["previous"] > 0)
         once = earlier and st["stepped_back"] is not None
@@ -640,7 +651,7 @@ class UpdateClient:
             "size": idx.size,
             "message": why,
         }
-        self._transition("remember", check=res)
+        self._transition("remember", check=res, review=download_review(cfg, idx))
         return res, idx
 
     def _need(self) -> Config:
@@ -676,7 +687,7 @@ class UpdateClient:
         with self._lock:
             if event == "init":
                 self._job = self._idle_job()
-                self._check = None
+                self._check = self._download_review = None
                 self._thread = None
                 return
             state = self._job_state()
@@ -686,6 +697,7 @@ class UpdateClient:
             elif event == "remember":
                 assert state == JobState.CHECKING
                 self._check = kw["check"]
+                self._download_review = kw.get("review")
             elif event == "end-check":
                 assert state == JobState.CHECKING
                 self._busy.release()
@@ -724,12 +736,14 @@ class UpdateClient:
         with self._lock:
             return dict(self._job)
 
-    def start_download(self) -> dict:
+    def start_download(self, expected: str | None = None) -> dict:
         """Refetch the index, and if it is newer start streaming its bundle into the inbox. Returns at once."""
         cfg = self._need()
         self._transition("begin")
         try:
             res, idx = self._check_locked(cfg)
+            if expected is not None and expected != download_review(cfg, idx):
+                raise UpdateError("review_changed", "The available update changed. Review it again.", 409)
             if not res["newer"]:
                 raise UpdateError("no_update", res["message"], 409)
             waiting = self.pending()
