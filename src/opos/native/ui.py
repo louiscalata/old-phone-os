@@ -46,6 +46,7 @@ button.tile { border: none; min-height: 52px; padding: 2px 16px; font-size: 24px
 button.tile:focus-visible { box-shadow: inset 0 0 0 2px @ink; }
 button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(@ink, 0.35); }
 button.pad { min-height: 84px; min-width: 0; padding: 0; font-size: 30px; }
+.converter-pad button.pad { min-height: 72px; }
 button.chip { min-height: 52px; min-width: 0; padding: 2px 8px; font-size: 19px; }
 button.brightness-step { min-height: 48px; min-width: 0; padding: 0; font-size: 17px; }
 .typed { border-bottom: 2px solid @ink; padding: 8px 0; font-size: 26px; }

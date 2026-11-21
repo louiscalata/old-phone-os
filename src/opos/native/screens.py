@@ -1016,6 +1016,7 @@ class Converter(Page):
         self.amount = label(" ", "head", wrap=False, x=1.0)
         self.amount.add_css_class("rule")
         self.pad = Gtk.Grid(column_spacing=8, row_spacing=8, column_homogeneous=True)
+        self.pad.add_css_class("converter-pad")
         for i, key in enumerate(self.PAD):
             self.pad.attach(button(key, lambda k=key: self.key(k), "pad"), i % 3, i // 3, 1, 1)
         self.pad.attach(button("Delete", lambda: self.key("<"), "pad"), 0, 4, 3, 1)
