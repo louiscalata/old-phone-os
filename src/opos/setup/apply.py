@@ -308,7 +308,7 @@ def apply(
                     env=env if env is not None else os.environ,
                 )
                 prog.finish("services", "; ".join(lines))
-            except (ServiceError, ValueError, FileNotFoundError, OSError) as exc:
+            except (ServiceError, ValueError, OSError) as exc:
                 prog.fail("services", str(exc))
                 failed = True
             except Exception as exc:
