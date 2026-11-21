@@ -30,5 +30,5 @@ Do not record device identifiers, radio identifiers, or hardware addresses in th
 | Heat above the battery limit slows the phone and says so | NOT_RUN |
 | Calls and texts through the modem, only after a SIM is present | NOT_RUN |
 | Voice over LTE registers, or it is confirmed unavailable | NOT_RUN |
-| A short alert plays and stops, and does not crash audio | NOT_RUN |
+| Settings → Sound → Play test alert plays once, stops, and leaves audio service working | NOT_RUN |
 | An alarm ring is heard, steps from quiet to the cap, and Stop ends it at once | NOT_RUN |

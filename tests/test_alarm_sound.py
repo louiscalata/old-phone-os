@@ -77,6 +77,26 @@ class Sound(unittest.TestCase):
         self.assertEqual(alarm_sound.levels()[0], 20)
         self.assertEqual(alarm_sound.levels()[-1], 70)
 
+    def test_short_alert_plays_one_fixed_volume_stream(self):
+        made = []
+        player = alarm_sound.Player(popen=fake_popen(made))
+        self.assertTrue(alarm_sound.play_alert(player))
+        self.assertEqual(
+            [proc.command for proc in made],
+            [
+                ["paplay", "--volume", "13107", str(alarm_sound.TONE)],
+            ],
+        )
+        self.assertIsNone(player.proc)
+
+    def test_short_alert_that_times_out_is_stopped_and_reports_failure(self):
+        made = []
+        player = alarm_sound.Player(popen=fake_popen(made, finish=False, stubborn=True))
+        self.assertFalse(alarm_sound.play_alert(player))
+        self.assertEqual(len(made), 1)
+        self.assertTrue(made[0].terminated and made[0].killed)
+        self.assertIsNone(player.proc)
+
     def test_the_ramp_waits_for_each_beep_and_gets_louder(self):
         made = []
         player = alarm_sound.Player(popen=fake_popen(made))
