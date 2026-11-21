@@ -238,6 +238,7 @@ ota_units_ok() {
         && grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater apply-pending-boot$' "$w/opos-update-boot.service" \
         && grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater confirm-boot$' "$w/opos-update-confirm.service" \
         && grep -q '^PathExistsGlob=/var/lib/opos-update/inbox/\*.opos-update$' "$w/opos-update.path" \
+        && grep -qx 'PathExists=/var/lib/opos-update/inbox/rollback.reviewed' "$w/opos-update.path" \
         && grep -q '^Before=opos-server.service opos.service$' "$w/opos-update-boot.service" \
         && [ ! -L "$w/multi-user.target.wants/opos-update.service" ]
 }

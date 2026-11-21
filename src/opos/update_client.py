@@ -50,6 +50,7 @@ import shutil
 import socket
 import ssl
 import stat
+import tempfile
 import threading
 import time
 import urllib.error
@@ -68,6 +69,7 @@ MAX_SERIAL = 2**31 - 1
 CHUNK = 64 * 1024
 BUNDLE_EXT = ".opos-update"
 ROLLBACK_REQUEST = "rollback.request"
+REVIEWED_ROLLBACK = "rollback.reviewed"
 CANCEL_STAGED = (
     b"cancel-staged"  # what rollback.request holds to cancel a staged update and nothing else (empty: go back)
 )
@@ -356,6 +358,34 @@ def _net_error(e: BaseException) -> UpdateError:
     return UpdateError("fetch", "The update server could not be reached. Check the phone's network.", 502)
 
 
+def is_review_key(action: str, key) -> bool:
+    if not isinstance(key, str):
+        return False
+    if action == "update_download":
+        return re.fullmatch(r"[0-9a-f]{64}", key) is not None
+    if action == "update_rollback":
+        return re.fullmatch(r"(?:cancel|rollback) [0-9]{1,10}-[0-9a-f]{12} [0-9]{1,10}-[0-9a-f]{12}", key) is not None
+    return False
+
+
+def rollback_review(state: dict, current: dict, staged, previous) -> dict | None:
+    """The exact transition offered by a root updater that understands guarded inbox requests."""
+    if type(state.get("reviewed_rollback")) is not int or state["reviewed_rollback"] != 1:
+        return None
+    kind, target = ("cancel", staged) if staged is not None else ("rollback", previous)
+    if not isinstance(target, dict) or (kind == "rollback" and state.get("stepped_back") is not None):
+        return None
+    running_release, target_release = current.get("release"), target.get("release")
+    if not all(
+        isinstance(n, str) and re.fullmatch(r"[0-9]{1,10}-[0-9a-f]{12}", n) for n in (running_release, target_release)
+    ):
+        return None
+    serial = _int(target.get("serial"))
+    if serial is None:
+        return None
+    return {"key": f"{kind} {running_release} {target_release}", "kind": kind, "serial": serial}
+
+
 class UpdateClient:
     """Config, check, download, rollback request and status. One network job at a time."""
 
@@ -393,6 +423,8 @@ class UpdateClient:
         floor = d.get("floor", 0)
         previous = d.get("previous")
         staged = d.get("pending_boot")
+        prior = previous[0] if isinstance(previous, list) and previous else None
+        review = rollback_review(d, cur, staged, prior)
         return {
             "serial": _int(cur.get("serial")),
             "version": version if isinstance(version, str) and _VERSION.fullmatch(version) else None,
@@ -401,6 +433,7 @@ class UpdateClient:
             "previous": len(previous) if isinstance(previous, list) else 0,
             "stepped_back": _int(d.get("stepped_back")),
             "staged": _int(staged.get("serial")) if isinstance(staged, dict) else None,
+            "review": review,
             "cancels_staged": type(d.get("floor")) is int
             and d["floor"]
             >= 0,  # a proxy, not a handshake: an updater that keeps a floor reads `cancel-staged` (docs/ota-update.md, Client)
@@ -461,7 +494,7 @@ class UpdateClient:
         """A bundle or rollback request has sat in the inbox for STALL_S seconds. The updater takes one within seconds,
         so this means its path unit is not running (stopped, failed or never enabled)."""
         now = self._clock()
-        for n in self.pending() + [ROLLBACK_REQUEST]:
+        for n in self.pending() + [ROLLBACK_REQUEST, REVIEWED_ROLLBACK]:
             try:
                 st = os.lstat(os.path.join(self.paths.inbox, n))
             except OSError:
@@ -501,7 +534,7 @@ class UpdateClient:
             check["newer"], check["message"] = self._verdict(check["serial"], check["version"])
             if check["newer"] and reviewed is not None:
                 check["review"] = reviewed
-        requested = avail and os.path.lexists(os.path.join(self.paths.inbox, ROLLBACK_REQUEST))
+        requested = avail and self.rollback_requested()
         earlier = bool(st and st["previous"] > 0)
         once = earlier and st["stepped_back"] is not None
         staged = (
@@ -513,6 +546,8 @@ class UpdateClient:
         )
         if staged is not None:
             rollback["staged"] = staged
+        if st and st["review"] and rollback["possible"] and not requested:
+            rollback["review"] = st["review"]
         return {
             "available": avail,
             "message": None if avail else NOT_AVAILABLE,
@@ -869,7 +904,37 @@ class UpdateClient:
 
     # ---- rollback ----
 
-    def request_rollback(self) -> dict:
+    def rollback_requested(self) -> bool:
+        return any(
+            os.path.lexists(os.path.join(self.paths.inbox, name)) for name in (ROLLBACK_REQUEST, REVIEWED_ROLLBACK)
+        )
+
+    def request_reviewed_rollback(self, expected: str, review: dict | None) -> dict:
+        if not review or expected != review["key"]:
+            raise UpdateError("review_changed", "The updates on this phone changed. Review the request again.", 409)
+        if self.rollback_requested():
+            raise UpdateError("pending", "An updater request is already queued.", 409)
+        name = os.path.join(self.paths.inbox, REVIEWED_ROLLBACK)
+        part = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=self.paths.inbox, suffix=".partial", delete=False) as item:
+                part = item.name
+                item.write(expected.encode("ascii"))
+                item.flush()
+                os.fsync(item.fileno())
+            os.link(part, name)  # publish the whole request without replacing a concurrent one
+        except FileExistsError as exc:
+            raise UpdateError("pending", "An updater request is already queued.", 409) from exc
+        except OSError as exc:
+            raise UpdateError("inbox", "OPOS cannot write to the update inbox.", 500) from exc
+        finally:
+            if part is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(part)
+        self._sync_dir(self.paths.inbox)
+        return {"requested": True, "already": False}
+
+    def request_rollback(self, expected: str | None = None) -> dict:
         """Ask root to go back: create inbox/rollback.request (empty). Root does the rollback; this only asks.
 
         With a boot-scope update staged this cancels it instead (the file holds `cancel-staged`): that needs no earlier
@@ -882,6 +947,11 @@ class UpdateClient:
             raise UpdateError(
                 "no_rollback", "OPOS cannot read which versions are installed, so it will not ask for a rollback.", 409
             )
+        if expected is not None:
+            return self.request_reviewed_rollback(expected, st["review"])
+        return self.request_legacy_rollback(st)
+
+    def request_legacy_rollback(self, st: dict) -> dict:
         cancel = st["staged"] is not None and st["cancels_staged"]
         if not cancel:
             if st["previous"] < 1:

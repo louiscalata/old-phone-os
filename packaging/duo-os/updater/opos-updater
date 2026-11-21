@@ -60,6 +60,7 @@ MAX_INDEX = 16 << 20
 BLOCK = 512                # the tar block size
 MAX_REQUEST = 64           # bytes of a request file that are read
 CHUNK = 1 << 20
+LEGACY_REQUEST, REVIEWED_REQUEST = 'rollback.request', 'rollback.reviewed'
 REQUEST_ROLLBACK, CANCEL_STAGED = 'rollback', 'cancel-staged'  # what inbox/rollback.request can ask for
 Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
 
@@ -760,6 +761,7 @@ class Updater:
         tr = self.st['trial']
         if tr and tr.get('release') != self.st['current']['release']:
             self.st['trial'] = None
+        self.st['reviewed_rollback'] = 1
         self.save()
         self.recover(restart)
         self.tidy()
@@ -812,13 +814,13 @@ class Updater:
 
     # -- inbox
     def scan_inbox(self):
-        """Returns (rollback requested, bundle names newest first). Hostile entries are removed."""
+        """Returns (request names, bundle names newest first). Hostile entries are removed."""
         cfg = self.cfg
         dfd = os.open(cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
-            rollback, bundles = False, []
+            requests, bundles = [], []
             for name in sorted(os.listdir(dfd)):
-                kind = 'rollback' if name == 'rollback.request' else 'bundle' if name.endswith('.opos-update') else 'partial' if name.endswith('.partial') else None
+                kind = 'rollback' if name in (LEGACY_REQUEST, REVIEWED_REQUEST) else 'bundle' if name.endswith('.opos-update') else 'partial' if name.endswith('.partial') else None
                 if kind is None:
                     continue
                 try:
@@ -831,10 +833,10 @@ class Updater:
                     if cfg.now() - st.st_mtime > cfg.partial_ttl:
                         self.drop(dfd, name)
                 elif kind == 'rollback':
-                    rollback = True
+                    requests.append(name)
                 else:
                     bundles.append((st.st_mtime_ns, name))
-            return rollback, [n for _, n in sorted(bundles, reverse=True)]
+            return requests, [n for _, n in sorted(bundles, reverse=True)]
         finally:
             os.close(dfd)
 
@@ -857,12 +859,8 @@ class Updater:
         self.bad += 1
         self.status('failed', 'rejected: inbox entry %r is %s' % (name[:60], why))
 
-    def take_request(self, dfd):
-        """Read and remove inbox/rollback.request. An empty file asks for a rollback (which also cancels a staged boot update);
-        the text `cancel-staged` asks to cancel the staged boot update and nothing else. Anything else is refused: a request
-        file is written by the unprivileged side, so only these two things are understood and at most MAX_REQUEST bytes are
-        read. Returns REQUEST_ROLLBACK, CANCEL_STAGED, or None for a refused request (removed and reported)."""
-        name = 'rollback.request'
+    def take_request(self, dfd, name):
+        """Read and remove a bounded request. Only the legacy filename accepts old request formats."""
         data, ident = None, None
         try:
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dfd)
@@ -878,11 +876,14 @@ class Updater:
                 os.close(fd)
         self.drop(dfd, name, ident)
         text = data.strip() if data is not None and len(data) <= MAX_REQUEST else None
-        if text == b'':
-            return REQUEST_ROLLBACK
-        if text == CANCEL_STAGED.encode():
-            return CANCEL_STAGED
-        self.log('rollback request refused and removed: it is not an empty file or %r' % CANCEL_STAGED)
+        if name == LEGACY_REQUEST:
+            if text == b'':
+                return REQUEST_ROLLBACK
+            if text == CANCEL_STAGED.encode():
+                return CANCEL_STAGED
+        elif text is not None and re.fullmatch(rb'(cancel|rollback) [0-9]{1,10}-[0-9a-f]{12} [0-9]{1,10}-[0-9a-f]{12}', text):
+            return tuple(text.decode('ascii').split(' '))
+        self.log('rollback request refused and removed: invalid request format')
         self.status('failed', 'rejected: the rollback request is not understood')
         return None
 
@@ -1470,6 +1471,19 @@ class Updater:
                     % (pb['serial'], pb.get('version', '?'), why, st['current']['release']))
         self.gc()
 
+    def rollback_reviewed(self, request):
+        """Validate the reviewed transition under the root updater lock before any state changes."""
+        kind, running, target = request
+        st = self.st
+        staged = st['pending_boot']
+        actual_kind = 'cancel' if staged is not None else 'rollback'
+        actual_target = staged if staged is not None else next(iter(st['previous']), {})
+        if (kind != actual_kind or running != st['current']['release']
+                or not isinstance(actual_target, dict) or target != actual_target.get('release')):
+            self.status('failed', 'the reviewed update request no longer matches the releases on the phone')
+            return False
+        return self.rollback('reviewed request', True, requested=True, cancel_only=kind == 'cancel')
+
     def rollback(self, reason, restart, requested=False, cancel_only=False):
         """Go back to the previous release, and drop a staged boot update. requested: asked for through the inbox, so by a
         process that is not root. That is honoured once per applied update (stepped_back) and does not burn the serial, so the
@@ -1531,17 +1545,19 @@ class Updater:
         with self.locked():
             self.begin(restart=True)
             for _ in range(self.cfg.max_passes):
-                rollback, bundles = self.scan_inbox()
-                if not rollback and not bundles:
+                requests, bundles = self.scan_inbox()
+                if not requests and not bundles:
                     break
-                if rollback:
+                for name in requests:
                     dfd = os.open(self.cfg.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
                     try:
-                        kind = self.take_request(dfd)
+                        kind = self.take_request(dfd, name)
                     finally:
                         os.close(dfd)
                     if kind is None:
                         self.bad += 1
+                    elif name == REVIEWED_REQUEST:
+                        self.bad += 0 if self.rollback_reviewed(kind) else 1
                     else:
                         self.bad += 0 if self.rollback('rollback requested through the inbox', True, requested=True, cancel_only=kind == CANCEL_STAGED) else 1
                 done = False

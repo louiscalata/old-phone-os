@@ -4009,7 +4009,10 @@ class TestUnits(unittest.TestCase):
     def test_path_unit_watches_for_finished_bundles_only(self):
         u = read_unit("opos-update.path")
         self.assertEqual(values(u, "Path", "PathExistsGlob"), ["/var/lib/opos-update/inbox/*.opos-update"])
-        self.assertEqual(values(u, "Path", "PathExists"), ["/var/lib/opos-update/inbox/rollback.request"])
+        self.assertEqual(
+            values(u, "Path", "PathExists"),
+            ["/var/lib/opos-update/inbox/rollback.request", "/var/lib/opos-update/inbox/rollback.reviewed"],
+        )
         self.assertEqual(values(u, "Path", "Unit"), ["opos-update.service"])
         # a half-downloaded .partial must not start the service, and events during a run must not be lost
         for bad in ("DirectoryNotEmpty", "PathChanged", "PathModified"):

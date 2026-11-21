@@ -1701,12 +1701,16 @@ class SetUpdates(SettingsSection):
         self.refresh_b = button("Refresh status", self.refresh, "side")
         self.settings_b = self.back_to_settings()
         self.download_b = button("Download…", self.review_download, "side")
+        self.rollback_b = button("Go back…", self.review_rollback, "side")
         self.review_text = label("", "mid")
-        self.confirm_b = button("Yes, download", self.confirm_download, "main")
+        self.confirm_b = button("", self.confirm_review, "main")
         self.cancel_b = button("Cancel", self.cancel_review, "side")
         read = reading(label(self.title, "head"), self.status, self.note)
         act = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
-        act.add_named(column(bottom=(self.download_b, self.refresh_b, bar(self.settings_b, self.check_b))), "actions")
+        act.add_named(
+            column(bottom=(self.download_b, self.rollback_b, self.refresh_b, bar(self.settings_b, self.check_b))),
+            "actions",
+        )
         act.add_named(column(bottom=(self.review_text, bar(self.cancel_b, self.confirm_b))), "review")
         self.actions = act
         self.paint(None)
@@ -1743,7 +1747,13 @@ class SetUpdates(SettingsSection):
             self.keep_polling()
 
     def keep_polling(self):
-        if self.timer is None and self.active and self.data and updatelogic.busy(self.data):
+        if (
+            self.timer is None
+            and self.active
+            and self.data
+            and not self.data.get("stalled")
+            and updatelogic.busy(self.data)
+        ):
             self.timer = GLib.timeout_add(self.POLL_MS, self.poll)
 
     def poll(self):
@@ -1756,16 +1766,22 @@ class SetUpdates(SettingsSection):
         self.status.set_label("\n".join(updatelogic.state_lines(data)))
         self.check_b.set_sensitive(not self.sending and updatelogic.can_check(data or {}))
         self.refresh_b.set_sensitive(not self.sending)
-        offer = updatelogic.download_offer(data or {})
-        self.download_b.set_visible(offer is not None)
+        download = updatelogic.download_offer(data or {})
+        rollback = updatelogic.rollback_offer(data or {})
+        self.download_b.set_visible(download is not None)
         self.download_b.set_sensitive(not self.sending)
-        if self.armed and self.armed != offer:
+        self.rollback_b.set_visible(rollback is not None)
+        self.rollback_b.set_sensitive(not self.sending)
+        staged = updatelogic.mapping((data or {}).get("rollback")).get("staged")
+        self.rollback_b.set_label("Drop staged update…" if staged is not None else "Go back…")
+        if self.armed and self.armed not in (download, rollback):
             self.armed = None
-            self.say("The available update changed. Review it again.")
+            self.say("The updates on this phone changed. Review the request again.")
         self.show_review()
 
     def show_review(self):
-        self.review_text.set_label(self.armed[1] if self.armed else "")
+        self.review_text.set_label(self.armed[3] if self.armed else "")
+        self.confirm_b.set_label(self.armed[2] if self.armed else "")
         self.actions.set_visible_child_name("review" if self.armed else "actions")
 
     def review_download(self):
@@ -1773,17 +1789,23 @@ class SetUpdates(SettingsSection):
             self.armed = updatelogic.download_offer(self.data or {})
             self.show_review()
 
+    def review_rollback(self):
+        if self.active and not self.sending:
+            self.armed = updatelogic.rollback_offer(self.data or {})
+            self.show_review()
+
     def cancel_review(self):
         self.armed = None
         self.show_review()
 
-    def confirm_download(self):
-        offer = updatelogic.download_offer(self.data or {})
-        if not self.active or self.sending or not self.armed or self.armed != offer:
+    def confirm_review(self):
+        if not self.active or self.sending or not self.armed:
             return
-        token, _ = offer
-        self.cancel_review()
-        self.send("update_download", "Asking for the reviewed download…", expected=token)
+        offers = (updatelogic.download_offer(self.data or {}), updatelogic.rollback_offer(self.data or {}))
+        if self.armed in offers:
+            action, review_key, _, _ = self.armed
+            self.cancel_review()
+            self.send(action, "Sending the reviewed request…", expected=review_key)
 
     def check(self):
         if not self.active or self.sending or not updatelogic.can_check(self.data or {}):

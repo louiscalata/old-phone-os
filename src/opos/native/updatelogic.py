@@ -59,7 +59,22 @@ def download_offer(snapshot):
         f"Download {check.get('version')} (update {check.get('serial')}, {size}) from {host}? "
         "The updater may restart OPOS after applying it or stage it for the next start."
     )
-    return review, words
+    return "update_download", review, "Yes, download", words
+
+
+def rollback_offer(snapshot):
+    if snapshot.get("available") is not True or snapshot.get("stalled") or busy(snapshot):
+        return None
+    data = mapping(snapshot.get("rollback"))
+    review = mapping(data.get("review"))
+    key, kind, serial = review.get("key"), review.get("kind"), review.get("serial")
+    if data.get("possible") is not True or not isinstance(key, str) or type(serial) is not int:
+        return None
+    if kind == "cancel":
+        return "update_rollback", key, "Yes, drop it", f"Drop update {serial} from the next start?"
+    if kind == "rollback":
+        return "update_rollback", key, "Yes, go back", f"Go back to update {serial}? OPOS restarts."
+    return None
 
 
 def _size(value):

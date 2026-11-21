@@ -1957,6 +1957,13 @@ class Routes(Env):
         self.assertEqual((status, refused["code"]), (409, "review_changed"))
         self.assertEqual(self.inbox(), [])
 
+    def test_reviewed_rollback_route_refuses_an_older_root_updater(self):
+        self.state(2, previous=[{"serial": 1, "release": "1-aaaaaaaaaaaa"}])
+        run = self.serve()
+        s, _, j = self.post(run, "update_rollback", expected="rollback 2-aaaaaaaaaaaa 1-aaaaaaaaaaaa")
+        self.assertEqual((s, j["code"]), (409, "review_changed"))
+        self.assertEqual(self.inbox(), [])
+
     def test_rollback_through_the_route(self):
         self.state(2, previous=["1-aaaaaaaaaaaa"])
         run = self.serve()
@@ -2212,7 +2219,7 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
         self.assertEqual(w.state()["pending_boot"]["serial"], 1)
         self.assertEqual(w.state()["previous"], [], "the first update: there is nothing to go back to")
         c = w.client
-        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 1})
+        self.assertEqual(c.snapshot()["rollback"]["review"]["serial"], 1)
         self.assertEqual(c.request_rollback(), {"requested": True, "already": False, "cancel": True})
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         self.assertEqual((w.status()["phase"], w.state()["pending_boot"]), ("rolled-back", None))
@@ -2227,12 +2234,12 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
         self.assertEqual(w.fetch_and_apply(2), 0, w.logs)
         w.release(3, scope="boot")
         self.assertEqual(w.fetch_and_apply(3), 0, w.logs)
-        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 3})
+        self.assertEqual(c.snapshot()["rollback"]["review"]["serial"], 3)
         self.assertEqual(c.request_rollback()["cancel"], True)
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         self.assertIn("cancelled", w.status()["message"])
         w.assert_on(self, 2, previous=[0], failed=[])
-        self.assertEqual(w.client.snapshot()["rollback"], {"possible": True, "requested": False})
+        self.assertEqual(w.client.snapshot()["rollback"]["review"]["serial"], 0)
 
 
 class Defaults(unittest.TestCase):

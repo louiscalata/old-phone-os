@@ -692,7 +692,7 @@ class RoundTrip(WorldCase):
             (1, "0.1.0", revision(1)),
         )
         self.assertEqual((snap["pending"], snap["status"]["phase"], snap["status"]["serial"]), ([], "done", 1))
-        self.assertEqual(snap["rollback"], {"possible": True, "requested": False})
+        self.assertEqual(snap["rollback"]["review"]["serial"], 0)
         self.assertFalse(snap["check"]["newer"])
         self.assertIn("latest", snap["check"]["message"])
         # A newer one, then a third: the image's own release goes when it is more than two back.
@@ -843,10 +843,44 @@ class RoundTrip(WorldCase):
         self.assertTrue(chk["newer"])
         self.assertEqual(w.fetch_and_apply(2), 0, w.logs)
         w.assert_on(self, 2, previous=[1, 0], failed=[])
-        self.assertEqual(w.client.snapshot()["rollback"], {"possible": True, "requested": False})
+        self.assertEqual(w.client.snapshot()["rollback"]["review"]["serial"], 1)
         w.release(3)
         self.assertEqual(w.fetch_and_apply(3), 0, w.logs)
         w.assert_on(self, 3, previous=[2, 1], failed=[])
+
+    def test_reviewed_rollback_refuses_changed_state_and_can_cancel_or_go_back(self):
+        w = self.w
+        w.release(1)
+        self.assertEqual(w.fetch_and_apply(1), 0, w.logs)
+        reviewed_back = w.client.snapshot()["rollback"]["review"]
+        self.assertEqual((reviewed_back["kind"], reviewed_back["serial"]), ("rollback", 0))
+        self.assertTrue(w.client.request_rollback(expected=reviewed_back["key"])["requested"])
+        path = Path(w.inbox) / uc.REVIEWED_ROLLBACK
+        guarded_payload = path.read_bytes()
+        path.unlink()
+        w.release(2, scope="boot")
+        self.assertEqual(w.fetch_and_apply(2), 0, w.logs)
+        # A staged update arrived between making the reviewed request and root seeing it.
+        path.write_bytes(guarded_payload)
+        self.assertEqual(w.run_updater("apply-inbox"), 3, w.logs)
+        self.assertEqual((w.state()["current"]["serial"], w.state()["pending_boot"]["serial"]), (1, 2))
+        self.assertIn("no longer matches", w.status()["message"])
+        self.assertFalse(path.exists())
+        with self.assertRaises(uc.UpdateError) as cm:
+            w.client.request_rollback(expected=reviewed_back["key"])
+        self.assertEqual(cm.exception.code, "review_changed")
+
+        cancel = w.client.snapshot()["rollback"]["review"]
+        self.assertEqual((cancel["kind"], cancel["serial"]), ("cancel", 2))
+        self.assertTrue(w.client.request_rollback(expected=cancel["key"])["requested"])
+        self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
+        self.assertIsNone(w.state()["pending_boot"])
+        w.assert_on(self, 1, previous=[0])
+
+        self.assertTrue(w.client.request_rollback(expected=reviewed_back["key"])["requested"])
+        self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
+        w.assert_on(self, 0)
+        self.assertFalse(path.exists())
 
     def test_a_boot_scope_bundle_is_staged_then_applied_at_the_next_boot(self):
         w = self.w
@@ -963,11 +997,11 @@ class Contracts(unittest.TestCase):
     def test_the_path_unit_starts_on_exactly_what_the_client_and_the_push_script_deliver(self):
         unit = rd(PKG / "updater" / "opos-update.path")
         glob = re.search(r"^PathExistsGlob=(\S+)$", unit, re.M).group(1)
-        exists = re.search(r"^PathExists=(\S+)$", unit, re.M).group(1)
+        exists = re.findall(r"^PathExists=(\S+)$", unit, re.M)
         inbox = U.Config().inbox
         for name in ("opos-1.opos-update", "opos-2147483647.opos-update"):
             self.assertTrue(fnmatch.fnmatch(inbox + "/" + name, glob), name)
-        self.assertEqual(exists, inbox + "/" + uc.ROLLBACK_REQUEST)
+        self.assertEqual(exists, [inbox + "/" + name for name in (uc.ROLLBACK_REQUEST, uc.REVIEWED_ROLLBACK)])
         self.assertTrue(glob.endswith("*" + uc.BUNDLE_EXT))
         for name in ("opos-1.opos-update.partial", "opos-1.partial", "rollback.request.partial"):
             self.assertFalse(

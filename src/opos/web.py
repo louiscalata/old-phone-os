@@ -1297,13 +1297,7 @@ class Handler(BaseHTTPRequestHandler):
         if a in _UPDATE_ACTIONS:
             extra = set(data) - {"action"}
             expected = data.get("expected")
-            guarded = (
-                a == "update_download"
-                and extra == {"expected"}
-                and isinstance(expected, str)
-                and len(expected) == 64
-                and all(c in "0123456789abcdef" for c in expected)
-            )
+            guarded = extra == {"expected"} and update_client.is_review_key(a, expected)
             if self.updater is None or (extra and not guarded):
                 self._deny(400, "bad request", "shape")
                 return

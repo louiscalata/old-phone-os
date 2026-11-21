@@ -356,26 +356,52 @@ class Screens(unittest.TestCase):
         page.enter()
         self.flush()
         self.assertTrue(page.download_b.visible)
-        page.confirm_download()
+        page.confirm_review()
         page.review_download()
         self.assertIn("1.0", page.review_text.label)
         page.cancel_review()
-        page.confirm_download()
+        page.confirm_review()
         self.assertEqual(len(self.work), 0)
         page.review_download()
         page.refresh()
         self.flush()
         self.assertEqual(page.actions.visible_child_name, "actions")
-        page.confirm_download()
+        page.confirm_review()
         self.assertEqual(len(self.work), 0)
         page.review_download()
         self.assertIn("2.0", page.review_text.label)
         self.shell.core.answers = [dict(base, ok=True)]
-        page.confirm_download()
-        page.confirm_download()
+        page.confirm_review()
+        page.confirm_review()
         self.flush()
         self.assertEqual(self.shell.core.sent[-1], ("update_download", {"expected": "new"}))
         self.assertEqual(len(self.shell.core.sent), 3)
+
+    def test_updates_distinguishes_drop_from_going_back(self):
+        page = self.page(self.screens.SetUpdates)
+        self.shell.core.post = lambda action, **fields: self.shell.core.app(action, fields)
+        base = {"available": True}
+        rollback = {"possible": True, "review": {"kind": "rollback", "serial": 2, "key": "rollback-token"}}
+        cancel = {
+            "possible": True,
+            "staged": 4,
+            "review": {"kind": "cancel", "serial": 4, "key": "cancel-token"},
+        }
+        self.shell.core.answers = [{**base, "rollback": rollback}, {**base, "rollback": cancel}]
+        page.enter()
+        self.flush()
+        page.review_rollback()
+        self.assertIn("Go back to update 2?", page.review_text.label)
+        page.refresh()
+        self.flush()
+        page.confirm_review()
+        self.assertEqual(len(self.work), 0)
+        page.review_rollback()
+        self.assertIn("Drop update 4", page.review_text.label)
+        self.shell.core.answers = [dict(base, ok=True)]
+        page.confirm_review()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("update_rollback", {"expected": "cancel-token"}))
 
     # --- Date & time ----------------------------------------------------------------------------------------------
 
