@@ -768,7 +768,7 @@ class Notes(Page):
         self.ident, self.entry = None, logic.Entry(limit=20000, multiline=True)
         self.want, self.busy = None, False  # the note being opened ("add" for a new one); a save or delete in flight
         self.want_n = None  # the request number of the last open or add: only its reply is adopted
-        self.sure = logic.Confirm()  # Delete asks twice, as in the browser
+        self.delete_target = None
         self.head, self.list, self.text = label("Notes", "head"), vbox(spacing=0), label("", "big")
         read = reading(self.head, self.note, self.list, self.text)
         self.keys = Keys(self.key)
@@ -776,27 +776,39 @@ class Notes(Page):
         self.delete_button = button("Delete this note", self.delete, "chip")
         self.tools = hbox(self.close_button, self.delete_button, spacing=8)
         self.main = button("New note", self.main_action, "main")
-        act = column(bottom=(self.tools, self.keys, bar(self.home(), self.main)))
+        edit = column(bottom=(self.tools, self.keys, bar(self.home(), self.main)))
+        self.delete_prompt = label("", "mid")
+        self.cancel_delete_button = button("Cancel", self.cancel_delete, "main")
+        self.confirm_delete_button = button("Yes, delete", self.confirm_delete)
+        self.review = column(bottom=(self.delete_prompt, hbox(self.cancel_delete_button, self.confirm_delete_button)))
+        # The gate takes the place of the editor controls. Both children reserve the same pane height,
+        # and neither can cover the reading pane when the shell stacks its panes on one screen.
+        self.actions = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        self.actions.add_named(edit, "edit")
+        self.actions.add_named(self.review, "review")
         self.mode()
-        return read, act
+        return read, self.actions
 
     def mode(self):
         on = self.ident is not None
-        for w in (self.keys, self.tools, self.text):
+        for w in (self.keys, self.tools, self.text, self.review):
             w.set_visible(on)
         self.list.set_visible(not on)
         self.main.set_label("Save" if on else "New note")
         self.head.set_label("Note" if on else "Notes")
-        self.sure.keep_only(self.ident)
-        self.delete_button.set_label("Delete this note?" if self.sure.armed else "Delete this note")
+        if self.delete_target != self.ident:
+            self.delete_target = None
+        self.actions.set_visible_child_name("review" if self.delete_target is not None else "edit")
         for w in (self.close_button, self.delete_button, self.main):
             w.set_sensitive(not self.busy)
 
     def key(self, ch):
-        if not self.busy and self.entry.key(ch):
+        if self.delete_target is None and not self.busy and self.entry.key(ch):
             self.text.set_label(self.entry.text + "_")
 
     def open_note(self, ident):
+        if self.delete_target is not None:
+            return
         self.want = ident
         self.ask_note({"action": "open", "id": ident})
 
@@ -824,7 +836,7 @@ class Notes(Page):
             self.mode()
 
     def main_action(self):
-        if self.busy:
+        if self.busy or self.delete_target is not None:
             return
         if self.ident is None:
             self.want = "add"
@@ -851,16 +863,32 @@ class Notes(Page):
         self.call(data, done=done)
 
     def close(self):
-        if self.ident is not None and not self.busy:
+        if self.ident is not None and not self.busy and self.delete_target is None:
             self.change({"action": "save", "id": self.ident, "text": self.entry.text}, leave=True)
 
     def delete(self):
-        """The first tap asks "Delete this note?", the second deletes."""
-        if self.ident is None or self.busy:
+        if self.ident is None or self.busy or self.delete_target is not None:
             return
-        if self.sure.tap(self.ident):
-            self.change({"action": "delete", "id": self.ident}, leave=True)
-        else:
+        self.delete_target = self.ident
+        title = (self.entry.text.strip().splitlines() or ["Empty note"])[0][:40]
+        self.delete_prompt.set_label(f'Delete the note "{title}"? It cannot be brought back.')
+        self.mode()
+        self.cancel_delete_button.grab_focus()
+
+    def cancel_delete(self):
+        if self.delete_target is not None:
+            self.leave()
+            self.delete_button.grab_focus()
+
+    def confirm_delete(self):
+        if self.delete_target is None or self.delete_target != self.ident or self.busy:
+            return
+        ident, self.delete_target = self.delete_target, None
+        self.change({"action": "delete", "id": ident}, leave=True)
+
+    def leave(self):
+        if self.delete_target is not None:
+            self.delete_target = None
             self.mode()
 
     def paint(self, data):
