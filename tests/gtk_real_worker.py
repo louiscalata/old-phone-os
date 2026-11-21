@@ -122,9 +122,13 @@ def check_home_tiles(home, description):
     for _app_id, title in home.shell.apps:
         bounds = rect_of(tile, home.tiles) if tile is not None else None
         check(
-            tile is not None and tile.get_mapped() and tile.get_label() == title
-            and bounds is not None and bounds[1] >= previous_bottom
-            and bounds[2] == home.tiles.get_width() and bounds[3] >= 48
+            tile is not None
+            and tile.get_mapped()
+            and tile.get_label() == title
+            and bounds is not None
+            and bounds[1] >= previous_bottom
+            and bounds[2] == home.tiles.get_width()
+            and bounds[3] >= 48
             and bounds[1] + bounds[3] <= home.tiles.get_height(),
             f"{description}: {title} fills one row with a 48 px target ({bounds!r})",
         )
