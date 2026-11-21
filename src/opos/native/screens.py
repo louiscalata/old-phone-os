@@ -2069,18 +2069,23 @@ class Network(SettingsSection):
         self.paint_review()
 
     def paint_review(self):
+        warning = ""
         match self.armed:
             case ("forget", ssid):
                 words = (
                     f"Forget {ssid}? Its saved Wi-Fi settings will be removed. If connected, the phone will disconnect."
                 )
                 confirm = "Yes, forget"
+                warning = netlogic.wifi_loss_warning(self.status_data, ssid)
             case ("disconnect", ssid):
                 words, confirm = f"Disconnect from {ssid}? Wi-Fi stays on.", "Yes, disconnect"
             case ("wifi-off",):
                 words, confirm = "Turn Wi-Fi off? The phone leaves every Wi-Fi network.", "Yes, turn Wi-Fi off"
+                warning = netlogic.wifi_loss_warning(self.status_data)
             case _:
                 words, confirm = "", ""
+        if warning:
+            words = f"{words} {warning}"
         opening = self.armed and self.seen.get("review") is None
         self.shown("review", self.armed)
         self.review_prompt.set_label(words)
