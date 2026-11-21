@@ -120,6 +120,11 @@ new choice and remain above zero. Brightness controls have not been checked on t
   stays, as before. The shell's own lock page is not a lock: it opens with a swipe, and only the server's PIN lock,
   shown by the browser, keeps anyone out.
 
+## Home
+
+Home lists the enabled apps in one column. Tap a tile to open the app or hold it to open its preview in the
+reading pane. The reading pane returns to black each time Home opens, including in the Paper palette.
+
 ## Settings
 
 Settings keeps the installation and emergency notices in the reading pane. The action pane shows one column of links.

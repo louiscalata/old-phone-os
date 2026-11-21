@@ -633,19 +633,37 @@ class Screens(unittest.TestCase):
         p.show({"battery": {}, "in_call": True, "simulation": {"modem": False}})
         self.assertEqual(p.status.get_label(), "In call\n" + self.screens.EMERGENCY)
 
-    def test_home_says_practice_mode_and_previews_a_practice_call(self):
-        self.page(self.screens.Phone)
-        h = self.page(self.screens.Home)
-        h.show(
-            {
-                "battery": {},
-                "home_note": "Practice mode: calls, texts and tasks are simulated.",
-                "in_call": True,
-                "simulation": {"modem": True},
-            }
-        )
-        self.assertEqual(h.v_note.get_label(), "Practice mode: calls, texts and tasks are simulated.")
-        self.assertEqual(h.v_text.get_label(), "In a practice call", "not the raw word 'in call'")
+    def test_home_reveals_practice_preview_on_hold_and_clears_it_on_return(self):
+        phone = self.page(self.screens.Phone)
+        refreshes = []
+        phone.refresh = lambda: refreshes.append("phone")
+        self.shell.snap = {
+            "battery": {},
+            "home_note": "Practice mode: calls, texts and tasks are simulated.",
+            "in_call": True,
+            "simulation": {"modem": True},
+        }
+        home = self.page(self.screens.Home)
+
+        home.enter()
+        self.assertEqual(refreshes, [])
+        self.assertIn("home-idle", home.read.css)
+        self.assertEqual([tile.get_label() for tile in home.tiles.children], ["Phone", "Messages"])
+
+        home.choose("phone")
+        self.assertEqual(refreshes, ["phone"])
+        self.assertNotIn("home-idle", home.read.css)
+        self.assertEqual(home.v_note.get_label(), self.shell.snap["home_note"])
+        self.assertEqual(home.v_text.get_label(), "In a practice call")
+
+        home.enter()
+        home.show(self.shell.snap)
+        self.assertEqual(refreshes, ["phone"])
+        self.assertIn("home-idle", home.read.css)
+        self.assertFalse(home.v_title.visible)
+        self.assertFalse(home.v_text.visible)
+        self.assertFalse(home.v_note.visible)
+        self.assertEqual(home.v_rows.children, [])
 
     def test_a_reply_that_lost_the_race_keeps_call_busy_until_a_newer_state_is_drawn(self):
         """The call is sent (n1); a poll asked after it (n2) is answered first, from before the server acted: not in a
@@ -1729,10 +1747,12 @@ class Screens(unittest.TestCase):
     def test_hand_section_retains_the_switch_and_the_current_posture(self):
         hub = self.page(self.screens.Settings)
         hand = self.page(self.screens.SetHand)
-        self.assertEqual(hand.hand.get_label(), "Buttons on the right. Tap to switch.")
+        self.assertEqual(hand.position.get_label(), "Buttons on the right.")
+        self.assertEqual(hand.hand.get_label(), "Switch to left")
         hand.switch_hand()
         hub.paint_hand()
-        self.assertEqual(hand.hand.get_label(), "Buttons on the left. Tap to switch.")
+        self.assertEqual(hand.position.get_label(), "Buttons on the left.")
+        self.assertEqual(hand.hand.get_label(), "Switch to right")
         self.shell.posture, self.shell.angle, self.shell.back = "back", 351, 1
         hub.paint_posture()
         self.assertEqual(

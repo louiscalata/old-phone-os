@@ -219,49 +219,62 @@ class Lock(Page):
 
 
 class Home(Page):
-    """The tiles under the thumb; the other screen previews the chosen app, live, and its rows can be tapped."""
+    """A single column of apps under the thumb. Holding an app opens its live preview."""
 
     name = "home"
 
     def build(self):
-        self.chosen = "phone"
+        self.chosen, self.previewing = "phone", False
         self.v_title, self.v_text, self.v_note = label("", "head"), label("", "big"), label("", "dim")
         self.v_rows = vbox(spacing=0)
         read = reading(self.v_title, self.v_text, self.v_rows, self.v_note)
-        grid = Gtk.Grid(column_spacing=12, row_spacing=12, column_homogeneous=True)
-        for i, (app_id, name) in enumerate(self.shell.apps):
+        read.add_css_class("home-idle")
+        self.tiles = vbox(spacing=4)
+        for app_id, name in self.shell.apps:
             tile = button(name, lambda a=app_id: self.shell.go(a), "tile")
+            tile.get_child().set_xalign(0)
             hold = Gtk.GestureLongPress()
             hold.connect(
                 "pressed", lambda g, *_xy, a=app_id: (g.set_state(Gtk.EventSequenceState.CLAIMED), self.choose(a))
             )
             tile.add_controller(hold)
-            grid.attach(tile, i % 2, i // 2, 1, 1)
+            self.tiles.append(tile)
         self.open = button("Open", lambda: self.shell.go(self.chosen), "main")
         act = column(
             label("Tap to open. Press and hold to look first.", "dim"),
-            bottom=(grid, bar(button("Lock", lambda: self.shell.go("lock")), self.open)),
+            bottom=(self.tiles, bar(button("Lock", lambda: self.shell.go("lock")), self.open)),
         )
         return read, act
 
     def enter(self):
-        self.shell.pages[self.chosen].refresh()  # the preview must not be what the app showed at its last visit
+        self.previewing = False
+        self.show(self.shell.snap)
 
     def choose(self, app_id):
-        self.chosen = app_id
+        self.chosen, self.previewing = app_id, True
         self.shell.pages[app_id].refresh()
         self.show(self.shell.snap)
 
     def show(self, snap):
         page = self.shell.pages[self.chosen]
+        self.open.set_label("Open %s" % page.title)
+        if not self.previewing:
+            self.read.add_css_class("home-idle")
+            for item in (self.v_title, self.v_text, self.v_note):
+                item.set_label("")
+                item.set_visible(False)
+            fill(self.v_rows, [])
+            return
+        self.read.remove_css_class("home-idle")
         text, rows = page.preview(snap)
         self.v_title.set_label(page.title)
+        self.v_title.set_visible(True)
         self.v_text.set_label(text)
         self.v_text.set_visible(bool(text))
         self.v_note.set_label(
             snap.get("home_note") or ""
         )  # the server words it: practice mode, or calls and messages on
-        self.open.set_label("Open %s" % page.title)
+        self.v_note.set_visible(bool(self.v_note.get_label()))
         fill(self.v_rows, rows)
 
 
@@ -1336,9 +1349,11 @@ class SetHand(SettingsSection):
 
     def build(self):
         self.hand = button("", self.switch_hand, "main")
+        self.position = label("", "mid")
         self.hinge_line = label(hand_posture(self.shell), "mid", "dim")
         read = reading(
             label(self.title, "head"),
+            self.position,
             label(
                 "The buttons sit on the screen under that hand; the other screen is for reading. "
                 "You can also swipe sideways across the hinge: the buttons follow your finger.",
@@ -1361,7 +1376,10 @@ class SetHand(SettingsSection):
         self.shell.set_hand("left" if self.shell.hand == "right" else "right")
 
     def paint_hand(self):
-        self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
+        current = self.shell.hand
+        other = "left" if current == "right" else "right"
+        self.position.set_label(f"Buttons on the {current}.")
+        self.hand.set_label(f"Switch to {other}")
 
 
 class SetBattery(SettingsSection):

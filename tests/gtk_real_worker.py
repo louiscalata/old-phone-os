@@ -116,6 +116,24 @@ def measure_notes_review(win, description):
     check(notes.actions.get_visible_child_name() == "edit", f"{description}: Cancel restores the editor")
 
 
+def check_home_tiles(home, description):
+    tile = home.tiles.get_first_child()
+    previous_bottom = 0
+    for _app_id, title in home.shell.apps:
+        bounds = rect_of(tile, home.tiles) if tile is not None else None
+        check(
+            tile is not None and tile.get_mapped() and tile.get_label() == title
+            and bounds is not None and bounds[1] >= previous_bottom
+            and bounds[2] == home.tiles.get_width() and bounds[3] >= 48
+            and bounds[1] + bounds[3] <= home.tiles.get_height(),
+            f"{description}: {title} fills one row with a 48 px target ({bounds!r})",
+        )
+        if bounds is not None:
+            previous_bottom = bounds[1] + bounds[3]
+        tile = tile.get_next_sibling() if tile is not None else None
+    check(tile is None, f"{description}: only enabled apps have tiles")
+
+
 def check_settings_hub(hub, label):
     viewport = hub.read.get_child()
     risk = rect_of(hub.risk, viewport)
@@ -252,6 +270,12 @@ def run(app):
         notes.ident, notes.entry.text = "layout-test", "Long note\n" + "A full line that must remain readable.\n" * 28
         notes.text.set_label(notes.entry.text + "_")
         notes.mode()
+    page_checks = {
+        "home": check_home_tiles,
+        "notes": measure_notes_review,
+        "settings": check_settings_hub,
+        "set_time": check_timezone_picker,
+    }
     for hand in ("right", "left"):
         win.set_hand(hand, save=False)
         for name in pages:
@@ -270,12 +294,9 @@ def run(app):
                     shown = name if spec is None else f"{name} ({spec['id']})"
                     description = f"{hand} hand, page {shown}, {mode}"
                     measure_all(win, description)
-                    if name == "notes":
-                        measure_notes_review(win, description)
-                    if name == "settings":
-                        check_settings_hub(win.pages[name], description)
-                    elif name == "set_time":
-                        check_timezone_picker(win.pages[name], description)
+                    page_check = page_checks.get(name)
+                    if page_check is not None:
+                        page_check(win.pages[name], description)
     # the battery sheet is the second row with the same panes; it is measured in measure_all
     for row in win.rows:
         two_columns(row, "right")

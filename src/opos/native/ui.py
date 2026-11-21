@@ -22,7 +22,7 @@ MOVE_MS = 180
 
 _STYLE = """
 window, .pane, .sheet { background: @ground; color: @ink; font-family: sans-serif; font-size: 20px; }
-.back-unused { background: #000; }
+.back-unused, .home-idle, .home-idle .pane { background: #000; }
 .clock { font-family: serif; font-weight: 700; font-size: 132px; }
 .head  { font-family: serif; font-weight: 700; font-size: 40px; }
 .big   { font-size: 28px; }
@@ -42,7 +42,8 @@ button.settings-row { border: none; min-height: 48px; padding: 1px 8px; }
 button.settings-home { min-height: 48px; padding: 4px 12px; }
 .settings-title { font-size: 22px; }
 .settings-detail { font: 15px monospace; }
-button.tile { min-height: 116px; font-size: 26px; }
+button.tile { border: none; min-height: 52px; padding: 2px 16px; font-size: 24px; }
+button.tile:focus-visible { box-shadow: inset 0 0 0 2px @ink; }
 button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(@ink, 0.35); }
 button.pad { min-height: 84px; min-width: 0; padding: 0; font-size: 30px; }
 button.chip { min-height: 52px; min-width: 0; padding: 2px 8px; font-size: 19px; }
