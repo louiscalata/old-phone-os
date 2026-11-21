@@ -728,6 +728,49 @@ class NetworkPage(unittest.TestCase):
         self.run_threads()
         self.assertEqual(self.changes()[-1], ("net_wifi", {"mode": "on"}))
 
+    def test_wifi_off_review_warns_when_no_other_connection_is_reported(self):
+        self.page.statused(
+            self.page.ask(self.page.radios),
+            {
+                "ok": True,
+                "wifi": {"enabled": True, "state": "connected", "ssid": "Home-Test"},
+                "usb": {"state": "absent"},
+                "data": {"state": "not set up"},
+            },
+        )
+        self.look()
+        self.page.toggle_wifi()
+        self.assertIn("You may lose access to this phone.", self.page.review_prompt.get_label())
+        self.assertEqual(self.changes(), [])
+        self.page.cancel_review()
+        self.page.confirm_review()
+        self.assertEqual(self.changes(), [])
+
+    def test_forget_warns_for_current_wifi_only_and_handles_unknown_links(self):
+        status = {
+            "ok": True,
+            "wifi": {"enabled": True, "state": "connected", "ssid": "Home-Test"},
+            "usb": {"state": "absent"},
+            "data": {"state": "off"},
+        }
+        for ssid in ("Work-Test", "Home-Test"):
+            self.page.statused(self.page.ask(self.page.radios), status)
+            self.chosen(net(ssid, known=True, active=ssid == "Home-Test"))
+            self.look()
+            self.page.forget()
+            self.assertEqual("You may lose access" in self.page.review_prompt.get_label(), ssid == "Home-Test")
+            self.page.cancel_review()
+        for update in (
+            {"usb": {"state": "up"}},
+            {"usb": {"state": "unavailable"}},
+            {"data": {"state": "on"}},
+            {"data": {"state": "unknown"}},
+            {"data": None},
+        ):
+            with self.subTest(update=update):
+                self.assertEqual(netlogic.wifi_loss_warning(dict(status, **update), "Home-Test"), "")
+        self.assertEqual(self.changes(), [])
+
     def test_wifi_off_armed_is_dropped_when_the_radio_reads_off(self):
         self.status_on(True)
         self.look()

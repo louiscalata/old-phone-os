@@ -294,6 +294,22 @@ def connected_to(status):
     return False, None
 
 
+def wifi_loss_warning(status, ssid=None):
+    """Warn when the current read shows connected Wi-Fi and neither USB nor mobile data is active."""
+    known, connected = connected_to(status)
+    if not known or connected is None or (ssid is not None and ssid != connected):
+        return ""
+    usb, data = status.get("usb"), status.get("data")
+    if (
+        isinstance(usb, dict)
+        and usb.get("state") == "absent"
+        and isinstance(data, dict)
+        and data.get("state") in ("off", "not set up")
+    ):
+        return "No USB network or mobile data connection is reported. You may lose access to this phone."
+    return ""
+
+
 def checking(ssid):
     """What the screen says while the read asked by the confirming Disconnect tap is waiting. It names the network."""
     return "Checking that %s is still the connected network..." % ssid

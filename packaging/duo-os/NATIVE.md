@@ -194,8 +194,9 @@ elsewhere the server refuses them and the screen shows its sentence.
 - Nothing is asked while the screen is not showing. On opening it reads the radios once, then scans once; while it shows
   it reads the radios again every 10 s and never rescans on its own. Opening it, polling and choosing a row change
   nothing.
-- Forget, Disconnect and Turn Wi-Fi off open a separate review with a named action and a Cancel button. Leaving
-  the screen closes the review. Every newer radios read or list that is
+- Forget, Disconnect and Turn Wi-Fi off open a separate review with a named action and a Cancel button. Forgetting
+  the connected network or turning Wi-Fi off also warns that access may be lost when the current read reports no
+  USB network adapter and mobile data off or unconfigured. Leaving the screen closes the review. Every newer radios read or list that is
   drawn finds the chosen row again by name and takes its new state, or closes the choice when the row is gone; a Forget
   or Disconnect prompt is dropped when that row's state changed or when the radios name another connected network.
   The server's disconnect names no network (it drops whatever is connected), and the radios read on screen can be up
