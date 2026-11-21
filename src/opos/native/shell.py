@@ -33,9 +33,9 @@ GTK 4 and PyGObject are already part of the Droidian image, so nothing is instal
 
     python3 -m opos.native.shell [--probe] [--shots FOLDER]
 
-Exit status: 10 when the owner chose the old interface in Settings, 11 when the server has a PIN lock or did not say
-whether it has one (this shell has no PIN screen), 3 when the window could not be built; the session's launcher
-(packaging/duo-os/opos-native) starts the browser on 10 and 11 and counts every other end.
+Exit status: 11 when the server has a PIN lock or did not say whether it has one (this shell has no PIN screen), and
+3 when the window could not be built. The session launcher (packaging/duo-os/opos-native) starts the browser on 11,
+restarts the shell after a requested end (143), and applies its failure limits to unexpected exits.
 
 --probe walks the main changes twice, prints the frame pacing of each and quits. --shots saves a picture of every
 screen into FOLDER and quits. Both are for checking the shell, not for use.
@@ -99,7 +99,6 @@ BASE, BASE_NOTE = logic.server_url(os.environ)
 if BASE_NOTE:
     print("opos shell: " + BASE_NOTE, file=sys.stderr, flush=True)
 POLL_S = 3.0
-LEAVE = 10      # exit status when the owner chose the old interface; the launcher (opos-native) starts the browser
 LOCKED = 11     # exit status when the server has a PIN lock, or would not say: no PIN screen here, so the browser shows it
 BROKEN = 3      # exit status when the window could not be built
 ASKED_TO_END = 128 + signal.SIGTERM   # SIGTERM: the launcher reads 143 as "asked to start again", as before
@@ -371,8 +370,8 @@ class Shell(Gtk.ApplicationWindow):
         GLib.timeout_add(220, step)     # long enough for each page's first drawing to finish
         return False
 
-    def leave(self, status=LEAVE):
-        """End with a status the session's launcher answers with the browser: LEAVE (the owner chose it) or LOCKED."""
+    def leave(self, status):
+        """End with the supplied launcher status."""
         self.leaving = status
         self.get_application().quit()
 
@@ -1045,7 +1044,7 @@ def main(argv=None):
     try:
         status = app.run([])
     finally:
-        for win in made:        # however the shell ends (the old interface, the PIN lock, an error), never leave it dark
+        for win in made:        # light the panels before giving up the window, even after an error
             try:
                 win.blanker.restore()
             except Exception:

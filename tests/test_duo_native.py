@@ -171,7 +171,6 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_every_handover_to_the_browser_lights_the_screens_first(self):
         for plan, why, n in (
-            ([(10, 500)], "the owner chose", 1),
             ([(11, 5)], "the PIN lock", 1),
             ([(1, 2)] * 3, "three quick ends", 3),
         ):
@@ -189,7 +188,7 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_a_restore_that_could_not_light_the_screens_is_logged_and_the_browser_still_starts(self):
         (self.t / "restore_rc").write_text("1\n")
-        self.run_native([(10, 500)])
+        self.run_native([(11, 500)])
         self.assertEqual(len(self.read("restore.log")), 1)
         self.assertEqual(self.kiosk_started(), 1, "the handover is never stopped")
         self.assertTrue(
@@ -199,7 +198,7 @@ class NativeLauncherTest(unittest.TestCase):
         self.assertEqual(self.read("kiosk.failed"), ["1"], "the kiosk is told, so it keeps trying in the background")
 
     def test_a_restore_that_lit_the_screens_tells_the_kiosk_nothing_is_left(self):
-        self.run_native([(10, 500)], env={"OPOS_NATIVE_RESTORE_FAILED": "1"})
+        self.run_native([(11, 500)], env={"OPOS_NATIVE_RESTORE_FAILED": "1"})
         self.assertEqual(self.read("kiosk.failed"), ["unset"], "a stale flag from the caller is not passed on")
 
     def test_a_restore_after_clean_and_sigterm_ends_too(self):
@@ -339,13 +338,14 @@ class NativeLauncherTest(unittest.TestCase):
         self.run_native([(0, 100)])
         self.assertEqual((len(self.runs()), self.kiosk_started()), (0, 1))
 
-    def test_the_owners_choice_starts_the_browser_at_once(self):
-        self.run_native([(10, 500)])
-        self.assertEqual((len(self.runs()), self.kiosk_started()), (1, 1))
-        self.assertTrue(any("owner chose" in line for line in self.read("logger.log")))
+    def test_a_retired_exit_10_uses_the_normal_restart_path(self):
+        self.run_native([(10, 100)], returncode=-signal.SIGTERM)
+        self.assertEqual((len(self.runs()), self.kiosk_started()), (1, 0))
+        self.assertEqual(self.read("restore.log"), ["--restore /opt/opos/src 0"])
+        self.assertTrue(any("ended with status 10" in line for line in self.read("logger.log")))
 
     def test_the_browser_takes_over_the_same_process(self):
-        (self.t / "plan").write_text("10 5" + chr(10))
+        (self.t / "plan").write_text("11 5" + chr(10))
         r = subprocess.Popen(
             ["sh", str(NATIVE)],
             env={
@@ -424,7 +424,7 @@ class NativeLauncherTest(unittest.TestCase):
         )
 
     def test_a_missing_browser_ends_the_client_with_status_1(self):
-        self.run_native([(10, 5)], env={"OPOS_NATIVE_BROWSER": str(self.t / "no-such-kiosk")}, returncode=1)
+        self.run_native([(11, 5)], env={"OPOS_NATIVE_BROWSER": str(self.t / "no-such-kiosk")}, returncode=1)
         self.assertTrue(any("cannot start" in line for line in self.read("logger.log")))
 
     def test_a_clock_that_went_back_is_not_a_quick_end(self):
@@ -524,14 +524,10 @@ class TheKioskHandsOver(unittest.TestCase):
             for t in n.targets
             if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant)
         }
-        self.assertEqual((consts["LEAVE"], consts["BROKEN"], consts["LOCKED"]), (10, 3, 11))
-        self.assertIn('if [ "$rc" -eq 10 ]; then', NATIVE.read_text(encoding="utf-8"))
+        self.assertEqual((consts["BROKEN"], consts["LOCKED"]), (3, 11))
+        self.assertNotIn('if [ "$rc" -eq 10 ]; then', NATIVE.read_text(encoding="utf-8"))
         self.assertIn('if [ "$rc" -eq 11 ]; then', NATIVE.read_text(encoding="utf-8"))
-        self.assertIn(
-            "self.shell.leave)",
-            (SHELL.parent / "screens.py").read_text(encoding="utf-8"),
-            "the Settings button ends with LEAVE",
-        )
+        self.assertNotIn("self.shell.leave", (SHELL.parent / "screens.py").read_text(encoding="utf-8"))
         self.assertIn(
             "OPOS_NATIVE_READY=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/opos-native-ready",
             NATIVE.read_text(encoding="utf-8"),
@@ -811,10 +807,6 @@ class ShellMain(unittest.TestCase):
             (App.last.quits, Window.destroyed), (1, 1), "the half-built window is destroyed and the application ends"
         )
         self.assertIn("a page could not be built", err.getvalue(), "and the reason is in the log")
-
-    def test_the_owners_choice_ends_with_leave(self):
-        self.made(leaving=10)
-        self.assertEqual(self.shell.main(["shell"]), self.shell.LEAVE)
 
     def test_a_pin_lock_ends_with_locked(self):
         self.made(leaving=11)

@@ -151,23 +151,20 @@ with a stand-in toolkit only; all four remain".
 3. [READ-ONLY] On the phone, the server the shell asks and what it said about it: `tr '\0' '\n' < /proc/$(pgrep -f 'opos.native.shell' | head -n 1)/environ | grep -E '^OPOS_(SERVER|LOCAL)_URL=' ; journalctl -b --no-pager | grep -E 'OPOS_SERVER_URL is not|did not say whether it has a PIN lock' | tail -n 10`.
 4. On the glass: open Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Call log and Settings, and go back to Home from each.
 5. On the glass: drag the battery sheet up and down, and drag the bottom edge of an app page; lift the finger half way.
-6. [OWNER ONLY] On the glass: Settings, "Use the old interface". The browser kiosk takes over.
 
 **Observe.** One window across both screens, nothing under the hinge; each tap answered in one frame, nothing sliding
 or fading; the sheet following the finger exactly and showing the final state when it lifts; the practice and
 emergency sentences on Phone; the launcher's log lines; after step 3, either no `OPOS_SERVER_URL` line or one that
 names `http://127.0.0.1:` and a port, and no log line saying the value was refused or that the PIN lock question had
 no answer; the shell's own lock page never saying "OPOS has not said whether this phone has a PIN lock"; Phone never
-saying "No answer about that call" or "No answer about hanging up" while the server answers; after step 6, the
-browser home page.
+saying "No answer about that call" or "No answer about hanging up" while the server answers.
 
 **Pass or fail.** Pass: `kiosk.native` names the native shell, every screen opens and returns, drags follow the finger
-1:1 and land complete, step 3 shows the phone's own server and no refused or unanswered line, and step 6 hands over to
-the browser with both screens lit. Fail: a screen that does not open, a frame that shows a wrong or half state, a dark
-screen at any time, an `OPOS_SERVER_URL` that names anything but `127.0.0.1`, a held lock page or a missing-answer
-sentence while the server answers, or a hand-over that does not come. The missing-answer sentences on Phone and the
-hold on the lock page appear only when the server stops answering; this page never stops it on purpose, so those two
-paths stay NOT_RUN by design unless they are seen; if seen, write down the sentence, and pass only when the screen
+1:1 and land complete, and step 3 shows the phone's own server and no refused or unanswered line. Fail: a screen
+that does not open, a frame that shows a wrong or half state, a dark screen at any time, an `OPOS_SERVER_URL` that
+names anything but `127.0.0.1`, a held lock page or a missing-answer sentence while the server answers. The missing-answer
+sentences on Phone and the hold on the lock page appear only when the server stops answering; this page never stops it on
+purpose, so those two paths stay NOT_RUN by design unless they are seen; if seen, write down the sentence, and pass only when the screen
 comes back by itself once the server answers.
 
 **Stop and undo.** After step 6 the browser stays until the session starts again, or see
@@ -970,11 +967,10 @@ interface. Never make the switch go away on purpose.
 
 ### R2. The native shell is wrong or stuck
 
-1. On the glass, if it answers: Settings, "Use the old interface".
-2. Over ssh, with sudo: `sudo touch /etc/opos/native-off`. The browser is the interface from the next session start;
+1. Over ssh, with sudo: `sudo touch /etc/opos/native-off`. The browser is the interface from the next session start;
    `sudo systemctl restart opos.service` starts the session again now (both screens go dark for a few seconds; that
    restart has not been run on the phone yet, so watch the screens and use R1 if they stay dark).
-3. To return to the native shell later: `sudo rm /etc/opos/native-off` and start the session again.
+2. To return to the native shell later: `sudo rm /etc/opos/native-off` and start the session again.
 
 ### R3. Wi-Fi is off or lost
 

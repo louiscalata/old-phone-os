@@ -35,8 +35,9 @@ process, with `OPOS_NATIVE_TRIED` set, so it never hands back) when:
 - first-run setup is not finished (no `firstrun.json` in the owner's config folder, the one the server writes);
 - the PIN lock is on (`OPOS_LOCK=1`, or the shell found the server enforcing it, or the server did not say whether it
   has one 5 times in a row, and the shell ended with status 11): the shell has no PIN screen;
-- the owner chose "Use the old interface" in Settings (status 10);
 - the shell ended 3 times in a row within 20 s, or did not report a window within 30 s, or ended 6 times in 10 minutes.
+
+An older shell can still return status 10. The launcher treats it as an unexpected exit and applies the normal restart and failure limits.
 
 `/etc/opos/native-off` keeps the browser as the interface from the next time the session starts. The two-screen span
 (`OPOS_SPAN`) comes from `/etc/default/opos-native`, which the image build writes with the server's own value. The

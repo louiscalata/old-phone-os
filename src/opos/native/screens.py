@@ -1230,7 +1230,6 @@ class Settings(Page):
             bottom=(
                 self.hand,
                 button("Network", lambda: self.shell.go("network")),
-                button("Use the old interface", self.shell.leave),
                 bar(self.home()),
             )
         )
