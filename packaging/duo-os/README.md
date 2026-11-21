@@ -648,7 +648,8 @@ written by hand.
   revision, base level and update status where present. SSH requires a matching, already trusted host key in
   the Windows user's OpenSSH configuration. Confirm the key with the phone before trusting it. Attach mode
   takes no install images, cannot be combined with `-Yes`, and performs no fastboot or adb operations.
-  Attach mode has been tested with stand-in host tools. Its Windows and phone run is **NOT_RUN**.
+  Windows PowerShell 5.1 returned a TCP 22 reply from the connected Duo in attach-only mode. The authenticated
+  revision and update status read remains **NOT_RUN**.
 
 ## Over-the-air updates
 

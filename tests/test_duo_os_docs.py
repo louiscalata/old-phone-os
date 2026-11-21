@@ -256,7 +256,8 @@ class TestDuoOsReadme(unittest.TestCase):
             "uses the PC's normal routing",
             "An open port is reachability only.",
             "matching, already trusted host key",
-            "Windows and phone run is **NOT_RUN**",
+            "returned a TCP 22 reply from the connected Duo",
+            "revision and update status read remains **NOT_RUN**",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, issues)
