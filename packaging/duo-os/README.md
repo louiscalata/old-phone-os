@@ -253,6 +253,7 @@ sudo sh packaging/duo-os/verify-image.sh \
 ```
 
 A developer key is optional and does not replace the required owner recovery key. The output image must not already exist.
+The image verifier accepts the pinned base's exact host-key generation drop-in and refuses other SSH startup overrides.
 
 `verify-image.sh` checks the unit wiring, that phoc is not started in shell mode, phoc's `-E` startup command and
 the journal settings, runs the OPOS server from the image with the image's own aarch64 python3 under
