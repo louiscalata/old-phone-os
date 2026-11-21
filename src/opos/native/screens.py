@@ -9,7 +9,7 @@ Clock, Contacts, Notes, Converter and Call log use the server's own app endpoint
 native screens and the old interface show the same alarms, people, notes, conversions and calls. The calculator needs
 no server.
 Network (opened from Settings) uses the server's net_* actions, the same ones the browser's /network page uses.
-Date & time uses the same time zone endpoint as the browser's /timezone page.
+Date & time and Updates use the same server endpoints as the browser's Settings.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from opos import apps, notices  # noqa: E402
-from opos.native import logic, netlogic, posture  # noqa: E402
+from opos.native import logic, netlogic, posture, updatelogic  # noqa: E402
 from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, settings_row, vbox  # noqa: E402
 
 MISSING = "%s is not part of the OPOS installed on this phone yet. It arrives with the next update."
@@ -1689,6 +1689,92 @@ class SetTime(SettingsSection):
             self.refresh()
 
 
+class SetUpdates(SettingsSection):
+    name, title = "set_updates", "Updates"
+    POLL_MS = 2000
+
+    def build(self):
+        self.active, self.checking = False, False
+        self.visit, self.timer = 0, None
+        self.status = label("", "mid")
+        self.check_b = button("Check now", self.check, "main")
+        self.refresh_b = button("Refresh status", self.refresh, "side")
+        self.settings_b = self.back_to_settings()
+        read = reading(label(self.title, "head"), self.status, self.note)
+        act = column(bottom=(self.refresh_b, bar(self.settings_b, self.check_b)))
+        self.paint(None)
+        return read, act
+
+    def fetch(self, data):
+        if data is None:
+            return self.shell.core.app("update")
+        return self.shell.core.post("update_check")
+
+    def enter(self):
+        self.visit += 1
+        self.active = True
+        self.say("")
+        self.paint(None)
+        self.refresh()
+
+    def leave(self):
+        self.active = False
+        self.seq.accept(self.seq.issue(), floor=True)
+        if self.timer is not None:
+            GLib.source_remove(self.timer)
+            self.timer = None
+
+    def refresh(self):
+        if self.active and not self.checking:
+            self.refresh_b.set_sensitive(False)
+            self.call()
+
+    def got(self, data):
+        if self.active and not self.checking:
+            self.paint(data if isinstance(data, dict) else {})
+            self.keep_polling()
+
+    def keep_polling(self):
+        if self.timer is None and self.active and self.data and updatelogic.busy(self.data):
+            self.timer = GLib.timeout_add(self.POLL_MS, self.poll)
+
+    def poll(self):
+        self.timer = None
+        self.refresh()
+        return False
+
+    def paint(self, data):
+        self.data = data
+        self.status.set_label("\n".join(updatelogic.state_lines(data)))
+        self.check_b.set_sensitive(not self.checking and updatelogic.can_check(data or {}))
+        self.refresh_b.set_sensitive(not self.checking)
+
+    def check(self):
+        if not self.active or self.checking or not updatelogic.can_check(self.data or {}):
+            return
+        self.checking = True
+        self.paint(self.data)
+        host = updatelogic.source_host(updatelogic.mapping(self.data.get("source")))
+        self.say(f"Checking {host or 'the update source'}…")
+        visit = self.visit
+        self.call({"action": "update_check"}, lambda data, fresh: self.checked(visit, data, fresh))
+
+    def checked(self, visit, data, fresh):
+        self.checking = False
+        if not self.active:
+            return
+        if visit != self.visit:
+            self.refresh()
+            return
+        if fresh and isinstance(data, dict) and data.get("ok") is True:
+            self.say("")
+            self.got(data)
+        else:
+            error = data.get("error") if isinstance(data, dict) else None
+            self.say(error or "The update check could not be confirmed.")
+            self.refresh()
+
+
 def owners_tap(fn):
     """Marks a handler as the owner's own tap: whatever it changes on a button is what the owner asked for, so it starts
     no hold and ends one (Network.shown). Every other change to what a button says (a newer read, an answer) starts one."""
@@ -2364,6 +2450,7 @@ PAGES = (
     SetSecurity,
     SetDisplay,
     SetTime,
+    SetUpdates,
     Network,
 )
 

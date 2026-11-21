@@ -310,6 +310,42 @@ class Screens(unittest.TestCase):
         self.assertEqual(page.bright_line.get_label(), "Brightness 60%")
         self.assertEqual([i for i, b in enumerate(page.steps, 1) if "on" in b.css], list(range(1, 7)))
 
+    def test_updates_reads_and_checks_through_owner_endpoints_and_polls_current_visit(self):
+        page = self.page(self.screens.SetUpdates)
+        self.assertFalse(page.tile)
+        self.shell.core.post = lambda action, **fields: self.shell.core.app(action, fields)
+        timers, removed = [], []
+        self.screens.GLib.timeout_add = lambda ms, callback: timers.append((ms, callback)) or len(timers)
+        self.screens.GLib.source_remove = removed.append
+        ready = {"available": True, "source": {"configured": True, "url": "https://updates.example/index?private"}}
+        downloading = {**ready, "job": {"phase": "downloading", "bytes": 1000000, "total": 2000000}}
+        self.shell.core.answers = [ready, dict(downloading, ok=True)]
+        page.enter()
+        self.flush()
+        self.assertTrue(page.check_b.sensitive)
+        page.check()
+        page.check()
+        self.assertIn("updates.example", page.note.label)
+        self.assertNotIn("private", page.note.label)
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("update", None), ("update_check", {})])
+        self.assertIn("1.0 MB of 2.0 MB", page.status.label)
+        self.assertFalse(page.check_b.sensitive)
+        self.assertEqual(timers[0][0], 2000)
+        self.assertFalse(timers[0][1]())
+        page.leave()
+        page.enter()
+        self.shell.core.answers = [downloading, ready]
+        self.flush()
+        self.assertTrue(page.check_b.sensitive)
+        self.assertNotIn("Downloading", page.status.label)
+        self.assertEqual(len(timers), 1)
+        self.shell.core.answers = [downloading]
+        page.refresh()
+        self.flush()
+        page.leave()
+        self.assertEqual(removed, [2])
+
     # --- Date & time ----------------------------------------------------------------------------------------------
 
     def test_settings_time_zone_uses_the_existing_endpoint_without_a_home_tile(self):
@@ -676,6 +712,7 @@ class Screens(unittest.TestCase):
             "set_security",
             "set_display",
             "set_time",
+            "set_updates",
             "network",
         ]
         self.assertEqual(names({}), base, "absent: no everyday apps")
@@ -698,6 +735,7 @@ class Screens(unittest.TestCase):
                 "set_security",
                 "set_display",
                 "set_time",
+                "set_updates",
                 "network",
             ],
         )
@@ -721,6 +759,7 @@ class Screens(unittest.TestCase):
                 "set_security",
                 "set_display",
                 "set_time",
+                "set_updates",
                 "network",
             ],
         )
@@ -745,6 +784,7 @@ class Screens(unittest.TestCase):
                 "set_security",
                 "set_display",
                 "set_time",
+                "set_updates",
                 "network",
             ],
             "the Duo list: the converter has a native screen",
@@ -766,6 +806,7 @@ class Screens(unittest.TestCase):
                 "set_security",
                 "set_display",
                 "set_time",
+                "set_updates",
                 "network",
             ],
             "only when OPOS_APPS names it",
