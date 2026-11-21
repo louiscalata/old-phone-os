@@ -9,12 +9,14 @@ Clock, Contacts, Notes, Converter and Call log use the server's own app endpoint
 native screens and the old interface show the same alarms, people, notes, conversions and calls. The calculator needs
 no server.
 Network (opened from Settings) uses the server's net_* actions, the same ones the browser's /network page uses.
+Date & time and Updates use the same server endpoints as the browser's Settings.
 """
 
 from __future__ import annotations
 
 import functools
 import json
+import math
 import os
 import shutil
 import threading
@@ -28,8 +30,8 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from opos import apps, notices  # noqa: E402
-from opos.native import logic, netlogic, posture  # noqa: E402
-from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, vbox  # noqa: E402
+from opos.native import logic, netlogic, posture, updatelogic  # noqa: E402
+from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, settings_row, vbox  # noqa: E402
 
 MISSING = "%s is not part of the OPOS installed on this phone yet. It arrives with the next update."
 ERRORS = {
@@ -185,7 +187,7 @@ class Lock(Page):
 
     def build(self):
         self.time, self.date = label("--:--", "clock"), label("", "big")
-        self.batt, self.story = label("", "big"), label("", "dim")
+        self.batt, self.story = label("Battery not reported", "big"), label("", "dim")
         self.link = label("", "big")
         self.link.set_visible(False)
         read = reading(self.time, self.date, self.batt, self.story, self.link)
@@ -201,8 +203,8 @@ class Lock(Page):
         return read, act
 
     def show(self, snap):
-        b = snap.get("battery") or {}
-        self.batt.set_label("%s%%%s" % (b.get("percent", "--"), "  charging" if snap.get("charging") else ""))
+        caption, _battery = logic.battery_status(snap)
+        self.batt.set_label(caption)
         self.story.set_label(snap.get("lock_story") or "")
 
     def lost(self, text):
@@ -217,49 +219,62 @@ class Lock(Page):
 
 
 class Home(Page):
-    """The tiles under the thumb; the other screen previews the chosen app, live, and its rows can be tapped."""
+    """A single column of apps under the thumb. Holding an app opens its live preview."""
 
     name = "home"
 
     def build(self):
-        self.chosen = "phone"
+        self.chosen, self.previewing = "phone", False
         self.v_title, self.v_text, self.v_note = label("", "head"), label("", "big"), label("", "dim")
         self.v_rows = vbox(spacing=0)
         read = reading(self.v_title, self.v_text, self.v_rows, self.v_note)
-        grid = Gtk.Grid(column_spacing=12, row_spacing=12, column_homogeneous=True)
-        for i, (app_id, name) in enumerate(self.shell.apps):
+        read.add_css_class("home-idle")
+        self.tiles = vbox(spacing=4)
+        for app_id, name in self.shell.apps:
             tile = button(name, lambda a=app_id: self.shell.go(a), "tile")
+            tile.get_child().set_xalign(0)
             hold = Gtk.GestureLongPress()
             hold.connect(
                 "pressed", lambda g, *_xy, a=app_id: (g.set_state(Gtk.EventSequenceState.CLAIMED), self.choose(a))
             )
             tile.add_controller(hold)
-            grid.attach(tile, i % 2, i // 2, 1, 1)
+            self.tiles.append(tile)
         self.open = button("Open", lambda: self.shell.go(self.chosen), "main")
         act = column(
             label("Tap to open. Press and hold to look first.", "dim"),
-            bottom=(grid, bar(button("Lock", lambda: self.shell.go("lock")), self.open)),
+            bottom=(self.tiles, bar(button("Lock", lambda: self.shell.go("lock")), self.open)),
         )
         return read, act
 
     def enter(self):
-        self.shell.pages[self.chosen].refresh()  # the preview must not be what the app showed at its last visit
+        self.previewing = False
+        self.show(self.shell.snap)
 
     def choose(self, app_id):
-        self.chosen = app_id
+        self.chosen, self.previewing = app_id, True
         self.shell.pages[app_id].refresh()
         self.show(self.shell.snap)
 
     def show(self, snap):
         page = self.shell.pages[self.chosen]
+        self.open.set_label("Open %s" % page.title)
+        if not self.previewing:
+            self.read.add_css_class("home-idle")
+            for item in (self.v_title, self.v_text, self.v_note):
+                item.set_label("")
+                item.set_visible(False)
+            fill(self.v_rows, [])
+            return
+        self.read.remove_css_class("home-idle")
         text, rows = page.preview(snap)
         self.v_title.set_label(page.title)
+        self.v_title.set_visible(True)
         self.v_text.set_label(text)
         self.v_text.set_visible(bool(text))
         self.v_note.set_label(
             snap.get("home_note") or ""
         )  # the server words it: practice mode, or calls and messages on
-        self.open.set_label("Open %s" % page.title)
+        self.v_note.set_visible(bool(self.v_note.get_label()))
         fill(self.v_rows, rows)
 
 
@@ -451,7 +466,60 @@ class Messages(Page):
         return "", self.rows(snap, opener)
 
 
-class Clock(Page):
+class RemoveReview(Page):
+    """Review deletion of a selected Clock or Contacts row."""
+
+    def with_remove_review(self, controls):
+        self.delete_target, self.deleting = None, False
+        self.delete_prompt = label("", "mid")
+        self.cancel_delete_button = button("Cancel", self.cancel_delete, "main")
+        self.confirm_delete_button = button("Yes, delete", self.confirm_delete)
+        review = column(bottom=(self.delete_prompt, bar(self.cancel_delete_button, self.confirm_delete_button)))
+        self.actions = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        self.actions.add_named(controls, "edit")
+        self.actions.add_named(review, "review")
+        return self.actions
+
+    def paint_removal(self):
+        if self.delete_target != self.removal():
+            self.delete_target = None
+        self.delete_prompt.set_label(self.delete_target[1] if self.delete_target else "")
+        self.actions.set_visible_child_name("review" if self.delete_target else "edit")
+        self.remove_button.set_sensitive(not self.deleting)
+
+    def remove(self):
+        if self.deleting or self.delete_target:
+            return
+        self.delete_target = self.removal()
+        self.paint_removal()
+        if self.delete_target:
+            self.cancel_delete_button.grab_focus()
+
+    def cancel_delete(self):
+        self.delete_target = None
+        self.paint_removal()
+
+    def leave(self):
+        self.cancel_delete()
+
+    def confirm_delete(self):
+        target = self.delete_target
+        if self.deleting or target is None or target != self.removal():
+            self.cancel_delete()
+            return
+        self.deleting = True
+        self.cancel_delete()
+
+        def done(data, fresh):
+            self.deleting = False
+            self.paint_removal()
+            if not fresh and not self.confirmed(data):
+                self.say(self.refusal_words(data) or MISSING % self.title)
+
+        self.call({"action": "delete", "id": target[0]}, done=done)
+
+
+class Clock(RemoveReview):
     name, title, api = "clock", "Clock", "clock"
 
     def build(self):
@@ -467,7 +535,7 @@ class Clock(Page):
         )
         self.ringing = None
         self.pick = label("", "big")
-        self.sure, self.adding = logic.Confirm(), False  # Remove asks twice; Add waits for its answer
+        self.adding = False
         self.remove_button = button("Remove", self.remove, "chip")
         self.pick_box = vbox(
             self.pick,
@@ -511,6 +579,7 @@ class Clock(Page):
                 bar(self.home(), self.add),
             ),
         )
+        act = self.with_remove_review(act)
         self.set_daily(False)
         self.choose(None)
         self.ring.set_visible(False)
@@ -555,29 +624,27 @@ class Clock(Page):
         self.add.set_label("Adding" if on else "Add alarm")
         self.add.set_sensitive(not on)
 
+    def alarm(self):
+        return next((r for r in (self.data or {}).get("alarms", []) if r.get("id") == self.chosen), None)
+
     def choose(self, alarm_id):
         self.chosen = alarm_id
-        row = next((r for r in (self.data or {}).get("alarms", []) if r.get("id") == alarm_id), None)
-        self.sure.keep_only(alarm_id if row else None)
-        self.remove_button.set_label("Delete this alarm?" if self.sure.armed else "Remove")
+        row = self.alarm()
         self.pick_box.set_visible(row is not None)
         if row:
             self.pick.set_label("%s  %s" % logic.alarm_line(row))
+        self.paint_removal()
 
     def toggle(self):
-        row = next((r for r in (self.data or {}).get("alarms", []) if r.get("id") == self.chosen), None)
+        row = self.alarm()
         if row:
             self.call({"action": "toggle", "id": row["id"], "enabled": not row.get("enabled")})
 
-    def remove(self):
-        """The first tap asks "Delete this alarm?", the second deletes, as in the browser. The alarm stays on screen
-        until the server has removed it."""
-        if not self.chosen:
-            return
-        go = self.sure.tap(self.chosen)
-        self.remove_button.set_label("Remove" if go else "Delete this alarm?")
-        if go:
-            self.call({"action": "delete", "id": self.chosen})
+    def removal(self):
+        row = self.alarm()
+        if row and self.chosen:
+            time, detail = logic.alarm_line(row)
+            return self.chosen, f"Delete the {time} alarm ({detail})?"
 
     def paint(self, data):
         rows = []
@@ -619,7 +686,7 @@ class Clock(Page):
         ]
 
 
-class Contacts(Page):
+class Contacts(RemoveReview):
     name, title, api = "contacts", "Contacts", "contacts"
 
     def build(self):
@@ -628,7 +695,6 @@ class Contacts(Page):
         self.people = vbox(spacing=0)
         read = reading(label("Contacts", "head"), self.note, self.people)
         self.pick = label("", "big")
-        self.sure = logic.Confirm()
         self.remove_button = button("Remove", self.remove, "chip")
         self.pick_box = vbox(
             self.pick,
@@ -653,6 +719,7 @@ class Contacts(Page):
                 bar(self.home(), self.save_button),
             ),
         )
+        act = self.with_remove_review(act)
         self.focus("name")
         self.choose(None)
         return read, act
@@ -709,11 +776,10 @@ class Contacts(Page):
     def choose(self, ident):
         self.chosen = ident
         person = self.person()
-        self.sure.keep_only(ident if person else None)
-        self.remove_button.set_label("Delete this person?" if self.sure.armed else "Remove")
         self.pick_box.set_visible(person is not None)
         if person:
             self.pick.set_label("%s\n%s" % (person.get("name") or "", self.number_of(person)))
+        self.paint_removal()
 
     def ring(self):
         person = self.person()
@@ -727,15 +793,12 @@ class Contacts(Page):
             self.shell.go("messages")
             self.shell.pages["messages"].open_thread(self.number_of(person))
 
-    def remove(self):
-        """The first tap asks "Delete this person?", the second deletes, as in the browser. The person stays on screen
-        until the server has removed them."""
-        if not self.chosen:
-            return
-        go = self.sure.tap(self.chosen)
-        self.remove_button.set_label("Remove" if go else "Delete this person?")
-        if go:
-            self.call({"action": "delete", "id": self.chosen})
+    def removal(self):
+        person = self.person()
+        if person and self.chosen:
+            name, number = person.get("name"), self.number_of(person)
+            identity = f"{name} ({number})" if name and number else name or number
+            return self.chosen, f"Delete the contact {identity}?" if identity else "Delete this contact?"
 
     def paint(self, data):
         fill(
@@ -768,7 +831,7 @@ class Notes(Page):
         self.ident, self.entry = None, logic.Entry(limit=20000, multiline=True)
         self.want, self.busy = None, False  # the note being opened ("add" for a new one); a save or delete in flight
         self.want_n = None  # the request number of the last open or add: only its reply is adopted
-        self.sure = logic.Confirm()  # Delete asks twice, as in the browser
+        self.delete_target = None
         self.head, self.list, self.text = label("Notes", "head"), vbox(spacing=0), label("", "big")
         read = reading(self.head, self.note, self.list, self.text)
         self.keys = Keys(self.key)
@@ -776,27 +839,39 @@ class Notes(Page):
         self.delete_button = button("Delete this note", self.delete, "chip")
         self.tools = hbox(self.close_button, self.delete_button, spacing=8)
         self.main = button("New note", self.main_action, "main")
-        act = column(bottom=(self.tools, self.keys, bar(self.home(), self.main)))
+        edit = column(bottom=(self.tools, self.keys, bar(self.home(), self.main)))
+        self.delete_prompt = label("", "mid")
+        self.cancel_delete_button = button("Cancel", self.cancel_delete, "main")
+        self.confirm_delete_button = button("Yes, delete", self.confirm_delete)
+        self.review = column(bottom=(self.delete_prompt, hbox(self.cancel_delete_button, self.confirm_delete_button)))
+        # The gate takes the place of the editor controls. Both children reserve the same pane height,
+        # and neither can cover the reading pane when the shell stacks its panes on one screen.
+        self.actions = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        self.actions.add_named(edit, "edit")
+        self.actions.add_named(self.review, "review")
         self.mode()
-        return read, act
+        return read, self.actions
 
     def mode(self):
         on = self.ident is not None
-        for w in (self.keys, self.tools, self.text):
+        for w in (self.keys, self.tools, self.text, self.review):
             w.set_visible(on)
         self.list.set_visible(not on)
         self.main.set_label("Save" if on else "New note")
         self.head.set_label("Note" if on else "Notes")
-        self.sure.keep_only(self.ident)
-        self.delete_button.set_label("Delete this note?" if self.sure.armed else "Delete this note")
+        if self.delete_target != self.ident:
+            self.delete_target = None
+        self.actions.set_visible_child_name("review" if self.delete_target is not None else "edit")
         for w in (self.close_button, self.delete_button, self.main):
             w.set_sensitive(not self.busy)
 
     def key(self, ch):
-        if not self.busy and self.entry.key(ch):
+        if self.delete_target is None and not self.busy and self.entry.key(ch):
             self.text.set_label(self.entry.text + "_")
 
     def open_note(self, ident):
+        if self.delete_target is not None:
+            return
         self.want = ident
         self.ask_note({"action": "open", "id": ident})
 
@@ -824,7 +899,7 @@ class Notes(Page):
             self.mode()
 
     def main_action(self):
-        if self.busy:
+        if self.busy or self.delete_target is not None:
             return
         if self.ident is None:
             self.want = "add"
@@ -851,16 +926,32 @@ class Notes(Page):
         self.call(data, done=done)
 
     def close(self):
-        if self.ident is not None and not self.busy:
+        if self.ident is not None and not self.busy and self.delete_target is None:
             self.change({"action": "save", "id": self.ident, "text": self.entry.text}, leave=True)
 
     def delete(self):
-        """The first tap asks "Delete this note?", the second deletes."""
-        if self.ident is None or self.busy:
+        if self.ident is None or self.busy or self.delete_target is not None:
             return
-        if self.sure.tap(self.ident):
-            self.change({"action": "delete", "id": self.ident}, leave=True)
-        else:
+        self.delete_target = self.ident
+        title = (self.entry.text.strip().splitlines() or ["Empty note"])[0][:40]
+        self.delete_prompt.set_label(f'Delete the note "{title}"? It cannot be brought back.')
+        self.mode()
+        self.cancel_delete_button.grab_focus()
+
+    def cancel_delete(self):
+        if self.delete_target is not None:
+            self.leave()
+            self.delete_button.grab_focus()
+
+    def confirm_delete(self):
+        if self.delete_target is None or self.delete_target != self.ident or self.busy:
+            return
+        ident, self.delete_target = self.delete_target, None
+        self.change({"action": "delete", "id": ident}, leave=True)
+
+    def leave(self):
+        if self.delete_target is not None:
+            self.delete_target = None
             self.mode()
 
     def paint(self, data):
@@ -973,6 +1064,7 @@ class Converter(Page):
         self.amount = label(" ", "head", wrap=False, x=1.0)
         self.amount.add_css_class("rule")
         self.pad = Gtk.Grid(column_spacing=8, row_spacing=8, column_homogeneous=True)
+        self.pad.add_css_class("converter-pad")
         for i, key in enumerate(self.PAD):
             self.pad.attach(button(key, lambda k=key: self.key(k), "pad"), i % 3, i // 3, 1, 1)
         self.pad.attach(button("Delete", lambda: self.key("<"), "pad"), 0, 4, 3, 1)
@@ -1199,14 +1291,118 @@ class Calls(Page):
 
 class Settings(Page):
     name, title = "settings", "Settings"
+    # Top to bottom. Each entry is shown only when its page ships with the shell.
+    GROUPS = (
+        ("About", "set_about"),
+        ("Security", "set_security"),
+        ("Sound", "set_sound"),
+        ("Battery", "set_battery"),
+        ("Date & time", "set_time"),
+        ("Updates", "set_updates"),
+        ("Network", "network"),
+        ("Hand & posture", "set_hand"),
+        ("Display", "set_display"),
+    )
 
     def build(self):
-        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")  # read on entering Settings, see enter()
-        self.hand = button("", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"), "main")
-        self.hinge_line = label("", "mid", "dim")
+        self.risk = label(notices.DISCLAIMER + " " + EMERGENCY, "mid")
+        read = reading(label(self.title, "head"), self.risk)
+        available = {page.name for page in enabled_pages()}
+        details = {"set_about": logic.STORAGE_UNKNOWN, "set_hand": hand_posture(self.shell)}
+        self.groups = {
+            page: settings_row(title, details.get(page, ""), lambda p=page: self.shell.go(p))
+            for title, page in self.GROUPS
+            if page in available
+        }
+        self.storage = self.groups["set_about"].detail
+        self.hinge_line = self.groups["set_hand"].detail
+        links = vbox(*self.groups.values(), spacing=2)
+        home = self.home()
+        home.add_css_class("settings-home")
+        act = column(bottom=(links, bar(home)))
+        act.set_margin_top(12)
+        act.set_margin_bottom(16)
+        return read, act
+
+    @staticmethod
+    def data_folder():
+        """Where the owner's files live: the home folder, or the root when there is no home."""
+        home = os.path.expanduser("~")
+        return home if os.path.isdir(home) else os.sep
+
+    def enter(self):
+        """Refresh local storage once on entry. The Network and Date & time pages own their reads."""
+        storage = logic.read_storage(self.data_folder(), shutil.disk_usage)
+        self.storage.set_label(storage)
+        about = self.shell.pages.get("set_about")
+        if about is not None:
+            about.storage.set_label(storage)
+
+    def paint_hand(self):
+        hand = self.shell.pages.get("set_hand")
+        if hand is not None:
+            hand.paint_hand()
+
+    def paint_posture(self):
+        words = hand_posture(self.shell)
+        self.hinge_line.set_label(words)
+        hand = self.shell.pages.get("set_hand")
+        if hand is not None:
+            hand.hinge_line.set_label(words)
+
+    def preview(self, snap):
+        b = snap.get("battery") or {}
+        return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), [
+            (
+                "Buttons on the %s" % self.shell.hand,
+                "Tap to switch",
+                lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"),
+            ),
+            ("Network", "Wi-Fi and radios", lambda: self.shell.go("network")),
+        ]
+
+
+def hand_posture(shell):
+    return posture.describe(
+        getattr(shell, "posture", None),
+        getattr(shell, "angle", None),
+        getattr(shell, "back", None) is not None,
+    )
+
+
+class SettingsSection(Page):
+    """A Settings page follows the shell's normal navigation and has no Home tile."""
+
+    tile = False
+
+    def back_to_settings(self):
+        return button("◀ Settings", lambda: self.shell.go("settings"))
+
+
+class SetAbout(SettingsSection):
+    name, title = "set_about", "About"
+
+    def build(self):
+        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")
         read = reading(
-            label("Settings", "head"),
-            label("Hand", "big"),
+            label(self.title, "head"),
+            label("Storage", "big"),
+            self.storage,
+            label(notices.as_text(), "mid", "dim"),
+        )
+        return read, column(bottom=(bar(self.back_to_settings()),))
+
+
+class SetHand(SettingsSection):
+    name, title = "set_hand", "Hand & posture"
+
+    def build(self):
+        self.hand = button("", self.switch_hand, "main")
+        self.position = label("", "mid")
+        self.hinge_line = label(hand_posture(self.shell), "mid", "dim")
+        read = reading(
+            label(self.title, "head"),
+            self.position,
             label(
                 "The buttons sit on the screen under that hand; the other screen is for reading. "
                 "You can also swipe sideways across the hinge: the buttons follow your finger.",
@@ -1221,56 +1417,490 @@ class Settings(Page):
                 "mid",
                 "dim",
             ),
-            label("Storage", "big"),
-            self.storage,
-            label("About", "big"),
-            label(notices.as_text(), "mid", "dim"),
-        )
-        act = column(
-            bottom=(
-                self.hand,
-                button("Network", lambda: self.shell.go("network")),
-                button("Use the old interface", self.shell.leave),
-                bar(self.home()),
-            )
         )
         self.paint_hand()
-        self.paint_posture()
-        return read, act
+        return read, column(bottom=(bar(self.back_to_settings(), self.hand),))
 
-    @staticmethod
-    def data_folder():
-        """Where the owner's files live: the home folder, or the root when there is no home."""
-        home = os.path.expanduser("~")
-        return home if os.path.isdir(home) else os.sep
-
-    def enter(self):
-        """The storage line is read once each time Settings is opened (one statvfs call), never in the background."""
-        self.storage.set_label(logic.read_storage(self.data_folder(), shutil.disk_usage))
+    def switch_hand(self):
+        self.shell.set_hand("left" if self.shell.hand == "right" else "right")
 
     def paint_hand(self):
-        self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
+        current = self.shell.hand
+        other = "left" if current == "right" else "right"
+        self.position.set_label(f"Buttons on the {current}.")
+        self.hand.set_label(f"Switch to {other}")
 
-    def paint_posture(self):
-        """The posture line in Settings; a label only, nothing on the screen depends on it."""
-        self.hinge_line.set_label(
-            posture.describe(
-                getattr(self.shell, "posture", None),
-                getattr(self.shell, "angle", None),
-                getattr(self.shell, "back", None) is not None,
+
+class SetBattery(SettingsSection):
+    name, title = "set_battery", "Battery"
+
+    def build(self):
+        self.summary = label("", "mid")
+        names = ("Level", "Charging", "Time left", "Drain", "Temperature", "Health")
+        self.readings = {name: label("", "mid") for name in names}
+        self.policy = label("", "mid", "dim")
+        read = reading(label(self.title, "head"), self.summary, *self.readings.values(), self.policy)
+        action = column(
+            bottom=(
+                button("Open the battery sheet", lambda: self.shell.set_shade(True), "side"),
+                bar(self.back_to_settings()),
             )
         )
+        self.show(self.shell.snap)
+        return read, action
 
-    def preview(self, snap):
-        b = snap.get("battery") or {}
-        return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), [
-            (
-                "Buttons on the %s" % self.shell.hand,
-                "Tap to switch",
-                lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"),
+    def show(self, snap):
+        summary, rows, policy = logic.battery_details(snap)
+        self.summary.set_label(summary)
+        for (name, widget), text in zip(self.readings.items(), rows, strict=True):
+            widget.set_label(f"{name}: {text}")
+        self.policy.set_label(policy)
+        self.policy.set_visible(bool(policy))
+
+
+class SetSound(SettingsSection):
+    name, title = "set_sound", "Sound"
+
+    def build(self):
+        self.level = label("", "mid")
+        read = reading(
+            label(self.title, "head"),
+            label("OPOS has no media or ringer volume control. The volume keys change a practice number.", "mid"),
+            self.level,
+        )
+        self.show(self.shell.snap)
+        return read, column(bottom=(bar(self.back_to_settings()),))
+
+    def show(self, snap):
+        state = snap.get("volume_keys") if isinstance(snap, dict) else None
+        percent = state.get("percent") if isinstance(state, dict) and state.get("simulated") is True else None
+        value = f"{percent}%" if type(percent) is int and 0 <= percent <= 100 else logic.NOT_REPORTED
+        self.level.set_label(f"Practice volume: {value}")
+
+
+class SetSecurity(SettingsSection):
+    name, title = "set_security", "Security"
+
+    def build(self):
+        self.lid = label("", "mid")
+        self.tick()
+        read = reading(
+            label(self.title, "head"),
+            label(
+                "The native lock screen keeps the interface covered. OPOS uses the browser to show a configured PIN.",
+                "mid",
             ),
-            ("Network", "Wi-Fi and radios", lambda: self.shell.go("network")),
-        ]
+            self.lid,
+        )
+        action = column(
+            bottom=(
+                button("Show lock screen", self.show_lock, "side"),
+                bar(self.back_to_settings()),
+            )
+        )
+        return read, action
+
+    def tick(self):
+        closed = self.shell.lid_closed
+        state = {True: "Closed", False: "Open"}.get(closed, logic.NOT_REPORTED)
+        self.lid.set_label(f"Lid: {state}")
+
+    def show_lock(self):
+        self.shell.go("lock")
+
+
+class SetDisplay(SettingsSection):
+    name, title = "set_display", "Display"
+    BRIGHTNESS_STEPS = 10
+
+    def build(self):
+        self.bright_line = label("", "mid")
+        self.steps = tuple(
+            button(f"{step * 10}%", lambda value=step: self.pick_brightness(value), "brightness-step")
+            for step in range(1, self.BRIGHTNESS_STEPS + 1)
+        )
+        self.bright_controls = hbox(*self.steps, spacing=3)
+        self.theme_line = label("", "mid")
+        self.theme_source = label("", "dim")
+        self.dark = button("Dark", lambda: self.pick_theme("dark"))
+        self.paper = button("Paper", lambda: self.pick_theme("paper"))
+        read = reading(label(self.title, "head"), self.bright_line, self.theme_line, self.theme_source, self.note)
+        act = column(
+            bottom=(
+                self.bright_controls,
+                hbox(self.dark, self.paper),
+                bar(self.back_to_settings()),
+            )
+        )
+        self.paint_brightness(None)
+        self.paint_theme()
+        return read, act
+
+    def enter(self):
+        self.paint_brightness(self.shell.brightness_level())
+        self.paint_theme()
+
+    def paint_brightness(self, level):
+        step = 0
+        if level is None:
+            self.bright_line.set_label("Brightness unavailable")
+        else:
+            step = max(1, round(level * self.BRIGHTNESS_STEPS))
+            self.bright_line.set_label(f"Brightness {step * 10}%")
+        for i, control in enumerate(self.steps, start=1):
+            (control.add_css_class if i <= step else control.remove_css_class)("on")
+        self.bright_controls.set_sensitive(level is not None)
+
+    def pick_brightness(self, step):
+        if self.shell.brightness_level() is None:
+            self.paint_brightness(None)
+            return
+        done = self.shell.set_brightness(step / self.BRIGHTNESS_STEPS)
+        self.say("" if done else "Brightness could not be set on every panel.")
+        self.paint_brightness(self.shell.brightness_level())
+
+    def paint_theme(self):
+        theme, fixed = self.shell.theme, self.shell.theme_fixed
+        self.theme_line.set_label(f"Theme {theme.title()}")
+        detail = ""
+        if fixed is not None:
+            detail = "OPOS_THEME fixes the theme for this session."
+        elif not self.shell.theme_kept:
+            detail = "This theme is active. It could not be saved. Tap it again to retry."
+        self.theme_source.set_label(detail)
+        self.theme_source.set_visible(bool(detail))
+        for name, control in (("dark", self.dark), ("paper", self.paper)):
+            (control.add_css_class if theme == name else control.remove_css_class)("on")
+            control.set_sensitive(fixed is None)
+
+    def pick_theme(self, theme):
+        self.shell.set_theme(theme)
+        self.paint_theme()
+
+
+class SetTime(SettingsSection):
+    name, title = "set_time", "Date & time"
+
+    def build(self):
+        self.zones, self.saved_zone = (), None
+        self.region, self.chosen = None, None
+        self.active, self.saving = False, False
+        self.summary = label("", "mid")
+        self.clock = label("", "mid", "dim")
+        self.cities = vbox(spacing=0)
+        self.pick = label("", "big")
+        self.alarm = label("", "mid", "dim")
+        self.regions_button = button("◀ Regions", self.to_regions, "side")
+        self.use = button("Use this zone", self.save, "main")
+        read = reading(label(self.title, "head"), self.summary, self.clock, self.note, self.cities)
+        act = column(
+            bottom=(
+                self.pick,
+                self.alarm,
+                self.regions_button,
+                bar(self.back_to_settings(), self.use),
+            )
+        )
+        self.paint_choices()
+        return read, act
+
+    def fetch(self, data):
+        # The endpoint belongs to first-run, not to OPOS_APPS.
+        return self.shell.core.app("timezone", data)
+
+    def enter(self):
+        self.active = True
+        self.zones, self.saved_zone = (), None
+        self.region, self.chosen = None, None
+        self.summary.set_label("Time zone: waiting for OPOS.")
+        self.clock.set_label("")
+        self.say("")
+        self.paint_choices()
+        if not self.saving:
+            self.refresh()
+
+    def leave(self):
+        self.active = False
+        self.seq.accept(self.seq.issue(), floor=True)
+
+    def refresh(self):
+        if self.active and not self.saving:
+            self.call()
+
+    def got(self, data):
+        if not self.active or self.saving:  # save acknowledgements are handled in saved()
+            return
+        data = data if isinstance(data, dict) else {}
+        zones = data.get("zones")
+        self.zones = ()
+        if isinstance(zones, list):
+            self.zones = tuple(dict.fromkeys(zone for zone in zones if isinstance(zone, str) and zone))
+        self.saved_zone = data.get("saved")
+        if not self.zones:
+            self.region, self.chosen = None, None
+            self.summary.set_label(
+                "Time zone is unavailable on this phone." if data.get("missing") else "Time zones could not be read."
+            )
+            self.clock.set_label("")
+        else:
+            if self.chosen not in self.zones:
+                self.chosen = None
+            self.summary.set_label(
+                "Saved zone: " + self.saved_zone
+                if isinstance(self.saved_zone, str) and self.saved_zone
+                else "No time zone saved. OPOS uses the system default."
+            )
+            clock = data.get("clock")
+            words = []
+            if isinstance(clock, dict):
+                figure = clock.get("note") if clock.get("plausible") is False else clock.get("text")
+                if isinstance(figure, str) and figure:
+                    words.append(figure)
+            if data.get("source") == "builtin":
+                words.append("OPOS is using built-in time zone rules. Local time can be wrong if those rules change.")
+            words.append("Date and time come from the system.")
+            self.clock.set_label("\n".join(words))
+        self.paint_choices()
+
+    def to_regions(self):
+        self.region, self.chosen = None, None
+        self.paint_choices()
+
+    def open_region(self, region):
+        self.region, self.chosen = region, None
+        if region in self.zones:  # UTC is listed as a region and is itself a zone.
+            self.chosen = region
+        self.paint_choices()
+
+    def choose(self, zone):
+        if zone not in self.zones:
+            return
+        self.chosen = zone
+        row = self.paint_choices()
+        if row is not None and row.get_mapped():
+            self.reveal_city(row)
+            # GTK can reallocate after the selection text changes. Check again after that frame's layout.
+            self.read.add_tick_callback(lambda *_: self.reveal_after_layout(row))
+
+    def reveal_after_layout(self, row):
+        GLib.idle_add(self.reveal_city, row)
+        return False
+
+    def reveal_city(self, row):
+        if not self.active or row.get_parent() is not self.cities or not row.has_css_class("on"):
+            return False
+        content = self.cities.get_parent()
+        adjustment = self.read.get_vadjustment()
+        ok, bounds = row.compute_bounds(content)
+        if ok and bounds.get_height() > 0 and adjustment.get_page_size() > 0:
+            # Use unscrolled content coordinates. Round both edges outward for GTK's integral allocations.
+            y = bounds.get_y() + content.get_margin_top()
+            adjustment.clamp_page(math.floor(y), math.ceil(y + bounds.get_height()))
+        return False
+
+    def paint_choices(self):
+        selected = None
+        if self.region is None:
+            rows = [
+                (name, f"{count} zones" if count != 1 else "1 zone", lambda n=name: self.open_region(n))
+                for name, count in logic.timezone_regions(self.zones)
+            ]
+            fill(self.cities, rows)
+        else:
+            cities = logic.timezone_cities(self.zones, self.region)
+            fill(self.cities, [(name, zone, lambda z=zone: self.choose(z)) for name, zone in cities])
+            row = self.cities.get_first_child()
+            for _, zone in cities:
+                if row is None:
+                    break
+                if zone == self.chosen:
+                    row.add_css_class("on")
+                    selected = row
+                else:
+                    row.remove_css_class("on")
+                row = row.get_next_sibling()
+        self.regions_button.set_visible(self.region is not None)
+        self.regions_button.set_sensitive(not self.saving)
+        self.cities.set_sensitive(not self.saving)
+        prompt = "Choose a city" if self.region else "Choose a region"
+        self.pick.set_label((self.chosen or prompt) if self.zones else "")
+        can_change = bool(self.chosen and self.chosen != self.saved_zone)
+        self.alarm.set_label("Alarms ring at the new local time." if can_change else "")
+        self.use.set_sensitive(can_change and not self.saving)
+        return selected
+
+    def save(self):
+        zone = self.chosen
+        if not self.active or self.saving or zone not in self.zones or zone == self.saved_zone:
+            return
+        self.saving = True
+        self.paint_choices()
+        self.say(f"Saving {zone}…")
+        self.call({"zone": zone, "client_tz": zone}, lambda data, fresh: self.saved(zone, data, fresh))
+
+    def saved(self, zone, data, fresh):
+        refresh = fresh or not self.confirmed(data)  # Page.deliver refreshes a confirmed write with a stale reply.
+        self.saving = False
+        data = data if isinstance(data, dict) else {}
+        if data.get("ok") is True and data.get("zone") == zone:
+            self.region, self.chosen = None, None
+            applied = self.shell.apply_zone(zone)
+            if self.active:
+                self.say(f"{zone} saved." if applied else f"{zone} saved. This screen will use it after OPOS restarts.")
+        elif self.active:
+            if data.get("missing"):
+                self.say("Time zone is unavailable on this phone.")
+            else:
+                self.say(f"Not saved: {data.get('error') or 'no answer from OPOS'}.")
+        if refresh:
+            self.refresh()
+
+
+class SetUpdates(SettingsSection):
+    name, title = "set_updates", "Updates"
+    POLL_MS = 2000
+
+    def build(self):
+        self.active, self.sending = False, False
+        self.visit, self.timer, self.armed = 0, None, None
+        self.status = label("", "mid")
+        self.check_b = button("Check now", self.check, "main")
+        self.refresh_b = button("Refresh status", self.refresh, "side")
+        self.settings_b = self.back_to_settings()
+        self.download_b = button("Download…", self.review_download, "side")
+        self.rollback_b = button("Go back…", self.review_rollback, "side")
+        self.review_text = label("", "mid")
+        self.confirm_b = button("", self.confirm_review, "main")
+        self.cancel_b = button("Cancel", self.cancel_review, "side")
+        read = reading(label(self.title, "head"), self.status, self.note)
+        act = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        act.add_named(
+            column(bottom=(self.download_b, self.rollback_b, self.refresh_b, bar(self.settings_b, self.check_b))),
+            "actions",
+        )
+        act.add_named(column(bottom=(self.review_text, bar(self.cancel_b, self.confirm_b))), "review")
+        self.actions = act
+        self.paint(None)
+        return read, act
+
+    def fetch(self, data):
+        if data is None:
+            return self.shell.core.app("update")
+        return self.shell.core.post(data["action"], **{k: v for k, v in data.items() if k != "action"})
+
+    def enter(self):
+        self.visit += 1
+        self.active = True
+        self.say("")
+        self.paint(None)
+        self.refresh()
+
+    def leave(self):
+        self.active = False
+        self.armed = None
+        self.seq.accept(self.seq.issue(), floor=True)
+        if self.timer is not None:
+            GLib.source_remove(self.timer)
+            self.timer = None
+
+    def refresh(self):
+        if self.active and not self.sending:
+            self.refresh_b.set_sensitive(False)
+            self.call()
+
+    def got(self, data):
+        if self.active and not self.sending:
+            self.paint(data if isinstance(data, dict) else {})
+            self.keep_polling()
+
+    def keep_polling(self):
+        if (
+            self.timer is None
+            and self.active
+            and self.data
+            and not self.data.get("stalled")
+            and updatelogic.busy(self.data)
+        ):
+            self.timer = GLib.timeout_add(self.POLL_MS, self.poll)
+
+    def poll(self):
+        self.timer = None
+        self.refresh()
+        return False
+
+    def paint(self, data):
+        self.data = data
+        self.status.set_label("\n".join(updatelogic.state_lines(data)))
+        self.check_b.set_sensitive(not self.sending and updatelogic.can_check(data or {}))
+        self.refresh_b.set_sensitive(not self.sending)
+        download = updatelogic.download_offer(data or {})
+        rollback = updatelogic.rollback_offer(data or {})
+        self.download_b.set_visible(download is not None)
+        self.download_b.set_sensitive(not self.sending)
+        self.rollback_b.set_visible(rollback is not None)
+        self.rollback_b.set_sensitive(not self.sending)
+        staged = updatelogic.mapping((data or {}).get("rollback")).get("staged")
+        self.rollback_b.set_label("Drop staged update…" if staged is not None else "Go back…")
+        if self.armed and self.armed not in (download, rollback):
+            self.armed = None
+            self.say("The updates on this phone changed. Review the request again.")
+        self.show_review()
+
+    def show_review(self):
+        self.review_text.set_label(self.armed[3] if self.armed else "")
+        self.confirm_b.set_label(self.armed[2] if self.armed else "")
+        self.actions.set_visible_child_name("review" if self.armed else "actions")
+
+    def review_download(self):
+        if self.active and not self.sending:
+            self.armed = updatelogic.download_offer(self.data or {})
+            self.show_review()
+
+    def review_rollback(self):
+        if self.active and not self.sending:
+            self.armed = updatelogic.rollback_offer(self.data or {})
+            self.show_review()
+
+    def cancel_review(self):
+        self.armed = None
+        self.show_review()
+
+    def confirm_review(self):
+        if not self.active or self.sending or not self.armed:
+            return
+        offers = (updatelogic.download_offer(self.data or {}), updatelogic.rollback_offer(self.data or {}))
+        if self.armed in offers:
+            action, review_key, _, _ = self.armed
+            self.cancel_review()
+            self.send(action, "Sending the reviewed request…", expected=review_key)
+
+    def check(self):
+        if not self.active or self.sending or not updatelogic.can_check(self.data or {}):
+            return
+        host = updatelogic.source_host(updatelogic.mapping(self.data.get("source")))
+        self.send("update_check", f"Checking {host or 'the update source'}…")
+
+    def send(self, action, doing, **fields):
+        self.sending = True
+        self.paint(self.data)
+        self.say(doing)
+        visit = self.visit
+        self.call(dict(fields, action=action), lambda data, fresh: self.acted(visit, data, fresh))
+
+    def acted(self, visit, data, fresh):
+        self.sending = False
+        if not self.active:
+            return
+        if visit != self.visit:
+            self.refresh()
+            return
+        if fresh and isinstance(data, dict) and data.get("ok") is True:
+            self.say("")
+            self.got(data)
+        else:
+            error = data.get("error") if isinstance(data, dict) else None
+            self.say(error or "The updater did not confirm the request.")
+            self.refresh()
 
 
 def owners_tap(fn):
@@ -1288,14 +1918,14 @@ def owners_tap(fn):
     return tap
 
 
-class Network(Page):
+class Network(SettingsSection):
     """Wi-Fi and the radios, through the server's net_* actions (opos.net does every change). No Home tile: Settings
     opens it.
 
     Nothing is asked while the page is not the one showing. On entering: the radios once, then one scan; while it shows,
     the radios again every POLL_MS (never a rescan). Nothing changes the Wi-Fi unless the owner taps for it: Forget,
-    Disconnect and Turn Wi-Fi off take two taps, as deleting does elsewhere, and Wi-Fi is never switched while its state
-    is not known. Each drawn radios read or list finds the chosen row again by name (rechoose); a Forget or Disconnect
+    Disconnect and Turn Wi-Fi off require a separate confirmation that names the change. Wi-Fi is switched only with
+    known radio state. Each drawn radios read or list finds the chosen row again by name (rechoose); a Forget or Disconnect
     prompt is dropped when that row changes or the connected network does. Disconnect names no network to the core, so
     its confirming tap sends nothing by itself: if the radios read drawn names the prompt's network as the connected
     one, the radios are read again (skipping the core's cache), the page is busy meanwhile, and the disconnect is sent
@@ -1310,8 +1940,8 @@ class Network(Page):
     for what it said before. The Wi-Fi button is held as well when it appears by itself (the pane goes back to idle
     because a newer list dropped the chosen row, or a change's answer closed the choice). The rows follow the same rule:
     when a newer list puts another network in a place, or changes what a tap on a place would offer, a tap on a row in
-    the next HOLD_S seconds chooses nothing and says the list changed (netlogic.LIST_CHANGED). The owner's own taps start
-    no hold, so a prompt they armed is confirmed by the very next tap and a row they chose is joined at once. The radios
+    the next HOLD_S seconds chooses nothing and says the list changed (netlogic.LIST_CHANGED). When a review closes
+    on an update, the controls it reveals are held too. The owner can confirm a review they opened without waiting. The radios
     and the scan each keep their own order (logic.Sequence): an older answer never replaces a newer one. Their request
     numbers come from one count (ask()), so between a radios read and a list it is known which was asked later: whether
     the chosen row is the connected one follows the later-asked of the two drawn (current()), so a list asked before
@@ -1337,7 +1967,7 @@ class Network(Page):
     visit's answer. The sending thread drops its copy once the request has gone. Nothing here prints, logs or saves it.
     """
 
-    name, title, tile = "network", "Network", False
+    name, title = "network", "Network"
     POLL_MS = 10000
     TITLES = {"name": "Name", "password": "Password"}
     # how long the shell waits for each action: the core may take up to about 95 s for a join (opos.net JOIN_WAIT_S and
@@ -1345,6 +1975,7 @@ class Network(Page):
     WAIT = {"net_status": 20, "net_scan": 30, "net_join": 100, "net_forget": 45, "net_wifi": 35}
     CHANGES = ("net_join", "net_forget", "net_wifi")
     HOLD_S = 1.5  # after a button changes by itself (not by the owner's tap), taps on it are ignored this long
+    REVIEW_CONTROLS = ("rows", "main", "wifi", "forget")
 
     def build(self):
         self.scan_data, self.status_data, self.chosen, self.other = None, None, None, False
@@ -1353,7 +1984,7 @@ class Network(Page):
         self.held = {}  # button -> until when a tap on it is ignored (hold())
         self.seen, self.by_owner = {}, False  # what each button last said (shown()); inside an owners_tap handler
         self.radios, self.found = logic.Sequence(), logic.Sequence()  # the order of the status and of the scan answers
-        self.sure = logic.Confirm()  # Forget, Disconnect and Turn Wi-Fi off ask twice
+        self.armed = None  # action and, for row actions, the SSID the owner reviewed
         self.secret, self.ssid_entry = netlogic.Secret(), logic.Entry(limit=32)
         self.status_n, self.scan_n = 0, 0  # the request numbers (ask()) of the radios read and of the list now drawn
         self.checking = None  # (network, request number) while a confirming Disconnect tap's read waits
@@ -1382,11 +2013,19 @@ class Network(Page):
                 self.typed,
                 self.keys,
                 self.chips,
-                bar(self.home(), self.main),
+                bar(self.back_to_settings(), self.main),
             ),
         )
+        self.review_prompt = label("", "mid")
+        self.review_cancel_b = button("Cancel", self.cancel_review, "main")
+        self.review_confirm_b = button("", self.confirm_review)
+        # Put Cancel where Disconnect was, so a second tap at the same place cannot confirm.
+        review = column(bottom=(self.review_prompt, bar(self.review_confirm_b, self.review_cancel_b)))
+        self.actions = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        self.actions.add_named(act, "network")
+        self.actions.add_named(review, "review")
         self.paint_act()
-        return read, act
+        return read, self.actions
 
     # --- what shows ---------------------------------------------------------------------------------------------
     def visible(self):
@@ -1419,29 +2058,62 @@ class Network(Page):
         self.typed.set_visible(m == "password")
         self.keys.set_visible(m in ("password", "other"))
         self.chips.set_visible(m != "idle")
-        self.forget_b.set_visible(m in ("known", "connected") and bool(row.get("known") or row.get("active")))
-        self.forget_b.set_label("Forget this network?" if self.sure.armed == ("forget", self.ssid()) else "Forget")
+        self.forget_b.set_visible(self.can_forget())
         main = {"idle": "Scan again", "connected": "Disconnect"}.get(m, "Join")
-        if m == "connected" and self.sure.armed == ("disconnect", self.ssid()):
-            main = "Disconnect now?"
         self.main.set_label(main)
         self.shown("main", (main, m, self.ssid()))
         self.main.set_visible(m != "unsupported")
         self.main.set_sensitive(not self.busy)
         self.paint_wifi()
         self.paint_typed()
+        self.paint_review()
+
+    def paint_review(self):
+        match self.armed:
+            case ("forget", ssid):
+                words = (
+                    f"Forget {ssid}? Its saved Wi-Fi settings will be removed. If connected, the phone will disconnect."
+                )
+                confirm = "Yes, forget"
+            case ("disconnect", ssid):
+                words, confirm = f"Disconnect from {ssid}? Wi-Fi stays on.", "Yes, disconnect"
+            case ("wifi-off",):
+                words, confirm = "Turn Wi-Fi off? The phone leaves every Wi-Fi network.", "Yes, turn Wi-Fi off"
+            case _:
+                words, confirm = "", ""
+        opening = self.armed and self.seen.get("review") is None
+        self.shown("review", self.armed)
+        self.review_prompt.set_label(words)
+        self.review_confirm_b.set_label(confirm)
+        self.review_confirm_b.set_sensitive(bool(words) and not self.busy)
+        self.actions.set_visible_child_name("review" if words else "network")
+        if opening:
+            self.review_cancel_b.grab_focus()
+
+    @owners_tap
+    def cancel_review(self):
+        self.armed = None
+        self.paint_act()
+
+    @owners_tap
+    def confirm_review(self):
+        if not self.visible() or self.busy or self.holding("review") or not self.armed:
+            return
+        armed, self.armed = self.armed, None
+        ssid = self.ssid()
+        if armed == ("disconnect", ssid) and self.mode() == "connected":
+            self.confirm_disconnect(ssid)
+        elif armed == ("forget", ssid) and self.can_forget():
+            self.act_on("net_forget", {"ssid": ssid}, "Forgetting...")
+        elif armed == ("wifi-off",) and netlogic.wifi_on(self.status_data) is True:
+            self.act_on("net_wifi", {"mode": "off"}, "Turning Wi-Fi off...")
+        else:
+            self.say(netlogic.CHANGED)
+            self.paint_act()
 
     def paint_wifi(self):
         on = netlogic.wifi_on(self.status_data)
-        says = (
-            "Wi-Fi: not known yet"
-            if on is None
-            else "Turn Wi-Fi on"
-            if on is False
-            else "Turn Wi-Fi off now?"
-            if self.sure.armed == ("wifi-off",)
-            else "Turn Wi-Fi off"
-        )
+        says = "Wi-Fi: not known yet" if on is None else "Turn Wi-Fi on" if on is False else "Turn Wi-Fi off"
         self.wifi.set_label(says)
         self.shown("wifi", (says, self.mode() == "idle"))  # what it says, and whether it is there at all
         self.wifi.set_sensitive(on is not None and not self.busy)
@@ -1468,11 +2140,10 @@ class Network(Page):
     # --- choosing and typing ------------------------------------------------------------------------------------
     @owners_tap
     def select(self, row):
-        if self.holding("rows", netlogic.LIST_CHANGED):
-            return  # the list changed under the finger: the tap was meant for what was in its place before
+        if self.armed or self.holding("rows", netlogic.LIST_CHANGED):
+            return
         self.drop_check()
         self.secret.clear()
-        self.sure.keep_only(None)
         self.other, self.chosen = False, self.current(row)
         self.keys.numbers(False)
         self.say("")
@@ -1481,14 +2152,15 @@ class Network(Page):
     @owners_tap
     def scan_row(self):
         """The only row of an empty list: scan again."""
-        if not self.holding("rows", netlogic.LIST_CHANGED):
+        if not self.armed and not self.holding("rows", netlogic.LIST_CHANGED):
             self.scan(True)
 
     @owners_tap
     def other_network(self):
+        if self.armed:
+            return
         self.drop_check()
         self.secret.clear()
-        self.sure.keep_only(None)
         self.ssid_entry.text, self.open_net, self.other, self.chosen = "", False, True, None
         self.focus("name")
         self.paint_act()
@@ -1508,6 +2180,8 @@ class Network(Page):
 
     @owners_tap
     def key(self, ch):
+        if self.armed:
+            return
         m = self.mode()
         if m == "other" and self.field == "name":
             if ch == "\n":
@@ -1538,7 +2212,7 @@ class Network(Page):
         """Close the choice. Nothing is sent; the typed password is dropped."""
         self.drop_check()
         self.secret.clear()
-        self.sure.keep_only(None)
+        self.armed = None
         self.ssid_entry.text, self.other, self.chosen, self.open_net = "", False, None, False
         self.paint_act()
 
@@ -1589,7 +2263,10 @@ class Network(Page):
     def hold(self, which):
         """Button `which` changed by itself, so a tap on it in the next HOLD_S seconds was meant for what it said before:
         it sends nothing and only says the button changed."""
-        self.held[which] = self.now() + self.HOLD_S
+        self.held[which] = until = self.now() + self.HOLD_S
+        if which == "review":
+            for control in self.REVIEW_CONTROLS:
+                self.held[control] = until
 
     def holding(self, which, why=netlogic.CHANGED):
         if self.now() < self.held.get(which, float("-inf")):
@@ -1599,34 +2276,28 @@ class Network(Page):
 
     @owners_tap
     def main_action(self):
-        if self.holding("main"):
+        if self.armed or self.holding("main"):
             return
         m = self.mode()
         if m == "idle":
             self.scan(True)
-        elif m == "connected":
-            if not self.sure.tap(("disconnect", self.ssid())):
-                self.paint_act()
-                return
-            # The core's disconnect names no network: it drops whatever is connected. So this tap sends nothing yet.
-            # If the radios read drawn already names another network (or none is known), it stops here. Otherwise the
-            # radios are read again, and the disconnect is sent only when that read, asked after this tap, still names
-            # the network the prompt asked about (checked()): the read drawn may be up to POLL_MS old, and the phone may
-            # have moved to another network between the two taps.
-            known, now = netlogic.connected_to(self.status_data)
-            if not known or now != self.ssid():
-                self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
-                self.paint_act()
-                return
-            if self.busy:
-                self.paint_act()
-                return
-            self.busy = True
-            self.say(netlogic.checking(self.ssid()))
+        elif m == "connected" and not self.busy:
+            self.armed = ("disconnect", self.ssid())
             self.paint_act()
-            self.status(fresh=True, check=self.ssid())
         elif m != "unsupported":
             self.join()
+
+    def confirm_disconnect(self, ssid):
+        # The change drops whatever is connected. Get a fresh reading after the confirming tap.
+        known, now = netlogic.connected_to(self.status_data)
+        if not known or now != ssid:
+            self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
+            self.paint_act()
+            return
+        self.busy = True
+        self.say(netlogic.checking(ssid))
+        self.paint_act()
+        self.status(fresh=True, check=ssid)
 
     def join(self):
         if self.busy:
@@ -1686,7 +2357,7 @@ class Network(Page):
         # network. Only a refusal before anything ran (netlogic.NOT_SENT: an HTTP 4xx, or nothing sent) leaves them as
         # they were, so only that sets no floor.
         floor = not netlogic.nothing_ran(got)
-        self.sure.keep_only(None)
+        self.armed = None
         self.say(text)
         if self.stale(visit):
             if floor:
@@ -1719,28 +2390,27 @@ class Network(Page):
         self.status_data, self.status_n = None, 0
         self.lines.set_label(netlogic.REREAD)
 
+    def can_forget(self):
+        row = self.chosen or {}
+        return bool(self.ssid() and self.mode() in ("known", "connected") and (row.get("known") or row.get("active")))
+
     @owners_tap
     def forget(self):
-        ssid = self.ssid()
-        if not ssid:
-            return
-        if self.sure.tap(("forget", ssid)):
-            self.act_on("net_forget", {"ssid": ssid}, "Forgetting...")
-        else:
+        if not self.armed and not self.busy and not self.holding("forget") and self.can_forget():
+            self.armed = ("forget", self.ssid())
             self.paint_act()
 
     @owners_tap
     def toggle_wifi(self):
-        if self.holding("wifi"):
+        if self.armed or self.holding("wifi"):
             return
         on = netlogic.wifi_on(self.status_data)
         if on is None:
-            self.say(netlogic.WIFI_UNKNOWN)  # never switch a radio whose state is not known
+            self.say(netlogic.WIFI_UNKNOWN)
         elif on is False:
             self.act_on("net_wifi", {"mode": "on"}, "Turning Wi-Fi on...")
-        elif self.sure.tap(("wifi-off",)):
-            self.act_on("net_wifi", {"mode": "off"}, "Turning Wi-Fi off...")
-        else:
+        elif not self.busy:
+            self.armed = ("wifi-off",)
             self.paint_act()
 
     def act_on(self, action, fields, doing):
@@ -1809,8 +2479,8 @@ class Network(Page):
 
     def disarm_row(self):
         """Drop a Forget or Disconnect prompt: what it asked about is no longer what it was."""
-        if self.sure.armed and self.sure.armed[0] in ("forget", "disconnect"):
-            self.sure.keep_only(None)
+        if self.armed and self.armed[0] in ("forget", "disconnect"):
+            self.armed = None
 
     def rechoose(self, row):
         """The chosen row is now `row` (a newer reading of the same network, or None when it is gone). A prompt about
@@ -1833,8 +2503,8 @@ class Network(Page):
             before = netlogic.connected_to(self.status_data)
             self.status_data, self.status_n = got, n
             self.lines.set_label("\n".join(netlogic.status_lines(got)) or "The radios could not be read.")
-            if self.sure.armed == ("wifi-off",) and netlogic.wifi_on(got) is not True:
-                self.sure.keep_only(None)
+            if self.armed == ("wifi-off",) and netlogic.wifi_on(got) is not True:
+                self.armed = None
             known, now = netlogic.connected_to(got)
             if (known, now) != before:
                 self.disarm_row()
@@ -1929,7 +2599,28 @@ class Network(Page):
         self.cancel()
 
 
-PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Converter, Calls, Settings, Network)
+PAGES = (
+    Lock,
+    Home,
+    Phone,
+    Messages,
+    Clock,
+    Contacts,
+    Notes,
+    Calculator,
+    Converter,
+    Calls,
+    Settings,
+    SetAbout,
+    SetHand,
+    SetBattery,
+    SetSound,
+    SetSecurity,
+    SetDisplay,
+    SetTime,
+    SetUpdates,
+    Network,
+)
 
 
 def enabled_pages(env=None):

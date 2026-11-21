@@ -253,6 +253,7 @@ sudo sh packaging/duo-os/verify-image.sh \
 ```
 
 A developer key is optional and does not replace the required owner recovery key. The output image must not already exist.
+The image verifier accepts the pinned base's exact host-key generation drop-in and refuses other SSH startup overrides.
 
 `verify-image.sh` checks the unit wiring, that phoc is not started in shell mode, phoc's `-E` startup command and
 the journal settings, runs the OPOS server from the image with the image's own aarch64 python3 under
@@ -634,8 +635,22 @@ written by hand.
   takes the /24 from the RNDIS adapter's IPv4 address. If the adapter shows only a self-assigned link-local address, the PC
   has no lease from the phone (seen on October 31, 2026): the sweep covers the wrong network and the script
   times out after the kernel boot. Do not run the script again to retry: that repeats the whole chain, including
-  the userdata format and a second kernel boot, and it has no attach-only mode. Find the phone and ssh to it by
-  hand.
+  the userdata format and a second kernel boot. Leave the phone running and use the Windows installer's read-only
+  `-AttachOnly` mode:
+
+  ```powershell
+  powershell -File deploy\duo-opos-boot.ps1 -AttachOnly
+  powershell -File deploy\duo-opos-boot.ps1 -AttachOnly -PhoneIp <phone-usb-ipv4> -Key <login-key>
+  ```
+
+  Attach checks for the Linux USB gadget and probes TCP 22. Use the known USB IPv4 address with `-PhoneIp` if
+  automatic discovery cannot find it. An explicit address uses the PC's normal routing and is not tied to the
+  USB adapter by the script. An open port is reachability only. Supply `-Key` to read the installed
+  revision, base level and update status where present. SSH requires a matching, already trusted host key in
+  the Windows user's OpenSSH configuration. Confirm the key with the phone before trusting it. Attach mode
+  takes no install images, cannot be combined with `-Yes`, and performs no fastboot or adb operations.
+  Windows PowerShell 5.1 returned a TCP 22 reply from the connected Duo in attach-only mode. The authenticated
+  revision and update status read remains **NOT_RUN**.
 
 ## Over-the-air updates
 

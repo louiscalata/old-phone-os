@@ -66,7 +66,10 @@ class PhoneDrainTests(unittest.TestCase):
         self.assertAlmostEqual(s["battery"]["hours_left"], level / drain["per_hour"], places=1)
         self.assertEqual(s["battery"]["time_left"], time_left_words(s["battery"]["hours_left"]))
         self.assertTrue(s["battery"]["goal_met"])  # about 9 h at 5 %/h against a goal six hours away
-        self.assertEqual(s["battery_source"], {"source": "sysfs", "health_source": "OPOS_BATTERY_HEALTH"})
+        self.assertEqual(
+            s["battery_source"],
+            {"source": "sysfs", "health_source": "OPOS_BATTERY_HEALTH", "temperature_reported": True},
+        )
         json.dumps(s)
 
     def test_goal_is_missed_when_the_measured_drain_is_fast(self):

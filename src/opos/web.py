@@ -443,7 +443,11 @@ class Phone:
         if volume.enabled():
             out["volume_keys"] = volume.snapshot()
         if self.live:
-            out["battery_source"] = {"source": self.sim.source, "health_source": self.sim.health_source}
+            out["battery_source"] = {
+                "source": self.sim.source,
+                "health_source": self.sim.health_source,
+                "temperature_reported": self.sim.temperature_reported,
+            }
         out["prefs"] = self._preferences()
         out["temp_c"] = round(float(self.sim.temp_c), 1)
         out["charging"] = bool(self.charging)
@@ -1291,11 +1295,15 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(429, "too many requests", "rate")
             return
         if a in _UPDATE_ACTIONS:
-            if self.updater is None or len(data) != 1:
+            extra = set(data) - {"action"}
+            expected = data.get("expected")
+            guarded = extra == {"expected"} and update_client.is_review_key(a, expected)
+            if self.updater is None or (extra and not guarded):
                 self._deny(400, "bad request", "shape")
                 return
             try:
-                getattr(self.updater, _UPDATE_ACTIONS[a])()
+                operation = getattr(self.updater, _UPDATE_ACTIONS[a])
+                operation(expected=expected) if guarded else operation()
             except update_client.UpdateError as e:
                 self._json({"error": e.message, "code": e.code}, e.status)
                 return

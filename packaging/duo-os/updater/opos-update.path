@@ -15,6 +15,7 @@ Description=OPOS update inbox
 [Path]
 PathExistsGlob=/var/lib/opos-update/inbox/*.opos-update
 PathExists=/var/lib/opos-update/inbox/rollback.request
+PathExists=/var/lib/opos-update/inbox/rollback.reviewed
 Unit=opos-update.service
 MakeDirectory=no
 

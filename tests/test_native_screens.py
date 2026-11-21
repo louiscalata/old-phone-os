@@ -54,6 +54,12 @@ class Widget:
     def get_child(self):
         return Widget()
 
+    def set_visible_child_name(self, name):
+        self.visible_child_name = name
+
+    def grab_focus(self):
+        self.focused = True
+
     def add_css_class(self, c):
         self.css.add(c)
 
@@ -103,6 +109,7 @@ class FakeShell:
         self.core, self.asked, self.went, self.pages = Core(), [], [], {}
         self.apps = [("phone", "Phone"), ("messages", "Messages")]
         self.known = True
+        self.lid_closed = None
 
     def ask(self, action, done=None, **fields):
         n = self.seq.issue()
@@ -180,6 +187,336 @@ class Screens(unittest.TestCase):
         page = cls(self.shell)
         self.shell.pages[page.name] = page
         return page
+
+    def test_battery_uses_polled_state_without_fetching_or_claiming_default_measurements(self):
+        snapshot = {
+            "battery": {"percent": 51, "time_left": "4 hours", "drain": {"basis": "model", "per_hour": 4.1}},
+            "battery_source": {"source": "sysfs", "health_source": "assumed"},
+            "temp_c": 30,
+        }
+        self.shell.snap = snapshot
+        page = self.page(self.screens.SetBattery)
+        page.enter()
+        self.assertFalse(page.tile)
+        self.assertEqual(page.readings["Level"].get_label(), "Level: 51% · Device reading")
+        self.assertEqual(page.readings["Charging"].get_label(), "Charging: Not reported")
+        self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: Not reported")
+        self.assertEqual(page.readings["Health"].get_label(), "Health: Not reported")
+        self.assertEqual(page.readings["Time left"].get_label(), "Time left: 4 hours · Server estimate")
+        self.assertEqual(page.readings["Drain"].get_label(), "Drain: 4.1%/h · Model estimate")
+
+        active = dict(
+            snapshot,
+            battery_source={
+                "source": "sysfs",
+                "health_source": "charge-counter",
+                "temperature_reported": True,
+            },
+        )
+        self.shell.drawn(self.shell.seq.issue(), active)
+        self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: 30.0 °C · Device reading")
+        self.assertEqual(page.readings["Health"].get_label(), "Health: Estimated from the charge counter")
+        self.shell.drawn(self.shell.seq.issue(), dict(snapshot, battery_source={"source": None}))
+        self.assertEqual(page.readings["Level"].get_label(), "Level: Not reported")
+        page.leave()
+        page.enter()
+        self.assertEqual(self.work, [])
+        self.assertEqual(self.shell.asked, [])
+        self.assertEqual(self.shell.core.sent, [])
+
+    def test_battery_distinguishes_practice_from_device_readings(self):
+        page = self.page(self.screens.SetBattery)
+        self.assertEqual(page.summary.get_label(), "Waiting for battery status.")
+        self.shell.drawn(self.shell.seq.issue(), {"battery": {"percent": 0}, "charging": False, "temp_c": 0})
+        self.assertIn("simulated", page.summary.get_label())
+        self.assertEqual(page.readings["Level"].get_label(), "Level: 0% · Practice")
+        self.assertEqual(page.readings["Charging"].get_label(), "Charging: No · Practice")
+        self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: 0.0 °C · Practice")
+
+    def test_sound_reports_only_explicit_practice_volume(self):
+        page = self.page(self.screens.SetSound)
+        page.enter()
+        self.assertEqual(page.level.get_label(), "Practice volume: Not reported")
+        page.show({"volume_keys": {"percent": 70}})
+        self.assertEqual(page.level.get_label(), "Practice volume: Not reported")
+        page.show({"volume_keys": {"simulated": True, "percent": True}})
+        self.assertEqual(page.level.get_label(), "Practice volume: Not reported")
+        page.show({"volume_keys": {"simulated": True, "percent": 0}})
+        self.assertEqual(page.level.get_label(), "Practice volume: 0%")
+        self.assertEqual(self.work, [])
+
+    def test_security_reports_the_lid_and_uses_the_existing_native_lock_screen(self):
+        page = self.page(self.screens.SetSecurity)
+        page.enter()
+        self.assertEqual(page.lid.get_label(), "Lid: Not reported")
+        self.shell.lid_closed = False
+        page.tick()
+        self.assertEqual(page.lid.get_label(), "Lid: Open")
+        self.shell.lid_closed = True
+        page.tick()
+        self.assertEqual(page.lid.get_label(), "Lid: Closed")
+        page.show_lock()
+        self.assertEqual(self.shell.went, ["lock"])
+        self.assertEqual(self.shell.asked, [])
+        self.assertEqual(self.work, [])
+
+    def test_display_offers_dark_and_paper_and_reports_failed_saves(self):
+        shell = self.shell
+        shell.theme, shell.theme_fixed, shell.theme_kept = "dark", None, True
+
+        def apply(theme):
+            shell.theme, shell.theme_kept = theme, False
+
+        shell.set_theme = apply
+        shell.brightness_level = lambda: None
+        settings = self.page(self.screens.Settings)
+        display = self.page(self.screens.SetDisplay)
+        self.assertFalse(display.tile, "Display is a Settings page")
+        self.assertIn("set_display", settings.groups)
+        self.assertIn("on", display.dark.css)
+        display.pick_theme("paper")
+        self.assertIn("on", display.paper.css)
+        self.assertNotIn("on", display.dark.css)
+        self.assertIn("could not be saved", display.theme_source.get_label())
+        shell.theme_fixed = "paper"
+        display.enter()
+        self.assertFalse(display.dark.sensitive)
+        self.assertFalse(display.paper.sensitive)
+        self.assertIn("OPOS_THEME", display.theme_source.get_label())
+
+    def test_display_disables_unknown_brightness_and_reports_the_lit_level(self):
+        shell = self.shell
+        shell.theme, shell.theme_fixed, shell.theme_kept = "dark", None, True
+        level, picked = [None], []
+
+        def apply(fraction):
+            picked.append(fraction)
+            level[0] = fraction
+            return True
+
+        shell.brightness_level = lambda: level[0]
+        shell.set_brightness = apply
+        page = self.page(self.screens.SetDisplay)
+        page.enter()
+        self.assertFalse(page.bright_controls.sensitive)
+        page.pick_brightness(6)
+        self.assertEqual(picked, [])
+        level[0] = 0.4
+        page.enter()
+        self.assertTrue(page.bright_controls.sensitive)
+        self.assertEqual(page.bright_line.get_label(), "Brightness 40%")
+        page.pick_brightness(6)
+        self.assertEqual(picked, [0.6])
+        self.assertEqual(page.bright_line.get_label(), "Brightness 60%")
+        self.assertEqual([i for i, b in enumerate(page.steps, 1) if "on" in b.css], list(range(1, 7)))
+
+    def test_updates_reads_and_checks_through_owner_endpoints_and_polls_current_visit(self):
+        page = self.page(self.screens.SetUpdates)
+        self.assertFalse(page.tile)
+        self.shell.core.post = lambda action, **fields: self.shell.core.app(action, fields)
+        timers, removed = [], []
+        self.screens.GLib.timeout_add = lambda ms, callback: timers.append((ms, callback)) or len(timers)
+        self.screens.GLib.source_remove = removed.append
+        ready = {"available": True, "source": {"configured": True, "url": "https://updates.example/index?private"}}
+        downloading = {**ready, "job": {"phase": "downloading", "bytes": 1000000, "total": 2000000}}
+        self.shell.core.answers = [ready, dict(downloading, ok=True)]
+        page.enter()
+        self.flush()
+        self.assertTrue(page.check_b.sensitive)
+        page.check()
+        page.check()
+        self.assertIn("updates.example", page.note.label)
+        self.assertNotIn("private", page.note.label)
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("update", None), ("update_check", {})])
+        self.assertIn("1.0 MB of 2.0 MB", page.status.label)
+        self.assertFalse(page.check_b.sensitive)
+        self.assertEqual(timers[0][0], 2000)
+        self.assertFalse(timers[0][1]())
+        page.leave()
+        page.enter()
+        self.shell.core.answers = [downloading, ready]
+        self.flush()
+        self.assertTrue(page.check_b.sensitive)
+        self.assertNotIn("Downloading", page.status.label)
+        self.assertEqual(len(timers), 1)
+        self.shell.core.answers = [downloading]
+        page.refresh()
+        self.flush()
+        page.leave()
+        self.assertEqual(removed, [2])
+
+    def test_updates_download_requires_a_current_review_and_posts_its_exact_token(self):
+        page = self.page(self.screens.SetUpdates)
+        self.shell.core.post = lambda action, **fields: self.shell.core.app(action, fields)
+        base = {"available": True, "source": {"configured": True, "url": "https://updates.example/latest"}}
+        first = {**base, "check": {"newer": True, "ok": True, "version": "1.0", "serial": 1, "review": "old"}}
+        newer = {**base, "check": {"newer": True, "ok": True, "version": "2.0", "serial": 2, "review": "new"}}
+        self.shell.core.answers = [first, newer]
+        page.enter()
+        self.flush()
+        self.assertTrue(page.download_b.visible)
+        page.confirm_review()
+        page.review_download()
+        self.assertIn("1.0", page.review_text.label)
+        page.cancel_review()
+        page.confirm_review()
+        self.assertEqual(len(self.work), 0)
+        page.review_download()
+        page.refresh()
+        self.flush()
+        self.assertEqual(page.actions.visible_child_name, "actions")
+        page.confirm_review()
+        self.assertEqual(len(self.work), 0)
+        page.review_download()
+        self.assertIn("2.0", page.review_text.label)
+        self.shell.core.answers = [dict(base, ok=True)]
+        page.confirm_review()
+        page.confirm_review()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("update_download", {"expected": "new"}))
+        self.assertEqual(len(self.shell.core.sent), 3)
+
+    def test_updates_distinguishes_drop_from_going_back(self):
+        page = self.page(self.screens.SetUpdates)
+        self.shell.core.post = lambda action, **fields: self.shell.core.app(action, fields)
+        base = {"available": True}
+        rollback = {"possible": True, "review": {"kind": "rollback", "serial": 2, "key": "rollback-token"}}
+        cancel = {
+            "possible": True,
+            "staged": 4,
+            "review": {"kind": "cancel", "serial": 4, "key": "cancel-token"},
+        }
+        self.shell.core.answers = [{**base, "rollback": rollback}, {**base, "rollback": cancel}]
+        page.enter()
+        self.flush()
+        page.review_rollback()
+        self.assertIn("Go back to update 2?", page.review_text.label)
+        page.refresh()
+        self.flush()
+        page.confirm_review()
+        self.assertEqual(len(self.work), 0)
+        page.review_rollback()
+        self.assertIn("Drop update 4", page.review_text.label)
+        self.shell.core.answers = [dict(base, ok=True)]
+        page.confirm_review()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("update_rollback", {"expected": "cancel-token"}))
+
+    # --- Date & time ----------------------------------------------------------------------------------------------
+
+    def test_settings_time_zone_uses_the_existing_endpoint_without_a_home_tile(self):
+        self.assertIn(self.screens.SetTime, self.screens.enabled_pages({}))
+        self.assertFalse(self.screens.SetTime.tile)
+        page = self.page(self.screens.SetTime)
+        zones = ["UTC", "America/Argentina/Buenos_Aires", "America/New_York", "Europe/Paris"]
+        zone = zones[1]
+        applied = []
+        self.shell.apply_zone = lambda value: not applied.append(value)
+        self.shell.core.answers = [
+            {"zones": zones, "saved": "Europe/Paris", "clock": {"plausible": True, "text": "10:05"}},
+            {"ok": True, "zone": zone, "restart": False},
+            {"zones": zones, "saved": zone},
+        ]
+        page.enter()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("timezone", None)])
+        self.assertEqual([row[0] for row in page.cities.rowset.words], ["America", "Europe", "UTC"])
+        self.assertIn("10:05", page.clock.get_label())
+        page.cities.rowset.click(0)
+        self.assertEqual(page.cities.rowset.words[0], ("Argentina / Buenos Aires", zone))
+        page.choose("Mars/Olympus")
+        self.assertIsNone(page.chosen)
+        page.cities.rowset.click(0)
+        self.assertEqual(page.chosen, zone)
+        self.assertTrue(page.use.sensitive)
+        self.assertIn("Alarms ring", page.alarm.get_label())
+        page.save()
+        page.save()
+        self.assertFalse(page.use.sensitive)
+        self.flush()
+        self.assertEqual(
+            self.shell.core.sent,
+            [("timezone", None), ("timezone", {"zone": zone, "client_tz": zone}), ("timezone", None)],
+        )
+        self.assertEqual(applied, [zone])
+        self.assertEqual(page.saved_zone, zone)
+        self.assertIn("saved", page.note.get_label())
+
+    def test_time_zone_read_after_leaving_does_not_enable_save(self):
+        page = self.page(self.screens.SetTime)
+        page.enter()
+        old = self.work.pop(0)
+        page.leave()
+        page.enter()
+        self.shell.core.answers = [{"zones": ["UTC"]}, {"missing": True}]
+        old()
+        self.assertEqual(page.zones, ())
+        self.flush()
+        self.assertIn("unavailable", page.summary.get_label())
+        page.choose("UTC")
+        page.save()
+        self.assertEqual(self.shell.core.sent, [("timezone", None), ("timezone", None)])
+
+    def test_time_zone_refusal_keeps_the_shell_clock_and_allows_retry(self):
+        page = self.page(self.screens.SetTime)
+        applied = []
+        self.shell.apply_zone = applied.append
+        choices = {
+            "zones": ["UTC", "Europe/Paris"],
+            "saved": None,
+            "clock": {"plausible": False, "note": "Clock is not set"},
+        }
+        self.shell.core.answers = [choices, {"error": "unknown time zone"}, choices]
+        page.enter()
+        self.flush()
+        self.assertIn("Clock is not set", page.clock.get_label())
+        page.open_region("UTC")
+        self.assertEqual(page.chosen, "UTC")
+        page.save()
+        self.flush()
+        self.assertEqual(applied, [])
+        self.assertIn("unknown time zone", page.note.get_label())
+        self.assertTrue(page.use.sensitive)
+
+    def test_confirmed_time_zone_updates_shell_even_when_settings_was_left(self):
+        page = self.page(self.screens.SetTime)
+        applied = []
+        self.shell.apply_zone = applied.append
+        page.enter()
+        self.shell.core.answers = [{"zones": ["UTC"]}, {"ok": True, "zone": "UTC"}]
+        self.flush()
+        page.open_region("UTC")
+        page.save()
+        page.leave()
+        self.flush()
+        self.assertEqual(applied, ["UTC"])
+        self.assertEqual(self.shell.core.sent[-1], ("timezone", {"zone": "UTC", "client_tz": "UTC"}))
+        self.assertFalse(self.work, "no background read after leaving")
+
+    def test_returning_during_time_zone_save_applies_the_zone_and_refreshes_once(self):
+        page = self.page(self.screens.SetTime)
+        applied = []
+        self.shell.apply_zone = lambda value: not applied.append(value)
+        self.shell.core.answers = [{"zones": ["UTC"]}, {"ok": True, "zone": "UTC"}, {"zones": ["UTC"], "saved": "UTC"}]
+        page.enter()
+        self.flush()
+        page.open_region("UTC")
+        page.save()
+        page.leave()
+        page.enter()
+        self.assertEqual(len(self.work), 1, "the new visit waits for the outstanding write before fetching")
+        self.assertFalse(page.use.sensitive)
+        self.assertFalse(page.cities.sensitive)
+        self.flush()
+        self.assertEqual(
+            self.shell.core.sent,
+            [("timezone", None), ("timezone", {"zone": "UTC", "client_tz": "UTC"}), ("timezone", None)],
+        )
+        self.assertEqual(applied, ["UTC"])
+        self.assertEqual(page.saved_zone, "UTC")
+        self.assertTrue(page.cities.sensitive)
+        self.assertFalse(page.use.sensitive)
 
     # --- Messages -------------------------------------------------------------------------------------------------
     def messages(self):
@@ -296,19 +633,37 @@ class Screens(unittest.TestCase):
         p.show({"battery": {}, "in_call": True, "simulation": {"modem": False}})
         self.assertEqual(p.status.get_label(), "In call\n" + self.screens.EMERGENCY)
 
-    def test_home_says_practice_mode_and_previews_a_practice_call(self):
-        self.page(self.screens.Phone)
-        h = self.page(self.screens.Home)
-        h.show(
-            {
-                "battery": {},
-                "home_note": "Practice mode: calls, texts and tasks are simulated.",
-                "in_call": True,
-                "simulation": {"modem": True},
-            }
-        )
-        self.assertEqual(h.v_note.get_label(), "Practice mode: calls, texts and tasks are simulated.")
-        self.assertEqual(h.v_text.get_label(), "In a practice call", "not the raw word 'in call'")
+    def test_home_reveals_practice_preview_on_hold_and_clears_it_on_return(self):
+        phone = self.page(self.screens.Phone)
+        refreshes = []
+        phone.refresh = lambda: refreshes.append("phone")
+        self.shell.snap = {
+            "battery": {},
+            "home_note": "Practice mode: calls, texts and tasks are simulated.",
+            "in_call": True,
+            "simulation": {"modem": True},
+        }
+        home = self.page(self.screens.Home)
+
+        home.enter()
+        self.assertEqual(refreshes, [])
+        self.assertIn("home-idle", home.read.css)
+        self.assertEqual([tile.get_label() for tile in home.tiles.children], ["Phone", "Messages"])
+
+        home.choose("phone")
+        self.assertEqual(refreshes, ["phone"])
+        self.assertNotIn("home-idle", home.read.css)
+        self.assertEqual(home.v_note.get_label(), self.shell.snap["home_note"])
+        self.assertEqual(home.v_text.get_label(), "In a practice call")
+
+        home.enter()
+        home.show(self.shell.snap)
+        self.assertEqual(refreshes, ["phone"])
+        self.assertIn("home-idle", home.read.css)
+        self.assertFalse(home.v_title.visible)
+        self.assertFalse(home.v_text.visible)
+        self.assertFalse(home.v_note.visible)
+        self.assertEqual(home.v_rows.children, [])
 
     def test_a_reply_that_lost_the_race_keeps_call_busy_until_a_newer_state_is_drawn(self):
         """The call is sent (n1); a poll asked after it (n2) is answered first, from before the server acted: not in a
@@ -394,10 +749,12 @@ class Screens(unittest.TestCase):
 
         self.screens.label = recording
         try:
-            self.page(self.screens.Settings)
+            hub = self.page(self.screens.Settings)
+            self.page(self.screens.SetAbout)
         finally:
             self.screens.label = real
         self.assertIn("About", made)
+        self.assertEqual(hub.risk.get_label(), self.screens.notices.DISCLAIMER + " " + self.screens.EMERGENCY)
         self.assertIn(self.screens.notices.as_text(), made)
         self.assertIn(self.screens.EMERGENCY, self.screens.notices.as_text())
 
@@ -416,16 +773,70 @@ class Screens(unittest.TestCase):
 
     def test_only_the_everyday_apps_opos_apps_names_get_pages(self):
         names = lambda env: [c.name for c in self.screens.enabled_pages(env)]  # noqa: E731
-        base = ["lock", "home", "phone", "messages", "calc", "settings", "network"]
+        base = [
+            "lock",
+            "home",
+            "phone",
+            "messages",
+            "calc",
+            "settings",
+            "set_about",
+            "set_hand",
+            "set_battery",
+            "set_sound",
+            "set_security",
+            "set_display",
+            "set_time",
+            "set_updates",
+            "network",
+        ]
         self.assertEqual(names({}), base, "absent: no everyday apps")
         self.assertEqual(names({"OPOS_APPS": ""}), base, "empty: none")
         self.assertEqual(
             names({"OPOS_APPS": "notes,clock"}),
-            ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "network"],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "clock",
+                "notes",
+                "calc",
+                "settings",
+                "set_about",
+                "set_hand",
+                "set_battery",
+                "set_sound",
+                "set_security",
+                "set_display",
+                "set_time",
+                "set_updates",
+                "network",
+            ],
         )
         self.assertEqual(
             names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
-            ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "clock",
+                "contacts",
+                "notes",
+                "calc",
+                "calls",
+                "settings",
+                "set_about",
+                "set_hand",
+                "set_battery",
+                "set_sound",
+                "set_security",
+                "set_display",
+                "set_time",
+                "set_updates",
+                "network",
+            ],
         )
         self.assertEqual(
             names({"OPOS_APPS": "clock,contacts,notes,calc,calls,convert"}),
@@ -441,69 +852,176 @@ class Screens(unittest.TestCase):
                 "convert",
                 "calls",
                 "settings",
+                "set_about",
+                "set_hand",
+                "set_battery",
+                "set_sound",
+                "set_security",
+                "set_display",
+                "set_time",
+                "set_updates",
                 "network",
             ],
             "the Duo list: the converter has a native screen",
         )
         self.assertEqual(
             names({"OPOS_APPS": "convert"}),
-            ["lock", "home", "phone", "messages", "calc", "convert", "settings", "network"],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "calc",
+                "convert",
+                "settings",
+                "set_about",
+                "set_hand",
+                "set_battery",
+                "set_sound",
+                "set_security",
+                "set_display",
+                "set_time",
+                "set_updates",
+                "network",
+            ],
             "only when OPOS_APPS names it",
         )
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
 
-    # --- two taps to delete, as the browser asks --------------------------------------------------------------------
-    def test_an_alarm_is_removed_only_on_the_second_tap(self):
+    # --- Separate delete reviews -----------------------------------------------------------------------------------
+    def test_an_alarm_requires_a_separate_review_of_the_current_alarm(self):
         c = self.page(self.screens.Clock)
-        two = [
-            {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True},
-            {"id": "a2", "hour": 8, "minute": 0, "days": [], "enabled": True},
-        ]
-        c.got({"alarms": two, "clock_ok": True})
+        first = {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True}
+        second = {"id": "a2", "hour": 8, "minute": 0, "days": [], "enabled": True}
+        snapshot = {"alarms": [first, second], "clock_ok": True}
+        c.got(snapshot)
         c.choose("a1")
         c.remove()
-        self.assertEqual(
-            (self.work, c.remove_button.get_label()), ([], "Delete this alarm?"), "the first tap only asks"
-        )
-        c.got({"alarms": two, "clock_ok": True})
-        self.assertEqual(c.remove_button.get_label(), "Delete this alarm?", "a refresh keeps the question")
-        c.got({"alarms": two[1:], "clock_ok": True})
-        self.assertEqual(c.remove_button.get_label(), "Remove", "the alarm went away: nothing is left armed")
-        c.got({"alarms": two, "clock_ok": True})
-        c.choose("a2")
-        self.assertEqual(c.remove_button.get_label(), "Remove", "another alarm: the question is gone")
         c.remove()
         self.assertEqual(self.work, [])
-        c.remove()
-        self.flush()
-        self.assertEqual(self.shell.core.sent[-1], ("clock", {"action": "delete", "id": "a2"}))
         self.assertEqual(c.remove_button.get_label(), "Remove")
-
-    def test_a_person_is_removed_only_on_the_second_tap(self):
-        c = self.page(self.screens.Contacts)
-        c.got({"people": [{"id": "p1", "name": "Ann", "numbers": []}, {"id": "p2", "name": "Bo", "numbers": []}]})
-        c.choose("p1")
+        self.assertEqual(c.actions.visible_child_name, "review")
+        self.assertIn("07:00", c.delete_prompt.get_label())
+        self.assertTrue(c.cancel_delete_button.focused)
+        c.got(snapshot)
+        self.assertEqual(c.actions.visible_child_name, "review", "an identical refresh keeps the review")
+        c.got(dict(snapshot, alarms=[dict(first, minute=30), second]))
+        c.confirm_delete()
+        self.assertEqual(self.work, [], "a change to the reviewed alarm requires another review")
+        c.choose("a2")
         c.remove()
-        self.assertEqual((self.work, c.remove_button.get_label()), ([], "Delete this person?"))
-        c.choose(None)
-        c.choose("p1")
-        c.remove()
-        self.assertEqual(self.work, [], "Done in between: the first tap asks again")
-        c.remove()
+        self.assertIn("08:00", c.delete_prompt.get_label())
+        self.shell.core.answers = [dict(snapshot, alarms=[first])]
+        c.confirm_delete()
+        c.confirm_delete()
+        self.assertEqual(len(self.work), 1)
+        self.assertEqual(c.chosen, "a2", "still chosen while the server reply waits")
         self.flush()
-        self.assertEqual(self.shell.core.sent[-1], ("contacts", {"action": "delete", "id": "p1"}))
+        self.assertEqual(self.shell.core.sent, [("clock", {"action": "delete", "id": "a2"})])
+        self.assertFalse(c.pick_box.visible, "the accepted server snapshot no longer has the deleted alarm")
 
-    def test_a_note_is_deleted_only_on_the_second_tap(self):
+    def test_contact_review_names_the_target_and_clears_on_cancel_change_or_leave(self):
+        c = self.page(self.screens.Contacts)
+        first = {"id": "p1", "name": "Ann", "numbers": [{"number": "2125550100"}]}
+        second = {"id": "p2", "name": "Bo", "numbers": []}
+        c.got({"people": [first, second]})
+        c.choose("p1")
+        c.remove()
+        self.assertIn("Ann (2125550100)", c.delete_prompt.get_label())
+        c.cancel_delete()
+        c.confirm_delete()
+        self.assertTrue(c.pick_box.visible, "Cancel leaves the current contact selected")
+        c.remove()
+        c.choose("p2")
+        c.confirm_delete()
+        c.remove()
+        c.leave()
+        c.confirm_delete()
+        self.assertEqual(self.work, [])
+        c.remove()
+        c.remove()
+        self.assertIn("Bo", c.delete_prompt.get_label())
+        self.shell.core.answers = [{"people": [first]}]
+        c.confirm_delete()
+        c.confirm_delete()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("contacts", {"action": "delete", "id": "p2"})])
+
+    def test_a_note_is_deleted_only_by_the_review_confirmation(self):
         n = self.page(self.screens.Notes)
         self.open_note(n)
-        sent = len(self.shell.core.sent)
+        n.confirm_delete()
         n.delete()
-        self.assertEqual(
-            (len(self.shell.core.sent), self.work, n.delete_button.get_label()), (sent, [], "Delete this note?")
-        )
         n.delete()
+        self.assertEqual(self.work, [], "only the review button can delete the note")
+        self.assertEqual(n.actions.visible_child_name, "review")
+        self.assertIn('"hello"', n.delete_prompt.get_label())
+        self.assertTrue(n.cancel_delete_button.focused)
+        self.assertEqual(n.delete_button.get_label(), "Delete this note")
+        self.shell.core.answers = [{"ok": True, "notes": []}]
+        n.confirm_delete()
+        n.confirm_delete()
+        self.assertEqual(len(self.work), 1)
+        self.assertEqual(n.ident, "n1", "the note stays until the reply")
         self.flush()
         self.assertEqual(self.shell.core.sent[-1], ("notes", {"action": "delete", "id": "n1"}))
+        self.assertIsNone(n.ident)
+        self.assertEqual(n.actions.visible_child_name, "edit")
+
+    def test_a_note_review_freezes_editing_and_saving_until_cancel(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        n.delete()
+        for ch in ("x", None, "\n"):
+            n.key(ch)
+        n.main_action()
+        n.close()
+        n.open_note("n2")
+        self.assertEqual(n.entry.text, "hello")
+        self.assertEqual(n.text.get_label(), "hello_")
+        self.assertEqual(self.work, [])
+        n.cancel_delete()
+        self.assertTrue(n.delete_button.focused)
+        self.assertEqual(n.actions.visible_child_name, "edit")
+        n.key("x")
+        n.main_action()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("notes", {"action": "save", "id": "n1", "text": "hellox"}))
+
+    def test_leaving_notes_drops_the_pending_deletion(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        n.delete()
+        n.leave()
+        n.confirm_delete()
+        self.assertEqual(self.work, [])
+        self.assertEqual((n.ident, n.entry.text), ("n1", "hello"))
+        self.assertEqual(n.actions.visible_child_name, "edit")
+
+    def test_a_new_open_reply_disarms_the_old_note_review(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        self.shell.core.answers = [{"ok": True, "id": "n2", "text": "another note"}]
+        n.open_note("n2")
+        n.delete()
+        self.flush()
+        n.confirm_delete()
+        self.assertEqual(self.work, [])
+        self.assertEqual((n.ident, n.entry.text), ("n2", "another note"))
+        self.assertEqual(n.actions.visible_child_name, "edit")
+
+    def test_failed_note_deletion_keeps_the_draft(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        n.key("x")
+        self.shell.core.answers = [{"error": "id"}]
+        n.delete()
+        n.confirm_delete()
+        self.flush()
+        self.assertEqual((n.ident, n.entry.text), ("n1", "hellox"))
+        self.assertEqual(n.actions.visible_child_name, "edit")
+        n.key("y")
+        self.assertEqual(n.entry.text, "helloxy")
 
     def test_add_alarm_twice_makes_one_request(self):
         c = self.page(self.screens.Clock)
@@ -621,14 +1139,26 @@ class Screens(unittest.TestCase):
         self.flush()
         self.assertEqual(c.digits, "")
 
-    def test_a_removed_alarm_stays_on_screen_until_the_server_removed_it(self):
+    def test_a_refused_alarm_removal_keeps_the_alarm_and_allows_a_new_review(self):
         c = self.page(self.screens.Clock)
-        c.paint({"alarms": [{"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True}], "clock_ok": True})
+        alarm = {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True}
+        c.got({"alarms": [alarm], "clock_ok": True})
         c.choose("a1")
-        self.shell.core.answers = [{"error": "id"}]
+        self.shell.core.answers = [{"error": "id"}, {"alarms": [], "clock_ok": True}]
         c.remove()
+        c.confirm_delete()
+        self.assertFalse(c.remove_button.sensitive)
+        c.remove()
+        c.confirm_delete()
+        self.assertEqual(len(self.work), 1)
         self.flush()
-        self.assertEqual(c.chosen, "a1", "refused: still chosen and still there")
+        self.assertTrue(c.pick_box.visible, "the refused alarm still exists on the last snapshot")
+        self.assertTrue(c.remove_button.sensitive, "a refusal releases the pending state")
+        self.assertIn("cannot be changed", c.note.get_label())
+        c.remove()
+        c.confirm_delete()
+        self.flush()
+        self.assertFalse(c.pick_box.visible)
 
     # --- Notes ----------------------------------------------------------------------------------------------------
     def open_note(self, n, ident="n1", text="hello"):
@@ -1197,6 +1727,69 @@ class Screens(unittest.TestCase):
         self.flush()
         self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")
 
+    # --- Settings hub --------------------------------------------------------------------------------------------
+
+    def test_settings_only_links_registered_sections_and_each_link_opens_that_section(self):
+        calls = {}
+        real = self.screens.settings_row
+
+        def recording(title, detail, callback):
+            calls[title] = callback
+            return real(title, detail, callback)
+
+        self.screens.settings_row = recording
+        existing = {"settings", "set_about", "set_time", "network", "set_hand"}
+        self.screens.PAGES = tuple(page for page in self.screens.PAGES if page.name in existing)
+        hub = self.page(self.screens.Settings)
+        self.assertEqual(list(hub.groups), ["set_about", "set_time", "network", "set_hand"])
+        self.assertEqual(list(calls), ["About", "Date & time", "Network", "Hand & posture"])
+        for navigate in calls.values():
+            navigate()
+        self.assertEqual(self.shell.went, list(hub.groups))
+        self.assertEqual(self.shell.core.sent, [], "creating and choosing hub links does not ask the server")
+        self.assertEqual(self.work, [])
+
+        class OptionalBattery(self.screens.SettingsSection):
+            name = "set_battery"
+
+        self.screens.PAGES += (OptionalBattery,)
+        hub = self.screens.Settings(self.shell)
+        self.assertEqual(list(hub.groups), ["set_about", "set_battery", "set_time", "network", "set_hand"])
+        calls["Battery"]()
+        self.assertEqual(self.shell.went[-1], "set_battery")
+
+    def test_settings_sections_have_a_return_link_and_no_home_tile(self):
+        calls = {}
+        real = self.screens.button
+
+        def recording(title, callback, *classes):
+            if title == "◀ Settings":
+                calls["back"] = callback
+            return real(title, callback, *classes)
+
+        self.screens.button = recording
+        for cls in (self.screens.SetAbout, self.screens.SetTime, self.screens.Network, self.screens.SetHand):
+            with self.subTest(page=cls.name):
+                self.assertFalse(self.page(cls).tile)
+                calls.pop("back")()
+                self.assertEqual(self.shell.went[-1], "settings")
+
+    def test_hand_section_retains_the_switch_and_the_current_posture(self):
+        hub = self.page(self.screens.Settings)
+        hand = self.page(self.screens.SetHand)
+        self.assertEqual(hand.position.get_label(), "Buttons on the right.")
+        self.assertEqual(hand.hand.get_label(), "Switch to left")
+        hand.switch_hand()
+        hub.paint_hand()
+        self.assertEqual(hand.position.get_label(), "Buttons on the left.")
+        self.assertEqual(hand.hand.get_label(), "Switch to right")
+        self.shell.posture, self.shell.angle, self.shell.back = "back", 351, 1
+        hub.paint_posture()
+        self.assertEqual(
+            hand.hinge_line.get_label(), "Back, hinge at 351 degrees. One screen is lit; the other is dark."
+        )
+        self.assertEqual(hand.hinge_line.get_label(), hub.hinge_line.get_label())
+
     # --- Settings: storage ----------------------------------------------------------------------------------------
     def test_storage_is_read_when_settings_is_entered_and_not_before(self):
         reads = []
@@ -1207,6 +1800,7 @@ class Screens(unittest.TestCase):
 
         self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
         s = self.page(self.screens.Settings)
+        about = self.page(self.screens.SetAbout)
         s.preview({})
         s.show({})
         s.tick()
@@ -1214,6 +1808,8 @@ class Screens(unittest.TestCase):
         self.assertEqual(s.storage.get_label(), "Storage: unknown")
         s.enter()
         self.assertEqual(s.storage.get_label(), "Storage: 12.3 GB free of 52.1 GB")
+        about.enter()
+        self.assertEqual(about.storage.get_label(), s.storage.get_label())
         self.assertEqual(len(reads), 1)
         self.assertEqual(
             reads[0],
@@ -1290,7 +1886,7 @@ class ShellRules(unittest.TestCase):
         sh.snap, sh.snap_seq, sh.said, sh.said_text, sh.battery_line = {}, 0, 0, "", ""
         sh.wake, sh.warming, sh.wanted, sh.page, sh.leaving = threading.Event(), False, None, "lock", 0
         sh.pages = {n: Recorder(n) for n in ("lock", "home", "phone", "clock")}
-        sh.s_right, sh.b_head, sh.b_detail, sh.b_events, sh.strip, sh.sheet = (Widget() for _ in range(6))
+        sh.s_right, sh.b_head, sh.b_detail, sh.b_events, sh.strip, sh.sheet, sh.b_link = (Widget() for _ in range(7))
         sh.reads, sh.acts, sh.splash = Widget(), Widget(), Widget()
         sh.quit_calls = 0
         sh.get_application = lambda: types.SimpleNamespace(quit=lambda: setattr(sh, "quit_calls", sh.quit_calls + 1))
@@ -1332,6 +1928,33 @@ class ShellRules(unittest.TestCase):
         self.assertTrue(sh.wake.is_set(), "the poll looks again at once")
         self.assertNotIn("in_call", sh.snap)
 
+    def test_battery_indicators_agree_with_the_source_and_hide_unavailable_values(self):
+        sh = self.sh
+        sh.pages["lock"] = lock = self.shell_module.screens.Lock(sh)
+        self.assertEqual(lock.batt.get_label(), "Battery not reported")
+        battery = dict(percent=63, time_left="3 hours", headline="Normal", events=["Display on"])
+        for source, level, detail in (
+            ({"source": "sysfs"}, "Battery · 63% · Charging", "3 hours"),
+            ({"source": "termux-api"}, "Battery · 63% · Charging", "3 hours"),
+            (None, "Battery unavailable", ""),
+            ({"source": None}, "Battery unavailable", ""),
+        ):
+            with self.subTest(source=source):
+                sh.polled(sh.seq.issue(), self.state(battery=battery, charging=True, battery_source=source), False)
+                self.assertEqual(lock.batt.get_label(), level)
+                self.assertEqual(sh.b_head.get_label(), level)
+                self.assertTrue(sh.s_right.get_label().startswith(level))
+                self.assertEqual(sh.b_detail.get_label().strip(), detail)
+                self.assertEqual(sh.b_events.get_label(), "Display on" if detail else "")
+
+        sh.polled(sh.seq.issue(), self.state(battery=dict(percent=True), charging="yes"), False)
+        self.assertEqual(sh.b_head.get_label(), "Battery level not reported")
+        self.assertEqual(sh.s_right.get_label(), "Battery level not reported")
+        self.assertEqual(lock.batt.get_label(), "Battery level not reported")
+        sh.polled(sh.seq.issue(), self.state(battery=battery), False)
+        self.assertEqual(sh.b_head.get_label(), "Practice battery · 63%")
+        self.assertEqual(lock.batt.get_label(), "Practice battery · 63%")
+
     def test_a_failed_poll_keeps_the_last_good_state_and_says_the_connection_is_lost(self):
         sh = self.sh
         sh.polled(sh.seq.issue(), self.state(status="ready"), False)
@@ -1339,12 +1962,16 @@ class ShellRules(unittest.TestCase):
         sh.polled(sh.seq.issue(), None, None)
         self.assertIs(sh.snap, good)
         self.assertEqual(sh.s_right.get_label(), logic.LINK_LOST)
+        self.assertEqual(sh.b_link.get_label(), logic.LINK_LOST)
+        self.assertTrue(sh.b_link.visible)
+        self.assertEqual(sh.b_head.get_label(), "Practice battery · 80%")
         self.assertEqual(
             sh.pages["lock"].lost_text, logic.LINK_LOST, "the lock screen has no top line, so it says so itself"
         )
         self.assertEqual(len(sh.pages["phone"].shown), 1, "no page was told anything new")
         sh.polled(sh.seq.issue(), self.state(), False)
-        self.assertEqual((sh.s_right.get_label(), sh.pages["lock"].lost_text), ("80%  ", ""))
+        self.assertEqual((sh.s_right.get_label(), sh.pages["lock"].lost_text), ("Practice battery · 80%", ""))
+        self.assertFalse(sh.b_link.visible)
 
     def test_an_error_body_is_not_a_state(self):
         sh = self.sh

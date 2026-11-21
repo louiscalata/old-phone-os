@@ -1923,6 +1923,78 @@ class Routes(Env):
         s, _, j = self.post(run, "update_rollback")
         self.assertEqual((s, j["code"]), (409, "no_rollback"))  # state has no earlier version
 
+    def test_guarded_route_downloads_only_the_reviewed_bundle(self):
+        self.conf()
+        self.state(0)
+        self.publish(7)
+        client = self.client()
+        run = self.serve(client)
+        _, _, checked = self.post(run, "update_check")
+        first = checked["check"]["review"]
+        replacement = self.publish(7, bundle=tar_bundle(8))
+        s, _, refused = self.post(run, "update_download", expected=first)
+        self.assertEqual((s, refused["code"]), (409, "review_changed"))
+        self.assertEqual(self.src.hits, ["/latest.json", "/latest.json"])
+        self.assertEqual(self.inbox(), [])
+        fresh = json.loads(self.get_json(run)[2])["check"]["review"]
+        self.assertNotEqual(first, fresh)
+        s, _, _ = self.post(run, "update_download", expected=fresh)
+        self.assertEqual(s, 200)
+        self.assertTrue(client.wait(5))
+        self.assertEqual(self.inbox(), ["opos-7.opos-update"])
+        with open(os.path.join(self.paths.inbox, self.inbox()[0]), "rb") as f:
+            self.assertEqual(f.read(), replacement)
+
+    def test_an_index_without_bundle_digest_has_no_guarded_review(self):
+        self.conf()
+        self.state(0)
+        self.publish(7, sha=False)
+        run = self.serve()
+        status, _, checked = self.post(run, "update_check")
+        self.assertEqual(status, 200)
+        self.assertNotIn("review", checked["check"])
+        status, _, refused = self.post(run, "update_download", expected="a" * 64)
+        self.assertEqual((status, refused["code"]), (409, "review_changed"))
+        self.assertEqual(self.inbox(), [])
+
+    def test_reviewed_rollback_route_refuses_an_older_root_updater(self):
+        self.state(2, previous=[{"serial": 1, "release": "1-aaaaaaaaaaaa"}])
+        run = self.serve()
+        s, _, j = self.post(run, "update_rollback", expected="rollback 2-aaaaaaaaaaaa 1-aaaaaaaaaaaa")
+        self.assertEqual((s, j["code"]), (409, "review_changed"))
+        self.assertEqual(self.inbox(), [])
+
+    def test_reviewed_rollback_support_is_checked_again_after_a_downgrade(self):
+        self.state(2, previous=[{"serial": 1, "release": "1-aaaaaaaaaaaa"}])
+        with open(self.paths.state, encoding="utf-8") as f:
+            doc = json.load(f)
+        self.put(self.paths.state, dict(doc, reviewed_rollback=1))
+        updater = os.path.join(self.tmp.name, "opos-updater")
+        unit = os.path.join(self.tmp.name, "opos-update.path")
+        paths = uc.Paths(self.paths.config, self.paths.root, self.paths.revision, updater, unit, os.geteuid())
+        client = uc.UpdateClient(paths)
+        run = self.serve(client)
+        feature = uc.REVIEWED_PROTOCOL_MARKER.decode() + "\n"
+        watch = "[Path]\n" + uc.REVIEWED_PATH_WATCH.decode() + "\n"
+        self.put(updater, feature)
+        os.chmod(updater, 0o700)
+        self.put(unit, watch)
+        review = client.snapshot()["rollback"]["review"]
+        for path, old, new in (
+            (unit, "[Path]\nPathExists=/var/lib/opos-update/inbox/rollback.request\n", watch),
+            (updater, "# Earlier updater\n", feature),
+        ):
+            with self.subTest(path=path):
+                self.put(path, old)
+                self.assertNotIn("review", client.snapshot()["rollback"])
+                s, _, j = self.post(run, "update_rollback", expected=review["key"])
+                self.assertEqual((s, j["code"]), (409, "review_changed"))
+                self.assertEqual(self.inbox(), [], "guarded request never falls back to the legacy filename")
+                self.put(path, new)
+        self.assertEqual(client.snapshot()["rollback"]["review"], review)
+        os.chmod(unit, 0o620)  # noqa: S103 - simulate a unit that untrusted users can write
+        self.assertNotIn("review", client.snapshot()["rollback"])
+
     def test_rollback_through_the_route(self):
         self.state(2, previous=["1-aaaaaaaaaaaa"])
         run = self.serve()
@@ -2178,7 +2250,7 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
         self.assertEqual(w.state()["pending_boot"]["serial"], 1)
         self.assertEqual(w.state()["previous"], [], "the first update: there is nothing to go back to")
         c = w.client
-        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 1})
+        self.assertEqual(c.snapshot()["rollback"]["review"]["serial"], 1)
         self.assertEqual(c.request_rollback(), {"requested": True, "already": False, "cancel": True})
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         self.assertEqual((w.status()["phase"], w.state()["pending_boot"]), ("rolled-back", None))
@@ -2193,12 +2265,12 @@ class CancelStagedWithTheRealUpdater(unittest.TestCase):
         self.assertEqual(w.fetch_and_apply(2), 0, w.logs)
         w.release(3, scope="boot")
         self.assertEqual(w.fetch_and_apply(3), 0, w.logs)
-        self.assertEqual(c.snapshot()["rollback"], {"possible": True, "requested": False, "staged": 3})
+        self.assertEqual(c.snapshot()["rollback"]["review"]["serial"], 3)
         self.assertEqual(c.request_rollback()["cancel"], True)
         self.assertEqual(w.run_updater("apply-inbox"), 0, w.logs)
         self.assertIn("cancelled", w.status()["message"])
         w.assert_on(self, 2, previous=[0], failed=[])
-        self.assertEqual(w.client.snapshot()["rollback"], {"possible": True, "requested": False})
+        self.assertEqual(w.client.snapshot()["rollback"]["review"]["serial"], 0)
 
 
 class Defaults(unittest.TestCase):

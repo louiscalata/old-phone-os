@@ -162,10 +162,26 @@ class LiveBatteryTests(unittest.TestCase):
         phone = Phone(live_battery=b)
         s = phone.state()
         self.assertTrue(s["charging"])
-        self.assertEqual(s["battery_source"], {"source": "termux-api", "health_source": "OPOS_BATTERY_HEALTH"})
+        self.assertEqual(
+            s["battery_source"],
+            {"source": "termux-api", "health_source": "OPOS_BATTERY_HEALTH", "temperature_reported": True},
+        )
         self.assertEqual(s["simulation"], {"modem": True})
         phone.tick(1)
         self.assertEqual(phone.sim.level, 23)
+
+    def test_missing_temperature_is_distinguished_from_the_previous_value(self):
+        missing_temperature = dict(self._reading(49), temp_c=None)
+        readings = iter([self._reading(50), missing_temperature, None])
+        battery = lb.LiveBattery(reader=lambda: next(readings), clock=lambda: 0.0)
+        phone = Phone(live_battery=battery)
+        self.assertTrue(phone.state()["battery_source"]["temperature_reported"])
+        battery.refresh(force=True)
+        state = phone.state()
+        self.assertEqual(state["temp_c"], 29.0)
+        self.assertFalse(state["battery_source"]["temperature_reported"])
+        battery.refresh(force=True)
+        self.assertFalse(phone.state()["battery_source"]["temperature_reported"])
 
     def test_demo_phone_unchanged(self):
         s = Phone().state()

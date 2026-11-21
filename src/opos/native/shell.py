@@ -33,9 +33,9 @@ GTK 4 and PyGObject are already part of the Droidian image, so nothing is instal
 
     python3 -m opos.native.shell [--probe] [--shots FOLDER]
 
-Exit status: 10 when the owner chose the old interface in Settings, 11 when the server has a PIN lock or did not say
-whether it has one (this shell has no PIN screen), 3 when the window could not be built; the session's launcher
-(packaging/duo-os/opos-native) starts the browser on 10 and 11 and counts every other end.
+Exit status: 11 when the server has a PIN lock or did not say whether it has one (this shell has no PIN screen), and
+3 when the window could not be built. The session launcher (packaging/duo-os/opos-native) starts the browser on 11,
+restarts the shell after a requested end (143), and applies its failure limits to unexpected exits.
 
 --probe walks the main changes twice, prints the frame pacing of each and quits. --shots saves a picture of every
 screen into FOLDER and quits. Both are for checking the shell, not for use.
@@ -57,11 +57,13 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+gi.require_version("Pango", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from opos.native import blank, displayconfig, facing, hinge, logic, posture, screens  # noqa: E402
 from opos.native.layout import (  # noqa: E402
     SLOP,
+    THEMES,
     active_screen,
     drag_kind,
     drag_offset,
@@ -70,24 +72,29 @@ from opos.native.layout import (  # noqa: E402
     drag_velocity,
     hinge_px,
     load_hand,
+    load_theme,
     pane_order,
     panel_to_darken,
     save_hand,
+    save_theme,
     screen_at,
     swipe_action,
+    theme_fixed,
     touch_ignored,
 )
 from opos.native.ui import (  # noqa: E402
     ANIMATE,
-    CSS,
     MOVE_MS,
     Slide,
     bar,
     button,
     column,
+    css_for,
+    inset_panes,
     label,
     one_column,
     reading,
+    shift_insets,
     two_columns,
     two_panes,
 )
@@ -99,7 +106,6 @@ BASE, BASE_NOTE = logic.server_url(os.environ)
 if BASE_NOTE:
     print("opos shell: " + BASE_NOTE, file=sys.stderr, flush=True)
 POLL_S = 3.0
-LEAVE = 10      # exit status when the owner chose the old interface; the launcher (opos-native) starts the browser
 LOCKED = 11     # exit status when the server has a PIN lock, or would not say: no PIN screen here, so the browser shows it
 BROKEN = 3      # exit status when the window could not be built
 ASKED_TO_END = 128 + signal.SIGTERM   # SIGTERM: the launcher reads 143 as "asked to start again", as before
@@ -188,13 +194,27 @@ class Core:
         return json.load(self._open("/api/" + name, {"X-OPOS-Token": self.token}))
 
 
+def paint_settings_posture(shell):
+    page = shell.pages.get("settings")
+    if page is not None and hasattr(page, "paint_posture"):
+        page.paint_posture()
+
+
 class Shell(Gtk.ApplicationWindow):
     def __init__(self, app, probe=False):
         super().__init__(application=app, title="OPOS")
         self.core, self.snap, self.snap_seq, self.probe = Core(), {}, 0, probe
         self.hinge, self.hand = hinge_px(), load_hand()
+        self.theme_fixed = theme_fixed()
+        self.theme = self.theme_fixed or load_theme()
+        self.theme_kept = True
+        self.css_provider = Gtk.CssProvider()
+        self.css_provider.load_from_string(css_for(self.theme))
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(), self.css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
         self.gaps, self.last_frame, self.start = [], None, None
-        self.said, self.said_text, self.battery_line = 0, "", ""
+        self.said, self.said_text, self.battery_line = 0, "", "Battery not reported"
         self.page, self.clock_absent, self.leaving = "lock", False, 0
         self.seq, self.link, self.ring = logic.Sequence(), logic.Link(), logic.RingGate()
         self.wake = threading.Event()       # set after an action: the poll then looks again at once
@@ -236,6 +256,7 @@ class Shell(Gtk.ApplicationWindow):
 
         # one quiet line above the reading pane, the same on every page: the time, and the battery or a short message
         self.s_time, self.s_right = label("", "strip", wrap=False), label("", "strip", wrap=False, x=1.0)
+        self.s_right.set_ellipsize(Pango.EllipsizeMode.END)
         self.s_right.set_hexpand(True)
         self.strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         for w in (self.s_time, self.s_right):
@@ -294,8 +315,10 @@ class Shell(Gtk.ApplicationWindow):
 
     def build_sheet(self):
         """The battery sheet: it covers both screens, so nothing under it shows through."""
-        self.b_head, self.b_detail, self.b_events = label("", "head"), label("", "big"), label("", "dim")
-        read = reading(self.b_head, self.b_detail, self.b_events)
+        self.b_head = label("Battery not reported", "head")
+        self.b_link, self.b_detail, self.b_events = label("", "mid"), label("", "big"), label("", "dim")
+        self.b_link.set_visible(False)
+        read = reading(self.b_head, self.b_link, self.b_detail, self.b_events)
         act = column(bottom=(label("Swipe up to close", "dim", x=0.5), bar(button("Close", lambda: self.set_shade(False), "main"))))
         sheet = two_panes(read, act, self.hinge, self.hand)
         sheet.add_css_class("sheet")
@@ -371,8 +394,8 @@ class Shell(Gtk.ApplicationWindow):
         GLib.timeout_add(220, step)     # long enough for each page's first drawing to finish
         return False
 
-    def leave(self, status=LEAVE):
-        """End with a status the session's launcher answers with the browser: LEAVE (the owner chose it) or LOCKED."""
+    def leave(self, status):
+        """End with the supplied launcher status."""
         self.leaving = status
         self.get_application().quit()
 
@@ -407,6 +430,23 @@ class Shell(Gtk.ApplicationWindow):
         if save:
             save_hand(hand)
 
+    def brightness_level(self):
+        return None if self.lid_closed else self.blanker.level()
+
+    def set_brightness(self, fraction):
+        return not self.lid_closed and self.blanker.set_level(fraction)
+
+    def set_theme(self, theme, save=True):
+        """Apply a live palette. theme_kept reports the result of a requested preference write."""
+        if theme not in THEMES or self.theme_fixed is not None:
+            return False
+        if theme != self.theme:
+            self.css_provider.load_from_string(css_for(theme))
+            self.theme = theme
+        if save:
+            self.theme_kept = save_theme(theme)
+        return True
+
     def say(self, text):
         """A short message in the top line for a few seconds; then the battery line comes back."""
         self.said, self.said_text = time.monotonic() + 4, text
@@ -418,6 +458,8 @@ class Shell(Gtk.ApplicationWindow):
         text = lost or (self.said_text if self.said and time.monotonic() < self.said else self.battery_line)
         self.s_right.set_label(text)
         self.pages["lock"].lost(lost)
+        self.b_link.set_label(lost)
+        self.b_link.set_visible(bool(lost))
 
     def ask(self, action, done=None, **fields):
         """Send one action to the server without blocking the window; its reply is the new state. The reply changes
@@ -714,9 +756,7 @@ class Shell(Gtk.ApplicationWindow):
         if self.posture != was:
             print("opos shell: posture %s -> %s (hinge %s)" % (was, self.posture, self.angle), file=sys.stderr, flush=True)
         self.fit_back()
-        page = self.pages.get("settings")
-        if page is not None and hasattr(page, "paint_posture"):
-            page.paint_posture()
+        paint_settings_posture(self)
 
     def fit_back(self):
         """Enter or leave back mode as the posture and the lid now say (posture.one_screen). One change, one frame."""
@@ -776,6 +816,7 @@ class Shell(Gtk.ApplicationWindow):
                 self.back = None
                 self.two_rows()
                 self.enter_back()
+                paint_settings_posture(self)
         return False
 
     def hinge_changed(self, angle):
@@ -892,6 +933,18 @@ class Shell(Gtk.ApplicationWindow):
         clock = self.pages.get("clock")
         return logic.clock_known(self.snap, clock.data if clock else None)
 
+    def apply_zone(self, zone):
+        """Use a server-confirmed zone in the native process as well as the server."""
+        from opos import timezone
+
+        try:
+            timezone.apply(zone)
+        except (OSError, ValueError) as err:
+            print(f"opos shell: cannot apply the time zone ({type(err).__name__})", file=sys.stderr, flush=True)
+            return False
+        self.s_time.set_label(self.time_text())
+        return True
+
     def time_text(self, now=None):
         return logic.time_text(self.clock_known(), time.localtime() if now is None else now)
 
@@ -901,14 +954,13 @@ class Shell(Gtk.ApplicationWindow):
             return False
         self.snap, self.snap_seq = snap, n
         self.link.shown()
-        b = snap.get("battery") or {}
-        pct = "%s%%%s" % (b.get("percent", "--"), "  charging" if snap.get("charging") else "")
-        self.b_head.set_label(pct)
+        caption, b = logic.battery_status(snap)
+        self.b_head.set_label(caption)
         until, aim = b.get("calls_until"), b.get("goal")     # no "(goal )" when the server has none to say
         goal = "" if not until else "Calls and messages until %s%s." % (until, " (goal %s)" % aim if aim else "")
         self.b_detail.set_label("%s\n%s" % (b.get("time_left") or "", goal))
         self.b_events.set_label("\n".join((b.get("events") or [])[:6]))
-        self.battery_line = "%s  %s" % (pct, b.get("headline") or "")
+        self.battery_line = " · ".join(text for text in (caption, b.get("headline")) if isinstance(text, str) and text)
         self.paint_strip()
         for page in self.pages.values():
             page.show(snap)
@@ -923,6 +975,48 @@ class Shell(Gtk.ApplicationWindow):
         return True
 
     # --- checking the shell ------------------------------------------------------------------------------------
+    def start_shift(self, env=None):
+        """Start only for the interactive session. Checking modes keep their original coordinates."""
+        if (os.environ if env is None else env).get("OPOS_NO_SHIFT") == "1":
+            return False
+        self.shift_step = 0
+        self.shift_panes = inset_panes(self.rows, self.strip)
+        self.shift_contacts = set()
+        pointer = Gtk.EventControllerLegacy()
+        pointer.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        pointer.connect("event", self.shift_pointer)
+        self.add_controller(pointer)
+        GLib.timeout_add_seconds(logic.SHIFT_S, self.nudge)
+        return True
+
+    def shift_pointer(self, _controller, event):
+        """Track a press even if it has not become a drag or a child button handles it."""
+        kind = event.get_event_type()
+        kinds = Gdk.EventType
+        if kind in (kinds.TOUCH_BEGIN, kinds.TOUCH_END, kinds.TOUCH_CANCEL):
+            contact = ("touch", event.get_event_sequence())
+        elif kind in (kinds.BUTTON_PRESS, kinds.BUTTON_RELEASE):
+            contact = (event.get_device(), event.get_button())
+        else:
+            return False
+        if kind in (kinds.TOUCH_BEGIN, kinds.BUTTON_PRESS):
+            self.shift_contacts.add(contact)
+        else:
+            self.shift_contacts.discard(contact)
+        return False
+
+    def nudge(self):
+        """Move only the resting content once the lid is open and the layout has settled."""
+        if (
+            self.warming or self.lid_closed is not False or self.drag is not None or self.shift_contacts
+            or self.restore_timer is not None or self.blanker.failed
+            or (self.back is None and self.blanker.pending())
+        ):
+            return True
+        self.shift_step += 1
+        shift_insets(self.shift_panes, *logic.shift_at(self.shift_step))
+        return True
+
     def tick(self, _w, clock):
         now = clock.get_frame_time() / 1000.0
         if self.last_frame is not None:
@@ -1016,9 +1110,6 @@ def main(argv=None):
     made = []
 
     def activate(a):
-        provider = Gtk.CssProvider()
-        provider.load_from_string(CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         try:
             win = Shell(a, probe)
         except Exception:
@@ -1041,11 +1132,12 @@ def main(argv=None):
             GLib.timeout_add(5000, win.run_shots, shots)
         if not probe and not shots:     # the checking modes must not depend on the lid or touch the screens
             win.start_lid()
+            win.start_shift()
     app.connect("activate", activate)
     try:
         status = app.run([])
     finally:
-        for win in made:        # however the shell ends (the old interface, the PIN lock, an error), never leave it dark
+        for win in made:        # light the panels before giving up the window, even after an error
             try:
                 win.blanker.restore()
             except Exception:

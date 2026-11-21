@@ -9,6 +9,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -187,6 +188,31 @@ def sudo(root):
 
 SSH_UNITS = ("ssh.service", "sshd.service", "ssh.socket", "sshd.socket")
 
+# Pinned Duo base item-duo1-20261025-port0.22.1. This drop-in only generates missing SSH host keys.
+DUO_SSH_HOST_KEYS_SHA256 = "be69ce951cffc002b3b48da4e8d583ac1c766869008ca539c90b527ee20f4ec0"
+
+
+def ssh_startup_overrides(root):
+    directory = root / "etc/systemd/system/ssh.service.d"
+    if not os.path.lexists(directory):
+        return
+    error = "unsupported SSH startup overrides"
+    require(directory.is_dir() and not directory.is_symlink(), error)
+    for path in directory.glob("*.conf"):
+        for parent in (directory, directory.parent, directory.parent.parent, root / "etc"):
+            ancestor = parent.lstat()
+            require(stat.S_ISDIR(ancestor.st_mode) and ancestor.st_uid == 0 and not ancestor.st_mode & 0o022, error)
+        info = path.lstat()
+        require(
+            path.name == "10-host-keys.conf"
+            and stat.S_ISREG(info.st_mode)
+            and info.st_uid == info.st_gid == 0
+            and stat.S_IMODE(info.st_mode) == 0o644
+            and info.st_size <= 1024
+            and hashlib.sha256(path.read_bytes()).hexdigest() == DUO_SSH_HOST_KEYS_SHA256,
+            error,
+        )
+
 
 def ssh_enablements(root):
     for path in (root / "etc/systemd/system").glob("*/*"):
@@ -266,7 +292,7 @@ def recovery(root):
         ),
         "ssh.service is not enabled",
     )
-    require(not list((root / "etc/systemd/system/ssh.service.d").glob("*.conf")), "unsupported SSH startup overrides")
+    ssh_startup_overrides(root)
     require(not (root / "etc/ssh/sshd_not_to_be_run").exists(), "SSH startup is disabled")
     ssh(root, recovery_key=key)
 

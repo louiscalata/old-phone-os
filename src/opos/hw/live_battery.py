@@ -318,6 +318,7 @@ class LiveBattery:
         self.health = 1.0
         self.health_source = "assumed"
         self.temp_c = 30.0
+        self.temperature_reported = False
         self.ambient_c = 30.0
         self.charging = False
         self.source = None
@@ -340,6 +341,7 @@ class LiveBattery:
             self.t_s += max(0.0, now - self._last)
         self._last = now
         r = self._reader()
+        self.temperature_reported = r is not None and r["temp_c"] is not None
         if r is None:
             self.source = None
             return

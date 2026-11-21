@@ -35,8 +35,9 @@ process, with `OPOS_NATIVE_TRIED` set, so it never hands back) when:
 - first-run setup is not finished (no `firstrun.json` in the owner's config folder, the one the server writes);
 - the PIN lock is on (`OPOS_LOCK=1`, or the shell found the server enforcing it, or the server did not say whether it
   has one 5 times in a row, and the shell ended with status 11): the shell has no PIN screen;
-- the owner chose "Use the old interface" in Settings (status 10);
 - the shell ended 3 times in a row within 20 s, or did not report a window within 30 s, or ended 6 times in 10 minutes.
+
+An older shell can still return status 10. The launcher treats it as an unexpected exit and applies the normal restart and failure limits.
 
 `/etc/opos/native-off` keeps the browser as the interface from the next time the session starts. The two-screen span
 (`OPOS_SPAN`) comes from `/etc/default/opos-native`, which the image build writes with the server's own value. The
@@ -49,6 +50,24 @@ The shell asks one server: the phone's own, at `http://127.0.0.1:8765`. `OPOS_SE
 is asked. `OPOS_LOCAL_URL` (the Helper's model server) is not read. No proxy from the environment is used, and a
 redirect to another address is not followed, so the shell's token and the owner's actions stay on the phone.
 
+## Native palettes
+
+The shell starts in its original dark palette unless it has a saved paper preference. A live switch changes only
+the colors. The two-pane layout, focus, and black area on the unused screen in back mode stay as before.
+The shell saves `theme` alongside `hand` in `$XDG_CONFIG_HOME/opos/shell.json` or `~/.config/opos/shell.json`.
+A valid `OPOS_THEME=dark` or `OPOS_THEME=paper` fixes the palette for the session without updating the saved choice.
+
+Settings → Display also reads the lit backlight and offers ten brightness steps when it can read a level. Adjusting
+brightness keeps a panel that is already dark at zero. If a restore is pending, the saved restore levels reflect the
+new choice and remain above zero. Brightness controls have not been checked on the Duo.
+
+## Resting pixel movement
+
+Every three minutes the native shell moves the contents of each pane by up to two logical pixels. The hinge and the
+unused dark pane keep their positions. GTK moves each control and its touch target together. The step waits for a
+confirmed open lid, a settled display and no touch or drag in progress. `OPOS_NO_SHIFT=1`, `--probe` and `--shots`
+keep the content fixed. This has been tested in desktop GTK. Its effect on the phone's OLED panels is unverified.
+
 ## The rules the screens follow
 
 - Every frame is a complete, accurate snapshot, and each tap is answered in one frame. Nothing slides or fades:
@@ -60,10 +79,12 @@ redirect to another address is not followed, so the shell's token and the owner'
 - The battery sheet, the lock screen and the bottom edge of an app page follow the finger while it is down (direct
   manipulation), exactly as far as the finger has moved. When it lifts, the next frame shows the result, complete: the
   sheet open or closed, Home or the page it was on. There is no easing, no coasting and no spring-back on a timer.
-- Deleting an alarm, a person or a note takes two taps ("Delete this alarm?", "Delete this person?", "Delete this
-  note?"), as in the browser. Add alarm and Call are busy until the server's answer is on screen, so a second tap sends
-  nothing. When the answer to a call or a hang-up does not come, the button stays busy until a state asked for after
-  that is drawn, so while the server cannot be reached it stays busy; the screen then no longer says it is asking. It
+- Remove in Clock or Contacts and Delete this note in Notes open reviews in the action pane. Each review names the
+  alarm, contact, or note. Cancel keeps the selection or draft, and Yes, delete sends the request. The reading pane
+  keeps its size and editing pauses while the review is open. Add alarm and Call are busy
+  until the server's answer is on screen, so a second tap sends nothing. When the answer to a call or a hang-up does
+  not come, the button stays busy until a state asked for after that is drawn, so while the server cannot be reached it
+  stays busy; the screen then no longer says it is asking. It
   says "No answer about that call. OPOS is being asked whether it went out; Call comes back when it says." or "No
   answer about hanging up. The call may still be up; OPOS is being asked, and the button comes back when it says." A
   request that could not be sent at all (no thread could be started) is answered at once as not sent, so no button
@@ -106,9 +127,61 @@ redirect to another address is not followed, so the shell's token and the owner'
   stays, as before. The shell's own lock page is not a lock: it opens with a swipe, and only the server's PIN lock,
   shown by the browser, keeps anyone out.
 
+## Home
+
+Home lists the enabled apps in one column. Tap a tile to open the app or hold it to open its preview in the
+reading pane. The reading pane returns to black each time Home opens, including in the Paper palette.
+
+## Settings
+
+Settings keeps the installation and emergency notices in the reading pane. The action pane shows one column of links.
+About shows the shared notices and the storage figure, which is read once when Settings opens. Hand & posture keeps the
+hand switch, hinge status and gesture help. Date & time and Network open their own pages and make their own reads.
+Each page has a **Settings** button to return to the hub. The usual Home gesture remains available.
+
+## Battery
+
+The lock screen, top line and battery sheet identify practice values. If the server cannot read the device
+battery, these surfaces show that it is unavailable. If the connection itself drops, the lock screen and
+battery sheet say that the numbers are from the last response, and the top line shows the connection message.
+
+The native Battery page uses the regular server snapshot. It labels time left as an estimate and distinguishes a rate
+measured from discharge from one supplied by the model. Practice numbers are labeled. A temperature only appears as a device
+reading when the current sample includes it. Health labels say whether the gauge reported it, a charge counter estimated it,
+or the owner supplied it. Missing data is shown as **Not reported**.
+
+The page shows the daily goal and its power policy when the server supplies them. Open the battery sheet from the action pane.
+Viewing Battery does not send a request of its own or change the daily goal.
+
+## Sound and Security
+
+Sound shows the practice volume when the enabled volume-key service reports it. The keys do not change audio output.
+Security shows the last lid report and can open the native lock screen. PIN handling remains in the browser.
+
+## Date & time
+
+Open **Date & time** from native Settings. Pick a region, choose a city and use **Use this zone** to save it. The selected
+city scrolls fully into view, and a city already in view keeps its position. Changing the zone changes when alarms ring in
+local time. The page shows the clock status the server reports and gives no control to set the system clock.
+
+The native shell uses the existing `GET /api/timezone` and `POST /api/timezone` from the first-run setup. When the server
+confirms a save, the shell applies that zone to its own clock without restarting the browser. The page shows when the
+server cannot supply the zone list. Built-in zone rules can lag changes to local law.
+
+## Updates
+
+The Updates page shows the running version, update source hostname and the updater's current progress. **Check now**
+refreshes the offer. **Download…** opens a review with the offered release, size and source. Confirming sends the review
+fingerprint. If the source now offers a different bundle, OPOS asks for a fresh review. Releases without a verified
+download digest have no native download control. The existing updater still verifies a bundle before staging or applying it.
+
+When the installed root updater supports reviewed requests, the page can also ask to drop a named staged update or
+return to a named previous release. The updater rechecks the installed and target releases before acting. The root
+updater and its systemd path unit are image components. An application-only update cannot add that support.
+
 ## The Network screen
 
-Settings has a Network button (Home has no tile for it). The screen shows the radios in the server's own sentences
+Settings has a Network link (Home has no tile for it). The screen shows the radios in the server's own sentences
 (Wi-Fi, airplane mode, Bluetooth, mobile data) and the networks it can see, connected first, then by signal, then the
 saved ones not in range. It can scan again, join (a typed password, or none for a saved or open network), join a hidden
 network by name, forget, disconnect, and turn Wi-Fi on or off. It uses the server's existing actions, the same ones the
@@ -119,12 +192,12 @@ elsewhere the server refuses them and the screen shows its sentence.
 - Nothing is asked while the screen is not showing. On opening it reads the radios once, then scans once; while it shows
   it reads the radios again every 10 s and never rescans on its own. Opening it, polling and choosing a row change
   nothing.
-- Forget, Disconnect and Turn Wi-Fi off take two taps ("Forget this network?", "Disconnect now?", "Turn Wi-Fi off
-  now?"); choosing another row, Cancel or leaving the screen disarms them. Every newer radios read or list that is
+- Forget, Disconnect and Turn Wi-Fi off open a separate review with a named action and a Cancel button. Leaving
+  the screen closes the review. Every newer radios read or list that is
   drawn finds the chosen row again by name and takes its new state, or closes the choice when the row is gone; a Forget
   or Disconnect prompt is dropped when that row's state changed or when the radios name another connected network.
   The server's disconnect names no network (it drops whatever is connected), and the radios read on screen can be up
-  to 10 s old, so the second Disconnect tap sends nothing by itself. If the read on screen names another network, or
+  to 10 s old, so confirming Disconnect first requests a fresh reading. If the read on screen names another network, or
   none is known, it stops there and says why. Otherwise the screen reads the radios again (skipping the server's
   few-second cache), says "Checking that <network> is still the connected network...", and stays busy; it sends the
   disconnect only when that read, asked after the tap, still names the network on the prompt, and then says
@@ -143,8 +216,9 @@ elsewhere the server refuses them and the screen shows its sentence.
   to its idle buttons). The rows follow the same rule: when a newer list puts another network in a place, or changes
   what a tap there would offer (for example from "needs a password" to "saved"), a tap on a row in the next 1.5 s
   chooses nothing and the screen says "The list just changed. Check it, then tap the network again." A list that only
-  brings new signal strengths, in the same order, holds nothing. The owner's own taps start no hold, so the second tap
-  of a prompt they armed, or Join right after choosing a row, acts at once.
+  brings new signal strengths, in the same order, holds nothing. The owner's own taps start no hold, so a tap
+  on a confirmation they opened, or Join right after choosing a row, acts at once. A review that closes after a
+  status change holds the controls it reveals for the same 1.5 s.
 - Each visit to the screen is numbered; leaving starts a new one. A radios read or a list sent for an earlier visit is
   dropped and starts nothing. What a visit read is forgotten when the screen is left, because the phone can move to
   another network or the Wi-Fi be switched while the screen is not showing (the browser's `/network` page, or

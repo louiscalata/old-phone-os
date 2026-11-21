@@ -493,8 +493,9 @@ class NetworkPage(unittest.TestCase):
         self.shell.leave, self.shell.set_hand = (lambda: None), (lambda h: None)
         settings = self.screens.Settings(self.shell)
         _text, rows = settings.preview({})
-        rows[-1][2]()
-        self.assertEqual((rows[-1][0], self.shell.gone), ("Network", ["network"]))
+        open_network = next(open_page for title, _summary, open_page in rows if title == "Network")
+        open_network()
+        self.assertEqual(self.shell.gone, ["network"])
         self.assertEqual(self.core.posts, [], "building the pages asks nothing")
 
     # --- join -----------------------------------------------------------------------------------------------------
@@ -673,13 +674,19 @@ class NetworkPage(unittest.TestCase):
     def test_forget_takes_two_taps_on_the_same_network(self):
         self.chosen(net("Home-Test", known=True))
         self.page.forget()
-        self.assertEqual(
-            (self.threads, self.page.forget_b.get_label()), ([], "Forget this network?"), "the first tap only asks"
-        )
+        self.assertEqual(self.page.actions.visible_child_name, "review")
+        self.assertIn("Forget Home-Test?", self.page.review_prompt.get_label())
+        self.page.forget()
         self.chosen(net("Work-Test", known=True))
-        self.assertEqual(self.page.forget_b.get_label(), "Forget", "another row disarms it")
+        self.assertEqual((self.threads, self.page.ssid()), ([], "Home-Test"))
+        self.page.cancel_review()
+        self.page.confirm_review()
+        self.assertEqual(self.page.actions.visible_child_name, "network")
+        self.assertEqual(self.threads, [])
+        self.chosen(net("Work-Test", known=True))
         self.page.forget()
-        self.page.forget()
+        self.page.confirm_review()
+        self.page.confirm_review()
         self.run_threads()
         self.assertEqual(self.changes(), [("net_forget", {"ssid": "Work-Test"})])
         self.assertEqual(self.core.handed[0][2], 45)
@@ -689,12 +696,14 @@ class NetworkPage(unittest.TestCase):
         self.chosen(net("Home-Test", active=True, known=True))
         self.assertEqual(self.page.mode(), "connected")
         self.page.main_action()
-        self.assertEqual((self.threads, self.page.main.get_label()), ([], "Disconnect now?"))
-        self.page.cancel()
-        self.chosen(net("Home-Test", active=True, known=True))
+        self.assertEqual((self.threads, self.page.review_confirm_b.get_label()), ([], "Yes, disconnect"))
+        self.assertIn("Disconnect from Home-Test?", self.page.review_prompt.get_label())
         self.page.main_action()
+        self.page.cancel_review()
+        self.page.confirm_review()
         self.assertEqual(self.threads, [], "Cancel disarmed it")
         self.page.main_action()
+        self.page.confirm_review()
         self.core.answers["net_status"] = self.HOME  # the read the confirming tap asks for: still Home-Test
         self.run_threads()
         self.assertEqual(self.changes(), [("net_wifi", {"mode": "disconnect"})])
@@ -704,8 +713,11 @@ class NetworkPage(unittest.TestCase):
         self.assertEqual(self.page.wifi.get_label(), "Turn Wi-Fi off")
         self.look()
         self.page.toggle_wifi()
-        self.assertEqual((self.threads, self.page.wifi.get_label()), ([], "Turn Wi-Fi off now?"))
+        self.assertEqual((self.threads, self.page.review_confirm_b.get_label()), ([], "Yes, turn Wi-Fi off"))
+        self.assertIn("The phone leaves every Wi-Fi network", self.page.review_prompt.get_label())
         self.page.toggle_wifi()
+        self.assertEqual(self.threads, [])
+        self.page.confirm_review()
         self.shell.page = "home"
         self.run_threads()
         self.assertEqual(self.changes(), [("net_wifi", {"mode": "off"})])
@@ -718,11 +730,14 @@ class NetworkPage(unittest.TestCase):
 
     def test_wifi_off_armed_is_dropped_when_the_radio_reads_off(self):
         self.status_on(True)
+        self.look()
         self.page.toggle_wifi()
+        self.assertEqual(self.page.armed, ("wifi-off",))
         self.status_on(False)
+        self.assertIsNone(self.page.armed)
         self.status_on(True)
-        self.page.toggle_wifi()
-        self.assertEqual(self.threads, [], "the earlier first tap no longer counts")
+        self.page.confirm_review()
+        self.assertEqual(self.threads, [], "the original review expired")
 
     def test_wifi_is_never_switched_while_its_state_is_not_known(self):
         self.assertEqual(self.page.wifi.get_label(), "Wi-Fi: not known yet")
@@ -865,7 +880,7 @@ class NetworkPage(unittest.TestCase):
         self.status_on(True)
         self.look()
         self.page.toggle_wifi()
-        self.page.toggle_wifi()  # Wi-Fi off asked for
+        self.page.confirm_review()
         self.page.status()  # a poll that the core may answer before it acts
         self.core.answers["net_status"] = [
             {"ok": True, "wifi": {"enabled": True, "summary": "Wi-Fi: before the change"}},
@@ -893,7 +908,7 @@ class NetworkPage(unittest.TestCase):
         self.core.answers["net_status"] = {"ok": True, "wifi": {"enabled": True, "summary": "Wi-Fi: a newer read"}}
         self.look()
         self.page.toggle_wifi()
-        self.page.toggle_wifi()
+        self.page.confirm_review()
         self.page.status()
         change, poll = self.threads
         self.threads.clear()
@@ -980,7 +995,7 @@ class NetworkPage(unittest.TestCase):
         self.page.nets.rowset.click(rows.index("Home-Test"))
         self.assertEqual(self.page.main.get_label(), "Disconnect")
         self.page.main_action()
-        self.page.main_action()  # Disconnect now?: confirmed on a read from before the change
+        self.page.confirm_review()
         said = self.said[-1]
         self.page.toggle_wifi()  # the Wi-Fi button cannot switch either
         self.core.answers["net_status"] = self.CAFE
@@ -1131,12 +1146,12 @@ class NetworkPage(unittest.TestCase):
         self.page.nets.rowset.click(0)
         self.assertEqual(self.page.ssid(), "Home-Test")
         self.page.main_action()
-        self.assertEqual(self.page.main.get_label(), "Disconnect now?")
+        self.assertEqual(self.page.review_confirm_b.get_label(), "Yes, disconnect")
 
     def test_a_newer_status_with_another_network_connected_drops_the_disconnect_prompt(self):
         self.armed_on_home()
         self.status_connected("Cafe-Test")
-        self.assertIsNone(self.page.sure.armed)
+        self.assertIsNone(self.page.armed)
         self.assertFalse(self.page.chosen["active"], "the chosen row follows the radios")
         self.assertEqual((self.page.mode(), self.page.main.get_label()), ("known", "Join"))
         self.assertEqual((self.threads, self.changes()), ([], []))
@@ -1144,7 +1159,7 @@ class NetworkPage(unittest.TestCase):
     def test_a_newer_scan_with_another_network_connected_drops_the_disconnect_prompt(self):
         self.armed_on_home()
         self.scan_shows(net("Home-Test", known=True), net("Cafe-Test", active=True, known=True))
-        self.assertIsNone(self.page.sure.armed)
+        self.assertIsNone(self.page.armed)
         self.assertEqual(
             (self.page.ssid(), self.page.chosen["active"]), ("Home-Test", False), "the row is found again by name"
         )
@@ -1155,10 +1170,10 @@ class NetworkPage(unittest.TestCase):
         self.armed_on_home()
         # the radios now name another network, without any reply having redrawn the pane (the last guard)
         self.page.status_data = {"ok": True, "wifi": {"enabled": True, "state": "connected", "ssid": "Cafe-Test"}}
-        self.page.main_action()
+        self.page.confirm_review()
         self.assertEqual((self.threads, self.changes()), ([], []))
         self.assertEqual(self.said[-1], netlogic.DISCONNECT_MOVED)
-        self.assertIsNone(self.page.sure.armed)
+        self.assertIsNone(self.page.armed)
 
     def test_the_second_disconnect_tap_is_refused_while_the_connected_network_is_not_known(self):
         for status in (
@@ -1170,7 +1185,7 @@ class NetworkPage(unittest.TestCase):
             with self.subTest(status=status):
                 self.armed_on_home()
                 self.page.status_data = status
-                self.page.main_action()
+                self.page.confirm_review()
                 self.assertEqual((self.threads, self.changes()), ([], []))
                 self.assertEqual(self.said[-1], netlogic.DISCONNECT_UNKNOWN)
 
@@ -1179,9 +1194,10 @@ class NetworkPage(unittest.TestCase):
         self.page.now = lambda: clock[0]
         self.armed_on_home()
         newer()  # a newer read: Home-Test is now only saved, the button says Join
-        self.assertEqual((self.page.sure.armed, self.page.mode(), self.page.main.get_label()), (None, "known", "Join"))
+        self.assertEqual((self.page.armed, self.page.mode(), self.page.main.get_label()), (None, "known", "Join"))
         clock[0] += self.screens.Network.HOLD_S / 2
-        self.page.main_action()  # the quick second tap that was meant for "Disconnect now?"
+        self.page.confirm_review()  # the stale confirmation sends nothing
+        self.page.main_action()  # the quick tap that lands on an exposed control also sends nothing
         self.assertEqual((self.threads, self.changes()), ([], []))
         self.assertEqual(self.said[-1], netlogic.CHANGED)
         clock[0] += self.screens.Network.HOLD_S
@@ -1214,14 +1230,14 @@ class NetworkPage(unittest.TestCase):
     def test_a_dropped_prompt_whose_button_still_only_arms_is_held_too(self):
         self.armed_on_home()
         self.scan_shows(net("Home-Test", active=True, known=True, security="open"))  # its row changed: dropped
-        self.assertEqual((self.page.sure.armed, self.page.main.get_label()), (None, "Disconnect"))
-        self.page.main_action()  # the quick tap meant for "Disconnect now?"
+        self.assertEqual((self.page.armed, self.page.main.get_label()), (None, "Disconnect"))
+        self.page.main_action()  # the quick tap at the position of the dismissed review
         self.assertEqual(
             (self.threads, self.page.main.get_label(), self.said[-1]), ([], "Disconnect", netlogic.CHANGED)
         )
         self.look()
         self.page.main_action()  # after the pause: a first tap that only asks
-        self.assertEqual((self.threads, self.page.main.get_label()), ([], "Disconnect now?"))
+        self.assertEqual((self.threads, self.page.review_confirm_b.get_label()), ([], "Yes, disconnect"))
 
     def unarmed_quick_tap_after(self, newer):
         """The button says Disconnect (not armed) and a newer read turns it into Join: the tap meant to arm Disconnect
@@ -1229,7 +1245,7 @@ class NetworkPage(unittest.TestCase):
         self.status_connected("Home-Test")
         self.scan_shows(net("Home-Test", active=True, known=True), net("Cafe-Test", known=True))
         self.page.nets.rowset.click(0)
-        self.assertEqual((self.page.sure.armed, self.page.main.get_label()), (None, "Disconnect"))
+        self.assertEqual((self.page.armed, self.page.main.get_label()), (None, "Disconnect"))
         self.look()
         newer()
         self.assertEqual((self.page.mode(), self.page.main.get_label()), ("known", "Join"))
@@ -1293,8 +1309,8 @@ class NetworkPage(unittest.TestCase):
         self.look()  # from here the clock stands still: no time passes between taps
         self.page.nets.rowset.click(0)  # the owner's tap changed the button: no hold
         self.page.main_action()  # arms at once
-        self.assertEqual((self.threads, self.page.main.get_label()), ([], "Disconnect now?"))
-        self.page.main_action()  # and the confirm right after it is not held either
+        self.assertEqual((self.threads, self.page.review_confirm_b.get_label()), ([], "Yes, disconnect"))
+        self.page.confirm_review()
         self.assertEqual(len(self.threads), 1)  # the read the confirming tap asks for
         self.core.answers["net_status"] = self.HOME
         self.run_one(0)
@@ -1305,7 +1321,7 @@ class NetworkPage(unittest.TestCase):
         self.status_connected(None)  # a read sent after the change: the radios are known again
         self.look()
         self.page.toggle_wifi()  # Turn Wi-Fi off: arms, then confirms, with no pause
-        self.page.toggle_wifi()
+        self.page.confirm_review()
         self.run_threads()
         self.assertEqual(self.changes()[-1], ("net_wifi", {"mode": "off"}))
         self.page.nets.rowset.click(1)  # Cafe-Test: Join right after choosing it
@@ -1331,17 +1347,17 @@ class NetworkPage(unittest.TestCase):
         self.scan_shows(net("Home-Test", known=True))
         self.page.nets.rowset.click(0)
         self.page.forget()
-        self.assertEqual(self.page.forget_b.get_label(), "Forget this network?")
+        self.assertEqual(self.page.review_confirm_b.get_label(), "Yes, forget")
         self.scan_shows(net("Home-Test", known=True, active=True))
-        self.assertEqual((self.page.sure.armed, self.page.forget_b.get_label()), (None, "Forget"), "its state changed")
+        self.assertEqual((self.page.armed, self.page.forget_b.get_label()), (None, "Forget"), "its state changed")
+        self.look()
         self.page.forget()
         self.status_connected("Cafe-Test")
-        self.assertIsNone(self.page.sure.armed, "the connected network changed")
+        self.assertIsNone(self.page.armed, "the connected network changed")
+        self.look()
         self.page.forget()
         self.scan_shows(net("Cafe-Test", known=True, active=True))
-        self.assertEqual(
-            (self.page.chosen, self.page.sure.armed), (None, None), "the row is gone: the choice is closed"
-        )
+        self.assertEqual((self.page.chosen, self.page.armed), (None, None), "the row is gone: the choice is closed")
         self.page.forget()
         self.assertEqual((self.threads, self.changes()), ([], []))
 
@@ -1350,9 +1366,9 @@ class NetworkPage(unittest.TestCase):
         self.scan_shows(net("Cafe-Test", active=True, known=True), net("Home-Test", known=True))
         self.page.nets.rowset.click(1)
         self.page.forget()
-        self.assertEqual(self.page.sure.armed, ("forget", "Home-Test"))
+        self.assertEqual(self.page.armed, ("forget", "Home-Test"))
         self.status_connected("Park-Test")  # Home-Test's own row is unchanged, but the phone moved
-        self.assertEqual((self.page.sure.armed, self.page.chosen["active"]), (None, False))
+        self.assertEqual((self.page.armed, self.page.chosen["active"]), (None, False))
         self.page.forget()
         self.assertEqual(self.threads, [], "the next tap only asks again")
 
@@ -1557,7 +1573,7 @@ class NetworkPage(unittest.TestCase):
         )  # a row that says connected, before any read of this visit
         self.assertEqual(self.page.main.get_label(), "Disconnect")
         self.page.main_action()
-        self.page.main_action()  # Disconnect now?
+        self.page.confirm_review()
         self.assertEqual(self.said[-1], netlogic.DISCONNECT_UNKNOWN)
         self.run_threads()
         self.assertEqual([c for c in self.changes() if c[0] == "net_wifi"], [], "Cafe-Test is never dropped")
@@ -1702,7 +1718,9 @@ class NetworkPage(unittest.TestCase):
         self.look()
         self.page.main_action()
         self.assertEqual(
-            (self.threads, self.page.main.get_label()), ([], "Disconnect now?"), "no join of the connected network"
+            (self.threads, self.page.review_confirm_b.get_label()),
+            ([], "Yes, disconnect"),
+            "no join of the connected network",
         )
 
     def test_an_older_radios_read_does_not_undo_a_newer_list(self):
@@ -1718,7 +1736,7 @@ class NetworkPage(unittest.TestCase):
         )
         self.look()
         self.page.main_action()
-        self.page.main_action()  # the radios read drawn still names Home-Test: nothing is dropped
+        self.page.confirm_review()
         self.assertEqual((self.threads, self.changes(), self.said[-1]), ([], [], netlogic.DISCONNECT_MOVED))
 
     def test_a_row_chosen_from_an_older_list_follows_the_newer_radios_read(self):
@@ -1737,7 +1755,7 @@ class NetworkPage(unittest.TestCase):
     # --- the confirming Disconnect tap reads the radios again before anything is sent -------------------------------
     def confirmed_on_home(self):
         self.armed_on_home()
-        self.page.main_action()  # "Disconnect now?": the confirming tap
+        self.page.confirm_review()
 
     def test_the_confirming_disconnect_tap_reads_the_radios_again_and_names_the_network(self):
         self.confirmed_on_home()
@@ -1842,7 +1860,7 @@ class NetworkPage(unittest.TestCase):
 
         self.armed_on_home()
         self.screens.threading = types.SimpleNamespace(Thread=Refuses)
-        self.page.main_action()
+        self.page.confirm_review()
         self.assertEqual((self.page.busy, self.core.posts, self.said[-1]), (False, [], netlogic.DISCONNECT_UNKNOWN))
 
 
@@ -1883,10 +1901,10 @@ class ShellParts(unittest.TestCase):
     def test_pages_without_a_tile_are_not_on_home(self):
         pages = self.shell.screens.PAGES
         names = [n for n, _t in self.shell.Shell.tiles(pages)]
-        self.assertNotIn("network", names)
-        self.assertIn("settings", names)
-        self.assertNotIn("lock", names)
-        self.assertEqual(len(names), len(pages) - 3, "lock and home have no title; network no tile")
+        self.assertIn(self.shell.screens.SetTime, self.shell.screens.enabled_pages({}))
+        self.assertEqual(
+            names, ["phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls", "settings"]
+        )
 
     def test_go_tells_the_page_left_before_the_new_one_enters(self):
         events = []

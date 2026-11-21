@@ -7,6 +7,8 @@ on any interface (Wi-Fi included once one is joined). `build-image.sh` (block "u
 `verify-image.sh` checks both; `opos-selftest` `ssh.auth` says "key-only everywhere" for the result. The blocks are run here against a scratch root file system,
 the way the dev-span, dev-sudo, clock and OTA blocks are; no image, mount or qemu is involved. Nothing here touches a phone."""
 
+import hashlib
+import importlib.util
 import os
 import re
 import shutil
@@ -16,6 +18,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.host_tools import LINUX_HOST
 
@@ -474,6 +477,41 @@ class BuildBlock(unittest.TestCase):
 
 
 @unittest.skipUnless(SH and os.name == "posix", "needs a POSIX sh")
+class SSHStartupOverrides(unittest.TestCase):
+    @unittest.skipUnless(getattr(os, "geteuid", lambda: -1)() == 0, "requires a root-owned scratch image")
+    def test_only_the_exact_inherited_host_key_generator_is_allowed(self):
+        spec = importlib.util.spec_from_file_location("image_policy", PKG / "image-policy.py")
+        policy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(policy)
+        contents = b"[Service]\nExecStartPre=/usr/bin/ssh-keygen -A\n"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            dropins = root / "etc/systemd/system/ssh.service.d"
+            policy.ssh_startup_overrides(root)
+            dropins.mkdir(parents=True)
+            known = dropins / "10-host-keys.conf"
+            known.write_bytes(contents)
+            with patch.object(policy, "DUO_SSH_HOST_KEYS_SHA256", hashlib.sha256(contents).hexdigest()):
+                known.chmod(0o644)
+                policy.ssh_startup_overrides(root)
+                extra = dropins / "99-unknown.conf"
+                extra.write_bytes(contents)
+                with self.assertRaisesRegex(ValueError, "unsupported SSH startup overrides"):
+                    policy.ssh_startup_overrides(root)
+                extra.unlink()
+                known.write_bytes(contents + b"Restart=no\n")
+                with self.assertRaisesRegex(ValueError, "unsupported SSH startup overrides"):
+                    policy.ssh_startup_overrides(root)
+                known.write_bytes(contents)
+                known.chmod(0o664)
+                with self.assertRaisesRegex(ValueError, "unsupported SSH startup overrides"):
+                    policy.ssh_startup_overrides(root)
+                known.chmod(0o644)
+                dropins.chmod(0o775)
+                with self.assertRaisesRegex(ValueError, "unsupported SSH startup overrides"):
+                    policy.ssh_startup_overrides(root)
+
+
 class VerifyBlock(unittest.TestCase):
     """The verify-image.sh block against a scratch root file system: the image as the build leaves it, and the image as the port ships it."""
 

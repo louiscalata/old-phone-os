@@ -221,7 +221,7 @@ flowchart TD
   error until the server answers.
 - **Degrade and continue.** Every other OPOS unit. No fatal unit has `Requires=`, `BindsTo=` or `Requisite=` on one of
   them, so their failure cannot take the session down. Within the session the native shell degrades to the browser
-  kiosk (exit 10: the owner chose the old interface; exit 11: a PIN lock the shell cannot show; no window within 30 s;
+  kiosk (exit 11: a PIN lock the shell cannot show; no window within 30 s;
   3 ends within 20 s; 6 ends within 10 minutes).
 
 ## Contracts
