@@ -11,6 +11,7 @@ import threading
 import types
 import unittest
 import urllib.error
+from unittest.mock import patch
 
 from opos.native import logic
 
@@ -35,6 +36,9 @@ class Widget:
 
     def set_sensitive(self, v):
         self.sensitive = bool(v)
+
+    def get_sensitive(self):
+        return self.sensitive
 
     def append(self, child):
         self.children.append(child)
@@ -244,6 +248,25 @@ class Screens(unittest.TestCase):
         page.show({"volume_keys": {"simulated": True, "percent": 0}})
         self.assertEqual(page.level.get_label(), "Practice volume: 0%")
         self.assertEqual(self.work, [])
+
+    def test_sound_runs_one_alert_after_an_explicit_request(self):
+        page = self.page(self.screens.SetSound)
+        page.enter()
+        self.assertEqual(self.work, [])
+        with patch.object(self.screens.alarm_sound, "play_alert", side_effect=[True, False]) as play:
+            page.play_alert()
+            page.play_alert()
+            self.assertEqual(len(self.work), 1)
+            self.assertFalse(page.alert.get_sensitive())
+            self.flush()
+            self.assertEqual(page.note.get_label(), "Alert test finished.")
+            self.assertTrue(page.alert.get_sensitive())
+            page.play_alert()
+            self.flush()
+            self.assertEqual(page.note.get_label(), "The test alert could not play.")
+            self.assertEqual(play.call_count, 2)
+            self.assertIsNot(play.call_args_list[0].args[0], play.call_args_list[1].args[0])
+        self.assertEqual(self.shell.asked, [])
 
     def test_security_reports_the_lid_and_uses_the_existing_native_lock_screen(self):
         page = self.page(self.screens.SetSecurity)

@@ -29,7 +29,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from opos import apps, notices  # noqa: E402
+from opos import alarm_sound, apps, notices  # noqa: E402
 from opos.native import logic, netlogic, posture, updatelogic  # noqa: E402
 from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, settings_row, vbox  # noqa: E402
 
@@ -1463,13 +1463,35 @@ class SetSound(SettingsSection):
 
     def build(self):
         self.level = label("", "mid")
+        self.alert = button("Play test alert", self.play_alert)
         read = reading(
             label(self.title, "head"),
             label("OPOS has no media or ringer volume control. The volume keys change a practice number.", "mid"),
             self.level,
+            self.note,
         )
         self.show(self.shell.snap)
-        return read, column(bottom=(bar(self.back_to_settings()),))
+        return read, column(bottom=(bar(self.back_to_settings(), self.alert),))
+
+    def play_alert(self):
+        if not self.alert.get_sensitive():
+            return
+        self.alert.set_sensitive(False)
+        self.say("Playing a short test alert…")
+
+        def work():
+            played = alarm_sound.play_alert(alarm_sound.Player())
+            GLib.idle_add(self.alert_result, played)
+
+        try:
+            threading.Thread(target=work, daemon=True).start()
+        except RuntimeError:
+            self.alert_result(False)
+
+    def alert_result(self, played):
+        self.alert.set_sensitive(True)
+        self.say("Alert test finished." if played else "The test alert could not play.")
+        return False
 
     def show(self, snap):
         state = snap.get("volume_keys") if isinstance(snap, dict) else None
