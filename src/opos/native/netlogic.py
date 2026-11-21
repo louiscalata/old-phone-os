@@ -296,8 +296,8 @@ def connected_to(status):
 
 def wifi_loss_warning(status, ssid=None):
     """Warn when the current read shows connected Wi-Fi and neither USB nor mobile data is active."""
-    known, connected = connected_to(status)
-    if not known or connected is None or (ssid is not None and ssid != connected):
+    _, connected = connected_to(status)
+    if connected is None or (ssid is not None and ssid != connected):
         return ""
     usb, data = status.get("usb"), status.get("data")
     if (
