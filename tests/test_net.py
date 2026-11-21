@@ -1709,6 +1709,69 @@ class Packaging(unittest.TestCase):
         self.assertIn("registered", p.stdout)
         self.assertIn("lte", p.stdout)
 
+    @needs_tools("tr", "grep")
+    def test_diag_radio_watch_reports_only_bounded_status_from_matching_objects(self):
+        source = self.read("packaging/duo-os/opos-diag")
+        start = source.index("# --- track: radio watch")
+        end = source.index("# --- end track: radio watch")
+        block = source[start:end]
+        self.assertEqual(block.count("radio_watch /sys"), 1)
+
+        f = Fake(self)
+        script = f.dir / "watch.sh"
+        script.write_text(block.replace("radio_watch /sys", 'radio_watch "$WATCH_SYSFS"'))
+        arguments = (
+            "--system --auto-start=no --allow-interactive-authorization=no --timeout=5s --quiet "
+            "call org.ofono /ril_0 org.ofono.Modem GetProperties"
+        )
+        f._script(
+            "busctl",
+            "#!/bin/sh\n"
+            f'[ "$*" = "{arguments}" ] || exit 23\n'
+            "printf 'private fixture payload\n'\n"
+            "printf 'private fixture error\n' >&2\n"
+            'exit "$WATCH_BUS_EXIT"\n',
+        )
+        sysfs = f.root / "sys"
+        processors = sysfs / "class" / "remoteproc"
+
+        def processor(number, compatible, state):
+            proc = processors / f"remoteproc{number}"
+            dt = proc / "device" / "of_node"
+            dt.mkdir(parents=True)
+            (dt / "compatible").write_bytes(compatible)
+            (proc / "state").write_text(state)
+            return proc
+
+        def check(wlan, modem, dsp, *, bus_exit="0"):
+            p = subprocess.run(
+                ["/bin/sh", str(script)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env={"PATH": f"{f.bin}:{f.tools}", "WATCH_SYSFS": str(sysfs), "WATCH_BUS_EXIT": bus_exit},
+            )
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(p.stderr, "")
+            self.assertEqual(
+                p.stdout.splitlines(),
+                ["== radio watch", f"watch: wlan0 {wlan}", f"watch: ril_0 {modem}", f"watch: adsp {dsp}"],
+            )
+
+        processor(0, b"qcom,sm8150-cdsp-pas\x00qcom,sm8150-adsp-pas-other\x00", "running\n")
+        check("present", "unavailable", "unavailable", bus_exit="1")
+        adsp = processor(1, b"fixture,first\x00qcom,sm8150-adsp-pas\x00", "running\n")
+        check("present", "present", "running")
+        (sysfs / "class" / "net" / "wlan0").rmdir()
+        (adsp / "state").write_text("crashed\n")
+        check("missing", "present", "not running")
+        (adsp / "state").write_text("undocumented fixture value\n")
+        check("missing", "present", "unavailable")
+        (adsp / "state").write_text("running\n")
+        processor(2, b"qcom,sm8150-adsp-pas\x00", "running\n")
+        (f.bin / "busctl").unlink()
+        check("missing", "unavailable", "unavailable")
+
     def test_no_secret_or_ssid_ships_in_the_repo_files(self):
         for name in (
             "src/opos/net.py",
