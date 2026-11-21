@@ -152,6 +152,13 @@ The native shell uses the existing `GET /api/timezone` and `POST /api/timezone` 
 confirms a save, the shell applies that zone to its own clock without restarting the browser. The page shows when the
 server cannot supply the zone list. Built-in zone rules can lag changes to local law.
 
+## Updates
+
+The Updates page shows the running version, update source hostname and the updater's current progress. **Check now**
+refreshes the offer. **Download…** opens a review with the offered release, size and source. Confirming sends the review
+fingerprint. If the source now offers a different bundle, OPOS asks for a fresh review. Releases without a verified
+download digest have no native download control. The existing updater still verifies a bundle before staging or applying it.
+
 ## The Network screen
 
 Settings has a Network link (Home has no tile for it). The screen shows the radios in the server's own sentences
