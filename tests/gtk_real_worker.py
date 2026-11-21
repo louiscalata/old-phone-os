@@ -86,9 +86,9 @@ def fill_converter(win):
     check(page.spec() is not None, "the Converter page has the server's measures")
 
 
-def measure_notes_review(win, description):
+def measure_notes_review(notes, description):
     """Opening the gate keeps the note's pane and its reading area in place."""
-    notes = win.pages["notes"]
+    win = notes.shell
     read, act = rect_of(notes.read, win), rect_of(notes.act, win)
     notes.delete_button.emit("clicked")
     spin(0.15)
