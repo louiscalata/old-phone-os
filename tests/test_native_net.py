@@ -1883,10 +1883,10 @@ class ShellParts(unittest.TestCase):
     def test_pages_without_a_tile_are_not_on_home(self):
         pages = self.shell.screens.PAGES
         names = [n for n, _t in self.shell.Shell.tiles(pages)]
-        self.assertNotIn("network", names)
-        self.assertIn("settings", names)
-        self.assertNotIn("lock", names)
-        self.assertEqual(len(names), len(pages) - 3, "lock and home have no title; network no tile")
+        self.assertIn(self.shell.screens.SetTime, self.shell.screens.enabled_pages({}))
+        self.assertEqual(
+            names, ["phone", "messages", "clock", "contacts", "notes", "calc", "convert", "calls", "settings"]
+        )
 
     def test_go_tells_the_page_left_before_the_new_one_enters(self):
         events = []

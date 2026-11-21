@@ -187,6 +187,121 @@ class Screens(unittest.TestCase):
         self.shell.pages[page.name] = page
         return page
 
+    # --- Date & time ----------------------------------------------------------------------------------------------
+
+    def test_settings_time_zone_uses_the_existing_endpoint_without_a_home_tile(self):
+        self.assertIn(self.screens.SetTime, self.screens.enabled_pages({}))
+        self.assertFalse(self.screens.SetTime.tile)
+        page = self.page(self.screens.SetTime)
+        zones = ["UTC", "America/Argentina/Buenos_Aires", "America/New_York", "Europe/Paris"]
+        zone = zones[1]
+        applied = []
+        self.shell.apply_zone = lambda value: not applied.append(value)
+        self.shell.core.answers = [
+            {"zones": zones, "saved": "Europe/Paris", "clock": {"plausible": True, "text": "10:05"}},
+            {"ok": True, "zone": zone, "restart": False},
+            {"zones": zones, "saved": zone},
+        ]
+        page.enter()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("timezone", None)])
+        self.assertEqual([row[0] for row in page.cities.rowset.words], ["America", "Europe", "UTC"])
+        self.assertIn("10:05", page.clock.get_label())
+        page.cities.rowset.click(0)
+        self.assertEqual(page.cities.rowset.words[0], ("Argentina / Buenos Aires", zone))
+        page.choose("Mars/Olympus")
+        self.assertIsNone(page.chosen)
+        page.cities.rowset.click(0)
+        self.assertEqual(page.chosen, zone)
+        self.assertTrue(page.use.sensitive)
+        self.assertIn("Alarms ring", page.alarm.get_label())
+        page.save()
+        page.save()
+        self.assertFalse(page.use.sensitive)
+        self.flush()
+        self.assertEqual(
+            self.shell.core.sent,
+            [("timezone", None), ("timezone", {"zone": zone, "client_tz": zone}), ("timezone", None)],
+        )
+        self.assertEqual(applied, [zone])
+        self.assertEqual(page.saved_zone, zone)
+        self.assertIn("saved", page.note.get_label())
+
+    def test_time_zone_read_after_leaving_does_not_enable_save(self):
+        page = self.page(self.screens.SetTime)
+        page.enter()
+        old = self.work.pop(0)
+        page.leave()
+        page.enter()
+        self.shell.core.answers = [{"zones": ["UTC"]}, {"missing": True}]
+        old()
+        self.assertEqual(page.zones, ())
+        self.flush()
+        self.assertIn("unavailable", page.summary.get_label())
+        page.choose("UTC")
+        page.save()
+        self.assertEqual(self.shell.core.sent, [("timezone", None), ("timezone", None)])
+
+    def test_time_zone_refusal_keeps_the_shell_clock_and_allows_retry(self):
+        page = self.page(self.screens.SetTime)
+        applied = []
+        self.shell.apply_zone = applied.append
+        choices = {
+            "zones": ["UTC", "Europe/Paris"],
+            "saved": None,
+            "clock": {"plausible": False, "note": "Clock is not set"},
+        }
+        self.shell.core.answers = [choices, {"error": "unknown time zone"}, choices]
+        page.enter()
+        self.flush()
+        self.assertIn("Clock is not set", page.clock.get_label())
+        page.open_region("UTC")
+        self.assertEqual(page.chosen, "UTC")
+        page.save()
+        self.flush()
+        self.assertEqual(applied, [])
+        self.assertIn("unknown time zone", page.note.get_label())
+        self.assertTrue(page.use.sensitive)
+
+    def test_confirmed_time_zone_updates_shell_even_when_settings_was_left(self):
+        page = self.page(self.screens.SetTime)
+        applied = []
+        self.shell.apply_zone = applied.append
+        page.enter()
+        self.shell.core.answers = [{"zones": ["UTC"]}, {"ok": True, "zone": "UTC"}]
+        self.flush()
+        page.open_region("UTC")
+        page.save()
+        page.leave()
+        self.flush()
+        self.assertEqual(applied, ["UTC"])
+        self.assertEqual(self.shell.core.sent[-1], ("timezone", {"zone": "UTC", "client_tz": "UTC"}))
+        self.assertFalse(self.work, "no background read after leaving")
+
+    def test_returning_during_time_zone_save_applies_the_zone_and_refreshes_once(self):
+        page = self.page(self.screens.SetTime)
+        applied = []
+        self.shell.apply_zone = lambda value: not applied.append(value)
+        self.shell.core.answers = [{"zones": ["UTC"]}, {"ok": True, "zone": "UTC"}, {"zones": ["UTC"], "saved": "UTC"}]
+        page.enter()
+        self.flush()
+        page.open_region("UTC")
+        page.save()
+        page.leave()
+        page.enter()
+        self.assertEqual(len(self.work), 1, "the new visit waits for the outstanding write before fetching")
+        self.assertFalse(page.use.sensitive)
+        self.assertFalse(page.cities.sensitive)
+        self.flush()
+        self.assertEqual(
+            self.shell.core.sent,
+            [("timezone", None), ("timezone", {"zone": "UTC", "client_tz": "UTC"}), ("timezone", None)],
+        )
+        self.assertEqual(applied, ["UTC"])
+        self.assertEqual(page.saved_zone, "UTC")
+        self.assertTrue(page.cities.sensitive)
+        self.assertFalse(page.use.sensitive)
+
     # --- Messages -------------------------------------------------------------------------------------------------
     def messages(self):
         m = self.page(self.screens.Messages)
@@ -422,16 +537,29 @@ class Screens(unittest.TestCase):
 
     def test_only_the_everyday_apps_opos_apps_names_get_pages(self):
         names = lambda env: [c.name for c in self.screens.enabled_pages(env)]  # noqa: E731
-        base = ["lock", "home", "phone", "messages", "calc", "settings", "network"]
+        base = ["lock", "home", "phone", "messages", "calc", "settings", "set_time", "network"]
         self.assertEqual(names({}), base, "absent: no everyday apps")
         self.assertEqual(names({"OPOS_APPS": ""}), base, "empty: none")
         self.assertEqual(
             names({"OPOS_APPS": "notes,clock"}),
-            ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "network"],
+            ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "set_time", "network"],
         )
         self.assertEqual(
             names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
-            ["lock", "home", "phone", "messages", "clock", "contacts", "notes", "calc", "calls", "settings", "network"],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "clock",
+                "contacts",
+                "notes",
+                "calc",
+                "calls",
+                "settings",
+                "set_time",
+                "network",
+            ],
         )
         self.assertEqual(
             names({"OPOS_APPS": "clock,contacts,notes,calc,calls,convert"}),
@@ -447,13 +575,14 @@ class Screens(unittest.TestCase):
                 "convert",
                 "calls",
                 "settings",
+                "set_time",
                 "network",
             ],
             "the Duo list: the converter has a native screen",
         )
         self.assertEqual(
             names({"OPOS_APPS": "convert"}),
-            ["lock", "home", "phone", "messages", "calc", "convert", "settings", "network"],
+            ["lock", "home", "phone", "messages", "calc", "convert", "settings", "set_time", "network"],
             "only when OPOS_APPS names it",
         )
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)

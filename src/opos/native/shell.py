@@ -891,6 +891,18 @@ class Shell(Gtk.ApplicationWindow):
         clock = self.pages.get("clock")
         return logic.clock_known(self.snap, clock.data if clock else None)
 
+    def apply_zone(self, zone):
+        """Use a server-confirmed zone in the native process as well as the server."""
+        from opos import timezone
+
+        try:
+            timezone.apply(zone)
+        except (OSError, ValueError) as err:
+            print(f"opos shell: cannot apply the time zone ({type(err).__name__})", file=sys.stderr, flush=True)
+            return False
+        self.s_time.set_label(self.time_text())
+        return True
+
     def time_text(self, now=None):
         return logic.time_text(self.clock_known(), time.localtime() if now is None else now)
 

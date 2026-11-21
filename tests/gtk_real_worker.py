@@ -112,6 +112,63 @@ def measure_notes_review(win, description):
     check(notes.actions.get_visible_child_name() == "edit", f"{description}: Cancel restores the editor")
 
 
+def check_timezone_picker(page, label):
+    """A two-line city near the bottom of a long list must move wholly into the viewport."""
+    zone = "America/City_Number_140"
+    zones = ["America/Argentina/Buenos_Aires", "Europe/Paris", "UTC"]
+    zones.extend(f"America/City_Number_{n:03d}" for n in range(160))
+    page.active = True
+    page.got({"zones": zones, "saved": "Europe/Paris", "source": "system"})
+    page.open_region("America")
+    spin(0.15)
+
+    viewport = page.read.get_child()
+    content = page.cities.get_parent()
+    adjustment = page.read.get_vadjustment()
+    city_rows = {}
+    row = page.cities.get_first_child()
+    for _, name in page.cities.rowset.words:
+        city_rows[name] = row
+        row = row.get_next_sibling()
+
+    row = city_rows[zone]
+    position = rect_of(row, content)
+    if position is None or adjustment.get_page_size() <= 0:
+        check(False, f"{label}: the late city row and scroll viewport are allocated")
+        return
+    adjustment.set_value(position[1] + content.get_margin_top() - adjustment.get_page_size() + 18)
+    spin(0.15)
+    partial = rect_of(row, viewport)
+    check(
+        partial is not None and partial[1] < viewport.get_height() < partial[1] + partial[3],
+        f"{label}: the late city starts partly visible at the lower edge",
+    )
+    row.emit("clicked")
+    spin(0.2)
+
+    for selected in (zone, "America/Argentina/Buenos_Aires"):
+        row = city_rows[selected]
+        if selected != zone:
+            page.choose(selected)
+            spin(0.2)
+        check(page.chosen == selected and row.has_css_class("on"), f"{label}: {selected} is chosen")
+        title, detail = row.get_child().get_first_child(), row.get_child().get_last_child()
+        for widget in (row, title, detail):
+            rect = rect_of(widget, viewport)
+            check(
+                widget.get_mapped()
+                and rect is not None
+                and rect[1] >= -0.5
+                and rect[1] + rect[3] <= viewport.get_height() + 0.5,
+                f"{label}: {selected} row and both lines are visible (bounds {rect!r})",
+            )
+        before = adjustment.get_value()
+        page.choose(selected)
+        spin(0.15)
+        check(abs(adjustment.get_value() - before) < 0.5, f"{label}: reselecting a visible city keeps its position")
+    page.leave()
+
+
 def variants(win, name):
     """What to show of a page: once, or for the Converter once for each measure the server offers."""
     if name == "convert" and win.pages[name].kinds:
@@ -161,6 +218,8 @@ def run(app):
                     measure_all(win, description)
                     if name == "notes":
                         measure_notes_review(win, description)
+                    if name == "set_time":
+                        check_timezone_picker(win.pages[name], description)
     # the battery sheet is the second row with the same panes; it is measured in measure_all
     for row in win.rows:
         two_columns(row, "right")

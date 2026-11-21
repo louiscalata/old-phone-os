@@ -109,6 +109,16 @@ redirect to another address is not followed, so the shell's token and the owner'
   stays, as before. The shell's own lock page is not a lock: it opens with a swipe, and only the server's PIN lock,
   shown by the browser, keeps anyone out.
 
+## Date & time
+
+Open **Date & time** from native Settings. Pick a region, choose a city and use **Use this zone** to save it. The selected
+city scrolls fully into view, and a city already in view keeps its position. Changing the zone changes when alarms ring in
+local time. The page shows the clock status the server reports and gives no control to set the system clock.
+
+The native shell uses the existing `GET /api/timezone` and `POST /api/timezone` from the first-run setup. When the server
+confirms a save, the shell applies that zone to its own clock without restarting the browser. The page shows when the
+server cannot supply the zone list. Built-in zone rules can lag changes to local law.
+
 ## The Network screen
 
 Settings has a Network button (Home has no tile for it). The screen shows the radios in the server's own sentences
