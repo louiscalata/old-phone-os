@@ -54,6 +54,12 @@ class Widget:
     def get_child(self):
         return Widget()
 
+    def set_visible_child_name(self, name):
+        self.visible_child_name = name
+
+    def grab_focus(self):
+        self.focused = True
+
     def add_css_class(self, c):
         self.css.add(c)
 
@@ -493,17 +499,81 @@ class Screens(unittest.TestCase):
         self.flush()
         self.assertEqual(self.shell.core.sent[-1], ("contacts", {"action": "delete", "id": "p1"}))
 
-    def test_a_note_is_deleted_only_on_the_second_tap(self):
+    def test_a_note_is_deleted_only_by_the_review_confirmation(self):
         n = self.page(self.screens.Notes)
         self.open_note(n)
-        sent = len(self.shell.core.sent)
+        n.confirm_delete()
         n.delete()
-        self.assertEqual(
-            (len(self.shell.core.sent), self.work, n.delete_button.get_label()), (sent, [], "Delete this note?")
-        )
         n.delete()
+        self.assertEqual(self.work, [], "only the review button can delete the note")
+        self.assertEqual(n.actions.visible_child_name, "review")
+        self.assertIn('"hello"', n.delete_prompt.get_label())
+        self.assertTrue(n.cancel_delete_button.focused)
+        self.assertEqual(n.delete_button.get_label(), "Delete this note")
+        self.shell.core.answers = [{"ok": True, "notes": []}]
+        n.confirm_delete()
+        n.confirm_delete()
+        self.assertEqual(len(self.work), 1)
+        self.assertEqual(n.ident, "n1", "the note stays until the reply")
         self.flush()
         self.assertEqual(self.shell.core.sent[-1], ("notes", {"action": "delete", "id": "n1"}))
+        self.assertIsNone(n.ident)
+        self.assertEqual(n.actions.visible_child_name, "edit")
+
+    def test_a_note_review_freezes_editing_and_saving_until_cancel(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        n.delete()
+        for ch in ("x", None, "\n"):
+            n.key(ch)
+        n.main_action()
+        n.close()
+        n.open_note("n2")
+        self.assertEqual(n.entry.text, "hello")
+        self.assertEqual(n.text.get_label(), "hello_")
+        self.assertEqual(self.work, [])
+        n.cancel_delete()
+        self.assertTrue(n.delete_button.focused)
+        self.assertEqual(n.actions.visible_child_name, "edit")
+        n.key("x")
+        n.main_action()
+        self.flush()
+        self.assertEqual(self.shell.core.sent[-1], ("notes", {"action": "save", "id": "n1", "text": "hellox"}))
+
+    def test_leaving_notes_drops_the_pending_deletion(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        n.delete()
+        n.leave()
+        n.confirm_delete()
+        self.assertEqual(self.work, [])
+        self.assertEqual((n.ident, n.entry.text), ("n1", "hello"))
+        self.assertEqual(n.actions.visible_child_name, "edit")
+
+    def test_a_new_open_reply_disarms_the_old_note_review(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        self.shell.core.answers = [{"ok": True, "id": "n2", "text": "another note"}]
+        n.open_note("n2")
+        n.delete()
+        self.flush()
+        n.confirm_delete()
+        self.assertEqual(self.work, [])
+        self.assertEqual((n.ident, n.entry.text), ("n2", "another note"))
+        self.assertEqual(n.actions.visible_child_name, "edit")
+
+    def test_failed_note_deletion_keeps_the_draft(self):
+        n = self.page(self.screens.Notes)
+        self.open_note(n)
+        n.key("x")
+        self.shell.core.answers = [{"error": "id"}]
+        n.delete()
+        n.confirm_delete()
+        self.flush()
+        self.assertEqual((n.ident, n.entry.text), ("n1", "hellox"))
+        self.assertEqual(n.actions.visible_child_name, "edit")
+        n.key("y")
+        self.assertEqual(n.entry.text, "helloxy")
 
     def test_add_alarm_twice_makes_one_request(self):
         c = self.page(self.screens.Clock)

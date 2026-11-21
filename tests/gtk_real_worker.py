@@ -82,6 +82,36 @@ def fill_converter(win):
     check(page.spec() is not None, "the Converter page has the server's measures")
 
 
+def measure_notes_review(win, description):
+    """Opening the gate keeps the note's pane and its reading area in place."""
+    notes = win.pages["notes"]
+    read, act = rect_of(notes.read, win), rect_of(notes.act, win)
+    notes.delete_button.emit("clicked")
+    spin(0.15)
+    check(notes.actions.get_visible_child_name() == "review", f"{description}: the review pane opens")
+    check(
+        read is not None and notes.read.get_mapped() and rect_of(notes.read, win) == read,
+        f"{description}: the reading pane has the same bounds under review",
+    )
+    check(rect_of(notes.act, win) == act, f"{description}: the action pane has the same bounds under review")
+    check(not notes.keys.get_mapped(), f"{description}: the edit keys are hidden during review")
+    for button in (notes.cancel_delete_button, notes.confirm_delete_button):
+        hit = rect_of(button, win)
+        check(
+            hit is not None
+            and act is not None
+            and button.get_mapped()
+            and act[0] <= hit[0]
+            and hit[0] + hit[2] <= act[0] + act[2]
+            and act[1] <= hit[1]
+            and hit[1] + hit[3] <= act[1] + act[3],
+            f"{description}: {button.get_label()} stays within the action pane",
+        )
+    notes.cancel_delete_button.emit("clicked")
+    spin(0.15)
+    check(notes.actions.get_visible_child_name() == "edit", f"{description}: Cancel restores the editor")
+
+
 def variants(win, name):
     """What to show of a page: once, or for the Converter once for each measure the server offers."""
     if name == "convert" and win.pages[name].kinds:
@@ -106,6 +136,11 @@ def run(app):
     check(not missing, f"every page is built, none left out (missing: {', '.join(missing)})")
     if "convert" in win.pages:
         fill_converter(win)
+    if "notes" in win.pages:
+        notes = win.pages["notes"]
+        notes.ident, notes.entry.text = "layout-test", "Long note\n" + "A full line that must remain readable.\n" * 28
+        notes.text.set_label(notes.entry.text + "_")
+        notes.mode()
     for hand in ("right", "left"):
         win.set_hand(hand, save=False)
         for name in pages:
@@ -122,7 +157,10 @@ def run(app):
                             one_column(row, int(mode[-1]))
                     spin(0.15)
                     shown = name if spec is None else f"{name} ({spec['id']})"
-                    measure_all(win, f"{hand} hand, page {shown}, {mode}")
+                    description = f"{hand} hand, page {shown}, {mode}"
+                    measure_all(win, description)
+                    if name == "notes":
+                        measure_notes_review(win, description)
     # the battery sheet is the second row with the same panes; it is measured in measure_all
     for row in win.rows:
         two_columns(row, "right")

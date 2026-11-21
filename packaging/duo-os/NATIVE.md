@@ -61,10 +61,12 @@ redirect to another address is not followed, so the shell's token and the owner'
 - The battery sheet, the lock screen and the bottom edge of an app page follow the finger while it is down (direct
   manipulation), exactly as far as the finger has moved. When it lifts, the next frame shows the result, complete: the
   sheet open or closed, Home or the page it was on. There is no easing, no coasting and no spring-back on a timer.
-- Deleting an alarm, a person or a note takes two taps ("Delete this alarm?", "Delete this person?", "Delete this
-  note?"), as in the browser. Add alarm and Call are busy until the server's answer is on screen, so a second tap sends
-  nothing. When the answer to a call or a hang-up does not come, the button stays busy until a state asked for after
-  that is drawn, so while the server cannot be reached it stays busy; the screen then no longer says it is asking. It
+- Deleting an alarm or a person takes two taps ("Delete this alarm?" or "Delete this person?"). In Notes,
+  Delete this note opens a confirmation in the action pane. Cancel keeps the draft and Yes, delete sends the request.
+  The reading pane keeps its size and editing pauses while the confirmation is open. Add alarm and Call are busy
+  until the server's answer is on screen, so a second tap sends nothing. When the answer to a call or a hang-up does
+  not come, the button stays busy until a state asked for after that is drawn, so while the server cannot be reached it
+  stays busy; the screen then no longer says it is asking. It
   says "No answer about that call. OPOS is being asked whether it went out; Call comes back when it says." or "No
   answer about hanging up. The call may still be up; OPOS is being asked, and the button comes back when it says." A
   request that could not be sent at all (no thread could be started) is answered at once as not sent, so no button
