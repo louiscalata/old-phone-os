@@ -515,10 +515,12 @@ class Screens(unittest.TestCase):
 
         self.screens.label = recording
         try:
-            self.page(self.screens.Settings)
+            hub = self.page(self.screens.Settings)
+            self.page(self.screens.SetAbout)
         finally:
             self.screens.label = real
         self.assertIn("About", made)
+        self.assertEqual(hub.risk.get_label(), self.screens.notices.DISCLAIMER + " " + self.screens.EMERGENCY)
         self.assertIn(self.screens.notices.as_text(), made)
         self.assertIn(self.screens.EMERGENCY, self.screens.notices.as_text())
 
@@ -537,12 +539,25 @@ class Screens(unittest.TestCase):
 
     def test_only_the_everyday_apps_opos_apps_names_get_pages(self):
         names = lambda env: [c.name for c in self.screens.enabled_pages(env)]  # noqa: E731
-        base = ["lock", "home", "phone", "messages", "calc", "settings", "set_time", "network"]
+        base = ["lock", "home", "phone", "messages", "calc", "settings", "set_about", "set_hand", "set_time", "network"]
         self.assertEqual(names({}), base, "absent: no everyday apps")
         self.assertEqual(names({"OPOS_APPS": ""}), base, "empty: none")
         self.assertEqual(
             names({"OPOS_APPS": "notes,clock"}),
-            ["lock", "home", "phone", "messages", "clock", "notes", "calc", "settings", "set_time", "network"],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "clock",
+                "notes",
+                "calc",
+                "settings",
+                "set_about",
+                "set_hand",
+                "set_time",
+                "network",
+            ],
         )
         self.assertEqual(
             names({"OPOS_APPS": "clock,contacts,notes,calc,calls"}),
@@ -557,6 +572,8 @@ class Screens(unittest.TestCase):
                 "calc",
                 "calls",
                 "settings",
+                "set_about",
+                "set_hand",
                 "set_time",
                 "network",
             ],
@@ -575,6 +592,8 @@ class Screens(unittest.TestCase):
                 "convert",
                 "calls",
                 "settings",
+                "set_about",
+                "set_hand",
                 "set_time",
                 "network",
             ],
@@ -582,7 +601,19 @@ class Screens(unittest.TestCase):
         )
         self.assertEqual(
             names({"OPOS_APPS": "convert"}),
-            ["lock", "home", "phone", "messages", "calc", "convert", "settings", "set_time", "network"],
+            [
+                "lock",
+                "home",
+                "phone",
+                "messages",
+                "calc",
+                "convert",
+                "settings",
+                "set_about",
+                "set_hand",
+                "set_time",
+                "network",
+            ],
             "only when OPOS_APPS names it",
         )
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
@@ -1396,6 +1427,67 @@ class Screens(unittest.TestCase):
         self.flush()
         self.assertEqual(c.preview({})[0], "5 km = 3.10686 mile")
 
+    # --- Settings hub --------------------------------------------------------------------------------------------
+
+    def test_settings_only_links_registered_sections_and_each_link_opens_that_section(self):
+        calls = {}
+        real = self.screens.settings_row
+
+        def recording(title, detail, callback):
+            calls[title] = callback
+            return real(title, detail, callback)
+
+        self.screens.settings_row = recording
+        existing = {"settings", "set_about", "set_time", "network", "set_hand"}
+        self.screens.PAGES = tuple(page for page in self.screens.PAGES if page.name in existing)
+        hub = self.page(self.screens.Settings)
+        self.assertEqual(list(hub.groups), ["set_about", "set_time", "network", "set_hand"])
+        self.assertEqual(list(calls), ["About", "Date & time", "Network", "Hand & posture"])
+        for navigate in calls.values():
+            navigate()
+        self.assertEqual(self.shell.went, list(hub.groups))
+        self.assertEqual(self.shell.core.sent, [], "creating and choosing hub links does not ask the server")
+        self.assertEqual(self.work, [])
+
+        class OptionalBattery(self.screens.SettingsSection):
+            name = "set_battery"
+
+        self.screens.PAGES += (OptionalBattery,)
+        hub = self.screens.Settings(self.shell)
+        self.assertEqual(list(hub.groups), ["set_about", "set_battery", "set_time", "network", "set_hand"])
+        calls["Battery"]()
+        self.assertEqual(self.shell.went[-1], "set_battery")
+
+    def test_settings_sections_have_a_return_link_and_no_home_tile(self):
+        calls = {}
+        real = self.screens.button
+
+        def recording(title, callback, *classes):
+            if title == "◀ Settings":
+                calls["back"] = callback
+            return real(title, callback, *classes)
+
+        self.screens.button = recording
+        for cls in (self.screens.SetAbout, self.screens.SetTime, self.screens.Network, self.screens.SetHand):
+            with self.subTest(page=cls.name):
+                self.assertFalse(self.page(cls).tile)
+                calls.pop("back")()
+                self.assertEqual(self.shell.went[-1], "settings")
+
+    def test_hand_section_retains_the_switch_and_the_current_posture(self):
+        hub = self.page(self.screens.Settings)
+        hand = self.page(self.screens.SetHand)
+        self.assertEqual(hand.hand.get_label(), "Buttons on the right. Tap to switch.")
+        hand.switch_hand()
+        hub.paint_hand()
+        self.assertEqual(hand.hand.get_label(), "Buttons on the left. Tap to switch.")
+        self.shell.posture, self.shell.angle, self.shell.back = "back", 351, 1
+        hub.paint_posture()
+        self.assertEqual(
+            hand.hinge_line.get_label(), "Back, hinge at 351 degrees. One screen is lit; the other is dark."
+        )
+        self.assertEqual(hand.hinge_line.get_label(), hub.hinge_line.get_label())
+
     # --- Settings: storage ----------------------------------------------------------------------------------------
     def test_storage_is_read_when_settings_is_entered_and_not_before(self):
         reads = []
@@ -1406,6 +1498,7 @@ class Screens(unittest.TestCase):
 
         self.screens.shutil = types.SimpleNamespace(disk_usage=usage)
         s = self.page(self.screens.Settings)
+        about = self.page(self.screens.SetAbout)
         s.preview({})
         s.show({})
         s.tick()
@@ -1413,6 +1506,8 @@ class Screens(unittest.TestCase):
         self.assertEqual(s.storage.get_label(), "Storage: unknown")
         s.enter()
         self.assertEqual(s.storage.get_label(), "Storage: 12.3 GB free of 52.1 GB")
+        about.enter()
+        self.assertEqual(about.storage.get_label(), s.storage.get_label())
         self.assertEqual(len(reads), 1)
         self.assertEqual(
             reads[0],

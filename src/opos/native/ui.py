@@ -37,6 +37,10 @@ button.main:active { background: #000; color: #fff; }
 button:disabled, label:disabled { opacity: 0.3; }
 button.row { border: none; border-bottom: 1px solid alpha(#fff, 0.22); min-height: 74px; padding: 6px 4px; }
 button.row:active { background: alpha(#fff, 0.18); color: #fff; }
+button.settings-row { border: none; min-height: 48px; padding: 1px 8px; }
+button.settings-home { min-height: 48px; padding: 4px 12px; }
+.settings-title { font-size: 22px; }
+.settings-detail { font: 15px monospace; }
 button.tile { min-height: 116px; font-size: 26px; }
 button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(#fff, 0.35); }
 button.pad { min-height: 84px; min-width: 0; padding: 0; font-size: 30px; }
@@ -76,6 +80,20 @@ def row(title, detail, on_click):
     b.set_child(box)
     b.connect("clicked", lambda *_: on_click())
     return b
+
+
+def settings_row(title, detail, on_click):
+    """A compact Settings row with a fixed action and an optional status line."""
+    item = Gtk.Button()
+    item.add_css_class("settings-row")
+    name = label(title, "settings-title", wrap=False)
+    item.detail = label(detail, "settings-detail", wrap=False)
+    item.detail.set_visible(bool(detail))
+    for part in (name, item.detail):
+        part.set_ellipsize(Pango.EllipsizeMode.END)
+    item.set_child(vbox(name, item.detail, spacing=1))
+    item.connect("clicked", lambda *_: on_click())
+    return item
 
 
 def clear(box):

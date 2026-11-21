@@ -109,6 +109,13 @@ redirect to another address is not followed, so the shell's token and the owner'
   stays, as before. The shell's own lock page is not a lock: it opens with a swipe, and only the server's PIN lock,
   shown by the browser, keeps anyone out.
 
+## Settings
+
+Settings keeps the installation and emergency notices in the reading pane. The action pane shows one column of links.
+About shows the shared notices and the storage figure, which is read once when Settings opens. Hand & posture keeps the
+hand switch, hinge status and gesture help. Date & time and Network open their own pages and make their own reads.
+Each page has a **Settings** button to return to the hub. The usual Home gesture remains available.
+
 ## Date & time
 
 Open **Date & time** from native Settings. Pick a region, choose a city and use **Use this zone** to save it. The selected
@@ -121,7 +128,7 @@ server cannot supply the zone list. Built-in zone rules can lag changes to local
 
 ## The Network screen
 
-Settings has a Network button (Home has no tile for it). The screen shows the radios in the server's own sentences
+Settings has a Network link (Home has no tile for it). The screen shows the radios in the server's own sentences
 (Wi-Fi, airplane mode, Bluetooth, mobile data) and the networks it can see, connected first, then by signal, then the
 saved ones not in range. It can scan again, join (a typed password, or none for a saved or open network), join a hidden
 network by name, forget, disconnect, and turn Wi-Fi on or off. It uses the server's existing actions, the same ones the

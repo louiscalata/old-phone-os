@@ -31,7 +31,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from opos import apps, notices  # noqa: E402
 from opos.native import logic, netlogic, posture  # noqa: E402
-from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, vbox  # noqa: E402
+from opos.native.ui import Keys, bar, button, column, fill, hbox, label, reading, settings_row, vbox  # noqa: E402
 
 MISSING = "%s is not part of the OPOS installed on this phone yet. It arrives with the next update."
 ERRORS = {
@@ -1229,14 +1229,116 @@ class Calls(Page):
 
 class Settings(Page):
     name, title = "settings", "Settings"
+    # Top to bottom. Each entry is shown only when its page ships with the shell.
+    GROUPS = (
+        ("About", "set_about"),
+        ("Security", "set_security"),
+        ("Sound", "set_sound"),
+        ("Battery", "set_battery"),
+        ("Date & time", "set_time"),
+        ("Updates", "set_updates"),
+        ("Network", "network"),
+        ("Hand & posture", "set_hand"),
+        ("Display", "set_display"),
+    )
 
     def build(self):
-        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")  # read on entering Settings, see enter()
-        self.hand = button("", lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"), "main")
-        self.hinge_line = label("", "mid", "dim")
+        self.risk = label(notices.DISCLAIMER + " " + EMERGENCY, "mid")
+        read = reading(label(self.title, "head"), self.risk)
+        available = {page.name for page in enabled_pages()}
+        details = {"set_about": logic.STORAGE_UNKNOWN, "set_hand": hand_posture(self.shell)}
+        self.groups = {
+            page: settings_row(title, details.get(page, ""), lambda p=page: self.shell.go(p))
+            for title, page in self.GROUPS
+            if page in available
+        }
+        self.storage = self.groups["set_about"].detail
+        self.hinge_line = self.groups["set_hand"].detail
+        links = vbox(*self.groups.values(), spacing=2)
+        home = self.home()
+        home.add_css_class("settings-home")
+        act = column(bottom=(links, bar(home)))
+        act.set_margin_top(12)
+        act.set_margin_bottom(16)
+        return read, act
+
+    @staticmethod
+    def data_folder():
+        """Where the owner's files live: the home folder, or the root when there is no home."""
+        home = os.path.expanduser("~")
+        return home if os.path.isdir(home) else os.sep
+
+    def enter(self):
+        """Refresh local storage once on entry. The Network and Date & time pages own their reads."""
+        storage = logic.read_storage(self.data_folder(), shutil.disk_usage)
+        self.storage.set_label(storage)
+        about = self.shell.pages.get("set_about")
+        if about is not None:
+            about.storage.set_label(storage)
+
+    def paint_hand(self):
+        hand = self.shell.pages.get("set_hand")
+        if hand is not None:
+            hand.paint_hand()
+
+    def paint_posture(self):
+        words = hand_posture(self.shell)
+        self.hinge_line.set_label(words)
+        hand = self.shell.pages.get("set_hand")
+        if hand is not None:
+            hand.hinge_line.set_label(words)
+
+    def preview(self, snap):
+        b = snap.get("battery") or {}
+        return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), [
+            (
+                "Buttons on the %s" % self.shell.hand,
+                "Tap to switch",
+                lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"),
+            ),
+            ("Network", "Wi-Fi and radios", lambda: self.shell.go("network")),
+        ]
+
+
+def hand_posture(shell):
+    return posture.describe(
+        getattr(shell, "posture", None),
+        getattr(shell, "angle", None),
+        getattr(shell, "back", None) is not None,
+    )
+
+
+class SettingsSection(Page):
+    """A Settings page follows the shell's normal navigation and has no Home tile."""
+
+    tile = False
+
+    def back_to_settings(self):
+        return button("◀ Settings", lambda: self.shell.go("settings"))
+
+
+class SetAbout(SettingsSection):
+    name, title = "set_about", "About"
+
+    def build(self):
+        self.storage = label(logic.STORAGE_UNKNOWN, "mid", "dim")
         read = reading(
-            label("Settings", "head"),
-            label("Hand", "big"),
+            label(self.title, "head"),
+            label("Storage", "big"),
+            self.storage,
+            label(notices.as_text(), "mid", "dim"),
+        )
+        return read, column(bottom=(bar(self.back_to_settings()),))
+
+
+class SetHand(SettingsSection):
+    name, title = "set_hand", "Hand & posture"
+
+    def build(self):
+        self.hand = button("", self.switch_hand, "main")
+        self.hinge_line = label(hand_posture(self.shell), "mid", "dim")
+        read = reading(
+            label(self.title, "head"),
             label(
                 "The buttons sit on the screen under that hand; the other screen is for reading. "
                 "You can also swipe sideways across the hinge: the buttons follow your finger.",
@@ -1251,61 +1353,19 @@ class Settings(Page):
                 "mid",
                 "dim",
             ),
-            label("Storage", "big"),
-            self.storage,
-            label("About", "big"),
-            label(notices.as_text(), "mid", "dim"),
-        )
-        act = column(
-            bottom=(
-                self.hand,
-                button("Network", lambda: self.shell.go("network")),
-                button("Date & time", lambda: self.shell.go("set_time")),
-                bar(self.home()),
-            )
         )
         self.paint_hand()
-        self.paint_posture()
-        return read, act
+        return read, column(bottom=(bar(self.back_to_settings(), self.hand),))
 
-    @staticmethod
-    def data_folder():
-        """Where the owner's files live: the home folder, or the root when there is no home."""
-        home = os.path.expanduser("~")
-        return home if os.path.isdir(home) else os.sep
-
-    def enter(self):
-        """The storage line is read once each time Settings is opened (one statvfs call), never in the background."""
-        self.storage.set_label(logic.read_storage(self.data_folder(), shutil.disk_usage))
+    def switch_hand(self):
+        self.shell.set_hand("left" if self.shell.hand == "right" else "right")
 
     def paint_hand(self):
         self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
 
-    def paint_posture(self):
-        """The posture line in Settings; a label only, nothing on the screen depends on it."""
-        self.hinge_line.set_label(
-            posture.describe(
-                getattr(self.shell, "posture", None),
-                getattr(self.shell, "angle", None),
-                getattr(self.shell, "back", None) is not None,
-            )
-        )
 
-    def preview(self, snap):
-        b = snap.get("battery") or {}
-        return "%s%%  %s\n%s" % (b.get("percent", "--"), b.get("time_left") or "", b.get("headline") or ""), [
-            (
-                "Buttons on the %s" % self.shell.hand,
-                "Tap to switch",
-                lambda: self.shell.set_hand("left" if self.shell.hand == "right" else "right"),
-            ),
-            ("Network", "Wi-Fi and radios", lambda: self.shell.go("network")),
-        ]
-
-
-class SetTime(Page):
+class SetTime(SettingsSection):
     name, title = "set_time", "Date & time"
-    tile = False
 
     def build(self):
         self.zones, self.saved_zone = (), None
@@ -1324,7 +1384,7 @@ class SetTime(Page):
                 self.pick,
                 self.alarm,
                 self.regions_button,
-                bar(button("◀ Settings", lambda: self.shell.go("settings")), self.use),
+                bar(self.back_to_settings(), self.use),
             )
         )
         self.paint_choices()
@@ -1497,7 +1557,7 @@ def owners_tap(fn):
     return tap
 
 
-class Network(Page):
+class Network(SettingsSection):
     """Wi-Fi and the radios, through the server's net_* actions (opos.net does every change). No Home tile: Settings
     opens it.
 
@@ -1546,7 +1606,7 @@ class Network(Page):
     visit's answer. The sending thread drops its copy once the request has gone. Nothing here prints, logs or saves it.
     """
 
-    name, title, tile = "network", "Network", False
+    name, title = "network", "Network"
     POLL_MS = 10000
     TITLES = {"name": "Name", "password": "Password"}
     # how long the shell waits for each action: the core may take up to about 95 s for a join (opos.net JOIN_WAIT_S and
@@ -1591,7 +1651,7 @@ class Network(Page):
                 self.typed,
                 self.keys,
                 self.chips,
-                bar(self.home(), self.main),
+                bar(self.back_to_settings(), self.main),
             ),
         )
         self.paint_act()
@@ -2138,7 +2198,23 @@ class Network(Page):
         self.cancel()
 
 
-PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Converter, Calls, Settings, SetTime, Network)
+PAGES = (
+    Lock,
+    Home,
+    Phone,
+    Messages,
+    Clock,
+    Contacts,
+    Notes,
+    Calculator,
+    Converter,
+    Calls,
+    Settings,
+    SetAbout,
+    SetHand,
+    SetTime,
+    Network,
+)
 
 
 def enabled_pages(env=None):

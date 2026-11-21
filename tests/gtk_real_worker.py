@@ -112,6 +112,31 @@ def measure_notes_review(win, description):
     check(notes.actions.get_visible_child_name() == "edit", f"{description}: Cancel restores the editor")
 
 
+def check_settings_hub(hub, label):
+    viewport = hub.read.get_child()
+    risk = rect_of(hub.risk, viewport)
+    check(
+        hub.risk.get_mapped()
+        and risk is not None
+        and risk[1] >= -0.5
+        and risk[1] + risk[3] <= viewport.get_height() + 0.5,
+        f"{label}: the complete installation and emergency warning fits the reading viewport",
+    )
+    previous_bottom = 0
+    for name, item in hub.groups.items():
+        bounds = rect_of(item, hub.act)
+        check(
+            item.get_mapped()
+            and bounds is not None
+            and bounds[1] >= previous_bottom - 0.5
+            and bounds[1] + bounds[3] <= hub.act.get_height() + 0.5
+            and bounds[3] >= 48,
+            f"{label}: {name} fits the single action column with a 48 px target ({bounds!r})",
+        )
+        if bounds is not None:
+            previous_bottom = bounds[1] + bounds[3]
+
+
 def check_timezone_picker(page, label):
     """A two-line city near the bottom of a long list must move wholly into the viewport."""
     zone = "America/City_Number_140"
@@ -218,7 +243,9 @@ def run(app):
                     measure_all(win, description)
                     if name == "notes":
                         measure_notes_review(win, description)
-                    if name == "set_time":
+                    if name == "settings":
+                        check_settings_hub(win.pages[name], description)
+                    elif name == "set_time":
                         check_timezone_picker(win.pages[name], description)
     # the battery sheet is the second row with the same panes; it is measured in measure_all
     for row in win.rows:

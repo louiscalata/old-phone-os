@@ -563,7 +563,10 @@ class ShellUse(unittest.TestCase):
         settings = next(n for n in screens.body if isinstance(n, ast.ClassDef) and n.name == "Settings")
         paint = next(n for n in settings.body if isinstance(n, ast.FunctionDef) and n.name == "paint_posture")
         called = [ast.unparse(c.func) for c in ast.walk(paint) if isinstance(c, ast.Call)]
-        self.assertEqual(sorted(set(called)), ["getattr", "posture.describe", "self.hinge_line.set_label"])
+        self.assertEqual(
+            sorted(set(called)),
+            ["hand.hinge_line.set_label", "hand_posture", "self.hinge_line.set_label", "self.shell.pages.get"],
+        )
 
     def test_the_angle_is_never_what_blanks_or_locks(self):
         for name in ("hinge_changed", "set_posture"):
