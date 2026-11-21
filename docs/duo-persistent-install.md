@@ -109,7 +109,7 @@ The RAM-boot command line's boot-image part was recorded as:
 
 `rcupdate.rcu_expedited=1 rcu_nocbs=0-7 cgroup.memory=nokmem,nosocket androidboot.hardware=surfaceduo androidboot.hardware.platform=qcom androidboot.console=ttyMSM0 androidboot.memcg=1 lpm_levels.sleep_disabled=1 video=vfb:640x400,bpp=32,memsize=3072000 msm_rtb.filter=0x237 service_locator.enable=1 swiotlb=2048 loop.max_part=7 androidboot.usbcontroller=a600000.dwc3 kpti=off buildvariant=user console=tty0 datapart=/dev/sda6 droidian.lvm.disable page_poison=off debug_pagealloc=off`.
 
-On `fastboot boot` the bootloader appended further arguments; the PC record gives `androidboot.bootloader=2022.815.527`,
+On `fastboot boot` the bootloader appended further arguments. The public excerpt of the PC record includes
 `verifiedbootstate=orange`, `slot_suffix=_a`, `dtbo_idx=4`, `dtb_idx=0`, `force_normal_boot=1` and
 `product.hardware.sku=att`, followed by an ellipsis. These reproduce the record's abbreviated names, not a complete
 transcription of the appended part. What it appends on a plain start from the slot
