@@ -143,9 +143,10 @@ class DuoBootScriptText(unittest.TestCase):
         for digest in HASHES:
             self.assertEqual(text().count(digest), 1)
         body = code()
-        self.assertEqual(body.count("Mandatory = $true"), 2)
-        self.assertIn("[Parameter(Mandatory = $true)][string]$ImageDir", body)
-        self.assertIn("[Parameter(Mandatory = $true)][string]$RootfsSha256", body)
+        self.assertIn("[CmdletBinding(DefaultParameterSetName = 'Install')]", body)
+        for name in ("ImageDir", "RootfsSha256"):
+            self.assertIn(f"[Parameter(ParameterSetName = 'Install', Mandatory = $true)][string]${name}", body)
+        self.assertIn("[Parameter(ParameterSetName = 'Attach', Mandatory = $true)][switch]$AttachOnly", body)
         self.assertIn("-RootfsSha256 must be 64 hex digits", body)
         self.assertIn('if ($h -ne $want[$n]) { throw "hash mismatch for', body)
         self.assertIn("Get-FileHash -LiteralPath $p[$n] -Algorithm SHA256", body)
@@ -271,8 +272,10 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertIn("-o LogLevel=ERROR", ssh)
         for option in ("BatchMode=yes", "IdentitiesOnly=yes", "-i $Key", "StrictHostKeyChecking=no"):
             self.assertIn(option, ssh)
-        # Only the PATH check and this one call mention ssh.exe.
-        self.assertEqual(len([line for line in code().splitlines() if "ssh.exe" in line]), 2)
+        # Attach uses a separate, strict SSH call. The install route keeps this call and its PATH check.
+        ssh_lines = [line for line in code().splitlines() if "ssh.exe" in line]
+        self.assertEqual(len(ssh_lines), 3)
+        self.assertEqual(sum("StrictHostKeyChecking=yes" in line for line in ssh_lines), 1)
 
     def test_header_documents_the_install_chain_guards(self):
         flat = " ".join(header().replace("#", " ").split())
@@ -364,7 +367,7 @@ class DuoBootScriptText(unittest.TestCase):
         self.assertLess(ssh.index("Push-Location"), ssh.index("& ssh.exe"))
         self.assertLess(ssh.index("& ssh.exe"), ssh.index("Pop-Location"))
         # -Key is resolved while the location is still the caller's, before Invoke-Ssh changes it.
-        body = code()
+        body = code().split("if ($RootfsSha256 -notmatch", 1)[1]
         self.assertIn("$Key = (Resolve-Path -LiteralPath $Key).ProviderPath", body)
         self.assertLess(body.index("-Key $Key is not a file"), body.index("$Key = (Resolve-Path"))
         self.assertLess(body.index("$Key = (Resolve-Path"), body.index("Invoke-Ssh $ip"))
@@ -623,7 +626,7 @@ try {
 # stand-in files (data only; the pinning itself is tested as text above), the rootfs is a small raw ext4 stand-in,
 # and the script's TCP probe is replaced by one that answers with its first host. $runs is a JSON list of
 #   {label, args, rootfs (base64), key, fail, others, late_others, tamper, no_keygen, no_early_ext4,
-#    imgdir, logdir, relative, lock_log_on, stop_on, stop_skip}
+#    imgdir, logdir, relative, lock_log_on, stop_on, stop_skip, attach, no_gadget, usb_ip, tcp}
 # and each run starts from freshly written image files. imgdir names the image folder under the work folder (default
 # img) and logdir a log folder beside it (default: logs inside the image folder), so a folder name can have a space in
 # it. relative lists the parameters (ImageDir, LogDir, Key) that are passed as paths relative to the work folder while
@@ -649,6 +652,7 @@ try {
     $global:CallLog = Join-Path $work 'calls.txt'
     $global:ProbeLog = Join-Path $work 'probes.txt'
     $global:SshLog = Join-Path $work 'ssh-calls.txt'
+    $global:TcpLog = Join-Path $work 'tcp-calls.txt'
     $procdir = Join-Path $work 'process-cwd'
     New-Item -ItemType Directory -Path $procdir | Out-Null
     $startCwd = [Environment]::CurrentDirectory
@@ -668,7 +672,14 @@ try {
     if ($text -notmatch 'hash mismatch') { throw 'harness: stand-in hashes were not set up' }
     $tcp = 'function Test-Tcp([string[]]$Hosts, [int]$Port, [int]$TimeoutMs) {'
     if (-not $text.Contains($tcp)) { throw 'harness: Test-Tcp was not found' }
-    $text = $text.Replace($tcp, $tcp + "`n" + '    return @($Hosts | Select-Object -First 1)')
+    $tcpStub = @'
+    Add-Content -LiteralPath $global:TcpLog -Value ($Hosts -join ',')
+    if ($global:TcpMode -eq 'none') { return @() }
+    if ($global:TcpMode -eq 'many' -and $Hosts.Count -eq 1) { return @() }
+    if ($global:TcpMode -eq 'many') { return @($Hosts | Select-Object -First 2) }
+    return @($Hosts | Select-Object -First 1)
+'@
+    $text = $text.Replace($tcp, $tcp + "`n" + $tcpStub)
     $defaultRootfs = New-Object byte[] 4096
     $defaultRootfs[1028] = 4
     $defaultRootfs[1080] = 0x53
@@ -740,7 +751,9 @@ try {
         elseif ($a -match 'sha256sum') { $global:RootfsSum + '  /data/rootfs.img' }
         elseif ($a -match ' push ') { '1 file pushed' }
     }
-    function global:Get-PnpDevice { [pscustomobject]@{ InstanceId = 'USB\VID_1D6B&PID_0104\1' } }
+    function global:Get-PnpDevice {
+        if (-not $global:NoGadget) { [pscustomobject]@{ InstanceId = 'USB\VID_1D6B&PID_0104\1' } }
+    }
     function global:Get-NetAdapter {
         [CmdletBinding()] param()
         $global:Others
@@ -760,7 +773,13 @@ try {
         $cwd = (Get-Location).ProviderPath
         $argv = @($args | ForEach-Object { "$_" })
         $global:LASTEXITCODE = 0
-        $call = [ordered]@{ cwd = $cwd; argv = @($argv | Select-Object -First ($argv.Count - 2)); key_found = $true; wrote = '' }
+        $call = [ordered]@{ cwd = $cwd; argv = @($argv | Select-Object -First ($argv.Count - 2)); remote = $argv[-1]; key_found = $true; wrote = '' }
+        $rule = Get-FailRule 'ssh' ($argv -join ' ')
+        if ($rule) {
+            Add-Content -LiteralPath $global:SshLog -Value ($call | ConvertTo-Json -Compress)
+            Apply-Rule $rule
+            return
+        }
         $ki = [array]::IndexOf($argv, '-i')
         if ($ki -ge 0 -and -not (Test-Path -LiteralPath $argv[$ki + 1] -PathType Leaf)) {
             $call.key_found = $false
@@ -779,7 +798,8 @@ try {
             } catch { }
         }
         Add-Content -LiteralPath $global:SshLog -Value ($call | ConvertTo-Json -Compress)
-        'state=running'
+        if ($argv -contains 'StrictHostKeyChecking=yes') { 'revision: 7755614394c1f82619ccd35c6091436923968ca5'; 'base: 1' }
+        else { 'state=running' }
     }
     # The fake phone answers at once, so any wait means the script went somewhere it should not: stop it there
     # (it reports "STOPPED" and exits 1) instead of letting a regression sit out its multi-minute timeouts.
@@ -801,7 +821,7 @@ try {
         $logs = $(if ($run.logdir) { Join-Path $work ([string]$run.logdir) } else { Join-Path $img 'logs' })
         $global:LogFile = Join-Path $logs 'boot-chain.log'
         Reset-Images $run.rootfs
-        $p = @{ ImageDir = $img; RootfsSha256 = $global:RootfsSum; WaitMinutes = 1 }
+        $p = if ($run.attach) { @{ AttachOnly = $true } } else { @{ ImageDir = $img; RootfsSha256 = $global:RootfsSum; WaitMinutes = 1 } }
         foreach ($prop in $run.args.PSObject.Properties) { $p[$prop.Name] = $prop.Value }
         if ($run.logdir) { $p['LogDir'] = $logs }
         $rel = @($run.relative | Where-Object { $_ })
@@ -830,9 +850,12 @@ try {
         $mk = { param($o) [pscustomobject]@{ Name = $o.name; InterfaceDescription = $o.desc; Status = 'Up'; ifIndex = [int]$o.index } }
         $global:Others = @(foreach ($o in @($run.others)) { if ($o) { $global:AddrOf["$($o.index)"] = $o.ip; & $mk $o } })
         $global:LateOthers = @(foreach ($o in @($run.late_others)) { if ($o) { $global:AddrOf["$($o.index)"] = $o.ip; & $mk $o } })
-        $global:KernelBooted = $false
+        if ($run.usb_ip) { $global:AddrOf['90'] = [string]$run.usb_ip }
+        $global:KernelBooted = [bool]$run.attach
+        $global:NoGadget = [bool]$run.no_gadget
+        $global:TcpMode = [string]$run.tcp
         $global:Tamper = [bool]$run.tamper
-        Remove-Item -LiteralPath $global:CallLog, $global:ProbeLog, $global:SshLog -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $global:CallLog, $global:ProbeLog, $global:SshLog, $global:TcpLog -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $logs -Recurse -Force -ErrorAction SilentlyContinue
         $global:LockLogOn = [string]$run.lock_log_on
         $global:ProcCwd = $null
@@ -867,6 +890,7 @@ try {
             ps_location = $global:PsLoc
             ssh_calls = @(if (Test-Path -LiteralPath $global:SshLog) { Get-Content -LiteralPath $global:SshLog | ForEach-Object { [string]$_ } })
             calls = @(if (Test-Path -LiteralPath $global:CallLog) { Get-Content -LiteralPath $global:CallLog | ForEach-Object { [string]$_ } })
+            tcp = @(if (Test-Path -LiteralPath $global:TcpLog) { Get-Content -LiteralPath $global:TcpLog })
             probes = @(if (Test-Path -LiteralPath $global:ProbeLog) { Get-Content -LiteralPath $global:ProbeLog | ForEach-Object { [string]$_ } })
             expected = $global:Expected
             stage_left = @(Get-ChildItem -LiteralPath $logs -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'stage-\d' } | ForEach-Object { $_.FullName })
@@ -1229,9 +1253,78 @@ class DuoBootScriptPowerShell(unittest.TestCase):
     def test_parses_without_errors_and_asks_only_for_the_essentials(self):
         got = run_powershell(PARSE)
         self.assertEqual(got["errors"], [], got["version"])
-        self.assertEqual(sorted(got["mandatory"]), ["ImageDir", "RootfsSha256"])
+        self.assertEqual(sorted(got["mandatory"]), ["AttachOnly", "ImageDir", "RootfsSha256"])
         for name in ("Key", "Serial", "PhoneIp", "PreferHost", "LogDir", "Yes", "Rootfs", "WaitMinutes"):
             self.assertIn(name, got["names"])
+
+    def test_attach_only_reports_reachability_or_reads_over_trusted_ssh(self):
+        runs = [
+            {"label": "discover", "attach": True},
+            {
+                "label": "explicit",
+                "attach": True,
+                "key": True,
+                "usb_ip": "169.254.1.9",
+                "args": {"PhoneIp": "203.0.113.20"},
+            },
+        ]
+        discovered, explicit = run_powershell(fake_phone_program(runs))["runs"]
+        for got, address in ((discovered, "203.0.113.82"), (explicit, "203.0.113.20")):
+            self.assertIsNone(got["threw"])
+            self.assertEqual(got["tcp"], [address])
+            self.assertEqual(got["calls"], [])
+            self.assertFalse(got["logs_dir"])
+            self.assertIn(f"TCP 22 answers at {address}.", "\n".join(got["output"]))
+        self.assertEqual(discovered["ssh_calls"], [])
+        self.assertEqual(len(explicit["ssh_calls"]), 1)
+        call = json.loads(explicit["ssh_calls"][0])
+        self.assertIn("StrictHostKeyChecking=yes", call["argv"])
+        self.assertIn("UpdateHostKeys=no", call["argv"])
+        self.assertEqual(call["wrote"], "")
+        for file in ("/opt/opos/REVISION", "/etc/opos/base-version", "/var/lib/opos-update/status.json"):
+            self.assertIn("cat " + file, call["remote"])
+        self.assertIn("revision: 7755614", "\n".join(explicit["output"]))
+
+    def test_attach_only_refuses_failed_preconditions_without_installing(self):
+        runs = [
+            {"label": "install flags", "args": {"Yes": True}},
+            {"label": "switch disabled", "args": {"AttachOnly": False}},
+            {"label": "no gadget", "no_gadget": True},
+            {"label": "invalid address", "args": {"PhoneIp": "duo.local"}},
+            {"label": "automatic link-local", "usb_ip": "169.254.1.9"},
+            {"label": "no answer", "tcp": "none"},
+            {"label": "multiple answers", "tcp": "many"},
+            {"label": "unknown host key", "key": True, "fail": [rule("ssh", "StrictHostKeyChecking=yes")]},
+            {
+                "label": "invalid revision",
+                "key": True,
+                "fail": [rule("ssh", "StrictHostKeyChecking=yes", "output", text="revision: unknown")],
+            },
+        ]
+        expected = (
+            "Parameter set cannot be resolved",
+            "-AttachOnly must be enabled",
+            "Linux USB gadget is not visible",
+            "-PhoneIp must be an IPv4 address",
+            "No TCP 22 response",
+            "No TCP 22 response",
+            "More than one address",
+            "Could not read OPOS status over trusted SSH",
+            "SSH did not return a valid installed OPOS revision",
+        )
+        got = run_powershell(fake_phone_program([dict(run, attach=True) for run in runs]))["runs"]
+        for row, reason in zip(got, expected, strict=True):
+            with self.subTest(row=row["label"]):
+                self.assertIn(reason, row["threw"])
+                self.assertEqual(row["calls"], [])
+                self.assertFalse(row["logs_dir"])
+        for row in got[:-2]:
+            self.assertEqual(row["ssh_calls"], [])
+        for row in got[-2:]:
+            self.assertEqual(len(row["ssh_calls"]), 1)
+            self.assertIn("StrictHostKeyChecking=yes", json.loads(row["ssh_calls"][0])["argv"])
+        for row in got[:5]:
+            self.assertEqual(row["tcp"], [])
 
     def test_the_kernel_boot_is_not_in_a_loop_or_a_retry_block(self):
         boots = run_powershell(PARSE)["boots"]

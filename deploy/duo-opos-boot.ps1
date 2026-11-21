@@ -5,6 +5,9 @@
 # (ssh.exe too, for the optional diagnostics). Not a permanent install: the phone runs from RAM-boot.
 #
 #   powershell -File deploy\duo-opos-boot.ps1 -ImageDir <folder> -RootfsSha256 <sha256> [-Key <private key>] [-Yes]
+#   powershell -File deploy\duo-opos-boot.ps1 -AttachOnly [-PhoneIp <USB IPv4>] [-Key <private key>]
+# Attach-only checks the running phone's USB network. With -Key it reads the installed revision and update status
+# over SSH using the client's existing host trust. It does not read images, use fastboot or adb, or change the phone.
 #
 # Keep <folder> in a normal folder in your user profile (e.g. %USERPROFILE%\opos-duo-images), never under a temp
 # folder: Windows Storage Sense deletes old files there and has deleted these images once. The script names an
@@ -50,18 +53,20 @@
 #   - Finding the phone on the USB network refuses to guess: if more than one RNDIS-like adapter is up it stops
 #     and lists them (-PhoneIp skips the search). The ssh host key is not pinned; the fingerprint that ssh
 #     accepted is printed so it can be compared with the phone's own.
+[CmdletBinding(DefaultParameterSetName = 'Install')]
 param(
-    [Parameter(Mandatory = $true)][string]$ImageDir,
-    [Parameter(Mandatory = $true)][string]$RootfsSha256,
-    [string]$Rootfs = 'opos-os-rootfs.img',
+    [Parameter(ParameterSetName = 'Install', Mandatory = $true)][string]$ImageDir,
+    [Parameter(ParameterSetName = 'Install', Mandatory = $true)][string]$RootfsSha256,
+    [Parameter(ParameterSetName = 'Install')][string]$Rootfs = 'opos-os-rootfs.img',
     [string]$Key = '',
-    [string]$Serial = '',
+    [Parameter(ParameterSetName = 'Install')][string]$Serial = '',
     [string]$PhoneIp = '',
     [int]$PreferHost = 82,
     [string]$SshUser = 'droidian',
-    [string]$LogDir = '',
-    [int]$WaitMinutes = 240,
-    [switch]$Yes
+    [Parameter(ParameterSetName = 'Install')][string]$LogDir = '',
+    [Parameter(ParameterSetName = 'Install')][int]$WaitMinutes = 240,
+    [Parameter(ParameterSetName = 'Install')][switch]$Yes,
+    [Parameter(ParameterSetName = 'Attach', Mandatory = $true)][switch]$AttachOnly
 )
 $ErrorActionPreference = 'Stop'
 
@@ -294,11 +299,15 @@ function RndisAddress {
     }
     if ($all.Count) { $all[0].Address }
 }
-function Find-Phone {
+function Find-Phone([switch]$Attach) {
     if ($PhoneIp) { return @(Test-Tcp @($PhoneIp) 22 3000) }
     $own = RndisAddress
-    if (-not $own) { return @() }
-    if ($script:probed -ne $own) { $script:probed = $own; Log "USB network adapter address ${own}: probing TCP 22 across its /24, host $PreferHost first" }
+    if (-not $own -or ($Attach -and $own -like '169.254.*')) { return @() }
+    if ($script:probed -ne $own) {
+        $script:probed = $own
+        $message = "USB network adapter address ${own}: probing TCP 22 across its /24, host $PreferHost first"
+        if ($Attach) { Write-Host $message } else { Log $message }
+    }
     @(Find-PhoneSsh $own $PreferHost 22 2500)
 }
 # stderr is merged into the text, and with no known_hosts entry ssh would start it with "Warning: Permanently
@@ -336,10 +345,36 @@ function Test-Ipv4([string]$s) {
     $s -match "^$o(\.$o){3}\z"
 }
 
-# Inputs, before anything else: nothing below has touched the phone yet.
-if ($RootfsSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw '-RootfsSha256 must be 64 hex digits' }
+# Validate shared inputs before discovery or preparation of an install.
 if ($PhoneIp -and -not (Test-Ipv4 $PhoneIp)) { throw '-PhoneIp must be an IPv4 address' }
 if ($PreferHost -lt 1 -or $PreferHost -gt 254) { throw '-PreferHost must be a host number from 1 to 254' }
+
+if ($PSCmdlet.ParameterSetName -eq 'Attach') {
+    if (-not $AttachOnly) { throw '-AttachOnly must be enabled for attach mode' }
+    if ($Key) {
+        if ($SshUser -notmatch '^[a-z_][a-z0-9_-]{0,31}$') { throw '-SshUser must be a plain account name' }
+        if (-not (Test-Path -LiteralPath $Key -PathType Leaf)) { throw '-Key must name an existing file' }
+        $Key = (Resolve-Path -LiteralPath $Key).ProviderPath
+    }
+    if (-not (Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match 'VID_1D6B&PID_0104' })) {
+        throw 'The Linux USB gadget is not visible. Attach-only needs a running OPOS session on the USB cable.'
+    }
+    $hits = @(Find-Phone -Attach)
+    if ($hits.Count -eq 0) { throw 'No TCP 22 response for the candidate. Check the RNDIS address or pass the known USB address with -PhoneIp.' }
+    if ($hits.Count -gt 1) { throw "More than one address answered on TCP 22: $($hits -join ', '). Use -PhoneIp with the known USB address." }
+    $ip = $hits[0]
+    Write-Host "TCP 22 answers at $ip. An open port alone does not identify the phone."
+    if ($Key) {
+        $remote = 'printf ''revision: ''; cat /opt/opos/REVISION || exit; if test -r /etc/opos/base-version; then printf ''base: ''; cat /etc/opos/base-version; fi; if test -r /var/lib/opos-update/status.json; then cat /var/lib/opos-update/status.json; fi'
+        $r = Native 'ssh.exe' @('-T', '-i', $Key, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UpdateHostKeys=no', '-o', 'ConnectTimeout=8', "$SshUser@$ip", $remote)
+        if ($r.Code -ne 0) { throw "Could not read OPOS status over trusted SSH: $($r.Text)" }
+        if ($r.Text -notmatch '(?m)^revision: [0-9a-f]{40}\r?$') { throw 'SSH did not return a valid installed OPOS revision.' }
+        Write-Output $r.Text
+    }
+    return
+}
+
+if ($RootfsSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw '-RootfsSha256 must be 64 hex digits' }
 $ImageDir = (Resolve-Path -LiteralPath $ImageDir).Path
 if (-not $LogDir) { $LogDir = Join-Path $ImageDir 'logs' }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
