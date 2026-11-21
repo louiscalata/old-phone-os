@@ -17,6 +17,8 @@ checks what the page holds, and at every change the page sends it checks why the
 - no change without an informed tap: a tap on the main button or the Wi-Fi button acts only on what the button has said
   (and whether it was there) for at least HOLD_S, unless the owner's own tap made it say that; a tap on a row chooses
   it only when the list has had that network in that place, offering the same, for at least HOLD_S;
+- Forget, Disconnect and Wi-Fi off require a separate confirm of the displayed action and target. A newer observation
+  that changes their meaning closes the review. Cancel and taps on a closed review send no changes;
 - no stale reply wins: Disconnect (which names no network to the core) and the Wi-Fi switch are never sent on a radios
   read made before a change whose answer was delivered, nor on a radios read drawn in an earlier visit (the network may
   have changed while the page was left), and Disconnect never drops a network other than the chosen one on a read that
@@ -42,6 +44,7 @@ PW = base.PW
 HIDDEN_NAME = "Hid-Test"
 CORE_SLOW = "The network service did not answer in time. Try again."  # opos.net's own timeout sentence
 OUTCOMES = ("ok", "refused", "http429", "late", "late_effect", "core_slow", "core_slow_effect", "dropped", "no_answer")
+ROW_STATE = ("active", "known", "visible", "supported", "secure")
 
 
 class World:
@@ -138,7 +141,10 @@ class Fuzz(unittest.TestCase):
         self.buttons, self.rows_sig, self.rows_at = {}, None, float("-inf")
         self.read, self.read_visit = None, None  # the radios read last seen drawn, and the visit it was drawn in
         self.violations, self.trace, self.outsides = [], [], 0
-        self.asked, self.confirm_at = 0, None  # requests sent so far; the core's time at the confirming Disconnect tap
+        self.asked = 0
+        self.review, self.review_state, self.confirming = None, None, None
+        self.closed_review = False
+        self.disconnect_confirmation = None  # reviewed SSID and the core's time at its confirming tap
         self.rereading = False  # a confirming tap's read is waiting
         self.screens.GLib.idle_add = lambda fn, *a: self.deliveries.append((fn, a)) or 0
         self.shell.core = types_core(self)
@@ -221,28 +227,72 @@ class Fuzz(unittest.TestCase):
                 and all(e <= read_at for e in self.effects)
             ):
                 self.bad("disconnect dropped another network", self.world.conn, p.ssid())
-            if fields.get("mode") == "disconnect":
-                self.counts["disconnects"] += 1
-                if self.confirm_at is None or read_at <= self.confirm_at:
-                    self.bad(
-                        "disconnect was sent on a radios read made before the confirming tap", read_at, self.confirm_at
-                    )
-                self.confirm_at = None
+        if action == "net_wifi" and fields.get("mode") == "disconnect":
+            self.counts["disconnects"] += 1
+            confirmation = self.disconnect_confirmation
+            if confirmation is None or confirmation[0] != p.ssid():
+                self.bad("disconnect was sent without confirmation for the chosen network", p.ssid(), confirmation)
+            elif read_at <= confirmation[1]:
+                self.bad("disconnect used a radio read before confirmation", read_at, confirmation[1])
+        if action == "net_forget":
+            self.counts["forgets"] += 1
+            if self.confirming != ("forget", fields.get("ssid")):
+                self.bad("forget was sent without confirmation for that network", fields.get("ssid"), self.confirming)
+        if action == "net_wifi" and fields.get("mode") == "off":
+            self.counts["wifi_off"] += 1
+            if self.confirming != ("wifi-off",):
+                self.bad("Wi-Fi off was sent without confirmation")
         if "password" in fields:
             if fields["password"] != PW:
                 self.bad("a password other than the one typed was sent")
             if self.typed_for is None or fields.get("ssid") != self.typed_for:
                 self.bad("a password was sent for a network it was not typed for", fields.get("ssid"), self.typed_for)
-        if self.tapping in ("main", "wifi"):
+        if self.tapping in ("main", "wifi", "forget"):
             what, at, by_owner = self.buttons.get(self.tapping, (None, float("-inf"), True))
             if not by_owner and self.clock[0] < at + p.HOLD_S:  # the same sum the page makes (Network.hold)
                 self.bad("a tap acted within HOLD_S of a change it did not make", self.tapping, what, action)
 
-    def after_step(self, by_owner):
+    def review_observation(self, review):
         p = self.page
+        if review[0] == "wifi-off":
+            return netlogic.wifi_on(p.status_data)
+        row = p.chosen or {}
+        return p.ssid(), tuple(row.get(key) for key in ROW_STATE), netlogic.connected_to(p.status_data)
+
+    def observe_review(self, event, offered):
+        p = self.page
+        opened = p.actions.visible_child_name == "review"
+        if self.review is None and opened:
+            if offered is None or p.armed != offered:
+                self.bad("a review opened without a matching tap", event, offered, p.armed)
+            self.review = offered
+            if offered is not None:
+                self.review_state = self.review_observation(offered)
+                self.counts[f"review_{offered[0]}"] += 1
+            self.closed_review = False
+        elif self.review is not None:
+            if opened:
+                if p.armed != self.review or self.review_observation(self.review) != self.review_state:
+                    self.bad("a stale or retargeted review stayed open", event, self.review, p.armed)
+                if event in ("confirm", "cancel_review", "leave") and not p.busy:
+                    self.bad("a review did not close", event, self.review)
+            else:
+                if event == "deliver" and self.review_observation(self.review) != self.review_state:
+                    self.counts["expired_reviews"] += 1
+                self.review, self.review_state, self.closed_review = None, None, True
+        if opened != bool(p.armed):
+            self.bad("review visibility and its action disagree", opened, p.armed)
+        return opened
+
+    def after_step(self, event, by_owner, offered):
+        p = self.page
+        was_reviewing = self.review is not None
+        reviewing = self.observe_review(event, offered)
+        normal = not reviewing
         now = {
-            "main": (p.main.get_label(), p.mode(), p.ssid(), p.main.visible),
-            "wifi": (p.wifi.get_label(), p.wifi.visible and p.idle.visible),
+            "main": (p.main.get_label(), p.mode(), p.ssid(), p.main.visible and normal),
+            "wifi": (p.wifi.get_label(), p.wifi.visible and p.idle.visible and normal),
+            "forget": (p.ssid(), p.forget_b.visible and p.chips.visible and normal),
         }
         for which, what in now.items():
             old = self.buttons.get(which)
@@ -256,6 +306,8 @@ class Fuzz(unittest.TestCase):
         if (p.scan_data is not None or sig == ("reading",)) and sig != self.rows_sig:
             self.rows_at = self.clock[0] if self.rows_sig is not None else float("-inf")
             self.rows_sig = sig
+        if was_reviewing and not reviewing and not by_owner:
+            self.rows_at = self.clock[0]
         if not len(p.secret):
             self.typed_for = None
         elif p.mode() not in ("password", "other") or self.shell.page != "network":
@@ -291,7 +343,11 @@ class Fuzz(unittest.TestCase):
                 + ["forget", "cancel", "return", "poll", "leave", "other", "edit"]
             )
             if p.mode() == "connected":
-                acts += ["main"] * 4  # Disconnect and its confirming tap are reached often,
+                acts += ["main"] * 4
+            if self.review is not None:
+                acts += ["confirm"] * 7 + ["cancel_review", "poll"]
+            elif self.closed_review:
+                acts += ["confirm"] * 2  # a tap can still arrive for the dismissed review
             if getattr(p, "checking", None):
                 acts += ["process", "deliver", "outside"] * 3  # and so are its read's answer and a roam before it
             if p.mode() == "other":
@@ -304,13 +360,16 @@ class Fuzz(unittest.TestCase):
                 "outside"
             ] * 2  # while the page is left, the network is changed elsewhere more often
         a = r.choice(acts)
-        self.tapping = None
+        self.tapping, self.confirming = None, None
+        offered = None
         owner = a in (
             "row",
             "connected",
             "main",
             "wifi",
             "forget",
+            "confirm",
+            "cancel_review",
             "cancel",
             "type",
             "return",
@@ -348,23 +407,26 @@ class Fuzz(unittest.TestCase):
                     self.bad("a row tap chose a network within HOLD_S of the list changing", p.ssid())
         elif a == "main":
             self.tapping = "main"
-            confirming = p.main.get_label() == "Disconnect now?" and not p.busy
-            if confirming:
-                self.confirm_at = self.world.t  # a read made up to now is from before this tap
+            if p.mode() == "connected":
+                offered = ("disconnect", p.ssid())
             p.main_action()
-            if confirming and getattr(p, "checking", None):
-                self.rereading = True
-                # the tap was taken (the page now reads the radios again before it sends anything): it must have been
-                # an informed one, by the same rule as a tap that sends at once (at_change)
-                self.counts["rereads"] += 1
-                what, at, by_owner = self.buttons.get("main", (None, float("-inf"), True))
-                if not by_owner and self.clock[0] < at + p.HOLD_S:
-                    self.bad("a confirming tap was taken within HOLD_S of a change it did not make", what)
         elif a == "wifi" and p.idle.visible:
             self.tapping = "wifi"
+            if netlogic.wifi_on(p.status_data) is True:
+                offered = ("wifi-off",)
             p.toggle_wifi()
         elif a == "forget" and p.forget_b.visible and p.chips.visible:
+            self.tapping = "forget"
+            offered = ("forget", p.ssid())
             p.forget()
+        elif a == "confirm":
+            self.confirm_review()
+        elif a == "cancel_review":
+            self.counts["review_cancels"] += 1
+            before = self.asked
+            p.cancel_review()
+            if self.asked != before:
+                self.bad("canceling a review sent a request")
         elif a == "cancel" and p.chips.visible:
             p.cancel()
         elif a == "type" and p.keys.visible:
@@ -390,9 +452,30 @@ class Fuzz(unittest.TestCase):
         self.trace.append((a, p.mode(), p.ssid(), p.main.get_label(), p.wifi.get_label(), p.busy))
         if self.rereading and not getattr(p, "checking", None):
             self.rereading = False
+            self.disconnect_confirmation = None
             if a == "deliver" and self.in_flight == 0:
                 self.counts["refused"] += 1  # the read came and the page sent nothing
-        self.after_step(owner)
+        self.after_step(a, owner, offered)
+
+    def confirm_review(self):
+        p = self.page
+        self.confirming = self.review
+        checking = p.checking
+        before = self.asked
+        if self.review is not None and self.review[0] == "disconnect":
+            self.disconnect_confirmation = (self.review[1], self.world.t)
+        p.confirm_review()
+        if p.checking is not None and p.checking != checking:
+            self.rereading = True
+            self.counts["rereads"] += 1
+            if self.review is None or self.review[0] != "disconnect":
+                self.bad("a fresh disconnect read started without its confirmation", self.review)
+        elif checking is None:
+            self.disconnect_confirmation = None
+        if self.review is None:
+            self.counts["closed_confirms"] += 1
+            if self.asked != before:
+                self.bad("a tap on a closed review sent a request")
 
     def type_something(self):
         p = self.page
@@ -438,6 +521,17 @@ class Fuzz(unittest.TestCase):
             self.counts["refused"], SEEDS // 100, "its read named another network or none, so nothing was sent"
         )
         self.assertGreater(self.counts["disconnects"], SEEDS // 50, "and a Disconnect was sent after its read")
+        for event in (
+            "review_forget",
+            "review_disconnect",
+            "review_wifi-off",
+            "forgets",
+            "wifi_off",
+            "expired_reviews",
+            "closed_confirms",
+            "review_cancels",
+        ):
+            self.assertGreater(self.counts[event], SEEDS // 50, event)
 
 
 def types_core(test):
