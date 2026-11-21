@@ -1218,6 +1218,7 @@ class ShellModule(unittest.TestCase):
                 "set_battery",
                 "set_sound",
                 "set_security",
+                "set_display",
                 "set_time",
                 "network",
             ],
