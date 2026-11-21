@@ -1856,7 +1856,7 @@ class ShellRules(unittest.TestCase):
         sh.snap, sh.snap_seq, sh.said, sh.said_text, sh.battery_line = {}, 0, 0, "", ""
         sh.wake, sh.warming, sh.wanted, sh.page, sh.leaving = threading.Event(), False, None, "lock", 0
         sh.pages = {n: Recorder(n) for n in ("lock", "home", "phone", "clock")}
-        sh.s_right, sh.b_head, sh.b_detail, sh.b_events, sh.strip, sh.sheet = (Widget() for _ in range(6))
+        sh.s_right, sh.b_head, sh.b_detail, sh.b_events, sh.strip, sh.sheet, sh.b_link = (Widget() for _ in range(7))
         sh.reads, sh.acts, sh.splash = Widget(), Widget(), Widget()
         sh.quit_calls = 0
         sh.get_application = lambda: types.SimpleNamespace(quit=lambda: setattr(sh, "quit_calls", sh.quit_calls + 1))
@@ -1898,6 +1898,33 @@ class ShellRules(unittest.TestCase):
         self.assertTrue(sh.wake.is_set(), "the poll looks again at once")
         self.assertNotIn("in_call", sh.snap)
 
+    def test_battery_indicators_agree_with_the_source_and_hide_unavailable_values(self):
+        sh = self.sh
+        sh.pages["lock"] = lock = self.shell_module.screens.Lock(sh)
+        self.assertEqual(lock.batt.get_label(), "Battery not reported")
+        battery = dict(percent=63, time_left="3 hours", headline="Normal", events=["Display on"])
+        for source, level, detail in (
+            ({"source": "sysfs"}, "Battery · 63% · Charging", "3 hours"),
+            ({"source": "termux-api"}, "Battery · 63% · Charging", "3 hours"),
+            (None, "Battery unavailable", ""),
+            ({"source": None}, "Battery unavailable", ""),
+        ):
+            with self.subTest(source=source):
+                sh.polled(sh.seq.issue(), self.state(battery=battery, charging=True, battery_source=source), False)
+                self.assertEqual(lock.batt.get_label(), level)
+                self.assertEqual(sh.b_head.get_label(), level)
+                self.assertTrue(sh.s_right.get_label().startswith(level))
+                self.assertEqual(sh.b_detail.get_label().strip(), detail)
+                self.assertEqual(sh.b_events.get_label(), "Display on" if detail else "")
+
+        sh.polled(sh.seq.issue(), self.state(battery=dict(percent=True), charging="yes"), False)
+        self.assertEqual(sh.b_head.get_label(), "Battery level not reported")
+        self.assertEqual(sh.s_right.get_label(), "Battery level not reported")
+        self.assertEqual(lock.batt.get_label(), "Battery level not reported")
+        sh.polled(sh.seq.issue(), self.state(battery=battery), False)
+        self.assertEqual(sh.b_head.get_label(), "Practice battery · 63%")
+        self.assertEqual(lock.batt.get_label(), "Practice battery · 63%")
+
     def test_a_failed_poll_keeps_the_last_good_state_and_says_the_connection_is_lost(self):
         sh = self.sh
         sh.polled(sh.seq.issue(), self.state(status="ready"), False)
@@ -1905,12 +1932,16 @@ class ShellRules(unittest.TestCase):
         sh.polled(sh.seq.issue(), None, None)
         self.assertIs(sh.snap, good)
         self.assertEqual(sh.s_right.get_label(), logic.LINK_LOST)
+        self.assertEqual(sh.b_link.get_label(), logic.LINK_LOST)
+        self.assertTrue(sh.b_link.visible)
+        self.assertEqual(sh.b_head.get_label(), "Practice battery · 80%")
         self.assertEqual(
             sh.pages["lock"].lost_text, logic.LINK_LOST, "the lock screen has no top line, so it says so itself"
         )
         self.assertEqual(len(sh.pages["phone"].shown), 1, "no page was told anything new")
         sh.polled(sh.seq.issue(), self.state(), False)
-        self.assertEqual((sh.s_right.get_label(), sh.pages["lock"].lost_text), ("80%  ", ""))
+        self.assertEqual((sh.s_right.get_label(), sh.pages["lock"].lost_text), ("Practice battery · 80%", ""))
+        self.assertFalse(sh.b_link.visible)
 
     def test_an_error_body_is_not_a_state(self):
         sh = self.sh

@@ -134,6 +134,10 @@ Each page has a **Settings** button to return to the hub. The usual Home gesture
 
 ## Battery
 
+The lock screen, top line and battery sheet identify practice values. If the server cannot read the device
+battery, these surfaces show that it is unavailable. If the connection itself drops, the lock screen and
+battery sheet say that the numbers are from the last response, and the top line shows the connection message.
+
 The native Battery page uses the regular server snapshot. It labels time left as an estimate and distinguishes a rate
 measured from discharge from one supplied by the model. Practice numbers are labeled. A temperature only appears as a device
 reading when the current sample includes it. Health labels say whether the gauge reported it, a charge counter estimated it,

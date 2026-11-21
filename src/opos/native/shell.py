@@ -57,7 +57,8 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+gi.require_version("Pango", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from opos.native import blank, displayconfig, facing, hinge, logic, posture, screens  # noqa: E402
 from opos.native.layout import (  # noqa: E402
@@ -205,7 +206,7 @@ class Shell(Gtk.ApplicationWindow):
             self.get_display(), self.css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
         self.gaps, self.last_frame, self.start = [], None, None
-        self.said, self.said_text, self.battery_line = 0, "", ""
+        self.said, self.said_text, self.battery_line = 0, "", "Battery not reported"
         self.page, self.clock_absent, self.leaving = "lock", False, 0
         self.seq, self.link, self.ring = logic.Sequence(), logic.Link(), logic.RingGate()
         self.wake = threading.Event()       # set after an action: the poll then looks again at once
@@ -247,6 +248,7 @@ class Shell(Gtk.ApplicationWindow):
 
         # one quiet line above the reading pane, the same on every page: the time, and the battery or a short message
         self.s_time, self.s_right = label("", "strip", wrap=False), label("", "strip", wrap=False, x=1.0)
+        self.s_right.set_ellipsize(Pango.EllipsizeMode.END)
         self.s_right.set_hexpand(True)
         self.strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         for w in (self.s_time, self.s_right):
@@ -305,8 +307,10 @@ class Shell(Gtk.ApplicationWindow):
 
     def build_sheet(self):
         """The battery sheet: it covers both screens, so nothing under it shows through."""
-        self.b_head, self.b_detail, self.b_events = label("", "head"), label("", "big"), label("", "dim")
-        read = reading(self.b_head, self.b_detail, self.b_events)
+        self.b_head = label("Battery not reported", "head")
+        self.b_link, self.b_detail, self.b_events = label("", "mid"), label("", "big"), label("", "dim")
+        self.b_link.set_visible(False)
+        read = reading(self.b_head, self.b_link, self.b_detail, self.b_events)
         act = column(bottom=(label("Swipe up to close", "dim", x=0.5), bar(button("Close", lambda: self.set_shade(False), "main"))))
         sheet = two_panes(read, act, self.hinge, self.hand)
         sheet.add_css_class("sheet")
@@ -446,6 +450,8 @@ class Shell(Gtk.ApplicationWindow):
         text = lost or (self.said_text if self.said and time.monotonic() < self.said else self.battery_line)
         self.s_right.set_label(text)
         self.pages["lock"].lost(lost)
+        self.b_link.set_label(lost)
+        self.b_link.set_visible(bool(lost))
 
     def ask(self, action, done=None, **fields):
         """Send one action to the server without blocking the window; its reply is the new state. The reply changes
@@ -941,14 +947,13 @@ class Shell(Gtk.ApplicationWindow):
             return False
         self.snap, self.snap_seq = snap, n
         self.link.shown()
-        b = snap.get("battery") or {}
-        pct = "%s%%%s" % (b.get("percent", "--"), "  charging" if snap.get("charging") else "")
-        self.b_head.set_label(pct)
+        caption, b = logic.battery_status(snap)
+        self.b_head.set_label(caption)
         until, aim = b.get("calls_until"), b.get("goal")     # no "(goal )" when the server has none to say
         goal = "" if not until else "Calls and messages until %s%s." % (until, " (goal %s)" % aim if aim else "")
         self.b_detail.set_label("%s\n%s" % (b.get("time_left") or "", goal))
         self.b_events.set_label("\n".join((b.get("events") or [])[:6]))
-        self.battery_line = "%s  %s" % (pct, b.get("headline") or "")
+        self.battery_line = " · ".join(text for text in (caption, b.get("headline")) if isinstance(text, str) and text)
         self.paint_strip()
         for page in self.pages.values():
             page.show(snap)

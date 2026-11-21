@@ -417,7 +417,7 @@ def bare_shell(case):
     sh.snap, sh.snap_seq, sh.said, sh.said_text, sh.battery_line = {}, 0, 0, "", ""
     sh.wake, sh.warming, sh.wanted, sh.page, sh.leaving = threading.Event(), False, None, "lock", 0
     sh.pages = {n: base.Recorder(n) for n in ("lock", "home", "phone", "clock")}
-    sh.s_right, sh.b_head, sh.b_detail, sh.b_events, sh.strip, sh.sheet = (base.Widget() for _ in range(6))
+    sh.s_right, sh.b_head, sh.b_detail, sh.b_events, sh.strip, sh.sheet, sh.b_link = (base.Widget() for _ in range(7))
     sh.reads, sh.acts, sh.splash = base.Widget(), base.Widget(), base.Widget()
     sh.quit_calls, sh.clock_absent = 0, True
     sh.get_application = lambda: types.SimpleNamespace(quit=lambda: setattr(sh, "quit_calls", sh.quit_calls + 1))

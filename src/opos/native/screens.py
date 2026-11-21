@@ -187,7 +187,7 @@ class Lock(Page):
 
     def build(self):
         self.time, self.date = label("--:--", "clock"), label("", "big")
-        self.batt, self.story = label("", "big"), label("", "dim")
+        self.batt, self.story = label("Battery not reported", "big"), label("", "dim")
         self.link = label("", "big")
         self.link.set_visible(False)
         read = reading(self.time, self.date, self.batt, self.story, self.link)
@@ -203,8 +203,8 @@ class Lock(Page):
         return read, act
 
     def show(self, snap):
-        b = snap.get("battery") or {}
-        self.batt.set_label("%s%%%s" % (b.get("percent", "--"), "  charging" if snap.get("charging") else ""))
+        caption, _battery = logic.battery_status(snap)
+        self.batt.set_label(caption)
         self.story.set_label(snap.get("lock_story") or "")
 
     def lost(self, text):

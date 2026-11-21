@@ -125,6 +125,31 @@ def _battery_number(value):
         return None
 
 
+def _battery_basis(snap):
+    source = snap.get("battery_source")
+    if isinstance(source, dict) and source.get("source") in ("sysfs", "termux-api"):
+        return "Device reading"
+    if "battery_source" not in snap:
+        return "Practice"
+    return None
+
+
+def battery_status(snap):
+    """Short label and usable battery data for the lock screen, strip, and sheet."""
+    battery = snap.get("battery")
+    basis = _battery_basis(snap)
+    if not isinstance(battery, dict) or not battery:
+        return "Battery not reported", {}
+    if basis is None:
+        return "Battery unavailable", {}
+    level = _battery_number(battery.get("percent"))
+    if level is None or not 0 <= level <= 100:
+        return "Battery level not reported", {}
+    title = "Battery" if basis == "Device reading" else "Practice battery"
+    charging = " · Charging" if snap.get("charging") is True else ""
+    return f"{title} · {level:g}%{charging}", battery
+
+
 def battery_details(snapshot):
     """Produce the Battery page's provenance and display rows from one poll."""
     snap = snapshot if isinstance(snapshot, dict) else {}
@@ -132,12 +157,12 @@ def battery_details(snapshot):
     if not isinstance(battery, dict) or not battery:
         return "Waiting for battery status.", (NOT_REPORTED,) * 6, ""
     source = snap.get("battery_source")
-    live = isinstance(source, dict) and source.get("source") in ("sysfs", "termux-api")
-    practice = "battery_source" not in snap
-    if not live and not practice:
+    basis = _battery_basis(snap)
+    if basis is None:
         return "The device battery reading is unavailable.", (NOT_REPORTED,) * 6, ""
+    live = basis == "Device reading"
+    practice = basis == "Practice"
 
-    basis = "Device reading" if live else "Practice"
     level = _battery_number(battery.get("percent"))
     level_text = f"{level:g}% · {basis}" if level is not None and 0 <= level <= 100 else NOT_REPORTED
     charging = snap.get("charging")
