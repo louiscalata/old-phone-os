@@ -139,7 +139,9 @@ update and nothing else), or `opos-updater rollback` (root, not limited).
 - Native Settings can review a specific update before downloading. Its authenticated update action includes the review
   fingerprint from the check, covering the advertised release and bundle digest. The client refetches the index and
   requires the same fingerprint before fetching the bundle. The app offers reviewed rollback and staged cancellation
-  when the root updater has recorded support for them. It publishes a complete `rollback.reviewed` request naming the
+  when the installed root-owned updater declares the reviewed protocol and the installed root-owned path unit watches
+  its request file. This capability is checked again just before publication, independent of the saved release state.
+  The client publishes a complete `rollback.reviewed` request naming the
   current and target releases. The updater checks both names and the requested operation while holding its lock.
   Its path unit also watches that filename. Older updaters ignore it, while legacy `rollback.request` requests continue
   to follow the existing rules.

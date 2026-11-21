@@ -2556,6 +2556,33 @@ class TestCrashSafety(unittest.TestCase):
         )  # asked for through the inbox: not burned, also when finished by recovery
         self.assertEqual(e.state()["stepped_back"], 7)
 
+    def test_rollback_recovery_refuses_inconsistent_state_before_touching_the_live_release(self):
+        names = self.steps_of(scn_rollback_request)
+        for field, value in (("serial", 6), ("release", release_name(6)), ("to", release_name(0))):
+            with self.subTest(field=field):
+                env, _, _ = self.fault_run(scn_rollback_request, names.index("rollback-txn"), "crash", "inbox")
+                state = env.state()
+                state["txn"][field] = value
+                wr(os.path.join(env.var, "state.json"), json.dumps(state))
+                live = env.live()
+                with self.assertRaisesRegex(U.Fatal, "does not match the installed and previous releases"):
+                    env.updater().apply_inbox()
+                self.assertEqual(env.live(), live, "link, overlays, and service calls remained unchanged")
+                self.assertEqual(env.state()["txn"], state["txn"], "the inconsistent transaction is kept for repair")
+                self.assertEqual(env.status()["phase"], "failed")
+
+    def test_rollback_recovery_accepts_a_link_already_switched_and_a_legacy_transaction(self):
+        names = self.steps_of(scn_rollback_request)
+        env, _, _ = self.fault_run(scn_rollback_request, names.index("rollback-switched"), "crash", "inbox")
+        state = env.state()
+        self.assertEqual(env.live()["link"].split("/")[-1], state["txn"]["to"])
+        state["txn"].pop("requested")
+        wr(os.path.join(env.var, "state.json"), json.dumps(state))
+        self.assertEqual(env.updater().apply_inbox(), 0)
+        self.assertEqual(env.consistent(), 6)
+        self.assertEqual(env.state()["failed"], [7], "legacy manual transactions burn the abandoned serial")
+        self.assertIsNone(env.state()["txn"])
+
     def test_crash_during_recovery_then_recovery_again(self):
         names = self.steps_of(scn_app)
         e0, _, _ = self.fault_run(scn_app, names.index("switched"), "crash", "inbox")

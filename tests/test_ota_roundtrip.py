@@ -355,8 +355,19 @@ class World:
         # The phone's opt-in to the update site.
         self.url = "http://127.0.0.1:%d/latest.json" % self.httpd.server_address[1]
         wr(self.update_json, json.dumps({"url": self.url, "auto_check": False, "allow_lan_http": True}))
+        installed_updater = os.path.join(r, "usr/libexec/opos-updater/opos-updater")
+        installed_path = os.path.join(r, "etc/systemd/system/opos-update.path")
+        wr(installed_updater, UPDATER.read_bytes(), 0o755)
+        wr(installed_path, (PKG / "updater/opos-update.path").read_bytes())
         self.client = uc.UpdateClient(
-            paths=uc.Paths(config=self.update_json, root=self.var, revision=os.path.join(self.opt_link, "REVISION")),
+            paths=uc.Paths(
+                config=self.update_json,
+                root=self.var,
+                revision=os.path.join(self.opt_link, "REVISION"),
+                updater=installed_updater,
+                update_path_unit=installed_path,
+                trusted_uid=self.cfg.trusted_uid,
+            ),
             limits=uc.Limits(io_timeout=10.0, index_deadline=20.0, bundle_deadline=60.0),
         )
         # Boot: the boot unit writes state.json, then opos-server starts from the release the symlink names.

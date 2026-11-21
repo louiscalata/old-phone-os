@@ -70,6 +70,8 @@ CHUNK = 64 * 1024
 BUNDLE_EXT = ".opos-update"
 ROLLBACK_REQUEST = "rollback.request"
 REVIEWED_ROLLBACK = "rollback.reviewed"
+REVIEWED_PROTOCOL_MARKER = b"REVIEWED_ROLLBACK_PROTOCOL = 1"
+REVIEWED_PATH_WATCH = b"PathExists=/var/lib/opos-update/inbox/rollback.reviewed"
 CANCEL_STAGED = (
     b"cancel-staged"  # what rollback.request holds to cancel a staged update and nothing else (empty: go back)
 )
@@ -126,6 +128,9 @@ class Paths:
     config: str = "/etc/opos/update.json"
     root: str = "/var/lib/opos-update"
     revision: str = "/opt/opos/REVISION"
+    updater: str = "/usr/libexec/opos-updater/opos-updater"
+    update_path_unit: str = "/etc/systemd/system/opos-update.path"
+    trusted_uid: int = 0
 
     @property
     def inbox(self) -> str:
@@ -206,6 +211,21 @@ def _read_small(path: str, cap: int = MAX_SMALL) -> bytes:
     if len(data) > cap:
         raise ValueError("file too large")
     return data
+
+
+def _trusted_file(path: str, uid: int, cap: int, *, executable: bool = False) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        with os.fdopen(os.open(path, flags), "rb") as f:
+            mode = os.fstat(f.fileno())
+            if not stat.S_ISREG(mode.st_mode) or mode.st_uid != uid or mode.st_mode & 0o022:
+                return b""
+            if executable and not mode.st_mode & stat.S_IXUSR:
+                return b""
+            data = f.read(cap + 1)
+            return data if len(data) <= cap else b""
+    except OSError:
+        return b""
 
 
 def _int(v):
@@ -369,9 +389,7 @@ def is_review_key(action: str, key) -> bool:
 
 
 def rollback_review(state: dict, current: dict, staged, previous) -> dict | None:
-    """The exact transition offered by a root updater that understands guarded inbox requests."""
-    if type(state.get("reviewed_rollback")) is not int or state["reviewed_rollback"] != 1:
-        return None
+    """The transition described by the state file. Support is checked against the installed files separately."""
     kind, target = ("cancel", staged) if staged is not None else ("rollback", previous)
     if not isinstance(target, dict) or (kind == "rollback" and state.get("stepped_back") is not None):
         return None
@@ -522,6 +540,24 @@ class UpdateClient:
             "error": None,
         }
 
+    def supports_reviewed_rollback(self) -> bool:
+        paths = self.paths
+        updater = _trusted_file(paths.updater, paths.trusted_uid, 256 * 1024, executable=True)
+        if REVIEWED_PROTOCOL_MARKER not in updater.splitlines():
+            return False
+        unit = _trusted_file(paths.update_path_unit, paths.trusted_uid, 8 * 1024)
+        in_path, watching = False, False
+        for line in unit.splitlines():
+            line = line.strip()
+            if line.startswith(b"["):
+                in_path = line == b"[Path]"
+            elif in_path and line.startswith(b"PathExists="):
+                if line == b"PathExists=":
+                    watching = False
+                elif line == REVIEWED_PATH_WATCH:
+                    watching = True
+        return watching
+
     def snapshot(self) -> dict:
         """Everything the page shows. Reads local files only; never touches the network."""
         avail = self.available()
@@ -546,7 +582,7 @@ class UpdateClient:
         )
         if staged is not None:
             rollback["staged"] = staged
-        if st and st["review"] and rollback["possible"] and not requested:
+        if st and st["review"] and rollback["possible"] and not requested and self.supports_reviewed_rollback():
             rollback["review"] = st["review"]
         return {
             "available": avail,
@@ -922,6 +958,8 @@ class UpdateClient:
                 item.write(expected.encode("ascii"))
                 item.flush()
                 os.fsync(item.fileno())
+            if not self.supports_reviewed_rollback():
+                raise UpdateError("review_changed", "This updater no longer supports reviewed rollback requests.", 409)
             os.link(part, name)  # publish the whole request without replacing a concurrent one
         except FileExistsError as exc:
             raise UpdateError("pending", "An updater request is already queued.", 409) from exc

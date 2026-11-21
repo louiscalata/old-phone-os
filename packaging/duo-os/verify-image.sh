@@ -226,6 +226,7 @@ ota_updater_ok() {
     u=$r/usr/libexec/opos-updater/opos-updater
     [ -f "$u" ] && [ ! -L "$u" ] && [ -x "$u" ] && [ "$(stat -c %a "$u")" = 755 ] \
         && [ "$(head -n 1 "$u")" = '#!/usr/bin/python3 -IB' ] \
+        && grep -qx 'REVIEWED_ROLLBACK_PROTOCOL = 1' "$u" \
         && python3 -I -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$u"
 }
 ota_signers_ok() {

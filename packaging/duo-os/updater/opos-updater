@@ -42,6 +42,7 @@ NAMESPACE = 'opos-update'
 PRINCIPAL = 'opos-release'
 SERVER_UNIT = 'opos-server.service'
 SAFE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'}
+MAX_SERIAL = 2**31 - 1
 RELEASE_RE = re.compile(r'^(\d{1,10})-([0-9a-f]{12})\Z')  # a serial is at most 2**31 - 1, ten digits
 HEX64 = re.compile(r'^[0-9a-f]{64}\Z')
 HEX40 = re.compile(r'^[0-9a-f]{40}\Z')
@@ -60,6 +61,8 @@ MAX_INDEX = 16 << 20
 BLOCK = 512                # the tar block size
 MAX_REQUEST = 64           # bytes of a request file that are read
 CHUNK = 1 << 20
+# Read by the unprivileged update client from this installed executable, never from persisted state.
+REVIEWED_ROLLBACK_PROTOCOL = 1
 LEGACY_REQUEST, REVIEWED_REQUEST = 'rollback.request', 'rollback.reviewed'
 REQUEST_ROLLBACK, CANCEL_STAGED = 'rollback', 'cancel-staged'  # what inbox/rollback.request can ask for
 Entry = collections.namedtuple('Entry', 'kind path tree sha256 size mode')  # kind: app | overlay
@@ -340,7 +343,7 @@ def parse_manifest(raw, cfg):
         raise Reject('manifest has missing or unknown keys')
     if _int(m['format'], 1, 1, 'format') != 1:
         raise Reject('unsupported format')
-    _int(m['serial'], 1, 2**31 - 1, 'serial')
+    _int(m['serial'], 1, MAX_SERIAL, 'serial')
     _str(m['version'], VERSION_RE, 'version')
     _str(m['revision'], HEX40, 'revision')
     _int(m['requires_base'], 1, 10**6, 'requires_base')
@@ -761,7 +764,7 @@ class Updater:
         tr = self.st['trial']
         if tr and tr.get('release') != self.st['current']['release']:
             self.st['trial'] = None
-        self.st['reviewed_rollback'] = 1
+        self.st.pop('reviewed_rollback', None)  # obsolete capability copied by earlier image versions
         self.save()
         self.recover(restart)
         self.tidy()
@@ -790,7 +793,9 @@ class Updater:
         if not txn:
             self.settle_status()
             return
-        self.log('recovering an interrupted %s of serial %s' % (txn['kind'], txn['serial']))
+        if not isinstance(txn, dict) or txn.get('kind') not in ('rollback', 'apply'):
+            raise Fatal('the interrupted update transaction is unreadable')
+        self.log('recovering an interrupted %s of serial %s' % (txn['kind'], txn.get('serial')))
         if txn['kind'] == 'rollback':
             self.finish_rollback(restart, 'finished an interrupted rollback')
         else:
@@ -1509,26 +1514,66 @@ class Updater:
                 self.status('failed', 'rollback refused: this phone already went back from update %d; install an update first' % st['stepped_back'])
             return staged
         target = st['previous'][0]
-        if not os.path.isdir(os.path.join(self.cfg.releases, target['release'])):
-            if not staged:
-                self.status('failed', 'the previous release %s is no longer on disk' % target['release'])
+        source_name = self.rollback_release(st['current'])
+        target_name = self.rollback_release(target)
+        if not source_name or not target_name or st['current']['serial'] <= target['serial']:
+            self.status('failed', 'the installed or previous release record is invalid')
             return staged
-        st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': st['current']['release'], 'to': target['release'],
+        if not os.path.isdir(os.path.join(self.cfg.releases, target_name)):
+            if not staged:
+                self.status('failed', 'the previous release %s is no longer on disk' % target_name)
+            return staged
+        st['txn'] = {'kind': 'rollback', 'serial': st['current']['serial'], 'release': source_name, 'to': target_name,
                      'requested': bool(requested)}
         self.save()
         self.step('rollback-txn')
         self.finish_rollback(restart, reason)
         return True
 
+    @staticmethod
+    def rollback_release(entry):
+        if isinstance(entry, dict) and type(entry.get('serial')) is int:
+            name = entry.get('release')
+            match = RELEASE_RE.fullmatch(name) if isinstance(name, str) else None
+            if match and int(match.group(1)) == entry['serial'] and 0 <= entry['serial'] <= MAX_SERIAL:
+                return name
+        return None
+
+    def rollback_endpoints(self, txn):
+        st = self.st
+        current = st['current']
+        target = st['previous'][0] if st['previous'] else None
+        source_name, target_name = self.rollback_release(current), self.rollback_release(target)
+        error = 'the interrupted rollback does not match the installed and previous releases'
+        if (not source_name or not target_name or current['serial'] <= target['serial']
+                or type(txn.get('serial')) is not int or txn['serial'] != current['serial']
+                or txn.get('release') != source_name or txn.get('to') != target_name
+                or type(txn.get('requested', False)) is not bool or st['pending_boot'] is not None):
+            raise Fatal(error)
+        releases = os.path.realpath(self.cfg.releases)
+        source_dir, target_dir = (os.path.join(releases, name) for name in (source_name, target_name))
+        try:
+            directories = all(stat.S_ISDIR(os.lstat(p).st_mode) for p in (source_dir, target_dir))
+        except OSError:
+            directories = False
+        # A crash can leave the link switched to the target while state still records the source and its transaction.
+        if not directories or os.path.realpath(self.cfg.opt_link) not in (source_dir, target_dir):
+            raise Fatal(error)
+        return source_dir, target_name
+
     def finish_rollback(self, restart, reason):
         st = self.st
         txn = st['txn']
+        try:
+            source_dir, target_name = self.rollback_endpoints(txn)
+        except Fatal as e:
+            self.status('failed', str(e))
+            raise
         self.serial = txn['serial']
         self.status('applying', 'rolling back release %s' % txn['release'])
-        note = self.put_back(os.path.join(self.cfg.releases, txn['release']), txn['to'], 'rollback-switched', restart)
-        if st['previous'] and st['previous'][0]['release'] == txn['to']:
-            st['current'] = st['previous'][0]
-            st['previous'] = st['previous'][1:]
+        note = self.put_back(source_dir, target_name, 'rollback-switched', restart)
+        st['current'] = st['previous'][0]
+        st['previous'] = st['previous'][1:]
         if not txn.get('requested'):
             self.burn(txn['serial'])
         st['stepped_back'] = txn['serial']

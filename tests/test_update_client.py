@@ -1964,6 +1964,37 @@ class Routes(Env):
         self.assertEqual((s, j["code"]), (409, "review_changed"))
         self.assertEqual(self.inbox(), [])
 
+    def test_reviewed_rollback_support_is_checked_again_after_a_downgrade(self):
+        self.state(2, previous=[{"serial": 1, "release": "1-aaaaaaaaaaaa"}])
+        with open(self.paths.state, encoding="utf-8") as f:
+            doc = json.load(f)
+        self.put(self.paths.state, dict(doc, reviewed_rollback=1))
+        updater = os.path.join(self.tmp.name, "opos-updater")
+        unit = os.path.join(self.tmp.name, "opos-update.path")
+        paths = uc.Paths(self.paths.config, self.paths.root, self.paths.revision, updater, unit, os.geteuid())
+        client = uc.UpdateClient(paths)
+        run = self.serve(client)
+        feature = uc.REVIEWED_PROTOCOL_MARKER.decode() + "\n"
+        watch = "[Path]\n" + uc.REVIEWED_PATH_WATCH.decode() + "\n"
+        self.put(updater, feature)
+        os.chmod(updater, 0o700)
+        self.put(unit, watch)
+        review = client.snapshot()["rollback"]["review"]
+        for path, old, new in (
+            (unit, "[Path]\nPathExists=/var/lib/opos-update/inbox/rollback.request\n", watch),
+            (updater, "# Earlier updater\n", feature),
+        ):
+            with self.subTest(path=path):
+                self.put(path, old)
+                self.assertNotIn("review", client.snapshot()["rollback"])
+                s, _, j = self.post(run, "update_rollback", expected=review["key"])
+                self.assertEqual((s, j["code"]), (409, "review_changed"))
+                self.assertEqual(self.inbox(), [], "guarded request never falls back to the legacy filename")
+                self.put(path, new)
+        self.assertEqual(client.snapshot()["rollback"]["review"], review)
+        os.chmod(unit, 0o620)  # noqa: S103 - simulate a unit that untrusted users can write
+        self.assertNotIn("review", client.snapshot()["rollback"])
+
     def test_rollback_through_the_route(self):
         self.state(2, previous=["1-aaaaaaaaaaaa"])
         run = self.serve()
