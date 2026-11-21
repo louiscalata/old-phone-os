@@ -181,12 +181,12 @@ elsewhere the server refuses them and the screen shows its sentence.
 - Nothing is asked while the screen is not showing. On opening it reads the radios once, then scans once; while it shows
   it reads the radios again every 10 s and never rescans on its own. Opening it, polling and choosing a row change
   nothing.
-- Forget, Disconnect and Turn Wi-Fi off take two taps ("Forget this network?", "Disconnect now?", "Turn Wi-Fi off
-  now?"); choosing another row, Cancel or leaving the screen disarms them. Every newer radios read or list that is
+- Forget, Disconnect and Turn Wi-Fi off open a separate review with a named action and a Cancel button. Leaving
+  the screen closes the review. Every newer radios read or list that is
   drawn finds the chosen row again by name and takes its new state, or closes the choice when the row is gone; a Forget
   or Disconnect prompt is dropped when that row's state changed or when the radios name another connected network.
   The server's disconnect names no network (it drops whatever is connected), and the radios read on screen can be up
-  to 10 s old, so the second Disconnect tap sends nothing by itself. If the read on screen names another network, or
+  to 10 s old, so confirming Disconnect first requests a fresh reading. If the read on screen names another network, or
   none is known, it stops there and says why. Otherwise the screen reads the radios again (skipping the server's
   few-second cache), says "Checking that <network> is still the connected network...", and stays busy; it sends the
   disconnect only when that read, asked after the tap, still names the network on the prompt, and then says
@@ -205,8 +205,9 @@ elsewhere the server refuses them and the screen shows its sentence.
   to its idle buttons). The rows follow the same rule: when a newer list puts another network in a place, or changes
   what a tap there would offer (for example from "needs a password" to "saved"), a tap on a row in the next 1.5 s
   chooses nothing and the screen says "The list just changed. Check it, then tap the network again." A list that only
-  brings new signal strengths, in the same order, holds nothing. The owner's own taps start no hold, so the second tap
-  of a prompt they armed, or Join right after choosing a row, acts at once.
+  brings new signal strengths, in the same order, holds nothing. The owner's own taps start no hold, so a tap
+  on a confirmation they opened, or Join right after choosing a row, acts at once. A review that closes after a
+  status change holds the controls it reveals for the same 1.5 s.
 - Each visit to the screen is numbered; leaving starts a new one. A radios read or a list sent for an earlier visit is
   dropped and starts nothing. What a visit read is forgotten when the screen is left, because the phone can move to
   another network or the Wi-Fi be switched while the screen is not showing (the browser's `/network` page, or
