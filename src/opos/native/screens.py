@@ -1444,19 +1444,53 @@ class SetSecurity(SettingsSection):
 
 class SetDisplay(SettingsSection):
     name, title = "set_display", "Display"
+    BRIGHTNESS_STEPS = 10
 
     def build(self):
+        self.bright_line = label("", "mid")
+        self.steps = tuple(
+            button(f"{step * 10}%", lambda value=step: self.pick_brightness(value), "brightness-step")
+            for step in range(1, self.BRIGHTNESS_STEPS + 1)
+        )
+        self.bright_controls = hbox(*self.steps, spacing=3)
         self.theme_line = label("", "mid")
         self.theme_source = label("", "dim")
         self.dark = button("Dark", lambda: self.pick_theme("dark"))
         self.paper = button("Paper", lambda: self.pick_theme("paper"))
-        read = reading(label(self.title, "head"), self.theme_line, self.theme_source, self.note)
-        act = column(bottom=(hbox(self.dark, self.paper), bar(self.back_to_settings())))
+        read = reading(label(self.title, "head"), self.bright_line, self.theme_line, self.theme_source, self.note)
+        act = column(
+            bottom=(
+                self.bright_controls,
+                hbox(self.dark, self.paper),
+                bar(self.back_to_settings()),
+            )
+        )
+        self.paint_brightness(None)
         self.paint_theme()
         return read, act
 
     def enter(self):
+        self.paint_brightness(self.shell.brightness_level())
         self.paint_theme()
+
+    def paint_brightness(self, level):
+        step = 0
+        if level is None:
+            self.bright_line.set_label("Brightness unavailable")
+        else:
+            step = max(1, round(level * self.BRIGHTNESS_STEPS))
+            self.bright_line.set_label(f"Brightness {step * 10}%")
+        for i, control in enumerate(self.steps, start=1):
+            (control.add_css_class if i <= step else control.remove_css_class)("on")
+        self.bright_controls.set_sensitive(level is not None)
+
+    def pick_brightness(self, step):
+        if self.shell.brightness_level() is None:
+            self.paint_brightness(None)
+            return
+        done = self.shell.set_brightness(step / self.BRIGHTNESS_STEPS)
+        self.say("" if done else "Brightness could not be set on every panel.")
+        self.paint_brightness(self.shell.brightness_level())
 
     def paint_theme(self):
         theme, fixed = self.shell.theme, self.shell.theme_fixed

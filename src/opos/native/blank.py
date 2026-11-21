@@ -11,8 +11,8 @@ and nothing is ever read from debugfs. Nothing here starts a program, so nothing
 session or the phone.
 
 The phone must never be left dark:
-  - the values are saved (and the file is on disk) before any panel is written, and a saved file is never replaced, so
-    a second blank, another shell, or a crash between the two steps cannot leave zeros as the "saved" brightness;
+  - blanking saves values before a panel is darkened and keeps any existing saved file. A second blank or a crash
+    cannot save zeros. An explicit brightness choice may replace the saved levels with positive values;
   - a restored value is never 0 (at least LOWEST, at most the max_brightness read from that panel; there is no fixed
     upper clamp), and a malformed saved file restores DEFAULTS;
   - a panel that is missing or cannot be written while restoring counts as failed: the saved file is kept and `failed`
@@ -141,6 +141,48 @@ class Blanker:
         value = max(LOWEST, value)
         return min(value, top) if top and top >= LOWEST else value
 
+    def _reference_max(self):
+        maximum = self._number(os.path.join(self.panel_dir(PANELS[1]), "max_brightness"))
+        return maximum if maximum is not None and maximum > 0 else 255
+
+    def level(self):
+        """Read a lit panel's brightness relative to the calibrated reference panel."""
+        maximum = self._reference_max()
+        for index in (1, 0):
+            value = self.read(PANELS[index])
+            if value is not None and value > 0:
+                return min(1.0, value * DEFAULTS[1] / DEFAULTS[index] / maximum)
+        return None
+
+    def set_level(self, fraction):
+        """Adjust only lit panels and preserve the selected level for a pending restore."""
+        if type(fraction) not in (int, float) or not 0 <= fraction <= 1:
+            return False
+        current = [self.read(panel) for panel in PANELS]
+        if not any(value is not None and value > 0 for value in current):
+            return False
+        saved = os.path.lexists(self.saved_path)
+        if saved and (
+            unsafe_dir(self.run_dir) or os.path.islink(self.saved_path) or not os.path.isfile(self.saved_path)
+        ):
+            return False
+        reference = fraction * self._reference_max()
+        target = tuple(
+            self.lit(panel, round(reference * default / DEFAULTS[1])) for panel, default in zip(PANELS, DEFAULTS)
+        )
+        failed = []
+        for panel, value, now in zip(PANELS, target, current):
+            if now is not None and now > 0:
+                self._write(panel, value, failed)
+        if saved and not failed:
+            try:
+                self._save(target, replace=True)
+            except OSError as err:
+                failed.append("saved file: %s" % (err.strerror or err))
+        if failed:
+            self.say("cannot set the brightness: " + "; ".join(failed))
+        return not failed
+
     def pending(self):
         """Whether the screens may still be dark from a blank: the saved file is there, or the last restore failed."""
         return os.path.lexists(self.saved_path) or bool(self.failed)
@@ -159,9 +201,8 @@ class Blanker:
             failed.append("%s: %s" % (panel, err.strerror or err))
             return False
 
-    def _save(self, values):
-        """Write the saved file, mode 0600, and put it in place only if there is none (a hard link never replaces).
-        Returns False when a saved file is already there; raises OSError when it cannot be written."""
+    def _save(self, values, *, replace=False):
+        """Install a private saved file. Only an explicit brightness change may replace an existing one."""
         fd, tmp = tempfile.mkstemp(prefix="." + SAVED_NAME + ".", dir=self.run_dir)
         try:
             with os.fdopen(fd, "w", encoding="ascii") as f:
@@ -169,6 +210,9 @@ class Blanker:
                 f.flush()
                 os.fsync(f.fileno())
             os.chmod(tmp, 0o600)
+            if replace:
+                os.replace(tmp, self.saved_path)
+                return True
             try:
                 os.link(tmp, self.saved_path)
             except FileExistsError:

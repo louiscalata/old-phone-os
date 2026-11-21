@@ -57,6 +57,10 @@ the colors. The two-pane layout, focus, and black area on the unused screen in b
 The shell saves `theme` alongside `hand` in `$XDG_CONFIG_HOME/opos/shell.json` or `~/.config/opos/shell.json`.
 A valid `OPOS_THEME=dark` or `OPOS_THEME=paper` fixes the palette for the session without updating the saved choice.
 
+Settings → Display also reads the lit backlight and offers ten brightness steps when it can read a level. Adjusting
+brightness keeps a panel that is already dark at zero. If a restore is pending, the saved restore levels reflect the
+new choice and remain above zero. Brightness controls have not been checked on the Duo.
+
 ## The rules the screens follow
 
 - Every frame is a complete, accurate snapshot, and each tap is answered in one frame. Nothing slides or fades:

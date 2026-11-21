@@ -418,6 +418,12 @@ class Shell(Gtk.ApplicationWindow):
         if save:
             save_hand(hand)
 
+    def brightness_level(self):
+        return None if self.lid_closed else self.blanker.level()
+
+    def set_brightness(self, fraction):
+        return not self.lid_closed and self.blanker.set_level(fraction)
+
     def set_theme(self, theme, save=True):
         """Apply a live palette. theme_kept reports the result of a requested preference write."""
         if theme not in THEMES or self.theme_fixed is not None:

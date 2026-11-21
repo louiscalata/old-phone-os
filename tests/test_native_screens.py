@@ -268,6 +268,7 @@ class Screens(unittest.TestCase):
             shell.theme, shell.theme_kept = theme, False
 
         shell.set_theme = apply
+        shell.brightness_level = lambda: None
         settings = self.page(self.screens.Settings)
         display = self.page(self.screens.SetDisplay)
         self.assertFalse(display.tile, "Display is a Settings page")
@@ -282,6 +283,32 @@ class Screens(unittest.TestCase):
         self.assertFalse(display.dark.sensitive)
         self.assertFalse(display.paper.sensitive)
         self.assertIn("OPOS_THEME", display.theme_source.get_label())
+
+    def test_display_disables_unknown_brightness_and_reports_the_lit_level(self):
+        shell = self.shell
+        shell.theme, shell.theme_fixed, shell.theme_kept = "dark", None, True
+        level, picked = [None], []
+
+        def apply(fraction):
+            picked.append(fraction)
+            level[0] = fraction
+            return True
+
+        shell.brightness_level = lambda: level[0]
+        shell.set_brightness = apply
+        page = self.page(self.screens.SetDisplay)
+        page.enter()
+        self.assertFalse(page.bright_controls.sensitive)
+        page.pick_brightness(6)
+        self.assertEqual(picked, [])
+        level[0] = 0.4
+        page.enter()
+        self.assertTrue(page.bright_controls.sensitive)
+        self.assertEqual(page.bright_line.get_label(), "Brightness 40%")
+        page.pick_brightness(6)
+        self.assertEqual(picked, [0.6])
+        self.assertEqual(page.bright_line.get_label(), "Brightness 60%")
+        self.assertEqual([i for i, b in enumerate(page.steps, 1) if "on" in b.css], list(range(1, 7)))
 
     # --- Date & time ----------------------------------------------------------------------------------------------
 
