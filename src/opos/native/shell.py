@@ -192,6 +192,12 @@ class Core:
         return json.load(self._open("/api/" + name, {"X-OPOS-Token": self.token}))
 
 
+def paint_settings_posture(shell):
+    page = shell.pages.get("settings")
+    if page is not None and hasattr(page, "paint_posture"):
+        page.paint_posture()
+
+
 class Shell(Gtk.ApplicationWindow):
     def __init__(self, app, probe=False):
         super().__init__(application=app, title="OPOS")
@@ -748,9 +754,7 @@ class Shell(Gtk.ApplicationWindow):
         if self.posture != was:
             print("opos shell: posture %s -> %s (hinge %s)" % (was, self.posture, self.angle), file=sys.stderr, flush=True)
         self.fit_back()
-        page = self.pages.get("settings")
-        if page is not None and hasattr(page, "paint_posture"):
-            page.paint_posture()
+        paint_settings_posture(self)
 
     def fit_back(self):
         """Enter or leave back mode as the posture and the lid now say (posture.one_screen). One change, one frame."""
@@ -810,6 +814,7 @@ class Shell(Gtk.ApplicationWindow):
                 self.back = None
                 self.two_rows()
                 self.enter_back()
+                paint_settings_posture(self)
         return False
 
     def hinge_changed(self, angle):
