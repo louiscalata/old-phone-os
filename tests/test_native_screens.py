@@ -109,6 +109,7 @@ class FakeShell:
         self.core, self.asked, self.went, self.pages = Core(), [], [], {}
         self.apps = [("phone", "Phone"), ("messages", "Messages")]
         self.known = True
+        self.lid_closed = None
 
     def ask(self, action, done=None, **fields):
         n = self.seq.issue()
@@ -231,6 +232,33 @@ class Screens(unittest.TestCase):
         self.assertEqual(page.readings["Level"].get_label(), "Level: 0% · Practice")
         self.assertEqual(page.readings["Charging"].get_label(), "Charging: No · Practice")
         self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: 0.0 °C · Practice")
+
+    def test_sound_reports_only_explicit_practice_volume(self):
+        page = self.page(self.screens.SetSound)
+        page.enter()
+        self.assertEqual(page.level.get_label(), "Practice volume: Not reported")
+        page.show({"volume_keys": {"percent": 70}})
+        self.assertEqual(page.level.get_label(), "Practice volume: Not reported")
+        page.show({"volume_keys": {"simulated": True, "percent": True}})
+        self.assertEqual(page.level.get_label(), "Practice volume: Not reported")
+        page.show({"volume_keys": {"simulated": True, "percent": 0}})
+        self.assertEqual(page.level.get_label(), "Practice volume: 0%")
+        self.assertEqual(self.work, [])
+
+    def test_security_reports_the_lid_and_uses_the_existing_native_lock_screen(self):
+        page = self.page(self.screens.SetSecurity)
+        page.enter()
+        self.assertEqual(page.lid.get_label(), "Lid: Not reported")
+        self.shell.lid_closed = False
+        page.tick()
+        self.assertEqual(page.lid.get_label(), "Lid: Open")
+        self.shell.lid_closed = True
+        page.tick()
+        self.assertEqual(page.lid.get_label(), "Lid: Closed")
+        page.show_lock()
+        self.assertEqual(self.shell.went, ["lock"])
+        self.assertEqual(self.shell.asked, [])
+        self.assertEqual(self.work, [])
 
     # --- Date & time ----------------------------------------------------------------------------------------------
 
@@ -594,6 +622,8 @@ class Screens(unittest.TestCase):
             "set_about",
             "set_hand",
             "set_battery",
+            "set_sound",
+            "set_security",
             "set_time",
             "network",
         ]
@@ -613,6 +643,8 @@ class Screens(unittest.TestCase):
                 "set_about",
                 "set_hand",
                 "set_battery",
+                "set_sound",
+                "set_security",
                 "set_time",
                 "network",
             ],
@@ -633,6 +665,8 @@ class Screens(unittest.TestCase):
                 "set_about",
                 "set_hand",
                 "set_battery",
+                "set_sound",
+                "set_security",
                 "set_time",
                 "network",
             ],
@@ -654,6 +688,8 @@ class Screens(unittest.TestCase):
                 "set_about",
                 "set_hand",
                 "set_battery",
+                "set_sound",
+                "set_security",
                 "set_time",
                 "network",
             ],
@@ -672,6 +708,8 @@ class Screens(unittest.TestCase):
                 "set_about",
                 "set_hand",
                 "set_battery",
+                "set_sound",
+                "set_security",
                 "set_time",
                 "network",
             ],

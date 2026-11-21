@@ -1364,9 +1364,8 @@ class SetHand(SettingsSection):
         self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
 
 
-class SetBattery(Page):
+class SetBattery(SettingsSection):
     name, title = "set_battery", "Battery"
-    tile = False
 
     def build(self):
         self.summary = label("", "mid")
@@ -1377,7 +1376,7 @@ class SetBattery(Page):
         action = column(
             bottom=(
                 button("Open the battery sheet", lambda: self.shell.set_shade(True), "side"),
-                bar(button("◀ Settings", lambda: self.shell.go("settings"))),
+                bar(self.back_to_settings()),
             )
         )
         self.show(self.shell.snap)
@@ -1390,6 +1389,57 @@ class SetBattery(Page):
             widget.set_label(f"{name}: {text}")
         self.policy.set_label(policy)
         self.policy.set_visible(bool(policy))
+
+
+class SetSound(SettingsSection):
+    name, title = "set_sound", "Sound"
+
+    def build(self):
+        self.level = label("", "mid")
+        read = reading(
+            label(self.title, "head"),
+            label("OPOS has no media or ringer volume control. The volume keys change a practice number.", "mid"),
+            self.level,
+        )
+        self.show(self.shell.snap)
+        return read, column(bottom=(bar(self.back_to_settings()),))
+
+    def show(self, snap):
+        state = snap.get("volume_keys") if isinstance(snap, dict) else None
+        percent = state.get("percent") if isinstance(state, dict) and state.get("simulated") is True else None
+        value = f"{percent}%" if type(percent) is int and 0 <= percent <= 100 else logic.NOT_REPORTED
+        self.level.set_label(f"Practice volume: {value}")
+
+
+class SetSecurity(SettingsSection):
+    name, title = "set_security", "Security"
+
+    def build(self):
+        self.lid = label("", "mid")
+        self.tick()
+        read = reading(
+            label(self.title, "head"),
+            label(
+                "The native lock screen keeps the interface covered. OPOS uses the browser to show a configured PIN.",
+                "mid",
+            ),
+            self.lid,
+        )
+        action = column(
+            bottom=(
+                button("Show lock screen", self.show_lock, "side"),
+                bar(self.back_to_settings()),
+            )
+        )
+        return read, action
+
+    def tick(self):
+        closed = self.shell.lid_closed
+        state = {True: "Closed", False: "Open"}.get(closed, logic.NOT_REPORTED)
+        self.lid.set_label(f"Lid: {state}")
+
+    def show_lock(self):
+        self.shell.go("lock")
 
 
 class SetTime(SettingsSection):
@@ -2241,6 +2291,8 @@ PAGES = (
     SetAbout,
     SetHand,
     SetBattery,
+    SetSound,
+    SetSecurity,
     SetTime,
     Network,
 )

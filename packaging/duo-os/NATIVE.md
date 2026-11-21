@@ -126,6 +126,11 @@ or the owner supplied it. Missing data is shown as **Not reported**.
 The page shows the daily goal and its power policy when the server supplies them. Open the battery sheet from the action pane.
 Viewing Battery does not send a request of its own or change the daily goal.
 
+## Sound and Security
+
+Sound shows the practice volume when the enabled volume-key service reports it. The keys do not change audio output.
+Security shows the last lid report and can open the native lock screen. PIN handling remains in the browser.
+
 ## Date & time
 
 Open **Date & time** from native Settings. Pick a region, choose a city and use **Use this zone** to save it. The selected
