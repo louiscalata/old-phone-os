@@ -252,8 +252,12 @@ class TestDuoOsReadme(unittest.TestCase):
             "times out after the kernel boot",
             "Do not run the script again to retry",
             "a second kernel boot",
-            "no attach-only mode",
-            "ssh to it by hand",
+            "read-only `-AttachOnly` mode",
+            "uses the PC's normal routing",
+            "An open port is reachability only.",
+            "matching, already trusted host key",
+            "returned a TCP 22 reply from the connected Duo",
+            "revision and update status read remains **NOT_RUN**",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, issues)
@@ -261,7 +265,8 @@ class TestDuoOsReadme(unittest.TestCase):
         script = read("deploy/duo-opos-boot.ps1")
         self.assertIn("LastIndexOf('.')", script)
         self.assertEqual(script.count("Fb boot"), 2)
-        self.assertNotRegex(script, r"(?i)attach|-Resume|-SkipChain")
+        self.assertIn("if ($PSCmdlet.ParameterSetName -eq 'Attach')", script)
+        self.assertNotRegex(script, r"(?i)-Resume|-SkipChain")
 
     def test_restore_step_one_is_hedged_and_step_two_reconciles_the_reset_with_the_button_steps(self):
         restore = section(self.text, "## Restore to Android")
