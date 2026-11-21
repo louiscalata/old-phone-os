@@ -1875,8 +1875,8 @@ class Network(SettingsSection):
 
     Nothing is asked while the page is not the one showing. On entering: the radios once, then one scan; while it shows,
     the radios again every POLL_MS (never a rescan). Nothing changes the Wi-Fi unless the owner taps for it: Forget,
-    Disconnect and Turn Wi-Fi off take two taps, as deleting does elsewhere, and Wi-Fi is never switched while its state
-    is not known. Each drawn radios read or list finds the chosen row again by name (rechoose); a Forget or Disconnect
+    Disconnect and Turn Wi-Fi off require a separate confirmation that names the change. Wi-Fi is switched only with
+    known radio state. Each drawn radios read or list finds the chosen row again by name (rechoose); a Forget or Disconnect
     prompt is dropped when that row changes or the connected network does. Disconnect names no network to the core, so
     its confirming tap sends nothing by itself: if the radios read drawn names the prompt's network as the connected
     one, the radios are read again (skipping the core's cache), the page is busy meanwhile, and the disconnect is sent
@@ -1891,8 +1891,8 @@ class Network(SettingsSection):
     for what it said before. The Wi-Fi button is held as well when it appears by itself (the pane goes back to idle
     because a newer list dropped the chosen row, or a change's answer closed the choice). The rows follow the same rule:
     when a newer list puts another network in a place, or changes what a tap on a place would offer, a tap on a row in
-    the next HOLD_S seconds chooses nothing and says the list changed (netlogic.LIST_CHANGED). The owner's own taps start
-    no hold, so a prompt they armed is confirmed by the very next tap and a row they chose is joined at once. The radios
+    the next HOLD_S seconds chooses nothing and says the list changed (netlogic.LIST_CHANGED). When a review closes
+    on an update, the controls it reveals are held too. The owner can confirm a review they opened without waiting. The radios
     and the scan each keep their own order (logic.Sequence): an older answer never replaces a newer one. Their request
     numbers come from one count (ask()), so between a radios read and a list it is known which was asked later: whether
     the chosen row is the connected one follows the later-asked of the two drawn (current()), so a list asked before
@@ -1926,6 +1926,7 @@ class Network(SettingsSection):
     WAIT = {"net_status": 20, "net_scan": 30, "net_join": 100, "net_forget": 45, "net_wifi": 35}
     CHANGES = ("net_join", "net_forget", "net_wifi")
     HOLD_S = 1.5  # after a button changes by itself (not by the owner's tap), taps on it are ignored this long
+    REVIEW_CONTROLS = ("rows", "main", "wifi", "forget")
 
     def build(self):
         self.scan_data, self.status_data, self.chosen, self.other = None, None, None, False
@@ -1934,7 +1935,7 @@ class Network(SettingsSection):
         self.held = {}  # button -> until when a tap on it is ignored (hold())
         self.seen, self.by_owner = {}, False  # what each button last said (shown()); inside an owners_tap handler
         self.radios, self.found = logic.Sequence(), logic.Sequence()  # the order of the status and of the scan answers
-        self.sure = logic.Confirm()  # Forget, Disconnect and Turn Wi-Fi off ask twice
+        self.armed = None  # action and, for row actions, the SSID the owner reviewed
         self.secret, self.ssid_entry = netlogic.Secret(), logic.Entry(limit=32)
         self.status_n, self.scan_n = 0, 0  # the request numbers (ask()) of the radios read and of the list now drawn
         self.checking = None  # (network, request number) while a confirming Disconnect tap's read waits
@@ -1966,8 +1967,16 @@ class Network(SettingsSection):
                 bar(self.back_to_settings(), self.main),
             ),
         )
+        self.review_prompt = label("", "mid")
+        self.review_cancel_b = button("Cancel", self.cancel_review, "main")
+        self.review_confirm_b = button("", self.confirm_review)
+        # Put Cancel where Disconnect was, so a second tap at the same place cannot confirm.
+        review = column(bottom=(self.review_prompt, bar(self.review_confirm_b, self.review_cancel_b)))
+        self.actions = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        self.actions.add_named(act, "network")
+        self.actions.add_named(review, "review")
         self.paint_act()
-        return read, act
+        return read, self.actions
 
     # --- what shows ---------------------------------------------------------------------------------------------
     def visible(self):
@@ -2000,29 +2009,62 @@ class Network(SettingsSection):
         self.typed.set_visible(m == "password")
         self.keys.set_visible(m in ("password", "other"))
         self.chips.set_visible(m != "idle")
-        self.forget_b.set_visible(m in ("known", "connected") and bool(row.get("known") or row.get("active")))
-        self.forget_b.set_label("Forget this network?" if self.sure.armed == ("forget", self.ssid()) else "Forget")
+        self.forget_b.set_visible(self.can_forget())
         main = {"idle": "Scan again", "connected": "Disconnect"}.get(m, "Join")
-        if m == "connected" and self.sure.armed == ("disconnect", self.ssid()):
-            main = "Disconnect now?"
         self.main.set_label(main)
         self.shown("main", (main, m, self.ssid()))
         self.main.set_visible(m != "unsupported")
         self.main.set_sensitive(not self.busy)
         self.paint_wifi()
         self.paint_typed()
+        self.paint_review()
+
+    def paint_review(self):
+        match self.armed:
+            case ("forget", ssid):
+                words = (
+                    f"Forget {ssid}? Its saved Wi-Fi settings will be removed. If connected, the phone will disconnect."
+                )
+                confirm = "Yes, forget"
+            case ("disconnect", ssid):
+                words, confirm = f"Disconnect from {ssid}? Wi-Fi stays on.", "Yes, disconnect"
+            case ("wifi-off",):
+                words, confirm = "Turn Wi-Fi off? The phone leaves every Wi-Fi network.", "Yes, turn Wi-Fi off"
+            case _:
+                words, confirm = "", ""
+        opening = self.armed and self.seen.get("review") is None
+        self.shown("review", self.armed)
+        self.review_prompt.set_label(words)
+        self.review_confirm_b.set_label(confirm)
+        self.review_confirm_b.set_sensitive(bool(words) and not self.busy)
+        self.actions.set_visible_child_name("review" if words else "network")
+        if opening:
+            self.review_cancel_b.grab_focus()
+
+    @owners_tap
+    def cancel_review(self):
+        self.armed = None
+        self.paint_act()
+
+    @owners_tap
+    def confirm_review(self):
+        if not self.visible() or self.busy or self.holding("review") or not self.armed:
+            return
+        armed, self.armed = self.armed, None
+        ssid = self.ssid()
+        if armed == ("disconnect", ssid) and self.mode() == "connected":
+            self.confirm_disconnect(ssid)
+        elif armed == ("forget", ssid) and self.can_forget():
+            self.act_on("net_forget", {"ssid": ssid}, "Forgetting...")
+        elif armed == ("wifi-off",) and netlogic.wifi_on(self.status_data) is True:
+            self.act_on("net_wifi", {"mode": "off"}, "Turning Wi-Fi off...")
+        else:
+            self.say(netlogic.CHANGED)
+            self.paint_act()
 
     def paint_wifi(self):
         on = netlogic.wifi_on(self.status_data)
-        says = (
-            "Wi-Fi: not known yet"
-            if on is None
-            else "Turn Wi-Fi on"
-            if on is False
-            else "Turn Wi-Fi off now?"
-            if self.sure.armed == ("wifi-off",)
-            else "Turn Wi-Fi off"
-        )
+        says = "Wi-Fi: not known yet" if on is None else "Turn Wi-Fi on" if on is False else "Turn Wi-Fi off"
         self.wifi.set_label(says)
         self.shown("wifi", (says, self.mode() == "idle"))  # what it says, and whether it is there at all
         self.wifi.set_sensitive(on is not None and not self.busy)
@@ -2049,11 +2091,10 @@ class Network(SettingsSection):
     # --- choosing and typing ------------------------------------------------------------------------------------
     @owners_tap
     def select(self, row):
-        if self.holding("rows", netlogic.LIST_CHANGED):
-            return  # the list changed under the finger: the tap was meant for what was in its place before
+        if self.armed or self.holding("rows", netlogic.LIST_CHANGED):
+            return
         self.drop_check()
         self.secret.clear()
-        self.sure.keep_only(None)
         self.other, self.chosen = False, self.current(row)
         self.keys.numbers(False)
         self.say("")
@@ -2062,14 +2103,15 @@ class Network(SettingsSection):
     @owners_tap
     def scan_row(self):
         """The only row of an empty list: scan again."""
-        if not self.holding("rows", netlogic.LIST_CHANGED):
+        if not self.armed and not self.holding("rows", netlogic.LIST_CHANGED):
             self.scan(True)
 
     @owners_tap
     def other_network(self):
+        if self.armed:
+            return
         self.drop_check()
         self.secret.clear()
-        self.sure.keep_only(None)
         self.ssid_entry.text, self.open_net, self.other, self.chosen = "", False, True, None
         self.focus("name")
         self.paint_act()
@@ -2089,6 +2131,8 @@ class Network(SettingsSection):
 
     @owners_tap
     def key(self, ch):
+        if self.armed:
+            return
         m = self.mode()
         if m == "other" and self.field == "name":
             if ch == "\n":
@@ -2119,7 +2163,7 @@ class Network(SettingsSection):
         """Close the choice. Nothing is sent; the typed password is dropped."""
         self.drop_check()
         self.secret.clear()
-        self.sure.keep_only(None)
+        self.armed = None
         self.ssid_entry.text, self.other, self.chosen, self.open_net = "", False, None, False
         self.paint_act()
 
@@ -2170,7 +2214,10 @@ class Network(SettingsSection):
     def hold(self, which):
         """Button `which` changed by itself, so a tap on it in the next HOLD_S seconds was meant for what it said before:
         it sends nothing and only says the button changed."""
-        self.held[which] = self.now() + self.HOLD_S
+        self.held[which] = until = self.now() + self.HOLD_S
+        if which == "review":
+            for control in self.REVIEW_CONTROLS:
+                self.held[control] = until
 
     def holding(self, which, why=netlogic.CHANGED):
         if self.now() < self.held.get(which, float("-inf")):
@@ -2180,34 +2227,28 @@ class Network(SettingsSection):
 
     @owners_tap
     def main_action(self):
-        if self.holding("main"):
+        if self.armed or self.holding("main"):
             return
         m = self.mode()
         if m == "idle":
             self.scan(True)
-        elif m == "connected":
-            if not self.sure.tap(("disconnect", self.ssid())):
-                self.paint_act()
-                return
-            # The core's disconnect names no network: it drops whatever is connected. So this tap sends nothing yet.
-            # If the radios read drawn already names another network (or none is known), it stops here. Otherwise the
-            # radios are read again, and the disconnect is sent only when that read, asked after this tap, still names
-            # the network the prompt asked about (checked()): the read drawn may be up to POLL_MS old, and the phone may
-            # have moved to another network between the two taps.
-            known, now = netlogic.connected_to(self.status_data)
-            if not known or now != self.ssid():
-                self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
-                self.paint_act()
-                return
-            if self.busy:
-                self.paint_act()
-                return
-            self.busy = True
-            self.say(netlogic.checking(self.ssid()))
+        elif m == "connected" and not self.busy:
+            self.armed = ("disconnect", self.ssid())
             self.paint_act()
-            self.status(fresh=True, check=self.ssid())
         elif m != "unsupported":
             self.join()
+
+    def confirm_disconnect(self, ssid):
+        # The change drops whatever is connected. Get a fresh reading after the confirming tap.
+        known, now = netlogic.connected_to(self.status_data)
+        if not known or now != ssid:
+            self.say(netlogic.DISCONNECT_MOVED if known else netlogic.DISCONNECT_UNKNOWN)
+            self.paint_act()
+            return
+        self.busy = True
+        self.say(netlogic.checking(ssid))
+        self.paint_act()
+        self.status(fresh=True, check=ssid)
 
     def join(self):
         if self.busy:
@@ -2267,7 +2308,7 @@ class Network(SettingsSection):
         # network. Only a refusal before anything ran (netlogic.NOT_SENT: an HTTP 4xx, or nothing sent) leaves them as
         # they were, so only that sets no floor.
         floor = not netlogic.nothing_ran(got)
-        self.sure.keep_only(None)
+        self.armed = None
         self.say(text)
         if self.stale(visit):
             if floor:
@@ -2300,28 +2341,27 @@ class Network(SettingsSection):
         self.status_data, self.status_n = None, 0
         self.lines.set_label(netlogic.REREAD)
 
+    def can_forget(self):
+        row = self.chosen or {}
+        return bool(self.ssid() and self.mode() in ("known", "connected") and (row.get("known") or row.get("active")))
+
     @owners_tap
     def forget(self):
-        ssid = self.ssid()
-        if not ssid:
-            return
-        if self.sure.tap(("forget", ssid)):
-            self.act_on("net_forget", {"ssid": ssid}, "Forgetting...")
-        else:
+        if not self.armed and not self.busy and not self.holding("forget") and self.can_forget():
+            self.armed = ("forget", self.ssid())
             self.paint_act()
 
     @owners_tap
     def toggle_wifi(self):
-        if self.holding("wifi"):
+        if self.armed or self.holding("wifi"):
             return
         on = netlogic.wifi_on(self.status_data)
         if on is None:
-            self.say(netlogic.WIFI_UNKNOWN)  # never switch a radio whose state is not known
+            self.say(netlogic.WIFI_UNKNOWN)
         elif on is False:
             self.act_on("net_wifi", {"mode": "on"}, "Turning Wi-Fi on...")
-        elif self.sure.tap(("wifi-off",)):
-            self.act_on("net_wifi", {"mode": "off"}, "Turning Wi-Fi off...")
-        else:
+        elif not self.busy:
+            self.armed = ("wifi-off",)
             self.paint_act()
 
     def act_on(self, action, fields, doing):
@@ -2390,8 +2430,8 @@ class Network(SettingsSection):
 
     def disarm_row(self):
         """Drop a Forget or Disconnect prompt: what it asked about is no longer what it was."""
-        if self.sure.armed and self.sure.armed[0] in ("forget", "disconnect"):
-            self.sure.keep_only(None)
+        if self.armed and self.armed[0] in ("forget", "disconnect"):
+            self.armed = None
 
     def rechoose(self, row):
         """The chosen row is now `row` (a newer reading of the same network, or None when it is gone). A prompt about
@@ -2414,8 +2454,8 @@ class Network(SettingsSection):
             before = netlogic.connected_to(self.status_data)
             self.status_data, self.status_n = got, n
             self.lines.set_label("\n".join(netlogic.status_lines(got)) or "The radios could not be read.")
-            if self.sure.armed == ("wifi-off",) and netlogic.wifi_on(got) is not True:
-                self.sure.keep_only(None)
+            if self.armed == ("wifi-off",) and netlogic.wifi_on(got) is not True:
+                self.armed = None
             known, now = netlogic.connected_to(got)
             if (known, now) != before:
                 self.disarm_row()
