@@ -1160,6 +1160,7 @@ class ShellModule(unittest.TestCase):
                 "convert",
                 "calls",
                 "settings",
+                "set_time",
                 "network",
             ],
         )

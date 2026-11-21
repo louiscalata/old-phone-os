@@ -9,12 +9,14 @@ Clock, Contacts, Notes, Converter and Call log use the server's own app endpoint
 native screens and the old interface show the same alarms, people, notes, conversions and calls. The calculator needs
 no server.
 Network (opened from Settings) uses the server's net_* actions, the same ones the browser's /network page uses.
+Date & time uses the same time zone endpoint as the browser's /timezone page.
 """
 
 from __future__ import annotations
 
 import functools
 import json
+import math
 import os
 import shutil
 import threading
@@ -1230,6 +1232,7 @@ class Settings(Page):
             bottom=(
                 self.hand,
                 button("Network", lambda: self.shell.go("network")),
+                button("Date & time", lambda: self.shell.go("set_time")),
                 button("Use the old interface", self.shell.leave),
                 bar(self.home()),
             )
@@ -1271,6 +1274,185 @@ class Settings(Page):
             ),
             ("Network", "Wi-Fi and radios", lambda: self.shell.go("network")),
         ]
+
+
+class SetTime(Page):
+    name, title = "set_time", "Date & time"
+    tile = False
+
+    def build(self):
+        self.zones, self.saved_zone = (), None
+        self.region, self.chosen = None, None
+        self.active, self.saving = False, False
+        self.summary = label("", "mid")
+        self.clock = label("", "mid", "dim")
+        self.cities = vbox(spacing=0)
+        self.pick = label("", "big")
+        self.alarm = label("", "mid", "dim")
+        self.regions_button = button("◀ Regions", self.to_regions, "side")
+        self.use = button("Use this zone", self.save, "main")
+        read = reading(label(self.title, "head"), self.summary, self.clock, self.note, self.cities)
+        act = column(
+            bottom=(
+                self.pick,
+                self.alarm,
+                self.regions_button,
+                bar(button("◀ Settings", lambda: self.shell.go("settings")), self.use),
+            )
+        )
+        self.paint_choices()
+        return read, act
+
+    def fetch(self, data):
+        # The endpoint belongs to first-run, not to OPOS_APPS.
+        return self.shell.core.app("timezone", data)
+
+    def enter(self):
+        self.active = True
+        self.zones, self.saved_zone = (), None
+        self.region, self.chosen = None, None
+        self.summary.set_label("Time zone: waiting for OPOS.")
+        self.clock.set_label("")
+        self.say("")
+        self.paint_choices()
+        if not self.saving:
+            self.refresh()
+
+    def leave(self):
+        self.active = False
+        self.seq.accept(self.seq.issue(), floor=True)
+
+    def refresh(self):
+        if self.active and not self.saving:
+            self.call()
+
+    def got(self, data):
+        if not self.active or self.saving:  # save acknowledgements are handled in saved()
+            return
+        data = data if isinstance(data, dict) else {}
+        zones = data.get("zones")
+        self.zones = ()
+        if isinstance(zones, list):
+            self.zones = tuple(dict.fromkeys(zone for zone in zones if isinstance(zone, str) and zone))
+        self.saved_zone = data.get("saved")
+        if not self.zones:
+            self.region, self.chosen = None, None
+            self.summary.set_label(
+                "Time zone is unavailable on this phone." if data.get("missing") else "Time zones could not be read."
+            )
+            self.clock.set_label("")
+        else:
+            if self.chosen not in self.zones:
+                self.chosen = None
+            self.summary.set_label(
+                "Saved zone: " + self.saved_zone
+                if isinstance(self.saved_zone, str) and self.saved_zone
+                else "No time zone saved. OPOS uses the system default."
+            )
+            clock = data.get("clock")
+            words = []
+            if isinstance(clock, dict):
+                figure = clock.get("note") if clock.get("plausible") is False else clock.get("text")
+                if isinstance(figure, str) and figure:
+                    words.append(figure)
+            if data.get("source") == "builtin":
+                words.append("OPOS is using built-in time zone rules. Local time can be wrong if those rules change.")
+            words.append("Date and time come from the system.")
+            self.clock.set_label("\n".join(words))
+        self.paint_choices()
+
+    def to_regions(self):
+        self.region, self.chosen = None, None
+        self.paint_choices()
+
+    def open_region(self, region):
+        self.region, self.chosen = region, None
+        if region in self.zones:  # UTC is listed as a region and is itself a zone.
+            self.chosen = region
+        self.paint_choices()
+
+    def choose(self, zone):
+        if zone not in self.zones:
+            return
+        self.chosen = zone
+        row = self.paint_choices()
+        if row is not None and row.get_mapped():
+            self.reveal_city(row)
+            # GTK can reallocate after the selection text changes. Check again after that frame's layout.
+            self.read.add_tick_callback(lambda *_: self.reveal_after_layout(row))
+
+    def reveal_after_layout(self, row):
+        GLib.idle_add(self.reveal_city, row)
+        return False
+
+    def reveal_city(self, row):
+        if not self.active or row.get_parent() is not self.cities or not row.has_css_class("on"):
+            return False
+        content = self.cities.get_parent()
+        adjustment = self.read.get_vadjustment()
+        ok, bounds = row.compute_bounds(content)
+        if ok and bounds.get_height() > 0 and adjustment.get_page_size() > 0:
+            # Use unscrolled content coordinates. Round both edges outward for GTK's integral allocations.
+            y = bounds.get_y() + content.get_margin_top()
+            adjustment.clamp_page(math.floor(y), math.ceil(y + bounds.get_height()))
+        return False
+
+    def paint_choices(self):
+        selected = None
+        if self.region is None:
+            rows = [
+                (name, f"{count} zones" if count != 1 else "1 zone", lambda n=name: self.open_region(n))
+                for name, count in logic.timezone_regions(self.zones)
+            ]
+            fill(self.cities, rows)
+        else:
+            cities = logic.timezone_cities(self.zones, self.region)
+            fill(self.cities, [(name, zone, lambda z=zone: self.choose(z)) for name, zone in cities])
+            row = self.cities.get_first_child()
+            for _, zone in cities:
+                if row is None:
+                    break
+                if zone == self.chosen:
+                    row.add_css_class("on")
+                    selected = row
+                else:
+                    row.remove_css_class("on")
+                row = row.get_next_sibling()
+        self.regions_button.set_visible(self.region is not None)
+        self.regions_button.set_sensitive(not self.saving)
+        self.cities.set_sensitive(not self.saving)
+        prompt = "Choose a city" if self.region else "Choose a region"
+        self.pick.set_label((self.chosen or prompt) if self.zones else "")
+        can_change = bool(self.chosen and self.chosen != self.saved_zone)
+        self.alarm.set_label("Alarms ring at the new local time." if can_change else "")
+        self.use.set_sensitive(can_change and not self.saving)
+        return selected
+
+    def save(self):
+        zone = self.chosen
+        if not self.active or self.saving or zone not in self.zones or zone == self.saved_zone:
+            return
+        self.saving = True
+        self.paint_choices()
+        self.say(f"Saving {zone}…")
+        self.call({"zone": zone, "client_tz": zone}, lambda data, fresh: self.saved(zone, data, fresh))
+
+    def saved(self, zone, data, fresh):
+        refresh = fresh or not self.confirmed(data)  # Page.deliver refreshes a confirmed write with a stale reply.
+        self.saving = False
+        data = data if isinstance(data, dict) else {}
+        if data.get("ok") is True and data.get("zone") == zone:
+            self.region, self.chosen = None, None
+            applied = self.shell.apply_zone(zone)
+            if self.active:
+                self.say(f"{zone} saved." if applied else f"{zone} saved. This screen will use it after OPOS restarts.")
+        elif self.active:
+            if data.get("missing"):
+                self.say("Time zone is unavailable on this phone.")
+            else:
+                self.say(f"Not saved: {data.get('error') or 'no answer from OPOS'}.")
+        if refresh:
+            self.refresh()
 
 
 def owners_tap(fn):
@@ -1929,7 +2111,7 @@ class Network(Page):
         self.cancel()
 
 
-PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Converter, Calls, Settings, Network)
+PAGES = (Lock, Home, Phone, Messages, Clock, Contacts, Notes, Calculator, Converter, Calls, Settings, SetTime, Network)
 
 
 def enabled_pages(env=None):

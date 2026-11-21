@@ -112,6 +112,26 @@ class Calc:
                 self.expr += key
 
 
+def timezone_regions(zones):
+    """Region names and counts. A name without a slash, such as UTC, is its own region."""
+    counts = {}
+    for zone in zones:
+        region = zone.split("/", 1)[0]
+        counts[region] = counts.get(region, 0) + 1
+    return sorted(counts.items())
+
+
+def timezone_cities(zones, region):
+    """Show each city in a region while keeping its canonical zone identifier."""
+    cities = []
+    for zone in zones:
+        prefix, _, city = zone.partition("/")
+        if prefix == region:
+            shown = (city or zone).replace("/", " / ").replace("_", " ")
+            cities.append((shown, zone))
+    return sorted(cities)
+
+
 def clock_digits(digits):
     """(hour, minute) from up to four typed digits read as HHMM ("730" is 7:30), or None when that is not a time."""
     if not digits.isdigit() or not 3 <= len(digits) <= 4:
