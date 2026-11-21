@@ -714,8 +714,8 @@ the separate persistent-install plan describes the unproven restore dependencies
    being installed; when you are restoring Android, the reset is the intended step. If `misc` holds a wipe
    request that the bootloader keeps rejecting boots against, zero the first 2 KB of `misc` from a RAM-booted
    TWRP.
-3. For a full stock reflash, the private recovery inventory records an extracted set for 2022.902.48
-   (all 25 partitions, `surface/duo/duo:12/2022.902.48`), checked against the OTA payload's own hashes. Confirm that the set matches the device before using it:
+3. For a full stock reflash, the private recovery inventory records an extracted set for stock Android 12
+   (all 25 partitions), checked against the OTA payload's own hashes. Confirm that the set matches the device before using it:
    flash it from fastboot, logical partitions through fastbootd, then wipe. No restore from it is
    recorded in this repository, and the OTA's publisher hash was not independently confirmed.
 4. A partition backup of this phone from October 31, 2026 also exists on the owner's PC.
