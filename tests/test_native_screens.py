@@ -187,6 +187,51 @@ class Screens(unittest.TestCase):
         self.shell.pages[page.name] = page
         return page
 
+    def test_battery_uses_polled_state_without_fetching_or_claiming_default_measurements(self):
+        snapshot = {
+            "battery": {"percent": 51, "time_left": "4 hours", "drain": {"basis": "model", "per_hour": 4.1}},
+            "battery_source": {"source": "sysfs", "health_source": "assumed"},
+            "temp_c": 30,
+        }
+        self.shell.snap = snapshot
+        page = self.page(self.screens.SetBattery)
+        page.enter()
+        self.assertFalse(page.tile)
+        self.assertEqual(page.readings["Level"].get_label(), "Level: 51% · Device reading")
+        self.assertEqual(page.readings["Charging"].get_label(), "Charging: Not reported")
+        self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: Not reported")
+        self.assertEqual(page.readings["Health"].get_label(), "Health: Not reported")
+        self.assertEqual(page.readings["Time left"].get_label(), "Time left: 4 hours · Server estimate")
+        self.assertEqual(page.readings["Drain"].get_label(), "Drain: 4.1%/h · Model estimate")
+
+        active = dict(
+            snapshot,
+            battery_source={
+                "source": "sysfs",
+                "health_source": "charge-counter",
+                "temperature_reported": True,
+            },
+        )
+        self.shell.drawn(self.shell.seq.issue(), active)
+        self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: 30.0 °C · Device reading")
+        self.assertEqual(page.readings["Health"].get_label(), "Health: Estimated from the charge counter")
+        self.shell.drawn(self.shell.seq.issue(), dict(snapshot, battery_source={"source": None}))
+        self.assertEqual(page.readings["Level"].get_label(), "Level: Not reported")
+        page.leave()
+        page.enter()
+        self.assertEqual(self.work, [])
+        self.assertEqual(self.shell.asked, [])
+        self.assertEqual(self.shell.core.sent, [])
+
+    def test_battery_distinguishes_practice_from_device_readings(self):
+        page = self.page(self.screens.SetBattery)
+        self.assertEqual(page.summary.get_label(), "Waiting for battery status.")
+        self.shell.drawn(self.shell.seq.issue(), {"battery": {"percent": 0}, "charging": False, "temp_c": 0})
+        self.assertIn("simulated", page.summary.get_label())
+        self.assertEqual(page.readings["Level"].get_label(), "Level: 0% · Practice")
+        self.assertEqual(page.readings["Charging"].get_label(), "Charging: No · Practice")
+        self.assertEqual(page.readings["Temperature"].get_label(), "Temperature: 0.0 °C · Practice")
+
     # --- Date & time ----------------------------------------------------------------------------------------------
 
     def test_settings_time_zone_uses_the_existing_endpoint_without_a_home_tile(self):
@@ -539,7 +584,19 @@ class Screens(unittest.TestCase):
 
     def test_only_the_everyday_apps_opos_apps_names_get_pages(self):
         names = lambda env: [c.name for c in self.screens.enabled_pages(env)]  # noqa: E731
-        base = ["lock", "home", "phone", "messages", "calc", "settings", "set_about", "set_hand", "set_time", "network"]
+        base = [
+            "lock",
+            "home",
+            "phone",
+            "messages",
+            "calc",
+            "settings",
+            "set_about",
+            "set_hand",
+            "set_battery",
+            "set_time",
+            "network",
+        ]
         self.assertEqual(names({}), base, "absent: no everyday apps")
         self.assertEqual(names({"OPOS_APPS": ""}), base, "empty: none")
         self.assertEqual(
@@ -555,6 +612,7 @@ class Screens(unittest.TestCase):
                 "settings",
                 "set_about",
                 "set_hand",
+                "set_battery",
                 "set_time",
                 "network",
             ],
@@ -574,6 +632,7 @@ class Screens(unittest.TestCase):
                 "settings",
                 "set_about",
                 "set_hand",
+                "set_battery",
                 "set_time",
                 "network",
             ],
@@ -594,6 +653,7 @@ class Screens(unittest.TestCase):
                 "settings",
                 "set_about",
                 "set_hand",
+                "set_battery",
                 "set_time",
                 "network",
             ],
@@ -611,6 +671,7 @@ class Screens(unittest.TestCase):
                 "settings",
                 "set_about",
                 "set_hand",
+                "set_battery",
                 "set_time",
                 "network",
             ],

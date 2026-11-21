@@ -116,6 +116,16 @@ About shows the shared notices and the storage figure, which is read once when S
 hand switch, hinge status and gesture help. Date & time and Network open their own pages and make their own reads.
 Each page has a **Settings** button to return to the hub. The usual Home gesture remains available.
 
+## Battery
+
+The native Battery page uses the regular server snapshot. It labels time left as an estimate and distinguishes a rate
+measured from discharge from one supplied by the model. Practice numbers are labeled. A temperature only appears as a device
+reading when the current sample includes it. Health labels say whether the gauge reported it, a charge counter estimated it,
+or the owner supplied it. Missing data is shown as **Not reported**.
+
+The page shows the daily goal and its power policy when the server supplies them. Open the battery sheet from the action pane.
+Viewing Battery does not send a request of its own or change the daily goal.
+
 ## Date & time
 
 Open **Date & time** from native Settings. Pick a region, choose a city and use **Use this zone** to save it. The selected

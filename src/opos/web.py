@@ -443,7 +443,11 @@ class Phone:
         if volume.enabled():
             out["volume_keys"] = volume.snapshot()
         if self.live:
-            out["battery_source"] = {"source": self.sim.source, "health_source": self.sim.health_source}
+            out["battery_source"] = {
+                "source": self.sim.source,
+                "health_source": self.sim.health_source,
+                "temperature_reported": self.sim.temperature_reported,
+            }
         out["prefs"] = self._preferences()
         out["temp_c"] = round(float(self.sim.temp_c), 1)
         out["charging"] = bool(self.charging)

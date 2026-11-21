@@ -1364,6 +1364,34 @@ class SetHand(SettingsSection):
         self.hand.set_label("Buttons on the %s. Tap to switch." % self.shell.hand)
 
 
+class SetBattery(Page):
+    name, title = "set_battery", "Battery"
+    tile = False
+
+    def build(self):
+        self.summary = label("", "mid")
+        names = ("Level", "Charging", "Time left", "Drain", "Temperature", "Health")
+        self.readings = {name: label("", "mid") for name in names}
+        self.policy = label("", "mid", "dim")
+        read = reading(label(self.title, "head"), self.summary, *self.readings.values(), self.policy)
+        action = column(
+            bottom=(
+                button("Open the battery sheet", lambda: self.shell.set_shade(True), "side"),
+                bar(button("◀ Settings", lambda: self.shell.go("settings"))),
+            )
+        )
+        self.show(self.shell.snap)
+        return read, action
+
+    def show(self, snap):
+        summary, rows, policy = logic.battery_details(snap)
+        self.summary.set_label(summary)
+        for (name, widget), text in zip(self.readings.items(), rows, strict=True):
+            widget.set_label(f"{name}: {text}")
+        self.policy.set_label(policy)
+        self.policy.set_visible(bool(policy))
+
+
 class SetTime(SettingsSection):
     name, title = "set_time", "Date & time"
 
@@ -2212,6 +2240,7 @@ PAGES = (
     Settings,
     SetAbout,
     SetHand,
+    SetBattery,
     SetTime,
     Network,
 )

@@ -1162,6 +1162,7 @@ class ShellModule(unittest.TestCase):
                 "settings",
                 "set_about",
                 "set_hand",
+                "set_battery",
                 "set_time",
                 "network",
             ],
