@@ -295,6 +295,51 @@ class Blanking(unittest.TestCase):
         self.assertTrue(blank.runtime_dir({}).startswith("/run/user/"))
 
 
+class Brightness(unittest.TestCase):
+    def test_level_reads_the_reference_and_clamps_each_panels_write(self):
+        t = Tree(self)
+        self.assertAlmostEqual(t.blanker.level(), 200 / 255)
+        self.assertTrue(t.blanker.set_level(0.5))
+        self.assertEqual(t.values(), (57, 128))
+        for panel in blank.PANELS:
+            t.brightness(panel).with_name("max_brightness").write_text("100", encoding="ascii")
+        self.assertTrue(t.blanker.set_level(1))
+        self.assertEqual(t.values(), (45, 100))
+        self.assertTrue(t.blanker.set_level(0))
+        self.assertEqual(t.values(), (blank.LOWEST, blank.LOWEST))
+
+    @unittest.skipUnless(os.name == "posix", "saved file permissions are POSIX")
+    def test_adjusting_a_lit_panel_keeps_the_other_dark_until_restore(self):
+        t = Tree(self)
+        self.assertTrue(t.blanker.blank(only=(1,)))
+        self.assertAlmostEqual(t.blanker.level(), 200 / 255)
+        self.assertTrue(t.blanker.set_level(0.6))
+        self.assertEqual(t.values(), (69, 0))
+        self.assertEqual(t.saved.read_text(encoding="ascii").split(), ["69", "153"])
+        self.assertEqual(stat.S_IMODE(t.saved.stat().st_mode), 0o600)
+        self.assertTrue(t.blanker.restore())
+        self.assertEqual(t.values(), (69, 153))
+        self.assertFalse(t.saved.exists())
+
+    def test_no_lit_panel_means_no_write_and_an_unknown_level(self):
+        t = Tree(self, (0, 0))
+        self.assertIsNone(t.blanker.level())
+        before = t.snapshot()
+        for level in (0.7, float("nan"), "0.8", True, 2, -1):
+            self.assertFalse(t.blanker.set_level(level))
+        self.assertEqual(t.snapshot(), before)
+
+    @unittest.skipUnless(os.name == "posix", "symlink creation needs a supported test host")
+    def test_an_unsafe_saved_path_blocks_the_change(self):
+        t = Tree(self, (90, 0))
+        target = t.root / "foreign"
+        target.write_text("keep this", encoding="ascii")
+        t.saved.symlink_to(target)
+        self.assertFalse(t.blanker.set_level(0.5))
+        self.assertEqual(target.read_text(encoding="ascii"), "keep this")
+        self.assertEqual(t.values(), (90, 0))
+
+
 class Safety(unittest.TestCase):
     """The paths that could leave a panel dark, or write somewhere they should not (the lid-blanking safety review)."""
 

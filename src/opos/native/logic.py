@@ -4,6 +4,7 @@ alarm, a timer and a call. Pure functions and two small classes, so they are tes
 
 from __future__ import annotations
 
+import math
 import re
 import time
 import urllib.parse
@@ -112,6 +113,131 @@ class Calc:
                 self.expr += key
 
 
+NOT_REPORTED = "Not reported"
+
+
+def _battery_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
+
+
+def _battery_basis(snap):
+    source = snap.get("battery_source")
+    if isinstance(source, dict) and source.get("source") in ("sysfs", "termux-api"):
+        return "Device reading"
+    if "battery_source" not in snap:
+        return "Practice"
+    return None
+
+
+def battery_status(snap):
+    """Short label and usable battery data for the lock screen, strip, and sheet."""
+    battery = snap.get("battery")
+    basis = _battery_basis(snap)
+    if not isinstance(battery, dict) or not battery:
+        return "Battery not reported", {}
+    if basis is None:
+        return "Battery unavailable", {}
+    level = _battery_number(battery.get("percent"))
+    if level is None or not 0 <= level <= 100:
+        return "Battery level not reported", {}
+    title = "Battery" if basis == "Device reading" else "Practice battery"
+    charging = " · Charging" if snap.get("charging") is True else ""
+    return f"{title} · {level:g}%{charging}", battery
+
+
+def battery_details(snapshot):
+    """Produce the Battery page's provenance and display rows from one poll."""
+    snap = snapshot if isinstance(snapshot, dict) else {}
+    battery = snap.get("battery")
+    if not isinstance(battery, dict) or not battery:
+        return "Waiting for battery status.", (NOT_REPORTED,) * 6, ""
+    source = snap.get("battery_source")
+    basis = _battery_basis(snap)
+    if basis is None:
+        return "The device battery reading is unavailable.", (NOT_REPORTED,) * 6, ""
+    live = basis == "Device reading"
+    practice = basis == "Practice"
+
+    level = _battery_number(battery.get("percent"))
+    level_text = f"{level:g}% · {basis}" if level is not None and 0 <= level <= 100 else NOT_REPORTED
+    charging = snap.get("charging")
+    charging_text = (
+        f"{'Yes' if charging else 'No'} · {'Reported by the device' if live else basis}"
+        if isinstance(charging, bool)
+        else NOT_REPORTED
+    )
+    left = battery.get("time_left")
+    time_text = (
+        f"{left} · {'Server estimate' if live else 'Practice estimate'}"
+        if isinstance(left, str) and left
+        else NOT_REPORTED
+    )
+    drain = battery.get("drain")
+    drain = drain if isinstance(drain, dict) else {}
+    rate = _battery_number(drain.get("per_hour"))
+    kind = "Measured discharge" if live and drain.get("basis") == "measured" else "Model estimate"
+    drain_text = f"{rate:.1f}%/h · {kind}" if rate is not None and rate >= 0 else NOT_REPORTED
+    temperature = _battery_number(snap.get("temp_c"))
+    temperature_text = NOT_REPORTED
+    if temperature is not None and (practice or source.get("temperature_reported") is True):
+        temperature_text = f"{temperature:.1f} °C · {basis}"
+    health_basis = source.get("health_source") if live else None
+    health_text = (
+        {
+            "sysfs": "Reported by the battery gauge",
+            "charge-counter": "Estimated from the charge counter",
+            "OPOS_BATTERY_HEALTH": "Set by the owner",
+        }.get(health_basis, NOT_REPORTED)
+        if isinstance(health_basis, str)
+        else NOT_REPORTED
+    )
+    policy = []
+    if battery.get("goal"):
+        policy.append(f"Daily goal: {battery['goal']}")
+        if battery.get("calls_until"):
+            policy.append(
+                f"Calls and messages until {battery['calls_until']} · Server estimate"
+                if live
+                else f"Calls and messages until {battery['calls_until']} · Practice estimate"
+            )
+    if battery.get("goal_note"):
+        policy.append(str(battery["goal_note"]))
+    paused = battery.get("paused")
+    if isinstance(paused, list):
+        policy.extend(
+            f"Paused: {item['name']} · {item['reason']}"
+            for item in paused
+            if isinstance(item, dict) and item.get("name") and item.get("reason")
+        )
+    summary = "Battery status from this phone." if live else "Practice numbers for a simulated battery."
+    return summary, (level_text, charging_text, time_text, drain_text, temperature_text, health_text), "\n".join(policy)
+
+
+def timezone_regions(zones):
+    """Region names and counts. A name without a slash, such as UTC, is its own region."""
+    counts = {}
+    for zone in zones:
+        region = zone.split("/", 1)[0]
+        counts[region] = counts.get(region, 0) + 1
+    return sorted(counts.items())
+
+
+def timezone_cities(zones, region):
+    """Show each city in a region while keeping its canonical zone identifier."""
+    cities = []
+    for zone in zones:
+        prefix, _, city = zone.partition("/")
+        if prefix == region:
+            shown = (city or zone).replace("/", " / ").replace("_", " ")
+            cities.append((shown, zone))
+    return sorted(cities)
+
+
 def clock_digits(digits):
     """(hour, minute) from up to four typed digits read as HHMM ("730" is 7:30), or None when that is not a time."""
     if not digits.isdigit() or not 3 <= len(digits) <= 4:
@@ -166,6 +292,15 @@ def call_line(row):
 # --- keeping the screen true -------------------------------------------------------------------------------------
 # Every frame shows one complete, accurate snapshot of what the server last said. These are the rules for that, with
 # no toolkit, so they are tested anywhere.
+
+# The resting layout moves by at most two logical pixels every three minutes.
+SHIFT_S = 180
+SHIFT_CYCLE = ((0, 0), (1, 0), (2, 1), (1, 2), (0, 2), (-1, 1), (-2, 0), (-1, -1), (0, -2))
+
+
+def shift_at(step):
+    return SHIFT_CYCLE[step % len(SHIFT_CYCLE)]
+
 
 PRACTICE_CALL = "In a practice call"
 PRACTICE_MESSAGES = "Practice mode: nothing you write here is sent."

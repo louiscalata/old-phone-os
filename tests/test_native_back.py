@@ -193,6 +193,9 @@ class StandInBox:
     def __init__(self, *a, **k):
         self.children, self.parent, self.vx, self.vx_set, self.vh = [], None, False, False, True
 
+    def add_css_class(self, name):
+        self.css_class = name
+
     def get_parent(self):
         return self.parent
 
@@ -252,6 +255,7 @@ class Rows(StandInShell):
                 halves = row.children
                 self.assertEqual(halves[screen], row.column)
                 self.assertEqual(halves[1 - screen], row.empty)
+                self.assertEqual(row.empty.css_class, "back-unused")
                 self.assertEqual(row.column.children, [row.read, row.act], "reading on top, thumb pane below")
                 self.assertEqual((row.read.vx, row.act.vx, row.act.vh), (True, False, False))
                 column, empty = row.column, row.empty
@@ -461,6 +465,25 @@ class ShellBack(StandInShell):
         self.assertEqual((w.back, self.calls[-1]), (0, ("blank", (1,))))
         w.tilt_changed(None)  # the sensor lost: it stays where it is
         self.assertEqual(w.back, 0)
+
+    def test_a_failed_facing_switch_updates_the_settings_posture_without_a_new_hinge_reading(self):
+        w = self.win
+        reports = []
+        w.pages["settings"] = types.SimpleNamespace(
+            paint_posture=lambda: reports.append(posture.describe(w.posture, w.angle, w.back is not None))
+        )
+        self.back()
+        self.assertEqual(w.back, 1)
+        self.assertIn("One screen is lit", reports[-1])
+
+        def fail_move(_row, _side):
+            raise RuntimeError("the new pane could not be moved")
+
+        self.shell.one_column = fail_move
+        for sampled_at in (100.0, 100.5, 101.0):
+            w.tilt_changed(-900, sampled_at)
+        self.assertEqual((w.back, w.back_failed, w.angle), (None, True, 352))
+        self.assertEqual(reports[-1], "Back, hinge at 352 degrees. Both screens are lit.")
 
     def test_a_tilt_reading_keeps_the_time_the_watcher_thread_took_it(self):
         """The hold time is measured between the readings, not between the main loop's turns to them."""

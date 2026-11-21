@@ -136,6 +136,16 @@ update and nothing else), or `opos-updater rollback` (root, not limited).
 
 ## Client (unprivileged, in OPOS)
 
+- Native Settings can review a specific update before downloading. Its authenticated update action includes the review
+  fingerprint from the check, covering the advertised release and bundle digest. The client refetches the index and
+  requires the same fingerprint before fetching the bundle. The app offers reviewed rollback and staged cancellation
+  when the installed root-owned updater declares the reviewed protocol and the installed root-owned path unit watches
+  its request file. This capability is checked again just before publication, independent of the saved release state.
+  The client publishes a complete `rollback.reviewed` request naming the
+  current and target releases. The updater checks both names and the requested operation while holding its lock.
+  Its path unit also watches that filename. Older updaters ignore it, while legacy `rollback.request` requests continue
+  to follow the existing rules.
+
 - Source is opt-in. With no `/etc/opos/update.json` nothing is ever fetched ($0 and no account by default, as the rest of
   OPOS). Config: `{"url": "https://.../latest.json", "auto_check": false, "allow_lan_http": false}`; `https` only, except
   loopback or private-LAN `http` when `allow_lan_http` is true; no redirects to another host; download size cap 256 MiB;
@@ -219,10 +229,10 @@ Where the code is stricter or more specific than the text above. Every item is a
   update only; the client must write it as `rollback.request.partial` and rename it, so root never reads it half
   written). Anything else in it is refused, and at most 64 bytes are read. A staged boot update is dropped on its own
   account, so it can be cancelled when there is no previous release and when the one-step limit has been used; its serial
-  is not burned. Root deletes every `*.opos-update` and `rollback.request` it looks at, accepted or not, removes `.partial`
+  is not burned. Root deletes every bundle and rollback request it looks at, accepted or not, removes `.partial`
   files older than a day, applies the newest bundle by modification time and discards the others; a symlink, FIFO or
   directory in the inbox is removed and reported (also when an unexpected error stops the run). The path unit matches
-  only `*.opos-update` and `rollback.request`. `opos-update.service` has **no start limit**: every file dropped in the inbox
+  only `*.opos-update`, `rollback.request` and `rollback.reviewed`. `opos-update.service` has **no start limit**: every file dropped in the inbox
   is one start, and a limit would let any process that can write the inbox switch the service and the path unit off until
   root resets them. What bounds a flood instead: everything looked at is removed, and the updater lingers after each run
   (2 s; 30 s after a run that could not work: exit 1 or 75), so the path unit starts at most one run per few seconds.

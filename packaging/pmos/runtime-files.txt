@@ -74,6 +74,7 @@ src/opos/native/posture.py
 src/opos/native/screens.py
 src/opos/native/shell.py
 src/opos/native/ui.py
+src/opos/native/updatelogic.py
 src/opos/net.py
 src/opos/net_page.py
 src/opos/notes_page.py

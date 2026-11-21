@@ -2,11 +2,13 @@
 """The native shell: its toolkit-free rules always; the GTK module only where GTK 4 and PyGObject are installed."""
 
 import ast
+import json
 import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from opos.native import layout
 
@@ -954,6 +956,53 @@ class Hand(unittest.TestCase):
         self.assertEqual(layout.settings_path({"HOME": "/h"}), Path("/h") / ".config" / "opos" / "shell.json")
 
 
+class ThemeSettings(unittest.TestCase):
+    def test_the_original_dark_palette_is_the_default(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "shell.json"
+            self.assertEqual(layout.load_theme(path, {}), "dark")
+            for text in ("not json", "[]", '{"theme": 2}', '{"theme": "unknown"}'):
+                path.write_text(text, encoding="utf-8")
+                self.assertEqual(layout.load_theme(path, {}), "dark")
+
+    def test_saving_either_preference_keeps_the_other_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "shell.json"
+            path.write_text('{"extra": {"nested": true}}', encoding="utf-8")
+            self.assertTrue(layout.save_hand("left", path))
+            self.assertTrue(layout.save_theme("paper", path))
+            self.assertTrue(layout.save_hand("right", path))
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8")),
+                {"extra": {"nested": True}, "hand": "right", "theme": "paper"},
+            )
+            self.assertEqual(layout.load_theme(path, {}), "paper")
+            self.assertFalse(layout.save_theme("other", path))
+            self.assertEqual(layout.load_theme(path, {}), "paper")
+
+    def test_explicit_environment_override_is_read_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "shell.json"
+            self.assertTrue(layout.save_theme("paper", path))
+            self.assertEqual(layout.theme_fixed({"OPOS_THEME": "dark"}), "dark")
+            self.assertEqual(layout.load_theme(path, {"OPOS_THEME": "dark"}), "dark")
+            self.assertIsNone(layout.theme_fixed({"OPOS_THEME": "other"}))
+            self.assertEqual(layout.load_theme(path, {"OPOS_THEME": "other"}), "paper")
+            self.assertEqual(layout.load_theme(path, {}), "paper")
+
+    def test_failed_replace_leaves_the_preference_file_usable(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "shell.json"
+            self.assertTrue(layout.save_hand("left", path))
+            before = path.read_bytes()
+            with patch.object(layout.os, "replace", side_effect=OSError("one failed write")):
+                self.assertFalse(layout.save_theme("paper", path))
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(list(Path(d).glob(".shell.json.*")), [])
+            self.assertTrue(layout.save_theme("paper", path))
+            self.assertEqual(layout.load_hand(path, {}), "left")
+
+
 def source(name):
     return (NATIVE / name).read_text(encoding="utf-8")
 
@@ -973,10 +1022,14 @@ class EveryFrameIsASnapshot(unittest.TestCase):
         self.assertIs(consts["ANIMATE"], False)
 
     def test_no_css_transition_or_animation(self):
-        text = source("ui.py")
-        css = text[text.index('CSS = """') : text.index('"""', text.index('CSS = """') + 9)]
+        tree = ast.parse(source("ui.py"))
+        style = next(
+            item.value.value
+            for item in tree.body
+            if isinstance(item, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_STYLE" for t in item.targets)
+        )
         for word in ("transition", "animation", "@keyframes"):
-            self.assertNotIn(word, css)
+            self.assertNotIn(word, style)
 
     def test_every_stack_and_the_sheet_use_no_transition_unless_animation_is_on(self):
         shell = source("shell.py")
@@ -1160,6 +1213,14 @@ class ShellModule(unittest.TestCase):
                 "convert",
                 "calls",
                 "settings",
+                "set_about",
+                "set_hand",
+                "set_battery",
+                "set_sound",
+                "set_security",
+                "set_display",
+                "set_time",
+                "set_updates",
                 "network",
             ],
         )

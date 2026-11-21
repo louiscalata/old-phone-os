@@ -557,13 +557,21 @@ class ShellUse(unittest.TestCase):
         for name in ("lid_changed", "lid_lost", "hinge_changed"):
             self.assertIn("self.set_posture", self.calls(self.method(name)), name)
 
-    def test_the_settings_line_is_repainted_by_set_posture_only_as_a_label(self):
-        self.assertIn("page.paint_posture", self.calls(self.method("set_posture")))
+    def test_hinge_and_facing_layout_changes_only_repaint_the_settings_labels(self):
+        for source in ("set_posture", "tilt_changed"):
+            self.assertIn("paint_settings_posture", self.calls(self.method(source)))
+        refresh = next(
+            n for n in self.tree.body if isinstance(n, ast.FunctionDef) and n.name == "paint_settings_posture"
+        )
+        self.assertEqual(sorted(self.calls(refresh)), ["hasattr", "page.paint_posture", "shell.pages.get"])
         screens = ast.parse((SHELL.parent / "screens.py").read_text(encoding="utf-8"))
         settings = next(n for n in screens.body if isinstance(n, ast.ClassDef) and n.name == "Settings")
         paint = next(n for n in settings.body if isinstance(n, ast.FunctionDef) and n.name == "paint_posture")
         called = [ast.unparse(c.func) for c in ast.walk(paint) if isinstance(c, ast.Call)]
-        self.assertEqual(sorted(set(called)), ["getattr", "posture.describe", "self.hinge_line.set_label"])
+        self.assertEqual(
+            sorted(set(called)),
+            ["hand.hinge_line.set_label", "hand_posture", "self.hinge_line.set_label", "self.shell.pages.get"],
+        )
 
     def test_the_angle_is_never_what_blanks_or_locks(self):
         for name in ("hinge_changed", "set_posture"):

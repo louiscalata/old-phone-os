@@ -20,29 +20,63 @@ from opos.native.logic import RowSet  # noqa: E402
 ANIMATE = False
 MOVE_MS = 180
 
-CSS = """
-window, .pane, .sheet { background: #000; color: #fff; font-family: sans-serif; font-size: 20px; }
+_STYLE = """
+window, .pane, .sheet { background: @ground; color: @ink; font-family: sans-serif; font-size: 20px; }
+.back-unused, .home-idle, .home-idle .pane { background: #000; }
 .clock { font-family: serif; font-weight: 700; font-size: 132px; }
 .head  { font-family: serif; font-weight: 700; font-size: 40px; }
 .big   { font-size: 28px; }
 .mid   { font-size: 22px; }
 .dim   { opacity: 0.6; }
 .strip { font-size: 17px; opacity: 0.7; }
-.rule  { border-bottom: 1px solid alpha(#fff, 0.22); }
-button { background: #000; background-image: none; color: #fff; border: 1px solid alpha(#fff, 0.55);
+.rule  { border-bottom: 1px solid @hairline; }
+button { background: @ground; background-image: none; color: @ink; border: 1px solid alpha(@ink, 0.55);
          border-radius: 0; box-shadow: none; outline: none; min-height: 68px; padding: 6px 16px; font-size: 24px; }
-button:active, button.on { background: #fff; color: #000; }
-button.main { background: #fff; color: #000; border-color: #fff; font-weight: 700; min-height: 80px; }
-button.main:active { background: #000; color: #fff; }
+button:active, button.on { background: @ink; color: @ground; }
+button.main { background: @main; color: @main_text; border-color: @main; font-weight: 700; min-height: 80px; }
+button.main:active { background: @ground; color: @ink; }
 button:disabled, label:disabled { opacity: 0.3; }
-button.row { border: none; border-bottom: 1px solid alpha(#fff, 0.22); min-height: 74px; padding: 6px 4px; }
-button.row:active { background: alpha(#fff, 0.18); color: #fff; }
-button.tile { min-height: 116px; font-size: 26px; }
-button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(#fff, 0.35); }
+button.row { border: none; border-bottom: 1px solid @hairline; min-height: 74px; padding: 6px 4px; }
+button.row:active { background: alpha(@ink, 0.18); color: @ink; }
+button.settings-row { border: none; min-height: 48px; padding: 1px 8px; }
+button.settings-home { min-height: 48px; padding: 4px 12px; }
+.settings-title { font-size: 22px; }
+.settings-detail { font: 15px monospace; }
+button.tile { border: none; min-height: 52px; padding: 2px 16px; font-size: 24px; }
+button.tile:focus-visible { box-shadow: inset 0 0 0 2px @ink; }
+button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(@ink, 0.35); }
 button.pad { min-height: 84px; min-width: 0; padding: 0; font-size: 30px; }
+.converter-pad button.pad { min-height: 72px; }
 button.chip { min-height: 52px; min-width: 0; padding: 2px 8px; font-size: 19px; }
-.typed { border-bottom: 2px solid #fff; padding: 8px 0; font-size: 26px; }
+button.brightness-step { min-height: 48px; min-width: 0; padding: 0; font-size: 17px; }
+.typed { border-bottom: 2px solid @ink; padding: 8px 0; font-size: 26px; }
 """
+
+CSS = (
+    """
+@define-color ground #000000;
+@define-color ink #ffffff;
+@define-color main #ffffff;
+@define-color main_text #000000;
+@define-color hairline alpha(#ffffff, 0.22);
+"""
+    + _STYLE
+)
+_PAPER_CSS = (
+    """
+@define-color ground #cfcdc4;
+@define-color ink #1f1f1c;
+@define-color main #b3b0a6;
+@define-color main_text #1f1f1c;
+@define-color hairline #706e66;
+"""
+    + _STYLE
+)
+
+
+def css_for(theme):
+    """Both palettes use the same widget sizes and states."""
+    return _PAPER_CSS if theme == "paper" else CSS
 
 
 def label(text="", *classes, wrap=True, x=0.0):
@@ -76,6 +110,20 @@ def row(title, detail, on_click):
     b.set_child(box)
     b.connect("clicked", lambda *_: on_click())
     return b
+
+
+def settings_row(title, detail, on_click):
+    """A compact Settings row with a fixed action and an optional status line."""
+    item = Gtk.Button()
+    item.add_css_class("settings-row")
+    name = label(title, "settings-title", wrap=False)
+    item.detail = label(detail, "settings-detail", wrap=False)
+    item.detail.set_visible(bool(detail))
+    for part in (name, item.detail):
+        part.set_ellipsize(Pango.EllipsizeMode.END)
+    item.set_child(vbox(name, item.detail, spacing=1))
+    item.connect("clicked", lambda *_: on_click())
+    return item
 
 
 def clear(box):
@@ -130,6 +178,31 @@ def column(*children, bottom=()):
     return box
 
 
+def inset_panes(rows, strip):
+    """Capture the inset of each content pane without including the hinge or unused screen."""
+    panes, pending = [strip], list(rows)
+    while pending:
+        widget = pending.pop()
+        if widget.has_css_class("pane"):
+            panes.append(widget)
+            continue
+        child = widget.get_first_child()
+        while child is not None:
+            pending.append(child)
+            child = child.get_next_sibling()
+    return [(w, w.get_margin_start(), w.get_margin_end(), w.get_margin_top(), w.get_margin_bottom()) for w in panes]
+
+
+def shift_insets(panes, x, y):
+    """Change opposite margins together so GTK moves drawing and input without resizing the pane."""
+    for widget, start, end, top, bottom in panes:
+        dx, dy = max(-start, min(x, end)), max(-top, min(y, bottom))
+        widget.set_margin_start(start + dx)
+        widget.set_margin_end(end - dx)
+        widget.set_margin_top(top + dy)
+        widget.set_margin_bottom(bottom - dy)
+
+
 def reading(*children):
     """The content view: a pane that scrolls by touch, never sideways, with no scrollbar taking room.
 
@@ -171,6 +244,7 @@ def one_column(row, screen):
     widgets move; the column and the empty half are made once per row and kept for the next time."""
     if getattr(row, "column", None) is None:
         row.column, row.empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL), Gtk.Box()
+        row.empty.add_css_class("back-unused")
     read, act = row.read, row.act
     if getattr(row, "kept", None) is None:  # how the panes stretched before, put back by two_columns
         row.kept = (

@@ -144,7 +144,7 @@ check "the sensorfwd drop-in honours the kill switch and limits restarts (3 star
 # --- track native: the native shell's launcher (packaging/duo-os/NATIVE.md) ---
 nl=$r/usr/libexec/opos/opos-native
 check "the native shell launcher is installed, executable and parses, and the kiosk hands its process to it" "[ -x $nl ] && [ ! -L $nl ] && sh -n $nl && grep -q 'opos.native.shell' $nl && grep -q '>>> track native' $k && grep -qF '/usr/libexec/opos/opos-native' $k"
-check "the native shell is in the image (shell, screens, logic, netlogic, layout, ui, posture, blank, displayconfig, hinge, facing) and the assistants screen is not" "[ -s $r/opt/opos/src/opos/native/shell.py ] && [ -s $r/opt/opos/src/opos/native/screens.py ] && [ -s $r/opt/opos/src/opos/native/logic.py ] && [ -s $r/opt/opos/src/opos/native/netlogic.py ] && [ -s $r/opt/opos/src/opos/native/layout.py ] && [ -s $r/opt/opos/src/opos/native/ui.py ] && [ -s $r/opt/opos/src/opos/native/posture.py ] && [ -s $r/opt/opos/src/opos/native/blank.py ] && [ -s $r/opt/opos/src/opos/native/displayconfig.py ] && [ -s $r/opt/opos/src/opos/native/hinge.py ] && [ -s $r/opt/opos/src/opos/native/facing.py ] && [ ! -e $r/opt/opos/src/opos/native/assistants.py ]"
+check "the native shell is in the image (shell, screens, logic, netlogic, updatelogic, layout, ui, posture, blank, displayconfig, hinge, facing) and the assistants screen is not" "[ -s $r/opt/opos/src/opos/native/shell.py ] && [ -s $r/opt/opos/src/opos/native/screens.py ] && [ -s $r/opt/opos/src/opos/native/logic.py ] && [ -s $r/opt/opos/src/opos/native/netlogic.py ] && [ -s $r/opt/opos/src/opos/native/updatelogic.py ] && [ -s $r/opt/opos/src/opos/native/layout.py ] && [ -s $r/opt/opos/src/opos/native/ui.py ] && [ -s $r/opt/opos/src/opos/native/posture.py ] && [ -s $r/opt/opos/src/opos/native/blank.py ] && [ -s $r/opt/opos/src/opos/native/displayconfig.py ] && [ -s $r/opt/opos/src/opos/native/hinge.py ] && [ -s $r/opt/opos/src/opos/native/facing.py ] && [ ! -e $r/opt/opos/src/opos/native/assistants.py ]"
 check "the native shell's defaults file, where there is one, holds only the server's own two-screen span" "[ ! -e $r/etc/default/opos-native ] || { [ -f $r/etc/default/opos-native ] && [ ! -L $r/etc/default/opos-native ] && [ \"\$(grep -v '^#' $r/etc/default/opos-native)\" = \"OPOS_SPAN=\$(sed -n 's/^Environment=OPOS_SPAN=//p' $w/opos-server.service)\" ]; }"
 if find "$r/usr/lib" -name Gtk-4.0.typelib 2>/dev/null | grep -q . && find "$r/usr/lib" -path '*/gi/__init__.py' 2>/dev/null | grep -q .; then
     echo "NOTE: GTK 4 and PyGObject are in the image: the native shell can start"
@@ -226,6 +226,7 @@ ota_updater_ok() {
     u=$r/usr/libexec/opos-updater/opos-updater
     [ -f "$u" ] && [ ! -L "$u" ] && [ -x "$u" ] && [ "$(stat -c %a "$u")" = 755 ] \
         && [ "$(head -n 1 "$u")" = '#!/usr/bin/python3 -IB' ] \
+        && grep -qx 'REVIEWED_ROLLBACK_PROTOCOL = 1' "$u" \
         && python3 -I -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$u"
 }
 ota_signers_ok() {
@@ -238,6 +239,7 @@ ota_units_ok() {
         && grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater apply-pending-boot$' "$w/opos-update-boot.service" \
         && grep -q '^ExecStart=/usr/libexec/opos-updater/opos-updater confirm-boot$' "$w/opos-update-confirm.service" \
         && grep -q '^PathExistsGlob=/var/lib/opos-update/inbox/\*.opos-update$' "$w/opos-update.path" \
+        && grep -qx 'PathExists=/var/lib/opos-update/inbox/rollback.reviewed' "$w/opos-update.path" \
         && grep -q '^Before=opos-server.service opos.service$' "$w/opos-update-boot.service" \
         && [ ! -L "$w/multi-user.target.wants/opos-update.service" ]
 }

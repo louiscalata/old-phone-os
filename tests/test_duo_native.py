@@ -15,6 +15,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging" / "duo-os"
@@ -171,7 +172,6 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_every_handover_to_the_browser_lights_the_screens_first(self):
         for plan, why, n in (
-            ([(10, 500)], "the owner chose", 1),
             ([(11, 5)], "the PIN lock", 1),
             ([(1, 2)] * 3, "three quick ends", 3),
         ):
@@ -189,7 +189,7 @@ class NativeLauncherTest(unittest.TestCase):
 
     def test_a_restore_that_could_not_light_the_screens_is_logged_and_the_browser_still_starts(self):
         (self.t / "restore_rc").write_text("1\n")
-        self.run_native([(10, 500)])
+        self.run_native([(11, 500)])
         self.assertEqual(len(self.read("restore.log")), 1)
         self.assertEqual(self.kiosk_started(), 1, "the handover is never stopped")
         self.assertTrue(
@@ -199,7 +199,7 @@ class NativeLauncherTest(unittest.TestCase):
         self.assertEqual(self.read("kiosk.failed"), ["1"], "the kiosk is told, so it keeps trying in the background")
 
     def test_a_restore_that_lit_the_screens_tells_the_kiosk_nothing_is_left(self):
-        self.run_native([(10, 500)], env={"OPOS_NATIVE_RESTORE_FAILED": "1"})
+        self.run_native([(11, 500)], env={"OPOS_NATIVE_RESTORE_FAILED": "1"})
         self.assertEqual(self.read("kiosk.failed"), ["unset"], "a stale flag from the caller is not passed on")
 
     def test_a_restore_after_clean_and_sigterm_ends_too(self):
@@ -339,13 +339,14 @@ class NativeLauncherTest(unittest.TestCase):
         self.run_native([(0, 100)])
         self.assertEqual((len(self.runs()), self.kiosk_started()), (0, 1))
 
-    def test_the_owners_choice_starts_the_browser_at_once(self):
-        self.run_native([(10, 500)])
-        self.assertEqual((len(self.runs()), self.kiosk_started()), (1, 1))
-        self.assertTrue(any("owner chose" in line for line in self.read("logger.log")))
+    def test_a_retired_exit_10_uses_the_normal_restart_path(self):
+        self.run_native([(10, 100)], returncode=-signal.SIGTERM)
+        self.assertEqual((len(self.runs()), self.kiosk_started()), (1, 0))
+        self.assertEqual(self.read("restore.log"), ["--restore /opt/opos/src 0"])
+        self.assertTrue(any("ended with status 10" in line for line in self.read("logger.log")))
 
     def test_the_browser_takes_over_the_same_process(self):
-        (self.t / "plan").write_text("10 5" + chr(10))
+        (self.t / "plan").write_text("11 5" + chr(10))
         r = subprocess.Popen(
             ["sh", str(NATIVE)],
             env={
@@ -424,7 +425,7 @@ class NativeLauncherTest(unittest.TestCase):
         )
 
     def test_a_missing_browser_ends_the_client_with_status_1(self):
-        self.run_native([(10, 5)], env={"OPOS_NATIVE_BROWSER": str(self.t / "no-such-kiosk")}, returncode=1)
+        self.run_native([(11, 5)], env={"OPOS_NATIVE_BROWSER": str(self.t / "no-such-kiosk")}, returncode=1)
         self.assertTrue(any("cannot start" in line for line in self.read("logger.log")))
 
     def test_a_clock_that_went_back_is_not_a_quick_end(self):
@@ -524,14 +525,10 @@ class TheKioskHandsOver(unittest.TestCase):
             for t in n.targets
             if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant)
         }
-        self.assertEqual((consts["LEAVE"], consts["BROKEN"], consts["LOCKED"]), (10, 3, 11))
-        self.assertIn('if [ "$rc" -eq 10 ]; then', NATIVE.read_text(encoding="utf-8"))
+        self.assertEqual((consts["BROKEN"], consts["LOCKED"]), (3, 11))
+        self.assertNotIn('if [ "$rc" -eq 10 ]; then', NATIVE.read_text(encoding="utf-8"))
         self.assertIn('if [ "$rc" -eq 11 ]; then', NATIVE.read_text(encoding="utf-8"))
-        self.assertIn(
-            "self.shell.leave)",
-            (SHELL.parent / "screens.py").read_text(encoding="utf-8"),
-            "the Settings button ends with LEAVE",
-        )
+        self.assertNotIn("self.shell.leave", (SHELL.parent / "screens.py").read_text(encoding="utf-8"))
         self.assertIn(
             "OPOS_NATIVE_READY=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/opos-native-ready",
             NATIVE.read_text(encoding="utf-8"),
@@ -631,6 +628,7 @@ class ImageIntegration(unittest.TestCase):
             "screens.py",
             "logic.py",
             "netlogic.py",
+            "updatelogic.py",
             "layout.py",
             "ui.py",
             "posture.py",
@@ -662,10 +660,14 @@ class ImageIntegration(unittest.TestCase):
         k.write_text(k.read_text(encoding="utf-8").replace(">>> track native", ">>> track nothing"), encoding="utf-8")
         self.assertIn("FAIL the native shell launcher", self.verify_native().stdout)
 
-    def test_an_image_without_the_network_screens_rules_fails(self):
+    def test_an_image_without_network_or_updates_rules_fails(self):
         self.image()
-        (self.r / "opt/opos/src/opos/native/netlogic.py").unlink()  # screens.py imports it: the shell would not start
-        self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
+        for name in ("netlogic.py", "updatelogic.py"):
+            with self.subTest(name=name):
+                installed = self.r / "opt/opos/src/opos/native" / name
+                installed.unlink()
+                self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
+                shutil.copy(SHELL.parent / name, installed)
 
     def test_an_image_without_the_hinge_or_the_facing_reader_fails(self):
         for name in ("hinge.py", "facing.py"):
@@ -812,10 +814,6 @@ class ShellMain(unittest.TestCase):
         )
         self.assertIn("a page could not be built", err.getvalue(), "and the reason is in the log")
 
-    def test_the_owners_choice_ends_with_leave(self):
-        self.made(leaving=10)
-        self.assertEqual(self.shell.main(["shell"]), self.shell.LEAVE)
-
     def test_a_pin_lock_ends_with_locked(self):
         self.made(leaving=11)
         self.assertEqual(self.shell.main(["shell"]), self.shell.LOCKED)
@@ -830,6 +828,108 @@ class ShellMain(unittest.TestCase):
         self.made()
         self.shell.main(["shell"])
         self.assertEqual(App.last.flags, "non-unique")
+
+    def test_theme_uses_one_provider_and_can_retry_a_failed_preference_write(self):
+        provider = Mock()
+        win = types.SimpleNamespace(theme="dark", theme_fixed=None, theme_kept=True, css_provider=provider)
+        with patch.object(self.shell, "save_theme", side_effect=[False, True]) as save:
+            self.assertTrue(self.shell.Shell.set_theme(win, "paper"))
+            self.assertEqual(win.theme, "paper")
+            self.assertFalse(win.theme_kept)
+            self.assertTrue(self.shell.Shell.set_theme(win, "paper"))
+            self.assertTrue(win.theme_kept)
+            self.assertTrue(self.shell.Shell.set_theme(win, "dark", save=False))
+            self.assertFalse(self.shell.Shell.set_theme(win, "invalid"))
+            win.theme_fixed = "dark"
+            self.assertFalse(self.shell.Shell.set_theme(win, "paper"))
+        self.assertEqual(win.theme, "dark")
+        self.assertEqual([c.args for c in save.call_args_list], [("paper",), ("paper",)])
+        self.assertEqual(
+            [c.args for c in provider.load_from_string.call_args_list],
+            [(self.shell.css_for("paper"),), (self.shell.css_for("dark"),)],
+        )
+
+    def test_pixel_shift_uses_the_three_minute_cycle_and_can_be_disabled(self):
+        module = self.shell
+        window = types.SimpleNamespace(rows=(), strip=object(), add_controller=Mock(), nudge=Mock())
+        window.shift_pointer = Mock()
+        with (
+            patch.object(module, "inset_panes", return_value=[]) as capture,
+            patch.object(module.GLib, "timeout_add_seconds", create=True) as timer,
+        ):
+            self.assertFalse(module.Shell.start_shift(window, {"OPOS_NO_SHIFT": "1"}))
+            timer.assert_not_called()
+            capture.assert_not_called()
+            self.assertTrue(module.Shell.start_shift(window, {}))
+        timer.assert_called_once_with(180, window.nudge)
+        window.add_controller.assert_called_once()
+        cycle = module.logic.SHIFT_CYCLE
+        self.assertEqual(len(set(cycle)), 9)
+        self.assertEqual(module.logic.shift_at(len(cycle)), (0, 0))
+        for dx, dy in cycle:
+            self.assertLessEqual(max(abs(dx), abs(dy)), 2)
+
+    def test_pixel_shift_waits_for_lid_input_and_backlight_recovery(self):
+        module = self.shell
+        blanker = types.SimpleNamespace(failed=[], pending=lambda: False)
+        base = dict(
+            warming=False,
+            lid_closed=False,
+            drag=None,
+            shift_contacts=set(),
+            restore_timer=None,
+            blanker=blanker,
+            back=None,
+            shift_step=0,
+            shift_panes=(),
+        )
+        with patch.object(module, "shift_insets") as apply:
+            for hold in (
+                {"warming": True},
+                {"lid_closed": None},
+                {"lid_closed": True},
+                {"drag": "home"},
+                {"shift_contacts": {"one touch"}},
+                {"restore_timer": 10},
+                {"blanker": types.SimpleNamespace(failed=["unreadable"], pending=lambda: True)},
+                {"blanker": types.SimpleNamespace(failed=[], pending=lambda: True)},
+            ):
+                with self.subTest(hold=hold):
+                    window = types.SimpleNamespace(**(base | hold))
+                    self.assertTrue(module.Shell.nudge(window))
+                    self.assertEqual(window.shift_step, 0)
+            apply.assert_not_called()
+            window = types.SimpleNamespace(
+                **(base | {"back": 1, "blanker": types.SimpleNamespace(failed=[], pending=lambda: True)})
+            )
+            self.assertTrue(module.Shell.nudge(window))
+            self.assertEqual(window.shift_step, 1)
+        apply.assert_called_once_with((), 1, 0)
+
+    def test_raw_touch_and_pointer_events_are_passed_on_and_tracked_until_release(self):
+        module = self.shell
+        window = types.SimpleNamespace(shift_contacts=set())
+        kinds = module.Gdk.EventType
+        touch_a, touch_b, device = object(), object(), object()
+
+        def event(kind, sequence=None, button=1):
+            data = types.SimpleNamespace(
+                get_event_type=lambda: kind,
+                get_event_sequence=lambda: sequence,
+                get_device=lambda: device,
+                get_button=lambda: button,
+            )
+            self.assertFalse(module.Shell.shift_pointer(window, None, data))
+
+        event(kinds.TOUCH_BEGIN, touch_a)
+        event(kinds.TOUCH_BEGIN, touch_b)
+        event(kinds.BUTTON_PRESS)
+        self.assertEqual(len(window.shift_contacts), 3)
+        event(kinds.TOUCH_CANCEL, touch_b)
+        event(kinds.BUTTON_RELEASE)
+        self.assertEqual(window.shift_contacts, {("touch", touch_a)})
+        event(kinds.TOUCH_END, touch_a)
+        self.assertFalse(window.shift_contacts)
 
     def test_ready_is_written_where_the_launcher_looks_and_a_bad_path_is_no_error(self):
         with tempfile.TemporaryDirectory() as d:
