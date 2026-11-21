@@ -1442,6 +1442,41 @@ class SetSecurity(SettingsSection):
         self.shell.go("lock")
 
 
+class SetDisplay(SettingsSection):
+    name, title = "set_display", "Display"
+
+    def build(self):
+        self.theme_line = label("", "mid")
+        self.theme_source = label("", "dim")
+        self.dark = button("Dark", lambda: self.pick_theme("dark"))
+        self.paper = button("Paper", lambda: self.pick_theme("paper"))
+        read = reading(label(self.title, "head"), self.theme_line, self.theme_source, self.note)
+        act = column(bottom=(hbox(self.dark, self.paper), bar(self.back_to_settings())))
+        self.paint_theme()
+        return read, act
+
+    def enter(self):
+        self.paint_theme()
+
+    def paint_theme(self):
+        theme, fixed = self.shell.theme, self.shell.theme_fixed
+        self.theme_line.set_label(f"Theme {theme.title()}")
+        detail = ""
+        if fixed is not None:
+            detail = "OPOS_THEME fixes the theme for this session."
+        elif not self.shell.theme_kept:
+            detail = "This theme is active. It could not be saved. Tap it again to retry."
+        self.theme_source.set_label(detail)
+        self.theme_source.set_visible(bool(detail))
+        for name, control in (("dark", self.dark), ("paper", self.paper)):
+            (control.add_css_class if theme == name else control.remove_css_class)("on")
+            control.set_sensitive(fixed is None)
+
+    def pick_theme(self, theme):
+        self.shell.set_theme(theme)
+        self.paint_theme()
+
+
 class SetTime(SettingsSection):
     name, title = "set_time", "Date & time"
 
@@ -2293,6 +2328,7 @@ PAGES = (
     SetBattery,
     SetSound,
     SetSecurity,
+    SetDisplay,
     SetTime,
     Network,
 )

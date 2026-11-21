@@ -5,12 +5,16 @@ no display here. Never run by the normal test discovery: it is a script."""
 
 import os
 import sys
+import tempfile
 import time
 
 import gtk_real_rules as rules  # this script's own folder is on sys.path; the rules import no GTK
 
 os.environ["OPOS_APPS"] = rules.ALL_APPS  # before the shell reads it: every app is a page
 os.environ["OPOS_HAND"] = "right"  # not the hand a person saved on this machine
+theme_config = tempfile.TemporaryDirectory(prefix="opos-gtk-theme-")
+os.environ["XDG_CONFIG_HOME"] = theme_config.name
+os.environ.pop("OPOS_THEME", None)
 os.environ.setdefault("OPOS_SPAN", rules.SPAN)
 # Unset or empty, the shell would ask 127.0.0.1:8765, where a real OPOS server may be running; the address below is
 # refused at once, so the poll thread reaches nothing and the run is hermetic. A value the caller set is kept.
@@ -21,7 +25,7 @@ try:
     import gi
 
     gi.require_version("Gtk", "4.0")
-    from gi.repository import Gdk, Gio, GLib, Gtk
+    from gi.repository import Gio, GLib, Gtk
 except (ImportError, ValueError) as err:
     print(f"no GTK 4: {err}", file=sys.stderr)
     sys.exit(rules.NO_GTK)
@@ -29,10 +33,10 @@ if not Gtk.init_check():
     print("no display for GTK", file=sys.stderr)
     sys.exit(rules.NO_GTK)
 
-from opos import convert
-from opos.native import screens
-from opos.native import shell as shell_module
-from opos.native.ui import CSS, one_column, two_columns
+from opos import convert  # noqa: E402
+from opos.native import screens  # noqa: E402
+from opos.native import shell as shell_module  # noqa: E402
+from opos.native.ui import one_column, two_columns  # noqa: E402
 
 W, H = rules.W, rules.H
 failures, checked = [], [0]
@@ -201,6 +205,31 @@ def variants(win, name):
     return [None]
 
 
+def measure_theme_switch(win):
+    original = win.pages["home"].open
+    original.grab_focus()
+    focused = win.get_focus()
+    first_box = rect_of(original, win)
+    first_color = original.get_color().to_string()
+    check(win.theme == "dark", "startup uses the dark palette with no saved preference")
+    check(win.set_theme("paper", save=False), "the shell switches to paper")
+    spin(0.15)
+    check(original.get_color().to_string() != first_color, "paper changes the active button color")
+    check(first_box == rect_of(original, win), "paper preserves button geometry")
+    check(win.get_focus() is focused, "paper preserves the focused widget")
+    measure_all(win, "paper, Home, two panes")
+    for side in (0, 1):
+        for row in win.rows:
+            two_columns(row, "right")
+            one_column(row, side)
+        spin(0.15)
+        measure_all(win, f"paper, Home, back mode {side}")
+        check(all(row.empty.has_css_class("back-unused") for row in win.rows), "the unused panel stays black")
+    check(win.set_theme("dark", save=False), "the shell switches back to dark")
+    spin(0.15)
+    check(original.get_color().to_string() == first_color, "dark restores the active button color")
+
+
 def run(app):
     win = app.win
     deadline = time.monotonic() + 20
@@ -261,6 +290,7 @@ def run(app):
         box is not None and hit is not None and hit.startswith("Open"),
         f"a tap on the Open button lands on it (got {hit!r})",
     )
+    measure_theme_switch(win)
     print(f"checked {checked[0]} things, {len(failures)} failed", flush=True)
     app.exit_code = 1 if failures else 0
     app.quit()
@@ -268,11 +298,6 @@ def run(app):
 
 
 def activate(app):
-    provider = Gtk.CssProvider()
-    provider.load_from_string(CSS)
-    Gtk.StyleContext.add_provider_for_display(
-        Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-    )
     app.win = shell_module.Shell(app, False)
     app.win.fullscreen()
     app.win.present()

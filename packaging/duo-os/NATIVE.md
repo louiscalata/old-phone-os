@@ -50,6 +50,13 @@ The shell asks one server: the phone's own, at `http://127.0.0.1:8765`. `OPOS_SE
 is asked. `OPOS_LOCAL_URL` (the Helper's model server) is not read. No proxy from the environment is used, and a
 redirect to another address is not followed, so the shell's token and the owner's actions stay on the phone.
 
+## Native palettes
+
+The shell starts in its original dark palette unless it has a saved paper preference. A live switch changes only
+the colors. The two-pane layout, focus, and black area on the unused screen in back mode stay as before.
+The shell saves `theme` alongside `hand` in `$XDG_CONFIG_HOME/opos/shell.json` or `~/.config/opos/shell.json`.
+A valid `OPOS_THEME=dark` or `OPOS_THEME=paper` fixes the palette for the session without updating the saved choice.
+
 ## The rules the screens follow
 
 - Every frame is a complete, accurate snapshot, and each tap is answered in one frame. Nothing slides or fades:

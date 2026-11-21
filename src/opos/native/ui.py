@@ -20,33 +20,60 @@ from opos.native.logic import RowSet  # noqa: E402
 ANIMATE = False
 MOVE_MS = 180
 
-CSS = """
-window, .pane, .sheet { background: #000; color: #fff; font-family: sans-serif; font-size: 20px; }
+_STYLE = """
+window, .pane, .sheet { background: @ground; color: @ink; font-family: sans-serif; font-size: 20px; }
+.back-unused { background: #000; }
 .clock { font-family: serif; font-weight: 700; font-size: 132px; }
 .head  { font-family: serif; font-weight: 700; font-size: 40px; }
 .big   { font-size: 28px; }
 .mid   { font-size: 22px; }
 .dim   { opacity: 0.6; }
 .strip { font-size: 17px; opacity: 0.7; }
-.rule  { border-bottom: 1px solid alpha(#fff, 0.22); }
-button { background: #000; background-image: none; color: #fff; border: 1px solid alpha(#fff, 0.55);
+.rule  { border-bottom: 1px solid @hairline; }
+button { background: @ground; background-image: none; color: @ink; border: 1px solid alpha(@ink, 0.55);
          border-radius: 0; box-shadow: none; outline: none; min-height: 68px; padding: 6px 16px; font-size: 24px; }
-button:active, button.on { background: #fff; color: #000; }
-button.main { background: #fff; color: #000; border-color: #fff; font-weight: 700; min-height: 80px; }
-button.main:active { background: #000; color: #fff; }
+button:active, button.on { background: @ink; color: @ground; }
+button.main { background: @main; color: @main_text; border-color: @main; font-weight: 700; min-height: 80px; }
+button.main:active { background: @ground; color: @ink; }
 button:disabled, label:disabled { opacity: 0.3; }
-button.row { border: none; border-bottom: 1px solid alpha(#fff, 0.22); min-height: 74px; padding: 6px 4px; }
-button.row:active { background: alpha(#fff, 0.18); color: #fff; }
+button.row { border: none; border-bottom: 1px solid @hairline; min-height: 74px; padding: 6px 4px; }
+button.row:active { background: alpha(@ink, 0.18); color: @ink; }
 button.settings-row { border: none; min-height: 48px; padding: 1px 8px; }
 button.settings-home { min-height: 48px; padding: 4px 12px; }
 .settings-title { font-size: 22px; }
 .settings-detail { font: 15px monospace; }
 button.tile { min-height: 116px; font-size: 26px; }
-button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(#fff, 0.35); }
+button.key { min-height: 64px; min-width: 0; padding: 0; font-size: 24px; border-color: alpha(@ink, 0.35); }
 button.pad { min-height: 84px; min-width: 0; padding: 0; font-size: 30px; }
 button.chip { min-height: 52px; min-width: 0; padding: 2px 8px; font-size: 19px; }
-.typed { border-bottom: 2px solid #fff; padding: 8px 0; font-size: 26px; }
+.typed { border-bottom: 2px solid @ink; padding: 8px 0; font-size: 26px; }
 """
+
+CSS = (
+    """
+@define-color ground #000000;
+@define-color ink #ffffff;
+@define-color main #ffffff;
+@define-color main_text #000000;
+@define-color hairline alpha(#ffffff, 0.22);
+"""
+    + _STYLE
+)
+_PAPER_CSS = (
+    """
+@define-color ground #cfcdc4;
+@define-color ink #1f1f1c;
+@define-color main #b3b0a6;
+@define-color main_text #1f1f1c;
+@define-color hairline #706e66;
+"""
+    + _STYLE
+)
+
+
+def css_for(theme):
+    """Both palettes use the same widget sizes and states."""
+    return _PAPER_CSS if theme == "paper" else CSS
 
 
 def label(text="", *classes, wrap=True, x=0.0):
@@ -189,6 +216,7 @@ def one_column(row, screen):
     widgets move; the column and the empty half are made once per row and kept for the next time."""
     if getattr(row, "column", None) is None:
         row.column, row.empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL), Gtk.Box()
+        row.empty.add_css_class("back-unused")
     read, act = row.read, row.act
     if getattr(row, "kept", None) is None:  # how the panes stretched before, put back by two_columns
         row.kept = (

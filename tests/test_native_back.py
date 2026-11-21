@@ -193,6 +193,9 @@ class StandInBox:
     def __init__(self, *a, **k):
         self.children, self.parent, self.vx, self.vx_set, self.vh = [], None, False, False, True
 
+    def add_css_class(self, name):
+        self.css_class = name
+
     def get_parent(self):
         return self.parent
 
@@ -252,6 +255,7 @@ class Rows(StandInShell):
                 halves = row.children
                 self.assertEqual(halves[screen], row.column)
                 self.assertEqual(halves[1 - screen], row.empty)
+                self.assertEqual(row.empty.css_class, "back-unused")
                 self.assertEqual(row.column.children, [row.read, row.act], "reading on top, thumb pane below")
                 self.assertEqual((row.read.vx, row.act.vx, row.act.vh), (True, False, False))
                 column, empty = row.column, row.empty

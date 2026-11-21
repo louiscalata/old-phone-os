@@ -260,6 +260,29 @@ class Screens(unittest.TestCase):
         self.assertEqual(self.shell.asked, [])
         self.assertEqual(self.work, [])
 
+    def test_display_offers_dark_and_paper_and_reports_failed_saves(self):
+        shell = self.shell
+        shell.theme, shell.theme_fixed, shell.theme_kept = "dark", None, True
+
+        def apply(theme):
+            shell.theme, shell.theme_kept = theme, False
+
+        shell.set_theme = apply
+        settings = self.page(self.screens.Settings)
+        display = self.page(self.screens.SetDisplay)
+        self.assertFalse(display.tile, "Display is a Settings page")
+        self.assertIn("set_display", settings.groups)
+        self.assertIn("on", display.dark.css)
+        display.pick_theme("paper")
+        self.assertIn("on", display.paper.css)
+        self.assertNotIn("on", display.dark.css)
+        self.assertIn("could not be saved", display.theme_source.get_label())
+        shell.theme_fixed = "paper"
+        display.enter()
+        self.assertFalse(display.dark.sensitive)
+        self.assertFalse(display.paper.sensitive)
+        self.assertIn("OPOS_THEME", display.theme_source.get_label())
+
     # --- Date & time ----------------------------------------------------------------------------------------------
 
     def test_settings_time_zone_uses_the_existing_endpoint_without_a_home_tile(self):
@@ -624,6 +647,7 @@ class Screens(unittest.TestCase):
             "set_battery",
             "set_sound",
             "set_security",
+            "set_display",
             "set_time",
             "network",
         ]
@@ -710,6 +734,7 @@ class Screens(unittest.TestCase):
                 "set_battery",
                 "set_sound",
                 "set_security",
+                "set_display",
                 "set_time",
                 "network",
             ],

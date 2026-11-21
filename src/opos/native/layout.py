@@ -6,7 +6,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+from contextlib import suppress
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # The shell runs on Linux; keep its pure rules importable elsewhere.
+    fcntl = None
 
 EDGE = 48  # a swipe that starts this close to an edge is an edge swipe (logical pixels)
 FAR = 80  # how fast a swipe must be to count (the toolkit reports a velocity in pixels per second)
@@ -25,6 +32,7 @@ HOME_DONE = 0.3  # ... and the page goes Home
 FLICK_MS = 150  # the release velocity is measured over the last this many milliseconds of the drag
 
 HANDS = ("right", "left")
+THEMES = ("dark", "paper")
 
 
 def hinge_px(env=None):
@@ -221,35 +229,68 @@ def settings_path(env=None):
     return Path(base) / "opos" / "shell.json"
 
 
+def _read_settings(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def load_hand(path=None, env=None):
     """The saved hand, "right" or "left". OPOS_HAND overrides the file; anything unreadable or unknown means "right"."""
     env = os.environ if env is None else env
     if env.get("OPOS_HAND") in HANDS:
         return env["OPOS_HAND"]
-    try:
-        hand = json.loads(Path(path or settings_path(env)).read_text(encoding="utf-8")).get("hand")
-    except (OSError, ValueError, AttributeError):
-        return "right"
+    hand = _read_settings(Path(path or settings_path(env))).get("hand")
     return hand if hand in HANDS else "right"
 
 
-def save_hand(hand, path=None, env=None):
-    """Write the hand to the settings file (other keys are kept). Returns True when it was written."""
-    if hand not in HANDS:
-        return False
+def theme_fixed(env=None):
+    """The theme forced by OPOS_THEME, or None when the saved choice can be used."""
+    theme = (os.environ if env is None else env).get("OPOS_THEME")
+    return theme if theme in THEMES else None
+
+
+def load_theme(path=None, env=None):
+    """Use OPOS_THEME, the saved choice, or the original dark palette."""
+    fixed = theme_fixed(env)
+    if fixed is not None:
+        return fixed
+    theme = _read_settings(Path(path or settings_path(env))).get("theme")
+    return theme if theme in THEMES else "dark"
+
+
+def _save_setting(key, value, path=None, env=None):
     path = Path(path or settings_path(env))
+    tmp = None
     try:
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                data = {}
-        except (OSError, ValueError):
-            data = {}
-        data["hand"] = hand
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data), encoding="utf-8")
-        os.replace(tmp, path)
+        # Lock the read/modify/replace, including across shell processes, so saving one choice keeps the other.
+        with path.with_name(path.name + ".lock").open("a", encoding="utf-8") as lock:
+            if fcntl is not None:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            data = _read_settings(path)
+            data[key] = value
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix="." + path.name + ".", dir=path.parent, delete=False
+            ) as handle:
+                tmp = Path(handle.name)
+                json.dump(data, handle)
+            os.replace(tmp, path)
         return True
     except OSError:
+        if tmp is not None:
+            with suppress(OSError):
+                tmp.unlink(missing_ok=True)
         return False
+
+
+def save_hand(hand, path=None, env=None):
+    """Write the hand preference while keeping the other keys."""
+    return hand in HANDS and _save_setting("hand", hand, path, env)
+
+
+def save_theme(theme, path=None, env=None):
+    """Write a valid theme preference while keeping the other keys."""
+    return theme in THEMES and _save_setting("theme", theme, path, env)

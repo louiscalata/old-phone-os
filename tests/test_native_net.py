@@ -493,8 +493,9 @@ class NetworkPage(unittest.TestCase):
         self.shell.leave, self.shell.set_hand = (lambda: None), (lambda h: None)
         settings = self.screens.Settings(self.shell)
         _text, rows = settings.preview({})
-        rows[-1][2]()
-        self.assertEqual((rows[-1][0], self.shell.gone), ("Network", ["network"]))
+        open_network = next(open_page for title, _summary, open_page in rows if title == "Network")
+        open_network()
+        self.assertEqual(self.shell.gone, ["network"])
         self.assertEqual(self.core.posts, [], "building the pages asks nothing")
 
     # --- join -----------------------------------------------------------------------------------------------------

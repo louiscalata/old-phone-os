@@ -62,6 +62,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from opos.native import blank, displayconfig, facing, hinge, logic, posture, screens  # noqa: E402
 from opos.native.layout import (  # noqa: E402
     SLOP,
+    THEMES,
     active_screen,
     drag_kind,
     drag_offset,
@@ -70,21 +71,24 @@ from opos.native.layout import (  # noqa: E402
     drag_velocity,
     hinge_px,
     load_hand,
+    load_theme,
     pane_order,
     panel_to_darken,
     save_hand,
+    save_theme,
     screen_at,
     swipe_action,
+    theme_fixed,
     touch_ignored,
 )
 from opos.native.ui import (  # noqa: E402
     ANIMATE,
-    CSS,
     MOVE_MS,
     Slide,
     bar,
     button,
     column,
+    css_for,
     label,
     one_column,
     reading,
@@ -192,6 +196,14 @@ class Shell(Gtk.ApplicationWindow):
         super().__init__(application=app, title="OPOS")
         self.core, self.snap, self.snap_seq, self.probe = Core(), {}, 0, probe
         self.hinge, self.hand = hinge_px(), load_hand()
+        self.theme_fixed = theme_fixed()
+        self.theme = self.theme_fixed or load_theme()
+        self.theme_kept = True
+        self.css_provider = Gtk.CssProvider()
+        self.css_provider.load_from_string(css_for(self.theme))
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(), self.css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
         self.gaps, self.last_frame, self.start = [], None, None
         self.said, self.said_text, self.battery_line = 0, "", ""
         self.page, self.clock_absent, self.leaving = "lock", False, 0
@@ -405,6 +417,17 @@ class Shell(Gtk.ApplicationWindow):
         self.pages["home"].show(self.snap)
         if save:
             save_hand(hand)
+
+    def set_theme(self, theme, save=True):
+        """Apply a live palette. theme_kept reports the result of a requested preference write."""
+        if theme not in THEMES or self.theme_fixed is not None:
+            return False
+        if theme != self.theme:
+            self.css_provider.load_from_string(css_for(theme))
+            self.theme = theme
+        if save:
+            self.theme_kept = save_theme(theme)
+        return True
 
     def say(self, text):
         """A short message in the top line for a few seconds; then the battery line comes back."""
@@ -1027,9 +1050,6 @@ def main(argv=None):
     made = []
 
     def activate(a):
-        provider = Gtk.CssProvider()
-        provider.load_from_string(CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         try:
             win = Shell(a, probe)
         except Exception:

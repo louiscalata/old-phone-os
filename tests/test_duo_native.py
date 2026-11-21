@@ -15,6 +15,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 DUO = ROOT / "packaging" / "duo-os"
@@ -822,6 +823,26 @@ class ShellMain(unittest.TestCase):
         self.made()
         self.shell.main(["shell"])
         self.assertEqual(App.last.flags, "non-unique")
+
+    def test_theme_uses_one_provider_and_can_retry_a_failed_preference_write(self):
+        provider = Mock()
+        win = types.SimpleNamespace(theme="dark", theme_fixed=None, theme_kept=True, css_provider=provider)
+        with patch.object(self.shell, "save_theme", side_effect=[False, True]) as save:
+            self.assertTrue(self.shell.Shell.set_theme(win, "paper"))
+            self.assertEqual(win.theme, "paper")
+            self.assertFalse(win.theme_kept)
+            self.assertTrue(self.shell.Shell.set_theme(win, "paper"))
+            self.assertTrue(win.theme_kept)
+            self.assertTrue(self.shell.Shell.set_theme(win, "dark", save=False))
+            self.assertFalse(self.shell.Shell.set_theme(win, "invalid"))
+            win.theme_fixed = "dark"
+            self.assertFalse(self.shell.Shell.set_theme(win, "paper"))
+        self.assertEqual(win.theme, "dark")
+        self.assertEqual([c.args for c in save.call_args_list], [("paper",), ("paper",)])
+        self.assertEqual(
+            [c.args for c in provider.load_from_string.call_args_list],
+            [(self.shell.css_for("paper"),), (self.shell.css_for("dark"),)],
+        )
 
     def test_ready_is_written_where_the_launcher_looks_and_a_bad_path_is_no_error(self):
         with tempfile.TemporaryDirectory() as d:
