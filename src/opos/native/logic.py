@@ -293,6 +293,15 @@ def call_line(row):
 # Every frame shows one complete, accurate snapshot of what the server last said. These are the rules for that, with
 # no toolkit, so they are tested anywhere.
 
+# The resting layout moves by at most two logical pixels every three minutes.
+SHIFT_S = 180
+SHIFT_CYCLE = ((0, 0), (1, 0), (2, 1), (1, 2), (0, 2), (-1, 1), (-2, 0), (-1, -1), (0, -2))
+
+
+def shift_at(step):
+    return SHIFT_CYCLE[step % len(SHIFT_CYCLE)]
+
+
 PRACTICE_CALL = "In a practice call"
 PRACTICE_MESSAGES = "Practice mode: nothing you write here is sent."
 PRACTICE_SENT = "Practice message. Nothing was sent."

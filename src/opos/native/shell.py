@@ -90,9 +90,11 @@ from opos.native.ui import (  # noqa: E402
     button,
     column,
     css_for,
+    inset_panes,
     label,
     one_column,
     reading,
+    shift_insets,
     two_columns,
     two_panes,
 )
@@ -973,6 +975,48 @@ class Shell(Gtk.ApplicationWindow):
         return True
 
     # --- checking the shell ------------------------------------------------------------------------------------
+    def start_shift(self, env=None):
+        """Start only for the interactive session. Checking modes keep their original coordinates."""
+        if (os.environ if env is None else env).get("OPOS_NO_SHIFT") == "1":
+            return False
+        self.shift_step = 0
+        self.shift_panes = inset_panes(self.rows, self.strip)
+        self.shift_contacts = set()
+        pointer = Gtk.EventControllerLegacy()
+        pointer.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        pointer.connect("event", self.shift_pointer)
+        self.add_controller(pointer)
+        GLib.timeout_add_seconds(logic.SHIFT_S, self.nudge)
+        return True
+
+    def shift_pointer(self, _controller, event):
+        """Track a press even if it has not become a drag or a child button handles it."""
+        kind = event.get_event_type()
+        kinds = Gdk.EventType
+        if kind in (kinds.TOUCH_BEGIN, kinds.TOUCH_END, kinds.TOUCH_CANCEL):
+            contact = ("touch", event.get_event_sequence())
+        elif kind in (kinds.BUTTON_PRESS, kinds.BUTTON_RELEASE):
+            contact = (event.get_device(), event.get_button())
+        else:
+            return False
+        if kind in (kinds.TOUCH_BEGIN, kinds.BUTTON_PRESS):
+            self.shift_contacts.add(contact)
+        else:
+            self.shift_contacts.discard(contact)
+        return False
+
+    def nudge(self):
+        """Move only the resting content once the lid is open and the layout has settled."""
+        if (
+            self.warming or self.lid_closed is not False or self.drag is not None or self.shift_contacts
+            or self.restore_timer is not None or self.blanker.failed
+            or (self.back is None and self.blanker.pending())
+        ):
+            return True
+        self.shift_step += 1
+        shift_insets(self.shift_panes, *logic.shift_at(self.shift_step))
+        return True
+
     def tick(self, _w, clock):
         now = clock.get_frame_time() / 1000.0
         if self.last_frame is not None:
@@ -1088,6 +1132,7 @@ def main(argv=None):
             GLib.timeout_add(5000, win.run_shots, shots)
         if not probe and not shots:     # the checking modes must not depend on the lid or touch the screens
             win.start_lid()
+            win.start_shift()
     app.connect("activate", activate)
     try:
         status = app.run([])

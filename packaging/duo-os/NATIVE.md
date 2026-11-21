@@ -61,6 +61,13 @@ Settings → Display also reads the lit backlight and offers ten brightness step
 brightness keeps a panel that is already dark at zero. If a restore is pending, the saved restore levels reflect the
 new choice and remain above zero. Brightness controls have not been checked on the Duo.
 
+## Resting pixel movement
+
+Every three minutes the native shell moves the contents of each pane by up to two logical pixels. The hinge and the
+unused dark pane keep their positions. GTK moves each control and its touch target together. The step waits for a
+confirmed open lid, a settled display and no touch or drag in progress. `OPOS_NO_SHIFT=1`, `--probe` and `--shots`
+keep the content fixed. This has been tested in desktop GTK. Its effect on the phone's OLED panels is unverified.
+
 ## The rules the screens follow
 
 - Every frame is a complete, accurate snapshot, and each tap is answered in one frame. Nothing slides or fades:

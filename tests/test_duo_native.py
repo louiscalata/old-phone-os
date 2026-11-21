@@ -844,6 +844,88 @@ class ShellMain(unittest.TestCase):
             [(self.shell.css_for("paper"),), (self.shell.css_for("dark"),)],
         )
 
+    def test_pixel_shift_uses_the_three_minute_cycle_and_can_be_disabled(self):
+        module = self.shell
+        window = types.SimpleNamespace(rows=(), strip=object(), add_controller=Mock(), nudge=Mock())
+        window.shift_pointer = Mock()
+        with (
+            patch.object(module, "inset_panes", return_value=[]) as capture,
+            patch.object(module.GLib, "timeout_add_seconds", create=True) as timer,
+        ):
+            self.assertFalse(module.Shell.start_shift(window, {"OPOS_NO_SHIFT": "1"}))
+            timer.assert_not_called()
+            capture.assert_not_called()
+            self.assertTrue(module.Shell.start_shift(window, {}))
+        timer.assert_called_once_with(180, window.nudge)
+        window.add_controller.assert_called_once()
+        cycle = module.logic.SHIFT_CYCLE
+        self.assertEqual(len(set(cycle)), 9)
+        self.assertEqual(module.logic.shift_at(len(cycle)), (0, 0))
+        for dx, dy in cycle:
+            self.assertLessEqual(max(abs(dx), abs(dy)), 2)
+
+    def test_pixel_shift_waits_for_lid_input_and_backlight_recovery(self):
+        module = self.shell
+        blanker = types.SimpleNamespace(failed=[], pending=lambda: False)
+        base = dict(
+            warming=False,
+            lid_closed=False,
+            drag=None,
+            shift_contacts=set(),
+            restore_timer=None,
+            blanker=blanker,
+            back=None,
+            shift_step=0,
+            shift_panes=(),
+        )
+        with patch.object(module, "shift_insets") as apply:
+            for hold in (
+                {"warming": True},
+                {"lid_closed": None},
+                {"lid_closed": True},
+                {"drag": "home"},
+                {"shift_contacts": {"one touch"}},
+                {"restore_timer": 10},
+                {"blanker": types.SimpleNamespace(failed=["unreadable"], pending=lambda: True)},
+                {"blanker": types.SimpleNamespace(failed=[], pending=lambda: True)},
+            ):
+                with self.subTest(hold=hold):
+                    window = types.SimpleNamespace(**(base | hold))
+                    self.assertTrue(module.Shell.nudge(window))
+                    self.assertEqual(window.shift_step, 0)
+            apply.assert_not_called()
+            window = types.SimpleNamespace(
+                **(base | {"back": 1, "blanker": types.SimpleNamespace(failed=[], pending=lambda: True)})
+            )
+            self.assertTrue(module.Shell.nudge(window))
+            self.assertEqual(window.shift_step, 1)
+        apply.assert_called_once_with((), 1, 0)
+
+    def test_raw_touch_and_pointer_events_are_passed_on_and_tracked_until_release(self):
+        module = self.shell
+        window = types.SimpleNamespace(shift_contacts=set())
+        kinds = module.Gdk.EventType
+        touch_a, touch_b, device = object(), object(), object()
+
+        def event(kind, sequence=None, button=1):
+            data = types.SimpleNamespace(
+                get_event_type=lambda: kind,
+                get_event_sequence=lambda: sequence,
+                get_device=lambda: device,
+                get_button=lambda: button,
+            )
+            self.assertFalse(module.Shell.shift_pointer(window, None, data))
+
+        event(kinds.TOUCH_BEGIN, touch_a)
+        event(kinds.TOUCH_BEGIN, touch_b)
+        event(kinds.BUTTON_PRESS)
+        self.assertEqual(len(window.shift_contacts), 3)
+        event(kinds.TOUCH_CANCEL, touch_b)
+        event(kinds.BUTTON_RELEASE)
+        self.assertEqual(window.shift_contacts, {("touch", touch_a)})
+        event(kinds.TOUCH_END, touch_a)
+        self.assertFalse(window.shift_contacts)
+
     def test_ready_is_written_where_the_launcher_looks_and_a_bad_path_is_no_error(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "opos-native-ready"

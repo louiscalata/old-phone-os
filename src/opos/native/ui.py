@@ -178,6 +178,31 @@ def column(*children, bottom=()):
     return box
 
 
+def inset_panes(rows, strip):
+    """Capture the inset of each content pane without including the hinge or unused screen."""
+    panes, pending = [strip], list(rows)
+    while pending:
+        widget = pending.pop()
+        if widget.has_css_class("pane"):
+            panes.append(widget)
+            continue
+        child = widget.get_first_child()
+        while child is not None:
+            pending.append(child)
+            child = child.get_next_sibling()
+    return [(w, w.get_margin_start(), w.get_margin_end(), w.get_margin_top(), w.get_margin_bottom()) for w in panes]
+
+
+def shift_insets(panes, x, y):
+    """Change opposite margins together so GTK moves drawing and input without resizing the pane."""
+    for widget, start, end, top, bottom in panes:
+        dx, dy = max(-start, min(x, end)), max(-top, min(y, bottom))
+        widget.set_margin_start(start + dx)
+        widget.set_margin_end(end - dx)
+        widget.set_margin_top(top + dy)
+        widget.set_margin_bottom(bottom - dy)
+
+
 def reading(*children):
     """The content view: a pane that scrolls by touch, never sideways, with no scrollbar taking room.
 

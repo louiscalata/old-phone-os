@@ -36,7 +36,7 @@ if not Gtk.init_check():
 from opos import convert  # noqa: E402
 from opos.native import screens  # noqa: E402
 from opos.native import shell as shell_module  # noqa: E402
-from opos.native.ui import one_column, two_columns  # noqa: E402
+from opos.native.ui import inset_panes, one_column, shift_insets, two_columns  # noqa: E402
 
 W, H = rules.W, rules.H
 failures, checked = [], [0]
@@ -248,6 +248,76 @@ def measure_theme_switch(win):
     check(original.get_color().to_string() == first_color, "dark restores the active button color")
 
 
+def picked_button(win, x, y):
+    widget = win.pick(x, y, Gtk.PickFlags.DEFAULT)
+    while widget is not None and not isinstance(widget, Gtk.Button):
+        widget = widget.get_parent()
+    return widget
+
+
+def pane_footprints(row, win):
+    panes = []
+    for pane in (row.read, row.act):
+        x, y, w, h = rect_of(pane, win)
+        start, end = pane.get_margin_start(), pane.get_margin_end()
+        top, bottom = pane.get_margin_top(), pane.get_margin_bottom()
+        left = end if pane.get_direction() == Gtk.TextDirection.RTL else start
+        panes.append((x - left, y - top, w + start + end, h + top + bottom))
+    return panes
+
+
+def measure_shift_surface(win, row, button, description):
+    before = rect_of(button, win)
+    panes = pane_footprints(row, win)
+    empty = getattr(row, "empty", None)
+    dark = rect_of(empty, win) if empty is not None and empty.get_mapped() else None
+    x, y, width, height = before
+    middle = y + height / 2
+    check(picked_button(win, x + width / 2, middle) is button, f"{description}: resting button can be picked")
+    check(picked_button(win, x + width + 1, middle) is not button, f"{description}: outside the old button")
+    margins = inset_panes(win.rows, win.strip)
+    shift_insets(margins, 2, 1)
+    spin(0.1)
+    shifted = rect_of(button, win)
+    check(shifted == (x + 2, y + 1, width, height), f"{description}: the button moves by exactly (2, 1)")
+    check(picked_button(win, x + width + 1, middle + 1) is button, f"{description}: picks the newly drawn edge")
+    check(
+        panes == pane_footprints(row, win),
+        f"{description}: the pane positions and hinge seam stay put",
+    )
+    if dark is not None:
+        check(
+            row.empty.has_css_class("back-unused") and dark == rect_of(row.empty, win),
+            f"{description}: the unused dark pane keeps its position",
+        )
+    shift_insets(margins, 0, 0)
+    spin(0.1)
+    check(rect_of(button, win) == before, f"{description}: restoring the margins restores the button")
+
+
+def measure_pixel_shift(win):
+    win.show_page("home")
+    opening = win.pages["home"].open
+    closing = win.rows[1].act.get_last_child().get_child_at(0, 0)
+    for hand in ("right", "left"):
+        for row in win.rows:
+            two_columns(row, win.hand)
+        win.set_hand(hand, save=False)
+        for side in (None, 0, 1):
+            for row in win.rows:
+                two_columns(row, hand)
+                if side is not None:
+                    one_column(row, side)
+            for reveal, row, button in ((False, win.rows[0], opening), (True, win.rows[1], closing)):
+                win.set_shade(reveal)
+                spin(0.15)
+                surface = "sheet" if reveal else "page"
+                measure_shift_surface(win, row, button, f"{surface}, {hand} hand, back side {side}")
+    win.set_shade(False)
+    for row in win.rows:
+        two_columns(row, win.hand)
+
+
 def run(app):
     win = app.win
     deadline = time.monotonic() + 20
@@ -312,6 +382,7 @@ def run(app):
         f"a tap on the Open button lands on it (got {hit!r})",
     )
     measure_theme_switch(win)
+    measure_pixel_shift(win)
     print(f"checked {checked[0]} things, {len(failures)} failed", flush=True)
     app.exit_code = 1 if failures else 0
     app.quit()
