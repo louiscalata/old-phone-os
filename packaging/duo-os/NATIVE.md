@@ -72,9 +72,9 @@ new choice and remain above zero. Brightness controls have not been checked on t
 - The battery sheet, the lock screen and the bottom edge of an app page follow the finger while it is down (direct
   manipulation), exactly as far as the finger has moved. When it lifts, the next frame shows the result, complete: the
   sheet open or closed, Home or the page it was on. There is no easing, no coasting and no spring-back on a timer.
-- Deleting an alarm or a person takes two taps ("Delete this alarm?" or "Delete this person?"). In Notes,
-  Delete this note opens a confirmation in the action pane. Cancel keeps the draft and Yes, delete sends the request.
-  The reading pane keeps its size and editing pauses while the confirmation is open. Add alarm and Call are busy
+- Remove in Clock or Contacts and Delete this note in Notes open reviews in the action pane. Each review names the
+  alarm, contact, or note. Cancel keeps the selection or draft, and Yes, delete sends the request. The reading pane
+  keeps its size and editing pauses while the review is open. Add alarm and Call are busy
   until the server's answer is on screen, so a second tap sends nothing. When the answer to a call or a hang-up does
   not come, the button stays busy until a state asked for after that is drawn, so while the server cannot be reached it
   stays busy; the screen then no longer says it is asking. It

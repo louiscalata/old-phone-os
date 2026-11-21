@@ -599,7 +599,7 @@ Sources: `ROADMAP.md:136` "Clock: save an alarm, snooze, stop, and open bedside.
 1. On the glass: Clock, add an alarm 2 minutes ahead, save it.
 2. When it rings, tap Snooze; when it rings again, tap Stop.
 3. Tap Bedside, then go back.
-4. Delete the alarm: tap Delete, then confirm at "Delete this alarm?".
+4. Select the alarm and tap Remove. Check the review names the alarm, then tap Yes, delete.
 
 **Observe.** The alarm listed as On; the ring screen with Stop and Snooze off the hinge; a second ring about 10 minutes
 later; the bedside clock; delete taking two taps.
@@ -694,7 +694,8 @@ the browser for this check.
 2. On the glass: Contacts, Import.
 3. Add one more invented person by hand.
 4. After C24's restart (or the next RAM-boot), open Contacts again.
-5. Delete both test people: Delete, then confirm at "Delete this person?".
+5. Delete both test people. In the browser, tap Delete and confirm. In the native shell, select each person, tap
+   Remove, check the review names that contact, and tap Yes, delete.
 
 **Observe.** The imported person and the hand-added person listed; both still there after the restart.
 

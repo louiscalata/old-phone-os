@@ -888,46 +888,64 @@ class Screens(unittest.TestCase):
         )
         self.assertEqual(names({"OPOS_APPS": "nonsense"}), base)
 
-    # --- two taps to delete, as the browser asks --------------------------------------------------------------------
-    def test_an_alarm_is_removed_only_on_the_second_tap(self):
+    # --- Separate delete reviews -----------------------------------------------------------------------------------
+    def test_an_alarm_requires_a_separate_review_of_the_current_alarm(self):
         c = self.page(self.screens.Clock)
-        two = [
-            {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True},
-            {"id": "a2", "hour": 8, "minute": 0, "days": [], "enabled": True},
-        ]
-        c.got({"alarms": two, "clock_ok": True})
+        first = {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True}
+        second = {"id": "a2", "hour": 8, "minute": 0, "days": [], "enabled": True}
+        snapshot = {"alarms": [first, second], "clock_ok": True}
+        c.got(snapshot)
         c.choose("a1")
         c.remove()
-        self.assertEqual(
-            (self.work, c.remove_button.get_label()), ([], "Delete this alarm?"), "the first tap only asks"
-        )
-        c.got({"alarms": two, "clock_ok": True})
-        self.assertEqual(c.remove_button.get_label(), "Delete this alarm?", "a refresh keeps the question")
-        c.got({"alarms": two[1:], "clock_ok": True})
-        self.assertEqual(c.remove_button.get_label(), "Remove", "the alarm went away: nothing is left armed")
-        c.got({"alarms": two, "clock_ok": True})
-        c.choose("a2")
-        self.assertEqual(c.remove_button.get_label(), "Remove", "another alarm: the question is gone")
         c.remove()
         self.assertEqual(self.work, [])
-        c.remove()
-        self.flush()
-        self.assertEqual(self.shell.core.sent[-1], ("clock", {"action": "delete", "id": "a2"}))
         self.assertEqual(c.remove_button.get_label(), "Remove")
-
-    def test_a_person_is_removed_only_on_the_second_tap(self):
-        c = self.page(self.screens.Contacts)
-        c.got({"people": [{"id": "p1", "name": "Ann", "numbers": []}, {"id": "p2", "name": "Bo", "numbers": []}]})
-        c.choose("p1")
+        self.assertEqual(c.actions.visible_child_name, "review")
+        self.assertIn("07:00", c.delete_prompt.get_label())
+        self.assertTrue(c.cancel_delete_button.focused)
+        c.got(snapshot)
+        self.assertEqual(c.actions.visible_child_name, "review", "an identical refresh keeps the review")
+        c.got(dict(snapshot, alarms=[dict(first, minute=30), second]))
+        c.confirm_delete()
+        self.assertEqual(self.work, [], "a change to the reviewed alarm requires another review")
+        c.choose("a2")
         c.remove()
-        self.assertEqual((self.work, c.remove_button.get_label()), ([], "Delete this person?"))
-        c.choose(None)
-        c.choose("p1")
-        c.remove()
-        self.assertEqual(self.work, [], "Done in between: the first tap asks again")
-        c.remove()
+        self.assertIn("08:00", c.delete_prompt.get_label())
+        self.shell.core.answers = [dict(snapshot, alarms=[first])]
+        c.confirm_delete()
+        c.confirm_delete()
+        self.assertEqual(len(self.work), 1)
+        self.assertEqual(c.chosen, "a2", "still chosen while the server reply waits")
         self.flush()
-        self.assertEqual(self.shell.core.sent[-1], ("contacts", {"action": "delete", "id": "p1"}))
+        self.assertEqual(self.shell.core.sent, [("clock", {"action": "delete", "id": "a2"})])
+        self.assertFalse(c.pick_box.visible, "the accepted server snapshot no longer has the deleted alarm")
+
+    def test_contact_review_names_the_target_and_clears_on_cancel_change_or_leave(self):
+        c = self.page(self.screens.Contacts)
+        first = {"id": "p1", "name": "Ann", "numbers": [{"number": "2125550100"}]}
+        second = {"id": "p2", "name": "Bo", "numbers": []}
+        c.got({"people": [first, second]})
+        c.choose("p1")
+        c.remove()
+        self.assertIn("Ann (2125550100)", c.delete_prompt.get_label())
+        c.cancel_delete()
+        c.confirm_delete()
+        self.assertTrue(c.pick_box.visible, "Cancel leaves the current contact selected")
+        c.remove()
+        c.choose("p2")
+        c.confirm_delete()
+        c.remove()
+        c.leave()
+        c.confirm_delete()
+        self.assertEqual(self.work, [])
+        c.remove()
+        c.remove()
+        self.assertIn("Bo", c.delete_prompt.get_label())
+        self.shell.core.answers = [{"people": [first]}]
+        c.confirm_delete()
+        c.confirm_delete()
+        self.flush()
+        self.assertEqual(self.shell.core.sent, [("contacts", {"action": "delete", "id": "p2"})])
 
     def test_a_note_is_deleted_only_by_the_review_confirmation(self):
         n = self.page(self.screens.Notes)
@@ -1121,14 +1139,26 @@ class Screens(unittest.TestCase):
         self.flush()
         self.assertEqual(c.digits, "")
 
-    def test_a_removed_alarm_stays_on_screen_until_the_server_removed_it(self):
+    def test_a_refused_alarm_removal_keeps_the_alarm_and_allows_a_new_review(self):
         c = self.page(self.screens.Clock)
-        c.paint({"alarms": [{"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True}], "clock_ok": True})
+        alarm = {"id": "a1", "hour": 7, "minute": 0, "days": [], "enabled": True}
+        c.got({"alarms": [alarm], "clock_ok": True})
         c.choose("a1")
-        self.shell.core.answers = [{"error": "id"}]
+        self.shell.core.answers = [{"error": "id"}, {"alarms": [], "clock_ok": True}]
         c.remove()
+        c.confirm_delete()
+        self.assertFalse(c.remove_button.sensitive)
+        c.remove()
+        c.confirm_delete()
+        self.assertEqual(len(self.work), 1)
         self.flush()
-        self.assertEqual(c.chosen, "a1", "refused: still chosen and still there")
+        self.assertTrue(c.pick_box.visible, "the refused alarm still exists on the last snapshot")
+        self.assertTrue(c.remove_button.sensitive, "a refusal releases the pending state")
+        self.assertIn("cannot be changed", c.note.get_label())
+        c.remove()
+        c.confirm_delete()
+        self.flush()
+        self.assertFalse(c.pick_box.visible)
 
     # --- Notes ----------------------------------------------------------------------------------------------------
     def open_note(self, n, ident="n1", text="hello"):

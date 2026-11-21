@@ -466,7 +466,60 @@ class Messages(Page):
         return "", self.rows(snap, opener)
 
 
-class Clock(Page):
+class RemoveReview(Page):
+    """Review deletion of a selected Clock or Contacts row."""
+
+    def with_remove_review(self, controls):
+        self.delete_target, self.deleting = None, False
+        self.delete_prompt = label("", "mid")
+        self.cancel_delete_button = button("Cancel", self.cancel_delete, "main")
+        self.confirm_delete_button = button("Yes, delete", self.confirm_delete)
+        review = column(bottom=(self.delete_prompt, bar(self.cancel_delete_button, self.confirm_delete_button)))
+        self.actions = Gtk.Stack(hhomogeneous=True, vhomogeneous=True)
+        self.actions.add_named(controls, "edit")
+        self.actions.add_named(review, "review")
+        return self.actions
+
+    def paint_removal(self):
+        if self.delete_target != self.removal():
+            self.delete_target = None
+        self.delete_prompt.set_label(self.delete_target[1] if self.delete_target else "")
+        self.actions.set_visible_child_name("review" if self.delete_target else "edit")
+        self.remove_button.set_sensitive(not self.deleting)
+
+    def remove(self):
+        if self.deleting or self.delete_target:
+            return
+        self.delete_target = self.removal()
+        self.paint_removal()
+        if self.delete_target:
+            self.cancel_delete_button.grab_focus()
+
+    def cancel_delete(self):
+        self.delete_target = None
+        self.paint_removal()
+
+    def leave(self):
+        self.cancel_delete()
+
+    def confirm_delete(self):
+        target = self.delete_target
+        if self.deleting or target is None or target != self.removal():
+            self.cancel_delete()
+            return
+        self.deleting = True
+        self.cancel_delete()
+
+        def done(data, fresh):
+            self.deleting = False
+            self.paint_removal()
+            if not fresh and not self.confirmed(data):
+                self.say(self.refusal_words(data) or MISSING % self.title)
+
+        self.call({"action": "delete", "id": target[0]}, done=done)
+
+
+class Clock(RemoveReview):
     name, title, api = "clock", "Clock", "clock"
 
     def build(self):
@@ -482,7 +535,7 @@ class Clock(Page):
         )
         self.ringing = None
         self.pick = label("", "big")
-        self.sure, self.adding = logic.Confirm(), False  # Remove asks twice; Add waits for its answer
+        self.adding = False
         self.remove_button = button("Remove", self.remove, "chip")
         self.pick_box = vbox(
             self.pick,
@@ -526,6 +579,7 @@ class Clock(Page):
                 bar(self.home(), self.add),
             ),
         )
+        act = self.with_remove_review(act)
         self.set_daily(False)
         self.choose(None)
         self.ring.set_visible(False)
@@ -570,29 +624,27 @@ class Clock(Page):
         self.add.set_label("Adding" if on else "Add alarm")
         self.add.set_sensitive(not on)
 
+    def alarm(self):
+        return next((r for r in (self.data or {}).get("alarms", []) if r.get("id") == self.chosen), None)
+
     def choose(self, alarm_id):
         self.chosen = alarm_id
-        row = next((r for r in (self.data or {}).get("alarms", []) if r.get("id") == alarm_id), None)
-        self.sure.keep_only(alarm_id if row else None)
-        self.remove_button.set_label("Delete this alarm?" if self.sure.armed else "Remove")
+        row = self.alarm()
         self.pick_box.set_visible(row is not None)
         if row:
             self.pick.set_label("%s  %s" % logic.alarm_line(row))
+        self.paint_removal()
 
     def toggle(self):
-        row = next((r for r in (self.data or {}).get("alarms", []) if r.get("id") == self.chosen), None)
+        row = self.alarm()
         if row:
             self.call({"action": "toggle", "id": row["id"], "enabled": not row.get("enabled")})
 
-    def remove(self):
-        """The first tap asks "Delete this alarm?", the second deletes, as in the browser. The alarm stays on screen
-        until the server has removed it."""
-        if not self.chosen:
-            return
-        go = self.sure.tap(self.chosen)
-        self.remove_button.set_label("Remove" if go else "Delete this alarm?")
-        if go:
-            self.call({"action": "delete", "id": self.chosen})
+    def removal(self):
+        row = self.alarm()
+        if row and self.chosen:
+            time, detail = logic.alarm_line(row)
+            return self.chosen, f"Delete the {time} alarm ({detail})?"
 
     def paint(self, data):
         rows = []
@@ -634,7 +686,7 @@ class Clock(Page):
         ]
 
 
-class Contacts(Page):
+class Contacts(RemoveReview):
     name, title, api = "contacts", "Contacts", "contacts"
 
     def build(self):
@@ -643,7 +695,6 @@ class Contacts(Page):
         self.people = vbox(spacing=0)
         read = reading(label("Contacts", "head"), self.note, self.people)
         self.pick = label("", "big")
-        self.sure = logic.Confirm()
         self.remove_button = button("Remove", self.remove, "chip")
         self.pick_box = vbox(
             self.pick,
@@ -668,6 +719,7 @@ class Contacts(Page):
                 bar(self.home(), self.save_button),
             ),
         )
+        act = self.with_remove_review(act)
         self.focus("name")
         self.choose(None)
         return read, act
@@ -724,11 +776,10 @@ class Contacts(Page):
     def choose(self, ident):
         self.chosen = ident
         person = self.person()
-        self.sure.keep_only(ident if person else None)
-        self.remove_button.set_label("Delete this person?" if self.sure.armed else "Remove")
         self.pick_box.set_visible(person is not None)
         if person:
             self.pick.set_label("%s\n%s" % (person.get("name") or "", self.number_of(person)))
+        self.paint_removal()
 
     def ring(self):
         person = self.person()
@@ -742,15 +793,12 @@ class Contacts(Page):
             self.shell.go("messages")
             self.shell.pages["messages"].open_thread(self.number_of(person))
 
-    def remove(self):
-        """The first tap asks "Delete this person?", the second deletes, as in the browser. The person stays on screen
-        until the server has removed them."""
-        if not self.chosen:
-            return
-        go = self.sure.tap(self.chosen)
-        self.remove_button.set_label("Remove" if go else "Delete this person?")
-        if go:
-            self.call({"action": "delete", "id": self.chosen})
+    def removal(self):
+        person = self.person()
+        if person and self.chosen:
+            name, number = person.get("name"), self.number_of(person)
+            identity = f"{name} ({number})" if name and number else name or number
+            return self.chosen, f"Delete the contact {identity}?" if identity else "Delete this contact?"
 
     def paint(self, data):
         fill(
