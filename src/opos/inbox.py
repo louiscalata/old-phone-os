@@ -84,7 +84,7 @@ def add(kind, text, now=None):
     sound = allows_sound(kind, when, quiet, False)
     row = {"id": str(nxt), "kind": kind, "text": text.strip(), "sound": sound}
     items.append(row)
-    _save(items[-CAP:], quiet, nxt + 1)
+    _save(items, quiet, nxt + 1)
     return row
 
 
