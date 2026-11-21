@@ -198,7 +198,7 @@ def _loads(raw: bytes):
 
     try:
         return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=bad)
-    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+    except (ValueError, RecursionError) as exc:
         raise ValueError("not valid JSON") from exc
 
 
