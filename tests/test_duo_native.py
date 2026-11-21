@@ -628,6 +628,7 @@ class ImageIntegration(unittest.TestCase):
             "screens.py",
             "logic.py",
             "netlogic.py",
+            "updatelogic.py",
             "layout.py",
             "ui.py",
             "posture.py",
@@ -659,10 +660,14 @@ class ImageIntegration(unittest.TestCase):
         k.write_text(k.read_text(encoding="utf-8").replace(">>> track native", ">>> track nothing"), encoding="utf-8")
         self.assertIn("FAIL the native shell launcher", self.verify_native().stdout)
 
-    def test_an_image_without_the_network_screens_rules_fails(self):
+    def test_an_image_without_network_or_updates_rules_fails(self):
         self.image()
-        (self.r / "opt/opos/src/opos/native/netlogic.py").unlink()  # screens.py imports it: the shell would not start
-        self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
+        for name in ("netlogic.py", "updatelogic.py"):
+            with self.subTest(name=name):
+                installed = self.r / "opt/opos/src/opos/native" / name
+                installed.unlink()
+                self.assertIn("FAIL the native shell is in the image", self.verify_native().stdout)
+                shutil.copy(SHELL.parent / name, installed)
 
     def test_an_image_without_the_hinge_or_the_facing_reader_fails(self):
         for name in ("hinge.py", "facing.py"):
