@@ -230,6 +230,7 @@ def variants(win, name):
 def measure_theme_switch(win):
     original = win.pages["home"].open
     original.grab_focus()
+    spin(0.15)
     focused = win.get_focus()
     first_box = rect_of(original, win)
     first_color = original.get_color().to_string()
@@ -247,9 +248,15 @@ def measure_theme_switch(win):
         spin(0.15)
         measure_all(win, f"paper, Home, back mode {side}")
         check(all(row.empty.has_css_class("back-unused") for row in win.rows), "the unused panel stays black")
+    for row in win.rows:
+        two_columns(row, win.hand)
+    original.grab_focus()
     check(win.set_theme("dark", save=False), "the shell switches back to dark")
     spin(0.15)
-    check(original.get_color().to_string() == first_color, "dark restores the active button color")
+    check(first_box == rect_of(original, win), "the original layout is restored for the palette comparison")
+    check(win.get_focus() is focused, "the original control is focused again")
+    restored = original.get_color().to_string()
+    check(restored == first_color, f"dark restores the button color ({restored} vs. {first_color})")
 
 
 def picked_button(win, x, y):
