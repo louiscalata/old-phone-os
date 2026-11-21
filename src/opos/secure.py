@@ -43,7 +43,7 @@ def token_ok(supplied: Any, expected: Any) -> bool:
     try:
         left = supplied.encode("utf-8")
         right = expected.encode("utf-8")
-    except (UnicodeError, ValueError):
+    except ValueError:
         return False
     return hmac.compare_digest(left, right)
 
