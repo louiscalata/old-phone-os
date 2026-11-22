@@ -118,14 +118,19 @@ def _matches(days, day):
 def latest_fire(hour, minute, days, start, end):
     """The latest valid fire in (start, end], or None."""
     best = None
+    best_at = None
     day = (start.astimezone(end.tzinfo)).date() - timedelta(days=1)
     last = end.astimezone(end.tzinfo).date()
     zone = end.tzinfo
+    start = start.astimezone(timezone.utc) if start.utcoffset() is not None else start
+    end = end.astimezone(timezone.utc) if end.utcoffset() is not None else end
     while day <= last:
         if _matches(days, day):
             made = first_valid(day, hour, minute, zone)
-            if made is not None and start < made <= end and (best is None or made > best):
-                best = made
+            if made is not None:
+                when = made.astimezone(timezone.utc) if made.utcoffset() is not None else made
+                if start < when <= end and (best_at is None or when > best_at):
+                    best, best_at = made, when
         day += timedelta(days=1)
     return best
 
@@ -135,12 +140,13 @@ def next_fire(hour, minute, days, now):
     now = _aware(now)
     zone = now.tzinfo
     day = now.date()
+    now = now.astimezone(timezone.utc)
     for offset in range(8):
         when = day + timedelta(days=offset)
         if not _matches(days, when):
             continue
         made = first_valid(when, hour, minute, zone)
-        if made is not None and made >= now:
+        if made is not None and made.astimezone(timezone.utc) >= now:
             return made
     return None
 
@@ -414,7 +420,8 @@ class Book:
                 when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), start, now)
             if when is None:
                 return
-            state = Occurrence.MISSED if now - when > GRACE else Occurrence.RINGING
+            elapsed = now.astimezone(timezone.utc) - when.astimezone(timezone.utc)
+            state = Occurrence.MISSED if elapsed > GRACE else Occurrence.RINGING
         else:
             raise ValueError("event")
 
