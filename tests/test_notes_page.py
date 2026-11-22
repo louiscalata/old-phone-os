@@ -32,7 +32,9 @@ class Notes(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 self.assertEqual(notes_page._title(" Café " + boundary + "Second"), "Café")
                 self.assertEqual(notes_page._title(boundary + "Second"), "Empty note")
+                self.assertEqual(notes_page._title(" " * 77 + "A" + boundary + "B" * 81), "A")
         self.assertEqual(notes_page._title("é" * 81 + "\nSecond"), "é" * 80)
+        self.assertEqual(notes_page._title(" " * 81 + "Title\nSecond"), "Title")
 
     def test_save_reload_and_the_size_cap(self):
         html = notes_page.render("t", "n")
