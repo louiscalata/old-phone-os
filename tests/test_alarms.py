@@ -266,6 +266,34 @@ class Engine(unittest.TestCase):
                     self.assertEqual(events[0].what, "timer" if kind == "timer" else "alarm")
                     self.assertEqual(events[0].at, due)
 
+    def test_timer_grace_uses_elapsed_seconds_across_clock_changes(self):
+        spring = at(UTC, 2026, 3, 8, 6, 55)
+        fall = at(UTC, 2026, 11, 1, 5, 5)
+        cases = (
+            (spring, 600, "ring", "Timer Eggs"),
+            (spring, 601, "missed", "Missed timer"),
+            (fall, 3600, "missed", "Missed timer"),
+        )
+        for due, seconds, kind, text in cases:
+            with self.subTest(due=due, seconds=seconds):
+                book = self.book(NY)
+                book.store.write_json(
+                    "alarms.json",
+                    {
+                        "alarms": [],
+                        "timer": {"id": "timer", "fires_at": due.isoformat(), "label": "Eggs"},
+                        "last_seen": (due - timedelta(seconds=1)).isoformat(),
+                        "notices": [],
+                    },
+                )
+                book = Book(book.store.root, NY)
+                events = book.tick(due + timedelta(seconds=seconds))
+                self.assertEqual(events, [Event(kind, "timer", "timer", due.astimezone(NY), text)])
+                self.assertEqual(events[0].at.astimezone(UTC), due)
+                self.assertIs(events[0].at.tzinfo, NY)
+                self.assertIsNone(book.timer)
+                self.assertEqual(book.notices, [text] if kind == "missed" else [])
+
     def test_edit_toggle_delete_and_saved_field_names(self):
         book = self.book()
         now = at(UTC, 2026, 11, 9, 6, 0)
