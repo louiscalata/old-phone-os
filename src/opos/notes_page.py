@@ -14,6 +14,7 @@ _STORE = None
 _CAP = 64 * 1024
 _MAX = 200
 _ID = re.compile(r"[0-9a-f]{8}")
+_FIRST_LINE = re.compile(r"[^\n\r\v\f\x1c-\x1e\x85\u2028\u2029]*")
 
 _CSS = """
 #body{width:100%;min-height:12rem;margin:8px 0;padding:8px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:0;font:inherit}
@@ -114,7 +115,7 @@ def _remove_file(ident):
 
 
 def _title(text):
-    line = (text.splitlines() or [""])[0].strip()
+    line = _FIRST_LINE.match(text)[0].strip()
     return (line or "Empty note")[:80]
 
 

@@ -27,6 +27,13 @@ class Notes(unittest.TestCase):
     def tearDown(self):
         notes_page.reset()
 
+    def test_title_uses_the_first_line(self):
+        for boundary in ("\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"):
+            with self.subTest(boundary=boundary):
+                self.assertEqual(notes_page._title(" Café " + boundary + "Second"), "Café")
+                self.assertEqual(notes_page._title(boundary + "Second"), "Empty note")
+        self.assertEqual(notes_page._title("é" * 81 + "\nSecond"), "é" * 80)
+
     def test_save_reload_and_the_size_cap(self):
         html = notes_page.render("t", "n")
         self.assertIn(">New note<", html)
