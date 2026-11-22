@@ -114,8 +114,12 @@ def _remove_file(ident):
 
 
 def _title(text):
-    line = (text.splitlines() or [""])[0].strip()
-    return (line or "Empty note")[:80]
+    limit = 80
+    lines = text[:limit].splitlines()
+    if len(text) > limit and len(lines) < 2:
+        lines = text.splitlines()
+    line = lines[0].strip() if lines else ""
+    return (line or "Empty note")[:limit]
 
 
 def _clock():
