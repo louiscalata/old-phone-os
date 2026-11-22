@@ -64,7 +64,7 @@ class Store:
         return self.root / _check_name(name)
 
     def _mkdir(self):
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         try:
             os.chmod(self.root, 0o700)
         except OSError:
