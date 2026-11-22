@@ -9,6 +9,7 @@ import stat
 import sys
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from html import unescape
 from pathlib import Path
@@ -106,6 +107,74 @@ def post(server, path, payload, token):
 
 
 class StoreTests(unittest.TestCase):
+    def test_concurrent_writes_publish_complete_files_and_failures_preserve_them(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        writers = (
+            ("state.json", lambda value: saved.write_json("state.json", {"value": value})),
+            ("state.jsonl", lambda value: saved.write_jsonl("state.jsonl", [{"value": value}])),
+            ("state.txt", lambda value: saved.write_bytes("state.txt", value.encode("utf-8"), 65536)),
+        )
+        for name, write in writers:
+            with self.subTest(name=name):
+                self._check_atomic_write(folder / name, write)
+
+    def _check_atomic_write(self, path, write):
+        values = ("é" * 101, "🍐" * 201)
+        documents = []
+        for value in values:
+            self.assertEqual(write(value), path)
+            documents.append(path.read_bytes())
+        self.assertNotEqual(*documents)
+
+        replace = os.replace
+        before_replace = threading.Barrier(2, timeout=5)
+        commit = threading.Lock()
+
+        def replace_staged(source, destination):
+            self.assertEqual(destination, path)
+            self.assertEqual(source.parent, path.parent)
+            self.assertIn(source.read_bytes(), documents)
+            before_replace.wait()
+            with commit:
+                replace(source, destination)
+
+        with mock.patch.object(storemod.os, "replace", side_effect=replace_staged):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = [executor.submit(write, value) for value in values]
+                self.assertEqual([result.result(timeout=10) for result in results], [path, path])
+        original = path.read_bytes()
+        self.assertIn(original, documents)
+        if sys.platform != "win32":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+        for operation in ("fsync", "replace"):
+            with self.subTest(operation=operation):
+                error = OSError("write interrupted")
+                with mock.patch.object(storemod.os, operation, side_effect=error):
+                    with self.assertRaises(OSError) as raised:
+                        write("discard")
+                self.assertIs(raised.exception, error)
+                self.assertEqual(path.read_bytes(), original)
+        self.assertFalse(list(path.parent.glob(f".{path.name}*")))
+
+    def test_write_and_cleanup_failures_both_remain_visible(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        path = saved.write_json("state.json", {"value": "before"})
+        original = path.read_bytes()
+        write_error = OSError("write interrupted")
+        cleanup_error = PermissionError("temporary file is in use")
+        with (
+            mock.patch.object(storemod.os, "fsync", side_effect=write_error),
+            mock.patch.object(Path, "unlink", side_effect=cleanup_error),
+            self.assertRaises(PermissionError) as raised,
+        ):
+            saved.write_json("state.json", {"value": "discard"})
+        self.assertIs(raised.exception, cleanup_error)
+        self.assertIs(raised.exception.__context__, write_error)
+        self.assertEqual(path.read_bytes(), original)
+
     @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_round_trip_mode_and_corrupt_recovery(self):
         folder = Path(self.enterContext(self._tmp()))

@@ -8,6 +8,7 @@ A file that cannot be read is moved aside to <name>.bad-<time> and the caller st
 import json
 import os
 import re
+import tempfile
 import time
 from pathlib import Path
 
@@ -28,6 +29,28 @@ def _check_name(name):
     if not isinstance(name, str) or _NAME.fullmatch(name) is None:
         raise ValueError("bad name")
     return name
+
+
+def _write_atomic(path, raw):
+    stream = tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    temporary = Path(stream.name)
+    try:
+        with stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.chmod(0o600)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class Store:
@@ -98,16 +121,7 @@ class Store:
             raise ValueError("too big")
         self._mkdir()
         path = self._path(name)
-        tmp = path.with_name("." + path.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, raw)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-        os.chmod(path, 0o600)
+        _write_atomic(path, raw)
         return path
 
     def read_jsonl(self, name, limit=500):
@@ -150,16 +164,7 @@ class Store:
         raw = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
         self._mkdir()
         path = self._path(name)
-        tmp = path.with_name("." + path.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, raw)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-        os.chmod(path, 0o600)
+        _write_atomic(path, raw)
         return path
 
     def write_bytes(self, name, raw, limit):
@@ -174,14 +179,5 @@ class Store:
             raise ValueError("too big")
         self._mkdir()
         path = self.root / name
-        tmp = path.with_name("." + path.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, bytes(raw))
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-        os.chmod(path, 0o600)
+        _write_atomic(path, bytes(raw))
         return path
