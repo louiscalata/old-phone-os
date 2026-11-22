@@ -143,7 +143,7 @@ class BootGraphTest(unittest.TestCase):
             (["--layers"], "flowchart TD"),
         ):
             p = subprocess.run(
-                [sys.executable, "-I", "-B", str(PKG / "bootgraph.py"), *args],
+                [sys.executable, "-I", "-B", "-W", "error", str(PKG / "bootgraph.py"), *args],
                 capture_output=True,
                 text=True,
                 stdin=subprocess.DEVNULL,
