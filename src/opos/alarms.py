@@ -369,16 +369,19 @@ class Book:
         for row in self.alarms:
             if occurrence(row) is Occurrence.RINGING:
                 return row
+        now_at = now.astimezone(timezone.utc)
+        grace_start = now_at - GRACE
         for row in self.alarms:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
-                when = _parse(snooze, self.zone)
-                if when <= now <= when + GRACE:
+                when = _parse(snooze, timezone.utc)
+                if grace_start <= when <= now_at:
                     return row
+        local_now = now.astimezone(self.zone)
         for row in self.alarms:
             if not row.get("enabled"):
                 continue
-            when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), now - GRACE, now)
+            when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), grace_start, local_now)
             if when is not None:
                 return row
         return None
