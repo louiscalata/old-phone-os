@@ -21,6 +21,10 @@ GRACE = timedelta(minutes=10)
 SNOOZE = timedelta(minutes=10)
 MAX_TIMER_S = 24 * 60 * 60
 _FILE = "alarms.json"
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_MICROSECOND = timedelta(microseconds=1)
+_MIN_TIMER_SEEN = (datetime.min.replace(tzinfo=timezone.utc) - _EPOCH) // _MICROSECOND
+_MAX_TIMER_SEEN = (datetime.max.replace(tzinfo=timezone.utc) - _EPOCH) // _MICROSECOND
 
 
 @dataclass(frozen=True)
@@ -162,6 +166,10 @@ def _parse(text, zone):
     return made.astimezone(zone)
 
 
+def _utc_microseconds(when):
+    return (when.astimezone(timezone.utc) - _EPOCH) // _MICROSECOND
+
+
 class Book:
     """The saved alarms and the one timer. tick() is the only thing that rings or misses."""
 
@@ -171,6 +179,7 @@ class Book:
         self._lock = threading.Lock()
         self.alarms = []
         self.timer = None
+        self._timer_seen = None
         self.last_seen = None
         self.notices = []
         self._load()
@@ -181,21 +190,26 @@ class Book:
         self.alarms = [row for row in alarms if isinstance(row, dict) and isinstance(row.get("id"), str)]
         timer = data.get("timer")
         self.timer = timer if isinstance(timer, dict) and isinstance(timer.get("fires_at"), str) else None
+        timer_seen = data.get("timer_seen")
+        if self.timer is not None and type(timer_seen) is int and _MIN_TIMER_SEEN <= timer_seen <= _MAX_TIMER_SEEN:
+            self._timer_seen = _EPOCH + timedelta(microseconds=timer_seen)
+        else:
+            self._timer_seen = None
         seen = data.get("last_seen")
         self.last_seen = seen if isinstance(seen, str) else None
         notes = data.get("notices") if isinstance(data.get("notices"), list) else []
         self.notices = [note for note in notes if isinstance(note, str)][-20:]
 
     def _save(self):
-        self.store.write_json(
-            _FILE,
-            {
-                "alarms": self.alarms,
-                "timer": self.timer,
-                "last_seen": self.last_seen,
-                "notices": self.notices[-20:],
-            },
-        )
+        data = {
+            "alarms": self.alarms,
+            "timer": self.timer,
+            "last_seen": self.last_seen,
+            "notices": self.notices[-20:],
+        }
+        if self.timer is not None and self._timer_seen is not None:
+            data["timer_seen"] = _utc_microseconds(self._timer_seen)
+        self.store.write_json(_FILE, data)
 
     def add(self, hour, minute, days=(), label="", now=None):
         with self._lock:
@@ -259,11 +273,13 @@ class Book:
             now = _aware(now)
             if isinstance(seconds, bool) or not isinstance(seconds, int) or not 1 <= seconds <= MAX_TIMER_S:
                 raise ValueError("seconds")
+            now_at = now.astimezone(timezone.utc)
             self.timer = {
                 "id": uuid.uuid4().hex[:8],
-                "fires_at": _iso(now.astimezone(timezone.utc) + timedelta(seconds=seconds)),
+                "fires_at": _iso(now_at + timedelta(seconds=seconds)),
                 "label": _label(label),
             }
+            self._timer_seen = now_at
             if self.last_seen is None:
                 self.last_seen = _iso(now)
             self._save()
@@ -272,7 +288,18 @@ class Book:
     def cancel_timer(self):
         with self._lock:
             self.timer = None
+            self._timer_seen = None
             self._save()
+
+    def _timer_seen_before_alarm_action(self):
+        if self.timer is None:
+            return None
+        if self._timer_seen is None and self.last_seen is not None:
+            try:
+                return _parse(self.last_seen, timezone.utc)
+            except (ValueError, OverflowError):
+                return None
+        return self._timer_seen
 
     def snooze(self, now, alarm_id=None):
         """Push the ringing alarm 10 minutes from now. Repeating alarms stay on."""
@@ -281,7 +308,9 @@ class Book:
             row = self._ringing(now, alarm_id)
             if row is None:
                 raise ValueError("id")
+            timer_seen = self._timer_seen_before_alarm_action()
             self._transition(row, "snooze", now=now)
+            self._timer_seen = timer_seen
             self.last_seen = _iso(now)
             self._save()
             return dict(row)
@@ -295,7 +324,9 @@ class Book:
                 row = self._row(alarm_id)
             if row is None:
                 raise ValueError("id")
+            timer_seen = self._timer_seen_before_alarm_action()
             self._transition(row, "stop")
+            self._timer_seen = timer_seen
             self.last_seen = _iso(now)
             self._save()
             return dict(row)
@@ -306,18 +337,16 @@ class Book:
             now = _aware(now).astimezone(self.zone)
             if not clock_ok:
                 return []
-            if self.last_seen is None:
-                self.last_seen = _iso(now)
-                self._save()
-                return []
-            start = _parse(self.last_seen, self.zone)
-            events = []
-            events.extend(self._timer_events(start, now))
-            for row in list(self.alarms):
-                event = self._transition(row, "tick", start=start, now=now)
-                if event is not None:
-                    events.append(event)
+            start = _parse(self.last_seen, self.zone) if self.last_seen is not None else None
+            timer_start = self._timer_seen if self._timer_seen is not None else start
+            events = self._timer_events(timer_start, now) if timer_start is not None else []
+            if start is not None:
+                for row in list(self.alarms):
+                    event = self._transition(row, "tick", start=start, now=now)
+                    if event is not None:
+                        events.append(event)
             self.last_seen = _iso(now)
+            self._timer_seen = now.astimezone(timezone.utc) if self.timer is not None else None
             if events:
                 for event in events:
                     if event.kind == "missed":
