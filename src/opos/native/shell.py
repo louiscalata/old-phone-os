@@ -42,7 +42,6 @@ screen into FOLDER and quits. Both are for checking the shell, not for use.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
@@ -167,8 +166,7 @@ class Core:
             return True
         except urllib.error.HTTPError as err:
             if err.code == 404:
-                with contextlib.suppress(Exception):
-                    err.close()
+                err.close()
                 return False
             raise
 

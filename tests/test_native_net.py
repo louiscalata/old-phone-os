@@ -653,6 +653,26 @@ class NetworkPage(unittest.TestCase):
             self.assertFalse(self.page.busy)
             self.assertTrue(body.closed, "the handled network response is closed")
 
+    def test_a_network_refusal_is_delivered_once_before_a_close_failure_escapes_the_worker(self):
+        class RefusesClose(io.BytesIO):
+            close_called = False
+
+            def close(self):
+                if not self.close_called:
+                    self.close_called = True
+                    raise OSError("close failed")
+                super().close()
+
+        body = RefusesClose(b"{}")
+        self.core.answers["net_join"] = urllib.error.HTTPError(URL, 429, "refused", {}, body)
+        self.chosen(net("Home-Test", known=True))
+        self.page.main_action()
+        with self.assertRaisesRegex(OSError, "close failed"):
+            self.run_threads()
+        self.assertTrue(body.close_called, "cleanup was attempted and its failure stayed observable")
+        self.assertEqual(self.said.count(netlogic.TOO_MANY), 1, "the established result was delivered exactly once")
+        self.assertFalse(self.page.busy)
+
     def test_a_join_with_no_answer_in_time_is_not_called_failed_and_the_radios_are_read_again(self):
         self.chosen(net("Cafe-Test"))
         self.type_in(PW)

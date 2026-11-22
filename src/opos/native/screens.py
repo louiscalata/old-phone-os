@@ -14,7 +14,6 @@ Date & time and Updates use the same server endpoints as the browser's Settings.
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import json
 import math
@@ -115,22 +114,22 @@ class Page:
         n = self.seq.issue()
 
         def work():
+            owned = None
             try:
                 got = self.fetch(data)
             except urllib.error.HTTPError as err:
+                owned = err
                 try:
-                    try:
-                        got = {"error": json.loads(err.read().decode("utf-8", "replace")).get("error") or "refused"}
-                    except Exception:  # a body that is not JSON, or a connection lost while reading it: still an answer
-                        got = {"error": "refused"}
-                finally:
-                    with contextlib.suppress(Exception):
-                        err.close()
+                    got = {"error": json.loads(err.read().decode("utf-8", "replace")).get("error") or "refused"}
+                except Exception:  # a body that is not JSON, or a connection lost while reading it: still an answer
+                    got = {"error": "refused"}
                 if err.code == 404:
                     got = {"missing": True}
             except Exception as err:
                 got = {"error": str(err)[:60]}
             GLib.idle_add(self.deliver, n, got, done, data is not None)
+            if owned is not None:
+                owned.close()
 
         try:
             threading.Thread(target=work, daemon=True).start()
@@ -2233,15 +2232,13 @@ class Network(SettingsSection):
         core, wait, change = self.shell.core, self.WAIT.get(action, 20), action in self.CHANGES
 
         def work():
+            owned = None
             typed = fields.get("password")
             try:
                 got = core.net(action, fields, wait)
             except urllib.error.HTTPError as err:
-                try:
-                    got = netlogic.refusal(err.code)  # a 4xx: refused before anything ran (netlogic.NOT_SENT)
-                finally:
-                    with contextlib.suppress(Exception):
-                        err.close()
+                owned = err
+                got = netlogic.refusal(err.code)  # a 4xx: refused before anything ran (netlogic.NOT_SENT)
             except Exception as err:  # never shown or logged as it is: it may quote the request
                 got = netlogic.failed(err, change)
             finally:
@@ -2249,6 +2246,8 @@ class Network(SettingsSection):
             got = netlogic.scrub(got, typed)
             typed = None
             GLib.idle_add(self.answer, then, got)
+            if owned is not None:
+                owned.close()
 
         try:
             threading.Thread(target=work, daemon=True).start()

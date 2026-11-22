@@ -1072,6 +1072,33 @@ class Screens(unittest.TestCase):
         c.add_alarm()
         self.assertEqual(len(self.shell.core.sent) + len(self.work), 2, "a second tap sends again")
 
+    def test_a_refusal_is_delivered_once_before_a_close_failure_escapes_the_worker(self):
+        c = self.page(self.screens.Clock)
+        for d in "0730":
+            c.digit(d)
+
+        class RefusesClose(io.BytesIO):
+            close_called = False
+
+            def close(self):
+                if not self.close_called:
+                    self.close_called = True
+                    raise OSError("close failed")
+                super().close()
+
+        body = RefusesClose(b'{"error": "refused"}')
+
+        def refuse(name, data=None):
+            raise urllib.error.HTTPError("u", 500, "broken", {}, body)
+
+        self.shell.core.app = refuse
+        c.add_alarm()
+        with self.assertRaisesRegex(OSError, "close failed"):
+            self.flush()
+        self.assertTrue(body.close_called, "cleanup was attempted and its failure stayed observable")
+        self.assertFalse(c.adding, "the established refusal was delivered before cleanup")
+        self.assertEqual(c.note.get_label(), "That did not go through.")
+
     # --- Contacts and Clock ---------------------------------------------------------------------------------------
     def test_an_unrelated_answer_cannot_clear_an_unsaved_contact_and_a_refusal_keeps_it(self):
         c = self.page(self.screens.Contacts)
@@ -2082,6 +2109,25 @@ class ShellRules(unittest.TestCase):
         self.assertFalse(broken_body.closed, "a rethrown response remains owned by the caller")
         with raised.exception:
             self.assertEqual(raised.exception.read(), b"still available")
+
+    def test_a_handled_missing_lock_does_not_hide_a_close_failure(self):
+        import urllib.error
+
+        class RefusesClose(io.BytesIO):
+            close_called = False
+
+            def close(self):
+                if not self.close_called:
+                    self.close_called = True
+                    raise OSError("close failed")
+                super().close()
+
+        core = self.shell_module.Core("http://127.0.0.1:1")
+        core.token = "t"
+        error = urllib.error.HTTPError("u", 404, "not found", {}, RefusesClose(b"missing"))
+        core._open = lambda path, headers=None: (_ for _ in ()).throw(error)
+        with self.assertRaisesRegex(OSError, "close failed"):
+            core.lock_on()
 
 
 if __name__ == "__main__":
