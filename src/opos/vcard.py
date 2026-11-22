@@ -5,6 +5,8 @@ import re
 
 from opos.essentials import normalize_number
 
+MAX_NUMBERS = 4
+
 _UNFOLD = re.compile(r"\r?\n[ \t]")
 _LABELS = {"cell": "Mobile", "mobile": "Mobile", "home": "Home", "work": "Work"}
 
@@ -67,7 +69,7 @@ def parse(text):
             except ValueError:
                 skipped += 1
                 continue
-            if len(current["numbers"]) < 4:
+            if len(current["numbers"]) < MAX_NUMBERS:
                 current["numbers"].append({"number": number, "label": _label(params)})
             else:
                 skipped += 1
