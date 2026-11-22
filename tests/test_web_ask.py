@@ -24,7 +24,8 @@ def _post(port, token, obj):
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode())
+        with e:
+            return e.code, json.loads(e.read().decode())
 
 
 def _get(port):

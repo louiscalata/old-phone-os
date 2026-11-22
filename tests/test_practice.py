@@ -162,7 +162,8 @@ class Server(unittest.TestCase):
             with urllib.request.urlopen(req) as resp:
                 return resp.status, json.load(resp)
         except urllib.error.HTTPError as e:
-            return e.code, json.load(e)
+            with e:
+                return e.code, json.load(e)
 
     def test_post_call_911_then_a_normal_number(self):
         self.serve(Phone())
