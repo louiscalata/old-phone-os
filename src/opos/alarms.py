@@ -255,7 +255,7 @@ class Book:
                 raise ValueError("seconds")
             self.timer = {
                 "id": uuid.uuid4().hex[:8],
-                "fires_at": _iso(now + timedelta(seconds=seconds)),
+                "fires_at": _iso(now.astimezone(timezone.utc) + timedelta(seconds=seconds)),
                 "label": _label(label),
             }
             if self.last_seen is None:
