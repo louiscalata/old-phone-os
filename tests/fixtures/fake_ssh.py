@@ -18,7 +18,8 @@ import sys
 import threading
 import zlib
 
-SC = json.load(open(os.environ["OPOS_FAKE_SSH"], encoding="utf-8"))
+with open(os.environ["OPOS_FAKE_SSH"], encoding="utf-8") as scenario_file:
+    SC = json.load(scenario_file)
 LOG = os.environ["OPOS_FAKE_SSH"] + ".log"
 
 
