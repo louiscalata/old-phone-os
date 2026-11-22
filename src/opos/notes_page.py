@@ -4,6 +4,7 @@
 import os
 import re
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from opos import appdoc, apps
@@ -93,12 +94,12 @@ def _store():
 
 def _index():
     data, note = _store().read_json("notes.json", {"notes": []})
+    return _rows(data), note
+
+
+def _rows(data):
     rows = data.get("notes") if isinstance(data.get("notes"), list) else []
-    return [row for row in rows if isinstance(row, dict) and isinstance(row.get("id"), str)], note
-
-
-def _write_index(rows):
-    _store().write_json("notes.json", {"notes": rows})
+    return [row for row in rows if isinstance(row, dict) and isinstance(row.get("id"), str)]
 
 
 def _remove_file(ident):
@@ -123,61 +124,71 @@ def _clock():
 
 def snapshot(extra=None):
     rows, note = _index()
-    out = {
-        "ok": True,
-        "notes": [{"id": row["id"], "title": row.get("title") or "Empty note"} for row in rows],
-        "recovered": note,
-    }
+    out = _snapshot(rows, note)
     if extra:
         out.update(extra)
     return out
 
 
+def _snapshot(rows, note=""):
+    return {
+        "ok": True,
+        "notes": [{"id": row["id"], "title": row.get("title") or "Empty note"} for row in rows],
+        "recovered": note,
+    }
+
+
 def post(data):
     action = data.get("action") if isinstance(data, dict) else None
-    rows, _note = _index()
-    try:
-        if action == "add":
-            if len(rows) >= _MAX:
-                raise ValueError("full")
-            ident = uuid.uuid4().hex[:8]
-            rows.insert(0, {"id": ident, "title": "Empty note"})
-            _write_index(rows)
-            _store().write_bytes("note-%s.txt" % ident, b"", _CAP)
-            return 200, dict(snapshot(), id=ident, text="", saved="")
-        if action == "open":
-            ident = data.get("id")
-            if ident not in {row["id"] for row in rows}:
-                raise ValueError("id")
-            raw = (_store().root / ("note-%s.txt" % ident)).read_text(encoding="utf-8")
-            return 200, dict(snapshot(), id=ident, text=raw)
-        if action == "save":
-            ident = data.get("id")
-            text = data.get("text")
-            if not isinstance(text, str):
-                raise ValueError("text")
-            raw = text.encode("utf-8")
-            if len(raw) > _CAP:
-                raise ValueError("size")
-            found = next((row for row in rows if row["id"] == ident), None)
-            if found is None:
-                raise ValueError("id")
-            _store().write_bytes("note-%s.txt" % ident, raw, _CAP)
-            found["title"] = _title(text)
-            _write_index(rows)
-            return 200, dict(snapshot(), id=ident, saved="Saved " + _clock())
-        if action == "delete":
-            ident = data.get("id")
-            if ident not in {row["id"] for row in rows}:
-                raise ValueError("id")
-            # Keep the row retryable if unlink fails. A missing file is already
-            # deleted, so a later retry can also finish a failed index write.
-            _remove_file(ident)
-            _write_index([row for row in rows if row["id"] != ident])
-            return 200, snapshot()
-    except ValueError as exc:
-        code = str(exc)
-        return 400, {"error": code if code in {"id", "text", "full", "size"} else "bad request"}
+    saved = _store()
+    default = {"notes": []}
+    if action in ("add", "save", "delete"):
+        context = saved._transaction("notes.json", default)
+    else:
+        context = nullcontext((*saved.read_json("notes.json", default), None))
+    with context as (index, _, save):
+        rows = _rows(index)
+        try:
+            if action == "add":
+                if len(rows) >= _MAX:
+                    raise ValueError("full")
+                ident = uuid.uuid4().hex[:8]
+                rows.insert(0, {"id": ident, "title": "Empty note"})
+                save({"notes": rows})
+                saved.write_bytes("note-%s.txt" % ident, b"", _CAP)
+                return 200, dict(_snapshot(rows), id=ident, text="", saved="")
+            if action == "open":
+                ident = data.get("id")
+                if ident not in {row["id"] for row in rows}:
+                    raise ValueError("id")
+                raw = (saved.root / ("note-%s.txt" % ident)).read_text(encoding="utf-8")
+                return 200, dict(snapshot(), id=ident, text=raw)
+            if action == "save":
+                ident = data.get("id")
+                text = data.get("text")
+                if not isinstance(text, str):
+                    raise ValueError("text")
+                raw = text.encode("utf-8")
+                if len(raw) > _CAP:
+                    raise ValueError("size")
+                found = next((row for row in rows if row["id"] == ident), None)
+                if found is None:
+                    raise ValueError("id")
+                saved.write_bytes("note-%s.txt" % ident, raw, _CAP)
+                found["title"] = _title(text)
+                save({"notes": rows})
+                return 200, dict(_snapshot(rows), id=ident, saved="Saved " + _clock())
+            if action == "delete":
+                ident = data.get("id")
+                if ident not in {row["id"] for row in rows}:
+                    raise ValueError("id")
+                _remove_file(ident)
+                rows = [row for row in rows if row["id"] != ident]
+                save({"notes": rows})
+                return 200, _snapshot(rows)
+        except ValueError as exc:
+            code = str(exc)
+            return 400, {"error": code if code in {"id", "text", "full", "size"} else "bad request"}
     return 400, {"error": "bad request"}
 
 

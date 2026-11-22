@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from opos import calllog, contacts_page, store
+from opos import calllog, contacts_page, notes_page, store
 from opos.call_events import CallEvent
 
 if os.name == "nt":
@@ -105,6 +105,20 @@ def calllog_after_read(connection, operation, *args):
 
     with connection, patch.object(calllog._CallStore, "_read_json", read_after_release):
         connection.send(operation(*args))
+
+
+def notes_after_read(connection, data):
+    read_json = store.Store._read_json
+
+    def read_after_release(saved, path):
+        index = read_json(saved, path)
+        connection.send("read")
+        if receive(connection) != "save":
+            raise AssertionError("expected the first operation to save")
+        return index
+
+    with connection, patch.object(store.Store, "_read_json", read_after_release):
+        connection.send(notes_page.post(data))
 
 
 class StoreRecoveryCoordinationTests(unittest.TestCase):
@@ -273,6 +287,65 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         _, next_call, response = self.record_concurrently(calllog.clear)
         self.assertEqual(response, {"ok": True, "calls": [], "missed_count": 0, "recovered": ""})
         self.assertEqual([row["id"] for row in calllog.snapshot()["calls"]], [next_call.call_id])
+
+    def notes_root(self):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root}))
+        notes_page.reset()
+        self.addCleanup(notes_page.reset)
+        return Path(root)
+
+    def post_notes_concurrently(self, root, first, second):
+        with self.process(notes_after_read, first) as first_connection:
+            self.assertEqual(receive(first_connection), "read")
+            self.assert_lock_held(root / "notes.json")
+            with self.process(run_while_locked, notes_page.post, second) as second_connection:
+                self.assertEqual(receive(second_connection), "acquire")
+                first_connection.send("save")
+                return receive(first_connection), receive(second_connection)
+
+    def test_concurrent_note_adds_respect_the_limit(self):
+        root = self.notes_root()
+        existing = [{"id": f"{i:08x}", "title": "Empty note"} for i in range(notes_page._MAX - 1)]
+        for row in existing:
+            (root / f"note-{row['id']}.txt").write_bytes(b"")
+        store.Store(root).write_json("notes.json", {"notes": existing})
+        add = {"action": "add"}
+        (status, first), second = self.post_notes_concurrently(root, add, add)
+        self.assertEqual(status, 200)
+        self.assertEqual(second, (400, {"error": "full"}))
+        rows = [{"id": first["id"], "title": "Empty note"}, *existing]
+        self.assertEqual(first["notes"], rows)
+        self.assertEqual(notes_page.snapshot()["notes"], rows)
+        self.assertEqual((root / f"note-{first['id']}.txt").read_bytes(), b"")
+
+    def test_concurrent_note_saves_preserve_both_titles(self):
+        root = self.notes_root()
+        first_id = notes_page.post({"action": "add"})[1]["id"]
+        second_id = notes_page.post({"action": "add"})[1]["id"]
+        first = {"action": "save", "id": first_id, "text": "First\nFirst body"}
+        second = {"action": "save", "id": second_id, "text": "Second\nSecond body"}
+        (first_status, first_body), (second_status, second_body) = self.post_notes_concurrently(root, first, second)
+        self.assertEqual((first_status, second_status), (200, 200))
+        self.assertEqual(
+            first_body["notes"], [{"id": second_id, "title": "Empty note"}, {"id": first_id, "title": "First"}]
+        )
+        rows = [{"id": second_id, "title": "Second"}, {"id": first_id, "title": "First"}]
+        self.assertEqual(second_body["notes"], rows)
+        self.assertEqual(notes_page.snapshot()["notes"], rows)
+        self.assertEqual((root / f"note-{first_id}.txt").read_bytes(), first["text"].encode("utf-8"))
+        self.assertEqual((root / f"note-{second_id}.txt").read_bytes(), second["text"].encode("utf-8"))
+
+    def test_delete_then_concurrent_save_keeps_the_note_deleted(self):
+        root = self.notes_root()
+        ident = notes_page.post({"action": "add"})[1]["id"]
+        delete = {"action": "delete", "id": ident}
+        save = {"action": "save", "id": ident, "text": "Later"}
+        first, second = self.post_notes_concurrently(root, delete, save)
+        self.assertEqual(first, (200, {"ok": True, "notes": [], "recovered": ""}))
+        self.assertEqual(second, (400, {"error": "id"}))
+        self.assertEqual(notes_page.snapshot()["notes"], [])
+        self.assertFalse((root / f"note-{ident}.txt").exists())
 
     def test_valid_and_missing_reads_leave_the_directory_alone(self):
         with tempfile.TemporaryDirectory() as root:
