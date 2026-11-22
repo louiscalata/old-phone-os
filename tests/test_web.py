@@ -93,7 +93,8 @@ class TestServer(unittest.TestCase):
         )
         with self.assertRaises(urllib.error.HTTPError) as cm:
             urllib.request.urlopen(req)
-        self.assertEqual(cm.exception.code, 400)
+        with cm.exception:
+            self.assertEqual(cm.exception.code, 400)
 
     def test_post_without_token_is_forbidden(self):
         """Reject POST without token."""
@@ -102,7 +103,8 @@ class TestServer(unittest.TestCase):
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with self.assertRaises(urllib.error.HTTPError) as cm:
             urllib.request.urlopen(req)
-        self.assertEqual(cm.exception.code, 403)
+        with cm.exception:
+            self.assertEqual(cm.exception.code, 403)
 
     def test_oversized_numeric_actions_rejected_without_mutation(self):
         host = ".".join(["127", "0", "0", "1"])
@@ -127,8 +129,9 @@ class TestServer(unittest.TestCase):
                     req = urllib.request.Request(url, data=payload, headers={ctype: "application/json", field: token})
                     with self.assertRaises(urllib.error.HTTPError) as cm:
                         urllib.request.urlopen(req)
-                    self.assertEqual(cm.exception.code, 400)
-                    self.assertEqual(json.load(cm.exception), err)
+                    with cm.exception:
+                        self.assertEqual(cm.exception.code, 400)
+                        self.assertEqual(json.load(cm.exception), err)
                     self.assertEqual(
                         (
                             self.phone.sim.level,
