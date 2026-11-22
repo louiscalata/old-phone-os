@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from opos.alarms import Book, Event, first_valid, next_fire
+from opos.alarms import Book, Event, first_valid, latest_fire, next_fire
 from opos.home import is_quiet
 
 try:
@@ -32,6 +32,17 @@ class Rules(unittest.TestCase):
         first = first_valid(datetime(2026, 11, 1).date(), 1, 30, NY)
         self.assertEqual(first, at(NY, 2026, 11, 1, 1, 30, 0))
         self.assertEqual(first.utcoffset(), timedelta(hours=-4))
+
+    def test_scheduled_occurrence_bounds_use_instants(self):
+        first = at(NY, 2026, 11, 1, 1, 30)
+        second = at(NY, 2026, 11, 1, 1, 15, 1)
+        end = at(NY, 2026, 11, 1, 1, 31, 1)
+        matched = latest_fire(1, 30, (6,), at(NY, 2026, 11, 1, 1, 29), first)
+        self.assertEqual(matched.astimezone(UTC), at(UTC, 2026, 11, 1, 5, 30))
+        self.assertEqual(next_fire(1, 30, (6,), first).astimezone(UTC), at(UTC, 2026, 11, 1, 5, 30))
+        self.assertIsNone(latest_fire(1, 30, (6,), first, end))
+        self.assertIsNone(latest_fire(1, 30, (6,), second, end))
+        self.assertEqual(next_fire(1, 30, (6,), second), at(NY, 2026, 11, 8, 1, 30))
 
     def test_labels_and_the_cap(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -96,6 +107,25 @@ class Engine(unittest.TestCase):
         self.assertEqual(first[0].at.utcoffset(), timedelta(hours=-4))
         second = book.tick(at(NY, 2026, 11, 1, 1, 31, 1))
         self.assertEqual(second, [])
+
+    def test_second_fold_does_not_replay_earlier_alarm(self):
+        book = self.book(NY)
+        start = at(NY, 2026, 11, 1, 1, 15, 1)
+        row = book.add(1, 30, days=(6,), now=start)
+        self.assertEqual(book.next_alarm(start)["at"], at(NY, 2026, 11, 8, 1, 30))
+        self.assertEqual(book.tick(at(NY, 2026, 11, 1, 1, 31, 1)), [])
+        self.assertEqual(Book(book.store.root, NY).alarms, [row])
+
+    def test_alarm_grace_uses_elapsed_time_across_fall_back(self):
+        for minute, kind, text in ((5, "ring", "Alarm 01:55"), (15, "missed", "Missed alarm 01:55")):
+            with self.subTest(kind=kind):
+                book = self.book(NY)
+                start = at(NY, 2026, 11, 1, 1, 50)
+                fire = at(NY, 2026, 11, 1, 1, 55)
+                row = book.add(1, 55, days=(6,), now=start)
+                events = book.tick(at(NY, 2026, 11, 1, 1, minute, 1))
+                self.assertEqual(events, [Event(kind, "alarm", row["id"], fire, text)])
+                self.assertEqual(events[0].at.astimezone(UTC), at(UTC, 2026, 11, 1, 5, 55))
 
     def test_timer_and_reload(self):
         book = self.book()
