@@ -165,6 +165,43 @@ class Engine(unittest.TestCase):
                 self.assertEqual(timer["fires_at"], expected)
                 self.assertEqual(Book(book.store.root, NY).timer, timer)
 
+    def test_saved_deadlines_use_instants_across_fall_back(self):
+        start = at(UTC, 2026, 11, 1, 5, 55)
+        due = at(UTC, 2026, 11, 1, 6, 5)
+        for previous, seconds, fires in ((start, -1, False), (start, 0, True), (start, 60, True), (due, 60, False)):
+            with self.subTest(previous=previous, seconds=seconds):
+                book = self.book(NY)
+                row = book.add(1, 55, days=(6,), now=start)
+                timer = {"id": "timer", "fires_at": due.isoformat(), "label": "Eggs"}
+                book.store.write_json(
+                    "alarms.json",
+                    {
+                        "alarms": [dict(row, snooze_at=due.isoformat())],
+                        "timer": timer,
+                        "last_seen": previous.isoformat(),
+                        "notices": [],
+                    },
+                )
+                book = Book(book.store.root, NY)
+                events = book.tick(due + timedelta(seconds=seconds))
+                if fires:
+                    local = due.astimezone(NY)
+                    self.assertEqual(
+                        events,
+                        [
+                            Event("ring", "timer", "timer", local, "Timer Eggs"),
+                            Event("ring", "alarm", row["id"], local, "Alarm 01:55"),
+                        ],
+                    )
+                    self.assertEqual([event.at.astimezone(UTC) for event in events], [due, due])
+                    self.assertTrue(all(event.at.tzinfo is NY and event.at.fold == 1 for event in events))
+                    self.assertIsNone(book.timer)
+                    self.assertNotIn("snooze_at", book.alarms[0])
+                else:
+                    self.assertEqual(events, [])
+                    self.assertEqual(book.timer, timer)
+                    self.assertEqual(book.alarms[0]["snooze_at"], due.isoformat())
+
     def test_one_shot_ring_next_tick_reload_and_stop(self):
         book = self.book()
         fire = at(UTC, 2026, 11, 9, 7, 0)
