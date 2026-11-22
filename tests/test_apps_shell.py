@@ -107,6 +107,22 @@ def post(server, path, payload, token):
 
 
 class StoreTests(unittest.TestCase):
+    @unittest.skipIf(os.name != "posix", "requires POSIX directory permissions")
+    def test_state_directory_is_private_before_chmod(self):
+        folder = Path(self.enterContext(self._tmp())) / "state"
+        chmod = os.chmod
+        observed = []
+
+        def record_mode(path, mode, *args, **kwargs):
+            if Path(path) == folder:
+                observed.append(stat.S_IMODE(folder.stat().st_mode))
+            return chmod(path, mode, *args, **kwargs)
+
+        self.addCleanup(os.umask, os.umask(0o022))
+        with mock.patch.object(storemod.os, "chmod", side_effect=record_mode):
+            storemod.Store(folder).write_json("state.json", {"value": 1})
+        self.assertEqual(observed, [0o700])
+
     def test_concurrent_writes_publish_complete_files_and_failures_preserve_them(self):
         folder = Path(self.enterContext(self._tmp()))
         saved = storemod.Store(folder)
