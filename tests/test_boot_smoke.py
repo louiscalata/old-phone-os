@@ -50,7 +50,7 @@ def read(path):
 
 
 def verdict(log, expect=GOOD, extra=(), judge=VERDICT):
-    args = [sys.executable, "-I", "-B", str(judge)]
+    args = [sys.executable, "-I", "-B", "-W", "error", str(judge)]
     if log is not None:
         args += ["--log", str(log)]
     if expect is not None:
