@@ -10,7 +10,13 @@ import os
 import re
 import tempfile
 import time
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 SCHEMA = 1
 MAX_JSON = 256 * 1024
@@ -31,6 +37,42 @@ def _check_name(name):
     return name
 
 
+@contextmanager
+def _lock(path):
+    lock = path.with_name(f".{path.name}.lock")
+    if os.name == "nt":
+        fd = os.open(lock, os.O_CREAT | os.O_RDONLY, 0o600)
+    else:
+        flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(lock, os.O_CREAT | flags, 0o600)
+        except PermissionError:
+            os.chmod(lock, 0o600, follow_symlinks=False)
+            fd = os.open(lock, flags)
+    try:
+        if os.name == "nt":
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            os.fchmod(fd, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+    finally:
+        os.close(fd)
+
+
+def _read_text(path):
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise
+    except (OSError, UnicodeError):
+        return None
+
+
 def _write_atomic(path, raw):
     stream = tempfile.NamedTemporaryFile(
         mode="wb",
@@ -46,8 +88,9 @@ def _write_atomic(path, raw):
             stream.flush()
             os.fsync(stream.fileno())
         temporary.chmod(0o600)
-        os.replace(temporary, path)
-        temporary = None
+        with _lock(path) if _NAME.fullmatch(path.name) else nullcontext():
+            os.replace(temporary, path)
+            temporary = None
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -92,23 +135,39 @@ class Store:
 
     def read_json(self, name, default):
         """(value, note). note is empty when the file was fine or absent."""
-        path = self._path(name)
+        return self._read(self._path(name), default, self._read_json)
+
+    def _read(self, path, default, read):
         try:
-            raw = path.read_bytes()
+            value = read(path)
         except FileNotFoundError:
             return default, ""
-        except OSError:
+        if value is not None:
+            return value, ""
+        with _lock(path):
+            try:
+                value = read(path)
+            except FileNotFoundError:
+                return default, ""
+            if value is not None:
+                return value, ""
             self._quarantine(path)
-            return default, self.note_once(name)
+            return default, self.note_once(path.name)
+
+    def _read_json(self, path, limit=None):
         try:
+            with path.open("rb") as stream:
+                raw = stream.read(-1 if limit is None else limit + 1)
+            if limit is not None and len(raw) > limit:
+                return None
             data = json.loads(raw.decode("utf-8"))
-        except (UnicodeError, json.JSONDecodeError, RecursionError):
-            self._quarantine(path)
-            return default, self.note_once(name)
+        except FileNotFoundError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+            return None
         if not isinstance(data, dict) or data.get("schema") != SCHEMA:
-            self._quarantine(path)
-            return default, self.note_once(name)
-        return data, ""
+            return None
+        return data
 
     def write_json(self, name, payload, limit=MAX_JSON):
         """Write payload with the schema field. Raises ValueError when the file would be over limit."""
@@ -126,14 +185,9 @@ class Store:
 
     def read_jsonl(self, name, limit=500):
         """A list of objects, oldest first. A bad line is skipped. A bad file is moved aside."""
-        path = self._path(name)
-        try:
-            text = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return [], ""
-        except (OSError, UnicodeError):
-            self._quarantine(path)
-            return [], self.note_once(name)
+        text, note = self._read(self._path(name), None, _read_text)
+        if text is None:
+            return [], note
         rows = []
         for line in text.splitlines():
             if not line.strip():

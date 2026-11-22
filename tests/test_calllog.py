@@ -206,7 +206,7 @@ class LocalCalls(unittest.TestCase):
     def test_unreadable_file_and_failed_quarantine_do_not_destroy_the_original(self):
         self.finish()
         raw = self.path.read_bytes()
-        with mock.patch.object(Path, "read_bytes", side_effect=PermissionError("denied")):
+        with mock.patch.object(Path, "open", side_effect=PermissionError("denied")):
             snap = calllog.snapshot()
         self.assertIn("Started empty", snap["recovered"])
         self.assertEqual(next(self.path.parent.glob("calls.json.bad-*")).read_bytes(), raw)
