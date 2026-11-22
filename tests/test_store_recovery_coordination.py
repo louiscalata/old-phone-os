@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -79,7 +80,7 @@ def post_after_release(connection, data):
         connection.send(contacts_page.post(data))
 
 
-def post_while_locked(connection, data):
+def run_while_locked(connection, operation, *args):
     lock = store._lock
 
     @contextmanager
@@ -89,7 +90,21 @@ def post_while_locked(connection, data):
             yield
 
     with connection, patch.object(store, "_lock", acquire):
-        connection.send(contacts_page.post(data))
+        connection.send(operation(*args))
+
+
+def calllog_after_read(connection, operation, *args):
+    read_json = calllog._CallStore._read_json
+
+    def read_after_release(saved, path):
+        state = read_json(saved, path)
+        connection.send("read")
+        if receive(connection) != "save":
+            raise AssertionError("expected the first operation to save")
+        return state
+
+    with connection, patch.object(calllog._CallStore, "_read_json", read_after_release):
+        connection.send(operation(*args))
 
 
 class StoreRecoveryCoordinationTests(unittest.TestCase):
@@ -197,7 +212,7 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         with self.process(post_after_release, first) as first_connection:
             self.assertEqual(receive(first_connection), "validate")
             self.assert_lock_held(Path(root, "contacts.json"))
-            with self.process(post_while_locked, second) as second_connection:
+            with self.process(run_while_locked, contacts_page.post, second) as second_connection:
                 self.assertEqual(receive(second_connection), "acquire")
                 first_connection.send("save")
                 status, body = receive(first_connection)
@@ -223,6 +238,41 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         self.assertEqual(len(people), 6)
         self.assertEqual({person["name"] for person in people}, names)
         self.assertTrue(all(person["favorite"] for person in people))
+
+    def record_concurrently(self, operation, *args):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(
+            patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_CONFIG_DIR": root, "OPOS_APPS": "calls"})
+        )
+        calllog.reset()
+        contacts_page.reset()
+        self.addCleanup(calllog.reset)
+        self.addCleanup(contacts_page.reset)
+        initial = replace(CALL, call_id="0" * 32, at=CALL.at - 1)
+        next_call = replace(CALL, call_id="2".zfill(32), at=CALL.at + 1)
+        calllog.record(initial)
+        with self.process(calllog_after_read, operation, *args) as first:
+            self.assertEqual(receive(first), "read")
+            self.assert_lock_held(Path(root, "calls.json"))
+            with self.process(run_while_locked, calllog.record, next_call) as second:
+                self.assertEqual(receive(second), "acquire")
+                first.send("save")
+                response = receive(first)
+                self.assertIsNone(receive(second))
+        return initial, next_call, response
+
+    def test_concurrent_call_records_preserve_both_starts(self):
+        initial, next_call, response = self.record_concurrently(calllog.record, CALL)
+        self.assertIsNone(response)
+        self.assertEqual(
+            [row["id"] for row in calllog.snapshot()["calls"]],
+            [next_call.call_id, CALL.call_id, initial.call_id],
+        )
+
+    def test_clear_then_concurrent_record_keeps_only_the_new_call(self):
+        _, next_call, response = self.record_concurrently(calllog.clear)
+        self.assertEqual(response, {"ok": True, "calls": [], "missed_count": 0, "recovered": ""})
+        self.assertEqual([row["id"] for row in calllog.snapshot()["calls"]], [next_call.call_id])
 
     def test_valid_and_missing_reads_leave_the_directory_alone(self):
         with tempfile.TemporaryDirectory() as root:

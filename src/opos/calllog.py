@@ -99,9 +99,8 @@ def _valid(row):
     )
 
 
-def _load():
+def _rows(data, note):
     global _RECOVERED
-    data, note = _store().read_json("calls.json", {"calls": []})
     _RECOVERED = note or _RECOVERED
     return sorted(data["calls"], key=lambda row: row["start_time"])[-MAX_CALLS:]
 
@@ -127,8 +126,8 @@ def record(event):
     ):
         raise ValueError("bad call event")
     number = normalize_number(event.number)
-    with _LOCK:
-        rows = _load()
+    with _LOCK, _store()._transaction("calls.json", {"calls": []}) as (data, note, save):
+        rows = _rows(data, note)
         row = next((r for r in rows if r["id"] == event.call_id), None)
         if event.state == "started":
             if row is not None:
@@ -161,25 +160,29 @@ def record(event):
                     row["duration"] = event.duration
             row["state"] = event.state
         rows.sort(key=lambda r: r["start_time"])
-        _store().write_json("calls.json", {"calls": rows[-MAX_CALLS:]})
+        save({"calls": rows[-MAX_CALLS:]})
+
+
+def _snapshot(rows):
+    return {
+        "ok": True,
+        "calls": list(reversed(rows)),
+        "missed_count": sum(row["direction"] == "missed" for row in rows),
+        "recovered": _RECOVERED,
+    }
 
 
 def snapshot():
     """missed_count counts retained missed calls; reading does not acknowledge them."""
     with _LOCK:
-        rows = _load()
-        return {
-            "ok": True,
-            "calls": list(reversed(rows)),
-            "missed_count": sum(row["direction"] == "missed" for row in rows),
-            "recovered": _RECOVERED,
-        }
+        data, note = _store().read_json("calls.json", {"calls": []})
+        return _snapshot(_rows(data, note))
 
 
 def clear():
     global _RECOVERED
-    with _LOCK:
-        _load()  # Keep an unreadable file aside before replacing it.
-        _store().write_json("calls.json", {"calls": []})
+    with _LOCK, _store()._transaction("calls.json", {"calls": []}) as (_, note, save):
+        _RECOVERED = note or _RECOVERED
+        save({"calls": []})
         _RECOVERED = ""
-        return snapshot()
+        return _snapshot([])
