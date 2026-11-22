@@ -69,12 +69,7 @@ def in_quiet(now, window):
 
 
 def allows_sound(kind, now, window, favorite=False):
-    """Alarms always ring. A favorite's call rings in quiet hours. Other sounds wait."""
-    if kind == "alarm":
-        return True
-    if not in_quiet(now, window):
-        return True
-    if kind == "call" and favorite:
+    if kind == "alarm" or not in_quiet(now, window) or (kind == "call" and favorite):
         return True
     return False
 
