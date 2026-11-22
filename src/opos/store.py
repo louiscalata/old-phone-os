@@ -244,7 +244,6 @@ class Store:
         return rows, ""
 
     def write_jsonl(self, name, rows, limit=500, line_limit=4000):
-        """Replace the file with the last limit rows. Each row must be a dict."""
         if not isinstance(rows, list):
             raise ValueError("bad rows")
         kept = rows[-limit:]
@@ -252,11 +251,12 @@ class Store:
         for row in kept:
             if not isinstance(row, dict):
                 raise ValueError("bad row")
-            line = json.dumps(row, ensure_ascii=False, separators=(",", ":"))
-            if len(line.encode("utf-8")) > line_limit:
+            line = json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if len(line) > line_limit:
                 raise ValueError("too big")
             lines.append(line)
-        raw = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+        lines.append(b"")
+        raw = b"\n".join(lines)
         self._mkdir()
         path = self._path(name)
         _write_atomic(path, raw, _lock(path))
