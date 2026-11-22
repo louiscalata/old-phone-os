@@ -245,7 +245,7 @@ class StoreTests(unittest.TestCase):
     def test_jsonl_preserves_utf8_bytes_and_the_line_limit(self):
         folder = Path(self.enterContext(self._tmp()))
         saved = storemod.Store(folder)
-        encoded = '{"value":"café 🟦"}'.encode("utf-8")
+        encoded = '{"value":"café 🟦"}'.encode()
         path = saved.write_jsonl("state.jsonl", [{"value": "café 🟦"}], line_limit=len(encoded))
         self.assertEqual(path.read_bytes(), encoded + b"\n")
         with self.assertRaisesRegex(ValueError, "too big"):
