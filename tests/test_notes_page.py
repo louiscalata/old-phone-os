@@ -98,7 +98,7 @@ class NotesDeleteFailures(unittest.TestCase):
         self.assertFalse(self.path.exists())
 
     def test_index_write_error_is_not_success_and_can_be_reconciled(self):
-        with mock.patch.object(notes_page, "_write_index", side_effect=OSError("disk error")):
+        with mock.patch("opos.store._write_atomic", side_effect=OSError("disk error")):
             with self.assertRaises(OSError):
                 notes_page.post({"action": "delete", "id": self.ident})
         self.assertEqual(notes_page.snapshot()["notes"][0]["id"], self.ident)
