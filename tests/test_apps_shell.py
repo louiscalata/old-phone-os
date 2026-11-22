@@ -143,19 +143,28 @@ class StoreTests(unittest.TestCase):
             documents.append(path.read_bytes())
         self.assertNotEqual(*documents)
 
+        chmod = Path.chmod
         replace = os.replace
-        before_replace = threading.Barrier(2, timeout=5)
+        staged = threading.Barrier(2, timeout=5)
         commit = threading.Lock()
+
+        def chmod_staged(source, mode):
+            chmod(source, mode)
+            self.assertEqual(source.parent, path.parent)
+            self.assertIn(source.read_bytes(), documents)
+            staged.wait()
 
         def replace_staged(source, destination):
             self.assertEqual(destination, path)
             self.assertEqual(source.parent, path.parent)
             self.assertIn(source.read_bytes(), documents)
-            before_replace.wait()
             with commit:
                 replace(source, destination)
 
-        with mock.patch.object(storemod.os, "replace", side_effect=replace_staged):
+        with (
+            mock.patch.object(Path, "chmod", autospec=True, side_effect=chmod_staged),
+            mock.patch.object(storemod.os, "replace", side_effect=replace_staged),
+        ):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 results = [executor.submit(write, value) for value in values]
                 self.assertEqual([result.result(timeout=10) for result in results], [path, path])
@@ -172,7 +181,7 @@ class StoreTests(unittest.TestCase):
                         write("discard")
                 self.assertIs(raised.exception, error)
                 self.assertEqual(path.read_bytes(), original)
-        self.assertFalse(list(path.parent.glob(f".{path.name}*")))
+        self.assertFalse(list(path.parent.glob(f".{path.name}.*.tmp")))
 
     def test_write_and_cleanup_failures_both_remain_visible(self):
         folder = Path(self.enterContext(self._tmp()))

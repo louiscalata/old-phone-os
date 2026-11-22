@@ -25,6 +25,19 @@ _RECOVERED = ""
 
 
 class _CallStore(Store):
+    def _read_json(self, path, limit=MAX_JSON):
+        data = super()._read_json(path, limit)
+        if data is None:
+            return None
+        rows = data.get("calls")
+        if (
+            not isinstance(rows, list)
+            or not all(_valid(row) for row in rows)
+            or len({row["id"] for row in rows}) != len(rows)
+        ):
+            return None
+        return data
+
     def _quarantine(self, path):
         dest = super()._quarantine(path)
         if dest is None:
@@ -88,27 +101,9 @@ def _valid(row):
 
 def _load():
     global _RECOVERED
-    saved = _store()
-    path = saved._path("calls.json")
-    try:
-        oversized = path.stat().st_size > MAX_JSON
-    except FileNotFoundError:
-        oversized = False
-    if oversized:
-        saved._quarantine(path)
-        data, note = {"calls": []}, saved.note_once("calls.json")
-    else:
-        data, note = saved.read_json("calls.json", {"calls": []})
-    rows = data.get("calls")
-    if (
-        not isinstance(rows, list)
-        or not all(_valid(row) for row in rows)
-        or len({row["id"] for row in rows}) != len(rows)
-    ):
-        saved._quarantine(path)
-        rows, note = [], saved.note_once("calls.json")
+    data, note = _store().read_json("calls.json", {"calls": []})
     _RECOVERED = note or _RECOVERED
-    return sorted(rows, key=lambda row: row["start_time"])[-MAX_CALLS:]
+    return sorted(data["calls"], key=lambda row: row["start_time"])[-MAX_CALLS:]
 
 
 def record(event):
