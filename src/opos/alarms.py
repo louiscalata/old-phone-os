@@ -457,7 +457,8 @@ class Book:
         label = self.timer.get("label") or ""
         ident = self.timer.get("id") or "timer"
         self.timer = None
-        if now - when <= GRACE:
+        elapsed = now.astimezone(timezone.utc) - when.astimezone(timezone.utc)
+        if elapsed <= GRACE:
             text = "Timer" + (" " + label if label else "")
             return [Event("ring", "timer", ident, when, text.strip())]
         return [Event("missed", "timer", ident, when, "Missed timer")]
