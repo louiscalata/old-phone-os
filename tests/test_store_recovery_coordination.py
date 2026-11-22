@@ -6,10 +6,11 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from opos import calllog, contacts_page, notes_page, store
+from opos import calllog, contacts_page, inbox, notes_page, store
 from opos.call_events import CallEvent
 
 if os.name == "nt":
@@ -107,7 +108,7 @@ def calllog_after_read(connection, operation, *args):
         connection.send(operation(*args))
 
 
-def notes_after_read(connection, data):
+def after_json_read(connection, operation, *args):
     read_json = store.Store._read_json
 
     def read_after_release(saved, path):
@@ -118,7 +119,7 @@ def notes_after_read(connection, data):
         return index
 
     with connection, patch.object(store.Store, "_read_json", read_after_release):
-        connection.send(notes_page.post(data))
+        connection.send(operation(*args))
 
 
 def notes_before_publish(connection, data):
@@ -324,6 +325,47 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         self.assertEqual(response, {"ok": True, "calls": [], "missed_count": 0, "recovered": ""})
         self.assertEqual([row["id"] for row in calllog.snapshot()["calls"]], [next_call.call_id])
 
+    def post_notices_concurrently(self, operation, *args):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root}))
+        inbox.reset()
+        self.addCleanup(inbox.reset)
+        saved = store.Store(root)
+        rows = [{"id": str(i), "kind": "system", "text": str(i), "sound": True} for i in range(1, inbox.CAP)]
+        quiet = {"from": "22:00", "to": "07:00", "on": False}
+        path = saved.write_json("inbox.json", {"items": rows, "quiet": quiet, "next": inbox.CAP})
+        with self.process(after_json_read, operation, *args) as first:
+            self.assertEqual(receive(first), "read")
+            self.assert_lock_held(path)
+            with self.process(run_while_locked, inbox.add, "system", "Second", datetime(2026, 1, 1, 23)) as second:
+                self.assertEqual(receive(second), "acquire")
+                first.send("save")
+                outcome = receive(first), receive(second)
+        return rows, quiet, outcome, saved.read_json(path.name, {})[0]
+
+    def test_concurrent_notices_keep_the_cap_and_distinct_ids(self):
+        rows, quiet, (first, second), saved = self.post_notices_concurrently(inbox.add, "battery", "First")
+        self.assertEqual((first["id"], second["id"]), (str(inbox.CAP), str(inbox.CAP + 1)))
+        self.assertEqual(saved["items"], [*rows[1:], first, second])
+        self.assertEqual(len(saved["items"]), inbox.CAP)
+        self.assertEqual(saved["quiet"], quiet)
+        self.assertEqual(saved["next"], inbox.CAP + 2)
+
+    def test_notice_clear_dismiss_and_quiet_preserve_a_later_notice(self):
+        for operation, args in ((inbox.clear, ()), (inbox.dismiss, ("1",)), (inbox.set_quiet, (True,))):
+            with self.subTest(operation=operation.__name__):
+                rows, previous_quiet, (first, second), saved = self.post_notices_concurrently(operation, *args)
+                if operation is inbox.clear:
+                    rows = []
+                elif operation is inbox.dismiss:
+                    rows = rows[1:]
+                quiet = first if operation is inbox.set_quiet else previous_quiet
+                self.assertEqual(saved["quiet"], quiet)
+                self.assertEqual(saved["items"], [*rows, second])
+                self.assertEqual(saved["next"], inbox.CAP + 1)
+                self.assertEqual(second["id"], str(inbox.CAP))
+                self.assertEqual(second["sound"], operation is not inbox.set_quiet)
+
     def notes_root(self):
         root = self.enterContext(tempfile.TemporaryDirectory())
         self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root}))
@@ -332,7 +374,7 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         return Path(root)
 
     def post_notes_concurrently(self, root, first, second):
-        with self.process(notes_after_read, first) as first_connection:
+        with self.process(after_json_read, notes_page.post, first) as first_connection:
             self.assertEqual(receive(first_connection), "read")
             self.assert_lock_held(root / "notes.json")
             with self.process(run_while_locked, notes_page.post, second) as second_connection:
