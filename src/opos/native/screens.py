@@ -14,6 +14,7 @@ Date & time and Updates use the same server endpoints as the browser's Settings.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import math
@@ -118,9 +119,13 @@ class Page:
                 got = self.fetch(data)
             except urllib.error.HTTPError as err:
                 try:
-                    got = {"error": json.loads(err.read().decode("utf-8", "replace")).get("error") or "refused"}
-                except Exception:  # a body that is not JSON, or a connection lost while reading it: still an answer
-                    got = {"error": "refused"}
+                    try:
+                        got = {"error": json.loads(err.read().decode("utf-8", "replace")).get("error") or "refused"}
+                    except Exception:  # a body that is not JSON, or a connection lost while reading it: still an answer
+                        got = {"error": "refused"}
+                finally:
+                    with contextlib.suppress(Exception):
+                        err.close()
                 if err.code == 404:
                     got = {"missing": True}
             except Exception as err:
@@ -2232,7 +2237,11 @@ class Network(SettingsSection):
             try:
                 got = core.net(action, fields, wait)
             except urllib.error.HTTPError as err:
-                got = netlogic.refusal(err.code)  # a 4xx: refused before anything ran (netlogic.NOT_SENT)
+                try:
+                    got = netlogic.refusal(err.code)  # a 4xx: refused before anything ran (netlogic.NOT_SENT)
+                finally:
+                    with contextlib.suppress(Exception):
+                        err.close()
             except Exception as err:  # never shown or logged as it is: it may quote the request
                 got = netlogic.failed(err, change)
             finally:

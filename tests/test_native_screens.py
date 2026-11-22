@@ -5,6 +5,7 @@ run everywhere. What they pin: a draft, a contact, an alarm or a note changes on
 a late reply never puts a screen back, rows that read the same act on the newest id, and practice is said."""
 
 import importlib
+import io
 import os
 import sys
 import threading
@@ -1049,9 +1050,11 @@ class Screens(unittest.TestCase):
             def read(self, *a):
                 raise ConnectionResetError("reset while reading")
 
+        body = io.BytesIO(b"unreadable")
+
         def refuse(name, data=None):
             self.shell.core.sent.append((name, data))
-            raise Dropped("u", 500, "broken", {}, None)
+            raise Dropped("u", 500, "broken", {}, body)
 
         self.shell.core.app = refuse
         c.add_alarm()
@@ -1064,6 +1067,7 @@ class Screens(unittest.TestCase):
         self.assertEqual(
             (c.add.get_label(), c.add.sensitive, c.digits), ("Add alarm", True, "0730"), "refused: the time stays"
         )
+        self.assertTrue(body.closed, "the handled response is closed even when its body cannot be read")
         self.assertIn("did not go through", c.note.get_label())
         c.add_alarm()
         self.assertEqual(len(self.shell.core.sent) + len(self.work), 2, "a second tap sends again")
@@ -1342,9 +1346,11 @@ class Screens(unittest.TestCase):
         for ch in "-1":
             c.key(ch)
 
+        body = io.BytesIO(b'{"error": "sign"}')
+
         def refuse(name, data=None):
             self.shell.core.sent.append((name, data))
-            raise urllib.error.HTTPError("u", 400, "bad", {}, __import__("io").BytesIO(b'{"error": "sign"}'))
+            raise urllib.error.HTTPError("u", 400, "bad", {}, body)
 
         self.shell.core.app = refuse
         c.convert()
@@ -1355,6 +1361,7 @@ class Screens(unittest.TestCase):
         )
         self.assertEqual(c.note.get_label(), "Length, mass and volume stay at zero or more.")
         self.assertTrue(c.go.sensitive)
+        self.assertTrue(body.closed, "the handled refusal response is closed after its message is read")
 
     def test_a_lost_connection_never_shows_its_raw_text(self):
         c = self.converter("5")
@@ -1371,13 +1378,16 @@ class Screens(unittest.TestCase):
     def test_a_converter_the_server_does_not_have_says_it_is_missing(self):
         c = self.page(self.screens.Converter)
 
+        body = io.BytesIO(b"{}")
+
         def gone(name, data=None):
-            raise urllib.error.HTTPError("u", 404, "missing", {}, __import__("io").BytesIO(b"{}"))
+            raise urllib.error.HTTPError("u", 404, "missing", {}, body)
 
         self.shell.core.app = gone
         c.enter()
         self.flush()
         self.assertEqual(c.note.get_label(), self.screens.MISSING % "Converter")
+        self.assertTrue(body.closed, "the handled missing response is closed")
         c.convert()
         self.assertEqual(c.note.get_label(), "Loading the converter.", "no measures: nothing is converted")
 
@@ -2061,11 +2071,17 @@ class ShellRules(unittest.TestCase):
         core._open = opener(object())
         self.assertTrue(core.lock_on(), "/api/lock answers only where OPOS_LOCK=1")
         self.assertEqual(asked[0], ("/api/lock", {"X-OPOS-Token": "t"}))
-        core._open = opener(urllib.error.HTTPError("u", 404, "not found", {}, None))
+        missing_body = io.BytesIO(b"missing")
+        core._open = opener(urllib.error.HTTPError("u", 404, "not found", {}, missing_body))
         self.assertFalse(core.lock_on())
-        core._open = opener(urllib.error.HTTPError("u", 500, "broken", {}, None))
-        with self.assertRaises(urllib.error.HTTPError):
+        self.assertTrue(missing_body.closed, "the handled missing-lock response is closed")
+        broken_body = io.BytesIO(b"still available")
+        core._open = opener(urllib.error.HTTPError("u", 500, "broken", {}, broken_body))
+        with self.assertRaises(urllib.error.HTTPError) as raised:
             core.lock_on()  # unknown: the poll asks again rather than guessing
+        self.assertFalse(broken_body.closed, "a rethrown response remains owned by the caller")
+        with raised.exception:
+            self.assertEqual(raised.exception.read(), b"still available")
 
 
 if __name__ == "__main__":
