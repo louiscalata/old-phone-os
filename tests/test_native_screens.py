@@ -1099,6 +1099,25 @@ class Screens(unittest.TestCase):
         self.assertFalse(c.adding, "the established refusal was delivered before cleanup")
         self.assertEqual(c.note.get_label(), "That did not go through.")
 
+    def test_a_scheduling_failure_still_closes_the_refusal_response(self):
+        c = self.page(self.screens.Clock)
+        for d in "0730":
+            c.digit(d)
+        body = io.BytesIO(b'{"error": "refused"}')
+
+        def refuse(name, data=None):
+            raise urllib.error.HTTPError("u", 500, "broken", {}, body)
+
+        def fail_schedule(*args):
+            raise RuntimeError("schedule failed")
+
+        self.shell.core.app = refuse
+        self.screens.GLib.idle_add = fail_schedule
+        c.add_alarm()
+        with self.assertRaisesRegex(RuntimeError, "schedule failed"):
+            self.flush()
+        self.assertTrue(body.closed, "the owned response closes when callback scheduling fails")
+
     # --- Contacts and Clock ---------------------------------------------------------------------------------------
     def test_an_unrelated_answer_cannot_clear_an_unsaved_contact_and_a_refusal_keeps_it(self):
         c = self.page(self.screens.Contacts)

@@ -673,6 +673,16 @@ class NetworkPage(unittest.TestCase):
         self.assertEqual(self.said.count(netlogic.TOO_MANY), 1, "the established result was delivered exactly once")
         self.assertFalse(self.page.busy)
 
+    def test_a_scheduling_failure_still_closes_the_network_response(self):
+        body = io.BytesIO(b"{}")
+        self.core.answers["net_join"] = urllib.error.HTTPError(URL, 429, "refused", {}, body)
+        self.chosen(net("Home-Test", known=True))
+        self.page.main_action()
+        self.screens.GLib.idle_add = lambda *args: (_ for _ in ()).throw(RuntimeError("schedule failed"))
+        with self.assertRaisesRegex(RuntimeError, "schedule failed"):
+            self.run_threads()
+        self.assertTrue(body.closed, "the owned response closes when callback scheduling fails")
+
     def test_a_join_with_no_answer_in_time_is_not_called_failed_and_the_radios_are_read_again(self):
         self.chosen(net("Cafe-Test"))
         self.type_in(PW)
