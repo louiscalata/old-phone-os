@@ -113,10 +113,11 @@ class Engine(unittest.TestCase):
     def test_timer_and_reload(self):
         book = self.book()
         start = at(UTC, 2026, 11, 9, 12, 0)
-        book.start_timer(60, start, label="Eggs")
-        self.assertEqual(book.tick(start + timedelta(seconds=30)), [])
-        rung = book.tick(start + timedelta(seconds=61))
-        self.assertEqual(rung[0].text, "Timer Eggs")
+        timer = book.start_timer(60, start, label="Eggs")
+        due = at(UTC, 2026, 11, 9, 12, 1)
+        self.assertEqual(timer["fires_at"], due.isoformat())
+        self.assertEqual(book.tick(start + timedelta(seconds=59)), [])
+        self.assertEqual(book.tick(due), [Event("ring", "timer", timer["id"], due, "Timer Eggs")])
         book.start_timer(60, start)
         path = book.store.root
         again = Book(path, UTC)
@@ -124,6 +125,15 @@ class Engine(unittest.TestCase):
         gone = Book(path, UTC)
         gone.cancel_timer()
         self.assertIsNone(Book(path, UTC).timer)
+
+    def test_timer_deadline_uses_elapsed_seconds_during_the_repeated_hour(self):
+        for minute, fold, expected in ((55, 0, "2026-11-01T06:05:00+00:00"), (20, 1, "2026-11-01T06:30:00+00:00")):
+            with self.subTest(fold=fold):
+                book = self.book(NY)
+                start = at(NY, 2026, 11, 1, 1, minute, fold)
+                timer = book.start_timer(600, start)
+                self.assertEqual(timer["fires_at"], expected)
+                self.assertEqual(Book(book.store.root, NY).timer, timer)
 
     def test_one_shot_ring_next_tick_reload_and_stop(self):
         book = self.book()
