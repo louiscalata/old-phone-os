@@ -233,6 +233,31 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(note, "")
         self.assertEqual(stat.S_IMODE((folder / "calls.jsonl").stat().st_mode), 0o600)
 
+    def test_failed_quarantine_leaves_the_original_and_reports_the_error(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        readers = (
+            ("state.json", lambda: saved.read_json("state.json", {}), {}),
+            ("state.jsonl", lambda: saved.read_jsonl("state.jsonl"), []),
+        )
+        for name, read, default in readers:
+            with self.subTest(name=name):
+                path = folder / name
+                original = b"\xff"
+                path.write_bytes(original)
+                error = PermissionError("move unavailable")
+                with mock.patch.object(storemod.os, "replace", side_effect=error):
+                    with self.assertRaises(PermissionError) as raised:
+                        read()
+                self.assertIs(raised.exception, error)
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(list(folder.glob(f"{name}.bad-*")))
+                value, note = read()
+                self.assertEqual(value, default)
+                self.assertIn("Started empty", note)
+                self.assertFalse(path.exists())
+                self.assertEqual([backup.read_bytes() for backup in folder.glob(f"{name}.bad-*")], [original])
+
     def _tmp(self):
         import tempfile
 

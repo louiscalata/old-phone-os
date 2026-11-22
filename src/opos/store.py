@@ -79,7 +79,7 @@ class Store:
             dest = path.with_name(path.name + ".bad-" + stamp + "-" + str(n))
         try:
             os.replace(path, dest)
-        except OSError:
+        except FileNotFoundError:
             return
         return dest
 
