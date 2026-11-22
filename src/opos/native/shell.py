@@ -166,6 +166,7 @@ class Core:
             return True
         except urllib.error.HTTPError as err:
             if err.code == 404:
+                err.close()
                 return False
             raise
 

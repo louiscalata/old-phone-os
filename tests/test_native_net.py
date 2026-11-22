@@ -644,12 +644,44 @@ class NetworkPage(unittest.TestCase):
 
     def test_http_errors_are_plain_sentences(self):
         for code, words in ((400, netlogic.FALLBACK), (403, netlogic.FALLBACK), (429, netlogic.TOO_MANY)):
-            self.core.answers["net_join"] = urllib.error.HTTPError(URL, code, "refused", {}, io.BytesIO(b"{}"))
+            body = io.BytesIO(b"{}")
+            self.core.answers["net_join"] = urllib.error.HTTPError(URL, code, "refused", {}, body)
             self.chosen(net("Home-Test", known=True))
             self.page.main_action()
             self.run_threads()
             self.assertEqual(self.said[-1], words, code)
             self.assertFalse(self.page.busy)
+            self.assertTrue(body.closed, "the handled network response is closed")
+
+    def test_a_network_refusal_is_delivered_once_before_a_close_failure_escapes_the_worker(self):
+        class RefusesClose(io.BytesIO):
+            close_called = False
+
+            def close(self):
+                if not self.close_called:
+                    self.close_called = True
+                    raise OSError("close failed")
+                super().close()
+
+        body = RefusesClose(b"{}")
+        self.core.answers["net_join"] = urllib.error.HTTPError(URL, 429, "refused", {}, body)
+        self.chosen(net("Home-Test", known=True))
+        self.page.main_action()
+        with self.assertRaisesRegex(OSError, "close failed"):
+            self.run_threads()
+        self.assertTrue(body.close_called, "cleanup was attempted and its failure stayed observable")
+        self.assertEqual(self.said.count(netlogic.TOO_MANY), 1, "the established result was delivered exactly once")
+        self.assertFalse(self.page.busy)
+
+    def test_a_scheduling_failure_still_closes_the_network_response(self):
+        body = io.BytesIO(b"{}")
+        self.core.answers["net_join"] = urllib.error.HTTPError(URL, 429, "refused", {}, body)
+        self.chosen(net("Home-Test", known=True))
+        self.page.main_action()
+        self.screens.GLib.idle_add = lambda *args: (_ for _ in ()).throw(RuntimeError("schedule failed"))
+        with self.assertRaisesRegex(RuntimeError, "schedule failed"):
+            self.run_threads()
+        self.assertTrue(body.closed, "the owned response closes when callback scheduling fails")
 
     def test_a_join_with_no_answer_in_time_is_not_called_failed_and_the_radios_are_read_again(self):
         self.chosen(net("Cafe-Test"))
@@ -947,7 +979,8 @@ class NetworkPage(unittest.TestCase):
     def test_a_failed_change_sets_no_floor(self):
         """Only a refusal before anything ran (an HTTP 4xx such as 429) leaves the radios as they were: no floor."""
         self.status_on(True)
-        self.core.answers["net_wifi"] = urllib.error.HTTPError(URL, 429, "refused", {}, io.BytesIO(b"{}"))
+        body = io.BytesIO(b"{}")
+        self.core.answers["net_wifi"] = urllib.error.HTTPError(URL, 429, "refused", {}, body)
         self.core.answers["net_status"] = {"ok": True, "wifi": {"enabled": True, "summary": "Wi-Fi: a newer read"}}
         self.look()
         self.page.toggle_wifi()
@@ -957,6 +990,7 @@ class NetworkPage(unittest.TestCase):
         self.threads.clear()
         self.screens.GLib.idle_add, held = (lambda fn, *a: held.append((fn, a))), []
         change()
+        self.assertTrue(body.closed, "the handled network response is closed")
         poll()
         held[0][0](*held[0][1])  # the refusal says nothing about the radios
         self.assertEqual(self.said[-1], netlogic.TOO_MANY)
