@@ -389,6 +389,8 @@ class Book:
             self.alarms = [item for item in self.alarms if item["id"] != row["id"]]
             return
         if event == "toggle":
+            if enabled and state is Occurrence.IDLE:
+                row.pop("done", None)
             row["enabled"] = enabled
             if not enabled:
                 row.pop("snooze_at", None)
