@@ -210,7 +210,8 @@ class TestWebMuseHelperReset(unittest.TestCase):
                         )
                         with self.assertRaises(urllib.error.HTTPError) as cm:
                             urllib.request.urlopen(req, timeout=5)
-                        self.assertEqual(cm.exception.code, 403)
+                        with cm.exception:
+                            self.assertEqual(cm.exception.code, 403)
                         mock_restart.assert_not_called()
         finally:
             server.shutdown()

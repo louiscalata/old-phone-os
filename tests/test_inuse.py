@@ -87,11 +87,13 @@ class InUseTest(unittest.TestCase):
         self.assertEqual(phone.dash.in_use, "maps")
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             post_api(port, {"action": "in_use", "name": "nope"}, token)
-        self.assertEqual(ctx.exception.code, 400)
+        with ctx.exception:
+            self.assertEqual(ctx.exception.code, 400)
         self.assertEqual(phone.dash.in_use, "maps")
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             post_api(port, {"action": "in_use", "name": "maps"})
-        self.assertEqual(ctx.exception.code, 403)
+        with ctx.exception:
+            self.assertEqual(ctx.exception.code, 403)
         self.assertEqual(phone.dash.in_use, "maps")
 
     def test_in_use_changes_next_decision(self):
