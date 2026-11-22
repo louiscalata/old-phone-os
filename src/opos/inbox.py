@@ -11,6 +11,7 @@ CAP = 100
 KINDS = {"call", "message", "alarm", "system", "battery"}
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _STORE = None
+_FILE = "inbox.json"
 
 
 def reset():
@@ -25,10 +26,11 @@ def _store():
     return _STORE
 
 
-def _load():
-    data, note = _store().read_json(
-        "inbox.json", {"items": [], "quiet": {"from": "22:00", "to": "07:00", "on": False}, "next": 1}
-    )
+def _default():
+    return {"items": [], "quiet": {"from": "22:00", "to": "07:00", "on": False}, "next": 1}
+
+
+def _state(data):
     items = data.get("items") if isinstance(data.get("items"), list) else []
     quiet = data.get("quiet") if isinstance(data.get("quiet"), dict) else {}
     try:
@@ -37,11 +39,11 @@ def _load():
         nxt = 1
     if nxt < 1:
         nxt = 1
-    return items, quiet, note, nxt
+    return items, quiet, nxt
 
 
-def _save(items, quiet, nxt):
-    _store().write_json("inbox.json", {"items": items[-CAP:], "quiet": quiet, "next": nxt})
+def _save(save, items, quiet, nxt):
+    save({"items": items[-CAP:], "quiet": quiet, "next": nxt})
 
 
 def _minutes(text):
@@ -79,41 +81,46 @@ def add(kind, text, now=None):
         raise ValueError("kind")
     if not isinstance(text, str) or not text.strip() or len(text) > 120:
         raise ValueError("text")
-    items, quiet, _note, nxt = _load()
-    when = now if isinstance(now, datetime) else datetime.now()
-    sound = allows_sound(kind, when, quiet, False)
-    row = {"id": str(nxt), "kind": kind, "text": text.strip(), "sound": sound}
-    items.append(row)
-    _save(items, quiet, nxt + 1)
-    return row
+    with _store()._transaction(_FILE, _default()) as (data, _, save):
+        items, quiet, nxt = _state(data)
+        when = now if isinstance(now, datetime) else datetime.now()
+        sound = allows_sound(kind, when, quiet, False)
+        row = {"id": str(nxt), "kind": kind, "text": text.strip(), "sound": sound}
+        items.append(row)
+        _save(save, items, quiet, nxt + 1)
+        return row
 
 
 def dismiss(item_id):
-    items, quiet, _note, nxt = _load()
-    items = [row for row in items if str(row.get("id")) != str(item_id)]
-    _save(items, quiet, nxt)
+    with _store()._transaction(_FILE, _default()) as (data, _, save):
+        items, quiet, nxt = _state(data)
+        items = [row for row in items if str(row.get("id")) != str(item_id)]
+        _save(save, items, quiet, nxt)
 
 
 def clear():
-    _items, quiet, _note, nxt = _load()
-    _save([], quiet, nxt)
+    with _store()._transaction(_FILE, _default()) as (data, _, save):
+        _, quiet, nxt = _state(data)
+        _save(save, [], quiet, nxt)
 
 
 def set_quiet(on, start="22:00", end="07:00"):
     _minutes(start)
     _minutes(end)
-    items, _quiet, _note, nxt = _load()
-    quiet = {
-        "on": bool(on),
-        "from": start,
-        "to": end,
-        "alarms": "Alarms always ring.",
-        "favorites": "Calls from Favorites ring.",
-    }
-    _save(items, quiet, nxt)
-    return quiet
+    with _store()._transaction(_FILE, _default()) as (data, _, save):
+        items, _, nxt = _state(data)
+        quiet = {
+            "on": bool(on),
+            "from": start,
+            "to": end,
+            "alarms": "Alarms always ring.",
+            "favorites": "Calls from Favorites ring.",
+        }
+        _save(save, items, quiet, nxt)
+        return quiet
 
 
 def snapshot():
-    items, quiet, note, _nxt = _load()
+    data, note = _store().read_json(_FILE, _default())
+    items, quiet, _ = _state(data)
     return {"ok": True, "items": items, "quiet": quiet, "recovered": note}
