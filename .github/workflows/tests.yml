@@ -52,4 +52,6 @@ jobs:
           shellcheck --version
           shellcheck deploy/make-manifest.sh deploy/verify-manifest.sh
       - name: Run the test suite
+        env:
+          PYTHONWARNINGS: error
         run: PYTHONPATH=src python3 -m unittest discover -s tests -t .
