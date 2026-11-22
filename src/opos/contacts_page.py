@@ -3,6 +3,7 @@
 
 import os
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 
 from opos import appdoc, apps, vcard
@@ -145,12 +146,12 @@ def _folder():
 
 def _load():
     data, note = _store().read_json("contacts.json", {"people": []})
+    return _people(data), note
+
+
+def _people(data):
     people = data.get("people") if isinstance(data.get("people"), list) else []
-    return [row for row in people if isinstance(row, dict) and isinstance(row.get("id"), str)], note
-
-
-def _save(people):
-    _store().write_json("contacts.json", {"people": people})
+    return [row for row in people if isinstance(row, dict) and isinstance(row.get("id"), str)]
 
 
 def name_for(number, practice=False):
@@ -177,6 +178,10 @@ def _public(row):
 
 def snapshot(note="", skipped=0, file_line=""):
     people, recovered = _load()
+    return _snapshot(people, recovered or note, skipped, file_line)
+
+
+def _snapshot(people, note, skipped=0, file_line=""):
     practice = False
     if not people:
         people = [dict(row, id="demo-%d" % i) for i, row in enumerate(_DEMO)]
@@ -186,14 +191,14 @@ def snapshot(note="", skipped=0, file_line=""):
         "ok": True,
         "people": [_public(row) for row in people],
         "practice": practice,
-        "recovered": recovered or note,
+        "recovered": note,
         "skipped": skipped,
         "file_line": file_line,
         "call": CALL,
     }
 
 
-def _clean_person(data, existing=None):
+def _clean_person(data, people, existing=None):
     name = data.get("name")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
         raise ValueError("name")
@@ -202,7 +207,6 @@ def _clean_person(data, existing=None):
     note = data.get("note") if isinstance(data.get("note"), str) else ""
     favorite = data.get("favorite") is True
     ice = data.get("ice") is True
-    people, _ = _load()
     if favorite and not (existing and existing.get("favorite")):
         if sum(1 for row in people if row.get("favorite")) >= 6:
             raise ValueError("favorites")
@@ -236,41 +240,46 @@ def _clean_person(data, existing=None):
 
 def post(data):
     action = data.get("action") if isinstance(data, dict) else None
-    people, note = _load()
-    try:
-        if action == "add":
-            if len(people) >= _MAX:
-                raise ValueError("full")
-            people.append(_clean_person(data))
-            _save(people)
-            return 200, snapshot(note)
-        if action == "edit":
-            found = next((row for row in people if row["id"] == data.get("id")), None)
-            if found is None:
-                raise ValueError("id")
-            people = [_clean_person(data, found) if row["id"] == found["id"] else row for row in people]
-            _save(people)
-            return 200, snapshot(note)
-        if action == "delete":
-            if data.get("id") not in {row["id"] for row in people}:
-                raise ValueError("id")
-            _save([row for row in people if row["id"] != data.get("id")])
-            return 200, snapshot(note)
-        if action == "import":
-            return _import(people, note)
-        if action == "export":
-            return _export(people, note)
-    except ValueError as exc:
-        code = str(exc)
-        return 400, {"error": code if code in {"name", "id", "full", "favorites"} else "bad request"}
-    return 400, {"error": "bad request"}
+    saved = _store()
+    default = {"people": []}
+    if action in ("add", "edit", "delete", "import"):
+        context = saved._transaction("contacts.json", default)
+    else:
+        context = nullcontext((*saved.read_json("contacts.json", default), None))
+    with context as (state, note, save):
+        people = _people(state)
+        try:
+            if action == "add":
+                if len(people) >= _MAX:
+                    raise ValueError("full")
+                people.append(_clean_person(data, people))
+            elif action == "edit":
+                found = next((row for row in people if row["id"] == data.get("id")), None)
+                if found is None:
+                    raise ValueError("id")
+                people = [_clean_person(data, people, found) if row["id"] == found["id"] else row for row in people]
+            elif action == "delete":
+                if data.get("id") not in {row["id"] for row in people}:
+                    raise ValueError("id")
+                people = [row for row in people if row["id"] != data.get("id")]
+            elif action == "import":
+                return _import(people, note, save)
+            elif action == "export":
+                return _export(people, note)
+            else:
+                return 400, {"error": "bad request"}
+            save({"people": people})
+            return 200, _snapshot(people, note)
+        except ValueError as exc:
+            code = str(exc)
+            return 400, {"error": code if code in {"name", "id", "full", "favorites"} else "bad request"}
 
 
-def _import(people, note):
+def _import(people, note, save):
     folder = _folder()
     files = sorted(folder.glob("*.vcf")) if folder.is_dir() else []
     if not files:
-        return 200, dict(snapshot(note), file_line="No vCard file found.")
+        return 200, _snapshot(people, note, file_line="No vCard file found.")
     added = 0
     skipped = 0
     known = {item["number"] for row in people for item in row.get("numbers") or []}
@@ -293,11 +302,11 @@ def _import(people, note):
             )
             known.add(number)
             added += 1
-    _save(people)
+    save({"people": people})
     line = "Imported %d." % added
     if skipped:
         line += " %d fields skipped." % skipped
-    return 200, dict(snapshot(note, skipped), file_line=line)
+    return 200, _snapshot(people, note, skipped, line)
 
 
 def _export(people, note):
