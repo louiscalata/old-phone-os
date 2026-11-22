@@ -596,6 +596,7 @@ class BusTalk(unittest.TestCase):
 
         def serve():
             conn, _ = self.server.accept()
+            self.addCleanup(conn.close)
             self.conn = conn
             self.received.append(conn.recv(4))
             if ack:
@@ -667,6 +668,7 @@ class AccelTalk(unittest.TestCase):
                     conn, _ = self.server.accept()
                 except OSError:
                     return
+                self.addCleanup(conn.close)
                 self.conns.append(conn)
                 self.received.append(conn.recv(4))
                 if ack:

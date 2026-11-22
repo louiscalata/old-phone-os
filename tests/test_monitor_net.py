@@ -876,14 +876,17 @@ class AbortEventTests(unittest.TestCase):
             abort.set()
 
         class Wrapped:
+            def __init__(self, sock):
+                self.sock = sock
+
             def do_handshake(self):
                 raise AssertionError("the handshake must not start after the deadline")
 
             def close(self):
-                pass
+                self.sock.close()
 
         context = mock.Mock()
-        context.wrap_socket.return_value = Wrapped()
+        context.wrap_socket.side_effect = lambda sock, **_: Wrapped(sock)
         with (
             mock.patch.object(socket.socket, "connect", connect),
             mock.patch.object(monitor.ssl, "create_default_context", lambda: context),
