@@ -329,7 +329,9 @@ class Book:
     def next_alarm(self, now):
         """The next armed fire at or after now, or None. Snooze counts."""
         now = _aware(now).astimezone(self.zone)
+        now_at = now.astimezone(timezone.utc)
         best = None
+        best_at = None
         best_row = None
         for row in self.alarms:
             if not row.get("enabled"):
@@ -337,12 +339,14 @@ class Book:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
                 when = _parse(snooze, self.zone)
-                if when >= now and (best is None or when < best):
-                    best, best_row = when, row
-                    continue
+                when_at = when.astimezone(timezone.utc)
+                if when_at >= now_at and (best_at is None or when_at < best_at):
+                    best, best_at, best_row = when, when_at, row
             when = next_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), now)
-            if when is not None and (best is None or when < best):
-                best, best_row = when, row
+            if when is not None:
+                when_at = when.astimezone(timezone.utc)
+                if best_at is None or when_at < best_at:
+                    best, best_at, best_row = when, when_at, row
         if best is None:
             return None
         return {
