@@ -30,13 +30,14 @@ class _CallStore(Store):
         if data is None:
             return None
         rows = data.get("calls")
-        if (
-            not isinstance(rows, list)
-            or not all(_valid(row) for row in rows)
-            or len({row["id"] for row in rows}) != len(rows)
-        ):
+        if not isinstance(rows, list):
             return None
-        return data
+        identifiers = set()
+        for row in rows:
+            if not _valid(row):
+                return None
+            identifiers.add(row["id"])
+        return data if len(identifiers) == len(rows) else None
 
     def _quarantine(self, path):
         dest = super()._quarantine(path)
