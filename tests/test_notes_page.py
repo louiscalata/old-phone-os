@@ -73,6 +73,38 @@ class Notes(unittest.TestCase):
             self.assertEqual(code, 400)
             self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "note-%s.txt" % other)))
 
+    def test_open_legacy_note_preserves_read_only_behavior(self):
+        root = Path(self.tmp.name) / "legacy"
+        request = {"action": "open", "id": "11223344"}
+        with mock.patch.dict(os.environ, {"OPOS_STATE_DIR": str(root)}):
+            self.assertEqual(notes_page.post(request), (400, {"error": "id"}))
+            self.assertFalse(root.exists())
+            root.mkdir()
+            index = root / "notes.json"
+            body = root / "note-11223344.txt"
+            index.write_bytes(b'{"schema":1,"notes":[{"id":"11223344","title":"Legacy"}]}')
+            body.write_bytes(b"Legacy\r\nsecond")
+            self.assertEqual(
+                notes_page.post(request),
+                (
+                    200,
+                    {
+                        "ok": True,
+                        "notes": [{"id": "11223344", "title": "Legacy"}],
+                        "recovered": "",
+                        "id": "11223344",
+                        "text": "Legacy\nsecond",
+                    },
+                ),
+            )
+            self.assertEqual(set(root.iterdir()), {index, body})
+            body.write_bytes(b"\xff")
+            self.assertEqual(notes_page.post(request), (400, {"error": "bad request"}))
+            body.unlink()
+            with self.assertRaises(FileNotFoundError):
+                notes_page.post(request)
+            self.assertEqual(set(root.iterdir()), {index})
+
 
 class NotesDeleteFailures(unittest.TestCase):
     def setUp(self):

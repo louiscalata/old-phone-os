@@ -8,7 +8,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from opos import appdoc, apps
-from opos.store import Store, default_root
+from opos.store import Store, _lock_path, default_root
 
 _STORE = None
 _CAP = 64 * 1024
@@ -138,6 +138,27 @@ def _snapshot(rows, note=""):
     }
 
 
+def _open(saved, rows, ident):
+    if ident not in {row["id"] for row in rows}:
+        raise ValueError("id")
+    path = saved.root / ("note-%s.txt" % ident)
+    lock = _lock_path(saved.root / "notes.json")
+    if not lock.exists():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if not lock.exists():
+                raise
+        else:
+            if not lock.exists():
+                return dict(_snapshot(rows), id=ident, text=text)
+    with saved._transaction("notes.json", {"notes": []}) as (index, _, _):
+        rows = _rows(index)
+        if not any(row["id"] == ident for row in rows):
+            raise ValueError("id")
+        return dict(_snapshot(rows), id=ident, text=path.read_text(encoding="utf-8"))
+
+
 def post(data):
     action = data.get("action") if isinstance(data, dict) else None
     saved = _store()
@@ -158,11 +179,7 @@ def post(data):
                 saved.write_bytes("note-%s.txt" % ident, b"", _CAP)
                 return 200, dict(_snapshot(rows), id=ident, text="", saved="")
             if action == "open":
-                ident = data.get("id")
-                if ident not in {row["id"] for row in rows}:
-                    raise ValueError("id")
-                raw = (saved.root / ("note-%s.txt" % ident)).read_text(encoding="utf-8")
-                return 200, dict(snapshot(), id=ident, text=raw)
+                return 200, _open(saved, rows, data.get("id"))
             if action == "save":
                 ident = data.get("id")
                 text = data.get("text")

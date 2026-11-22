@@ -37,9 +37,13 @@ def _check_name(name):
     return name
 
 
+def _lock_path(path):
+    return path.with_name(f".{path.name}.lock")
+
+
 @contextmanager
 def _lock(path):
-    lock = path.with_name(f".{path.name}.lock")
+    lock = _lock_path(path)
     if os.name == "nt":
         fd = os.open(lock, os.O_CREAT | os.O_RDONLY, 0o600)
     else:

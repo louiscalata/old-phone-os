@@ -121,6 +121,42 @@ def notes_after_read(connection, data):
         connection.send(notes_page.post(data))
 
 
+def notes_before_publish(connection, data):
+    write_atomic = store._write_atomic
+
+    def publish_after_read(path, raw, lock):
+        if path.name == "notes.json":
+            connection.send("publish")
+            if receive(connection) != "write":
+                raise AssertionError("expected permission to write the index")
+        write_atomic(path, raw, lock)
+
+    with connection, patch.object(store, "_write_atomic", publish_after_read):
+        connection.send(notes_page.post(data))
+
+
+def note_read(connection, data, read_before_release):
+    read_text = Path.read_text
+    first = True
+
+    def read_after_release(path, *args, **kwargs):
+        nonlocal first
+        if not first or path.name != f"note-{data['id']}.txt":
+            return read_text(path, *args, **kwargs)
+        first = False
+        if read_before_release:
+            text = read_text(path, *args, **kwargs)
+        connection.send("read")
+        if receive(connection) != "open":
+            raise AssertionError("expected the first writer to finish")
+        if read_before_release:
+            return text
+        return read_text(path, *args, **kwargs)
+
+    with connection, patch.object(Path, "read_text", read_after_release):
+        connection.send(notes_page.post(data))
+
+
 class StoreRecoveryCoordinationTests(unittest.TestCase):
     @contextmanager
     def process(self, target, *args):
@@ -346,6 +382,51 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         self.assertEqual(second, (400, {"error": "id"}))
         self.assertEqual(notes_page.snapshot()["notes"], [])
         self.assertFalse((root / f"note-{ident}.txt").exists())
+
+    def test_note_open_waits_for_pending_index_publication(self):
+        for action in ("save", "delete"):
+            with self.subTest(action=action):
+                root = self.notes_root()
+                ident = notes_page.post({"action": "add"})[1]["id"]
+                update = {"action": action, "id": ident, "text": "Changed title\nChanged body"}
+                request = {"action": "open", "id": ident}
+                with self.process(notes_before_publish, update) as writer:
+                    self.assertEqual(receive(writer), "publish")
+                    self.assert_lock_held(root / "notes.json")
+                    with self.process(run_while_locked, notes_page.post, request) as reader:
+                        self.assertEqual(receive(reader), "acquire")
+                        writer.send("write")
+                        self.assertEqual(receive(writer)[0], 200)
+                        status, body = receive(reader)
+                if action == "delete":
+                    self.assertEqual((status, body), (400, {"error": "id"}))
+                else:
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["text"], update["text"])
+                    self.assertEqual(body["notes"], [{"id": ident, "title": "Changed title"}])
+
+    def test_note_open_reloads_when_the_first_writer_creates_the_lock(self):
+        for action in ("save", "delete"):
+            with self.subTest(action=action):
+                root = self.notes_root()
+                ident = "11223344"
+                (root / "notes.json").write_bytes(b'{"schema":1,"notes":[{"id":"11223344","title":"Legacy"}]}')
+                (root / f"note-{ident}.txt").write_bytes(b"Legacy")
+                request = {"action": "open", "id": ident}
+                update = {"action": action, "id": ident, "text": "Changed title\nChanged body"}
+                with self.process(note_read, request, action == "save") as reader:
+                    self.assertEqual(receive(reader), "read")
+                    self.assertFalse((root / ".notes.json.lock").exists())
+                    self.assertEqual(notes_page.post(update)[0], 200)
+                    self.assertTrue((root / ".notes.json.lock").is_file())
+                    reader.send("open")
+                    status, body = receive(reader)
+                if action == "delete":
+                    self.assertEqual((status, body), (400, {"error": "id"}))
+                else:
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["text"], update["text"])
+                    self.assertEqual(body["notes"], [{"id": ident, "title": "Changed title"}])
 
     def test_valid_and_missing_reads_leave_the_directory_alone(self):
         with tempfile.TemporaryDirectory() as root:
