@@ -84,9 +84,9 @@ def run_while_locked(connection, operation, *args):
     lock = store._lock
 
     @contextmanager
-    def acquire(path):
+    def acquire(path, **kwargs):
         connection.send("acquire")
-        with lock(path):
+        with lock(path, **kwargs):
             yield
 
     with connection, patch.object(store, "_lock", acquire):

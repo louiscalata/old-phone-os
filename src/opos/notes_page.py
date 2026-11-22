@@ -8,7 +8,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from opos import appdoc, apps
-from opos.store import Store, _lock_path, default_root
+from opos.store import Store, _lock_exists, default_root
 
 _STORE = None
 _CAP = 64 * 1024
@@ -142,21 +142,21 @@ def _open(saved, rows, ident):
     if ident not in {row["id"] for row in rows}:
         raise ValueError("id")
     path = saved.root / ("note-%s.txt" % ident)
-    lock = _lock_path(saved.root / "notes.json")
-    if not lock.exists():
+    index_path = saved.root / "notes.json"
+    if not _lock_exists(index_path):
         try:
             text = path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            if not lock.exists():
+            if not _lock_exists(index_path):
                 raise
         else:
-            if not lock.exists():
+            if not _lock_exists(index_path):
                 return dict(_snapshot(rows), id=ident, text=text)
-    with saved._transaction("notes.json", {"notes": []}) as (index, _, _):
+    with saved._read_transaction("notes.json", {"notes": []}) as (index, note):
         rows = _rows(index)
         if not any(row["id"] == ident for row in rows):
             raise ValueError("id")
-        return dict(_snapshot(rows), id=ident, text=path.read_text(encoding="utf-8"))
+        return dict(_snapshot(rows, note), id=ident, text=path.read_text(encoding="utf-8"))
 
 
 def post(data):

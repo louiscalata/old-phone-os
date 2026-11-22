@@ -41,10 +41,20 @@ def _lock_path(path):
     return path.with_name(f".{path.name}.lock")
 
 
+def _lock_exists(path):
+    try:
+        _lock_path(path).stat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 @contextmanager
-def _lock(path):
+def _lock(path, *, create=True):
     lock = _lock_path(path)
-    if os.name == "nt":
+    if not create:
+        fd = os.open(lock, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    elif os.name == "nt":
         fd = os.open(lock, os.O_CREAT | os.O_RDONLY, 0o600)
     else:
         flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
@@ -61,7 +71,8 @@ def _lock(path):
             finally:
                 msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         else:
-            os.fchmod(fd, 0o600)
+            if create:
+                os.fchmod(fd, 0o600)
             fcntl.flock(fd, fcntl.LOCK_EX)
             yield
     finally:
@@ -183,6 +194,12 @@ class Store:
         with _lock(path):
             value, note = self._recover(path, default, self._read_json)
             yield value, note, save
+
+    @contextmanager
+    def _read_transaction(self, name, default):
+        path = self._path(name)
+        with _lock(path, create=False):
+            yield self._recover(path, default, self._read_json)
 
     def _read_json(self, path, limit=None):
         try:
