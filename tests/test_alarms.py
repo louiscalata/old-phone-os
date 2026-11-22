@@ -71,6 +71,19 @@ class Engine(unittest.TestCase):
         self.assertTrue(book.alarms[0]["enabled"])
         self.assertEqual(book.tick(at(UTC, 2026, 11, 9, 7, 20)), [])
 
+    def test_snooze_deadline_uses_elapsed_minutes_during_the_repeated_hour(self):
+        for minute, fold, expected in ((55, 0, "2026-11-01T06:05:00+00:00"), (20, 1, "2026-11-01T06:30:00+00:00")):
+            with self.subTest(fold=fold):
+                book = self.book(NY)
+                fire = at(NY, 2026, 11, 1, 1, 0)
+                row = book.add(1, 0, days=(6,), now=fire - timedelta(minutes=1))
+                self.assertEqual(book.tick(fire), [Event("ring", "alarm", row["id"], fire, "Alarm 01:00")])
+                now = at(NY, 2026, 11, 1, 1, minute, fold)
+                self.assertEqual(book.snooze(now, row["id"]), dict(row, snooze_at=expected))
+                reloaded = Book(book.store.root, NY)
+                self.assertEqual(reloaded.alarms, [dict(row, snooze_at=expected)])
+                self.assertEqual(reloaded.last_seen, now.astimezone(UTC).isoformat())
+
     def test_a_late_restart_is_missed_and_an_unknown_clock_does_not_ring(self):
         book = self.book()
         fire = at(UTC, 2026, 11, 9, 7, 0)

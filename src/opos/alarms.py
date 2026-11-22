@@ -422,7 +422,7 @@ class Book:
             row.pop("done", None)
             row.pop("ringing", None)
             row["enabled"] = True
-            row["snooze_at"] = _iso(now + SNOOZE)
+            row["snooze_at"] = _iso(now.astimezone(timezone.utc) + SNOOZE)
         elif state is Occurrence.COMPLETED:
             row.pop("snooze_at", None)
             row.pop("ringing", None)
