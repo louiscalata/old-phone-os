@@ -13,9 +13,10 @@ import time
 import unittest
 from datetime import datetime
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 from opos import alarm_sound, apps, clock_page
-from opos.alarms import Event
+from opos.alarms import Book, Event
 from opos.home import is_quiet
 from tests.test_apps_shell import get, post, running, visible
 from tests.test_panes_pages import TOKENS, css_hexes, style_of
@@ -460,6 +461,76 @@ class ClockSnapshot(unittest.TestCase):
         code, result = clock_page.post({"action": "snooze", "id": before["alarms"][0]["id"]})
         self.assertEqual((code, result), (400, {"error": "id"}))
         self.assertEqual(clock_page.snapshot(), before)
+
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
+    def test_stop_accepts_a_saved_snooze_only_within_elapsed_grace(self):
+        root = clock_page.book().store.root
+        zone = ZoneInfo("America/New_York")
+        cases = (
+            ("05:45:00", "05:54:59", False),
+            ("05:45:00", "05:55:00", True),
+            ("05:45:00", "06:04:00", True),
+            ("05:45:00", "06:05:00", True),
+            ("05:45:00", "06:05:01", False),
+            ("04:55:00", "06:08:00", False),
+        )
+        for fire_at, current_at, stops in cases:
+            with self.subTest(fire_at=fire_at, now=current_at):
+                saved = Book(root / current_at.replace(":", ""), zone)
+                fire = datetime.fromisoformat("2026-11-01T" + fire_at + "+00:00").astimezone(zone)
+                now = datetime.fromisoformat("2026-11-01T" + current_at + "+00:00").astimezone(zone)
+                start = datetime.fromisoformat("2026-11-01T04:30:00+00:00")
+                ident = saved.add(fire.hour, fire.minute, now=start)["id"]
+                self.assertEqual([event.id for event in saved.tick(fire)], [ident])
+                saved.snooze(fire, ident)
+                saved.edit(ident, 9, 0)
+                path = saved.store.root / "alarms.json"
+                before = path.read_bytes()
+                with (
+                    mock.patch.object(clock_page, "book", return_value=Book(saved.store.root, zone)),
+                    mock.patch.object(clock_page, "current_now", return_value=now),
+                ):
+                    code, snap = clock_page.post({"action": "stop"})
+                if stops:
+                    self.assertEqual(code, 200, snap)
+                    row = Book(saved.store.root, zone).alarms[0]
+                    self.assertFalse(row["enabled"])
+                    self.assertNotIn("snooze_at", row)
+                else:
+                    self.assertEqual((code, snap), (400, {"error": "id"}))
+                    self.assertEqual(path.read_bytes(), before)
+
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
+    def test_stop_selects_recent_scheduled_alarm_in_the_books_zone(self):
+        root = clock_page.book().store.root
+        zone = ZoneInfo("America/New_York")
+        start = datetime.fromisoformat("2026-11-01T05:40:00+00:00")
+        cases = (
+            ("05:55:00", zone, True),
+            ("06:04:00", zone, True),
+            ("06:04:00", ZoneInfo("UTC"), True),
+            ("06:05:00", zone, False),
+        )
+        for case, (current_at, input_zone, stops) in enumerate(cases):
+            with self.subTest(now=current_at, input_zone=input_zone.key):
+                saved = Book(root / str(case), zone)
+                saved.add(1, 40, label="Stale", now=start)
+                saved.add(1, 55, label="Recent", now=start)
+                now = datetime.fromisoformat("2026-11-01T" + current_at + "+00:00").astimezone(input_zone)
+                path = saved.store.root / "alarms.json"
+                before = path.read_bytes()
+                with (
+                    mock.patch.object(clock_page, "book", return_value=Book(saved.store.root, zone)),
+                    mock.patch.object(clock_page, "current_now", return_value=now),
+                ):
+                    code, snap = clock_page.post({"action": "stop"})
+                if stops:
+                    self.assertEqual(code, 200, snap)
+                    rows = Book(saved.store.root, zone).alarms
+                    self.assertEqual([row["label"] for row in rows if not row["enabled"]], ["Recent"])
+                else:
+                    self.assertEqual((code, snap), (400, {"error": "id"}))
+                    self.assertEqual(path.read_bytes(), before)
 
 
 if __name__ == "__main__":
