@@ -386,6 +386,35 @@ class Engine(unittest.TestCase):
         self.assertEqual(resumed.notices, ["Earlier", "Missed timer"])
         self.assertEqual(resumed.tick(due + timedelta(minutes=11)), [])
 
+    def test_alarm_actions_replace_an_unusable_legacy_last_seen(self):
+        ring = at(UTC, 2026, 11, 9, 7, 0)
+        due = ring + timedelta(seconds=15)
+        timer = {"id": "tea", "fires_at": due.isoformat(), "label": "Tea"}
+        prior_values = ("2026-02-29T07:00:00+00:00", "0001-01-01T00:00:00+00:01", "9999-12-31T23:59:59-00:01")
+        for action in (Book.stop, Book.snooze):
+            for prior in prior_values:
+                with self.subTest(action=action.__name__, prior=prior):
+                    book = self.book()
+                    alarm = book.add(7, 0, now=ring - timedelta(hours=1))
+                    book.tick(ring)
+                    book.store.write_json(
+                        "alarms.json",
+                        {"alarms": book.alarms, "timer": timer, "last_seen": prior, "notices": ["Earlier"]},
+                    )
+                    book = Book(book.store.root, UTC)
+                    row = action(book, due, alarm["id"])
+                    self.assertNotIn("ringing", row)
+                    saved, _ = book.store.read_json("alarms.json", {})
+                    self.assertEqual(saved["last_seen"], due.isoformat())
+                    self.assertEqual(saved["timer"], timer)
+                    self.assertNotIn("timer_seen", saved)
+
+                    resumed = Book(book.store.root, UTC)
+                    self.assertEqual(resumed.alarms, [row])
+                    self.assertEqual(resumed.tick(due + timedelta(seconds=1)), [])
+                    self.assertEqual(resumed.timer, timer)
+                    self.assertEqual(resumed.notices, ["Earlier"])
+
     def test_legacy_timer_ignores_unrecognized_cursor_metadata(self):
         due = at(UTC, 2026, 11, 9, 7, 0)
         timer = {"id": "old-timer", "fires_at": due.isoformat(), "label": "Tea"}

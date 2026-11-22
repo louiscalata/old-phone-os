@@ -295,7 +295,10 @@ class Book:
         if self.timer is None:
             return None
         if self._timer_seen is None and self.last_seen is not None:
-            return _parse(self.last_seen, timezone.utc)
+            try:
+                return _parse(self.last_seen, timezone.utc)
+            except (ValueError, OverflowError):
+                return None
         return self._timer_seen
 
     def snooze(self, now, alarm_id=None):
