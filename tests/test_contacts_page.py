@@ -146,6 +146,126 @@ class ContactsApi(unittest.TestCase):
             code, raw = post(server, "/api/contacts", {"action": "add", "name": "No", "number": "abc"}, token)
             self.assertEqual(code, 400)
 
+    def test_edit_replaces_only_the_primary_number_of_an_imported_contact(self):
+        folder = Path(self.env["OPOS_CONTACTS_DIR"])
+        folder.mkdir()
+        (folder / "people.vcf").write_text(
+            "BEGIN:VCARD\nVERSION:3.0\nFN:Bo\nTEL;TYPE=CELL:+15550101\n"
+            "TEL;TYPE=HOME:+15550102\nTEL;TYPE=WORK:+15550103\nNOTE:Fixture\nEND:VCARD\n",
+            encoding="utf-8",
+        )
+        with running(self.env) as server:
+            token = server.RequestHandlerClass.token
+            code, raw = post(server, "/api/contacts", {"action": "import"}, token)
+            self.assertEqual(code, 200, raw)
+            person = json.loads(raw)["people"][0]
+            stored = [
+                {"number": "+15550101", "label": "Mobile"},
+                {"number": "+15550102", "label": "Home"},
+                {"number": "+15550103", "label": "Work"},
+            ]
+            self.assertEqual(person["numbers"], stored)
+            edit = {
+                "action": "edit",
+                "id": person["id"],
+                "name": "Bo Renamed",
+                "favorite": True,
+                "note": person["note"],
+                **stored[0],
+            }
+            code, raw = post(server, "/api/contacts", edit, token)
+            self.assertEqual(code, 200, raw)
+            renamed = dict(person, name="Bo Renamed", favorite=True)
+            self.assertEqual(json.loads(raw)["people"], [renamed])
+
+            code, raw = post(server, "/api/contacts", dict(edit, number="+1 (555) 0199", label="Work"), token)
+            self.assertEqual(code, 200, raw)
+            numbers = [{"number": "+15550199", "label": "Work"}, *stored[1:]]
+            expected = dict(renamed, numbers=numbers)
+            self.assertEqual(json.loads(raw)["people"], [expected])
+
+            contacts_page.reset()
+            code, raw = get(server, "/api/contacts", token)
+            self.assertEqual(code, 200, raw)
+            self.assertEqual(json.loads(raw)["people"], [expected])
+
+            code, raw = post(server, "/api/contacts", {"action": "export"}, token)
+            self.assertEqual(code, 200, raw)
+            exported = vcard.parse((folder / "contacts.vcf").read_text(encoding="utf-8"))
+            self.assertEqual(exported, ([{"name": "Bo Renamed", "numbers": numbers, "note": "Fixture"}], 0))
+
+    def test_edit_rewrites_legacy_contact_with_only_the_first_three_usable_secondary_numbers(self):
+        state_path = Path(self.tmp.name) / "contacts.json"
+        export_path = Path(self.env["OPOS_CONTACTS_DIR"]) / "contacts.vcf"
+        longest = "9" * 64
+        secondary = [
+            {"number": "+15550102", "label": "Home"},
+            {"number": longest, "label": "Work"},
+            {"number": "+15550103"},
+            {"number": "+15550104", "label": "Mobile"},
+            {"number": "+15550105", "label": "Home"},
+        ]
+        malformed = [
+            None,
+            {},
+            {"number": 15550106, "label": "Home"},
+            {"number": "+15550106", "label": ["Home"]},
+            secondary[0],
+            {"number": "١٢٣", "label": "Work"},
+            {"number": "+12", "label": "Mobile"},
+            {"number": "+1 555 0106", "label": "Work"},
+            {"number": "+" + longest, "label": "Work"},
+            secondary[1],
+            {"number": "++123", "label": "Home"},
+            {"number": "+15550106", "label": "Fax"},
+            *secondary[2:],
+        ]
+        body = {"action": "edit", "id": "legacy", "name": "Renamed", "number": "+1 (555) 0199", "label": "Work"}
+        expected = {
+            "id": "legacy",
+            "name": "Renamed",
+            "numbers": [{"number": "+15550199", "label": "Work"}, *secondary[:2], dict(secondary[2], label="Mobile")],
+            "note": "",
+            "favorite": False,
+            "ice": False,
+        }
+        saved_bytes = json.dumps({"people": [expected], "schema": 1}, separators=(",", ":")).encode("utf-8")
+        export_bytes = os.linesep.join(
+            (
+                "BEGIN:VCARD",
+                "VERSION:3.0",
+                "FN:Renamed",
+                "TEL;TYPE=WORK:+15550199",
+                "TEL;TYPE=HOME:+15550102",
+                "TEL;TYPE=WORK:" + longest,
+                "TEL;TYPE=CELL:+15550103",
+                "END:VCARD",
+                "",
+            )
+        ).encode("utf-8")
+        with running(self.env) as server:
+            token = server.RequestHandlerClass.token
+            for case, tail in (("malformed", malformed), ("over-limit", secondary)):
+                with self.subTest(case=case):
+                    state_path.write_text(
+                        json.dumps(
+                            {"people": [{"id": "legacy", "name": "Stored", "numbers": [None, *tail]}], "schema": 1}
+                        ),
+                        encoding="utf-8",
+                    )
+                    code, raw = post(server, "/api/contacts", body, token)
+                    self.assertEqual(code, 200, raw)
+                    self.assertEqual(json.loads(raw)["people"], [dict(expected, demo=False)])
+                    self.assertEqual(state_path.read_bytes(), saved_bytes)
+
+                    contacts_page.reset()
+                    code, raw = get(server, "/api/contacts", token)
+                    self.assertEqual(code, 200, raw)
+                    self.assertEqual(json.loads(raw)["people"], [dict(expected, demo=False)])
+                    code, raw = post(server, "/api/contacts", {"action": "export"}, token)
+                    self.assertEqual(code, 200, raw)
+                    self.assertEqual(export_path.read_bytes(), export_bytes)
+
     def test_routes_and_the_home_tile_stay_off_until_contacts_is_named(self):
         # Importing the page registers it. A registered app still refuses until OPOS_APPS names it.
         self.assertIsNotNone(contacts_page.snapshot)

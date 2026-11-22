@@ -4,6 +4,10 @@ import typing
 from opos.secure import clean_text
 
 
+MAX_NUMBER_LENGTH = 64
+MIN_NUMBER_DIGITS = 3
+
+
 class Modem(typing.Protocol):
     def dial(self, number: str) -> None: ...
     def hang_up(self) -> None: ...
@@ -13,7 +17,7 @@ class Modem(typing.Protocol):
 def normalize_number(raw: str) -> str:
     if not isinstance(raw, str):
         raise ValueError
-    if len(raw) > 64:
+    if len(raw) > MAX_NUMBER_LENGTH:
         raise ValueError
     allowed = set("0123456789+ -().")
     if any(ch not in allowed for ch in raw):
@@ -22,7 +26,7 @@ def normalize_number(raw: str) -> str:
     if cleaned.count("+") > 1 or ("+" in cleaned and not cleaned.startswith("+")):
         raise ValueError
     digits = [c for c in cleaned if c.isdigit()]
-    if len(digits) < 3:
+    if len(digits) < MIN_NUMBER_DIGITS:
         raise ValueError
     return cleaned
 

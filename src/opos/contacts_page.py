@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from opos import appdoc, apps, vcard
-from opos.essentials import normalize_number
+from opos.essentials import MAX_NUMBER_LENGTH, MIN_NUMBER_DIGITS, normalize_number
 from opos.practice import CALL
 from opos.store import Store, default_root
 
@@ -206,10 +206,27 @@ def _clean_person(data, existing=None):
     if favorite and not (existing and existing.get("favorite")):
         if sum(1 for row in people if row.get("favorite")) >= 6:
             raise ValueError("favorites")
+    numbers = [{"number": number, "label": label}]
+    stored_numbers = existing.get("numbers") if existing else None
+    if isinstance(stored_numbers, list):
+        for item in stored_numbers[1:]:
+            if len(numbers) == vcard.MAX_NUMBERS:
+                break
+            if not isinstance(item, dict):
+                continue
+            stored_label = item.get("label", "Mobile")
+            if stored_label not in _LABELS:
+                continue
+            stored_number = item.get("number")
+            if not isinstance(stored_number, str) or len(stored_number) > MAX_NUMBER_LENGTH:
+                continue
+            digits = stored_number.removeprefix("+")
+            if len(digits) >= MIN_NUMBER_DIGITS and digits.isascii() and digits.isdigit():
+                numbers.append({**item, "label": stored_label})
     row = {
         "id": existing["id"] if existing else uuid.uuid4().hex[:8],
         "name": " ".join(name.split()),
-        "numbers": [{"number": number, "label": label}],
+        "numbers": numbers,
         "note": note.strip()[:200],
         "favorite": favorite,
         "ice": ice,
