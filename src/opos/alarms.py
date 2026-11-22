@@ -411,7 +411,7 @@ class Book:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
                 due = _parse(snooze, self.zone)
-                if start < due <= now:
+                if start.astimezone(timezone.utc) < due.astimezone(timezone.utc) <= now.astimezone(timezone.utc):
                     when = due
                     row.pop("snooze_at", None)
             if when is None:
@@ -459,7 +459,7 @@ class Book:
         if not self.timer:
             return []
         when = _parse(self.timer["fires_at"], self.zone)
-        if not start < when <= now:
+        if not start.astimezone(timezone.utc) < when.astimezone(timezone.utc) <= now.astimezone(timezone.utc):
             return []
         label = self.timer.get("label") or ""
         ident = self.timer.get("id") or "timer"
