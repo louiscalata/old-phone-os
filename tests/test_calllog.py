@@ -123,17 +123,22 @@ class LocalCalls(unittest.TestCase):
         original_replace = os.replace
         original_fsync = os.fsync
         order = []
+        staged = []
 
         def synced(fd):
             original_fsync(fd)
             order.append("fsync")
 
         def replaced(src, dest):
-            self.assertEqual(Path(src).name, ".calls.json.tmp")
-            self.assertEqual(stat.S_IMODE(Path(src).stat().st_mode), 0o600)
-            json.loads(Path(src).read_text())
+            source = Path(src)
+            self.assertEqual(Path(dest), self.path)
+            self.assertEqual(source.parent, self.path.parent)
+            self.assertNotEqual(source, self.path)
+            self.assertEqual(stat.S_IMODE(source.stat().st_mode), 0o600)
+            json.loads(source.read_bytes())
             self.assertEqual(order[-1], "fsync")
             order.append("replace")
+            staged.append(source)
             return original_replace(src, dest)
 
         with (
@@ -144,7 +149,7 @@ class LocalCalls(unittest.TestCase):
         self.assertEqual(order, ["fsync", "replace"] * 3)
         self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(self.path.parent.stat().st_mode), 0o700)
-        self.assertFalse((self.path.parent / ".calls.json.tmp").exists())
+        self.assertFalse(any(source.exists() for source in staged))
 
     def test_failed_atomic_write_preserves_previous_complete_file(self):
         self.finish()
