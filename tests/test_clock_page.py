@@ -492,6 +492,27 @@ class ClockSnapshot(unittest.TestCase):
         self.assertIsNone(snap["next"])
 
     @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
+    def test_reenabled_one_shot_stays_armed_after_reload_and_rings_again(self):
+        ident = self.send("add", hour=7, minute=0)["alarms"][0]["id"]
+        self.assertEqual(self.send("tick", now=FIRE)["ringing"]["id"], ident)
+        stopped = self.send("stop")
+        self.assertFalse(stopped["alarms"][0]["enabled"])
+        self.assertIsNone(stopped["ringing"])
+        self.assertTrue(clock_page.book().alarms[0]["done"])
+
+        next_fire = "2026-11-17T07:00:00+00:00"
+        snap = self.send("toggle", id=ident, enabled=True)
+        self.assertTrue(snap["alarms"][0]["enabled"])
+        self.assertEqual(snap["next"]["at"], next_fire)
+        clock_page.reset()
+
+        snap = self.send("tick", now="2026-11-16T07:01:00+00:00")
+        self.assertTrue(snap["alarms"][0]["enabled"])
+        self.assertIsNone(snap["ringing"])
+        self.assertEqual(snap["next"]["at"], next_fire)
+        self.assertEqual(self.send("tick", now=next_fire)["ringing"]["id"], ident)
+
+    @unittest.skipIf(sys.platform == "win32", "needs the IANA time zone database")
     def test_unknown_clock_snapshot_and_missed_restart(self):
         self.send("add", hour=7, minute=0)
         before = clock_page.book().last_seen
