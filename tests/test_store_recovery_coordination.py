@@ -66,6 +66,32 @@ def write(connection, root):
         store.Store(root).write_json("state.json", {"value": "new"})
 
 
+def post_after_release(connection, data):
+    clean_person = contacts_page._clean_person
+
+    def clean_after_release(data, people, existing=None):
+        connection.send("validate")
+        if receive(connection) != "save":
+            raise AssertionError("expected permission to save")
+        return clean_person(data, people, existing)
+
+    with connection, patch.object(contacts_page, "_clean_person", clean_after_release):
+        connection.send(contacts_page.post(data))
+
+
+def post_while_locked(connection, data):
+    lock = store._lock
+
+    @contextmanager
+    def acquire(path):
+        connection.send("acquire")
+        with lock(path):
+            yield
+
+    with connection, patch.object(store, "_lock", acquire):
+        connection.send(contacts_page.post(data))
+
+
 class StoreRecoveryCoordinationTests(unittest.TestCase):
     @contextmanager
     def process(self, target, *args):
@@ -127,29 +153,76 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
                 self.assertEqual(list(path.parent.glob(f"{name}.bad-*")), backups)
                 self.assertEqual(backups[0].read_bytes(), damaged)
 
+    def assert_lock_held(self, path):
+        sidecar = path.with_name(f".{path.name}.lock")
+        fd = os.open(sidecar, os.O_RDONLY if os.name == "nt" else os.O_RDWR)
+        try:
+            with self.assertRaises(OSError) as blocked:
+                if os.name == "nt":
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertIn(blocked.exception.errno, (errno.EACCES, errno.EAGAIN))
+        finally:
+            os.close(fd)
+
     def test_writer_holds_the_lock_at_replace(self):
         with tempfile.TemporaryDirectory() as root:
             saved = store.Store(root)
             path = saved.write_json("state.json", {"value": "old"})
-            sidecar = path.with_name(f".{path.name}.lock")
             initial = path.read_bytes()
             with self.process(write, root) as connection:
                 self.assertEqual(receive(connection), "replace")
                 self.assertEqual(path.read_bytes(), initial)
-                fd = os.open(sidecar, os.O_RDONLY if os.name == "nt" else os.O_RDWR)
-                try:
-                    with self.assertRaises(OSError) as blocked:
-                        if os.name == "nt":
-                            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-                        else:
-                            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    self.assertIn(blocked.exception.errno, (errno.EACCES, errno.EAGAIN))
-                finally:
-                    os.close(fd)
+                self.assert_lock_held(path)
                 connection.send("read")
             self.assertEqual(saved.read_json(path.name, {}), ({"schema": 1, "value": "new"}, ""))
             self.assertEqual(path.read_bytes(), b'{"value":"new","schema":1}')
             self.assertFalse(list(path.parent.glob(f".{path.name}.*.tmp")))
+
+    def post_concurrently(self, favorite):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_CONFIG_DIR": root}))
+        contacts_page.reset()
+        self.addCleanup(contacts_page.reset)
+        names = set()
+        if favorite:
+            for index in range(5):
+                name = f"Favorite {index}"
+                seed = dict(CONTACT, name=name, number=f"202555011{index}", favorite=True)
+                self.assertEqual(contacts_page.post(seed)[0], 200)
+                names.add(name)
+        first = dict(CONTACT, favorite=favorite)
+        second = dict(first, name="Another Contact", number="2025550101")
+        with self.process(post_after_release, first) as first_connection:
+            self.assertEqual(receive(first_connection), "validate")
+            self.assert_lock_held(Path(root, "contacts.json"))
+            with self.process(post_while_locked, second) as second_connection:
+                self.assertEqual(receive(second_connection), "acquire")
+                first_connection.send("save")
+                status, body = receive(first_connection)
+                self.assertEqual(status, 200)
+                names.add(first["name"])
+                self.assertEqual({person["name"] for person in body["people"]}, names)
+                response = receive(second_connection)
+        return names, second, response
+
+    def test_concurrent_contacts_adds_preserve_both_saves(self):
+        names, second, (status, body) = self.post_concurrently(favorite=False)
+        self.assertEqual(status, 200)
+        names.add(second["name"])
+        self.assertEqual({person["name"] for person in body["people"]}, names)
+        people = contacts_page.snapshot()["people"]
+        self.assertEqual(len(people), 2)
+        self.assertEqual({person["name"] for person in people}, names)
+
+    def test_concurrent_favorite_adds_respect_the_limit(self):
+        names, _, response = self.post_concurrently(favorite=True)
+        self.assertEqual(response, (400, {"error": "favorites"}))
+        people = contacts_page.snapshot()["people"]
+        self.assertEqual(len(people), 6)
+        self.assertEqual({person["name"] for person in people}, names)
+        self.assertTrue(all(person["favorite"] for person in people))
 
     def test_valid_and_missing_reads_leave_the_directory_alone(self):
         with tempfile.TemporaryDirectory() as root:

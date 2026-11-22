@@ -73,7 +73,18 @@ def _read_text(path):
         return None
 
 
-def _write_atomic(path, raw):
+def _encode_json(payload, limit):
+    if not isinstance(payload, dict):
+        raise ValueError("bad payload")
+    body = dict(payload)
+    body["schema"] = SCHEMA
+    raw = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(raw) > limit:
+        raise ValueError("too big")
+    return raw
+
+
+def _write_atomic(path, raw, lock):
     stream = tempfile.NamedTemporaryFile(
         mode="wb",
         dir=path.parent,
@@ -88,7 +99,7 @@ def _write_atomic(path, raw):
             stream.flush()
             os.fsync(stream.fileno())
         temporary.chmod(0o600)
-        with _lock(path) if _NAME.fullmatch(path.name) else nullcontext():
+        with lock:
             os.replace(temporary, path)
             temporary = None
     finally:
@@ -145,14 +156,29 @@ class Store:
         if value is not None:
             return value, ""
         with _lock(path):
-            try:
-                value = read(path)
-            except FileNotFoundError:
-                return default, ""
-            if value is not None:
-                return value, ""
-            self._quarantine(path)
-            return default, self.note_once(path.name)
+            return self._recover(path, default, read)
+
+    def _recover(self, path, default, read):
+        try:
+            value = read(path)
+        except FileNotFoundError:
+            return default, ""
+        if value is not None:
+            return value, ""
+        self._quarantine(path)
+        return default, self.note_once(path.name)
+
+    @contextmanager
+    def _transaction(self, name, default):
+        path = self._path(name)
+        self._mkdir()
+
+        def save(payload):
+            _write_atomic(path, _encode_json(payload, MAX_JSON), nullcontext())
+
+        with _lock(path):
+            value, note = self._recover(path, default, self._read_json)
+            yield value, note, save
 
     def _read_json(self, path, limit=None):
         try:
@@ -171,16 +197,10 @@ class Store:
 
     def write_json(self, name, payload, limit=MAX_JSON):
         """Write payload with the schema field. Raises ValueError when the file would be over limit."""
-        if not isinstance(payload, dict):
-            raise ValueError("bad payload")
-        body = dict(payload)
-        body["schema"] = SCHEMA
-        raw = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        if len(raw) > limit:
-            raise ValueError("too big")
+        raw = _encode_json(payload, limit)
         self._mkdir()
         path = self._path(name)
-        _write_atomic(path, raw)
+        _write_atomic(path, raw, _lock(path))
         return path
 
     def read_jsonl(self, name, limit=500):
@@ -218,7 +238,7 @@ class Store:
         raw = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
         self._mkdir()
         path = self._path(name)
-        _write_atomic(path, raw)
+        _write_atomic(path, raw, _lock(path))
         return path
 
     def write_bytes(self, name, raw, limit):
@@ -233,5 +253,5 @@ class Store:
             raise ValueError("too big")
         self._mkdir()
         path = self.root / name
-        _write_atomic(path, bytes(raw))
+        _write_atomic(path, bytes(raw), nullcontext())
         return path
