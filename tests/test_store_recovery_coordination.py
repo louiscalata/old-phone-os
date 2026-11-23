@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import errno
+import io
 import multiprocessing
 import os
 import tempfile
@@ -480,6 +481,35 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
             path.write_bytes(b'{"schema":1,"value":42}')
             self.assertEqual(store.Store(folder).read_json(path.name, {}), ({"schema": 1, "value": 42}, ""))
             self.assertEqual(list(folder.iterdir()), [path])
+
+    def test_json_read_errors_propagate_without_quarantine_on_either_read(self):
+        for error in (PermissionError(errno.EACCES, "denied"), OSError(errno.EIO, "read failed")):
+            for corrupt_first in (False, True):
+                with self.subTest(error=type(error).__name__, corrupt_first=corrupt_first):
+                    with tempfile.TemporaryDirectory() as root:
+                        saved = store.Store(root)
+                        path = saved.write_json("state.json", {"value": "kept"})
+                        original = path.read_bytes()
+                        calls = 0
+                        opened = Path.open
+
+                        def fail_read(
+                            target, *args, path=path, corrupt_first=corrupt_first, error=error, opened=opened, **kwargs
+                        ):
+                            nonlocal calls
+                            if target == path and args == ("rb",):
+                                calls += 1
+                                if corrupt_first and calls == 1:
+                                    # Corrupt first read forces the locked reread.
+                                    return io.BytesIO(b"bad JSON")
+                                raise error
+                            return opened(target, *args, **kwargs)
+
+                        with patch.object(Path, "open", fail_read), self.assertRaises(type(error)):
+                            saved.read_json(path.name, {})
+                        self.assertEqual(calls, 2 if corrupt_first else 1)
+                        self.assertEqual(path.read_bytes(), original)
+                        self.assertFalse(list(path.parent.glob(path.name + ".bad-*")))
 
     @unittest.skipIf(os.name == "nt", "Windows has different file mode semantics")
     def test_owner_can_reopen_the_lock_after_restrictive_creation(self):

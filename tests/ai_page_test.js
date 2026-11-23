@@ -66,6 +66,21 @@ function snapshot(rev=1){const s=clone(fixture.snapshot);s.rev=rev;s.phone.answe
 function answer(state='answering'){return {...clone(fixture.snapshot.gpu.answer),state,tokens:21,tps:42.125,error:null,where:'Demo PC'};}
 function pc(state='ready'){return {label:'Demo PC',live:true,state,gpu:{name:'Demo GPU'},copied:41,total:100,error:null};}
 
+test('startup read faults and recovery warnings stay visible and block GPU asks',async()=>{
+ for(const notice of ['The phone could not read a saved answer. Restore access and restart AI mode.',
+                      'The saved file could not be read. Started empty.']){
+  for(const search of ['', '?pane=gpu']){
+   const w=world(search),s=snapshot();s.gpu.link.pc=pc();s.gpu.link.storage='error';
+   s.gpu.link.storage_notice=notice;s.gpu.ready=false;
+   await w.show(s);
+   assert.equal(w.get('gpu-speed').textContent,notice);
+   assert.ok(w.get('gpu-cable').textContent.includes(notice));
+   assert.equal(w.get('ask').disabled,true);
+   for(const button of w.get('presets').children)assert.equal(button.disabled,true);
+  }
+ }
+});
+
 test('answer markup remains literal and every visible field comes from one snapshot',async()=>{
  const w=world(),s=snapshot();s.gpu.answer=clone(fixture.snapshot.gpu.answer);s.gpu.answer.tokens=21;s.gpu.answer.tps=42.125;s.gpu.answer.where='Demo PC';
  s.gpu.link.pc=pc();await w.show(s);

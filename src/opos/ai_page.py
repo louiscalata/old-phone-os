@@ -190,7 +190,14 @@ class PageState:
                 "gpu": {
                     "model": (gpu["model"] if gpu else "") or (model["name"] if model else ""),
                     "where": (gpu["where"] if gpu else "") or "on the PC's GPU",
-                    "ready": bool(model and model["state"] == "ready" and pc and pc["live"] and pc["state"] == "ready"),
+                    "ready": bool(
+                        model
+                        and model["state"] == "ready"
+                        and pc
+                        and pc["live"]
+                        and pc["state"] == "ready"
+                        and link.get("storage") != "error"
+                    ),
                     "answer": gpu,
                     "link": link,
                 },
@@ -222,6 +229,8 @@ class PageState:
         panes = [pane for pane in panes if pane != "gpu" or _service() is not None]
         if not panes:
             raise ValueError("GPU Link is off.")
+        if "gpu" in panes and answers.startup_notice:
+            raise ValueError(answers.startup_notice)
         if any(answers.current(pane) is not None for pane in panes):
             raise ValueError("Wait for this answer, or stop it.")
         held = answers.snapshot()["answers"]
@@ -435,8 +444,9 @@ function linkWords(link){
  if(link.model.state==='none')return 'No GPU model file is available.';
  return 'Ready';
 }
+function storageWords(link){return link.storage_notice||ERRORS.storage_error}
 function words(name,p){
- if(name==='gpu'&&p.link&&p.link.storage==='error')return ERRORS.storage_error;
+ if(name==='gpu'&&p.link&&p.link.storage==='error')return storageWords(p.link);
  var a=p.answer;
  if(a){
   if(a.state==='failed')return errorWords(name,a.error)||(name==='gpu'?'The PC could not finish the answer.':'The phone could not finish the answer.');
@@ -459,7 +469,7 @@ function cableState(p){
 }
 function cableWords(p){
  var state=cableState(p),a=p.answer,pc=p.link&&p.link.pc,open=!!(a&&OPEN.indexOf(a.state)>=0);
- if(p.link&&p.link.storage==='error')return ERRORS.storage_error+(state==='wait'?' Wait before unplugging.':'');
+ if(p.link&&p.link.storage==='error')return storageWords(p.link)+(state==='wait'?' Wait before unplugging.':'');
  var stuck=!!pc&&(pc.state==='stopping'||pc.state==='error');
  if(state==='')return '';
  if(state==='out'){
@@ -498,7 +508,8 @@ function drawPane(name,p){
 }
 function line(id,value){text(id,value);G(id).hidden=!value}
 function targets(){return (pane?[pane]:['phone','gpu']).filter(function(n){return n!=='gpu'||current&&current.gpu.link})}
-function askingBusy(){return targets().some(function(n){var a=current&&current[n].answer;return a&&OPEN.indexOf(a.state)>=0})}
+function askingBusy(){return targets().some(function(n){var p=current&&current[n],a=p&&p.answer;
+ return a&&OPEN.indexOf(a.state)>=0||n==='gpu'&&p&&p.link&&p.link.storage==='error'})}
 function buttons(){
  var disabled=!current||!targets().length||askingBusy();G('ask').disabled=disabled;
  text('ask',pane==='gpu'?'Ask the GPU':pane==='phone'||!current.gpu.link?'Ask the phone model':'Ask both models');

@@ -206,10 +206,12 @@ class LocalCalls(unittest.TestCase):
     def test_unreadable_file_and_failed_quarantine_do_not_destroy_the_original(self):
         self.finish()
         raw = self.path.read_bytes()
-        with mock.patch.object(Path, "open", side_effect=PermissionError("denied")):
-            snap = calllog.snapshot()
-        self.assertIn("Started empty", snap["recovered"])
-        self.assertEqual(next(self.path.parent.glob("calls.json.bad-*")).read_bytes(), raw)
+        before = calllog.snapshot()
+        with mock.patch.object(Path, "open", side_effect=PermissionError("denied")), self.assertRaises(PermissionError):
+            calllog.snapshot()
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertFalse(list(self.path.parent.glob("calls.json.bad-*")))
+        self.assertEqual(calllog.snapshot(), before)
         self.path.write_bytes(b"broken")
         with mock.patch("opos.store.os.replace", side_effect=PermissionError("denied")):
             with self.assertRaises(OSError):

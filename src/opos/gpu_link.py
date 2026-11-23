@@ -527,6 +527,8 @@ class LinkService:
             speed["noted"] = now
 
     def _work(self, wait: int) -> Reply:
+        if self._answers.startup_notice:
+            raise OSError(self._answers.startup_notice)
         self._poll += 1
         generation = self._poll
         self._changed.notify_all()
@@ -712,7 +714,8 @@ class LinkService:
                     live=self._last_status is not None and self._clock() - self._last_status < LINK_SECONDS,
                 )
             return {
-                "storage": "error" if self._storage_fault is not None else None,
+                "storage": "error" if self._storage_fault is not None or self._answers.startup_notice else None,
+                "storage_notice": self._answers.startup_notice,
                 "model": self._model.copy(),
                 "pc": pc,
                 "pending": pending,

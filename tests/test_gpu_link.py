@@ -20,7 +20,7 @@ from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
 
-from opos import gpu_link
+from opos import ai_answers, ai_page, gpu_link
 from opos import gpu_link_proto as proto
 from opos.ai_answers import AnswerError, AnswerStore
 from opos.gpu_link import HASH_RETRY_SECONDS, HISTORY_LIMIT, LINK_SECONDS, LinkService
@@ -70,6 +70,106 @@ class LinkTests(unittest.TestCase):
         new = FakePC(self.link, key=key, label="PC-B")
         self.link._pending = (new.label, new.key, self.clock())
         return new
+
+    def restart_with_page(self):
+        self.link.close()
+        self.store = Store(self.store.root)
+        self.answers = AnswerStore(self.store)
+        self.link = self.make_link()
+        self.pc = FakePC(self.link)
+        self.assertEqual(self.pc.hello().status, 200)
+        self.assertEqual(self.pc.status("ready").status, 200)
+        with (
+            patch.object(ai_answers, "shared", return_value=self.answers),
+            patch.object(ai_page, "_service", return_value=self.link),
+            patch.object(ai_page, "_route", return_value=None),
+        ):
+            return ai_page.PageState().snapshot()
+
+    def test_startup_read_fault_preserves_acknowledged_prefix_for_retry(self):
+        answer, work = self.work()
+        prefix = "Saved café\nGPU text"
+        reply = self.pc.text(work["lease"], 0, prefix)
+        self.assertEqual((reply.status, self.pc.data(reply)), (200, {"acked": len(prefix.encode())}))
+        self.link.close()
+        path = self.store.root / f"ai-answer-{answer['id']}.json"
+        saved = path.read_bytes()
+        opened = Path.open
+
+        for error in (PermissionError(errno.EACCES, "read denied"), OSError(errno.EIO, "read failed")):
+            with self.subTest(error=type(error).__name__):
+                reads = []
+
+                def unreadable(target, *args, reads=reads, error=error, **kwargs):
+                    if target == path and args == ("rb",):
+                        reads.append(target)
+                        raise error
+                    return opened(target, *args, **kwargs)
+
+                with patch.object(Path, "open", unreadable):
+                    # Both startup attempts fail; the directory remains writable.
+                    probe = path.parent / "writable"
+                    probe.write_bytes(b"ok")
+                    probe.unlink()
+                    for _ in range(2):
+                        page = self.restart_with_page()
+                        self.assertTrue(path.exists())
+                        self.assertEqual(list(path.parent.glob(path.name + ".bad-*")), [])
+                        self.assertEqual(page["gpu"]["link"]["storage"], "error")
+                        self.assertFalse(page["gpu"]["ready"])
+                        self.assertIn("could not read", page["gpu"]["link"]["storage_notice"])
+                        self.assertEqual(self.pc.work().status, 500)
+                        with self.assertRaises(OSError):
+                            self.answers.ask("gpu", "replacement")
+                        before = self.answers.snapshot()
+                        with (
+                            patch.object(ai_answers, "shared", return_value=self.answers),
+                            patch.object(ai_page, "_service", return_value=self.link),
+                            self.assertRaisesRegex(ValueError, "could not read"),
+                        ):
+                            ai_page.PageState().ask({"panes": ["phone", "gpu"], "question": "replacement"})
+                        self.assertEqual(self.answers.snapshot(), before)
+                self.assertGreaterEqual(len(reads), 2)
+                self.assertEqual(path.read_bytes(), saved)
+        page = self.restart_with_page()
+        self.assertIsNone(page["gpu"]["link"]["storage"])
+        self.assertEqual(page["gpu"]["answer"]["text"], prefix)
+        reply = self.pc.work()
+        self.assertEqual(reply.status, 200)
+        resumed = self.pc.data(reply)
+        self.assertEqual(resumed["partial"], prefix)
+        reply = self.pc.text(resumed["lease"], len(prefix.encode()), " continued")
+        self.assertEqual((reply.status, self.pc.data(reply)), (200, {"acked": len((prefix + " continued").encode())}))
+        self.assertEqual(self.answers.get(answer["id"])["text"], prefix + " continued")
+
+    def test_startup_corrupt_json_quarantines_with_visible_warning(self):
+        answer, work = self.work()
+        self.assertEqual(self.pc.text(work["lease"], 0, "saved").status, 200)
+        self.link.close()
+        path = self.store.root / f"ai-answer-{answer['id']}.json"
+        damaged = b"{bad JSON"
+        path.write_bytes(damaged)
+        page = self.restart_with_page()
+        self.assertFalse(path.exists())
+        self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [damaged])
+        self.assertEqual(page["gpu"]["link"]["storage"], "error")
+        self.assertFalse(page["gpu"]["ready"])
+        self.assertIn("Started empty", page["gpu"]["link"]["storage_notice"])
+        self.assertEqual(self.pc.work().status, 500)
+        with self.assertRaises(OSError):
+            self.answers.ask("gpu", "replacement")
+
+    def test_startup_missing_answer_is_empty_and_ready_without_warning(self):
+        self.enrolled()
+        page = self.restart_with_page()
+        self.assertIsNone(page["gpu"]["answer"])
+        self.assertTrue(page["gpu"]["ready"])
+        self.assertIsNone(page["gpu"]["link"]["storage"])
+        self.assertEqual(page["gpu"]["link"]["storage_notice"], "")
+        self.assertEqual(list(self.store.root.glob("ai-answer-*.json*")), [])
+        self.assertEqual(self.pc.work().status, 204)
+        self.answers.ask("gpu", "new question")
+        self.assertEqual(self.pc.work().status, 200)
 
     def test_failed_forget_cancel_survives_restart(self):
         answer, w = self.work()

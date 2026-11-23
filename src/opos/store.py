@@ -2,7 +2,8 @@
 """Local files for everyday apps. JSON under the state directory, mode 0600, no network.
 
 The directory is $XDG_STATE_HOME/opos, or the default state directory when that variable is unset.
-A file that cannot be read is moved aside to <name>.bad-<time> and the caller starts empty.
+Corrupt JSON is moved aside to <name>.bad-<time> and the caller starts empty.
+JSON read errors propagate so the original file remains available for retry.
 """
 
 import errno
@@ -238,9 +239,7 @@ class Store:
             if limit is not None and len(raw) > limit:
                 return None
             data = json.loads(raw.decode("utf-8"))
-        except FileNotFoundError:
-            raise
-        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+        except (UnicodeError, json.JSONDecodeError, RecursionError):
             return None
         if not isinstance(data, dict) or data.get("schema") != SCHEMA:
             return None

@@ -123,7 +123,8 @@ class AnswerStore:
     least the highest revision of any valid answer that could be read. Readers
     that must never go back in time should also compare a value that changes
     with every start.
-    Start-up keeps answer files; Store may move unreadable files aside.
+    Start-up keeps unreadable answer files and reports a notice. Store may move
+    corrupt files aside. Either notice blocks new GPU work until a fresh scan.
 
     Each changing method first writes its answer, then replaces memory and
     retries pending recovery writes. A failed primary write leaves memory
@@ -151,8 +152,14 @@ class AnswerStore:
         self._removals: set[str] = set()
         self._recoveries: set[str] = set()
         self._sweep_pending = False
+        self._startup_notice = ""
         with self._lock:
             self._load()
+
+    @property
+    def startup_notice(self) -> str:
+        """A startup read fault or recovery warning, retained until reconstruction."""
+        return self._startup_notice
 
     @property
     def rev(self) -> int:
@@ -174,6 +181,21 @@ class AnswerStore:
         else:
             self._sweep_pending = False
 
+    def _read_record(self, name: str, ident: str) -> dict | None:
+        try:
+            record, notice = self._store.read_json(name, None)
+        except OSError:
+            self._startup_notice = "The phone could not read a saved answer. Restore access and restart AI mode."
+            return None
+        if notice:
+            self._startup_notice = self._startup_notice or notice
+        if record is None:
+            return None
+        if not self._valid_record(record, ident):
+            self._startup_notice = self._startup_notice or "A saved answer was damaged. New GPU work is stopped."
+            return None
+        return record
+
     def _load(self) -> None:
         self._retry_sweep()
         loaded = []
@@ -181,8 +203,8 @@ class AnswerStore:
             ident = path.name[len("ai-answer-") : -len(".json")]
             if not _ID.fullmatch(ident):
                 continue
-            record, _ = self._store.read_json(path.name, {})
-            if self._valid_record(record, ident):
+            record = self._read_record(path.name, ident)
+            if record is not None:
                 if record["answer"]["state"] == "waiting":
                     record["answer"]["state"] = "queued"
                 loaded.append(record)
@@ -317,9 +339,11 @@ class AnswerStore:
     def ask(self, pane: str, question: str, model: str = "") -> dict:
         """Store a queued answer, then drop old final answers with retryable cleanup."""
         with self._lock:
-            self._retry_removals()
             if pane not in PANES:
                 raise ValueError("pane")
+            if pane == "gpu" and self._startup_notice:
+                raise OSError(self._startup_notice)
+            self._retry_removals()
             _question(question)
             if not _label(model):
                 raise ValueError("model")
