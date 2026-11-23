@@ -254,7 +254,7 @@ The service remembers the last 64 finished and page-cancelled leases, oldest fir
   Other apps' writes sync the directory best effort and ignore its errors; only GPU Link's answer records and pairing
   file are acknowledged on a synced directory.
 - After the final post, with `done`, the phone accepts nothing more for that lease except an exact repeat of that post. While the lease is remembered, the repeat gets the same reply and changes nothing.
-- The companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset.
+- The planned companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset. The stand-in tool keeps a pending post only for retryable replies; after a transport failure it discards its source and pending text, and the next work request resumes from the text the phone stored.
 - The phone shows answers as plain text only.
 
 The phone's link snapshot includes `storage`: `"error"` while an answer-store startup notice stands, after a signed
@@ -268,8 +268,10 @@ it. A snapshot also clears it when its answer is final or gone. A failure with n
 service instance; unrelated answer saves do not clear it. This request/write flag is in memory and resets when LinkService is
 reconstructed. AnswerStore's deferred startup recovery writes do not set it: a recovery write that remains unwritten
 is not represented by this flag. A successful status alone is not evidence that unsaved text reached storage.
-When a connected PC holds unacknowledged text, keep it connected while it retries after storage recovers. Reconnect a
-disconnected PC while its grant lasts so it can retry. Enrol an unpaired PC for new work; a revoked lease cannot save
+When a connected planned companion holds unacknowledged text, keep it connected while it retries after storage recovers.
+Reconnect a disconnected one while its grant lasts so it can retry. The stand-in tool has no grant window and keeps no
+text across a transport failure, so it can only resume from the stored text.
+Enrol an unpaired PC for new work; a revoked lease cannot save
 its unsent text. For a fault with no answer, check storage and reconstruct the service after recovery; the instance
 flag is not a pending text count.
 
