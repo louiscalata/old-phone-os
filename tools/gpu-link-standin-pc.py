@@ -22,6 +22,10 @@ no proxies, redirects or compressed replies. Keys are raw 32-byte files; mode 06
 protects them on POSIX only. On Windows, mode 0600 does not make a key private on
 NTFS. Use a dedicated private folder; see the first-run plan's Windows icacls steps.
 The tool does not check Windows access rules.
+Server generations have a 300-second total wall-clock limit (--generation-timeout),
+including response headers and trickled bytes, plus a 30-second inactivity timeout.
+Only a stop or length finish reason followed by [DONE] completes a server answer;
+an answer that reaches the phone's size limit ends there as a length answer.
 Questions and answers stay out of event lines unless --show-text is supplied.
 Ctrl-C stops the tool and closes its current stream. Physical phone checks remain
 NOT_RUN. The phone must already offer a ready model file before it hands out work.
@@ -193,8 +197,9 @@ def checked_reply(target, status, raw):
 class DeadlineReader(io.RawIOBase):
     """Apply one monotonic deadline to every socket read."""
 
-    def __init__(self, sock, deadline):
+    def __init__(self, sock, deadline, inactivity_timeout=None):
         self.sock, self.deadline = sock, deadline
+        self.inactivity_timeout = inactivity_timeout
         self.stream = sock.makefile("rb", buffering=0)
 
     def readable(self):
@@ -204,7 +209,7 @@ class DeadlineReader(io.RawIOBase):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError
-        self.sock.settimeout(remaining)
+        self.sock.settimeout(min(remaining, self.inactivity_timeout) if self.inactivity_timeout else remaining)
         count = self.stream.readinto(buffer)
         if time.monotonic() >= self.deadline:
             raise TimeoutError
@@ -370,16 +375,31 @@ class PracticeSource:
         """There is no worker or socket in practice mode."""
 
 
+class ServerResponse(http.client.HTTPResponse):
+    """Apply the generation deadline and inactivity timeout inside every read."""
+
+    def __init__(self, sock, deadline, **kwargs):
+        class ReaderSocket:
+            def makefile(self, *args):
+                return io.BufferedReader(DeadlineReader(sock, deadline, inactivity_timeout=30))
+
+        super().__init__(ReaderSocket(), **kwargs)
+
+
 class ServerSource:
     """Read bounded SSE in a worker so phone status continues during server waits."""
 
-    def __init__(self, job, url, model):
+    def __init__(self, job, url, model, generation_timeout=300):
+        if not math.isfinite(generation_timeout) or generation_timeout <= 0:
+            raise ToolError("generation-timeout must be finite and greater than zero")
+        self.generation_timeout = generation_timeout
         self.host, self.port, self.url = endpoint(url)
         self.model, self.job = model, job
         self.lock, self.stop = threading.Lock(), threading.Event()
         self.data = job["partial"].encode()
         self.partial_bytes = len(self.data)
         self.done, self.finish, self.tokens, self.error = False, "stop", None, False
+        self.normal_stop = False
         self.sock = None
         self.worker = threading.Thread(target=self._run, name="standin-stream")
         self.worker.start()
@@ -396,6 +416,8 @@ class ServerSource:
             )
 
     def _event(self, value):
+        if not isinstance(value, dict) or "error" in value:
+            raise ToolError("invalid server stream")
         choices = value.get("choices", [])
         if choices:
             choice = choices[0]
@@ -407,10 +429,14 @@ class ServerSource:
                 room = proto.MAX_ANSWER_BYTES - len(self.data)
                 self.data += cut(cleaned, room)
                 if len(cleaned) >= room:
-                    self.finish = "length"
+                    # The phone cannot keep more text: the answer ends here as a length-limited answer.
+                    self.finish, self.normal_stop = "length", True
                     return True
-                if choice.get("finish_reason"):
-                    self.finish = "length" if choice["finish_reason"] == "length" else "stop"
+                reason = choice.get("finish_reason")
+                if reason is not None:
+                    if reason not in ("stop", "length"):
+                        raise ToolError("server stream did not stop normally")
+                    self.finish, self.normal_stop = reason, True
         usage = value.get("usage") or {}
         tokens = usage.get("completion_tokens")
         if type(tokens) is int and 0 <= tokens <= proto.MAX_WHOLE:
@@ -419,29 +445,31 @@ class ServerSource:
         return False
 
     def _read(self, response):
-        total, ended = 0, False
+        total = 0
         while not self.stop.is_set():
             line = response.readline(65537)
             total += len(line)
             if len(line) > 65536 or total > 2 * 1024 * 1024:
                 raise ToolError("server stream too large")
             if not line:
-                if not ended:
-                    raise ToolError("server stream ended early")
-                return
+                raise ToolError("server stream ended early")
+            if line.startswith(b"event:") and line[6:].strip() == b"error":
+                raise ToolError("server stream error event")
             if not line.startswith(b"data:"):
                 continue
             data = line[5:].strip()
             if data == b"[DONE]":
+                if not self.normal_stop:
+                    raise ToolError("server stream missing normal stop")
                 return
-            value = json.loads(data)
-            if self._event(value):
+            if self._event(json.loads(data)):
                 return
-            ended = ended or any(c.get("finish_reason") for c in value.get("choices", []))
 
     def _run(self):
         connection_type = http.client.HTTPSConnection if self.url.scheme == "https" else http.client.HTTPConnection
-        connection = connection_type(self.host, self.port, timeout=2)
+        deadline = time.monotonic() + self.generation_timeout
+        connection = connection_type(self.host, self.port, timeout=min(2, self.generation_timeout))
+        connection.response_class = lambda sock, **kwargs: ServerResponse(sock, deadline, **kwargs)
         try:
             messages = [{"role": "user", "content": self.job["question"]}]
             if self.job["partial"]:
@@ -453,7 +481,10 @@ class ServerSource:
             connection.connect()
             with self.lock:
                 self.sock = connection.sock
-                self.sock.settimeout(30)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError
+                self.sock.settimeout(min(30, remaining))
             if self.stop.is_set():
                 return
             target = self.url.path + ("?" + self.url.query if self.url.query else "")
@@ -466,7 +497,8 @@ class ServerSource:
                 if response.getheader("Content-Type", "").split(";")[0] != "text/event-stream":
                     raise ToolError("chat-completions server must stream events")
                 self._read(response)
-        except (OSError, ValueError, http.client.HTTPException, KeyError, TypeError, AttributeError):
+        except Exception:
+            # Parser and unexpected worker failures must never publish successful completion.
             with self.lock:
                 self.error = not self.stop.is_set()
         finally:
@@ -717,6 +749,12 @@ def arguments(argv=None):
     parser.add_argument(
         "--give-up-after", type=float, default=300, help="consecutive failure limit in seconds (default: 300; 0: never)"
     )
+    parser.add_argument(
+        "--generation-timeout",
+        type=float,
+        default=300,
+        help="total server generation limit in seconds, greater than zero (default: 300)",
+    )
     parser.add_argument("--show-text", action="store_true", help="include questions and answer text in event lines")
     args = parser.parse_args(argv)
     endpoint(args.phone, phone=True)
@@ -728,6 +766,8 @@ def arguments(argv=None):
         raise ToolError("rate must be greater than zero and at most 4")
     if not math.isfinite(args.give_up_after) or args.give_up_after < 0:
         raise ToolError("give-up-after must be finite and nonnegative")
+    if not math.isfinite(args.generation_timeout) or args.generation_timeout <= 0:
+        raise ToolError("generation-timeout must be finite and greater than zero")
     if args.text == "server" and (not args.server or not args.model):
         raise ToolError("server text needs --server and --model")
     return args
@@ -775,7 +815,11 @@ def main(argv=None):
                 print(ENROL_REFUSED, file=sys.stderr)
                 return 2
             return 0
-        source = PracticeSource if args.text == "practice" else lambda job: ServerSource(job, args.server, args.model)
+        source = (
+            PracticeSource
+            if args.text == "practice"
+            else lambda job: ServerSource(job, args.server, args.model, args.generation_timeout)
+        )
         StandIn(pc, source, args.rate, emit, args.show_text, give_up_after=args.give_up_after).run(threading.Event())
         return 0
     except GiveUpError as err:

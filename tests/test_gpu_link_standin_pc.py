@@ -1004,7 +1004,7 @@ class StandInTests(unittest.TestCase):
         with self.assertRaises(standin.ToolError):
             standin.arguments([*base, "--label", "bad_label"])
 
-    def chat_stub(self, stalled=False, redirect=False):
+    def chat_stub(self, stalled=False, redirect=False, body=None):
         """Serve SSE fixtures only; never run a model or an external service."""
         requests, release, entered = [], threading.Event(), threading.Event()
 
@@ -1020,6 +1020,9 @@ class StandInTests(unittest.TestCase):
                     release.wait(5)
                     return
                 if redirect:
+                    return
+                if body is not None:
+                    self.wfile.write(body)
                     return
                 for text in ("Hello é", " 🌿\r\x00\x85\ud800\n", "world"):
                     data = json.dumps({"choices": [{"delta": {"content": text}, "finish_reason": None}]})
@@ -1090,6 +1093,35 @@ class StandInTests(unittest.TestCase):
         self.assertFalse(source.worker.is_alive())
         self.assertIsNone(self.runner.source)
 
+    def test_broken_stream_reports_failure_and_preserves_stored_prefix(self):
+        self.enrolled()
+        answer = self.answers.ask("gpu", "question")
+        self.answers.begin(answer["id"])
+        self.answers.append(answer["id"], 0, b"Saved prefix")
+        self.answers.pause(answer["id"])
+        url, _, _, _ = self.chat_stub(
+            body=b'data: {"choices":[{"delta":{"content":"more"}}]}\n\n'
+            b'data: {"error":{"message":"failed"}}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        )
+        self.runner.source_factory = lambda job: standin.ServerSource(job, url, "fixture-model")
+        send = self.pc.send
+        posts = []
+
+        def record(method, target, body=b"", **kwargs):
+            if target.endswith("/text"):
+                posts.append(json.loads(body))
+            return send(method, target, body, **kwargs)
+
+        with patch.object(self.pc, "send", side_effect=record):
+            result = self.drive()
+        self.assertEqual(result["state"], "failed")
+        self.assertTrue(result["text"].startswith("Saved prefix"))
+        self.assertFalse(any(post["done"] for post in posts))
+        self.assertIn("Answer stopped: chat-completions server error", self.lines)
+        self.assertEqual(result["error"], "server")
+        self.assertEqual(self.answers.get(answer["id"])["text"], result["text"])
+
     def test_server_redirect_fails_answer_without_following(self):
         self.enrolled()
         self.answers.ask("gpu", "question")
@@ -1097,6 +1129,175 @@ class StandInTests(unittest.TestCase):
         self.runner.source_factory = lambda job: standin.ServerSource(job, url, "fixture-model")
         self.assertEqual(self.drive()["state"], "failed")
         self.assertEqual(len(requests), 1)
+
+
+class ServerStreamTests(unittest.TestCase):
+    """Exercise stream completion and per-read deadlines without a real model."""
+
+    def source(self, body, trickle=None, limit=None, headers=None):
+        clock = Clock()
+        started = clock()
+
+        class Trickle(io.RawIOBase):
+            reads = 0
+
+            def readable(self):
+                return True
+
+            def readinto(self, buffer):
+                chunk = raw.read(len(buffer))
+                if not chunk and trickle is not None and self.reads < 100:
+                    self.reads += 1
+                    clock.advance(0.1)
+                    chunk = trickle
+                buffer[: len(chunk)] = chunk
+                return len(chunk)
+
+        class Socket:
+            def makefile(self, mode, buffering=-1):
+                stream = Trickle()
+                return stream if buffering == 0 else io.BufferedReader(stream)
+
+            def settimeout(self, value):
+                pass
+
+            def shutdown(self, how):
+                pass
+
+        class Connection:
+            sock = Socket()
+            response_class = http.client.HTTPResponse
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                pass
+
+            def request(self, *args):
+                pass
+
+            def getresponse(self):
+                response = self.response_class(self.sock)
+                response.begin()
+                return response
+
+            def close(self):
+                pass
+
+        if headers is None:
+            headers = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+        raw = io.BytesIO(headers + body)
+        run = standin.ServerSource._run
+
+        def configured_run(source):
+            if limit is not None:
+                source.generation_timeout = limit
+            run(source)
+
+        with (
+            patch.object(standin.http.client, "HTTPConnection", Connection),
+            patch.object(standin.time, "monotonic", clock),
+            patch.object(standin.ServerSource, "_run", configured_run),
+        ):
+            source = standin.ServerSource(
+                dict(question="question", partial="Saved "), "http://127.0.0.1:1/chat", "fixture"
+            )
+            self.addCleanup(source.close)
+            source.worker.join(2)
+            self.assertFalse(source.worker.is_alive())
+        return source, clock() - started
+
+    def assert_failed(self, ending):
+        source, _ = self.source(b'data: {"choices":[{"delta":{"content":"received"}}]}\n\n' + ending)
+        data, done, _, _, error = source.snapshot()
+        self.assertEqual(data, b"Saved received")
+        self.assertTrue(done)
+        self.assertTrue(error, "broken stream must enter the server-error path")
+
+    def test_error_chunk_mid_stream(self):
+        self.assert_failed(
+            b'data: {"error":{"message":"failed"}}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        )
+
+    def test_stream_cut_after_stop_without_marker(self):
+        self.assert_failed(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n')
+
+    def test_non_normal_finish_reason(self):
+        for reason in ("error", "content_filter", "tool_calls"):
+            with self.subTest(reason=reason):
+                self.assert_failed(
+                    b'data: {"choices":[{"delta":{},"finish_reason":"' + reason.encode() + b'"}]}\n\ndata: [DONE]\n\n'
+                )
+
+    def test_invalid_json_chunk(self):
+        self.assert_failed(b"data: {invalid json}\n\ndata: [DONE]\n\n")
+
+    def test_marker_without_stop(self):
+        self.assert_failed(b"data: [DONE]\n\n")
+
+    def test_deep_json_worker_failure(self):
+        self.assert_failed(b"data: " + b"[" * 15000 + b"0" + b"]" * 15000 + b"\n\n")
+
+    def test_unexpected_parser_failure(self):
+        with patch.object(standin.ServerSource, "_read", side_effect=RuntimeError("parser failed")):
+            source, _ = self.source(b"data: [DONE]\n\n")
+        self.assertTrue(source.snapshot()[1])
+        self.assertTrue(source.snapshot()[4])
+
+    def test_explicit_error_event(self):
+        self.assert_failed(
+            b'event: error\ndata: {}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        )
+
+    def test_normal_stream_completes(self):
+        source, _ = self.source(
+            b'data: {"choices":[{"delta":{"content":"received"}}]}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+            b'data: {"usage":{"completion_tokens":7}}\n\ndata: [DONE]\n\n'
+        )
+        self.assertEqual(source.snapshot(), (b"Saved received", True, "stop", 7, False))
+
+    def test_length_finish_reason_completes_as_length(self):
+        source, _ = self.source(
+            b'data: {"choices":[{"delta":{"content":"received"}}]}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n'
+        )
+        self.assertEqual(source.snapshot(), (b"Saved received", True, "length", 1, False))
+
+    def test_answer_at_the_phone_size_limit_ends_as_length(self):
+        piece = b"x" * (standin.proto.MAX_ANSWER_BYTES + 100)
+        source, _ = self.source(b'data: {"choices":[{"delta":{"content":"' + piece + b'"}}]}\n\n')
+        data, done, finish, _, error = source.snapshot()
+        self.assertEqual(len(data), standin.proto.MAX_ANSWER_BYTES)
+        self.assertEqual((done, finish, error), (True, "length", False))
+
+    def test_total_bound_interrupts_trickling_reads(self):
+        for trickle in (
+            b": keep-alive\n\n",
+            b'data: {"choices":[{"delta":{"reasoning":"x"}}]}\n\n',
+            b'data: {"choices":[{"delta":{"content":"x"}}]}\n\n',
+            b":",
+        ):
+            with self.subTest(trickle=trickle):
+                source, elapsed = self.source(b"", trickle=trickle, limit=0.25)
+                self.assertTrue(source.snapshot()[4])
+                self.assertLessEqual(elapsed, 0.31)
+                self.assertTrue(source.snapshot()[0].startswith(b"Saved "))
+
+    def test_total_bound_interrupts_trickling_headers(self):
+        source, elapsed = self.source(b"", trickle=b"x", limit=0.25, headers=b"HTTP/1.1 200 OK\r\nX: ")
+        self.assertTrue(source.snapshot()[4])
+        self.assertLessEqual(elapsed, 0.31)
+
+    def test_generation_timeout_option(self):
+        base = ["--key-file", "unused"]
+        self.assertEqual(standin.arguments(base).generation_timeout, 300)
+        self.assertEqual(standin.arguments([*base, "--generation-timeout", "0.25"]).generation_timeout, 0.25)
+        for value in ("0", "-1", "nan", "inf"):
+            with self.subTest(value=value), self.assertRaises(standin.ToolError):
+                standin.arguments([*base, "--generation-timeout", value])
 
 
 class DiagnosticTests(unittest.TestCase):
