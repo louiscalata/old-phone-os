@@ -22,6 +22,7 @@ APPS = {
     "calls": ("/calls", "/api/calls"),
     "convert": ("/convert", "/api/convert"),
     "notices": ("/notices", "/api/notices"),
+    "ai": ("/ai", "/api/ai"),
 }
 ROUTES = ("/apps",) + tuple(path for paths in APPS.values() for path in paths)
 NAMED = ",".join(APPS)

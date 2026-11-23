@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # GPU Link
 
-GPU Link is a proposed USB link for a phone to use a language model on a PC GPU and receive streamed text. Stage 1 is owner mode only. Phone execution of this design is NOT_RUN. The feature is off by default. `OPOS_GPU_LINK=1` turns on the link service; `OPOS_APPS` must name `ai` for the page.
+GPU Link lets the phone offer work and a model file to a PC over a USB forward and store streamed answer text. The phone service and AI mode page are implemented. Stage 1 is owner mode only. The Windows companion described here is a requirement for a separate implementation. It is not supplied by this repository. Its permission window, forwarding, model download and engine rules below are requirements, not recorded PC results. Physical-phone AI mode and GPU Link checks are **NOT_RUN**. The feature is off by default. `OPOS_GPU_LINK=1` turns on the link service; `OPOS_APPS` must name `ai` for the page.
 
 ## 1. Purpose
 
-A phone hands a question to a language model that runs on a PC's NVIDIA GPU, over a USB cable, and receives the answer as streamed text. The model file and the conversation belong to the phone. Pulling the cable pauses the answer. Plugging it back in continues it.
+The intended companion runs a language model on a PC's NVIDIA GPU and sends answer text to the phone. The phone stores the question and answer and serves the configured model file. Loss of status pauses running GPU work. A later work request can resume the stored prefix under a new lease. This does not establish that a cable or GPU was used in a device run.
 
 Terms:
 
@@ -17,7 +17,7 @@ Terms:
 
 ## 2. Two stages
 
-- **Stage 1, owner mode.** For the owner's own PCs. This is planned for 2026-12-10: one model, one piece of work at a time, one enrolled PC. It adds no listener that another device can reach.
+- **Stage 1, owner mode.** For the owner's own PCs. The phone service supports one model, one GPU answer in progress and one enrolled PC. It binds to loopback. The developer forward gives the PC access to that listener.
 - **Stage 2, guest mode.** For a PC with no earlier relationship to the phone. Not planned for the demo. Section 13 lists what it must meet, and it needs its own review before any code.
 
 ## 3. Not goals
@@ -29,8 +29,9 @@ Terms:
 
 ## 4. Stage 1 transport
 
-- The link service listens on the phone's loopback only, on its own port. It serves the link messages and nothing else. The phone's page server stays separate.
-- The PC reaches that port through a channel the owner already has for their own PC: `adb forward` on Android, or an SSH local forward on the OPOS OS image. Every existing PC-to-phone channel in the repository already works this way.
+- The link service listens on `127.0.0.1` on the phone, at port `8767` unless `OPOS_GPU_LINK_PORT` selects another port. The companion forwards to that phone port. It serves only link messages. The phone's page server stays separate.
+- The computer's local forwarded port is the companion's choice. It must not be `8767` on a computer running the Inference monitor there. That monitor port is documented in `packaging/duo-os/README.md`, under Inference page. The phone port and the computer port need not match.
+- The PC reaches that port through a channel the owner already has for their own PC: `adb forward` on Android, or an SSH local forward on the OPOS OS image. These are transport requirements for the companion; the listener does not check which transport reached it.
 - The companion creates the forward itself, on a port that adb or SSH chose, and checks that the process listening on that port is the adb or SSH program it started. If not, it stops.
 - That developer access can do far more than GPU Link: it can run commands on the phone. Owner mode is therefore only for PCs the owner already trusts with that access. It is not a way to use someone else's PC.
 - Every TCP connection is made from the PC. The PC accepts no inbound connection from the phone.
@@ -38,19 +39,37 @@ Terms:
 
 ## 5. Enrolling a PC
 
-Enrolling gives one PC and the phone a shared 32-byte key `K`. In stage 1 the key travels only through the owner's developer access, on the standard input of one fixed command. It never travels through a forwarded port, a command argument, an environment variable or a log.
+Enrolling gives one PC and the phone a shared 32-byte key `K`. The companion must deliver the key through the owner's developer access, on the standard input of the remote command described in step 2. It must not put the key in a forwarded request from the PC, a command argument, an environment variable or a log. The phone accepts enrolment on the same loopback listener as other link requests. It does not enforce that delivery path. Any program that can reach it can start an enrolment; the owner must compare the code on both screens before allowing it (sections 12 and 14).
 
 1. The companion notices the phone and shows its permission window (section 7). Nothing is sent until the PC owner chooses Allow.
-2. The companion creates `K` (32 random bytes) and delivers one enrolment message, `{pc_label, K}`, to the link service's loopback port on the phone. On Android the command is `adb shell` running the phone's `nc` to that port. On the OPOS OS image it is `ssh`, with strict host-key checking, running the same. The message is at most 1 KB and travels on the command's standard input. It is one HTTP request, `POST /v1/enrol`, with `Content-Type: application/json`. The reply says only whether the phone is now waiting for its owner, and carries no secret and no code. If the command is not available on the phone, enrolling is not possible. There is no second path.
+2. The companion creates `K` (32 random bytes) and delivers one enrolment message, `{pc_label, key}` (`key` is `K` in lowercase hex), to the link service's loopback port on the phone. On Android the command is `adb shell` running the phone's `nc` to that port. On the OPOS OS image it is `ssh`, with strict host-key checking, running the same. The JSON body is at most 1,024 bytes and travels on the command's standard input. It is one HTTP request in the form below. The reply says only whether the phone is now waiting for its owner, and carries no secret and no code. If the command is not available on the phone, enrolling is not possible. This is the required companion delivery path; the listener cannot distinguish it from a forwarded request.
 3. Both sides compute a code: SHA-256 over a fixed prefix and the length-framed values `pc_label` and `K`, read as a number modulo 1,000,000 and shown as six digits with leading zeros. Both also compute `pc_id`, the first 8 bytes of SHA-256(`K`).
 4. The companion's window shows "Confirm on the phone: 482 913". The phone shows "Use the GPU of <pc_label>? Code 482 913. This PC will see what you ask in AI mode and will keep a copy of the model file." with Allow and Not now.
 5. On Allow the phone stores the label and `K` with mode 0600, in one step. On Not now, or after 60 seconds, it forgets `K`. Only one enrolment can be pending. A pending key is accepted on no route.
-6. The companion learns the outcome from its first signed request (section 6). That request is answered only if the phone stored `K`. Until then it gets status 401.
+6. Allow changes the epoch. The first signed request after Allow, if signed with the epoch read before Allow, gets an empty unsigned 401 even though the key is stored. The companion then says hello again, compares the epoch and repeats the request with that epoch and a new nonce. A 401 is not proof that Allow failed. Section 6 defines recovery and the pending-key case.
 7. The companion stores `K` for the current Windows user, protected with DPAPI.
+
+### Enrolment HTTP bytes
+
+Build the command's standard input as these ASCII header lines, an empty line, then the UTF-8 JSON body. Each line, including the empty line, ends in CRLF (`\r\n`). The display below omits those line-ending bytes. Replace `<n>` with the body's UTF-8 byte length. Send exactly that many body bytes, with no added newline.
+
+```text
+POST /v1/enrol HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Content-Length: <n>
+Connection: close
+
+<compact JSON body with pc_label and key>
+```
+
+The version must be `HTTP/1.1`. `Content-Type` is exactly `application/json`, case-sensitive, with no parameters or trailing space. `Host` is lowercase `127.0.0.1` or `localhost`, optionally followed by a colon and one to five decimal digits with a value at most 65535. An empty port, IPv6 literal and trailing space are refused. The port in `Host` need not equal the phone port. Header names are case-insensitive and each may appear once. Values contain printable ASCII only; tabs are refused. Leading spaces after the colon are removed; trailing spaces are retained. `Content-Length` is decimal without a sign or leading zero, except `0` itself. `Transfer-Encoding` is refused. These framing rules apply to every request; every POST needs `Content-Length`.
+
+Read the HTTP reply from `nc` standard output. Read its status and headers through CRLF CRLF, then the number of bytes in its `Content-Length`. Every reply says `Connection: close`. Keep reading to EOF rather than relying on a particular `nc` exit option. A framing refusal is sent before the phone half-closes writing and drains input as described in section 12. A command failure or an incomplete reply does not establish an enrolment outcome. Availability and behavior of `nc` on the phone remain **NOT_RUN**.
 
 Why this shape:
 
-- No message returns a secret from the phone, and `K` never crosses a port that another program on the PC could have opened.
+- No reply returns a secret from the phone. The required command path avoids delivering `K` to a substituted local forward. This is a companion requirement, not a route restriction enforced by the phone.
 - What protects the delivery differs by route. SSH checks the phone's host key against the one the owner accepted earlier. adb does not identify the phone to the PC: it only lets the phone accept or refuse the PC. On Android the step therefore relies on the owner's own cable and port, as section 4 says.
 - The code lets the person see that the request on the phone came from the window in front of them. A different program that enrols a key of its own shows a different code.
 - `pc_label` is limited to 24 characters from letters, digits, space and hyphen, on both screens. It begins and ends with a letter or digit.
@@ -61,20 +80,23 @@ Stage 2 cannot use this, because a stranger's PC has no developer access to the 
 
 ## 6. Signed requests
 
-Every request after enrolling is signed. The key itself is never sent again.
+After enrolling, status, work, text and model requests are signed. The key itself is not sent on those routes.
 
-- After enrolling, `GET /v1/hello` is the only unsigned request. The enrolment message of section 5 is unsigned too: no key is shared yet. The reply to hello is `{proto, label, epoch}`. `epoch` is 16 random bytes that change when the link service restarts. The companion refuses a `proto` it does not know.
+- Exactly two routes are unsigned: `GET /v1/hello` and `POST /v1/enrol`. Enrolment has no shared key yet. The reply to hello is `{proto, label, epoch}`. `epoch` is 16 random bytes. It changes on service start-up, on Allow, on Forget and when the nonce table is full. The companion refuses a `proto` it does not know.
 - Headers on every other request: `X-Link-Pc` (the `pc_id`), `X-Link-Nonce` (12 random bytes) and `X-Link-Mac`.
 - `X-Link-Mac` = HMAC-SHA256(`K`, "opos-link-v1" ‖ `epoch` ‖ method ‖ path with query ‖ `Range` header or empty ‖ nonce ‖ SHA-256(body)), with each value length-framed.
 - The phone compares in constant time. It checks and records the nonce in one step, under a lock, before the request has any effect. A nonce seen before in the current `epoch` is refused.
-- The phone records at most 4,096 nonces per PC. When that is full it starts a new `epoch` and refuses everything signed for the old one. The companion says hello again.
-- Every reply to a request that passed the check carries `X-Link-Mac` = HMAC-SHA256(`K`, "opos-link-v1-reply" ‖ request nonce ‖ status ‖ range headers or empty ‖ SHA-256(body)). A request that fails the check gets status 401 with an empty body and no `X-Link-Mac`, and has no other effect. The companion drops any other reply without a valid value. For a model file the body hash is left out, and the bytes are checked against the companion's own list (section 10).
+- The phone records at most 4,096 nonces per PC. When the table is full, the next otherwise valid signed request starts a new epoch, clears the table and gets the empty unsigned 401. A bad signature cannot rotate the epoch. A new epoch does not end a live lease.
+- After sending enrolment, the companion says hello before each signed attempt. On an empty unsigned 401, it says hello again and compares the epoch. It retries the request once with the returned epoch and a new nonce. The first signed request after Allow using the pre-Allow epoch therefore gets 401 and recovers through hello. If hello is rate limited, wait and try hello again. A 401 with an unchanged epoch can mean a pending, denied, expired or removed key, a reused nonce, or refused framing. Check the request before concluding that the key is no longer accepted. A retry that succeeds after an epoch change does not count toward the two failed status posts that mean link down.
+- Every reply to a request that passed the check carries `X-Link-Mac` = HMAC-SHA256(`K`, "opos-link-v1-reply" ‖ request nonce ‖ status ‖ range headers or empty ‖ SHA-256(body)). A request that fails the check gets status 401 with an empty body and no `X-Link-Mac`, and performs no requested operation. The valid request that rolls a full nonce table changes only the epoch and nonce table. The companion drops any other reply without a valid value. For a model file the body hash is left out, and the bytes are checked against the companion's own list (section 10).
 - A retry is a new request with a new nonce.
 - No clocks are compared. Time limits use each side's own monotonic clock.
 
 The companion's HTTP client uses no proxy, follows no redirect, accepts no compressed reply, and limits header size, body size and time for every request.
 
 ## 7. Permission on the PC
+
+These are requirements for the separate Windows companion.
 
 - The companion shows its window each time a phone is noticed and there is no grant for it.
 - A grant belongs to one enrolled phone (its `K`). It lasts from Allow until one of these: the phone has been unplugged for 2 minutes by the PC's monotonic clock, the user chooses Stop in the tray menu, the companion exits, or the user signs out. A replug inside those 2 minutes does not ask again.
@@ -90,13 +112,13 @@ Bodies are JSON in UTF-8, written without `\u` escapes, with a size limit per me
 | Request | Limit | Purpose |
 | --- | --- | --- |
 | `POST /v1/status`, once a second | 2 KB | The PC's state: `idle`, `copying`, `loading`, `ready`, `busy`, `stopping` or `error`; the lease it is working on, or none; copy progress; GPU name, memory and driver; an error code. The reply can carry `cancel` with a lease. The companion acts on it only if that is the lease it holds. This is also the liveness signal. |
-| `GET /v1/work?wait=20` | reply 64 KB | Long poll. Returns 204, or one piece of work: `{lease, model_sha256, question, partial}`. Generation settings are fixed in the companion's model list. One piece of work per phone at a time. A PC that asks again while it holds a lease gets that same work again. |
+| `GET /v1/work?wait=20` | reply 64 KB | Long poll. Returns 204, or one piece of work: `{lease, model_sha256, question, partial}`. Generation settings are fixed in the companion's model list. One piece of work per phone at a time. A PC that asks again receives the same answer under a new lease, with `partial` set to the stored text. The previous lease is replaced and its text posts receive 404 `lease`. |
 | `POST /v1/runs/<lease>/text`, at most 4 a second | 8 KB | `{offset, text, done, finish}`. Reply `{acked}`. |
 | `GET /v1/models/<sha256>` with `Range` | file | The bytes of one model file. |
 
-A question is one message of at most 4 KB. Stage 1 has no multi-turn history. An answer is at most 12 KB.
+A question is at most 4,096 UTF-8 bytes. Stage 1 has no multi-turn history. An answer is at most 12,288 UTF-8 bytes. In this document KB means 1,024 bytes.
 
-Status, a work request, text with the same offset and bytes, and model ranges may be sent again after a failure, each time as a new signed request. Nothing else is retried.
+Status, a work request, text with the same offset and bytes, and model ranges may be sent again after a failure, each time as a new signed request. The identical pending enrolment may also be repeated as described below; it does not extend the deadline.
 
 ## Wire format
 
@@ -105,6 +127,7 @@ Status, a work request, text with the same offset and bytes, and model ranges ma
 - All binary values travel as lowercase hexadecimal text, in headers and in JSON. Uppercase is refused.
 - `frame(v)` is the length of `v` as 4 bytes, big-endian, followed by `v`.
 - Sizes in bytes: key 32, nonce 12, epoch 16, lease 16, `pc_id` 8.
+- In the enrolment code and `pc_id` calculation, `K` is the raw 32 bytes. In MAC inputs, epoch, nonce and SHA-256 digests are raw bytes, never hex text. `K` is the raw HMAC key, not an additional framed value. Hex is only the wire representation in headers and JSON.
 - A label (the PC's and the phone's) matches `[A-Za-z0-9](?:[A-Za-z0-9 -]{0,22}[A-Za-z0-9])?` in full: 1 to 24 characters, letters, digits, space and hyphen, beginning and ending with a letter or digit.
 - `code(pc_label, K)`: SHA-256 over `frame("opos-link-v1-code") ‖ frame(pc_label as UTF-8) ‖ frame(K)`, read as a big-endian number, modulo 1,000,000, written as six digits with leading zeros. Showing it as "482 913" is a display matter.
 - `pc_id(K)`: the first 8 bytes of SHA-256(`K`), as 16 hex characters.
@@ -124,13 +147,13 @@ Request headers: `X-Link-Pc` (16 hex), `X-Link-Nonce` (24 hex), `X-Link-Mac` (64
 
 - `status` is the status code in ASCII decimal, such as `200`.
 - `content range` is the value of the reply's `Content-Range` header exactly as sent, or empty.
-- `body hash` is SHA-256 of the raw reply body. For a model file reply (status 200 or 206 on a models target) it is the empty value, so its frame is four zero bytes.
+- `body hash` is SHA-256 of the raw reply body. For an empty body, such as a 204 work reply, it is the SHA-256 of zero bytes: the 32-byte value `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. For a model file reply (status 200 or 206 on a models target) it is the empty value, so its frame is four zero bytes.
 
-Every reply to a request that passed the signature check carries `X-Link-Mac`, whatever its status. A request that fails the check gets status 401 with an empty body and no `X-Link-Mac`, and has no other effect.
+Every reply to a request that passed the signature check carries `X-Link-Mac`, whatever its status. A request that fails the check gets status 401 with an empty body and no `X-Link-Mac`, and performs no requested operation. The valid request that rolls a full nonce table changes only the epoch and nonce table.
 
 Comparison uses constant-time `hmac.compare_digest`. A header that is not lowercase hex of the exact length fails the check.
 
-The method, the target, the range value and the content range are ASCII. Each signed value has one way to be written. Before anything is computed, both sides refuse a key that is not 32 bytes, an epoch that is not 16, a nonce that is not 12, a method other than `GET` or `POST`, text outside ASCII, and a status that is not a whole number from 100 to 599.
+The method, the target, the range value and the content range are ASCII. Each signed value has one way to be written. Before anything is computed, both sides refuse bad inputs. They refuse a key that is not 32 bytes, an epoch that is not 16, a nonce that is not 12, a method other than `GET` or `POST`, text outside ASCII, and a status that is not a whole number from 100 to 599.
 
 ### Targets
 
@@ -147,11 +170,11 @@ Exactly these, matched in full, case-sensitive. Anything else is refused.
 
 ### Bodies
 
-JSON objects in UTF-8. A sender writes compact JSON with no `\u` escapes (`ensure_ascii=False`, separators `,` and `:`). A receiver checks the size of the raw bytes first, then parses, and refuses: anything that is not an object, a duplicate key, an unknown key, a missing key, a wrong type (a boolean is not a number), `NaN` and `Infinity`, and a body nested more than 4 levels deep (the outer object is level 1; the deepest valid message has 2). The depth is counted on the raw bytes, so the limit does not depend on a parser's own recursion limit.
+JSON objects in UTF-8. A sender writes compact JSON with no `\u` escapes (`ensure_ascii=False`, separators `,` and `:`). A receiver checks the size of the raw bytes first, then parses. It refuses anything that is not an object, a duplicate key, an unknown key, a missing key, a wrong type (a boolean is not a number), `NaN` and `Infinity`, and a body nested more than 4 levels deep (the outer object is level 1; the deepest valid message has 2). The depth is counted on the raw bytes, so the limit does not depend on a parser's own recursion limit. A receiver accepts JSON whitespace between tokens and `\uXXXX` escapes, including valid surrogate pairs. It refuses a UTF-8 byte order mark. A lone surrogate in answer text gets 400 `text`; in another request field it gets 400 `request`. Offsets count UTF-8 bytes after unescaping, not JSON bytes, characters or UTF-16 code units. Escapes and whitespace still count toward the raw body limit. A sender must use compact JSON without `\u` escapes.
 
 Numbers have one written form. A whole number is digits only, with no sign, fraction, exponent or leading zero, and is at most 9,007,199,254,740,991 (2^53 - 1). `offset` is at most 12,288. `tps` is a whole number, or digits with a fraction of one to three digits and no exponent, from 0 to 100,000. Any other number token in a body is refused, also where a number is not expected.
 
-A sender refuses to build a message that breaks these rules. In a work reply the question is at most 4,096 bytes and the partial text at most 12,288 bytes, and neither holds a character below U+0020 other than newline and tab. No sender writes a `\u` escape.
+A sender must refuse numbers outside the written forms above. The phone's `gpu_link_proto.dumps` checks those forms before writing a number, including a float's decimal representation. In a work reply the question is at most 4,096 bytes and the partial text at most 12,288 bytes. The builder rejects invalid UTF-8 and characters below U+0020 other than newline and tab. Stored questions and partial answers also pass the full answer text rule below. The generic builder is not a substitute for that rule: it does not reject U+007F to U+009F. No sender writes a `\u` escape.
 
 | Message | Raw limit | Keys |
 | --- | --- | --- |
@@ -165,35 +188,63 @@ A sender refuses to build a message that breaks these rules. In a work reply the
 | text reply | | `acked` on 200, `stored` on 409 and 413 |
 | error reply | | `error`: `lease`, `state`, `text`, `too_long`, `rate`, `range`, `model` or `request` |
 
-`gpu.name` and `gpu.driver` are shown on the phone. They may hold printable ASCII only (0x20 to 0x7E).
+`gpu.name` is shown on the phone. `gpu.driver` is accepted in a status and is not displayed. Both may hold printable ASCII only (0x20 to 0x7E).
 
 `tokens` and `tps` in the status request exist for the tokens-per-second display on the phone. They are numbers and change nothing else.
 
 In a status request, `error` is not null exactly when `state` is `error`, and `copied` and `total` are either both null or both numbers with `copied` not above `total`. Any other combination is refused.
 
-Enrol reply statuses: 202 `pending`; 409 `busy` (another request is waiting) or `enrolled` (a PC is already enrolled); 403 `closed` (three requests were denied or expired); 400, 413 and 429 with an error body. The same label and key sent again while that request is pending gets 202 again and does not restart its 60 seconds.
+Enrol reply statuses: 202 `pending`; 409 `busy` (another request is waiting) or `enrolled` (a PC is already enrolled); 403 `closed` (three requests were denied or expired); 400 `request`, 411 `request` for missing `Content-Length`, 413 `too_long` and 429 `rate`. The same label and key sent again while that request is pending gets 202 again and does not restart its 60 seconds.
+
+### Reply handling
+
+A request that reaches the service and passes authentication gets a signed reply, including errors. A request refused before authentication may get an empty unsigned 401. The listener rejects malformed HTTP, a bad Host or a method other than GET or POST with unsigned 400 `request`. For a signed target, missing POST Content-Length, a malformed Content-Length, Transfer-Encoding, a disallowed Range or an oversized body gets the empty unsigned 401. These framing refusals consume no nonce. A request that passed authentication consumes its nonce even when its operation is refused.
+
+| Reply | Meaning and companion action |
+| --- | --- |
+| 200 status or text | Verify the reply MAC. Read `cancel` or `acked` as appropriate. Act on `cancel` only for the held lease. |
+| 200 work | Accept the new lease and stored prefix. Stop using any replaced lease. |
+| 204 work | No work from this poll; poll again. The empty body is hashed normally for the reply MAC. |
+| 200 or 206 model | Check the status, exact byte range and size, then verify the completed file against the companion's list. Only these replies use an empty body-hash frame in the MAC. |
+| Connection closed before a status line, or before `Content-Length` bytes arrive (model request) | The file changed or the service is closing. Discard the partial bytes, say hello, and repeat the range as a new signed request. Verify the whole file against the companion's list as usual. |
+| Empty unsigned 401 | Refresh hello, compare the epoch and retry once with a new nonce as in section 6. Check framing if the epoch is unchanged. |
+| 400 `request` | Correct the request. An authenticated request to an unlisted target, including `/v1/work` without `?wait=N`, gets this signed error. A bad signature to that target gets 401. |
+| 400 `text` | The answer text breaks the text rule. Remove refused characters before counting offsets and sending again. |
+| 400 `state` | The service is closing. Stop using this connection and wait for the service to return. |
+| 404 `lease` | The lease is no longer usable. Drop it and ask for work again. A status naming a lease that is neither live nor remembered also gets this error. Paused and replaced leases are not remembered. |
+| 404 `model` | The model is not ready or the requested hash differs. Stop this download and report the model error. |
+| 409 with `stored` | An offset or repeated text disagrees with storage. Reconcile the retained text with the stored count before resending. |
+| 413 with `stored` | An append would exceed 12,288 answer bytes. Fit any remaining text within the limit, then finish with `length`; do not repeat the oversized append. |
+| 413 `too_long` | The raw JSON body exceeds its size limit. Reduce it. Oversized bodies on signed targets are normally refused as 401 before authentication. |
+| 416 `range` | Correct the range. This reply has no Content-Range header. |
+| 429 `rate` | Wait for the relevant token bucket, then retry with a new nonce on a signed route. |
+| 500 `state` | Storage failed. Retain the text and retry an allowed operation with a new nonce. A final-post retry may reveal that the earlier write completed. |
+
+Enrolment uses the state replies and framing errors listed under Bodies. Its replies and hello replies are unsigned.
 
 ### Answer text rule
 
-Text is accepted when its bytes are well-formed UTF-8 (no surrogates, no overlong forms, no cut character) and hold no character of Unicode category Cc other than U+000A and U+0009. Anything else is refused whole. Carriage return is refused.
+Text is accepted when its bytes are well-formed UTF-8 (no surrogates, no overlong forms, no cut character) and hold no character of Unicode category Cc other than U+000A and U+0009. Anything else is refused whole. Control character means Unicode category Cc: U+0000 to U+001F and U+007F to U+009F. Carriage return is refused. The companion must remove every Cc character except newline and tab from model output before it counts offsets or posts text. The phone refuses the whole post with 400 `text`; it does not clean incoming answer text. Hold an incomplete UTF-8 character until its remaining bytes arrive. Bytes that are not valid UTF-8 anywhere in the JSON body get 400 `request`. Only well-formed JSON whose text value breaks the rule (a lone surrogate escape, a control character, a carriage return, or empty text with `done` false) gets 400 `text`. A post with `done` false must carry at least one byte of text. An empty post with `done` true is accepted at an offset equal to the stored count.
 
 ### Ranges
 
 `Range` must match `bytes=<start>-<end>` in full, each a decimal number without leading zeros, with start ≤ end < total. One range only. The reply's `Content-Range` is `bytes <start>-<end>/<total>`.
 
-The shared example messages for both sides are planned for `tests/fixtures/gpu_link/examples.json`. That file arrives with a later change.
+The shared example messages and signatures for both sides are in `tests/fixtures/gpu_link/examples.json`. Its keys, nonces and epochs are test values.
 
 ## 9. Answer text, pause and resume
 
-**Lease.** Each time the phone hands out work it creates a new `lease` of 16 random bytes and ties it to that PC. Text is accepted only when the lease is the current one for that answer, the signature is from the PC it was given to, and the answer's state is `loading` or `answering`. The phone ends the lease before it marks an answer paused, cancelled or done. A lease that ended with the final post is remembered for one purpose: an exact repeat of that post gets the same reply.
+**Lease.** Each time the phone hands out work it creates a new `lease` of 16 random bytes and ties it to that PC. Text is accepted only when the lease is the current one for that answer, the signature is from the PC it was given to, and the answer's state is `loading` or `answering`. Replacing a live lease keeps the answer `loading` or `answering`. Callbacks from the replaced work reply cannot change the new lease. The phone drops the lease before saving a pause, cancellation or final post; a failed storage write restores the lease.
+
+The service remembers the last 64 finished and page-cancelled leases, oldest first, until Forget or service restart. Only a remembered finished lease accepts an exact final-post retry: the decoded offset, text bytes, done and finish must match. A replaced or cancelled lease's text post gets 404 `lease`. A forgotten lease also gets 404 `lease`. After restart an exact repeat of a final post gets 404 `lease` even though its stored answer is correct and complete. This record is separate from the 50-answer store.
 
 **Bytes.**
 
-- `offset` is the number of bytes of the answer the phone has stored. The phone appends only when `offset` equals that number.
-- The phone stores the text exactly as received. A post that contains invalid UTF-8, a partial character at its end, or a control character other than newline and tab is refused whole, with no change.
-- A post that repeats bytes the phone already has is acknowledged only if the bytes are identical. Otherwise it returns 409 with the stored length.
+- `offset` is the UTF-8 byte position in the answer after JSON unescaping. The phone appends only when it equals the stored byte count. `acked` is the total UTF-8 bytes stored after the post. An identical repeat of earlier bytes returns the current total, which may exceed `offset` plus the post's byte length. An exact final-post repeat returns the remembered total. `stored` on 409 or on an append overflow (413) is the same total count; it is not the size of the refused post.
+- The phone stores the text exactly as received. A post that contains invalid UTF-8, a partial character at its end, or a Cc character other than newline and tab is refused whole, with no change to the answer text.
+- A post with `done` false whose bytes lie wholly inside the stored text is acknowledged if they are identical, with the current total. A post that starts before the stored end and runs past it, a post whose bytes differ, and any post with `done` true at an offset other than the stored count get 409 `stored`. Resend from the stored count.
 - The check and the append happen under one lock. The phone acknowledges only after the text and the answer's state are written and flushed to storage.
-- After the final post, with `done`, the phone accepts nothing more for that lease except an exact repeat of that post. The repeat gets the same reply and changes nothing.
+- After the final post, with `done`, the phone accepts nothing more for that lease except an exact repeat of that post. While the lease is remembered, the repeat gets the same reply and changes nothing.
 - The companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset.
 - The phone shows answers as plain text only.
 
@@ -201,46 +252,67 @@ The shared example messages for both sides are planned for `tests/fixtures/gpu_l
 
 | Event | Phone | PC |
 | --- | --- | --- |
-| Cable pulled while answering | No status for 2.5 seconds means the link is down. The lease is cancelled, then `answering` becomes `paused`. Text is kept. | Two failed status posts mean the link is down. Generation stops. The model stays loaded while the grant lasts. |
-| Cable back while the grant lasts | Hands out the same answer under a new lease, with `partial` set to the stored text. | Applies the model's chat template to the question, appends `partial`, and continues from there. Sends only new text, starting at `offset` = length of `partial`. |
+| Cable pulled while loading or answering | At least 2.5 seconds since the later of the last status and the completed work reply means the link is down. The lease is dropped, then the GPU answer becomes `paused`. A failed pause is retried by the timer. Text is kept. | Two failed status posts mean the link is down. Generation stops. The model stays loaded while the grant lasts. |
+| Cable back while the grant lasts | Hands out the same answer under a new lease, with `partial` set to the stored text. | Applies the model's chat template to the question, appends `partial`, and continues from there. Sends only new text, starting at `offset` = UTF-8 byte length of `partial`. |
 | Cable back after the grant ended | Same. | Shows the permission window first, loads the model, then the same. |
-| The question and `partial` no longer fit the context | Marks the answer `done` with the reason `length`. | Reports `finish: length` without generating. |
-| OPOS restarts | Reads answers from storage. An answer that was `loading` or `answering` becomes `paused`. | Its lease is refused. It asks for work again. |
+| The question and `partial` no longer fit the context | On the PC's final post, marks the answer `done` with the reason `length`. | Reports `finish: length` without generating. |
+| OPOS restarts | Reads answers from storage. A GPU answer that was `loading` or `answering` becomes `paused`. A phone-pane answer in either state becomes `failed` with error `restart`. | Its lease is refused. It asks for work again. |
 
 What is promised: after a resume, the text on the phone begins with exactly the bytes it had before, and continues from there. What is not promised: that the result equals what an uninterrupted run would have produced. The engine continues from a text prefix.
+
+Two status posts received after a completed work reply that do not name the live lease also pause that work. A newer long poll wakes an older pending poll with 204. A status with state `error` that names the live lease ends the answer: it becomes `failed` with that error code, the lease is dropped and no resume follows. An error status with no lease, or naming another lease, changes only the PC state shown.
+
+Stopping the link service attempts to pause running work. A failed Forget pause retains its lease for timer retries. A failed pause during shutdown is retried by a later service when it reconciles a running GPU answer without a lease before offering it. The timer also pauses a running GPU answer that has no lease, so the page does not keep showing it as running until the next work request. If the model file changes after a hand-out, the timer pauses the work. Text and status under the old lease then get 404 `lease`, and the PC's next work request gets a new lease with the new `model_sha256`.
+
+The service records the PC label and model on the answer independently of speed reports. A failed metadata write is retried on accepted text posts. This recording does not depend on `tokens` or `tps`.
 
 Resume on a different PC is not part of stage 1.
 
 ## 10. Model files
 
+The phone serves only the file named by `OPOS_GPU_LINK_MODEL`. `OPOS_GPU_LINK_MODEL_NAME` sets its display name; otherwise the file stem is used, limited to 64 printable ASCII characters. `OPOS_GPU_LINK_LABEL` sets the phone label (default `OPOS phone`). The phone hashes the file in a background thread. Its restart cache in `gpu-link-model.json` binds the digest to the path, size, nanosecond modification time, device and inode. A digest is published only if the service is still open and the file identity still matches. It makes the model ready even if writing the restart cache fails. A failed hash read is retried after five seconds unless the file identity changes, which permits an immediate retry. No work or model bytes are offered until the model is ready. The listener checks the open file identity before headers and after each chunk. A changed file stops the transfer. The phone answers a valid `Range` with 206, including a range covering the whole file. A request without `Range` gets 200. The phone accepts no file upload or executable code from the PC.
+
+The companion must verify the completed download against its own list. Its requirements are:
+
 - The companion carries a built-in list of accepted model files. In stage 1 the list has one entry: the SHA-256, the exact size in bytes, the name and the engine settings. The phone's own description of a file is not trusted.
 - The companion refuses any other hash before it downloads a byte.
 - It accepts a 200 reply only for the whole file from byte 0, and a 206 reply only when the range and the total size are exactly what it asked for and what its list says. It stops at the listed size. It refuses a 200 reply to a request that named a range.
-- The phone answers a valid `Range` with 206, also when the range covers the whole file, and a request without `Range` with 200.
 - It writes to one temporary file, hashes the bytes, deletes the file on a mismatch, and renames it to `<sha256>.gguf` on a match. A temporary file left behind is removed at start-up and on Stop.
 - It refuses to start a download that would not fit in free disk space.
-- Reason: llama.cpp published eight security advisories in the last 24 months, and five are triggered by a crafted model file. A hash supplied by the phone proves nothing. A hash the companion already knows does.
-- The phone never receives a file or code from the PC.
+- A hash supplied by the phone does not establish that the companion accepts the file. The companion must compare it with its own built-in list and verify the downloaded bytes.
 
 ## 11. Engine rules on the PC
 
-- A pinned llama.cpp build (`b12359`, tagged v1.0.0 on 2026-11-13) with pinned archive hashes. It is newer than every fix in the advisories above.
-- `--host 127.0.0.1`, a port chosen by the companion, `--no-webui`, `--offline`, one slot, context 4,096, reasoning off.
+These requirements are not enforced by the phone service. This repository does not supply the Windows companion, an engine build, archive hashes or a verified engine command line.
+
+- Pin the llama.cpp build and archive hashes after checking that build's security fixes and supported options.
+- Bind the engine to `127.0.0.1` on a port chosen by the companion. Disable its web interface and network downloads. Use one slot, context 4,096 and reasoning off.
 - A fresh random API key for each start, in a file that only the current user can read, deleted when the engine has started.
 - Before it sends a key or a prompt, the companion checks that the process listening on the port is the child it started. If not, it stops.
-- An explicit `--device` taken from `--list-devices`. When CUDA cannot start, the engine falls back to the CPU without an error, and that must never be reported as GPU work.
-- Stage 1 uses the CUDA build only. If it does not offer the NVIDIA GPU, both screens say why.
+- Select the NVIDIA device explicitly from the pinned build's device list. Verify that inference uses CUDA before reporting GPU work. CPU work must not be reported as GPU work.
+- The companion must use the CUDA build for stage 1 and report an error if the NVIDIA GPU is unavailable. The phone shows the PC's error state; it does not verify the device or engine backend.
 - The engine runs in a job object that ends it when the companion ends.
 - Neither side writes question or answer text to a log. The companion keeps no conversation on disk and switches engine logging off.
 
 ## 12. Limits on the phone
 
-- At most 4 open link connections, one pending long poll and one piece of work per PC.
-- A request whose headers do not arrive within 5 seconds is closed.
-- One enrolled PC and at most 50 stored answers. The oldest finished answer is removed first.
-- Hello requests and enrolment attempts are rate limited without regard to who sends them.
-- The `Host` header must be `127.0.0.1` or `localhost`, with any port or none. An enrolment message must say `Content-Type: application/json`. A page open in a browser on the PC can therefore not send one.
-- Every reply closes its connection. One request travels on one connection.
+- At most 4 open link connections, including long polls and file transfers. At capacity a new connection replaces the oldest connection still reading its request. A request handed to the service for an answer is never replaced. If all four are being answered, the new connection is closed. A refusal still draining input remains eligible for replacement. A request that has been accepted but not yet fully read can therefore be closed without a reply while the listener is full.
+- There is one pending long poll and one GPU answer in progress per PC.
+- Headers must arrive within 5 seconds. The complete request must arrive within 10 seconds from the start of handling. The request line is at most 2,000 bytes including CRLF. The header block is at most 8,000 bytes including CRLF and its blank terminator, with at most 40 fields.
+- The answer store admits at most 50 unfinished answers and trims finished answers oldest first after accepting a question. Start-up scans do not trim files; failed cleanup is retried on later questions. The 50-answer retention target is separate from the 64-lease retry history.
+- Hello uses one shared token bucket of 10 tokens, refilled at 10 per second. Enrolment has a separate shared bucket of 2, refilled at 2 per second. Text has 4 tokens, refilled at 4 per second for the enrolled PC. Exceeding a bucket returns 429 `rate`.
+- The HTTP framing rules in section 5 apply, including the exact Host and enrolment Content-Type values. Every reply closes its connection. One request travels on one connection.
+- For a framing refusal, the phone sends the reply, half-closes writing and discards at most 64 KB of input, including buffered input, for at most one second and within the original request deadline. It then shuts down reading and closes. The client can read the refusal; a reset after it is not expected.
+- Replies held in memory have a 10-second write deadline. Model transfers have a 10-second deadline per chunk, with no overall transfer deadline.
+
+Known limits:
+
+1. Any program that can reach the phone's loopback port, including through the forwarded port, can start an enrolment. The owner's comparison of the code on both screens is the only barrier. A separate enrolment port that is never forwarded would close this and is not built.
+2. A signed request that the phone never processed because the connection was cut before it was read stays valid for the rest of its epoch. An observer on the path who recorded it could send it later. That observer is outside the scope of stage 1.
+3. A flood of unsigned hello requests can use up the shared hello bucket and deny the PC a new epoch. The four-connection limit is the other bound.
+4. A repeat of a final post after the phone restarted gets 404 `lease`, although the stored text is correct and complete.
+5. The phone refuses carriage returns and U+007F to U+009F in answer text with 400 `text`. The companion must remove them before counting offsets.
+6. While all four connection slots are taken, a request that has been accepted but not yet fully read can be closed without a reply. The companion repeats it as a new signed request. Peers that reconnect as soon as they are dropped can keep causing such closures, which delays the PC but does not change any answer.
 
 ## 13. Stage 2 requirements (guest mode)
 
@@ -250,7 +322,7 @@ Guest mode must meet all of these before it is built, and gets its own review:
 2. A way to create that channel's key on each phone image. Python's standard library can serve TLS but cannot create a key. Whether the images carry the `openssl` tool is NOT_RUN.
 3. A listener that accepts only packets that arrive on the USB interface from the address at the other end of the cable. Binding to the USB address is not enough when the PC routes or bridges.
 4. A stated answer to what the phone reveals before pairing. A long-lived certificate is an identifier.
-5. A tested TLS client on Windows 10, which has no TLS 1.3, with an explicit check of the pinned certificate and no general bypass of certificate checks.
+5. A tested TLS client on the supported Windows versions, with an explicit check of the pinned certificate and no general bypass of certificate checks.
 6. Limits on unauthenticated connections strong enough that an unpaired PC cannot keep the phone busy.
 7. On the OPOS OS image: proof that a PC that has never seen the phone gets a driver and a working address with no administrator step. NOT_RUN.
 
@@ -261,30 +333,36 @@ Guest mode must meet all of these before it is built, and gets its own review:
 | A PC with the owner's developer access | Everything that access allows, which is more than GPU Link | Not limited by this design |
 | The companion on an enrolled PC | Read the model file; read the questions asked in AI mode; append text to the answer it holds a lease for; stop | Change stored text; write to another answer; act after its key is removed |
 | The phone | Use the GPU while a grant lasts; make the PC keep a copy of the one model file the companion lists | Supply code; make the engine load an unlisted file; read PC files; put its own wording in the permission window beyond the label |
-| Another program on the PC without the owner's developer access | Reach a forwarded port | Sign a request; enrol a key; use the engine without its key; read `K` if it runs as a different user |
+| Another program on the PC that can reach the forward | Reach the phone listener and start an enrolment with its own key | Use the enrolled key without knowing it; approve its own enrolment through the link protocol. The owner must compare the code on both screens before Allow |
+
+The table's PC protections depend on the companion meeting sections 4, 5, 7, 10 and 11. The phone does not enforce those Windows behaviors.
+
+Known limits of this threat model: the six known limits in section 12 apply here.
 
 ## 15. Risks accepted
 
-- An enrolled PC reads the conversation and can return wrong text. The phone names the PC that answered, and says so before enrolling.
+- An enrolled PC reads the conversation and can return wrong text. The service records the answering PC's label and model independently of speed reports, with failed metadata writes retried on accepted text posts. The enrolment screen discloses that the PC sees the question.
 - Software running as the same Windows user can read `K`, use the owner's developer access and read the engine's memory.
 - On Android, a device placed between the phone and the PC on the cable could read or change the enrolment, because adb does not identify the phone to the PC. The owner uses their own cable and port.
 - Someone with an unlocked phone can approve a PC, and the PC then appears in the list. Someone with an unlocked PC can grant access or copy `K`.
 - `K` does not expire. It ends when the owner removes the PC on the phone. Removal is checked on the next request, not in the middle of one.
-- A model copy of about 2 GB stays on the PC until the user removes it from the tray menu or uninstalls. The window and the phone both say so.
+- The companion is required to retain its model copy until the user removes it from the tray menu or uninstalls. The phone discloses that the PC keeps a copy. Its size is determined by the companion's accepted model list.
 - Prompts may remain in the PC's memory, page file or crash dumps.
-- A flaw in the engine reachable through prompt text. Reduced by the pinned build, loopback, the API key and the job object.
+- An engine flaw reachable through prompt text remains a PC risk. Section 11 requires build pinning, loopback, an API key and a job object.
 
 ## 16. Open points
 
 1. Whether the chosen phone has `nc` for the enrolment command: NOT_RUN. To check in the first hour. Without it, stage 1 cannot enrol on that phone.
 2. Settled: the reply to the enrolment message says whether the phone is waiting for its owner, is busy with another request, already has a PC, or has closed enrolling. A command that fails gives no such reply.
 3. How the phone notices the cable inside Termux without root. Stage 1 uses the status timeout only.
-4. Whether listening on 127.0.0.1 shows the Windows firewall prompt to a standard user: NOT_RUN. Believed not. To test.
+4. Whether the companion's loopback listeners show a Windows firewall prompt to a standard user: **NOT_RUN**.
 5. The owner's yes to guest mode, after the demo.
 
 ## 17. Tests before any device run
 
-- A fake PC in the phone's unit tests and a fake phone in the companion's tests, both driven from one shared file of example messages, signatures included.
+This is a pre-device checklist, not a record that every case passed. Phone-side unit tests and shared vectors are present. The separate Windows companion needs its own tests. Physical-phone checks remain **NOT_RUN**.
+
+- A fake PC in the phone's unit tests and a fake phone in the companion's tests, both driven from `tests/fixtures/gpu_link/examples.json`, signatures included.
 - Enrolment: a second enrolment while one is pending, expiry, three denials, a signed request made with a pending key, a second PC while one is enrolled, a message over 1 KB.
 - Signatures: wrong key, replayed nonce, a retry with a reused nonce, two copies of one request at the same moment, changed body, changed path, changed range, a reply without a signature, a request signed for an old epoch.
 - Text: wrong lease, cancelled lease, wrong PC, wrong offset, repeat with different bytes, invalid UTF-8, a cut inside a character, control characters, a 12 KB overflow, a cancel that names an old lease, a restart between a post and its acknowledgement, a lost work reply followed by a new work request, a repeat of the final post, a different post after the final one.

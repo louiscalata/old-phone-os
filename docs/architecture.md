@@ -2,7 +2,7 @@
 # Architecture
 
 Paths below are relative to `src/opos/`. Packages are listed as units, including their child
-modules.
+modules. The tracked inventory from `git ls-files src/opos` contains 123 Python modules and 50 other files (173 total), including subpackages and package markers. There are 78 Python modules directly under `src/opos/` and 45 in subpackages. The complete file list is in [module-map.md](module-map.md).
 
 ## Battery policy
 
@@ -20,6 +20,7 @@ modules.
 - `advisor.py`: asynchronous, cached Muse Glimmer advice that can only add pauses; at most one request in flight.
 - `assist.py`: Ask routing, the rest rule (`is_resting`), memory checks, optional Wikipedia search and fallback messages.
 - `muse.py`: model routes, HTTP completions, Why, Plan and the endpoint check, with one shared deadline across routes.
+- `ai_answers.py`, `gpu_link_proto.py`, `gpu_link.py`, `gpu_link_server.py`: the shared answer store, GPU Link protocol, PC work service and optional loopback listener. `web.main` starts the listener only with `OPOS_GPU_LINK=1` and stops it when serving ends.
 - `aitools/`: optional coding-tool catalog, installation, wrappers and a standalone power/session guard.
 
 ## Phone services
@@ -32,6 +33,7 @@ modules.
 
 - `web.py`: loopback HTTP server, API dispatch, the simulated `Phone`, the helper's plain facts (`why_paused`) and page assembly.
 - `web_static/`: ordered CSS, HTML and JavaScript fragments.
+- `ai_page.py`: AI mode's phone and GPU panes and `/api/ai`, available only when `OPOS_APPS` names `ai`; see [apps.md](apps.md#ai-mode) and [gpu-link.md](gpu-link.md).
 - `monitor.py`, `monitor_web.py`, `web_static/monitor*`: the optional Inference page (read-only; the data and its document, and the glue `web.py` calls), served only while `OPOS_MONITOR=1`.
 - `secure.py`: bind and request validation, tokens, body limits, rate limiting and security headers.
 - `dashboard.py`: battery details, goals, history, saving plans and undo state.
@@ -42,6 +44,7 @@ modules.
 
 - `native/`: the GTK 4 shell that replaces the browser on the Surface Duo image ([NATIVE.md](../packaging/duo-os/NATIVE.md)); it draws what the server last said and asks the server to act.
 - `native/posture.py`, `hinge.py`, `facing.py`: the posture from the lid switch and the hinge angle, a read-only D-Bus client of the phone's sensor service (sensorfw) with adaptive polling, and which screen faces you when the phone is folded back. The angle and the accelerometer come only from that service; nothing is written to the phone's sensors and nothing under `/sys/kernel/debug` is read.
+- `native/updatelogic.py`: the native Updates screen's status, progress and action choices from the existing updater response.
 - `native/blank.py`, `displayconfig.py`: darkening and lighting the two panels for the lid and for back mode.
 
 ## Setup and install
@@ -107,7 +110,7 @@ this order:
 - JavaScript: `js-1.js` to `js-8.js`, interleaved with inline helper, thread-rendering, simulator-state and render-hook code; then separate scripts `phone-a.js`, `phone-b.js`, `jaryo.js`, `jaryo-layout.js`.
 
 After expansion, `page` replaces `@@ABOUT_NOTICES@@` with the escaped shared notices, applies the demo
-option, inserts the token meta tag and adds CSP nonces. Tests hold the page to a 102,400-byte (100 KiB) budget.
+option, inserts the token meta tag and adds CSP nonces. Tests hold `page()` and the served home page with the image switches to a 102,000-byte wave gate, with a separate 102,400-byte (100 KiB) hard cap; see [ui-byte-ledger.md](ui-byte-ledger.md).
 
 ## Tests
 

@@ -21,6 +21,7 @@ MODULES = {
     "calls": "opos.calls_page",
     "convert": "opos.convert_page",
     "notices": "opos.notices_page",
+    "ai": "opos.ai_page",
 }
 _APPS = {}
 _BROKEN = set()
