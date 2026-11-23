@@ -18,7 +18,10 @@ Practice text is simulated; no speed or GPU hardware is claimed. Server
 resume includes the stored partial as an assistant message; continuation quality
 and prefix support depend on the server. Token counts fall back to word estimates.
 Use the full endpoint URL. HTTP and HTTPS loopback literals or localhost only;
-no proxies, redirects or compressed replies. Keys are raw 32-byte mode-0600 files.
+no proxies, redirects or compressed replies. Keys are raw 32-byte files; mode 0600
+protects them on POSIX only. On Windows, mode 0600 does not make a key private on
+NTFS. Use a dedicated private folder; see the first-run plan's Windows icacls steps.
+The tool does not check Windows access rules.
 Questions and answers stay out of event lines unless --show-text is supplied.
 Ctrl-C stops the tool and closes its current stream. Physical phone checks remain
 NOT_RUN. The phone must already offer a ready model file before it hands out work.
@@ -103,7 +106,7 @@ def endpoint(value, phone=False):
 
 
 def key_file(path):
-    """Create privately or read a regular, private file without following links."""
+    """Create or read a regular key; owner/mode privacy checks are POSIX-only."""
     flags = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     getuid, fchmod = getattr(os, "getuid", None), getattr(os, "fchmod", None)
     # Windows keeps regular-file and size checks; inherited access rules are not checked.
@@ -594,7 +597,7 @@ class StandIn:
         self.started, self.next_status = self.clock(), 0
         self.emit(f"Work received; partial {self.offset} bytes")
         if self.show_text:
-            self.emit("Question: " + json.dumps(clean(job["question"]), ensure_ascii=False))
+            self.emit("Question: " + json.dumps(clean(job["question"]), ensure_ascii=True))
 
     def _post_reply(self, raw, piece, data):
         """Keep the pending post and its failure window until its reply is accepted."""
@@ -649,7 +652,7 @@ class StandIn:
             self.offset += len(piece)
             self.emit(f"Text acknowledged; {self.offset} bytes" + ("; final" if final else ""))
             if self.show_text:
-                self.emit("Text: " + json.dumps(piece.decode(), ensure_ascii=False))
+                self.emit("Text: " + json.dumps(piece.decode(), ensure_ascii=True))
             if final:
                 self.close()
         else:
@@ -695,7 +698,11 @@ def arguments(argv=None):
     parser.add_argument(
         "--label", default="Stand-in PC", help="wire label: letters, digits, spaces and hyphens; 1 to 24 chars"
     )
-    parser.add_argument("--key-file", required=True, help="raw 32-byte key file; created with mode 0600 if missing")
+    parser.add_argument(
+        "--key-file",
+        required=True,
+        help="raw 32-byte key; mode 0600 on POSIX only; Windows needs a dedicated private folder (see first-run plan)",
+    )
     parser.add_argument(
         "--enrol-request", action="store_true", help="write enrolment HTTP request to a pipe or socket; never connect"
     )

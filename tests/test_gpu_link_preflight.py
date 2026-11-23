@@ -1269,6 +1269,53 @@ print('Fixture NVIDIA, 8192, 555.0, %s, %s' % (utilization, 100 + count))
         self.assertNotIn("Traceback", child.stderr)
 
 
+class PortableTests(unittest.TestCase):
+    def test_report_on_legacy_and_utf8_stdout(self):
+        results = [dict(status="FAIL", name="chat", detail="server error: 模型🌿", fix="Check 模型", seconds=0)]
+        for encoding in ("cp1252", "cp437", "utf-8"):
+            with (
+                self.subTest(encoding=encoding),
+                io.TextIOWrapper(io.BytesIO(), encoding=encoding, newline="\n") as output,
+            ):
+                with (
+                    contextlib.redirect_stdout(output),
+                    patch.object(preflight.Preflight, "run", return_value=results),
+                ):
+                    status = preflight.main(["--transport", "ssh", "--quick"])
+                output.flush()
+                expected = (
+                    "FAIL chat: server error: 模型🌿\nFix: Check 模型\nSummary: 0 PASS, 0 WARN, 1 FAIL, 0 SKIP\n"
+                ).encode(encoding, errors="backslashreplace")
+                self.assertEqual(output.buffer.getvalue(), expected)
+                self.assertEqual(status, 1)
+
+    def test_engine_log_symlink_refused_without_nofollow(self):
+        with TemporaryDirectory() as folder:
+            log = Path(folder) / "engine.log"
+            log.write_text("fixture", encoding="utf-8")
+            info = log.stat()
+            link_info = os.stat_result((preflight.stat.S_IFLNK, *tuple(info)[1:]))
+            with (
+                patch.object(preflight.os, "O_NOFOLLOW", 0, create=True),
+                patch.object(preflight.os, "lstat", return_value=link_info),
+                patch.object(preflight.os, "open", side_effect=AssertionError("must not open a symlink")),
+                self.assertRaisesRegex(OSError, "non-symlink"),
+            ):
+                preflight.engine_offload(log, 8080)
+
+    def test_engine_log_regular_file_without_nofollow(self):
+        with TemporaryDirectory() as folder:
+            log = Path(folder) / "engine.log"
+            log.write_text(
+                "ggml_cuda_init: found 1 CUDA devices:\n"
+                "llm_load_tensors: offloaded 33/33 layers to GPU\n"
+                "main: server is listening on http://127.0.0.1:8080\n",
+                encoding="utf-8",
+            )
+            with patch.object(preflight.os, "O_NOFOLLOW", 0, create=True):
+                self.assertEqual(preflight.engine_offload(log, 8080)[0], "PASS")
+
+
 class ArgumentTests(unittest.TestCase):
     def test_loopback_only_url_enforcement(self):
         urls = [

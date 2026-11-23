@@ -1099,5 +1099,41 @@ class StandInTests(unittest.TestCase):
         self.assertEqual(len(requests), 1)
 
 
+class DiagnosticTests(unittest.TestCase):
+    def test_show_question_on_legacy_stdout(self):
+        question = "A question with 🌿"
+        for encoding in ("cp1252", "cp437"):
+            with self.subTest(encoding=encoding), io.TextIOWrapper(io.BytesIO(), encoding=encoding) as output:
+                runner = standin.StandIn(None, show_text=True)
+                self.addCleanup(runner.close)
+                with (
+                    contextlib.redirect_stdout(output),
+                    patch.object(runner, "_exchange", return_value=(200, dict(question=question, partial=""))),
+                ):
+                    runner._work()
+                output.flush()
+                line = output.buffer.getvalue().decode(encoding).splitlines()[-1]
+                self.assertEqual(json.loads(line.removeprefix("Question: ")), question)
+
+    def test_show_answer_on_legacy_stdout(self):
+        text = "An answer with 🌿"
+        for encoding in ("cp1252", "cp437"):
+            with self.subTest(encoding=encoding), io.TextIOWrapper(io.BytesIO(), encoding=encoding) as output:
+                runner = standin.StandIn(None, show_text=True)
+                self.addCleanup(runner.close)
+                runner.job = dict(lease="fixture")
+                runner.source = standin.PracticeSource(dict(partial=""))
+                runner.pending = b"{}", text.encode(), False
+                with (
+                    contextlib.redirect_stdout(output),
+                    patch.object(runner, "_exchange", return_value=(200, dict(acked=len(text.encode())))),
+                ):
+                    runner._post()
+                output.flush()
+                line = output.buffer.getvalue().decode(encoding).splitlines()[-1]
+                self.assertEqual(json.loads(line.removeprefix("Text: ")), text)
+                self.assertEqual(runner.offset, len(text.encode()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -145,6 +145,26 @@ class ArgumentTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, 2)
             self.assertIn("terminate the owned forward", output.getvalue())
 
+    def test_batch_transport_wrappers_refused_before_launch(self):
+        with TemporaryDirectory(prefix="keeper space & ") as folder:
+            for suffix in (".cmd", ".bat", ".CMD", ".BAT"):
+                wrapper = Path(folder) / ("transport" + suffix)
+                wrapper.touch()
+                for option in ("--ssh", "--adb"):
+                    for executable in (str(wrapper), wrapper.name):
+                        with (
+                            self.subTest(option=option, executable=executable),
+                            capture_errors() as output,
+                            capture_reports(),
+                            patch.object(subprocess, "Popen", side_effect=AssertionError("must not launch wrappers")),
+                        ):
+                            with self.assertRaises(SystemExit) as caught:
+                                keeper.main(["--mode", "ssh", "--ssh-target", "u@h", option, executable])
+                            self.assertEqual(caught.exception.code, 2)
+                            self.assertIn(".cmd/.bat transport wrappers are refused", output.getvalue())
+                            self.assertIn("native executable", output.getvalue())
+                            self.assertNotIn(folder, output.getvalue())
+
     def test_valid_limits_defaults_and_help(self):
         args = keeper.arguments(["--status"])
         self.assertEqual((args.local_port, args.remote_port, args.interval), (8767, 8767, 0.5))
