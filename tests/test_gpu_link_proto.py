@@ -417,12 +417,19 @@ class ProtoTests(unittest.TestCase):
                     obj.update(copied=value, total=value)
                 self.assertEqual(proto.parse_status(proto.dumps(obj)), obj)
             for value in (True, False, -1, 1.0, "1", [], {}, 9007199254740992):
-                self.assert_error("request", proto.parse_status, proto.dumps({**status_body(), field: value}))
+                raw = json.dumps({**status_body(), field: value}).encode()
+                self.assert_error("request", proto.parse_status, raw)
         for value in (0, 0.0, 96.4, 100000, 100000.0):
             obj = {**status_body(), "tps": value}
             self.assertEqual(proto.parse_status(proto.dumps(obj)), obj)
         for value in (True, False, -1, 100001, "1", [], {}):
-            self.assert_error("request", proto.parse_status, proto.dumps({**status_body(), "tps": value}))
+            self.assert_error("request", proto.parse_status, json.dumps({**status_body(), "tps": value}).encode())
+
+    def test_surv_status_error_code_grammar(self):
+        for bad in ("Bad Code", "x" * 33, "", "UPPER", 7):
+            with self.subTest(bad=bad):
+                body = proto.dumps({**status_body(), "state": "error", "error": bad})
+                self.assert_error("request", proto.parse_status, body)
 
     def test_status_error_matches_state(self):
         self.assert_error("request", proto.parse_status, proto.dumps({**status_body(), "state": "error"}))
@@ -482,7 +489,9 @@ class ProtoTests(unittest.TestCase):
         )
         for value in (True, -1, 1.5, None, "1024", 9007199254740992):
             self.assert_error(
-                "request", proto.parse_status, proto.dumps({**status_body(), "gpu": {**gpu, "memory_mb": value}})
+                "request",
+                proto.parse_status,
+                json.dumps({**status_body(), "gpu": {**gpu, "memory_mb": value}}).encode(),
             )
         for obj in (status_body(), gpu):
             for field in obj:
@@ -511,7 +520,7 @@ class ProtoTests(unittest.TestCase):
             {"done": True, "finish": []},
             {"extra": 1},
         ):
-            self.assert_error("request", proto.parse_text, proto.dumps({**text_body(), **changes}))
+            self.assert_error("request", proto.parse_text, json.dumps({**text_body(), **changes}).encode())
         for field in text_body():
             self.assert_error(
                 "request",
@@ -563,6 +572,41 @@ class ProtoTests(unittest.TestCase):
         cyclic = []
         cyclic.append(cyclic)
         self.assert_error("request", proto.dumps, cyclic)
+
+    def test_dumps_number_written_form(self):
+        for value in (
+            -1,
+            9007199254740992,
+            12345678901234567890,
+            -0.0,
+            -1.0,
+            1e-7,
+            1e16,
+            96.123456,
+            100000.5,
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+        ):
+            for obj in (value, {"x": [value]}, {"x": {value: None}}):
+                with self.subTest(value=value, obj=obj):
+                    self.assert_error("request", proto.dumps, obj)
+        self.assert_error("request", proto.dumps, {**status_body(), "tps": 96.123456})
+        for value, written in (
+            (0, b"0"),
+            (9007199254740991, b"9007199254740991"),
+            (0.0, b"0.0"),
+            (0.001, b"0.001"),
+            (96.123, b"96.123"),
+            (100000.0, b"100000.0"),
+        ):
+            with self.subTest(value=value):
+                raw = proto.dumps({"n": value})
+                self.assertEqual(raw, b'{"n":' + written + b"}")
+                self.assertEqual(proto.loads(raw, 100), {"n": value})
+        raw = proto.dumps({**status_body(), "tps": 96.123})
+        self.assertIn(b'"tps":96.123', raw)
+        self.assertEqual(proto.parse_status(raw)["tps"], 96.123)
 
     def test_dumps_and_reply_builders(self):
         self.assertEqual(proto.dumps({"text": "数据 é", "value": 1}), '{"text":"数据 é","value":1}'.encode())

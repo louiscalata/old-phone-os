@@ -156,7 +156,12 @@ def dumps(obj: object) -> bytes:
                 raise ProtoError("request")
             children = (child for pair in value.items() for child in pair) if type(value) is dict else value
             pending.extend((child, depth + 1) for child in children)
-        elif value is not None and type(value) not in (int, float, bool):
+        elif type(value) is int:
+            if not 0 <= value <= MAX_WHOLE:
+                raise ProtoError("request")
+        elif type(value) is float:
+            _float(repr(value))
+        elif value is not None and type(value) is not bool:
             raise ProtoError("request")
     try:
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
