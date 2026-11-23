@@ -1096,6 +1096,55 @@ class AnswerTests(unittest.TestCase):
             self.assertEqual(second.get(row["id"]), row)
         self.assertEqual(os.environ.get("XDG_STATE_HOME"), previous)
 
+    def slow_writes(self):
+        real = self.disk.write_json
+
+        def slow(*args, **kwargs):
+            time.sleep(0.15)
+            return real(*args, **kwargs)
+
+        return patch.object(self.disk, "write_json", slow)
+
+    def test_surv_full_length_answer_survives_restart(self):
+        # The maximum accepted byte count remains valid on disk after restart.
+        ident = self.store.ask("gpu", "q")["id"]
+        self.store.begin(ident)
+        self.store.append(ident, 0, b"x" * answers.MAX_ANSWER_BYTES, done=True, finish="length")
+        restarted = answers.AnswerStore(Store(self.root))
+        row = restarted.get(ident)
+        self.assertIsNotNone(row)
+        self.assertEqual((row["state"], row["bytes"]), ("done", answers.MAX_ANSWER_BYTES))
+
+    def test_surv_concurrent_appends_at_one_offset_store_one_winner(self):
+        # Competing posts must not both acknowledge different bytes at one offset.
+        ident = self.store.ask("phone", "q")["id"]
+        self.store.begin(ident)
+        results = []
+
+        def post(data):
+            try:
+                results.append(("ok", self.store.append(ident, 0, data)["bytes"]))
+            except answers.AnswerError as err:
+                results.append(("err", type(err).__name__))
+
+        with self.slow_writes(), ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(post, data) for data in (b"abc", b"xyz")]
+            for future in futures:
+                future.result(timeout=5)
+        self.assertEqual(sorted(kind for kind, _ in results), ["err", "ok"])
+        self.assertEqual(self.store.get(ident)["bytes"], 3)
+
+    def test_surv_concurrent_asks_get_distinct_sequence_numbers(self):
+        # Creation order must remain distinct when both panes ask concurrently.
+        def ask(pane):
+            self.store.ask(pane, "q")
+
+        with self.slow_writes(), ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(ask, pane) for pane in ("phone", "gpu")]
+            for future in futures:
+                future.result(timeout=5)
+        self.assertEqual(sorted(row["seq"] for row in self.store._records.values()), [1, 2])
+
 
 if __name__ == "__main__":
     unittest.main()
