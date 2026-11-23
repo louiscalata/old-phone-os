@@ -10,7 +10,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, replace
+from threading import Event
+from typing import Any
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -224,6 +227,321 @@ def ask(route, prompt, env=None, opener=None, timeout=None, max_tokens=DEFAULT_M
         raise
     except (OSError, ValueError, KeyError, IndexError, TypeError, RecursionError, http.client.HTTPException) as e:
         raise MuseError("request failed") from e
+
+
+STREAM_IDLE_S = 30.0
+STREAM_LINE_BYTES = 65536
+
+
+def stream(
+    route: Route,
+    prompt: str,
+    env: Mapping[str, str] | None = None,
+    opener: Callable[..., Any] | None = None,
+    timeout: float | None = None,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    cancel: Event | None = None,
+) -> "Stream":
+    """Open a streamed completion after applying the blocking helper's route checks.
+
+    The opener timeout is min(STREAM_IDLE_S, time left), also for model checks.
+    The overall deadline is checked before every body read and before text is
+    yielded. Ending can take one waiting read beyond timeout: with the defaults,
+    up to 150 seconds total (120 + 30), plus scheduling and cleanup. DNS and
+    trickled header or chunk-framing bytes are outside this bound, as for ask.
+    Custom openers must honor the timeout and provide bounded reads themselves.
+    Use with muse.stream(...) as s: to own the response. It closes at the end
+    of the stream, on an error, on cancel, on close(), on leaving the with
+    block, and when an iterator that has started is dropped. A Stream or an
+    iterator that is never started is closed by Stream.close() or the with block.
+    """
+    _stream_check_cancel(cancel)
+    if env is None:
+        env = os.environ
+    if opener is None:
+        opener = _open_no_redirect
+    if timeout is None:
+        timeout = timeout_s(env)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise MuseError("invalid timeout")
+    deadline = time.monotonic() + timeout
+    headers = {"Content-Type": "application/json"}
+    if route.key == "spark-open":
+        try:
+            headers["Authorization"] = "Api-Key " + env["BASETEN_API_KEY"]
+        except KeyError as err:
+            raise MuseError("auth missing") from err
+    _require_http_url(route.base_url)
+    try:
+        if route.verify_model:
+
+            def model_opener(req: urllib.request.Request, timeout: float | None = None) -> Any:
+                return _stream_model_opened(opener, req, timeout, deadline)
+
+            route = _verified(route, model_opener, min(_stream_wait(deadline), MODEL_LIST_TIMEOUT))
+        _stream_check_cancel(cancel)
+        payload = _payload(route, prompt, max_tokens)
+        payload.update(stream=True, stream_options={"include_usage": True})
+        req = urllib.request.Request(
+            route.base_url + "/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )  # noqa: S310 - the scheme was checked above; the default opener blocks redirects and proxies.
+        _stream_check_cancel(cancel)
+        resp = _stream_open(opener, req, _stream_wait(deadline))
+        try:
+            result = Stream(route, resp, deadline, cancel)
+            _stream_wait(deadline)
+            return result
+        except Exception:
+            resp.close()
+            raise
+    except MuseError:
+        raise
+    except TimeoutError as err:
+        raise MuseError("stream timed out") from err
+    except Exception as err:
+        raise MuseError("request failed") from err
+
+
+def _stream_check_cancel(cancel: Event | None) -> None:
+    if cancel is not None and cancel.is_set():
+        raise MuseError("cancelled")
+
+
+def _stream_wait(deadline: float) -> float:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise MuseError("stream timed out")
+    return min(STREAM_IDLE_S, left)
+
+
+def _stream_open(opener: Callable[..., Any], req: urllib.request.Request, timeout: float) -> Any:
+    try:
+        return opener(req, timeout=timeout)
+    except urllib.error.HTTPError as err:
+        err.close()
+        raise
+
+
+class _StreamModelReader:
+    """Bound model-list body reads by the same overall deadline as the POST."""
+
+    def __init__(self, response: Any, deadline: float) -> None:
+        self._read = getattr(response, "read1", None) or response.read
+        self._deadline = deadline
+
+    def read(self, size: int) -> bytes:
+        chunks = bytearray()
+        while len(chunks) < size:
+            _stream_wait(self._deadline)
+            raw = self._read(min(4096, size - len(chunks)))
+            _stream_wait(self._deadline)
+            if not raw:
+                break
+            chunks.extend(raw)
+        return bytes(chunks)
+
+
+@contextlib.contextmanager
+def _stream_model_opened(
+    opener: Callable[..., Any], req: urllib.request.Request, timeout: float | None, deadline: float
+) -> Iterator[Any]:
+    with contextlib.closing(_stream_open(opener, req, min(timeout, _stream_wait(deadline)))) as response:
+        yield _StreamModelReader(response, deadline)
+        _stream_wait(deadline)
+
+
+class Stream:
+    """Visible text from one streamed chat completion, piece by piece.
+
+    Reads use HTTPResponse.read1 to avoid waiting to fill a large buffer. The
+    opener sets a socket timeout of min(STREAM_IDLE_S, time left). The overall
+    deadline is checked before every read and before yielding text. Ending can
+    take one waiting read beyond timeout: up to 150 seconds (120 + 30) with the
+    defaults, plus scheduling and cleanup. DNS and trickled header or chunk
+    framing bytes are outside this limit, as they are for ask.
+
+    cancel is checked before and after every read and before buffered text.
+    Cancellation ends iteration and closes the response within one waiting read
+    (up to 30 seconds by default, plus scheduling and cleanup). Call close()
+    from the thread that iterates. Use with muse.stream(...) as s: to own the
+    response. It closes at the end of the stream, on an error, on cancel, on
+    close(), on leaving the with block, and when an iterator that has started
+    is dropped. A Stream or an iterator that is never started is closed by
+    Stream.close() or the with block. Custom openers and responses must honor
+    the opener timeout and provide bounded reads.
+    """
+
+    def __init__(self, route: Route, response: Any, deadline: float, cancel: Event | None) -> None:
+        self.route = route
+        self.finish: str | None = None
+        self.tokens: int | None = None
+        self.tps: float | None = None
+        self._response = response
+        self._deadline = deadline
+        self._cancel = cancel
+        self._buffer = bytearray()
+        self._total = 0
+        self._closed = False
+        self._read_response = getattr(response, "read1", None) or response.read
+
+    def __iter__(self) -> Iterator[str]:
+        """Yield nonempty pieces; closing or collecting a started generator closes IO."""
+        try:
+            while True:
+                try:
+                    content = self._next()
+                except StopIteration:
+                    return
+                yield content
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        """Close once, from the thread that iterates; repeated calls are safe."""
+        if not self._closed:
+            self._closed = True
+            self._response.close()
+
+    def __enter__(self) -> "Stream":
+        """Return this stream for a bounded request lifetime."""
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        """Close an unfinished response when leaving the context."""
+        self.close()
+
+    def _stopped(self) -> bool:
+        return self._closed or (self._cancel is not None and self._cancel.is_set())
+
+    def _read(self) -> bytes:
+        if self._stopped():
+            return b""
+        _stream_wait(self._deadline)
+        try:
+            raw = self._read_response(min(4096, MAX_RESPONSE_BYTES - self._total + 1))
+        except OSError:
+            if self._stopped():
+                return b""
+            raise
+        if self._stopped():
+            return b""
+        _stream_wait(self._deadline)
+        self._total += len(raw)
+        if self._total > MAX_RESPONSE_BYTES:
+            raise MuseError("response too large")
+        return raw
+
+    def _line(self) -> bytes | None:
+        while True:
+            end = self._buffer.find(b"\n")
+            size = end if end >= 0 else len(self._buffer)
+            if size > STREAM_LINE_BYTES:
+                raise MuseError("stream line too large")
+            if end >= 0:
+                line = bytes(self._buffer[:end]).removesuffix(b"\r")
+                del self._buffer[: end + 1]
+                return line
+            raw = self._read()
+            if not raw:
+                if self._buffer:
+                    line = bytes(self._buffer)
+                    self._buffer.clear()
+                    return line
+                return None
+            self._buffer.extend(raw)
+
+    def _event(self, line: bytes) -> str | None:
+        if not line.startswith(b"data:"):
+            return None
+        data = line[5:].strip()
+        if data == b"[DONE]":
+            self.close()
+            return None
+        obj = json.loads(data.decode("utf-8"))
+        if not isinstance(obj, dict) or not isinstance(obj.get("choices"), list):
+            raise MuseError("bad stream object")
+        self._metrics(obj)
+        if not obj["choices"]:
+            return None
+        choice = obj["choices"][0]
+        if not isinstance(choice, dict) or not isinstance(choice.get("delta"), dict):
+            raise MuseError("bad stream delta")
+        finish = choice.get("finish_reason")
+        if finish is not None:
+            if finish not in ("stop", "length"):
+                raise MuseError("bad stream finish")
+            self.finish = finish
+        content = choice["delta"].get("content")
+        if content is not None and not isinstance(content, str):
+            raise MuseError("bad stream content")
+        if content:
+            content.encode("utf-8")  # Refuse lone surrogates even when escaped in JSON.
+        return content or None
+
+    def _metrics(self, obj: dict[str, Any]) -> None:
+        usage = obj.get("usage")
+        timings = obj.get("timings")
+        if usage is not None:
+            if not isinstance(usage, dict):
+                raise MuseError("bad stream usage")
+            tokens = usage.get("completion_tokens")
+            if tokens is not None:
+                if type(tokens) is not int or tokens < 0:
+                    raise MuseError("bad stream tokens")
+                self.tokens = tokens
+        if timings is not None:
+            if not isinstance(timings, dict):
+                raise MuseError("bad stream timings")
+            tps = timings.get("predicted_per_second")
+            if tps is not None:
+                if type(tps) not in (int, float) or not math.isfinite(tps) or tps < 0:
+                    raise MuseError("bad stream speed")
+                self.tps = tps
+
+    def _next(self) -> str:
+        try:
+            while not self._stopped():
+                _stream_wait(self._deadline)
+                line = self._line()
+                if self._stopped():
+                    break
+                if line is None:
+                    if self.finish is None:
+                        raise MuseError("stream ended early")
+                    break
+                content = self._event(line)
+                if content:
+                    if self._stopped():
+                        break
+                    _stream_wait(self._deadline)
+                    return content
+        except TimeoutError as err:
+            if not self._stopped():
+                raise MuseError("stream timed out") from err
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            OverflowError,
+            RecursionError,
+            http.client.HTTPException,
+        ) as err:
+            stopped = self._stopped()
+            self.close()
+            if not stopped:
+                raise MuseError("stream failed") from err
+        except MuseError:
+            stopped = self._stopped()
+            self.close()
+            if not stopped:
+                raise
+        self.close()
+        raise StopIteration
 
 
 def _verified(route, opener, timeout):
