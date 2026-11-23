@@ -5,6 +5,7 @@ The directory is $XDG_STATE_HOME/opos, or the default state directory when that 
 A file that cannot be read is moved aside to <name>.bad-<time> and the caller starts empty.
 """
 
+import errno
 import json
 import os
 import re
@@ -21,6 +22,10 @@ else:
 SCHEMA = 1
 MAX_JSON = 256 * 1024
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\.jsonl?$")
+
+
+class DurabilityError(OSError):
+    """A replacement is visible but its directory could not be synced."""
 
 
 def default_root():
@@ -99,31 +104,42 @@ def _encode_json(payload, limit):
     return raw
 
 
-def _write_atomic(path, raw, lock):
-    stream = tempfile.NamedTemporaryFile(
-        mode="wb",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    )
-    temporary = Path(stream.name)
-    try:
-        with stream:
-            stream.write(raw)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.chmod(0o600)
-        with lock:
+def _write_atomic(path, raw, lock, *, durable=False):
+    with lock:
+        stream = tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        )
+        temporary = Path(stream.name)
+        try:
+            with stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.chmod(0o600)
             os.replace(temporary, path)
             temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            if os.name == "posix":
+                try:
+                    directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
+                except OSError as error:
+                    if durable and error.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS):
+                        raise DurabilityError(error.errno, "directory sync failed") from error
+                    # Default writes are best effort; unsupported directory sync is always ignored.
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 class Store:
-    """One directory of small JSON files. Writes are a temp file plus os.replace."""
+    """Atomic local writes; durable=True requires directory sync where supported."""
 
     def __init__(self, root=None):
         self.root = Path(root) if root is not None else default_root()
@@ -159,6 +175,16 @@ class Store:
         self._said.add(name)
         return "The saved file could not be read. Started empty."
 
+    def sweep_temps(self, name):
+        """Remove temporary siblings under the lock held throughout every write."""
+        path = self._path(name)
+        pattern = f".{name}.*.tmp"
+        if not any(self.root.glob(pattern)):
+            return
+        with _lock(path):
+            for temporary in self.root.glob(pattern):
+                temporary.unlink(missing_ok=True)
+
     def read_json(self, name, default):
         """(value, note). note is empty when the file was fine or absent."""
         return self._read(self._path(name), default, self._read_json)
@@ -184,12 +210,16 @@ class Store:
         return default, self.note_once(path.name)
 
     @contextmanager
-    def _transaction(self, name, default):
+    def _transaction(self, name, default, *, durable=False):
         path = self._path(name)
         self._mkdir()
 
         def save(payload):
-            _write_atomic(path, _encode_json(payload, MAX_JSON), nullcontext())
+            raw = _encode_json(payload, MAX_JSON)
+            if durable:
+                _write_atomic(path, raw, nullcontext(), durable=True)
+            else:
+                _write_atomic(path, raw, nullcontext())
 
         with _lock(path):
             value, note = self._recover(path, default, self._read_json)
@@ -216,12 +246,15 @@ class Store:
             return None
         return data
 
-    def write_json(self, name, payload, limit=MAX_JSON):
+    def write_json(self, name, payload, limit=MAX_JSON, *, durable=False):
         """Write payload with the schema field. Raises ValueError when the file would be over limit."""
         raw = _encode_json(payload, limit)
         self._mkdir()
         path = self._path(name)
-        _write_atomic(path, raw, _lock(path))
+        if durable:
+            _write_atomic(path, raw, _lock(path), durable=True)
+        else:
+            _write_atomic(path, raw, _lock(path))
         return path
 
     def read_jsonl(self, name, limit=500):
@@ -243,7 +276,7 @@ class Store:
             rows = rows[-limit:]
         return rows, ""
 
-    def write_jsonl(self, name, rows, limit=500, line_limit=4000):
+    def write_jsonl(self, name, rows, limit=500, line_limit=4000, *, durable=False):
         """Replace the file with the last limit rows. Each row must be a dict."""
         if not isinstance(rows, list):
             raise ValueError("bad rows")
@@ -259,10 +292,13 @@ class Store:
         raw = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
         self._mkdir()
         path = self._path(name)
-        _write_atomic(path, raw, _lock(path))
+        if durable:
+            _write_atomic(path, raw, _lock(path), durable=True)
+        else:
+            _write_atomic(path, raw, _lock(path))
         return path
 
-    def write_bytes(self, name, raw, limit):
+    def write_bytes(self, name, raw, limit, *, durable=False):
         """Atomic write of raw bytes under a safe name. name may be notes/<id>.txt via a flat name only.
 
         This method accepts the same flat names as JSON, plus .txt. Callers that need a directory
@@ -274,5 +310,8 @@ class Store:
             raise ValueError("too big")
         self._mkdir()
         path = self.root / name
-        _write_atomic(path, bytes(raw), nullcontext())
+        if durable:
+            _write_atomic(path, bytes(raw), nullcontext(), durable=True)
+        else:
+            _write_atomic(path, bytes(raw), nullcontext())
         return path

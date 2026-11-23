@@ -2,11 +2,14 @@
 """Answer lifecycle, durable byte seams, recovery, and concurrent snapshots."""
 
 import contextlib
+import errno
 import io
 import json
 import os
 import random
 import stat
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -16,6 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from opos import ai_answers as answers
+from opos import gpu_link_server
 from opos.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,14 +37,14 @@ class FailingStore(Store):
         self.events = []
         self.after_write = None
 
-    def write_json(self, name, payload, limit=256 * 1024):
+    def write_json(self, name, payload, limit=256 * 1024, *, durable=False):
         if self.remaining is not None:
             self.remaining -= 1
             if self.remaining <= 0:
                 if not self.persistent:
                     self.remaining = None
                 raise OSError("write refused")
-        result = super().write_json(name, payload, limit)
+        result = super().write_json(name, payload, limit, durable=durable)
         self.writes.append(name)
         self.events.append("write finished")
         if self.after_write is not None:
@@ -200,9 +204,25 @@ class AnswerTests(unittest.TestCase):
                 record, _ = self.disk.read_json(f"ai-answer-{oldest}.json", {})
                 self.assertEqual(record["answer"]["state"], "queued")
                 recovered = answers.AnswerStore(self.disk)
+                phone_row = next(row for row in snapshot["answers"] if row["id"] == phone)
+                phone_row.update(state="failed", error="restart", rev=snapshot["rev"] + 1)
+                snapshot["rev"] += 1
                 self.assertEqual(recovered.snapshot(), snapshot)
-                self.assertEqual(self.disk.writes, [f"ai-answer-{ident}.json"])
+                self.assertEqual(self.disk.writes, [f"ai-answer-{ident}.json", f"ai-answer-{phone}.json"])
                 self.assertEqual(recovered.begin(oldest)["state"], "loading")
+
+    def test_queued_phone_answer_fails_on_restart_but_gpu_stays_queued(self):
+        phone = self.store.ask("phone", "q")["id"]
+        gpu = self.store.ask("gpu", "q")["id"]
+        recovered = answers.AnswerStore(self.disk)
+        row = recovered.get(phone)
+        self.assertEqual((row["state"], row["error"]), ("failed", "restart"))
+        self.assertIsNone(recovered.current("phone"))
+        self.assertEqual(recovered.ask("phone", "next")["state"], "waiting")
+        self.assertEqual(recovered.current("gpu")["id"], gpu)
+        self.assertEqual(recovered.get(gpu)["state"], "waiting")
+        saved, _ = self.disk.read_json(f"ai-answer-{phone}.json", {})
+        self.assertEqual(saved["answer"]["state"], "failed")
 
     def test_appending_offset_and_repeats(self):
         ident = self.make_state("loading")
@@ -339,7 +359,7 @@ class AnswerTests(unittest.TestCase):
                 self.assertEqual(restarted.get(gpu)["state"], "paused")
                 self.assertEqual(restarted.get(phone)["state"], "failed")
                 self.assertEqual(restarted.get(phone)["error"], "restart")
-                self.assertEqual(restarted.get(queued)["state"], "waiting")
+                self.assertEqual(restarted.get(queued)["state"], "failed")
                 for row in before["answers"]:
                     after = restarted.get(row["id"])
                     for key in ("id", "question", "text", "bytes", "model", "where", "tokens", "tps", "asked"):
@@ -376,7 +396,62 @@ class AnswerTests(unittest.TestCase):
         self.assertIsNone(self.store.get(later))
         self.unchanged(answers.FullError, self.store.ask, "gpu", "full")
         self.assertEqual(len(list(self.root.glob("ai-answer-*.json"))), 50)
-        self.assertEqual(answers.AnswerStore(Store(self.root)).snapshot(), self.store.snapshot())
+        recovered = answers.AnswerStore(Store(self.root))
+        self.assertEqual(len(recovered.snapshot()["answers"]), 50)
+        self.assertTrue(
+            all(row["state"] == "failed" for row in recovered.snapshot()["answers"] if row["pane"] == "phone")
+        )
+
+    def test_killed_write_temp_is_swept_on_load(self):
+        ident = self.make_state("loading")
+        code = """
+import os
+import sys
+from unittest.mock import patch
+from opos.ai_answers import AnswerStore
+from opos.store import Store
+answers = AnswerStore(Store(sys.argv[1]))
+answers.begin(sys.argv[2])
+with patch('opos.store.os.replace', side_effect=lambda *args: os._exit(9)):
+    answers.append(sys.argv[2], 0, b'partial from child')
+"""
+        result = subprocess.run([sys.executable, "-c", code, str(self.root), ident], capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 9)
+        self.assertEqual((result.stdout, result.stderr), (b"", b""))
+        leftovers = list(self.root.glob(".ai-answer-*.json.*.tmp"))
+        self.assertEqual(len(leftovers), 1)
+        self.assertTrue(b'"question":"question"' in leftovers[0].read_bytes())
+        self.assertTrue(b"partial from child" in leftovers[0].read_bytes())
+        recovered = answers.AnswerStore(self.disk)
+        self.assertEqual(recovered.get(ident)["state"], "paused")
+        self.assertFalse(list(self.root.glob(".ai-answer-*.json.*.tmp")))
+
+    def test_sweep_failure_loads_answer_and_retries_after_save(self):
+        ident = self.make_state("loading")
+        temporary = self.root / f".ai-answer-{ident}.json.stale.tmp"
+        temporary.write_text("leftover", encoding="ascii")
+        unlink = Path.unlink
+
+        def blocked(path, *args, **kwargs):
+            if path == temporary:
+                raise PermissionError("unlink refused")
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", blocked):
+            recovered = answers.AnswerStore(self.disk)
+            self.assertEqual(recovered.get(ident)["state"], "paused")
+            self.assertTrue(recovered._sweep_pending)
+        recovered.note(ident, tokens=1)
+        self.assertFalse(temporary.exists())
+        self.assertFalse(recovered._sweep_pending)
+
+    def test_removed_answer_leaves_no_temp(self):
+        ident = self.make_state("done")
+        (self.root / f".ai-answer-{ident}.json.stale.tmp").write_bytes(b"partial")
+        for _ in range(answers.MAX_ANSWERS):
+            self.store.ask("gpu", "next")
+        self.assertIsNone(self.store.get(ident))
+        self.assertFalse(any(ident in path.name for path in self.root.iterdir()))
 
     def test_finished_answers_do_not_accumulate_lock_files(self):
         for number in range(60):
@@ -498,12 +573,13 @@ class AnswerTests(unittest.TestCase):
         self.assertEqual(len(recovered.snapshot()["answers"]), 51)
         self.assertEqual(recovered.get(oldest)["state"], "done")
         self.disk.writes.clear()
-        before, files = recovered.snapshot(), self.files()
-        with self.assertRaises(answers.FullError):
-            recovered.ask("phone", "full after restart")
-        self.assertEqual(recovered.snapshot(), before)
-        self.assertEqual(self.files(), files)
-        self.assertEqual(self.disk.writes, [])
+        self.assertTrue(
+            all(row["state"] == "failed" for row in recovered.snapshot()["answers"] if row["pane"] == "phone")
+        )
+        self.assertEqual(recovered.ask("phone", "after restart")["state"], "waiting")
+        self.assertIsNone(recovered.get(oldest))
+        self.assertFalse(path.exists())
+        self.assertEqual(len(self.files()), 50)
 
     def test_each_change_writes_once_and_failed_write_can_be_retried(self):
         for action in ("ask", "append", "note", "begin", "pause", "cancel", "fail", "done"):
@@ -547,9 +623,9 @@ class AnswerTests(unittest.TestCase):
         self.disk.persistent = True
         self.unchanged(OSError, self.store.begin, ident)
 
-    def test_write_that_took_effect_is_accepted(self):
+    def test_failed_write_with_matching_disk_record_keeps_memory(self):
         def after_write(name, payload):
-            raise OSError("close failed after replace")
+            raise OSError("injected failure after replacement")
 
         for action in ("ask", "begin", "pause", "cancel", "fail", "note", "append", "done"):
             with self.subTest(action=action):
@@ -566,26 +642,25 @@ class AnswerTests(unittest.TestCase):
                     function, args, kwargs = getattr(self.store, action), (ident,), {}
                     if action == "fail":
                         args += ("broken",)
-                rev = self.store.rev
+                before = self.store.snapshot()
                 self.disk.writes.clear()
-                with patch.object(self.disk, "after_write", after_write):
-                    result = function(*args, **kwargs)
-                name = f"ai-answer-{result['id']}.json"
-                self.assertEqual(self.disk.writes, [name])
-                self.assertEqual(self.store.rev, rev + 1)
-                self.assertEqual(self.store.get(result["id"]), result)
+                with (
+                    patch.object(self.disk, "after_write", after_write),
+                    patch.object(self.disk, "read_json", wraps=self.disk.read_json) as read,
+                ):
+                    with self.assertRaises(OSError):
+                        function(*args, **kwargs)
+                read.assert_not_called()
+                self.assertEqual(self.store.snapshot(), before)
+                self.assertEqual(len(self.disk.writes), 1)
+                name = self.disk.writes[0]
                 record, _ = self.disk.read_json(name, {})
-                record.pop("schema")
-                self.assertEqual(self.store._records[result["id"]], record)
-                if action == "done":
-                    self.assertEqual(result["state"], "done")
-                    self.assertEqual(result["text"], "prefix!")
-                    noted = self.store.note(ident, tokens=1)
-                    record, _ = self.disk.read_json(name, {})
-                    self.assertEqual(record["answer"], noted)
-                    self.assertEqual(record["answer"]["text"], "prefix!")
-                    self.assertEqual(self.store.append(ident, 6, b"!", True, "stop"), noted)
-                    self.assertEqual(self.disk.writes, [name, name])
+                self.assertEqual(record["answer"]["rev"], before["rev"] + 1)
+                # The same operation must write again even though matching bytes are visible.
+                result = function(*args, **kwargs)
+                self.assertEqual(self.disk.writes, [name, f"ai-answer-{result['id']}.json"])
+                self.assertEqual(self.store.rev, before["rev"] + 1)
+                self.assertEqual(self.store.get(result["id"]), result)
 
     def test_failed_write_without_matching_readback_keeps_memory(self):
         for fault in ("unreadable", "read error", "different record"):
@@ -684,7 +759,10 @@ class AnswerTests(unittest.TestCase):
         files = self.files()
         recovered = answers.AnswerStore(Store(self.root))
         self.assertEqual(len(recovered.snapshot()["answers"]), 51)
-        self.assertEqual(self.files(), files)
+        self.assertEqual(set(self.files()), set(files))
+        self.assertTrue(
+            all(row["state"] == "failed" for row in recovered.snapshot()["answers"] if row["pane"] == "phone")
+        )
         self.assertEqual(recovered.latest("gpu")["question"], "new")
         recovered.ask("phone", "newer")
         self.assertIsNone(recovered.get(oldest))
@@ -727,8 +805,10 @@ class AnswerTests(unittest.TestCase):
         (self.root / f"ai-answer-{damaged['id']}.json").write_bytes(b"bad")
         before = self.files()
         recovered = answers.AnswerStore(Store(self.root))
+        good.update(state="failed", error="restart", rev=good["rev"] + 1)
         self.assertEqual(recovered.snapshot(), {"rev": good["rev"], "answers": [good]})
-        self.assert_files_preserved(before)
+        backups = list(self.root.glob(f"ai-answer-{damaged['id']}.json.bad-*"))
+        self.assertEqual([path.read_bytes() for path in backups], [before[f"ai-answer-{damaged['id']}.json"]])
 
     def test_every_answer_damaged_starts_empty_and_remains_usable(self):
         for pane in answers.PANES:
@@ -740,17 +820,18 @@ class AnswerTests(unittest.TestCase):
         self.assert_files_preserved(before)
         row = recovered.ask("phone", "usable")
         self.assertEqual(row["rev"], 1)
+        row.update(state="failed", error="restart", rev=row["rev"] + 1)
         self.assertEqual(answers.AnswerStore(Store(self.root)).get(row["id"]), row)
 
     def test_non_answer_files_are_left_alone(self):
-        self.store.ask("phone", "kept")
+        kept = self.store.ask("phone", "kept")
         names = ("ai-answers.json", "unrelated.txt", "ai-answer-invalid.json", ".temporary")
         for name in names:
             (self.root / name).write_bytes(b"leave alone")
         before = self.files()
         recovered = answers.AnswerStore(Store(self.root))
-        self.assertEqual(recovered.snapshot(), self.store.snapshot())
-        self.assertEqual(self.files(), before)
+        self.assertEqual(recovered.get(kept["id"])["state"], "failed")
+        self.assertEqual(set(self.files()), set(before))
         for name in names:
             self.assertEqual((self.root / name).read_bytes(), b"leave alone")
 
@@ -761,9 +842,9 @@ class AnswerTests(unittest.TestCase):
             ("gpu", ("loading", "paused"), ("paused", "queued"), (0, 1)),
             ("phone", ("loading", "paused"), ("failed", "paused"), (0,)),
             ("gpu", ("waiting", "paused"), ("queued", "paused"), ()),
-            ("phone", ("waiting", "paused"), ("queued", "paused"), ()),
+            ("phone", ("waiting", "paused"), ("failed", "paused"), (0,)),
             ("gpu", ("waiting", "waiting"), ("waiting", "queued"), ()),
-            ("phone", ("waiting", "waiting"), ("waiting", "queued"), ()),
+            ("phone", ("waiting", "waiting"), ("failed", "failed"), (0, 1)),
             ("gpu", ("queued", "waiting"), ("waiting", "queued"), ()),
         )
         for pane, states, expected, changed in cases:
@@ -789,13 +870,17 @@ class AnswerTests(unittest.TestCase):
                         name = f"ai-answer-{ident}.json"
                         self.assertEqual(self.files()[name], before[name])
                 active = recovered.current(pane)
-                self.assertIn(active["state"], ("waiting", "paused"))
+                if active is not None:
+                    self.assertIn(active["state"], ("waiting", "paused"))
                 if "failed" in expected:
                     self.assertEqual(recovered.get(ids[0])["error"], "restart")
                 self.disk.writes.clear()
                 again = answers.AnswerStore(self.disk)
-                self.assertEqual(again.snapshot(), recovered.snapshot())
-                self.assertEqual(self.disk.writes, [])
+                if pane == "phone" and expected == ("paused", "queued"):
+                    self.assertEqual(again.get(ids[1])["state"], "failed")
+                else:
+                    self.assertEqual(again.snapshot(), recovered.snapshot())
+                    self.assertEqual(self.disk.writes, [])
                 # A legacy waiting file must never be written back as waiting.
                 for ident in ids:
                     record, _ = self.disk.read_json(f"ai-answer-{ident}.json", {})
@@ -804,7 +889,7 @@ class AnswerTests(unittest.TestCase):
                         self.assertEqual(recovered.note(ident, tokens=1)["state"], state)
                         record, _ = self.disk.read_json(f"ai-answer-{ident}.json", {})
                         self.assertEqual(record["answer"]["state"], "queued")
-                if "failed" not in expected:
+                if "failed" not in expected and pane == "gpu":
                     recovered.cancel(active["id"])
                     promoted = recovered.current(pane)
                     self.assertEqual(promoted["state"], "waiting")
@@ -814,6 +899,41 @@ class AnswerTests(unittest.TestCase):
                     self.assertEqual(
                         recovered.append(ident, promoted["bytes"], b"!", True, "stop")["text"], "partial é!"
                     )
+
+    def test_reconciliation_write_failure_keeps_recovery_and_retries_on_any_save(self):
+        ident = self.make_state("answering")
+        done = self.make_state("done", "phone")
+        rev = self.store.rev
+        with patch.object(self.disk, "write_json", side_effect=OSError(errno.ENOSPC, "storage full")):
+            recovered = answers.AnswerStore(self.disk)
+        row = recovered.get(ident)
+        self.assertEqual((row["state"], row["text"]), ("paused", "prefix"))
+        self.assertEqual(recovered.latest("phone")["id"], done)
+        self.assertEqual(recovered.rev, rev + 1)
+        saved, _ = self.disk.read_json(f"ai-answer-{ident}.json", {})
+        self.assertEqual(saved["answer"]["state"], "answering")
+        recovered.note(done, tokens=1)
+        saved, _ = self.disk.read_json(f"ai-answer-{ident}.json", {})
+        self.assertEqual(saved["answer"], row)
+        self.assertFalse(recovered._recoveries)
+        self.assertEqual(answers.AnswerStore(self.disk).get(ident), row)
+
+    def test_service_starts_when_reconciliation_write_fails(self):
+        ident = self.make_state("answering")
+        self.addCleanup(gpu_link_server.stop)
+        with patch.object(self.disk, "write_json", side_effect=OSError(errno.ENOSPC, "storage full")):
+            recovered = answers.AnswerStore(self.disk)
+            service = gpu_link_server.start(
+                recovered,
+                {"OPOS_GPU_LINK": "1", "OPOS_GPU_LINK_PORT": "0", "XDG_STATE_HOME": str(self.root)},
+            )
+        self.assertIsNotNone(service)
+        self.assertIs(gpu_link_server.service(), service)
+        self.assertEqual(recovered.get(ident)["state"], "paused")
+        again = answers.AnswerStore(self.disk)
+        saved, _ = self.disk.read_json(f"ai-answer-{ident}.json", {})
+        self.assertEqual(saved["answer"]["state"], "paused")
+        self.assertEqual(again.get(ident)["text"], "prefix")
 
     def test_startup_second_write_failure_converges_on_retry(self):
         self.make_state("loading", "gpu")
@@ -825,15 +945,16 @@ class AnswerTests(unittest.TestCase):
             (baseline_root / name).write_bytes(raw)
         baseline_disk = FailingStore(baseline_root)
         expected = answers.AnswerStore(baseline_disk)
-        self.assertEqual(len(baseline_disk.writes), 2)
+        self.assertEqual(len(baseline_disk.writes), 3)
         self.assertEqual(expected.rev, self.store.rev + 1)
         self.assertEqual(expected.get(phone)["state"], "failed")
-        self.assertEqual(expected.get(queued)["state"], "waiting")
+        self.assertEqual(expected.get(queued)["state"], "failed")
         self.disk.writes.clear()
         self.disk.remaining = 2
-        with self.assertRaises(OSError):
-            answers.AnswerStore(self.disk)
-        self.assertEqual(len(self.disk.writes), 1)
+        partial = answers.AnswerStore(self.disk)
+        self.assertEqual(len(self.disk.writes), 2)
+        self.assertEqual(partial.get(phone)["state"], "failed")
+        self.assertEqual(len(partial._recoveries), 1)
         self.disk.writes.clear()
         recovered = answers.AnswerStore(self.disk)
         self.assertEqual(len(self.disk.writes), 1)
@@ -850,6 +971,33 @@ class AnswerTests(unittest.TestCase):
         self.assertEqual(answers.AnswerStore(self.disk).snapshot(), recovered.snapshot())
         self.assertEqual(self.disk.writes, [])
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_recovery_directory_error_remains_pending_until_synced(self):
+        ident = self.make_state("loading")
+        self.disk.writes.clear()
+        fsync = os.fsync
+        attempts = []
+
+        def synced(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                attempts.append("directory")
+                raise OSError(errno.EIO, "directory sync failed")
+            return fsync(fd)
+
+        with patch("opos.store.os.fsync", synced):
+            recovered = answers.AnswerStore(self.disk)
+            self.assertEqual(recovered._recoveries, {ident})
+            self.assertEqual(self.disk.writes, [])
+            recovered._retry_recoveries()
+            self.assertEqual(recovered._recoveries, {ident})
+        self.assertEqual(attempts, ["directory", "directory"])
+        recovered._retry_recoveries()
+        self.assertEqual(recovered._recoveries, set())
+        self.assertEqual(self.disk.writes, [f"ai-answer-{ident}.json"])
+        record, _ = self.disk.read_json(f"ai-answer-{ident}.json", {})
+        self.assertEqual(record["answer"], recovered.get(ident))
+        self.assertEqual(record["answer"]["state"], "paused")
+
     def test_restart_revision_and_only_changed_records_are_written(self):
         gpu = self.make_state("loading")
         phone = self.make_state("answering", "phone")
@@ -860,12 +1008,12 @@ class AnswerTests(unittest.TestCase):
         self.disk.writes.clear()
         recovered = answers.AnswerStore(self.disk)
         self.assertEqual(recovered.rev, rev + 1)
-        self.assertEqual(set(self.disk.writes), {f"ai-answer-{ident}.json" for ident in (gpu, phone)})
-        self.assertEqual(len(self.disk.writes), 2)
-        for ident in (gpu, phone):
+        self.assertEqual(set(self.disk.writes), {f"ai-answer-{ident}.json" for ident in (gpu, phone, queued)})
+        self.assertEqual(len(self.disk.writes), 3)
+        for ident in (gpu, phone, queued):
             self.assertEqual(recovered.get(ident)["rev"], rev + 1)
-        self.assertEqual(recovered.get(queued)["rev"], self.store.get(queued)["rev"])
-        self.assertEqual(recovered.get(queued)["state"], "waiting")
+        self.assertEqual(recovered.get(queued)["rev"], rev + 1)
+        self.assertEqual(recovered.get(queued)["state"], "failed")
         path = f"ai-answer-{unchanged}.json"
         self.assertEqual(self.files()[path], before[path])
         self.disk.writes.clear()
@@ -896,7 +1044,9 @@ class AnswerTests(unittest.TestCase):
             result = self.store.append(ident, 0, b"durable")
             self.disk.events.append("append returned")
         self.assertEqual(self.disk.writes, [f"ai-answer-{ident}.json"])
-        self.assertEqual(self.disk.events, ["flushed", "write finished", "append returned"])
+        self.assertEqual(
+            self.disk.events, ["flushed"] * (2 if os.name == "posix" else 1) + ["write finished", "append returned"]
+        )
         record, _ = self.disk.read_json(self.disk.writes[0], {})
         self.assertEqual(record["answer"], result)
         self.assertEqual(set(record), {"schema", "answer", "final_offset", "seq"})
@@ -938,6 +1088,12 @@ class AnswerTests(unittest.TestCase):
                 newest = self.store.ask(pane, "queued")
                 self.assertEqual(self.store.latest(pane), newest)
                 self.assertEqual(self.store.latest(other_pane), other)
+
+    def test_negative_clock_answer_loads_after_restart(self):
+        with patch("opos.ai_answers.time.time", return_value=-5):
+            row = self.store.ask("gpu", "question")
+        self.assertEqual(row["asked"], 0)
+        self.assertEqual(answers.AnswerStore(self.disk).get(row["id"]), row)
 
     def test_creation_order_survives_restart_with_equal_seconds(self):
         ids = ["f" * 12, "a" * 12, "0" * 12]
@@ -1093,6 +1249,7 @@ class AnswerTests(unittest.TestCase):
             second = answers.shared()
             self.assertIsNot(first, second)
             self.assertIs(answers.shared(), second)
+            row.update(state="failed", error="restart", rev=row["rev"] + 1)
             self.assertEqual(second.get(row["id"]), row)
         self.assertEqual(os.environ.get("XDG_STATE_HOME"), previous)
 

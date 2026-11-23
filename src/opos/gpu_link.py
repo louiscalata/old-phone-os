@@ -30,7 +30,7 @@ from typing import Any, BinaryIO
 
 from opos import ai_answers as answers_api
 from opos import gpu_link_proto as proto
-from opos.store import Store
+from opos.store import DurabilityError, Store
 
 HISTORY_LIMIT = 64
 LINK_SECONDS = 2.5
@@ -106,6 +106,13 @@ class LinkService:
         self._pending: tuple[str, bytes, float] | None = None
         self._denials = 0
         self._pc: tuple[str, bytes] | None = None
+        self._pairing_sweep_pending = True
+        try:
+            self._store.sweep_temps("gpu-link-pc.json")
+        except OSError:
+            pass
+        else:
+            self._pairing_sweep_pending = False
         saved, _ = self._store.read_json("gpu-link-pc.json", {})
         key = proto.unhex(saved.get("key"), 32)
         if key is not None and proto.valid_label(saved.get("label")):
@@ -113,6 +120,8 @@ class LinkService:
         self._status: dict | None = None
         self._last_status: float | None = None
         self._lease: dict | None = None
+        self._ending_answer: str | None = None
+        self._storage_fault: str | None = None
         self._speed: dict | None = None
         self._history: OrderedDict[bytes, tuple[str, dict | None, int | None, bytes]] = OrderedDict()
         self._poll = 0
@@ -281,6 +290,12 @@ class LinkService:
             except proto.ProtoError as err:
                 reply = _error(413 if err.code == "too_long" else 400, err.code)
             except OSError:
+                if auth is not None:
+                    try:
+                        answer = self._answers.current("gpu") if route[0] in ("work", "text", "status") else None
+                    except OSError:
+                        answer = None
+                    self._storage_fault = answer["id"] if answer is not None else ""
                 # Work can release the lock while waiting. Never roll back tokens
                 # consumed by another request during that wait.
                 if method == "POST" and target.startswith("/v1/runs/"):
@@ -349,7 +364,14 @@ class LinkService:
             if not self._matches_pending(code):
                 return False
             label, key, _ = self._pending
-            self._store.write_json("gpu-link-pc.json", {"label": label, "key": key.hex()})
+            if self._pairing_sweep_pending:
+                self._store.sweep_temps("gpu-link-pc.json")
+                self._pairing_sweep_pending = False
+            if self._ending_answer is not None or self._pc is None or self._pc[1] != key:
+                self._end_pc_answer()
+            self._store.write_json("gpu-link-pc.json", {"label": label, "key": key.hex()}, durable=True)
+            if self._pc is not None and self._pc[1] != key:
+                self._poll += 1
             self._epoch = self._rand(16)
             self._nonces.clear()
             self._pc = label, key
@@ -372,20 +394,22 @@ class LinkService:
             self._denials = 0
 
     def forget(self) -> bool:
-        """Pause live work before removing its PC; failed removal keeps the PC.
-
-        These are two durable files: if removal fails after a successful pause,
-        the answer stays safely paused and the owner may retry forget.
-        """
+        """End handed-out work and remove its PC, retaining failed endings for retry."""
         with self._changed:
+            self._pairing_sweep_pending = True
+            self._store.sweep_temps("gpu-link-pc.json")
+            self._pairing_sweep_pending = False
             if self._pc is None:
                 return False
             try:
-                self._pause()
+                self._end_pc_answer()
+            except DurabilityError:
+                raise
             except Exception:
-                # Revoke the PC now, but retain the lease so tick retries the pause.
-                self._lease["failed"] = True
-            self._store.write_json("gpu-link-pc.json", {})
+                # Revoke the PC now; tick retries cancellation before any new offer.
+                if self._lease is not None:
+                    self._lease["failed"] = True
+            self._store.write_json("gpu-link-pc.json", {}, durable=True)
             self._pc = self._status = self._last_status = None
             self._history.clear()
             self._epoch = self._rand(16)
@@ -394,6 +418,18 @@ class LinkService:
             self._poll += 1
             self._changed.notify_all()
             return True
+
+    def _end_pc_answer(self) -> None:
+        """Cancel work seen by a PC, keeping untouched queued questions available."""
+        answer = (
+            self._answers.get(self._ending_answer) if self._ending_answer is not None else self._answers.current("gpu")
+        )
+        if answer is not None and answer["state"] not in answers_api.FINAL:
+            if answer["state"] in ("paused", "loading", "answering") or answer["text"] or answer["where"]:
+                self._ending_answer = answer["id"]
+                self.cancel(answer["id"])
+        self._lease = None
+        self._ending_answer = None
 
     def _remember(self, lease: bytes, state: str, post: dict | None = None, acked: int | None = None) -> None:
         if self._pc is None:
@@ -411,7 +447,9 @@ class LinkService:
                 self._lease = None
             try:
                 answer = self._answers.cancel(answer_id)
-            except (OSError, answers_api.AnswerError):
+                self._clear_storage_fault(answer_id)
+            except Exception:
+                self._storage_fault = answer_id
                 self._lease = old
                 raise
             if matching:
@@ -424,10 +462,12 @@ class LinkService:
         if old is not None:
             try:
                 self._answers.pause(old["answer"])
+                self._clear_storage_fault(old["answer"])
             except answers_api.StateError:
                 # The answer already left loading/answering outside this service.
                 pass
             except Exception:
+                self._storage_fault = old["answer"]
                 self._lease = old
                 raise
             self._changed.notify_all()
@@ -441,6 +481,7 @@ class LinkService:
                     self._lease = None
                     try:
                         self._answers.fail(live["answer"], status["error"])
+                        self._clear_storage_fault(live["answer"])
                     except (OSError, answers_api.AnswerError):
                         self._lease = live
                         raise
@@ -504,6 +545,8 @@ class LinkService:
         return Reply(204)
 
     def _offer(self) -> Reply | None:
+        if self._ending_answer is not None:
+            self._end_pc_answer()
         old = self._lease
         if old is not None:
             answer = self._answers.get(old["answer"])
@@ -515,12 +558,14 @@ class LinkService:
                 return None
             if answer["state"] in ("loading", "answering"):
                 answer = self._answers.pause(answer["id"])
+                self._clear_storage_fault(answer["id"])
             if answer["state"] not in ("waiting", "paused"):
                 return _error(400, "request")
         lease = self._rand(16)
         body = proto.work_reply(lease, self._model_hash, answer["question"], answer["text"])
         if old is None:
             self._answers.begin(answer["id"])
+            self._clear_storage_fault(answer["id"])
         self._lease = {
             "id": lease,
             "answer": answer["id"],
@@ -573,6 +618,7 @@ class LinkService:
             return _error(404, "lease")
         if post["done"] and live is not None and live["id"] == lease:
             self._lease = None
+        stored_bytes = self._answers.get(answer_id)["bytes"]
         try:
             answer = self._answers.append(answer_id, **post)
         except (OSError, answers_api.AnswerError) as err:
@@ -586,6 +632,8 @@ class LinkService:
             raise
         # Retry metadata without requiring optional speed fields from the PC.
         self._note_speed(answer_id, final=post["done"])
+        if answer["bytes"] > stored_bytes or answer["state"] in answers_api.FINAL:
+            self._clear_storage_fault(answer_id)
         if post["done"]:
             self._remember(lease, "done", post, answer["bytes"])
         self._changed.notify_all()
@@ -597,6 +645,12 @@ class LinkService:
             if self._closed:
                 return
             self._expire()
+            if self._ending_answer is not None:
+                try:
+                    self._end_pc_answer()
+                except OSError:
+                    self._storage_fault = self._ending_answer or ""
+                    return
             if self._lease is not None:
                 last = self._lease["sent"]
                 if last is not None and self._last_status is not None:
@@ -606,15 +660,22 @@ class LinkService:
                 if self._lease["failed"] or stale or (last is not None and self._clock() - last >= LINK_SECONDS):
                     try:
                         self._pause()
-                    except (OSError, answers_api.StateError):
+                    except OSError:
+                        return
+                    except answers_api.StateError:
                         # Keep the lease until the pause can be made durable.
                         return
             else:
+                answer = None
                 try:
                     answer = self._answers.current("gpu")
                     if answer is not None and answer["state"] in ("loading", "answering"):
                         self._answers.pause(answer["id"])
-                except (OSError, answers_api.StateError):
+                        self._clear_storage_fault(answer["id"])
+                except OSError:
+                    self._storage_fault = answer["id"] if answer is not None else ""
+                    return
+                except answers_api.StateError:
                     # Retry reconciliation on the next tick, even without a PC.
                     return
             try:
@@ -623,9 +684,17 @@ class LinkService:
                 # A cache read failed. Retry on the next tick without publishing it.
                 return
 
+    def _clear_storage_fault(self, answer_id: str) -> None:
+        if self._storage_fault == answer_id:
+            self._storage_fault = None
+
     def snapshot(self) -> dict:
         """Return copies of display-only data, never keys, nonces or leases."""
         with self._lock:
+            if self._storage_fault:
+                answer = self._answers.get(self._storage_fault)
+                if answer is None or answer["state"] in answers_api.FINAL:
+                    self._storage_fault = None
             pending = None
             if self._pending is not None:
                 label, key, since = self._pending
@@ -643,6 +712,7 @@ class LinkService:
                     live=self._last_status is not None and self._clock() - self._last_status < LINK_SECONDS,
                 )
             return {
+                "storage": "error" if self._storage_fault is not None else None,
                 "model": self._model.copy(),
                 "pc": pc,
                 "pending": pending,
