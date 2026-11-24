@@ -10,9 +10,17 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from opos import calllog, clock_page, contacts_page, inbox, lockpin, notes_page, store
 from opos.call_events import CallEvent
+
+try:
+    ZoneInfo("UTC")
+except ZoneInfoNotFoundError:  # e.g. Windows without the tzdata package, which the Windows job here runs on
+    ZONE_DATABASE = False
+else:
+    ZONE_DATABASE = True
 
 if os.name == "nt":
     import msvcrt
@@ -172,6 +180,8 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
         for name, app in readers:
             for fault in ("permission", "directory"):
                 with self.subTest(name=name, fault=fault), tempfile.TemporaryDirectory() as root:
+                    if app is clock_page and not ZONE_DATABASE:
+                        self.skipTest("needs the IANA time zone database (tzdata)")
                     with patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_LOCK": "1", "OPOS_APPS": "calls"}):
                         app.reset()
                         try:

@@ -196,7 +196,7 @@ class PageState:
                         and pc
                         and pc["live"]
                         and pc["state"] == "ready"
-                        and link.get("storage") != "error"
+                        and not link.get("storage_notice")
                     ),
                     "answer": gpu,
                     "link": link,
@@ -465,11 +465,11 @@ function cableState(p){
  var pc=p.link&&p.link.pc;
  if(!pc)return '';
  if(!pc.live)return 'out';
- return p.link.storage==='error'||pc.state==='copying'?'wait':'ok';
+ return p.link.storage==='error'&&!p.link.storage_notice||pc.state==='copying'?'wait':'ok';
 }
 function cableWords(p){
  var state=cableState(p),a=p.answer,pc=p.link&&p.link.pc,open=!!(a&&OPEN.indexOf(a.state)>=0);
- if(p.link&&p.link.storage==='error')return storageWords(p.link)+(state==='wait'?' Wait before unplugging.':'');
+ if(p.link&&p.link.storage==='error'&&!p.link.storage_notice)return storageWords(p.link)+(state==='wait'?' Wait before unplugging.':'');
  var stuck=!!pc&&(pc.state==='stopping'||pc.state==='error');
  if(state==='')return '';
  if(state==='out'){
@@ -509,7 +509,7 @@ function drawPane(name,p){
 function line(id,value){text(id,value);G(id).hidden=!value}
 function targets(){return (pane?[pane]:['phone','gpu']).filter(function(n){return n!=='gpu'||current&&current.gpu.link})}
 function askingBusy(){return targets().some(function(n){var p=current&&current[n],a=p&&p.answer;
- return a&&OPEN.indexOf(a.state)>=0||n==='gpu'&&p&&p.link&&p.link.storage==='error'})}
+ return a&&OPEN.indexOf(a.state)>=0||n==='gpu'&&p&&p.link&&p.link.storage_notice})}
 function buttons(){
  var disabled=!current||!targets().length||askingBusy();G('ask').disabled=disabled;
  text('ask',pane==='gpu'?'Ask the GPU':pane==='phone'||!current.gpu.link?'Ask the phone model':'Ask both models');

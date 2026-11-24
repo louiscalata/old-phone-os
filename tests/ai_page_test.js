@@ -74,8 +74,9 @@ test('startup read faults and recovery warnings stay visible and block GPU asks'
    s.gpu.link.storage_notice=notice;s.gpu.ready=false;
    await w.show(s);
    assert.equal(w.get('gpu-speed').textContent,notice);
-   // Existing page-script behavior; waiting does not clear a startup notice.
-   assert.equal(w.get('gpu-cable').textContent,notice+' Wait before unplugging.');
+   // Waiting cannot clear a startup notice, so the cable line stays about the cable.
+   assert.equal(w.get('gpu-cable').textContent,'Connected. Safe to unplug.');
+   assert.equal(w.get('gpu-cable').dataset.cable,'ok');
    const blocked=search!=='?pane=phone';
    assert.equal(w.get('ask').disabled,blocked);
    for(const button of w.get('presets').children)assert.equal(button.disabled,blocked);
@@ -84,6 +85,38 @@ test('startup read faults and recovery warnings stay visible and block GPU asks'
     assert.deepEqual(JSON.parse(w.requests[0].options.body).panes,['phone']);
    }
   }
+ }
+});
+
+test('a startup notice leaves the cable line to the cable and the saved answer',async()=>{
+ const notice='A saved answer was damaged and moved aside. Restart AI mode to continue.';
+ const w=world();let rev=0;
+ for(const live of [true,false])for(const answerState of [null,'answering','paused','done']){
+  const s=snapshot(++rev);s.gpu.link.pc={...pc(),live};s.gpu.link.storage='error';s.gpu.link.storage_notice=notice;
+  s.gpu.ready=false;s.gpu.answer=answerState?answer(answerState):null;await w.show(s);
+  const open=answerState==='answering'||answerState==='paused';
+  const saved=open?' The answer is saved and continues when the PC is ready again.':'';
+  const expected=live?(open?'Connected. Safe to unplug: the answer is saved and continues when the PC is ready again.':'Connected. Safe to unplug.')
+   :(open?'Not connected.'+saved:'Not connected. Check the cable and the PC.');
+  assert.equal(w.get('gpu-cable').textContent,expected,'live='+live+' answer='+answerState);
+  assert.equal(w.get('gpu-cable').dataset.cable,live?'ok':'out');
+  assert.doesNotMatch(w.get('gpu-cable').textContent,/Wait before unplugging|damaged|restart/i);
+  assert.match(w.get(answerState&&answer(answerState).tps!=null?'gpu-state':'gpu-speed').textContent,/^A saved answer was damaged/);
+ }
+});
+
+test('a request or write fault does not disable Ask; only a startup notice does',async()=>{
+ for(const search of ['', '?pane=gpu', '?pane=phone']){
+  const w=world(search);
+  const s=snapshot(1);s.gpu.link.pc=pc();s.gpu.link.storage='error';s.gpu.link.storage_notice='';await w.show(s);
+  assert.equal(w.get('ask').disabled,false,'a transient fault must not block asking ('+search+')');
+  for(const button of w.get('presets').children)assert.equal(button.disabled,false);
+  assert.equal(w.get('gpu-cable').textContent,'The phone could not save the answer. Wait before unplugging.');
+  const n=snapshot(2);n.gpu.link.pc=pc();n.gpu.link.storage='error';n.gpu.link.storage_notice='A saved answer was damaged and moved aside. Restart AI mode to continue.';
+  await w.show(n);
+  assert.equal(w.get('ask').disabled,search!=='?pane=phone');
+  const c=snapshot(3);c.gpu.link.pc=pc();c.gpu.link.storage=null;c.gpu.link.storage_notice='';await w.show(c);
+  assert.equal(w.get('ask').disabled,false);
  }
 });
 

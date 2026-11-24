@@ -282,8 +282,14 @@ For an unreadable file, restore access first. For a quarantined file, the next s
 clears the notice if they can be read and validated. Reconstructing LinkService alone does not clear it. The default
 `/ai` view refuses its combined question and presets while the notice stands. Phone-only questions still work through
 `/ai?pane=phone`, `/api/ai` with `panes: ["phone"]`, and `AnswerStore.ask("phone", ...)`.
-The current page also appends "Wait before unplugging." to a startup notice when the PC is live; waiting cannot clear
-that notice, and it replaces the cable line's saved-answer sentence. Follow the notice's restart instruction instead.
+The page shows a startup notice as the GPU status line. The cable line keeps describing the cable and the open answer
+("Connected. Safe to unplug: the answer is saved and continues when the PC is ready again."); it does not say "Wait
+before unplugging.", because waiting cannot clear a notice. Follow the notice's restart instruction instead.
+
+A request or write fault (`storage` is `"error"` and `storage_notice` is empty) is only a message. The page shows its
+words, and the cable line asks to wait before unplugging a live PC, but Ask stays enabled and the GPU pane stays
+ready: with no answer open the flag stays set for the whole service instance, so it must not block questions after the
+fault has passed. Only a startup notice disables the GPU Ask controls and marks the GPU pane not ready.
 
 Pairing and model-cache files use ordinary Store reads, like the everyday apps: an unreadable or corrupt file is
 quarantined and the caller starts empty. The link can start without that cache or pairing; it rehashes the model and
