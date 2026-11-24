@@ -114,6 +114,27 @@ class TestLocalRouteIsVerified(unittest.TestCase):
         result = muse.explain(FACTS, routes, env={}, opener=Servers(local_models=model_list("nvidia-aceinstruct-1.5b")))
         self.assertEqual(result["engine"], "NVIDIA AceInstruct 1.5B")
 
+    def test_nvidia_helper_selects_environment_id_before_verification(self):
+        env = {"OPOS_LLAMA_ID": "nvidia-aceinstruct-1.5b", "OPOS_ON_PHONE": "1"}
+        for free in (2000, 5000):
+            with self.subTest(free=free):
+                self.assertEqual(muse.label(assist.ask_route(env, free)), "NVIDIA AceInstruct 1.5B, on this phone")
+                servers = Servers(local_models=model_list(LLAMA_1B, LLAMA_3B, env["OPOS_LLAMA_ID"]))
+                result = assist.answer(QUESTION, env=env, opener=servers, free=free, context=FACTS)
+                self.assertEqual(result["engine"], "NVIDIA AceInstruct 1.5B")
+                self.assertEqual(json.loads(servers.sent_to_local()[1][2])["model"], env["OPOS_LLAMA_ID"])
+
+    def test_nvidia_explain_selects_environment_id_before_verification(self):
+        env = {"OPOS_LLAMA_ID": "nvidia-aceinstruct-1.5b", "OPOS_ON_PHONE": "1"}
+        for free in (2000, 5000):
+            with self.subTest(free=free):
+                routes = assist.explain_routes(env, free)
+                self.assertEqual((routes[0].model, routes[0].name), (env["OPOS_LLAMA_ID"], "NVIDIA AceInstruct 1.5B"))
+                servers = Servers(local_models=model_list(LLAMA_1B, LLAMA_3B, env["OPOS_LLAMA_ID"]))
+                result = muse.explain(FACTS, routes, env={}, opener=servers)
+                self.assertEqual(result["engine"], "NVIDIA AceInstruct 1.5B")
+                self.assertEqual(json.loads(servers.sent_to_local()[1][2])["model"], env["OPOS_LLAMA_ID"])
+
     def assert_nothing_private_sent_to_local(self, servers):
         for method, url, data in servers.sent_to_local():
             self.assertEqual((method, url, data), ("GET", LOCAL_BASE + "/models", ""))

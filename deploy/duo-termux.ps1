@@ -5,10 +5,11 @@
 # adb reverse makes a Glimmer server on this computer's 127.0.0.1:1234 answer on the phone's.
 # Undo: uninstall com.termux and com.termux.api and delete /sdcard/Download/opos.
 #
-#   powershell -File deploy\duo-termux.ps1 -ApkDir <dir with the two APKs> [-Model <file.gguf>] [-Bench 3]
+#   powershell -File deploy\duo-termux.ps1 -ApkDir <dir with the two APKs> [-Model <file.gguf>] [-LlamaId <model-id>] [-Bench 3]
 param(
     [Parameter(Mandatory = $true)][string]$ApkDir,
     [string]$Model = "",
+    [ValidateScript({ $_ -cmatch "\A[a-z0-9][a-z0-9.-]{0,63}\z" })][string]$LlamaId,
     [int]$Bench = 0,
     [int]$SetupTimeoutS = 2400
 )
@@ -47,6 +48,12 @@ Sh "mkdir -p $drop; rm -f $drop/status $drop/setup.log" | Out-Null
 Adb push $tmp "$drop/opos-src.tar.gz" | Out-Null
 Remove-Item $tmp
 Adb push (Join-Path $PSScriptRoot "termux-setup.sh") "$drop/termux-setup.sh" | Out-Null
+# Only the validated ASCII id enters the remote shell; printf writes exactly one line.
+if ($PSBoundParameters.ContainsKey("LlamaId")) {
+    Sh "printf '%s\n' '$LlamaId' > $drop/llama-id" | Out-Null
+} else {
+    Sh "rm -f $drop/llama-id" | Out-Null
+}
 if ($Model) {
     $size = (Get-Item $Model).Length
     if ((Sh "stat -c %s $drop/model.gguf 2>/dev/null || echo 0") -ne "$size") { "pushing model ($size bytes)"; Adb push $Model "$drop/model.gguf" | Out-Null }
