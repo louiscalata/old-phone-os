@@ -19,7 +19,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from opos import gpu_link_proto as proto
 from opos import gpu_link_server
@@ -1385,14 +1385,20 @@ class ServerStreamTests(unittest.TestCase):
 class ErrorFlushTests(unittest.TestCase):
     """A finished reader can outrun phone posting; preserve its bounded backlog."""
 
-    def exercise(self, source, refusal=None, pending=False, prefix=b"Saved "):
-        clock, events = Clock(), []
-        runner = standin.StandIn(None, emit=lambda line: events.append(("line", line)), clock=clock)
-        self.addCleanup(runner.close)
-        runner.pc = type("PC", (), {"epoch": b"fixture"})()
+    def exercise(self, source, refusal=None, pending=False, prefix=b"Saved ", ahead=b"", show_text=False, runner=None):
+        """Drive one failed job. `ahead` is text the phone already stored whose acknowledgement the tool never saw;
+        `runner` reuses one StandIn for a second job. The StandIn is kept in self.runner."""
+        events = []
+        if runner is None:
+            runner = standin.StandIn(None, emit=print, clock=Clock())
+            self.addCleanup(runner.close)
+            runner.pc = type("PC", (), {"epoch": b"fixture"})()
+        self.runner, clock = runner, runner.clock
+        runner.emit, runner.show_text = (lambda line: events.append(("line", line))), show_text
         runner.job = dict(lease="fixture", partial=prefix.decode())
         runner.source, runner.offset = source, len(prefix)
-        stored = bytearray(prefix)
+        stored = bytearray(prefix + ahead)
+        self.assertEqual(source.snapshot()[0][len(prefix) : len(prefix) + len(ahead)], ahead)
         posts, statuses = [], []
 
         def status(lease=None, tokens=None, tps=None, error=None):
@@ -1410,12 +1416,16 @@ class ErrorFlushTests(unittest.TestCase):
                 if refusal == 200:
                     return 200, dict(acked=1)
                 return refusal, {"stored": len(stored)} if refusal in (409, 413) else {}
-            self.assertEqual(post["offset"], len(stored))
-            stored.extend(post["text"].encode())
-            return 200, dict(acked=len(stored))
+            offset, text = post["offset"], post["text"].encode()
+            if offset == len(stored):
+                stored.extend(text)
+                return 200, dict(acked=len(stored))
+            if offset < len(stored) and stored[offset : offset + len(text)] == text:  # a repeat inside the stored text
+                return 200, dict(acked=offset + len(text))
+            return 409, dict(stored=len(stored))  # the phone's rule for a longer piece that starts inside its text
 
         if pending:
-            piece = standin.cut(source.snapshot()[0][runner.offset :], 256)
+            piece = ahead or standin.cut(source.snapshot()[0][runner.offset :], 256)
             runner.pending = (
                 proto.dumps(dict(offset=runner.offset, text=piece.decode(), done=False, finish=None)),
                 piece,
@@ -1474,11 +1484,79 @@ class ErrorFlushTests(unittest.TestCase):
         for refusal in (200, 400, 404, 409, 413, 500, standin.RejectedError(), OSError("connection lost")):
             with self.subTest(refusal=refusal):
                 source = self.failed_source(b"data: {}\n\n")
-                stored, posts, statuses, _ = self.exercise(source, refusal=refusal)
+                stored, posts, statuses, events = self.exercise(source, refusal=refusal)
                 self.assertEqual(len(posts), 1)
                 self.assertEqual(stored, b"Saved ")
                 if refusal != 404 and not isinstance(refusal, OSError):
                     self.assertEqual(statuses[-1][1], "server")
+                if refusal == 404:
+                    # The lease is gone: the job is closed and no failure status follows.
+                    self.assertIsNone(self.runner.job)
+                    self.assertFalse(any(error for _, error in statuses))
+                    self.assertIn(("line", "Lease ended; polling again"), events)
+
+    def test_error_flush_recovers_after_a_lost_acknowledgement(self):
+        # The phone stored a piece whose acknowledgement never arrived, so the tool's offset is behind the phone's and
+        # the first fresh 256-byte flush piece is a longer piece that starts inside the stored text (409 with `stored`).
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        for length in (7, 100, 255, len(data) - 6):  # whole characters are 7 bytes ("é🌿 "), so 100 and 255 are cut
+            for pending in (False, True):
+                with self.subTest(ahead=length, pending=pending):
+                    source = self.failed_source(b"data: {}\n\n")
+                    ahead = standin.cut(data[6 : 6 + length], length)
+                    stored, posts, statuses, events = self.exercise(source, ahead=ahead, pending=pending)
+                    self.assertEqual(stored, data)
+                    self.assertEqual(statuses[-1][1], "server")
+                    self.assertEqual(posts[0][1]["offset"], 6)
+                    if len(ahead) < len(standin.cut(data[6:], 256)):  # shorter: the phone answers 409 with its length
+                        self.assertEqual(posts[1][1]["offset"], 6 + len(ahead))
+                        self.assertIn(("line", f"Offset recovered; stored {6 + len(ahead)} bytes"), events)
+
+    def test_error_flush_ignores_a_stored_length_inside_a_character_or_past_the_buffer(self):
+        for stored_length in (7, 10**6):  # byte 7 is inside the two-byte first character after "Saved "
+            with self.subTest(stored=stored_length):
+                source = self.failed_source(b"data: {}\n\n")
+                runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+                self.addCleanup(runner.close)
+                runner.pc = Mock(epoch=b"fixture")
+                runner.pc.send.return_value = (409, dict(stored=stored_length))
+                runner.job, runner.source, runner.offset = dict(lease="fixture", partial="Saved "), source, 6
+                runner._post_error_tail(source.snapshot()[0])
+                self.assertEqual((runner.offset, runner.error_flush_stopped, runner.pc.send.call_count), (6, True, 1))
+
+    def test_flush_state_is_reset_for_the_next_job(self):
+        first = self.failed_source(b"data: {}\n\n")
+        _, posts, statuses, _ = self.exercise(first, refusal=500)  # the flush is refused, then the failure is sent
+        self.assertEqual((len(posts), statuses[-1][1]), (1, "server"))
+        runner = self.runner
+        self.assertIsNone(runner.job)
+        self.assertEqual((runner.error_posts, runner.error_flush_stopped), (0, False))
+        second = self.failed_source(b"data: {}\n\n")
+        stored, posts, _, _ = self.exercise(second, runner=runner)
+        self.assertEqual(stored, second.snapshot()[0])
+        self.assertGreater(len(posts), 1)
+
+    def test_flush_keeps_answer_text_out_of_event_lines_unless_asked(self):
+        for show_text in (False, True):
+            with self.subTest(show_text=show_text):
+                source = self.failed_source(b"data: {}\n\n")
+                _, posts, _, events = self.exercise(source, show_text=show_text)
+                lines = [line for kind, line in events if kind == "line" and line.startswith("Text: ")]
+                self.assertEqual(len(lines), len(posts) if show_text else 0)
+
+    def test_flush_acknowledgement_clears_the_post_failure_window(self):
+        source = self.failed_source(b"data: {}\n\n")
+        data = source.snapshot()[0]
+        piece = standin.cut(data[6:], 256)
+        runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+        self.addCleanup(runner.close)
+        runner.pc = Mock(epoch=b"fixture")
+        runner.pc.send.return_value = (200, dict(acked=6 + len(piece)))
+        runner.job, runner.source, runner.offset = dict(lease="fixture", partial="Saved "), source, 6
+        runner.post_failed_since, runner.last_failure_line = 5.0, 7.0
+        runner._post_error_tail(data)
+        self.assertEqual((runner.post_failed_since, runner.last_failure_line), (None, None))
+        self.assertEqual((runner.offset, runner.error_flush_stopped), (6 + len(piece), False))
 
     def test_maximum_utf8_backlog_fits_49_posts(self):
         source = self.failed_source(b"data: {}\n\n")

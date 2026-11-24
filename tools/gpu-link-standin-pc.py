@@ -731,6 +731,15 @@ class StandIn:
             self.emit(f"Text acknowledged; {self.offset} bytes")
             if self.show_text:
                 self.emit("Text: " + json.dumps(piece.decode(), ensure_ascii=True))
+        elif status in (409, 413) and "stored" in value:
+            # A lost acknowledgement can leave the phone ahead of this tool, so the fresh piece starts inside text the
+            # phone already holds. Take the stored length as normal posting does and keep flushing from there. The
+            # 49-post limit still counts this attempt, and a reply that makes no progress ends the flush.
+            stored = value["stored"]
+            if stored != self.offset and stored <= len(data) and cut(data, stored) == data[:stored]:
+                self.offset = stored
+                self.error_flush_stopped = False
+                self.emit(f"Offset recovered; stored {self.offset} bytes")
 
     def step(self):
         """Perform bounded work; callers close this object even after a failure."""
