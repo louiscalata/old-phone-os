@@ -218,7 +218,7 @@ A request that reaches the service and passes authentication gets a signed reply
 | 413 `too_long` | The raw JSON body exceeds its size limit. Reduce it. Oversized bodies on signed targets are normally refused as 401 before authentication. |
 | 416 `range` | Correct the range. This reply has no Content-Range header. |
 | 429 `rate` | Wait for the relevant token bucket, then retry with a new nonce on a signed route. |
-| 500 `state` | A storage read, recovery or write failed. A startup notice alone does not produce this reply or stop an intact open GPU answer resuming. Retain the text and retry an allowed operation with a new nonce. A final-post retry may reveal that the earlier write completed. |
+| 500 `state` | A storage read, recovery or write failed. A startup notice alone does not produce this reply or stop an intact open GPU answer resuming. Retain the text and retry an allowed operation with a new nonce. A final-post retry may reveal that the earlier write completed. The stand-in's retry limits are in section 9; retrying does not guarantee that work can resume. |
 
 Enrolment uses the state replies and framing errors listed under Bodies. Its replies and hello replies are unsigned.
 
@@ -254,7 +254,18 @@ The service remembers the last 64 finished and page-cancelled leases, oldest fir
   Other apps' writes sync the directory best effort and ignore its errors; only GPU Link's answer records and pairing
   file are acknowledged on a synced directory.
 - After the final post, with `done`, the phone accepts nothing more for that lease except an exact repeat of that post. While the lease is remembered, the repeat gets the same reply and changes nothing.
-- The planned companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset. The stand-in tool keeps a pending post only for retryable replies; after a transport failure it discards its source and pending text, and the next work request resumes from the text the phone stored.
+- The companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset.
+- The stand-in tool keeps its current lease, source and exact pending text-post body on a retryable error (`RetryError`).
+  This includes valid replies with status 500 or higher (including 500 `state`), 429, or 400 `state`.
+  A reply cut off in its status line or headers is retryable when the HTTP parser accepts the status line and the tool
+  detects the missing header terminator. Invalid reply bodies, stored offsets or text acknowledgements are also retryable.
+  These retries send the same JSON body bytes, including offset, text, done and finish, with a fresh nonce.
+  A plain connection error (refused, reset, timeout, or a body shorter than its declared Content-Length), or another
+  HTTP parser exception, closes the source and discards the lease and pending post, and clears the signing epoch.
+  A missing or wrong reply signature, oversized reply or compressed reply stops the tool instead of retrying.
+  After discarding generation or restarting, it can continue a resumable answer only when a work request succeeds.
+  It creates a new source from that reply's `partial`, starting posts at its UTF-8 byte length. Server mode sends the
+  question and `partial` as user and assistant messages; practice mode keeps that prefix in its simulated text.
 - The phone shows answers as plain text only.
 
 The phone's link snapshot includes `storage`: `"error"` while an answer-store startup notice stands, after a signed
@@ -268,9 +279,21 @@ it. A snapshot also clears it when its answer is final or gone. A failure with n
 service instance; unrelated answer saves do not clear it. This request/write flag is in memory and resets when LinkService is
 reconstructed. AnswerStore's deferred startup recovery writes do not set it: a recovery write that remains unwritten
 is not represented by this flag. A successful status alone is not evidence that unsaved text reached storage.
-When a connected planned companion holds unacknowledged text, keep it connected while it retries after storage recovers.
-Reconnect a disconnected one while its grant lasts so it can retry. The stand-in tool has no grant window and keeps no
-text across a transport failure, so it can only resume from the stored text.
+
+For the planned companion:
+When a connected PC holds unacknowledged text, keep it connected while it retries after storage recovers. Reconnect a
+disconnected PC while its grant lasts so it can retry.
+
+The stand-in tool has no grant window. Keep it running and connected while it retries a pending text post refused
+with 500 `state`. It retains the exact post body and retries about once a second; storage recovery can let that same
+post succeed without a new work request. If the lease ends or the phone cancels the answer, it drops the source and
+pending post. The failure limit for a pending text post is `--give-up-after` (default 300 seconds, 0 disables the limit).
+When that limit is reached, the tool exits with status 3 and discards generation and pending text. Successful status
+replies do not reset the pending text post's failure timer. With no pending text-post failure, an accepted exchange
+resets the consecutive failure timer: successful status replies between failed work polls can keep the tool retrying
+beyond 300 seconds.
+Retries alone do not guarantee that the phone can offer work; a refused work poll supplies no `partial` to resume.
+
 Enrol an unpaired PC for new work; a revoked lease cannot save
 its unsent text. For a fault with no answer, check storage and reconstruct the service after recovery; the instance
 flag is not a pending text count.
