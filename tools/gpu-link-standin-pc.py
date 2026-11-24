@@ -539,7 +539,7 @@ class StandIn:
         self.failed_since, self.last_failure_line = None, None
         self.post_failed_since = None
         self.retry_at, self.pending = 0, None
-        self.error_posts, self.error_flush_stopped = 0, False
+        self.error_posts, self.error_flush_stopped, self.error_recovered = 0, False, False
         self.started = clock()
 
     def close(self):
@@ -548,11 +548,12 @@ class StandIn:
             self.source.close()
         self.source, self.job, self.pending = None, None, None
         self.post_failed_since = None
-        self.error_posts, self.error_flush_stopped = 0, False
+        self.error_posts, self.error_flush_stopped, self.error_recovered = 0, False, False
 
     def _error_tail_pending(self, data):
         # A UTF-8 cut can leave three bytes of a 256-byte piece unused.
         # 49 posts cover the entire 12,288-byte buffer, including that rounding.
+        # The one offset recovery that a failed answer may use is not charged to them.
         return self.offset < len(data) and self.error_posts < 49 and not self.error_flush_stopped
 
     def _request(self, send):
@@ -698,7 +699,7 @@ class StandIn:
             raise ToolError("text post refused")
 
     def _post_error_tail(self, data):
-        """Drain at most 49 paced, non-final posts; stop at the first refusal."""
+        """Drain at most 49 paced, non-final posts, plus one uncounted offset recovery; stop at the first refusal."""
         if self.offset > len(data) or len(data) > proto.MAX_ANSWER_BYTES:
             raise ToolError("invalid buffered answer size")
         if not self._error_tail_pending(data):
@@ -731,14 +732,19 @@ class StandIn:
             self.emit(f"Text acknowledged; {self.offset} bytes")
             if self.show_text:
                 self.emit("Text: " + json.dumps(piece.decode(), ensure_ascii=True))
-        elif status in (409, 413) and "stored" in value:
+        elif status == 409 and "stored" in value and not self.error_recovered:
             # A lost acknowledgement can leave the phone ahead of this tool, so the fresh piece starts inside text the
-            # phone already holds. Take the stored length as normal posting does and keep flushing from there. The
-            # 49-post limit still counts this attempt, and a reply that makes no progress ends the flush.
+            # phone already holds and draws a 409 with its stored length (a 413 always repeats the tool's own offset).
+            # Take the stored length as normal posting does and keep flushing from there. A failed
+            # answer gets one such recovery, which is not charged to the 49 posts, so a full buffer is still flushed
+            # and a phone that keeps changing its stored length cannot keep the flush going. A reply that makes no
+            # progress, or reports a length that is not a whole-character prefix of the buffer, ends the flush.
             stored = value["stored"]
             if stored != self.offset and stored <= len(data) and cut(data, stored) == data[:stored]:
                 self.offset = stored
                 self.error_flush_stopped = False
+                self.error_recovered = True
+                self.error_posts -= 1
                 self.emit(f"Offset recovered; stored {self.offset} bytes")
 
     def step(self):

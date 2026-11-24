@@ -234,6 +234,8 @@ The shared example messages and signatures for both sides are in `tests/fixtures
 
 ## 9. Answer text, pause and resume
 
+The stand-in tool (`tools/gpu-link-standin-pc.py`, described in `tools/README.md`) follows these rules for the text it posts. One case differs from its usual retries: when the model stream fails, it posts the text it still holds in at most 49 paced posts of at most 256 bytes, plus at most one extra post after a 409 that reports the phone's stored length (it then continues from that length), does not retry any other refused piece, and then reports the failure. The phone keeps what it acknowledged, and a failed answer is not resumed.
+
 **Lease.** Each time the phone hands out work it creates a new `lease` of 16 random bytes and ties it to that PC. Text is accepted only when the lease is the current one for that answer, the signature is from the PC it was given to, and the answer's state is `loading` or `answering`. Replacing a live lease keeps the answer `loading` or `answering`. Callbacks from the replaced work reply cannot change the new lease. The phone drops the lease before saving a pause, cancellation or final post; a failed storage write restores the lease.
 
 The service remembers the last 64 finished and page-cancelled leases, oldest first, until Forget or service restart. Only a remembered finished lease accepts an exact final-post retry: the decoded offset, text bytes, done and finish must match. A replaced or cancelled lease's text post gets 404 `lease`. A forgotten lease also gets 404 `lease`. After restart an exact repeat of a final post gets 404 `lease` even though its stored answer is correct and complete. This record is separate from the 50-answer store.
