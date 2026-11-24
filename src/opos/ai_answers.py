@@ -124,7 +124,8 @@ class AnswerStore:
     that must never go back in time should also compare a value that changes
     with every start.
     Start-up keeps unreadable answer files and reports a notice. Store may move
-    corrupt files aside. Either notice blocks new GPU work until a fresh scan.
+    corrupt files aside. Either notice blocks new GPU questions until a fresh scan;
+    readable open GPU answers can still resume. Phone-only questions remain available.
 
     Each changing method first writes its answer, then replaces memory and
     retries pending recovery writes. A failed primary write leaves memory
@@ -183,16 +184,17 @@ class AnswerStore:
 
     def _read_record(self, name: str, ident: str) -> dict | None:
         try:
-            record, notice = self._store.read_json(name, None)
+            record, notice = self._store.read_json(
+                name, None, strict=True, validate=lambda value: self._valid_record(value, ident)
+            )
         except OSError:
             self._startup_notice = "The phone could not read a saved answer. Restore access and restart AI mode."
             return None
         if notice:
-            self._startup_notice = self._startup_notice or notice
+            self._startup_notice = self._startup_notice or (
+                "A saved answer was damaged and moved aside. Restart AI mode to continue."
+            )
         if record is None:
-            return None
-        if not self._valid_record(record, ident):
-            self._startup_notice = self._startup_notice or "A saved answer was damaged. New GPU work is stopped."
             return None
         return record
 

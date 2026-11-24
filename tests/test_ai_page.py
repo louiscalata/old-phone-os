@@ -74,6 +74,29 @@ class AiPage(unittest.TestCase):
     def ask(self, panes=("phone",), question="A public question"):
         return ai_page.post({"action": "ask", "question": question, "panes": list(panes)})
 
+    def test_startup_notice_refuses_gpu_and_combined_api_but_allows_phone(self):
+        path = Path(self.tmp.name) / "ai-answer-0123456789ab.json"
+        path.write_bytes(b"{bad")
+        self.answers = ai_answers.AnswerStore(Store(self.tmp.name))
+        self.enterContext(mock.patch.object(ai_answers, "shared", return_value=self.answers))
+        self.link.answers = self.answers
+        notice = self.answers.startup_notice
+        self.assertTrue(notice)
+        for panes in (("gpu",), ("phone", "gpu")):
+            with self.subTest(panes=panes):
+                before = self.answers.snapshot()
+                status, body = self.ask(panes)
+                self.assertEqual(status, 400)
+                self.assertEqual(body["error"], notice)
+                self.assertEqual(self.answers.snapshot(), before)
+        self.job(["Phone works"])
+        self.assertEqual(self.ask()[0], 200)
+        self.join_workers()
+        self.assertEqual(self.answers.snapshot()["answers"][0]["text"], "Phone works")
+        self.assertEqual(self.answers.startup_notice, notice)
+        with self.assertRaises(OSError):
+            self.answers.ask("gpu", "still refused")
+
     def test_registration_token_nonce_disclosure_and_home_unchanged(self):
         app = apps.by_id("ai")
         self.assertEqual((app.id, app.title, app.path), ("ai", "AI mode", "/ai"))

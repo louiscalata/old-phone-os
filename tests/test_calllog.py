@@ -64,6 +64,26 @@ class LocalCalls(unittest.TestCase):
         contacts_page.post({"action": "delete", "id": ident})
         self.assertEqual(calllog.snapshot()["calls"][0]["name"], "Ana")
 
+    def test_unreadable_contacts_do_not_drop_a_missed_call(self):
+        self.assertEqual(contacts_page.post({"action": "add", "name": "Ana", "number": NUMBER})[0], 200)
+        path = Path(self.tmp.name) / "contacts.json"
+        raw = path.read_bytes()
+        opened = Path.open
+
+        def unreadable(target, *args, **kwargs):
+            if target == path and args == ("rb",):
+                raise PermissionError("denied")
+            return opened(target, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", unreadable):
+            calllog.record(event(direction="incoming", practice=False))
+            calllog.record(event(state="ended", direction="incoming", practice=False, answered=False))
+        snap = calllog.snapshot()
+        self.assertEqual(snap["missed_count"], 1)
+        self.assertEqual(len(snap["calls"]), 1)
+        self.assertEqual(snap["calls"][0]["name"], "")
+        self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [raw])
+
     def test_unknown_name_and_real_adapter_event_are_not_inferred_as_practice(self):
         self.finish(practice=False)
         self.finish(2, number="+15550100", practice=False)
@@ -206,12 +226,10 @@ class LocalCalls(unittest.TestCase):
     def test_unreadable_file_and_failed_quarantine_do_not_destroy_the_original(self):
         self.finish()
         raw = self.path.read_bytes()
-        before = calllog.snapshot()
-        with mock.patch.object(Path, "open", side_effect=PermissionError("denied")), self.assertRaises(PermissionError):
-            calllog.snapshot()
-        self.assertEqual(self.path.read_bytes(), raw)
-        self.assertFalse(list(self.path.parent.glob("calls.json.bad-*")))
-        self.assertEqual(calllog.snapshot(), before)
+        with mock.patch.object(Path, "open", side_effect=PermissionError("denied")):
+            snap = calllog.snapshot()
+        self.assertIn("Started empty", snap["recovered"])
+        self.assertEqual(next(self.path.parent.glob("calls.json.bad-*")).read_bytes(), raw)
         self.path.write_bytes(b"broken")
         with mock.patch("opos.store.os.replace", side_effect=PermissionError("denied")):
             with self.assertRaises(OSError):

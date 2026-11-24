@@ -78,7 +78,8 @@ class LinkTests(unittest.TestCase):
         self.link = self.make_link()
         self.pc = FakePC(self.link)
         self.assertEqual(self.pc.hello().status, 200)
-        self.assertEqual(self.pc.status("ready").status, 200)
+        if self.link._pc is not None:
+            self.assertEqual(self.pc.status("ready").status, 200)
         with (
             patch.object(ai_answers, "shared", return_value=self.answers),
             patch.object(ai_page, "_service", return_value=self.link),
@@ -118,7 +119,7 @@ class LinkTests(unittest.TestCase):
                         self.assertEqual(page["gpu"]["link"]["storage"], "error")
                         self.assertFalse(page["gpu"]["ready"])
                         self.assertIn("could not read", page["gpu"]["link"]["storage_notice"])
-                        self.assertEqual(self.pc.work().status, 500)
+                        self.assertEqual(self.pc.work().status, 204)
                         with self.assertRaises(OSError):
                             self.answers.ask("gpu", "replacement")
                         before = self.answers.snapshot()
@@ -154,14 +155,26 @@ class LinkTests(unittest.TestCase):
         self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [damaged])
         self.assertEqual(page["gpu"]["link"]["storage"], "error")
         self.assertFalse(page["gpu"]["ready"])
-        self.assertIn("Started empty", page["gpu"]["link"]["storage_notice"])
-        self.assertEqual(self.pc.work().status, 500)
+        self.assertEqual(
+            page["gpu"]["link"]["storage_notice"],
+            "A saved answer was damaged and moved aside. Restart AI mode to continue.",
+        )
+        self.assertEqual(self.pc.work().status, 204)
         with self.assertRaises(OSError):
             self.answers.ask("gpu", "replacement")
 
     def test_startup_missing_answer_is_empty_and_ready_without_warning(self):
         self.enrolled()
-        page = self.restart_with_page()
+        missing = self.store.root / "ai-answer-0123456789ab.json"
+        glob = Path.glob
+
+        def disappeared(folder, pattern):
+            if folder == self.store.root and pattern == "ai-answer-*.json":
+                return iter([missing])
+            return glob(folder, pattern)
+
+        with patch.object(Path, "glob", disappeared):
+            page = self.restart_with_page()
         self.assertIsNone(page["gpu"]["answer"])
         self.assertTrue(page["gpu"]["ready"])
         self.assertIsNone(page["gpu"]["link"]["storage"])
@@ -170,6 +183,81 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(self.pc.work().status, 204)
         self.answers.ask("gpu", "new question")
         self.assertEqual(self.pc.work().status, 200)
+
+    def test_readable_gpu_resumes_beside_damaged_or_unreadable_phone(self):
+        self.enrolled()
+        for damage in ("json", "record", "denied"):
+            with self.subTest(damage=damage):
+                answer = self.answers.ask("gpu", "good question")
+                reply = self.pc.work()
+                self.assertEqual(reply.status, 200)
+                work = self.pc.data(reply)
+                prefix = "Kept café prefix"
+                self.assertEqual(self.pc.text(work["lease"], 0, prefix).status, 200)
+                phone = self.answers.ask("phone", "old phone question")
+                self.answers.cancel(phone["id"])
+                self.link.close()
+                path = self.store.root / f"ai-answer-{phone['id']}.json"
+                if damage == "json":
+                    path.write_bytes(b"{damaged")
+                elif damage == "record":
+                    self.store.write_json(path.name, {"answer": {"state": "bogus"}})
+                raw = path.read_bytes()
+                opened = Path.open
+
+                def unreadable(target, *args, path=path, opened=opened, **kwargs):
+                    if target == path and args == ("rb",):
+                        raise PermissionError(errno.EACCES, "denied")
+                    return opened(target, *args, **kwargs)
+
+                with patch.object(Path, "open", unreadable) if damage == "denied" else contextlib.nullcontext():
+                    page = self.restart_with_page()
+                    notice = self.answers.startup_notice
+                    self.assertTrue(notice)
+                    self.assertEqual(page["gpu"]["link"]["storage_notice"], notice)
+                    self.assertFalse(page["gpu"]["ready"])
+                    self.assertEqual(self.answers.get(answer["id"])["text"], prefix)
+                    reply = self.pc.work()
+                    self.assertEqual(reply.status, 200)
+                    resumed = self.pc.data(reply)
+                    self.assertEqual(resumed["partial"], prefix)
+                    reply = self.pc.text(resumed["lease"], len(prefix.encode()), " continued", done=True, finish="stop")
+                    self.assertEqual(reply.status, 200)
+                    self.assertEqual(self.answers.get(answer["id"])["text"], prefix + " continued")
+                    self.assertEqual(self.answers.startup_notice, notice)
+                if damage == "denied":
+                    self.assertEqual(path.read_bytes(), raw)
+                    self.assertFalse(list(path.parent.glob(path.name + ".bad-*")))
+                    path.unlink()
+                else:
+                    self.assertFalse(path.exists())
+                    self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [raw])
+                self.restart_with_page()
+                self.assertEqual(self.answers.startup_notice, "")
+
+    def test_unreadable_pairing_and_model_cache_do_not_stop_startup(self):
+        for name in ("gpu-link-pc.json", "gpu-link-model.json"):
+            with self.subTest(name=name):
+                self.enrolled()
+                self.link.close()
+                path = self.store.root / name
+                raw = path.read_bytes()
+                opened = Path.open
+
+                def unreadable(target, *args, path=path, opened=opened, **kwargs):
+                    if target == path and args == ("rb",):
+                        raise PermissionError(errno.EACCES, "denied")
+                    return opened(target, *args, **kwargs)
+
+                with patch.object(Path, "open", unreadable):
+                    page = self.restart_with_page()
+                self.assertEqual(page["gpu"]["link"]["model"]["state"], "ready")
+                self.assertEqual([p.read_bytes() for p in path.parent.glob(name + ".bad-*")], [raw])
+                self.assertEqual(self.answers.startup_notice, "")
+                if name == "gpu-link-pc.json":
+                    self.assertIsNone(page["gpu"]["link"]["pc"])
+                else:
+                    self.assertIsNotNone(page["gpu"]["link"]["pc"])
 
     def test_failed_forget_cancel_survives_restart(self):
         answer, w = self.work()

@@ -59,10 +59,10 @@ class UnreadableStore(Store):
         super().__init__(root)
         self.unreadable = unreadable
 
-    def read_json(self, name, default):
+    def read_json(self, name, default, **kwargs):
         if name == self.unreadable:
             raise PermissionError("read denied")
-        return super().read_json(name, default)
+        return super().read_json(name, default, **kwargs)
 
 
 class AnswerTests(unittest.TestCase):
@@ -799,9 +799,21 @@ with patch('opos.store.os.replace', side_effect=lambda *args: os._exit(9)):
                 self.assertEqual(recovered.rev, rev)
                 self.assert_files_preserved(before)
                 self.assertTrue(recovered.startup_notice)
+                notice = recovered.startup_notice
+                self.assertTrue(notice.endswith("restart AI mode.") or notice.endswith("Restart AI mode to continue."))
                 if damage == "unreadable":
                     self.assertEqual(path.read_bytes(), before[path.name])
                     self.assertFalse(list(self.root.glob(path.name + ".bad-*")))
+                else:
+                    self.assertFalse(path.exists())
+                    self.assertEqual(
+                        [p.read_bytes() for p in self.root.glob(path.name + ".bad-*")], [before[path.name]]
+                    )
+                    self.assertEqual(answers.AnswerStore(Store(self.root)).startup_notice, "")
+                recovered.ask("phone", "still usable")
+                self.assertEqual(recovered.startup_notice, notice)
+                recovered.snapshot()
+                self.assertEqual(recovered.startup_notice, notice)
                 with self.assertRaises(OSError):
                     recovered.ask("gpu", "replacement")
 

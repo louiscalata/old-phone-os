@@ -218,7 +218,7 @@ A request that reaches the service and passes authentication gets a signed reply
 | 413 `too_long` | The raw JSON body exceeds its size limit. Reduce it. Oversized bodies on signed targets are normally refused as 401 before authentication. |
 | 416 `range` | Correct the range. This reply has no Content-Range header. |
 | 429 `rate` | Wait for the relevant token bucket, then retry with a new nonce on a signed route. |
-| 500 `state` | Storage failed. Retain the text and retry an allowed operation with a new nonce. A final-post retry may reveal that the earlier write completed. |
+| 500 `state` | A storage read, recovery or write failed. A startup notice alone does not produce this reply or stop an intact open GPU answer resuming. Retain the text and retry an allowed operation with a new nonce. A final-post retry may reveal that the earlier write completed. |
 
 Enrolment uses the state replies and framing errors listed under Bodies. Its replies and hello replies are unsigned.
 
@@ -255,19 +255,41 @@ The service remembers the last 64 finished and page-cancelled leases, oldest fir
 - The companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset.
 - The phone shows answers as plain text only.
 
-The phone's link snapshot includes `storage`: `"error"` after a signed request returns 500 `state` for a storage error,
-or after a timer pause or service reconciliation write fails. The fault belongs to that GPU answer. It stays set while
+The phone's link snapshot includes `storage`: `"error"` while an answer-store startup notice stands, after a signed
+request returns 500 `state` for a storage error, or after a timer pause or service reconciliation write fails.
+The request or write fault belongs to that GPU answer. It stays set while
 that answer is open until a successful append stores new bytes, or a begin, pause, Stop, or terminal transition for that
 answer succeeds. This includes a status that pauses work or records the PC's error as a failed answer. Ordinary status
 posts, metadata saves, a save for another answer or the phone pane, and a repeat that stores no new bytes do not clear
 it. A snapshot also clears it when its answer is final or gone. A failure with no answer remains an error for that
-service instance; unrelated answer saves do not clear it. The flag is in memory and resets when LinkService is
+service instance; unrelated answer saves do not clear it. This request/write flag is in memory and resets when LinkService is
 reconstructed. AnswerStore's deferred startup recovery writes do not set it: a recovery write that remains unwritten
 is not represented by this flag. A successful status alone is not evidence that unsaved text reached storage.
 When a connected PC holds unacknowledged text, keep it connected while it retries after storage recovers. Reconnect a
 disconnected PC while its grant lasts so it can retry. Enrol an unpaired PC for new work; a revoked lease cannot save
 its unsent text. For a fault with no answer, check storage and reconstruct the service after recovery; the instance
 flag is not a pending text count.
+
+Answer files alone use strict Store reads: an I/O error other than a missing file leaves the original bytes in place.
+Invalid JSON, a wrong schema or an invalid answer record is moved to the Store's `.bad-<time>` recovery file without
+rewriting its bytes. A locked re-read uses the same strict reading and record checks before moving anything aside.
+Both cases set `storage_notice` on AnswerStore until it is reconstructed, even if a phone question or a resumed GPU
+answer is saved successfully. Only new GPU questions are refused; a readable open GPU answer still goes to the PC
+with its saved prefix. A missing answer file is an ordinary empty result, without a startup notice.
+
+The notice says to restart AI mode; this means restarting the OPOS server process, which constructs a new AnswerStore.
+For an unreadable file, restore access first. For a quarantined file, the next start scans the remaining files and
+clears the notice if they can be read and validated. Reconstructing LinkService alone does not clear it. The default
+`/ai` view refuses its combined question and presets while the notice stands. Phone-only questions still work through
+`/ai?pane=phone`, `/api/ai` with `panes: ["phone"]`, and `AnswerStore.ask("phone", ...)`.
+The current page also appends "Wait before unplugging." to a startup notice when the PC is live; waiting cannot clear
+that notice, and it replaces the cable line's saved-answer sentence. Follow the notice's restart instruction instead.
+
+Pairing and model-cache files use ordinary Store reads, like the everyday apps: an unreadable or corrupt file is
+quarantined and the caller starts empty. The link can start without that cache or pairing; it rehashes the model and
+requires enrolment again if the pairing was moved aside. Recovery itself can still fail, for example if a backup
+cannot be created. This change preserves the everyday apps' existing recovery behavior, including the PIN lock's
+existing loss of the saved PIN when its file is quarantined; it does not add a lock-file recovery policy.
 
 **States** of one answer on the phone: `queued`, `waiting`, `loading`, `answering`, `paused`, `done`, `failed`, `cancelled`.
 

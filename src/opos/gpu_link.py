@@ -527,8 +527,6 @@ class LinkService:
             speed["noted"] = now
 
     def _work(self, wait: int) -> Reply:
-        if self._answers.startup_notice:
-            raise OSError(self._answers.startup_notice)
         self._poll += 1
         generation = self._poll
         self._changed.notify_all()

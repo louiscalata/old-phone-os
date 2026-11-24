@@ -68,15 +68,21 @@ function pc(state='ready'){return {label:'Demo PC',live:true,state,gpu:{name:'De
 
 test('startup read faults and recovery warnings stay visible and block GPU asks',async()=>{
  for(const notice of ['The phone could not read a saved answer. Restore access and restart AI mode.',
-                      'The saved file could not be read. Started empty.']){
-  for(const search of ['', '?pane=gpu']){
+                      'A saved answer was damaged and moved aside. Restart AI mode to continue.']){
+  for(const search of ['', '?pane=gpu', '?pane=phone']){
    const w=world(search),s=snapshot();s.gpu.link.pc=pc();s.gpu.link.storage='error';
    s.gpu.link.storage_notice=notice;s.gpu.ready=false;
    await w.show(s);
    assert.equal(w.get('gpu-speed').textContent,notice);
-   assert.ok(w.get('gpu-cable').textContent.includes(notice));
-   assert.equal(w.get('ask').disabled,true);
-   for(const button of w.get('presets').children)assert.equal(button.disabled,true);
+   // Existing page-script behavior; waiting does not clear a startup notice.
+   assert.equal(w.get('gpu-cable').textContent,notice+' Wait before unplugging.');
+   const blocked=search!=='?pane=phone';
+   assert.equal(w.get('ask').disabled,blocked);
+   for(const button of w.get('presets').children)assert.equal(button.disabled,blocked);
+   if(!blocked){
+    w.get('question').value='Phone only';w.get('ask').onclick();await w.tick();
+    assert.deepEqual(JSON.parse(w.requests[0].options.body).panes,['phone']);
+   }
   }
  }
 });
