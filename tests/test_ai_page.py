@@ -202,13 +202,16 @@ class AiPage(unittest.TestCase):
         self.assertTrue(ai_page.snapshot()["gpu"]["ready"])
         # A request or write fault is only a message. With no answer open it stays set for the whole service
         # instance, so it must not keep the GPU pane unready (and Ask disabled) after the fault has passed.
-        self.link.value.update(storage="error", storage_notice="")
+        self.link.value.update(storage="error", storage_notice="", storage_fault=True)
         self.assertTrue(ai_page.snapshot()["gpu"]["ready"])
         # A startup notice stands until the store is rebuilt, and then new GPU questions are refused.
         notice = "A saved answer was damaged and moved aside. Restart AI mode to continue."
-        self.link.value.update(storage="error", storage_notice=notice)
+        self.link.value.update(storage="error", storage_notice=notice, storage_fault=False)
         self.assertFalse(ai_page.snapshot()["gpu"]["ready"])
-        self.link.value.update(storage=None, storage_notice="")
+        # A write fault on top of the notice does not make the pane ready again.
+        self.link.value.update(storage="error", storage_notice=notice, storage_fault=True)
+        self.assertFalse(ai_page.snapshot()["gpu"]["ready"])
+        self.link.value.update(storage=None, storage_notice="", storage_fault=False)
         self.assertTrue(ai_page.snapshot()["gpu"]["ready"])
 
     def test_snapshots_open_finished_and_hidden_store_changes_raise_revision(self):

@@ -14,6 +14,9 @@ from opos import muse, web
 
 ROUTE = muse.Route("local", "Small local model", "on this phone", "http://127.0.0.1:8080/v1", "local-test")
 LINK = {
+    "storage": None,
+    "storage_notice": "",
+    "storage_fault": False,
     "model": {"state": "ready", "name": "Large model", "size": 100},
     "pc": None,
     "pending": None,
@@ -41,8 +44,12 @@ class FakeLink:
         self.calls: list = []
 
     def snapshot(self) -> dict:
-        """Return an independent link view."""
-        return deepcopy(self.value)
+        """Return an independent link view. Like LinkService.snapshot, it carries the answer store's startup notice."""
+        value = deepcopy(self.value)
+        value["storage_notice"] = value["storage_notice"] or getattr(self.answers, "startup_notice", "")
+        if value["storage_notice"] or value["storage_fault"]:
+            value["storage"] = "error"
+        return value
 
     def allow(self, code: Any) -> bool:
         """Approve only the request whose code was shown."""

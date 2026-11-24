@@ -465,11 +465,11 @@ function cableState(p){
  var pc=p.link&&p.link.pc;
  if(!pc)return '';
  if(!pc.live)return 'out';
- return p.link.storage==='error'&&!p.link.storage_notice||pc.state==='copying'?'wait':'ok';
+ return p.link.storage_fault||pc.state==='copying'?'wait':'ok';
 }
 function cableWords(p){
  var state=cableState(p),a=p.answer,pc=p.link&&p.link.pc,open=!!(a&&OPEN.indexOf(a.state)>=0);
- if(p.link&&p.link.storage==='error'&&!p.link.storage_notice)return storageWords(p.link)+(state==='wait'?' Wait before unplugging.':'');
+ if(p.link&&p.link.storage_fault)return storageWords(p.link)+(state==='wait'?' Wait before unplugging.':'');
  var stuck=!!pc&&(pc.state==='stopping'||pc.state==='error');
  if(state==='')return '';
  if(state==='out'){
@@ -508,8 +508,9 @@ function drawPane(name,p){
 }
 function line(id,value){text(id,value);G(id).hidden=!value}
 function targets(){return (pane?[pane]:['phone','gpu']).filter(function(n){return n!=='gpu'||current&&current.gpu.link})}
-function askingBusy(){return targets().some(function(n){var p=current&&current[n],a=p&&p.answer;
- return a&&OPEN.indexOf(a.state)>=0||n==='gpu'&&p&&p.link&&p.link.storage_notice})}
+function answering(){return targets().some(function(n){var p=current&&current[n],a=p&&p.answer;return a&&OPEN.indexOf(a.state)>=0})}
+function noticeStands(){return targets().indexOf('gpu')>=0&&!!current.gpu.link.storage_notice}
+function askingBusy(){return answering()||noticeStands()}
 function buttons(){
  var disabled=!current||!targets().length||askingBusy();G('ask').disabled=disabled;
  text('ask',pane==='gpu'?'Ask the GPU':pane==='phone'||!current.gpu.link?'Ask the phone model':'Ask both models');
@@ -573,7 +574,8 @@ function request(){
 function send(body){if(document.hidden)return;queue.push(body);schedule()}
 function ask(){
  if(!current||!targets().length)return;
- if(askingBusy()){text('err','Wait for this answer, or stop it.');return}
+ if(answering()){text('err','Wait for this answer, or stop it.');return}
+ if(noticeStands()){text('err',current.gpu.link.storage_notice);return}
  send({action:'ask',question:G('question').value,panes:targets()});
 }
 G('ask').onclick=ask;

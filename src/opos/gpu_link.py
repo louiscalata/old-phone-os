@@ -714,6 +714,7 @@ class LinkService:
             return {
                 "storage": "error" if self._storage_fault is not None or self._answers.startup_notice else None,
                 "storage_notice": self._answers.startup_notice,
+                "storage_fault": self._storage_fault is not None,
                 "model": self._model.copy(),
                 "pc": pc,
                 "pending": pending,

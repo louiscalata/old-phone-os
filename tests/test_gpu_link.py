@@ -25,6 +25,7 @@ from opos import gpu_link_proto as proto
 from opos.ai_answers import AnswerError, AnswerStore
 from opos.gpu_link import HASH_RETRY_SECONDS, HISTORY_LIMIT, LINK_SECONDS, LinkService
 from opos.store import DurabilityError, Store
+from tests.ai_page_support import PC, FakeLink
 from tests.gpu_link_fake_pc import Clock, FakePC, RandomBytes
 
 
@@ -52,6 +53,19 @@ class LinkTests(unittest.TestCase):
         if link._hasher:
             link._hasher.join(2)
             self.assertFalse(link._hasher.is_alive())
+        snapshot = link.snapshot
+
+        def checked_snapshot():
+            # Every snapshot of every test obeys the contract the page relies on: "storage" is "error" exactly when a
+            # startup notice stands or a request or write fault is recorded, and storage_fault is a real boolean.
+            value = snapshot()
+            self.assertIn(value["storage"], (None, "error"))
+            self.assertIs(type(value["storage_fault"]), bool)
+            self.assertIsInstance(value["storage_notice"], str)
+            self.assertEqual(value["storage"] == "error", value["storage_fault"] or bool(value["storage_notice"]))
+            return value
+
+        link.snapshot = checked_snapshot
         return link
 
     def enrolled(self):
@@ -154,6 +168,7 @@ class LinkTests(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [damaged])
         self.assertEqual(page["gpu"]["link"]["storage"], "error")
+        self.assertFalse(page["gpu"]["link"]["storage_fault"])
         self.assertFalse(page["gpu"]["ready"])
         self.assertEqual(
             page["gpu"]["link"]["storage_notice"],
@@ -178,6 +193,7 @@ class LinkTests(unittest.TestCase):
         self.assertIsNone(page["gpu"]["answer"])
         self.assertTrue(page["gpu"]["ready"])
         self.assertIsNone(page["gpu"]["link"]["storage"])
+        self.assertFalse(page["gpu"]["link"]["storage_fault"])
         self.assertEqual(page["gpu"]["link"]["storage_notice"], "")
         self.assertEqual(list(self.store.root.glob("ai-answer-*.json*")), [])
         self.assertEqual(self.pc.work().status, 204)
@@ -234,6 +250,49 @@ class LinkTests(unittest.TestCase):
                     self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [raw])
                 self.restart_with_page()
                 self.assertEqual(self.answers.startup_notice, "")
+
+    def test_the_page_fake_link_mirrors_the_real_snapshot(self):
+        # The page tests run against FakeLink, so it must carry the same fields and derive them the same way.
+        fake = FakeLink(self.answers)
+        real = self.link.snapshot()
+        self.assertEqual(set(fake.snapshot()), set(real))
+        self.assertEqual(set(fake.snapshot()["model"]), set(real["model"]))
+        self.enrolled()
+        self.assertEqual(set(PC), set(self.link.snapshot()["pc"]))
+        fake.value["storage_fault"] = True
+        self.assertEqual((fake.snapshot()["storage"], fake.snapshot()["storage_fault"]), ("error", True))
+        fake.value["storage_fault"] = False
+        self.assertIsNone(fake.snapshot()["storage"])
+        notice = "A saved answer was damaged and moved aside. Restart AI mode to continue."
+        with patch.object(self.answers, "_startup_notice", notice):
+            mirrored, actual = fake.snapshot(), self.link.snapshot()
+        for value in (mirrored, actual):
+            self.assertEqual(
+                (value["storage"], value["storage_notice"], value["storage_fault"]), ("error", notice, False)
+            )
+
+    def test_a_write_fault_stays_visible_while_a_startup_notice_stands(self):
+        self.enrolled()
+        answer = self.answers.ask("gpu", "good question")
+        work = self.pc.data(self.pc.work())
+        prefix = "Kept prefix"
+        self.assertEqual(self.pc.text(work["lease"], 0, prefix).status, 200)
+        phone = self.answers.ask("phone", "old phone question")
+        self.answers.cancel(phone["id"])
+        self.link.close()
+        (self.store.root / f"ai-answer-{phone['id']}.json").write_bytes(b"{damaged")
+        link = self.restart_with_page()["gpu"]["link"]
+        self.assertEqual((link["storage"], bool(link["storage_notice"]), link["storage_fault"]), ("error", True, False))
+        resumed = self.pc.data(self.pc.work())
+        self.assertEqual(resumed["partial"], prefix)
+        with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "full")):
+            self.assertEqual(self.pc.text(resumed["lease"], len(prefix.encode()), " more").status, 500)
+        link = self.link.snapshot()
+        self.assertEqual((link["storage"], bool(link["storage_notice"]), link["storage_fault"]), ("error", True, True))
+        self.assertEqual(self.pc.text(resumed["lease"], len(prefix.encode()), " more").status, 200)
+        self.assertEqual(self.answers.get(answer["id"])["text"], prefix + " more")
+        link = self.link.snapshot()
+        self.assertEqual((link["storage"], bool(link["storage_notice"]), link["storage_fault"]), ("error", True, False))
 
     def test_unreadable_pairing_and_model_cache_do_not_stop_startup(self):
         for name in ("gpu-link-pc.json", "gpu-link-model.json"):
@@ -465,10 +524,12 @@ class LinkTests(unittest.TestCase):
         with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "full")):
             self.assertEqual(self.pc.status("error", w["lease"], error="engine").status, 500)
         self.assertEqual(self.link.snapshot()["storage"], "error")
+        self.assertTrue(self.link.snapshot()["storage_fault"])
         self.assertEqual(self.pc.status("error", w["lease"], error="engine").status, 200)
         self.assertEqual(self.answers.get(answer["id"])["state"], "failed")
         self.link.tick()
         self.assertIsNone(self.link.snapshot()["storage"])
+        self.assertFalse(self.link.snapshot()["storage_fault"])
 
     def test_metadata_save_does_not_hide_text_failure(self):
         answer, w = self.work()
@@ -2119,6 +2180,7 @@ class LinkTests(unittest.TestCase):
             reply = self.pc.model(self.sha)
         self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
         before["storage"] = "error"
+        before["storage_fault"] = True
         self.assertEqual(self.link.snapshot(), before)
 
     def test_model_cache_write_failure_keeps_ready_hash_without_rehashing(self):
@@ -2219,6 +2281,7 @@ class LinkTests(unittest.TestCase):
         with patch.object(self.store, "write_json", side_effect=OSError("disk")):
             self.assertEqual(self.pc.status().status, 500)
         before[0]["storage"] = "error"
+        before[0]["storage_fault"] = True
         self.assertEqual((self.link.snapshot(), self.link._lease, self.answers.snapshot()), before)
         self.assertEqual(self.pc.status().status, 200)
         self.assertEqual(self.answers.get(answer["id"])["state"], "paused")
@@ -2403,6 +2466,7 @@ class LinkTests(unittest.TestCase):
                 reply = action()
             self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
             before[1]["storage"] = "error"
+            before[1]["storage_fault"] = True
             self.assertEqual(
                 (self.answers.snapshot(), self.link.snapshot(), self.link._lease, self.link._buckets), before
             )
