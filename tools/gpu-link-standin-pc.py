@@ -539,6 +539,7 @@ class StandIn:
         self.failed_since, self.last_failure_line = None, None
         self.post_failed_since = None
         self.retry_at, self.pending = 0, None
+        self.error_posts, self.error_flush_stopped = 0, False
         self.started = clock()
 
     def close(self):
@@ -547,6 +548,12 @@ class StandIn:
             self.source.close()
         self.source, self.job, self.pending = None, None, None
         self.post_failed_since = None
+        self.error_posts, self.error_flush_stopped = 0, False
+
+    def _error_tail_pending(self, data):
+        # A UTF-8 cut can leave three bytes of a 256-byte piece unused.
+        # 49 posts cover the entire 12,288-byte buffer, including that rounding.
+        return self.offset < len(data) and self.error_posts < 49 and not self.error_flush_stopped
 
     def _request(self, send):
         """Repeat the same operation once after an epoch change, with a fresh nonce."""
@@ -594,8 +601,8 @@ class StandIn:
     def _status(self):
         tokens, tps = None, None
         if self.source:
-            _, _, _, tokens, error = self.source.snapshot()
-            if error:
+            data, _, _, tokens, error = self.source.snapshot()
+            if error and not self._error_tail_pending(data):
                 self._send_status(self.job["lease"], error="server")
                 self.emit("Answer stopped: chat-completions server error")
                 self.close()
@@ -649,8 +656,8 @@ class StandIn:
 
     def _post(self):
         data, done, finish, _, error = self.source.snapshot()
-        if error and self.pending is None:
-            self.next_status = 0
+        if error:
+            self._post_error_tail(data)
             return
         if self.offset > len(data):
             raise ToolError("stored offset exceeds buffered answer")
@@ -689,6 +696,41 @@ class StandIn:
                 self.close()
         else:
             raise ToolError("text post refused")
+
+    def _post_error_tail(self, data):
+        """Drain at most 49 paced, non-final posts; stop at the first refusal."""
+        if self.offset > len(data) or len(data) > proto.MAX_ANSWER_BYTES:
+            raise ToolError("invalid buffered answer size")
+        if not self._error_tail_pending(data):
+            self.next_status = 0
+            return
+        piece = cut(data[self.offset :], 256)
+        raw = proto.dumps(dict(offset=self.offset, text=piece.decode(), done=False, finish=None))
+        self.error_posts += 1
+        self.pending = None
+        # Do not retry a refused or unacknowledged flush piece. The failure
+        # status is still attempted if the lease and connection remain usable.
+        self.error_flush_stopped = True
+        self.next_status = 0
+        try:
+            # Unlike normal posting, a refusal must not retry even after an
+            # epoch change. Each flush attempt sends at most one text request.
+            status, value = self._accepted(self.pc.send("POST", f"/v1/runs/{self.job['lease']}/text", raw))
+        except RejectedError:
+            return
+        if status == 200 and value["acked"] != self.offset + len(piece):
+            raise RetryError("Invalid text acknowledgement; waiting to retry")
+        self.next_post = self.clock() + 1 / self.rate
+        if status == 404:
+            self.close()
+            self.emit("Lease ended; polling again")
+        elif status == 200:
+            self.offset += len(piece)
+            self.post_failed_since, self.last_failure_line = None, None
+            self.error_flush_stopped = False
+            self.emit(f"Text acknowledged; {self.offset} bytes")
+            if self.show_text:
+                self.emit("Text: " + json.dumps(piece.decode(), ensure_ascii=True))
 
     def step(self):
         """Perform bounded work; callers close this object even after a failure."""
