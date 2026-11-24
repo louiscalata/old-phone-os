@@ -13,7 +13,9 @@ NVIDIA = "nvidia-aceinstruct-1.5b"
 LLAMA = "llama-3.2-1b-instruct"
 
 
-@unittest.skipUnless(shutil.which("sh"), "needs a POSIX shell")
+@unittest.skipUnless(
+    os.name != "nt" and shutil.which("sh", path=os.defpath), "needs a POSIX host with sh in /bin or /usr/bin"
+)
 class TermuxModelId(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -28,6 +30,7 @@ class TermuxModelId(unittest.TestCase):
             "llama-server": 'printf "%s\\n" "$@" > "$HOME/llama-args"\n',
             "python": 'printf "%s\\n" "${OPOS_LLAMA_ID-unset}" > "$HOME/python-id"\n',
             "pkill": "exit 0\n",
+            "nohup": 'exec "$@"\n',  # the host's nohup is not under test, and macOS's needs a console
             "termux-wake-lock": "exit 0\n",
         }
         for name, body in stubs.items():
@@ -52,11 +55,17 @@ class TermuxModelId(unittest.TestCase):
         return subprocess.run(
             ["sh", "-eu", "-c", 'status() { printf "%s\\n" "$1"; };\n' + block],
             env=self.env,
+            cwd=self.home,
             capture_output=True,
             text=True,
             timeout=10,
             check=False,
         )
+
+    def generate_ok(self, value=None):
+        result = self.generate(value)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result
 
     def launch(self, expected_alias, expected_id, override=None):
         env = dict(self.env)
@@ -64,7 +73,13 @@ class TermuxModelId(unittest.TestCase):
             env["OPOS_LLAMA_ID"] = override
         script = (self.home / "bin/opos-start").read_text(encoding="utf-8")
         result = subprocess.run(
-            ["sh", "-c", script + "\nwait\n"], env=env, capture_output=True, text=True, timeout=10, check=False
+            ["sh", "-c", script + "\nwait\n"],
+            env=env,
+            cwd=self.home,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         args = (self.home / "llama-args").read_text(encoding="utf-8").splitlines()
@@ -72,24 +87,24 @@ class TermuxModelId(unittest.TestCase):
         self.assertEqual((self.home / "python-id").read_text(encoding="utf-8"), expected_id + "\n")
 
     def test_no_file_preserves_original_defaults(self):
-        self.assertEqual(self.generate().returncode, 0)
+        self.generate_ok()
         self.launch(LLAMA, "")
 
     def test_drop_id_survives_plain_restart(self):
-        self.assertEqual(self.generate(NVIDIA + "\n").returncode, 0)
+        self.generate_ok(NVIDIA + "\n")
         (self.drop / "llama-id").unlink()
         self.launch(NVIDIA, NVIDIA)
         self.launch(NVIDIA, NVIDIA)
 
     def test_environment_wins_over_saved_id(self):
-        self.assertEqual(self.generate(NVIDIA + "\n").returncode, 0)
+        self.generate_ok(NVIDIA + "\n")
         self.launch(LLAMA, LLAMA, override=LLAMA)
         self.launch(LLAMA, "", override="")
 
     def test_id_grammar_accepts_boundaries(self):
         for value in ("a", "0", "a" * 64, "0.model-1.5"):
             with self.subTest(value=value):
-                self.assertEqual(self.generate(value + "\n").returncode, 0)
+                self.generate_ok(value + "\n")
                 self.launch(value, value)
 
     def test_invalid_drop_id_refuses_launcher_generation(self):
@@ -102,17 +117,37 @@ class TermuxModelId(unittest.TestCase):
         values.append("x'};exit;${y-")  # closes the quoted default and runs code if it is ever accepted
         for character in hostile:
             values += [character + "a", "a" + character + "b", "a" + character]
+        launcher = self.home / "bin/opos-start"
         for value in values:
             with self.subTest(value=value):
+                launcher.unlink(missing_ok=True)  # one wrongly accepted value must not fail every later one
                 result = self.generate(value + "\n")
-                self.assertNotEqual(result.returncode, 0)
+                self.assertNotEqual(result.returncode, 0, f"the validator accepted {value!r}")
                 self.assertIn("failed: invalid llama-id", result.stdout)
-                self.assertFalse((self.home / "bin/opos-start").exists())
+                self.assertFalse(launcher.exists(), f"a launcher was written for {value!r}")
+
+    def test_launcher_stops_when_it_cannot_enter_the_opos_folder(self):
+        self.generate_ok(NVIDIA + "\n")
+        (self.home / "opos").rmdir()
+        (self.home / "models/model.gguf").unlink()  # no background model server may outlive the test
+        script = (self.home / "bin/opos-start").read_text(encoding="utf-8")
+        result = subprocess.run(
+            ["sh", "-c", script + "\nwait\n"],
+            env=self.env,
+            cwd=self.home,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.home / "python-id").exists(), "OPOS must not start from the wrong folder")
+        self.assertFalse((self.home / "llama-args").exists())
 
     def test_without_model_starts_only_opos_with_saved_id(self):
-        self.assertEqual(self.generate(NVIDIA + "\n").returncode, 0)
+        self.generate_ok(NVIDIA + "\n")
         (self.home / "models/model.gguf").unlink()
         script = (self.home / "bin/opos-start").read_text(encoding="utf-8")
-        subprocess.run(["sh", "-eu", "-c", script + "\nwait\n"], env=self.env, timeout=10, check=True)
+        subprocess.run(["sh", "-eu", "-c", script + "\nwait\n"], env=self.env, cwd=self.home, timeout=10, check=True)
         self.assertFalse((self.home / "llama-args").exists())
         self.assertEqual((self.home / "python-id").read_text(encoding="utf-8"), NVIDIA + "\n")
