@@ -15,6 +15,8 @@ Terms:
 - **Companion**: a per-user Windows app that the PC's owner installed. It never asks for administrator rights.
 - **Engine**: llama.cpp's `llama-server`, started by the companion as a child process.
 
+For the phone's local NVIDIA AceInstruct 1.5B model, set `OPOS_LLAMA_ID=nvidia-aceinstruct-1.5b` when starting `~/bin/opos-start` in Termux. The launcher uses that value for the server's `--alias` and passes it to OPOS. The id must match exactly: the default local route checks `/v1/models` before sending a question. Only ids in `assist.LOCAL_MODELS` can be selected; an unset, empty or unknown value keeps the memory-based choice, and the memory guard still applies.
+
 ## 2. Two stages
 
 - **Stage 1, owner mode.** For the owner's own PCs. The phone service supports one model, one GPU answer in progress and one enrolled PC. It binds to loopback. The developer forward gives the PC access to that listener.

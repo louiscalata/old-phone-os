@@ -92,7 +92,7 @@ if ($Model -and $Bench -gt 0) {
     $ids = (Invoke-RestMethod http://127.0.0.1:18080/v1/models -TimeoutSec 10).data.id -join ","
     "llama-server model ids: $ids"
     $q = @{
-        model = "llama-3.2-1b-instruct"; max_tokens = 96; temperature = 0
+        model = ($ids -split ",")[0]; max_tokens = 96; temperature = 0
         messages = @(
             @{ role = "system"; content = "You explain an old phone's battery decisions in two plain sentences." },
             @{ role = "user"; content = "Battery 60%, health 60% (about 36% usable), not charging, goal 16:00. Maps and photos backup are paused. Why are maps paused?" }

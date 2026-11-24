@@ -55,7 +55,11 @@ def is_resting(context):
 
 
 MIN_MB_1B = 1536  # free RAM in MB needed for 1B Q4_K_M build with context
-LOCAL_MODELS = {"llama-3.2-1b-instruct": "Meta Llama 3.2 1B", "llama-3.2-3b-instruct": "Meta Llama 3.2 3B"}
+LOCAL_MODELS = {
+    "llama-3.2-1b-instruct": "Meta Llama 3.2 1B",
+    "llama-3.2-3b-instruct": "Meta Llama 3.2 3B",
+    "nvidia-aceinstruct-1.5b": "NVIDIA AceInstruct 1.5B",
+}
 
 
 def free_mb(path="/proc/meminfo"):
@@ -78,11 +82,12 @@ def recommend(free):
 
 
 def local_route(env=None, free=None):
-    """The optional Llama server on this machine.
+    """The optional llama.cpp server on this machine.
 
+    OPOS_LLAMA_ID selects a known model; otherwise the free-memory recommendation applies.
     OPOS_LOCAL_URL (http on loopback) is the owner's choice and is used as set. The default port 8080 is
     common for other programs, so that route is marked verify_model: muse.ask sends nothing to it until
-    its /models list contains one of the LOCAL_MODELS ids exactly, and the answer names the size listed.
+    its /models list contains one of the LOCAL_MODELS ids exactly, and the answer names the model listed.
     """
     if env is None:
         env = os.environ
@@ -91,6 +96,8 @@ def local_route(env=None, free=None):
     model = recommend(free)
     if model is None:
         return None
+    if env.get("OPOS_LLAMA_ID") in LOCAL_MODELS:
+        model = env["OPOS_LLAMA_ID"]
     url = None
     env_url = env.get("OPOS_LOCAL_URL")
     if env_url:
@@ -100,7 +107,7 @@ def local_route(env=None, free=None):
                 url = env_url
     # OPOS_ON_PHONE=1: set by deploy/termux-setup.sh, where the packaged-install check cannot see the phone.
     where = "on this phone" if PHONE_BUILD or env.get("OPOS_ON_PHONE") == "1" else "on this computer"
-    # The server already holds whichever size it loaded, so either exact id verifies it; the free-memory pick goes first.
+    # The server already holds its loaded model, so any known exact id verifies it; the chosen id goes first.
     other = tuple((m, n) for m, n in LOCAL_MODELS.items() if m != model)
     return muse.Route(
         "local",
