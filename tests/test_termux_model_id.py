@@ -93,13 +93,21 @@ class TermuxModelId(unittest.TestCase):
                 self.launch(value, value)
 
     def test_invalid_drop_id_refuses_launcher_generation(self):
-        for value in ("", "a" * 65, ".model", "-model", "UPPER", "a_b", "a b", "é", "a\nb", "$(touch pwned)"):
+        # The id is written into shell text, so the validator is the only guard. Every shell-significant ASCII
+        # character must be refused on its own, in the first, the middle and the last position, and so must an
+        # uppercase letter or an underscore after the first character. Setup only generates the launcher, so a
+        # value that is wrongly accepted shows up as a zero exit status and a launcher file, not as a side effect.
+        hostile = "'\";&|\\`$(){}[]<>*?#!~%:@+=,^/ \t\r\x0b\x0c"
+        values = ["", "a" * 65, ".model", "-model", "UPPER", "aB", "a_b", "a b", "é", "a\nb", "$(touch pwned)"]
+        values.append("x'};exit;${y-")  # closes the quoted default and runs code if it is ever accepted
+        for character in hostile:
+            values += [character + "a", "a" + character + "b", "a" + character]
+        for value in values:
             with self.subTest(value=value):
                 result = self.generate(value + "\n")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("failed: invalid llama-id", result.stdout)
                 self.assertFalse((self.home / "bin/opos-start").exists())
-                self.assertFalse((self.home / "pwned").exists())
 
     def test_without_model_starts_only_opos_with_saved_id(self):
         self.assertEqual(self.generate(NVIDIA + "\n").returncode, 0)
