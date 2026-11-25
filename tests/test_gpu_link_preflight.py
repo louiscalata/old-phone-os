@@ -460,6 +460,72 @@ print('Fixture NVIDIA, 8192, 555.0, %s, %s' % (utilization, 100 + count))
         for name in ("chat server first answer", "chat server continuation", "gpu use and speed"):
             self.status(name, "FAIL", "server reported an error: finish_reason: error")
 
+    def stream_checks(self, scenario, status, detail=""):
+        self.server.scenario = dict(scenario, gpu_delay=1.1)
+        # Start each probe with fresh simulated GPU samples, including in subtests.
+        (self.root / "gpu-count").unlink(missing_ok=True)
+        self.run_checks("--engine-log", str(self.engine_log), full=True)
+        for name in ("chat server first answer", "chat server continuation", "gpu use and speed"):
+            self.status(name, status, detail)
+        self.status("stand-in tool", "PASS")
+
+    def test_stop_then_done_passes_all_stream_checks(self):
+        self.stream_checks({"finish": "stop"}, "PASS")
+
+    def test_length_then_done_passes_all_stream_checks(self):
+        self.stream_checks({"finish": "length", "continuation": "5, 6, 7, 8, 9, 1"}, "PASS")
+
+    def test_finish_without_done_fails_all_stream_checks(self):
+        for finish in ("stop", "length", "content_filter", "tool_calls"):
+            with self.subTest(finish=finish):
+                event = self.chunk("5, 6, 7", finish)
+                raw = b"data: " + json.dumps(event).encode() + b"\n\n"
+                self.stream_checks({"raw_stream": raw}, "FAIL", "stream ended early")
+
+    def test_done_without_finish_fails_all_stream_checks(self):
+        for finish_field in ({}, {"finish_reason": None}):
+            with self.subTest(finish_field=finish_field):
+                event = {"choices": [{"delta": {"content": "5, 6, 7"}, **finish_field}]}
+                raw = b"data: " + json.dumps(event).encode() + b"\n\ndata: [DONE]\n\n"
+                # A finish after [DONE] must not repair the missing finish before it.
+                raw += b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+                self.stream_checks({"raw_stream": raw}, "FAIL", "stream missing finish reason")
+
+    def test_error_finish_with_done_fails_all_stream_checks(self):
+        self.stream_checks({"finish": "error"}, "FAIL", "server reported an error: finish_reason: error")
+
+    def test_abnormal_finish_with_done_warns_all_stream_checks(self):
+        for finish in ("content_filter", "tool_calls"):
+            with self.subTest(finish=finish):
+                self.stream_checks({"finish": finish}, "WARN", "unexpected finish reason")
+
+    def test_error_event_after_finish_fails_all_stream_checks(self):
+        self.stream_checks({"stream_tail": b"event: error\n\n"}, "FAIL", "server reported an error: event: error")
+
+    def test_incomplete_stream_failure_precedes_content_checks(self):
+        for text in ("", "1, 2, 3"):
+            with self.subTest(text=text):
+                event = self.chunk(text, "stop")
+                raw = b"data: " + json.dumps(event).encode() + b"\n\n"
+                self.stream_checks({"raw_stream": raw}, "FAIL", "stream ended early")
+
+    def test_abnormal_finish_preserves_content_failures(self):
+        for finish in ("content_filter", "tool_calls"):
+            with self.subTest(finish=finish):
+                self.server.scenario = {"finish": finish, "text": ""}
+                self.run_checks(full=True)
+                self.status("chat server first answer", "FAIL", "no content")
+                self.status("chat server continuation", "FAIL", "empty continuation")
+                self.status("gpu use and speed", "FAIL", "no content")
+
+    def test_llama_stream_shape_passes_all_stream_checks(self):
+        events = [self.chunk("5, 6, 7"), self.chunk(finish="stop")]
+        events.append({"choices": [], "usage": {"completion_tokens": 9}, "timings": {"predicted_n": 9}})
+        raw = b": keep-alive\r\n\r\n"
+        raw += b"".join(b"data:" + json.dumps(event).encode() + b"\r\n\r\n" for event in events)
+        raw += b"data:[DONE]\r\n\r\n"
+        self.stream_checks({"raw_stream": raw}, "PASS")
+
     def test_unexpected_finish_reason(self):
         for finish in ("content_filter", "tool_calls", "unknown", "", 0, False):
             with self.subTest(finish=finish):
@@ -852,7 +918,7 @@ print('Fixture NVIDIA, 8192, 555.0, %s, %s' % (utilization, 100 + count))
             ({"text": " \t\n"}, "no content"),
             ({"text": "\0\x7f\ud800"}, "no content"),
             ({"truncated": True}, "stream ended early"),
-            ({"done_only": True}, "no content"),
+            ({"done_only": True}, "stream missing finish reason"),
         ):
             with self.subTest(scenario=scenario):
                 self.server.scenario = scenario
@@ -981,7 +1047,7 @@ print('Fixture NVIDIA, 8192, 555.0, %s, %s' % (utilization, 100 + count))
             ("a usage chunk after it", [self.chunk(finish="length"), usage], "PASS"),
             ("last chunk says stop", [self.chunk(finish="stop")], "WARN"),
             ("the last reason wins", [self.chunk(finish="length"), self.chunk(finish="stop")], "WARN"),
-            ("no finish reason at all", [], "WARN"),
+            ("no finish reason at all", [], "FAIL"),
         ):
             with self.subTest(label):
                 self.server.scenario = {"continuation_events": text + tail}
@@ -1366,7 +1432,7 @@ class ArgumentTests(unittest.TestCase):
             {"choices": [{"delta": {"content": "OK\0"}}]},
             {"choices": [{"delta": {}, "finish_reason": "stop"}]},
         ]
-        lines = iter([b"data: " + json.dumps(event).encode() + b"\n" for event in events] + [b""])
+        lines = iter([b"data: " + json.dumps(event).encode() + b"\n" for event in events] + [b"data: [DONE]\n"])
         ticks = iter([2.0, 4.0, 5.0, 6.0])
         now = [1.0]
 
@@ -1389,8 +1455,11 @@ class ArgumentTests(unittest.TestCase):
                     data = b"data: " + json.dumps(event).encode() + b"\n\n"
                     if done:
                         data += b"data: [DONE]\n\n"
-                    if finish is None and not done:
+                    if not done:
                         with self.assertRaisesRegex(preflight.ProbeError, "stream ended early"):
+                            preflight.read_stream(io.BytesIO(data), time.monotonic(), True)
+                    elif finish is None:
+                        with self.assertRaisesRegex(preflight.ProbeError, "stream missing finish reason"):
                             preflight.read_stream(io.BytesIO(data), time.monotonic(), True)
                     else:
                         result = preflight.read_stream(io.BytesIO(data), time.monotonic(), True)
@@ -1401,6 +1470,7 @@ class ArgumentTests(unittest.TestCase):
         for tokens in (0, 1_000_000, -1, 1_000_001, 10**400, True, 1.5, "150"):
             with self.subTest(tokens=tokens):
                 data = (
+                    b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
                     b"data: " + json.dumps({"usage": {"completion_tokens": tokens}}).encode() + b"\n\ndata: [DONE]\n\n"
                 )
                 result = preflight.read_stream(io.BytesIO(data), time.monotonic(), False)

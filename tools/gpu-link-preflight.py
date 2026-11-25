@@ -403,16 +403,14 @@ def read_stream(response, started, keep_text):
         extra_choice=False,
         finish=None,
     )
-    total, ended = 0, False
+    total = 0
     while True:
         line = response.readline(65537)
         total += len(line)
         if len(line) > 65536 or total > 2 * 1024 * 1024:
             raise ProbeError("server stream too large", "Check the server's streaming chat configuration.")
         if not line:
-            if not ended:
-                raise ProbeError("server stream ended early", "Check the server's streaming chat configuration.")
-            break
+            raise ProbeError("server stream ended early", "Check the server's streaming chat configuration.")
         if line.startswith(b"event:") and line[6:].strip().lower() == b"error":
             stream_error("event: error")
         if not line.startswith(b"data:"):
@@ -421,6 +419,11 @@ def read_stream(response, started, keep_text):
             continue
         data = line[5:].strip()
         if data == b"[DONE]":
+            if result["finish"] is None:
+                raise ProbeError(
+                    "server stream missing finish reason", "Check the server's streaming chat configuration."
+                )
+            # Only stop/length can PASS; callers retain WARN for other non-error finish reasons.
             break
         try:
             value = json.loads(data)
@@ -430,13 +433,12 @@ def read_stream(response, started, keep_text):
             stream_error(data.decode("utf-8", errors="replace"))
         if "error" in value:
             stream_error(value["error"])
-        ended |= consume_event(value, result, started, keep_text)
+        consume_event(value, result, started, keep_text)
     result["elapsed"] = time.monotonic() - started
     return result
 
 
 def consume_event(value, result, started, keep_text):
-    ended = False
     choices = value.get("choices", [])
     # The probes ask for one completion: text, reasoning and finish reason must all come from it.
     result["extra_choice"] |= len(choices) > 1
@@ -449,8 +451,7 @@ def consume_event(value, result, started, keep_text):
             stream_error("finish_reason: error")
         if finish not in (None, "stop", "length"):
             result["unexpected"] = True
-        # Null means generation is still in progress, not stream completion.
-        ended |= finish is not None
+        # Null means generation is still in progress; it must not erase a prior finish reason.
         if finish is not None:
             result["finish"] = finish
     if choices:
@@ -472,7 +473,6 @@ def consume_event(value, result, started, keep_text):
     tokens = (value.get("usage") or {}).get("completion_tokens")
     if type(tokens) is int and 0 <= tokens <= 1_000_000:
         result["tokens"] = tokens
-    return ended
 
 
 class Preflight:
