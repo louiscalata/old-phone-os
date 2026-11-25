@@ -146,7 +146,7 @@ class LocalCalls(unittest.TestCase):
             mock.patch.object(store.os, "fsync", side_effect=synced),
         ):
             self.finish()
-        self.assertEqual(order, ["fsync", "replace"] * 3)
+        self.assertEqual(order, ["fsync", "replace", "fsync"] * 3)  # File flush, rename, directory flush.
         self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(self.path.parent.stat().st_mode), 0o700)
         self.assertFalse(any(source.exists() for source in staged))

@@ -2,9 +2,10 @@
 """Seeded fault injection for GPU Link pause and resume (design section 9).
 
 A PC with a fixed multibyte text per question meets lost replies, pulled cables, phone restarts, failed
-writes, replayed and wrong posts, and cancels. After every step each stored answer must be a byte prefix
-of its text, equal its file, hold every acknowledged byte, never change once final, and equal the text
-when done. OPOS_FUZZ_SEEDS (default 200) and OPOS_FUZZ_FIRST choose the seeds.
+writes, replayed and wrong posts, and cancels. Each stored answer must be a byte prefix of its PC text,
+hold every acknowledged byte, never lose bytes or change once final, and equal the PC text when done.
+Only a late failed write may leave its exact replacement on disk ahead of unchanged memory, until a
+successful write or restart. OPOS_FUZZ_SEEDS (default 200) and OPOS_FUZZ_FIRST choose the seeds.
 """
 
 import contextlib
@@ -35,30 +36,59 @@ class Run:
         self.fault, self.real, self.store.write_json = "", self.store.write_json, self.write
         self.link, self.pc, self.model = None, FakePC(), root / "model.gguf"
         self.model.write_bytes(b"model")
+        self.late = {}
+        self.log, self.posts, self.jobs, self.seen, self.acked, self.final = [], [], {}, {}, {}, set()
         self.restart()
         assert self.pc.enrol().status == 202 and self.link.allow(self.pc.code)
         self.pc.hello()
-        self.log, self.posts, self.jobs, self.seen, self.acked, self.final = [], [], {}, {}, {}, set()
         self.offered = set()
         self.lease, self.pending, self.job, self.offset, self.said = None, None, None, 0, -10.0
         for _ in range(49 if seed % 8 == 0 else 0):  # start next to the 50-answer limit
             self.answers.cancel(self.answers.ask("phone", "another pane")["id"])
         self.ask()
 
-    def write(self, *args):
+    def write(self, name, record, *, durable=False):
+        ident = record["answer"]["id"] if name.startswith("ai-answer-") else None
         if self.fault != "+write-error":  # "late": the file is replaced, then the call fails
-            self.real(*args)
+            self.real(name, record, durable=durable)
+            if ident is not None:
+                if self.fault:
+                    before = self.answers.get(ident)
+                    if before is not None:
+                        before["state"] = before["state"].replace("waiting", "queued")
+                    self.late[ident] = record["answer"].copy(), before
+                else:
+                    self.late.pop(ident, None)
         if self.fault:
             raise OSError("disk")
 
     def restart(self):
+        files = {
+            ident: self.store.read_json(f"ai-answer-{ident}.json", {})[0]["answer"]
+            for ident, _, _ in self.jobs.values()
+        }
         if self.link is not None:
-            self.link.close()
+            # Model a power loss: close joins the reader, but its pause must not overwrite the file.
+            self.fault = "+write-error"
+            try:
+                self.link.close()
+            finally:
+                self.fault = ""
         self.answers = AnswerStore(self.store)
         self.link = self.pc.link = LinkService(self.answers, self.store, self.model, clock=self.clock, rand=self.rand)
         if self.link._hasher is not None:
             self.link._hasher.join()
         self.pc.hello()
+        for ident, before in files.items():
+            answer = self.answers.get(ident)
+            disk = self.store.read_json(f"ai-answer-{ident}.json", {})[0]["answer"]
+            assert answer["text"] == before["text"], f"{ident}: restart did not load the file's text"
+            assert len(answer["text"].encode()) >= self.acked[ident], f"{ident}: restart lost acknowledged bytes"
+            expected_state = "paused" if before["state"] in ("loading", "answering") else before["state"]
+            answer["state"] = answer["state"].replace("waiting", "queued")
+            assert answer["state"] == expected_state, f"{ident}: restart did not recover the file's state"
+            assert answer == disk, f"{ident}: memory differs from the file after restart"
+        self.late.clear()
 
     def ask(self):
         size = self.rng.randrange(LIMIT - 400, LIMIT + 900) if self.rng.random() < 0.1 else self.rng.randrange(30, 700)
@@ -173,7 +203,18 @@ class Run:
             assert raw.startswith(got), f"{ident}: the stored text is not a prefix of the PC's text"
             assert got.startswith(self.seen[ident]), f"{ident}: the stored text lost bytes"
             assert len(got) >= self.acked[ident], f"{ident}: acknowledged bytes are missing"
-            assert (disk["text"], disk["state"]) == (answer["text"], state.replace("waiting", "queued")), "file differs"
+            answer["state"] = state.replace("waiting", "queued")
+            if ident in self.late:
+                attempted, before = self.late[ident]
+                assert answer == before, f"{ident}: a failed write changed memory"
+                assert disk == attempted, f"{ident}: file differs from the interrupted write"
+                assert disk["text"].encode().startswith(got), f"{ident}: file is behind memory"
+                assert raw.startswith(disk["text"].encode()), f"{ident}: file is not a prefix of the PC's text"
+                assert disk["state"] != "done" or (disk["text"].encode(), disk["finish"]) == (raw, finish), (
+                    f"{ident}: file is done but incomplete"
+                )
+            else:
+                assert disk == answer, f"{ident}: file differs"
             assert ident not in self.final or got == self.seen[ident], f"{ident}: the text changed after its end"
             assert state != "done" or (got, answer["finish"]) == (raw, finish), f"{ident}: done but incomplete"
             self.seen[ident] = got

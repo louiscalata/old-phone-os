@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import hmac
 import io
@@ -23,7 +24,7 @@ from opos import gpu_link
 from opos import gpu_link_proto as proto
 from opos.ai_answers import AnswerError, AnswerStore
 from opos.gpu_link import HASH_RETRY_SECONDS, HISTORY_LIMIT, LINK_SECONDS, LinkService
-from opos.store import Store
+from opos.store import DurabilityError, Store
 from tests.gpu_link_fake_pc import Clock, FakePC, RandomBytes
 
 
@@ -65,6 +66,350 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(reply.status, 200)
         return answer, self.pc.data(reply)
 
+    def replace_pc(self, key=b"N" * 32):
+        new = FakePC(self.link, key=key, label="PC-B")
+        self.link._pending = (new.label, new.key, self.clock())
+        return new
+
+    def test_failed_forget_cancel_survives_restart(self):
+        answer, w = self.work()
+        self.assertEqual(self.pc.text(w["lease"], 0, "private prefix").status, 200)
+        with patch.object(self.answers, "cancel", side_effect=OSError(errno.ENOSPC, "full")):
+            self.assertTrue(self.link.forget())
+        # Ordinary orderly shutdown also loses the retry intent, without needing a physical crash.
+        self.link.close()
+        self.store = Store(self.store.root)
+        self.answers = AnswerStore(self.store)
+        self.link = self.make_link()
+        self.pc = FakePC(self.link, key=b"N" * 32, label="PC-B")
+        self.enrolled()
+        reply = self.pc.work()
+        self.assertEqual(reply.status, 204)
+        row = self.answers.get(answer["id"])
+        self.assertEqual((row["state"], row["text"], row["where"]), ("cancelled", "private prefix", "Test PC"))
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_directory_sync_failure_is_not_acknowledged(self):
+        answer, work = self.work()
+        before = self.answers.get(answer["id"])
+        fsync, open_directory = os.fsync, os.open
+        for fault in ("open", "sync"):
+            with self.subTest(fault=fault):
+
+                def synced(fd):
+                    if stat.S_ISDIR(os.fstat(fd).st_mode):
+                        raise OSError(errno.EIO, "directory sync failed")
+                    return fsync(fd)
+
+                def opened(path, *args, **kwargs):
+                    if Path(path) == self.store.root:
+                        raise PermissionError(errno.EACCES, "directory open failed")
+                    return open_directory(path, *args, **kwargs)
+
+                target, replacement = ("fsync", synced) if fault == "sync" else ("open", opened)
+                with patch("opos.store.os." + target, replacement):
+                    reply = self.pc.text(work["lease"], 0, "final", True, "stop")
+                self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
+                self.assertEqual(self.answers.get(answer["id"]), before)
+                self.assertEqual(self.link.snapshot()["storage"], "error")
+        reply = self.pc.text(work["lease"], 0, "final", True, "stop")
+        self.assertEqual((reply.status, self.pc.data(reply)), (200, {"acked": 5}))
+        self.assertEqual(self.answers.get(answer["id"])["state"], "done")
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_failed_retry_never_acknowledges_unsynced_replacement(self):
+        answer, work = self.work()
+        before = self.answers.snapshot()
+        fsync = os.fsync
+        synced = []
+        fault = "directory"
+
+        def sync(fd):
+            directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+            if directory and fault == "directory":
+                raise OSError(errno.EIO, "directory sync failed")
+            if not directory and fault == "file":
+                raise OSError(errno.ENOSPC, "temporary file sync failed")
+            result = fsync(fd)
+            synced.append("directory" if directory else "file")
+            return result
+
+        with patch("opos.store.os.fsync", sync):
+            for fault in ("directory", "file"):
+                with self.subTest(fault=fault):
+                    reply = self.pc.text(work["lease"], 0, "final", True, "stop")
+                    self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
+                    self.assertEqual(self.answers.snapshot(), before)
+                    self.assertEqual(self.link.snapshot()["storage"], "error")
+            self.assertEqual(synced, ["file"])
+            visible, _ = self.store.read_json(f"ai-answer-{answer['id']}.json", {})
+            self.assertEqual(visible["answer"]["text"], "final")
+            fault = None
+            reply = self.pc.text(work["lease"], 0, "final", True, "stop")
+            self.assertEqual((reply.status, self.pc.data(reply)), (200, {"acked": 5}))
+            self.assertEqual(synced, ["file", "file", "directory"])
+        self.assertEqual(self.answers.get(answer["id"])["state"], "done")
+        self.assertIsNone(self.link.snapshot()["storage"])
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_allow_and_forget_propagate_durability_error(self):
+        self.enrolled()
+        fsync = os.fsync
+
+        def synced(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EIO, "directory sync failed")
+            return fsync(fd)
+
+        new = self.replace_pc()
+        with patch("opos.store.os.fsync", synced):
+            with self.assertRaises(DurabilityError):
+                self.link.allow(new.code)
+            with self.assertRaises(DurabilityError):
+                self.link.forget()
+        self.assertEqual(self.link.snapshot()["pc"]["label"], self.pc.label)
+
+    def test_sweep_preserves_other_store_live_write(self):
+        self.store.write_json("race.json", {"value": "old"})
+        other = Store(self.store.root)
+        entered = threading.Event()
+        release = threading.Event()
+        sweeping = threading.Event()
+        swept = threading.Event()
+        errors = []
+        fsync = os.fsync
+
+        def block(fd):
+            if threading.current_thread().name == "live-writer" and stat.S_ISREG(os.fstat(fd).st_mode):
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("writer was not released")
+            return fsync(fd)
+
+        def write():
+            try:
+                self.store.write_json("race.json", {"value": "new"})
+            except Exception as error:
+                errors.append(error)
+
+        def sweep():
+            sweeping.set()
+            try:
+                other.sweep_temps("race.json")
+            except Exception as error:
+                errors.append(error)
+            finally:
+                swept.set()
+
+        with patch("opos.store.os.fsync", side_effect=block):
+            writer = threading.Thread(target=write, name="live-writer")
+            sweeper = threading.Thread(target=sweep)
+            writer.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                temporary = next(self.store.root.glob(".race.json.*.tmp"))
+                # Simulate a writer suspended for arbitrarily long, beyond the old grace period.
+                os.utime(temporary, (1, 1))
+                sweeper.start()
+                self.assertTrue(sweeping.wait(3))
+                self.assertFalse(swept.wait(0.1), "sweep must wait for the writer's destination lock")
+                self.assertTrue(temporary.exists())
+            finally:
+                release.set()
+                writer.join(3)
+                if sweeper.ident is not None:
+                    sweeper.join(3)
+        self.assertFalse(writer.is_alive() or sweeper.is_alive())
+        self.assertEqual(errors, [])
+        self.assertTrue(swept.is_set())
+        self.assertEqual(other.read_json("race.json", {})[0]["value"], "new")
+        self.assertFalse(list(self.store.root.glob(".race.json.*.tmp")))
+
+    def test_pairing_crash_temps_are_swept_on_startup_and_forget(self):
+        self.enrolled()
+        self.link.close()
+        for cleanup in ("startup", "forget"):
+            with self.subTest(cleanup=cleanup):
+                leftovers = [self.store.root / f".gpu-link-pc.json.{age}.tmp" for age in ("young", "old")]
+                for temporary in leftovers:
+                    temporary.write_bytes(b"old key material")
+                os.utime(leftovers[1], (1, 1))
+                if cleanup == "startup":
+                    self.link = self.make_link()
+                    self.assertEqual(self.link.snapshot()["pc"]["label"], self.pc.label)
+                else:
+                    self.assertTrue(self.link.forget())
+                self.assertTrue(all(not temporary.exists() for temporary in leftovers))
+                self.assertFalse(self.link._pairing_sweep_pending)
+
+    def test_pairing_sweep_failure_loads_pc_and_retries(self):
+        self.enrolled()
+        self.link.close()
+        temp = self.store.root / ".gpu-link-pc.json.stale.tmp"
+        unlink = Path.unlink
+        for retry in ("forget", "allow"):
+            with self.subTest(retry=retry):
+                temp.write_text("leftover", encoding="ascii")
+
+                def blocked(path, *args, **kwargs):
+                    if path == temp:
+                        raise PermissionError(errno.EACCES, "unlink refused")
+                    return unlink(path, *args, **kwargs)
+
+                with patch.object(Path, "unlink", blocked):
+                    self.link = self.make_link()
+                self.assertEqual(self.link.snapshot()["pc"]["label"], self.pc.label)
+                self.assertTrue(self.link._pairing_sweep_pending)
+                self.assertTrue(temp.exists())
+                if retry == "allow":
+                    self.pc = self.replace_pc()
+                    self.assertTrue(self.link.allow(self.pc.code))
+                else:
+                    self.assertTrue(self.link.forget())
+                    self.pc = FakePC(self.link)
+                    self.enrolled()
+                self.assertFalse(temp.exists())
+                self.assertFalse(self.link._pairing_sweep_pending)
+                self.link.close()
+
+    def test_successful_error_status_clears_storage_fault(self):
+        answer, w = self.work()
+        with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "full")):
+            self.assertEqual(self.pc.status("error", w["lease"], error="engine").status, 500)
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+        self.assertEqual(self.pc.status("error", w["lease"], error="engine").status, 200)
+        self.assertEqual(self.answers.get(answer["id"])["state"], "failed")
+        self.link.tick()
+        self.assertIsNone(self.link.snapshot()["storage"])
+
+    def test_metadata_save_does_not_hide_text_failure(self):
+        answer, w = self.work()
+        self.pc.text(w["lease"], 0, "abc")
+        self.clock.advance(2)
+        self.link._speed["values"]["tokens"] = 5
+        write = self.store.write_json
+
+        def selective(name, payload, *a, **kw):
+            if payload.get("answer", {}).get("bytes", 0) > 3:
+                raise OSError(errno.ENOSPC, "full at larger size")
+            return write(name, payload, *a, **kw)
+
+        with patch.object(self.store, "write_json", side_effect=selective):
+            self.assertEqual(self.pc.text(w["lease"], 3, "def").status, 500)
+            self.assertEqual(self.link.snapshot()["storage"], "error")
+            self.assertEqual(self.pc.text(w["lease"], 0, "abc").status, 200)
+            self.assertEqual(self.link.snapshot()["storage"], "error", "metadata-only save hid still-failing append")
+
+    def test_phone_save_does_not_clear_gpu_fault_on_noop_repeat(self):
+        phone = self.answers.ask("phone", "phone question")
+        answer, w = self.work()
+        self.pc.text(w["lease"], 0, "abc")
+        original_write = self.store.write_json
+        original_append = self.answers.append
+        writes = []
+
+        def write(name, payload, *a, **kw):
+            writes.append(name)
+            if payload.get("answer", {}).get("pane") == "gpu":
+                raise OSError(errno.ENOSPC, "GPU file full")
+            return original_write(name, payload, *a, **kw)
+
+        with patch.object(self.store, "write_json", side_effect=write):
+            self.assertEqual(self.pc.text(w["lease"], 3, "def").status, 500)
+            self.assertEqual(self.link.snapshot()["storage"], "error")
+            writes.clear()
+
+            def interleave(*a, **kw):
+                result = original_append(*a, **kw)
+                t = threading.Thread(target=lambda: self.answers.note(phone["id"], tokens=1))
+                t.start()
+                t.join(3)
+                self.assertFalse(t.is_alive())
+                return result
+
+            with patch.object(self.answers, "append", side_effect=interleave):
+                self.assertEqual(self.pc.text(w["lease"], 0, "abc").status, 200)
+            self.assertEqual(writes, [f"ai-answer-{phone['id']}.json"])
+            self.assertEqual(self.link.snapshot()["storage"], "error", "unrelated phone save cleared GPU fault")
+
+    def test_allow_invalidates_old_waiting_poll(self):
+        self.enrolled()
+        entered = threading.Event()
+        result = []
+        wait = self.link._changed.wait
+
+        def waiting(*a, **kw):
+            entered.set()
+            return wait(*a, **kw)
+
+        new = self.replace_pc()
+        with patch.object(self.link._changed, "wait", side_effect=waiting):
+            t = threading.Thread(target=lambda: result.append(self.pc.work(wait=1)))
+            t.start()
+            self.assertTrue(entered.wait(3))
+            with self.link._changed:
+                self.assertTrue(self.link.allow(new.code))
+                self.answers.ask("gpu", "question intended for PC-B")
+            t.join(3)
+            self.assertFalse(t.is_alive())
+        self.assertEqual(result[0].status, 204, f"old PC got {result[0].body!r}")
+
+    def test_successful_forget_remains_cancelled_after_restart(self):
+        answer, work = self.work()
+        self.assertEqual(self.pc.text(work["lease"], 0, "private prefix").status, 200)
+        self.assertTrue(self.link.forget())
+        self.link.close()
+        self.store = Store(self.store.root)
+        self.answers = AnswerStore(self.store)
+        self.link = self.make_link()
+        self.pc = FakePC(self.link, key=b"N" * 32, label="PC-B")
+        self.enrolled()
+        self.assertEqual(self.pc.work().status, 204)
+        row = self.answers.get(answer["id"])
+        self.assertEqual((row["state"], row["text"], row["where"]), ("cancelled", "private prefix", "Test PC"))
+
+    def test_first_pc_receives_untouched_queued_answer(self):
+        answer = self.answers.ask("gpu", "queued before enrolment")
+        self.enrolled()
+        reply = self.pc.work()
+        self.assertEqual(reply.status, 200)
+        self.assertEqual(self.pc.data(reply)["question"], answer["question"])
+        self.assertEqual(self.pc.data(reply)["partial"], "")
+
+    def test_fault_belongs_to_one_answer_and_expires_when_it_ends(self):
+        answer, work = self.work()
+        with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "full")):
+            self.assertEqual(self.pc.text(work["lease"], 0, "new").status, 500)
+        other = self.answers.ask("gpu", "another question")
+        self.link.cancel(other["id"])
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+        # A terminal transition outside LinkService is noticed lazily.
+        self.answers.cancel(answer["id"])
+        self.assertIsNone(self.link.snapshot()["storage"])
+        self.link._storage_fault = ""
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+        self.link._storage_fault = "0" * 12
+        self.assertIsNone(self.link.snapshot()["storage"])
+
+    def test_forget_propagates_answer_durability_error(self):
+        answer, work = self.work()
+        with patch.object(self.answers, "cancel", side_effect=DurabilityError(errno.EIO, "directory sync failed")):
+            with self.assertRaises(DurabilityError):
+                self.link.forget()
+        self.assertIsNotNone(self.link.snapshot()["pc"])
+        self.assertEqual(self.answers.get(answer["id"])["state"], "loading")
+        self.assertTrue(self.link.forget())
+        self.assertEqual(self.answers.get(answer["id"])["state"], "cancelled")
+
+    def test_reconciliation_failure_without_answer_sets_storage_error(self):
+        with patch.object(self.answers, "current", side_effect=OSError(errno.EIO, "unreadable")):
+            self.link.tick()
+        self.assertEqual(self.link._storage_fault, "")
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+        self.enrolled()
+        self.answers.ask("phone", "unrelated")
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+
     def rejected(self, request):
         before = self.link.snapshot(), self.answers.snapshot()
         reply = self.pc.send(*request)
@@ -95,15 +440,69 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(self.pc.text(second["lease"], 0, "kept").status, 200)
 
     def test_new_lease_after_a_failed_one_is_not_failed(self):
-        answer, _ = self.work()
-        with patch.object(self.answers, "pause", side_effect=OSError("disk")):
+        previous, _ = self.work()
+        with patch.object(self.answers, "cancel", side_effect=OSError("disk")):
             self.assertTrue(self.link.forget())
+        self.link.tick()
+        self.assertEqual(self.answers.get(previous["id"])["state"], "cancelled")
+        answer = self.answers.ask("gpu", "new question")
         self.clock.advance(1)
         self.enrolled()
         work = self.pc.data(self.pc.work())
         self.link.tick()
         self.assertEqual(self.answers.get(answer["id"])["state"], "loading")
         self.assertEqual(self.pc.text(work["lease"], 0, "kept").status, 200)
+
+    def test_forget_ends_the_open_answer_so_another_pc_never_receives_it(self):
+        answer, work = self.work()
+        self.assertEqual(self.pc.text(work["lease"], 0, "partial from A").status, 200)
+        first = self.answers.get(answer["id"])["where"]
+        self.assertTrue(self.link.forget())
+        self.clock.advance(1)
+        self.pc = FakePC(self.link, key=b"N" * 32, label="PC-B")
+        self.enrolled()
+        self.assertEqual(self.pc.work().status, 204)
+        row = self.answers.get(answer["id"])
+        self.assertEqual(row["state"], "cancelled")
+        self.assertEqual((row["where"], row["text"]), (first, "partial from A"))
+        self.assertIsNone(self.link._lease)
+
+    def test_allow_replacement_ends_answer_before_persisting_new_pc(self):
+        answer, work = self.work()
+        self.assertEqual(self.pc.text(work["lease"], 0, "partial from A").status, 200)
+        replacement = FakePC(self.link, key=b"N" * 32, label="PC-B")
+        # Exercise allow's matching-pending path while an older PC is enrolled.
+        self.link._pending = (replacement.label, replacement.key, self.clock())
+        with patch.object(self.answers, "cancel", side_effect=OSError("disk")):
+            with self.assertRaises(OSError):
+                self.link.allow(replacement.code)
+        self.assertEqual(self.link.snapshot()["pc"]["label"], self.pc.label)
+        saved, _ = self.store.read_json("gpu-link-pc.json", {})
+        self.assertEqual(saved["label"], self.pc.label)
+        self.assertTrue(self.link.allow(replacement.code))
+        self.pc = replacement
+        self.assertEqual(self.pc.hello().status, 200)
+        self.assertEqual(self.pc.work().status, 204)
+        row = self.answers.get(answer["id"])
+        self.assertEqual((row["state"], row["where"], row["text"]), ("cancelled", "Test PC", "partial from A"))
+
+    def test_forget_keeps_only_never_handed_out_work(self):
+        self.enrolled()
+        for state, label in (("queued", ""), ("paused", ""), ("queued", "Test PC")):
+            with self.subTest(state=state, label=label):
+                answer = self.answers.ask("gpu", "question")
+                if state == "paused":
+                    self.answers.begin(answer["id"])
+                    self.answers.pause(answer["id"])
+                if label:
+                    self.answers.note(answer["id"], where=label)
+                self.assertTrue(self.link.forget())
+                row = self.answers.get(answer["id"])
+                self.assertEqual(row["state"], "waiting" if state == "queued" and not label else "cancelled")
+                if row["state"] == "waiting":
+                    self.answers.cancel(answer["id"])
+                self.clock.advance(1)
+                self.enrolled()
 
     def test_model_file_change_ends_the_live_lease_and_the_next_poll_starts_again(self):
         answer, first = self.work()
@@ -440,7 +839,7 @@ class LinkTests(unittest.TestCase):
 
     def test_cancel_after_forget_with_failed_pause_needs_no_pc(self):
         answer, work = self.work()
-        with patch.object(self.answers, "pause", side_effect=OSError("disk")):
+        with patch.object(self.answers, "cancel", side_effect=OSError("disk")):
             self.assertTrue(self.link.forget())
         self.assertIsNone(self.link.snapshot()["pc"])
         self.assertIsNotNone(self.link._lease)
@@ -449,6 +848,121 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(result["state"], "cancelled")
         self.assertIsNone(self.link._lease)
         self.assertFalse(self.link._history)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_forget_directory_fsync_failure_keeps_pc_for_retry(self):
+        self.enrolled()
+        fsync = os.fsync
+
+        def synced(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError("directory flush failed")
+            return fsync(fd)
+
+        with patch("opos.store.os.fsync", synced), self.assertRaises(OSError):
+            self.link.forget()
+        self.assertEqual(self.link.snapshot()["pc"]["label"], self.pc.label)
+        self.assertTrue(self.link.forget())
+        self.assertIsNone(self.link.snapshot()["pc"])
+
+    def test_forget_removes_pairing_temp(self):
+        self.enrolled()
+        (self.store.root / ".gpu-link-pc.json.stale.tmp").write_text(self.pc.key.hex(), encoding="ascii")
+        self.assertTrue(self.link.forget())
+        self.assertFalse(list(self.store.root.glob(".gpu-link-pc.json.*.tmp")))
+        self.assertFalse(any(self.pc.key.hex().encode() in path.read_bytes() for path in self.store.root.iterdir()))
+
+    def test_pairing_load_removes_pairing_temp(self):
+        self.enrolled()
+        (self.store.root / ".gpu-link-pc.json.stale.tmp").write_text(self.pc.key.hex(), encoding="ascii")
+        os.utime(self.store.root / ".gpu-link-pc.json.stale.tmp", (1, 1))
+        self.link.close()
+        self.link = self.make_link()
+        self.assertEqual(self.link.snapshot()["pc"]["label"], self.pc.label)
+        self.assertFalse(list(self.store.root.glob(".gpu-link-pc.json.*.tmp")))
+
+    def test_storage_fault_survives_status_until_text_is_saved(self):
+        answer, work = self.work()
+        lease = work["lease"]
+        self.assertEqual(self.pc.text(lease, 0, "abc").status, 200)
+        error = OSError(errno.ENOSPC, "storage full")
+        with patch.object(self.store, "write_json", side_effect=error):
+            for _ in range(21):
+                reply = self.pc.text(lease, 3, "def")
+                self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
+                self.assertEqual(self.link.snapshot()["storage"], "error")
+                self.assertEqual(self.pc.status("busy", lease).status, 200)
+                self.link.tick()
+                self.assertEqual(self.link.snapshot()["storage"], "error")
+                row = self.answers.get(answer["id"])
+                self.assertEqual((row["state"], row["text"]), ("answering", "abc"))
+                self.clock.advance(1)
+        # A repeat that writes nothing must not clear the fault.
+        self.assertEqual(self.pc.text(lease, 0, "abc").status, 200)
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+        self.assertEqual(self.pc.text(lease, 3, "def").status, 200)
+        self.assertIsNone(self.link.snapshot()["storage"])
+        self.assertEqual(self.pc.text(lease, 6, "", True, "stop").status, 200)
+        self.assertEqual(self.answers.get(answer["id"])["state"], "done")
+
+    def test_storage_fault_on_offer_clears_when_begin_is_saved(self):
+        self.enrolled()
+        answer = self.answers.ask("gpu", "question")
+        with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "storage full")):
+            reply = self.pc.work()
+        self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
+        self.assertEqual(self.link.snapshot()["storage"], "error")
+        self.assertEqual(self.answers.get(answer["id"])["state"], "waiting")
+        self.assertEqual(self.pc.work().status, 200)
+        self.assertIsNone(self.link.snapshot()["storage"])
+
+    def test_storage_fault_survives_offer_or_text_metadata_retry(self):
+        self.enrolled()
+        for route in ("offer", "text"):
+            with self.subTest(route=route):
+                answer = self.answers.ask("gpu", "question")
+                with patch.object(self.answers, "note", side_effect=OSError("storage full")):
+                    work = self.pc.data(self.pc.work())
+                self.answers.append(answer["id"], 0, b"abc")
+                with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "storage full")):
+                    self.assertEqual(self.pc.text(work["lease"], 3, "def").status, 500)
+                self.assertEqual(self.link.snapshot()["storage"], "error")
+                reply = self.pc.work() if route == "offer" else self.pc.text(work["lease"], 0, "abc")
+                self.assertEqual(reply.status, 200)
+                if route == "offer":
+                    work = self.pc.data(reply)
+                self.assertEqual(self.link.snapshot()["storage"], "error")
+                self.assertEqual(self.answers.get(answer["id"])["where"], self.pc.label)
+                self.assertEqual(self.pc.text(work["lease"], 3, "def").status, 200)
+                self.assertIsNone(self.link.snapshot()["storage"])
+                self.link.cancel(answer["id"])
+                self.clock.advance(1)
+
+    def test_tick_storage_fault_clears_after_pause_or_cancel(self):
+        for orphan, cancel in ((False, False), (True, False), (False, True)):
+            with self.subTest(orphan=orphan, cancel=cancel):
+                self.empty_link_answer_for_fault_test()
+                answer = self.answers.ask("gpu", "question")
+                self.assertEqual(self.pc.work().status, 200)
+                if orphan:
+                    self.link._lease = None
+                self.clock.advance(LINK_SECONDS)
+                with patch.object(self.store, "write_json", side_effect=OSError(errno.ENOSPC, "storage full")):
+                    self.link.tick()
+                self.assertEqual(self.link.snapshot()["storage"], "error")
+                if cancel:
+                    self.link.cancel(answer["id"])
+                else:
+                    self.link.tick()
+                self.assertIsNone(self.link.snapshot()["storage"])
+                self.assertEqual(self.answers.get(answer["id"])["state"], "cancelled" if cancel else "paused")
+
+    def empty_link_answer_for_fault_test(self):
+        answer = self.answers.current("gpu")
+        if answer is not None:
+            self.link.cancel(answer["id"])
+        if self.link.snapshot()["pc"] is None:
+            self.enrolled()
 
     def test_provenance_is_stored_without_speed_values(self):
         answer, work = self.work()
@@ -593,16 +1107,15 @@ class LinkTests(unittest.TestCase):
             with self.subTest(error=type(error).__name__):
                 answer = self.answers.ask("gpu", "cannot pause")
                 self.assertEqual(self.pc.work().status, 200)
-                with patch.object(self.answers, "pause", side_effect=error):
+                with patch.object(self.answers, "cancel", side_effect=error):
                     self.assertTrue(self.link.forget())
                 self.assertIsNotNone(self.link._lease)
                 self.assertTrue(self.link._lease["failed"])
                 self.link.tick()
                 self.assertIsNone(self.link._lease)
-                self.assertEqual(self.answers.get(answer["id"])["state"], "paused")
+                self.assertEqual(self.answers.get(answer["id"])["state"], "cancelled")
                 self.assertIsNone(self.link.snapshot()["pc"])
                 self.assertNotIn("key", self.store.read_json("gpu-link-pc.json", {})[0])
-                self.answers.cancel(answer["id"])
                 self.clock.advance(1)
                 self.enrolled()
 
@@ -887,7 +1400,7 @@ class LinkTests(unittest.TestCase):
     def test_forget_revokes_and_survives_restart(self):
         answer, work = self.work()
         self.assertTrue(self.link.forget())
-        self.assertEqual(self.answers.get(answer["id"])["state"], "paused")
+        self.assertEqual(self.answers.get(answer["id"])["state"], "cancelled")
         self.rejected(
             self.pc.prepare(
                 "POST", f"/v1/runs/{work['lease']}/text", proto.dumps(dict(offset=0, text="x", done=False, finish=None))
@@ -1417,6 +1930,7 @@ class LinkTests(unittest.TestCase):
         with patch.object(self.store, "read_json", side_effect=OSError("disk")):
             reply = self.pc.model(self.sha)
         self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
+        before["storage"] = "error"
         self.assertEqual(self.link.snapshot(), before)
 
     def test_model_cache_write_failure_keeps_ready_hash_without_rehashing(self):
@@ -1491,23 +2005,23 @@ class LinkTests(unittest.TestCase):
         self.assertIsNotNone(self.link.snapshot()["pc"])
         self.link.tick()
         self.assertIsNone(self.link._lease)
-        self.assertEqual(self.answers.get(answer["id"])["state"], "paused")
-        self.assertEqual(self.pc.work().status, 200)
+        self.assertEqual(self.answers.get(answer["id"])["state"], "cancelled")
+        self.assertEqual(self.pc.work().status, 204)
 
     def test_forget_credential_failure_keeps_pc_but_work_is_safely_paused(self):
         answer, _ = self.work()
         original = self.store.write_json
 
-        def write(name, payload):
+        def write(name, payload, *, durable=False):
             if name == "gpu-link-pc.json":
                 raise OSError("disk")
-            return original(name, payload)
+            return original(name, payload, durable=durable)
 
         with patch.object(self.store, "write_json", side_effect=write), self.assertRaises(OSError):
             self.link.forget()
         self.assertIsNotNone(self.link.snapshot()["pc"])
         self.assertIsNone(self.link._lease)
-        self.assertEqual(self.answers.get(answer["id"])["state"], "paused")
+        self.assertEqual(self.answers.get(answer["id"])["state"], "cancelled")
         self.assertTrue(self.link.forget())
 
     def test_second_missing_status_storage_failure_preserves_first(self):
@@ -1516,6 +2030,7 @@ class LinkTests(unittest.TestCase):
         before = self.link.snapshot(), self.link._lease.copy(), self.answers.snapshot()
         with patch.object(self.store, "write_json", side_effect=OSError("disk")):
             self.assertEqual(self.pc.status().status, 500)
+        before[0]["storage"] = "error"
         self.assertEqual((self.link.snapshot(), self.link._lease, self.answers.snapshot()), before)
         self.assertEqual(self.pc.status().status, 200)
         self.assertEqual(self.answers.get(answer["id"])["state"], "paused")
@@ -1699,6 +2214,7 @@ class LinkTests(unittest.TestCase):
             with patch.object(self.store, "write_json", side_effect=OSError("disk")):
                 reply = action()
             self.assertEqual((reply.status, self.pc.data(reply)), (500, {"error": "state"}))
+            before[1]["storage"] = "error"
             self.assertEqual(
                 (self.answers.snapshot(), self.link.snapshot(), self.link._lease, self.link._buckets), before
             )
@@ -1837,7 +2353,7 @@ class LinkTests(unittest.TestCase):
         answer = self.answers.ask("gpu", "question")
         lease = self.pc.data(self.pc.work())["lease"]
         self.assertEqual(self.pc.text(lease, 0, "kept").status, 200)
-        with patch.object(self.answers, "pause", side_effect=OSError("disk")):
+        with patch.object(self.answers, "cancel", side_effect=OSError("disk")):
             self.assertTrue(self.link.forget())
         self.clock.advance(5)
         self.link.tick()
@@ -1850,8 +2366,8 @@ class LinkTests(unittest.TestCase):
         reply = self.pc.work()
         stored = self.answers.get(answer["id"])
         self.assertEqual(stored["text"], "kept")
-        self.assertEqual(reply.status, 200, (reply.body, stored["state"]))
-        self.assertEqual(self.pc.data(reply)["partial"], "kept")
+        self.assertEqual(reply.status, 204)
+        self.assertEqual(stored["state"], "cancelled")
 
     def test_surv_live_flag_flips_exactly_at_link_seconds(self):
         # The display becomes disconnected at the timeout, including equality.

@@ -123,13 +123,14 @@ class AnswerStore:
     least the highest revision of any valid answer that could be read. Readers
     that must never go back in time should also compare a value that changes
     with every start.
-    Start-up never deletes files; Store may move unreadable files aside.
+    Start-up keeps answer files; Store may move unreadable files aside.
 
-    Each changing method writes just its answer, then replaces memory. A failed
-    write leaves memory unchanged and raises unless read-back confirms it took
-    effect. Start-up may write several changed answers once each; if a write
-    fails, construction raises and the next scan
-    finishes normalisation. Each write uses Store's flush/fsync/replace pattern.
+    Each changing method first writes its answer, then replaces memory and
+    retries pending recovery writes. A failed primary write leaves memory
+    unchanged and raises: readable replacement bytes do not prove a directory sync. Start-up may
+    write several changed answers once each; if a write
+    fails, memory keeps the recovery and later successful saves retry it.
+    The next scan also recomputes recovery. Each write uses Store's flush/fsync/replace pattern.
 
     Asking accepts the new answer before dropping old final answers from memory.
     Failed file or lock removals are retried at every ask and cannot fail it.
@@ -148,6 +149,8 @@ class AnswerStore:
         self._rev = 0
         self._records: dict[str, dict] = {}
         self._removals: set[str] = set()
+        self._recoveries: set[str] = set()
+        self._sweep_pending = False
         with self._lock:
             self._load()
 
@@ -157,7 +160,22 @@ class AnswerStore:
         with self._lock:
             return self._rev
 
+    def _sweep_temps(self) -> None:
+        for temporary in self._store.root.glob(".ai-answer-*.json.*.tmp"):
+            name = temporary.name[1:].split(".json.", 1)[0] + ".json"
+            if _ID.fullmatch(name[len("ai-answer-") : -len(".json")]):
+                self._store.sweep_temps(name)
+
+    def _retry_sweep(self) -> None:
+        try:
+            self._sweep_temps()
+        except OSError:
+            self._sweep_pending = True
+        else:
+            self._sweep_pending = False
+
     def _load(self) -> None:
+        self._retry_sweep()
         loaded = []
         for path in self._store.root.glob("ai-answer-*.json"):
             ident = path.name[len("ai-answer-") : -len(".json")]
@@ -174,7 +192,9 @@ class AnswerStore:
         recovered = self._records.copy()
         for ident, record in self._records.items():
             answer = record["answer"]
-            if answer["state"] in ("loading", "answering"):
+            if answer["state"] in ("loading", "answering") or (
+                answer["pane"] == "phone" and answer["state"] == "queued"
+            ):
                 recovered[ident] = record = deepcopy(record)
                 answer = record["answer"]
                 answer["state"] = "paused" if answer["pane"] == "gpu" else "failed"
@@ -194,9 +214,22 @@ class AnswerStore:
             for ident, record in recovered.items():
                 if record != self._records[ident]:
                     record["answer"]["rev"] = revision
-                    self._store.write_json(_name(ident), record)
+                    self._recoveries.add(ident)
             self._records = recovered
             self._rev = revision
+            self._retry_recoveries()
+
+    def _retry_recoveries(self) -> None:
+        for ident, record in self._records.items():
+            if ident in self._recoveries:
+                try:
+                    self._store.write_json(_name(ident), record, durable=True)
+                except OSError:
+                    continue
+                self._recoveries.discard(ident)
+                if self._sweep_pending:
+                    self._retry_sweep()
+        self._recoveries.intersection_update(self._records)
 
     def _valid_record(self, record: Any, ident: str) -> bool:
         if not isinstance(record, dict) or not isinstance(record.get("answer"), dict):
@@ -233,6 +266,10 @@ class AnswerStore:
     def _retry_removals(self) -> None:
         for ident in tuple(self._removals):
             removed = True
+            try:
+                self._store.sweep_temps(_name(ident))
+            except OSError:
+                removed = False
             for name in (_name(ident), f".{_name(ident)}.lock"):
                 try:
                     (self._store.root / name).unlink(missing_ok=True)
@@ -268,19 +305,13 @@ class AnswerStore:
         ident = record["answer"]["id"]
         if record != self._records.get(ident):
             record["answer"]["rev"] = self._rev + 1
-            try:
-                self._store.write_json(_name(ident), record)
-            except OSError:
-                try:
-                    saved, _ = self._store.read_json(_name(ident), {})
-                except OSError:
-                    saved = None
-                if isinstance(saved, dict):
-                    saved = {key: value for key, value in saved.items() if key != "schema"}
-                if saved != {key: value for key, value in record.items() if key != "schema"}:
-                    raise
+            self._store.write_json(_name(ident), record, durable=True)
             self._records[ident] = record
             self._rev += 1
+            self._recoveries.discard(ident)
+            if self._sweep_pending:
+                self._retry_sweep()
+        self._retry_recoveries()
         return self._view(record)
 
     def ask(self, pane: str, question: str, model: str = "") -> dict:
@@ -311,7 +342,7 @@ class AnswerStore:
                 tps=None,
                 finish=None,
                 error=None,
-                asked=int(time.time()),
+                asked=max(0, int(time.time())),
                 rev=self._rev + 1,
             )
             record = {"answer": answer, "final_offset": None, "seq": seq}

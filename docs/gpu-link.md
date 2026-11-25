@@ -243,10 +243,31 @@ The service remembers the last 64 finished and page-cancelled leases, oldest fir
 - `offset` is the UTF-8 byte position in the answer after JSON unescaping. The phone appends only when it equals the stored byte count. `acked` is the total UTF-8 bytes stored after the post. An identical repeat of earlier bytes returns the current total, which may exceed `offset` plus the post's byte length. An exact final-post repeat returns the remembered total. `stored` on 409 or on an append overflow (413) is the same total count; it is not the size of the refused post.
 - The phone stores the text exactly as received. A post that contains invalid UTF-8, a partial character at its end, or a Cc character other than newline and tab is refused whole, with no change to the answer text.
 - A post with `done` false whose bytes lie wholly inside the stored text is acknowledged if they are identical, with the current total. A post that starts before the stored end and runs past it, a post whose bytes differ, and any post with `done` true at an offset other than the stored count get 409 `stored`. Resend from the stored count.
-- The check and the append happen under one lock. The phone acknowledges only after the text and the answer's state are written and flushed to storage.
+- The check and the append happen under one lock. The phone acknowledges only after the text and the answer's state are
+  written, the file is flushed and synced, and the renamed file's directory is synced. A directory open or sync failure
+  fails the write; every failed write gets signed 500 `state`, with no new acknowledged bytes
+  in the page snapshot. A failed write is never accepted from a read-back, even when matching bytes are visible.
+  The PC can repeat the identical post; the retry rewrites and syncs it before acknowledging. Filesystems that reject directory sync with
+  EINVAL, ENOTSUP, EOPNOTSUPP or ENOSYS offer no better guarantee; those unsupported-operation errors are ignored.
+  Other apps' writes sync the directory best effort and ignore its errors; only GPU Link's answer records and pairing
+  file are acknowledged on a synced directory.
 - After the final post, with `done`, the phone accepts nothing more for that lease except an exact repeat of that post. While the lease is remembered, the repeat gets the same reply and changes nothing.
 - The companion keeps the text of the current run in memory until the run ends, so it can send again from any earlier offset.
 - The phone shows answers as plain text only.
+
+The phone's link snapshot includes `storage`: `"error"` after a signed request returns 500 `state` for a storage error,
+or after a timer pause or service reconciliation write fails. The fault belongs to that GPU answer. It stays set while
+that answer is open until a successful append stores new bytes, or a begin, pause, Stop, or terminal transition for that
+answer succeeds. This includes a status that pauses work or records the PC's error as a failed answer. Ordinary status
+posts, metadata saves, a save for another answer or the phone pane, and a repeat that stores no new bytes do not clear
+it. A snapshot also clears it when its answer is final or gone. A failure with no answer remains an error for that
+service instance; unrelated answer saves do not clear it. The flag is in memory and resets when LinkService is
+reconstructed. AnswerStore's deferred startup recovery writes do not set it: a recovery write that remains unwritten
+is not represented by this flag. A successful status alone is not evidence that unsaved text reached storage.
+When a connected PC holds unacknowledged text, keep it connected while it retries after storage recovers. Reconnect a
+disconnected PC while its grant lasts so it can retry. Enrol an unpaired PC for new work; a revoked lease cannot save
+its unsent text. For a fault with no answer, check storage and reconstruct the service after recovery; the instance
+flag is not a pending text count.
 
 **States** of one answer on the phone: `queued`, `waiting`, `loading`, `answering`, `paused`, `done`, `failed`, `cancelled`.
 
@@ -256,15 +277,47 @@ The service remembers the last 64 finished and page-cancelled leases, oldest fir
 | Cable back while the grant lasts | Hands out the same answer under a new lease, with `partial` set to the stored text. | Applies the model's chat template to the question, appends `partial`, and continues from there. Sends only new text, starting at `offset` = UTF-8 byte length of `partial`. |
 | Cable back after the grant ended | Same. | Shows the permission window first, loads the model, then the same. |
 | The question and `partial` no longer fit the context | On the PC's final post, marks the answer `done` with the reason `length`. | Reports `finish: length` without generating. |
-| OPOS restarts | Reads answers from storage. A GPU answer that was `loading` or `answering` becomes `paused`. A phone-pane answer in either state becomes `failed` with error `restart`. | Its lease is refused. It asks for work again. |
+| Forget this PC | Cancels handed-out open work; keeps untouched queued work. | Key and lease refused. |
+| Allow a different PC key | Cancels handed-out open work before replacing the PC. | Receives queued work only. |
+| OPOS restarts | GPU loading/answering pauses; phone queued/loading/answering fails with `restart`. | Lease refused. |
+
+GPU answers still queued at restart stay queued. The first queued answer is shown as derived `waiting` in snapshots
+only when no loading, answering or paused answer already occupies that pane.
+Existing paused phone records are outside the restart-failure rule.
+
+Answer-store startup keeps recovery states in memory even if their saves fail. The next successful answer save retries
+pending recovery writes using the current records, and a later restart recomputes recovery from disk. Startup also
+sweeps all matching answer and pairing temporary files under each destination's lock, regardless of age. A writer
+holds that same lock from before temporary-file creation through writing, file sync, rename and directory sync;
+a sweep waits for a live writer, so temporary files it finds under the lock are stale. An unlink failure does not
+prevent valid saved answers or the pairing from loading. Only failed cleanup remains pending: answer cleanup retries
+after a successful answer save, and pairing cleanup retries at Allow and Forget. Forget and removal of an answer
+no longer held by the answer store also sweep matching temporary files under the destination lock.
 
 What is promised: after a resume, the text on the phone begins with exactly the bytes it had before, and continues from there. What is not promised: that the result equals what an uninterrupted run would have produced. The engine continues from a text prefix.
 
 Two status posts received after a completed work reply that do not name the live lease also pause that work. A newer long poll wakes an older pending poll with 204. A status with state `error` that names the live lease ends the answer: it becomes `failed` with that error code, the lease is dropped and no resume follows. An error status with no lease, or naming another lease, changes only the PC state shown.
 
-Stopping the link service attempts to pause running work. A failed Forget pause retains its lease for timer retries. A failed pause during shutdown is retried by a later service when it reconciles a running GPU answer without a lease before offering it. The timer also pauses a running GPU answer that has no lease, so the page does not keep showing it as running until the next work request. If the model file changes after a hand-out, the timer pauses the work. Text and status under the old lease then get 404 `lease`, and the PC's next work request gets a new lease with the new `model_sha256`.
+Forget and replacement through Allow cancel work through the same operation as Stop, keeping its text and recorded PC
+label and dropping its lease. An open answer counts as handed out if it is `paused`, `loading` or `answering`, or has
+stored text or a recorded PC label. A PC is replaced when its key changes; a label change with the same key does not
+replace its identity. Never-handed-out queued work stays available. If a Forget cancellation fails before directory
+sync, its lease is retained for retries while pairing revocation can still succeed. A `DurabilityError` during
+cancellation propagates, keeping the PC enrolled for a retry. The timer, Allow and work hand-out retry the cancellation
+before a new PC can receive work. After service reconstruction, Allow also checks stored answer states when there is no
+enrolled PC or its key changes, and cancels handed-out open work before enrolling the PC. This does not depend on an
+in-memory cancellation marker. Stopping the link service attempts to pause running work. A failed pause during shutdown
+is retried by a later service when it reconciles a running GPU answer without a lease before offering it. The timer also
+pauses a running GPU answer that has no lease, so the page does not keep showing it as running until the next work
+request. If the model file changes after a hand-out, the timer pauses the work. Text and status under the old lease then
+get 404 `lease`, and the PC's next work request gets a new lease with the new `model_sha256`.
 
 The service records the PC label and model on the answer independently of speed reports. A failed metadata write is retried on accepted text posts. This recording does not depend on `tokens` or `tps`.
+
+Page requirements for authentication and enrolment: an expired page token requires a reload and stops stale polling
+and queued mutations. A `403 locked` response immediately redacts private answer text, discards queued mutations and keeps polling for unlock.
+A new enrolment must preserve focus while the owner is typing in an input or textarea, and Allow
+still requires an explicit tap. These page behaviors are tested separately from the service and store contracts here.
 
 Resume on a different PC is not part of stage 1.
 
@@ -299,11 +352,17 @@ These requirements are not enforced by the phone service. This repository does n
 - At most 4 open link connections, including long polls and file transfers. At capacity a new connection replaces the oldest connection still reading its request. A request handed to the service for an answer is never replaced. If all four are being answered, the new connection is closed. A refusal still draining input remains eligible for replacement. A request that has been accepted but not yet fully read can therefore be closed without a reply while the listener is full.
 - There is one pending long poll and one GPU answer in progress per PC.
 - Headers must arrive within 5 seconds. The complete request must arrive within 10 seconds from the start of handling. The request line is at most 2,000 bytes including CRLF. The header block is at most 8,000 bytes including CRLF and its blank terminator, with at most 40 fields.
-- The answer store admits at most 50 unfinished answers and trims finished answers oldest first after accepting a question. Start-up scans do not trim files; failed cleanup is retried on later questions. The 50-answer retention target is separate from the 64-lease retry history.
+- The answer store admits at most 50 unfinished answers and trims finished answers oldest first after accepting a
+  question. Start-up scans do not trim answer history; they do sweep temporary files as described in section 9.
+  Failed history cleanup is retried on later questions. The 50-answer retention target is separate from the 64-lease
+  retry history.
 - Hello uses one shared token bucket of 10 tokens, refilled at 10 per second. Enrolment has a separate shared bucket of 2, refilled at 2 per second. Text has 4 tokens, refilled at 4 per second for the enrolled PC. Exceeding a bucket returns 429 `rate`.
 - The HTTP framing rules in section 5 apply, including the exact Host and enrolment Content-Type values. Every reply closes its connection. One request travels on one connection.
 - For a framing refusal, the phone sends the reply, half-closes writing and discards at most 64 KB of input, including buffered input, for at most one second and within the original request deadline. It then shuts down reading and closes. The client can read the refusal; a reset after it is not expected.
 - Replies held in memory have a 10-second write deadline. Model transfers have a 10-second deadline per chunk, with no overall transfer deadline.
+
+These fixes remove or change none of the six known limits below. Connection, framing, rate, answer-capacity and
+lease-history limits are unchanged.
 
 Known limits:
 
