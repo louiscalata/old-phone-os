@@ -4,6 +4,7 @@
 src/opos/__init__.py
 src/opos/advisor.py
 src/opos/ai_answers.py
+src/opos/ai_page.py
 src/opos/aitools/__init__.py
 src/opos/aitools/__main__.py
 src/opos/aitools/catalog.py
