@@ -50,6 +50,7 @@ src/opos/goalsim.py
 src/opos/governor.py
 src/opos/gpu_link.py
 src/opos/gpu_link_proto.py
+src/opos/gpu_link_server.py
 src/opos/home.py
 src/opos/hw/__init__.py
 src/opos/hw/battery.py
