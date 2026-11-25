@@ -123,6 +123,35 @@ class AiPage(unittest.TestCase):
         self.assertEqual(ai_page.snapshot()["presets"], list(ai_page.PRESETS))
         self.assertEqual(ai_page.snapshot()["gpu"]["model"], "Large model")
 
+    def test_page_server_question_body_limit_and_other_path_limits(self):
+        self.job()
+        with mock.patch.dict(os.environ, {"OPOS_APPS": "ai,notes,contacts"}), running() as server:
+            for question in ("a" * 4096, "a" * 4097, '"' * 4096):
+                with self.subTest(question_bytes=len(question.encode()), quotes=question.startswith('"')):
+                    body = {"action": "ask", "question": question, "panes": ["phone", "gpu"]}
+                    status, raw = request(server, "/api/ai", body)
+                    reply = json.loads(raw)
+                    if len(question) == 4097:
+                        self.assertEqual(
+                            (status, reply), (400, {"error": "Keep the question to 4,096 bytes or fewer."})
+                        )
+                    else:
+                        self.assertEqual(status, 200)
+                        self.assertEqual(reply["gpu"]["answer"]["question"], question)
+                        self.join_workers()
+                        self.state.cancel(reply["gpu"]["answer"]["id"])
+            # Pad valid JSON to the exact boundary; parsing must happen only below the path's cap.
+            for path, limit in (("/api/ai", 24832), ("/api/notes", 70000), ("/api/contacts", 4096)):
+                for size in (limit, limit + 1):
+                    with self.subTest(path=path, size=size):
+                        body = {"padding": "a" * (size - len(json.dumps({"padding": ""})))}
+                        self.assertEqual(len(json.dumps(body).encode()), size)
+                        status, raw = request(server, path, body)
+                        if size > limit:
+                            self.assertEqual((status, json.loads(raw)), (413, {"error": "body too large"}))
+                        else:
+                            self.assertNotEqual(status, 413)
+
     def test_link_off_missing_module_and_each_pc_shape(self):
         self.link = None
         off = ai_page.snapshot()
@@ -656,9 +685,11 @@ class AiPage(unittest.TestCase):
             self.assertNotIn(b"PRIVATE_", raw)
             self.assertNotIn("phone", json.loads(raw))
             self.assertEqual(json.loads(raw), json.loads(request(server, "/api/state")[1]))
-            self.assertEqual(
-                request(server, "/api/ai", {"action": "ask", "panes": ["gpu"], "question": "hidden"})[0], 403
-            )
+            body = {"action": "ask", "panes": ["gpu"], "question": "hidden"}
+            status, raw = request(server, "/api/ai", body)
+            self.assertEqual((status, json.loads(raw)), (403, {"error": "locked"}))
+            status, raw = request(server, "/api/ai", body, token=False)
+            self.assertEqual((status, json.loads(raw)), (403, {"error": "forbidden"}))
         self.assertEqual(len(self.answers.snapshot()["answers"]), 1)
 
     def test_document_controls_tokens_layout_and_plain_text(self):
@@ -757,6 +788,7 @@ class AiPage(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node is not installed; AI page DOM checks need Node.js")
+        self.link.value["storage"] = None
         # Supply actual store output with hostile-looking text; it must remain text.
         answer = self.answers.ask("gpu", "Public question")
         self.answers.begin(answer["id"])

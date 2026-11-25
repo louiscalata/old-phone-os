@@ -29,7 +29,7 @@ function world(search='') {
   const ids=['list','thumb','ai-title','home','nav','controls','question','ask','presets','err','enrol','enrol-text','allow','deny','reopen','forget',
     'phone-pane','phone-title','phone-model','phone-state','phone-speed','phone-answer','phone-stop',
     'gpu-pane','gpu-title','gpu-model','gpu-state','gpu-speed','gpu-answer','gpu-stop','gpu-disclosure','gpu-cable','link-controls'];
-  for(const id of ids)nodes.set(id,new Element());
+  for(const id of ids)nodes.set(id,new Element(id==='question'?'input':'div'));
   const get=id=>{assert.ok(nodes.has(id),'known DOM id '+id);return nodes.get(id)};
   for(const id of ['ai-title','controls','phone-pane'])get('list').appendChild(get(id));
   for(const id of ['gpu-pane','nav'])get('thumb').appendChild(get(id));
@@ -46,11 +46,13 @@ function world(search='') {
   get('gpu-disclosure').textContent='This PC can see what you ask here.';
   for(const [id,label] of Object.entries({deny:'Not now',allow:'Allow',reopen:'Allow PC requests again',forget:'Forget this PC'}))get(id).textContent=label;
   const document={hidden:false,documentElement:new Element('html'),getElementById:get,createElement:tag=>new Element(tag),
+    get activeElement(){return focused},
     querySelector:()=>({content:'fixture-token'}),addEventListener:(name,fn)=>listeners.set(name,fn)};
   const context=vm.createContext({document,location:{search},URLSearchParams,AbortController,performance:{now:()=>now},
     setTimeout:(fn,delay)=>{const id=++seq;timers.set(id,{fn,at:now+delay});return id},clearTimeout:id=>timers.delete(id),
     fetch:(url,options)=>new Promise((resolve,reject)=>{
       const req={url,options,at:now,resolve:(s,status=200)=>resolve({status,json:()=>Promise.resolve(clone(s))}),reject,
+        resolveInvalidJSON:status=>resolve({status,json:()=>Promise.reject(new SyntaxError('No JSON body'))}),
         resolveBody:()=>resolve({status:200,json:()=>new Promise(bodyResolve=>{req.resolve=s=>bodyResolve(clone(s))})})};
       requests.push(req);
     })});
@@ -125,9 +127,86 @@ test('request cadence includes actions and sends nothing while hidden',async()=>
  await w.reply({...s,rev:s.rev+2});await w.tick();assert.equal(w.requests[0].at,2300);
 });
 
-test('pending enrolment gives Not now focus and exact disclosure, with explicit link controls',async()=>{
- const w=world(),s=snapshot();s.gpu.link.pending={label:'Demo PC',code:'482913',seconds:60};await w.show(s);
- assert.equal(w.get('enrol').hidden,false);assert.equal(w.focus(),w.get('deny'));
+for(const method of ['GET','POST'])test('a locked '+method+' immediately redacts answers, drops actions and keeps polling',async()=>{
+ const w=world(),s=snapshot();
+ for(const name of ['phone','gpu']){
+  s[name].answer=answer();s[name].answer.text='private '+name+' answer visible before lock';
+ }
+ await w.show(s);
+ for(const name of ['phone','gpu'])assert.equal(w.get(name+'-answer').textContent,s[name].answer.text);
+ if(method==='POST')w.get('gpu-stop').onclick();
+ await w.tick();assert.equal(w.requests[0].options.method,method);
+ // Queue mutations while the request is in flight: none may survive the lock.
+ w.get('gpu-stop').onclick();w.get('phone-stop').onclick();
+ await w.reply({error:'locked'},403);
+ // Assert before advancing any timer or supplying a locked GET snapshot.
+ function domText(node){return node.textContent+node.children.map(domText).join('')}
+ for(const id of ['list','thumb'])assert.doesNotMatch(domText(w.get(id)),/private .* answer visible before lock/);
+ for(const name of ['phone','gpu']){
+  assert.equal(w.get(name+'-answer').textContent,'');
+  assert.equal(w.get(name+'-speed').textContent,'Unlock the phone to use AI mode.');
+  assert.equal(w.get(name+'-model').textContent,'');
+  assert.equal(w.get(name+'-state').textContent,'');
+  assert.equal(w.get(name+'-stop').hidden,true);
+ }
+ assert.equal(w.get('controls').hidden,true);
+ assert.equal(w.get('err').textContent,'locked');
+ assert.equal(w.timers.size,1,'the locked refusal must leave the next poll scheduled');
+ await w.tick();assert.equal(w.requests[0].options.method,'GET');
+ await w.reply({locked:true});
+ assert.equal(w.timers.size,1,'locked snapshots keep polling for unlock');
+ await w.tick();assert.equal(w.requests[0].options.method,'GET');
+ const unlocked=snapshot(s.rev+1);await w.reply(unlocked);
+ assert.equal(w.get('controls').hidden,false);
+ assert.equal(w.get('err').textContent,'');
+ assert.equal(w.get('gpu-speed').textContent,'Waiting for the PC');
+ await w.tick();assert.equal(w.requests[0].options.method,'GET','no queued mutation replays after unlock');
+ await w.reply(unlocked);
+});
+
+test('a 403 without JSON or with an unexpected error keeps polling',async()=>{
+ for(const method of ['GET','POST'])for(const body of [undefined,null,{}, {error:'unexpected'}]){
+  const w=world();await w.show(snapshot());
+  if(method==='POST')w.get('ask').onclick();
+  await w.tick();assert.equal(w.requests[0].options.method,method);
+  if(body===undefined){w.requests.shift().resolveInvalidJSON(403);await settle()}
+  else await w.reply(body,403);
+  assert.equal(w.get('err').textContent,body&&body.error||'AI mode could not update.');
+  assert.equal(w.timers.size,1,'only a token refusal stops polling');
+  await w.tick();assert.equal(w.requests[0].options.method,'GET');await w.reply(snapshot(2));
+  assert.equal(w.get('err').textContent,'');assert.equal(w.timers.size,1);
+ }
+});
+
+test('a forbidden poll or post explains that the page needs reloading',async()=>{
+ for(const method of ['GET','POST']){
+  const w=world();await w.show(snapshot());
+  if(method==='POST')w.get('ask').onclick();
+  await w.tick();assert.equal(w.requests[0].options.method,method);
+  await w.reply({error:'forbidden'},403);
+  assert.equal(w.get('err').textContent,'This page is out of date. Reload it, then try again.');
+ }
+});
+
+test('a forbidden poll or post stops polling and queued actions until reload',async()=>{
+ for(const method of ['GET','POST']){
+  const w=world();await w.show(snapshot());
+  if(method==='POST')w.get('ask').onclick();
+  await w.tick();assert.equal(w.requests[0].options.method,method);
+  w.get('ask').onclick();
+  await w.reply({error:'forbidden'},403);
+  assert.equal(w.timers.size,0,'no next poll or queued action');
+  w.hidden(true);w.hidden(false);w.get('ask').onclick();
+  assert.equal(w.timers.size,0,'visibility and actions cannot restart stale polling');
+  assert.equal(w.requests.length,0);
+ }
+});
+
+test('pending enrolment uses safe focus and exact disclosure, with explicit link controls',async()=>{
+ for(const typing of [false,true]){
+ const w=world(),s=snapshot();w.get(typing?'question':'ask').focus();
+ s.gpu.link.pending={label:'Demo PC',code:'482913',seconds:60};await w.show(s);
+ assert.equal(w.get('enrol').hidden,false);assert.equal(w.focus(),w.get(typing?'question':'deny'));
  assert.equal(w.get('enrol-text').textContent,'Use the GPU of Demo PC? Code 482 913. This PC will see what you ask in AI mode and will keep a copy of the model file.');
  for(const action of ['deny','allow','reopen','forget']){
   w.get(action).onclick();await w.tick();
@@ -135,6 +214,27 @@ test('pending enrolment gives Not now focus and exact disclosure, with explicit 
  }
  s.rev++;s.gpu.link.pending=null;s.gpu.link.enrol='closed';await w.show(s);
  assert.equal(w.get('enrol').hidden,true);assert.equal(w.get('enrol-text').textContent,'');assert.equal(w.get('reopen').hidden,false);
+ }
+});
+
+test('new enrolments preserve typing focus and still require an explicit Allow tap',async()=>{
+ for(const tag of ['input','textarea']){
+  const w=world();await w.show(snapshot());
+  const field=tag==='input'?w.get('question'):w.document.createElement(tag);
+  if(tag==='textarea')w.get('controls').appendChild(field);
+  field.value='Question in progress';field.focus();
+  let rev=1;
+  for(const code of ['482913','590079']){
+   const s=snapshot(++rev);s.gpu.link.pending={label:'Demo PC',code,seconds:60};
+   await w.tick();assert.equal(w.requests[0].options.method,'GET');await w.reply(s);
+   assert.equal(w.focus(),field,tag+' keeps focus');
+   assert.equal(field.value,'Question in progress');
+   assert.equal(w.get('enrol').hidden,false);
+   assert.equal(w.requests.length,0,'no automatic approval or refusal');
+  }
+  w.get('allow').onclick();await w.tick();
+  assert.deepEqual(JSON.parse(w.requests[0].options.body),{action:'allow',code:'590079'});
+ }
 });
 
 test('queued enrolment answers retain the drawn code when another request replaces it',async()=>{
@@ -327,6 +427,46 @@ test('cable line says when a PC is connected and what unplugging does',async()=>
  s=snapshot(++rev);s.gpu.link=null;await w.show(s);assert.equal(cable().hidden,true);
  s=snapshot(++rev);s.gpu.link.pc=pc();await w.show(s);assert.equal(cable().hidden,false);
  await w.show({locked:true});assert.equal(cable().hidden,true);assert.equal(cable().textContent,'');
+});
+
+test('a link storage fault replaces GPU answering and waiting words until it clears',async()=>{
+ const w=world();let rev=0;
+ for(const state of ['answering','waiting',null])for(const speed of [null,42]){
+  const s=snapshot(++rev);s.gpu.link.pc=pc();s.gpu.link.storage='error';
+  s.gpu.answer=state?answer(state):null;
+  if(state)s.gpu.answer.tps=speed;
+  s.phone.answer=answer();s.phone.answer.tps=null;s.phone.link=s.gpu.link;
+  await w.show(s);
+  const id=state&&speed!==null?'gpu-state':'gpu-speed';
+  assert.match(w.get(id).textContent,/^The phone could not save the answer\./);
+  assert.equal(w.get('phone-speed').textContent,'Answering','the fault belongs to the GPU link');
+  assert.equal(w.get('gpu-answer').textContent,state?s.gpu.answer.text:'');
+  s.rev=++rev;s.gpu.link.storage=null;await w.show(s);
+  assert.doesNotMatch(w.get(id).textContent,/could not save/);
+ }
+});
+
+test('a link storage fault only asks to wait before unplugging a live PC',async()=>{
+ const w=world();let rev=0;
+ assert.equal(fixture.snapshot.gpu.link.storage,null,'the fake snapshot supplies storage');
+ for(const state of ['ready','copying','stopping','error'])for(const live of [true,false])
+ for(const answerState of [null,'answering','done']){
+  const s=snapshot(++rev);s.gpu.link.pc={...pc(state),live};s.gpu.link.storage='error';
+  s.gpu.answer=answerState?answer(answerState):null;await w.show(s);
+  assert.equal(w.get('gpu-cable').dataset.cable,live?'wait':'out');
+  assert.equal(w.get('gpu-cable').hidden,false);
+  assert.equal(w.get('gpu-cable').textContent,'The phone could not save the answer.'+(live?' Wait before unplugging.':''));
+  assert.doesNotMatch(w.get('gpu-cable').textContent,/answer is saved|Safe to unplug/);
+  s.rev=++rev;s.gpu.link.storage=null;await w.show(s);
+  assert.doesNotMatch(w.get('gpu-cable').textContent,/could not save/);
+ }
+ for(const enrol of ['open','closed'])for(const answerState of [null,'answering','done']){
+  const s=snapshot(++rev);s.gpu.link.pc=null;s.gpu.link.enrol=enrol;s.gpu.link.storage='error';
+  s.gpu.answer=answerState?answer(answerState):null;await w.show(s);
+  assert.equal(w.get('gpu-cable').dataset.cable,'');
+  assert.equal(w.get('gpu-cable').hidden,false);
+  assert.equal(w.get('gpu-cable').textContent,'The phone could not save the answer.');
+ }
 });
 
 test('live lines are written only when their words change',async()=>{

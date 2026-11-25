@@ -1273,6 +1273,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             limit = 70000 if path == "/api/notes" else secure.MAX_BODY
+            if path == "/api/ai" and ai_answers is not None:
+                limit = 6 * ai_answers.MAX_QUESTION_BYTES + 256
             data = secure.read_json_body(self.rfile, self.headers, limit)
         except secure.BodyError as e:
             self._deny(e.status, e.message, "body")

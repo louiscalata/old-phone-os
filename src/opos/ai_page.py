@@ -409,6 +409,7 @@ if(pane==='gpu'){
 }
 if(pane==='phone')G('list').appendChild(G('home').parentNode);
 var token=document.querySelector('meta[name=opos-token]').content;
+var stale=false;
 var boot=null,rev=-1,current=null,timer=null,busy=false,queue=[],last=-Infinity,open=false,pendingCode=null,presetKey=null;
 var OPEN=['queued','waiting','loading','answering','paused'];
 var ERRORS={no_model:'No model is available on this phone.',stream_error:'The phone model could not finish the answer.',
@@ -435,6 +436,7 @@ function linkWords(link){
  return 'Ready';
 }
 function words(name,p){
+ if(name==='gpu'&&p.link&&p.link.storage==='error')return ERRORS.storage_error;
  var a=p.answer;
  if(a){
   if(a.state==='failed')return errorWords(name,a.error)||(name==='gpu'?'The PC could not finish the answer.':'The phone could not finish the answer.');
@@ -453,10 +455,11 @@ function cableState(p){
  var pc=p.link&&p.link.pc;
  if(!pc)return '';
  if(!pc.live)return 'out';
- return pc.state==='copying'?'wait':'ok';
+ return p.link.storage==='error'||pc.state==='copying'?'wait':'ok';
 }
 function cableWords(p){
  var state=cableState(p),a=p.answer,pc=p.link&&p.link.pc,open=!!(a&&OPEN.indexOf(a.state)>=0);
+ if(p.link&&p.link.storage==='error')return ERRORS.storage_error+(state==='wait'?' Wait before unplugging.':'');
  var stuck=!!pc&&(pc.state==='stopping'||pc.state==='error');
  if(state==='')return '';
  if(state==='out'){
@@ -518,8 +521,9 @@ function draw(s){
  G('enrol').hidden=!pending;G('reopen').hidden=!(link&&link.enrol==='closed');G('forget').hidden=!pc;
  text('enrol-text',pending?'Use the GPU of '+pending.label+'? Code '+pending.code.slice(0,3)+' '+pending.code.slice(3)+
   '. This PC will see what you ask in AI mode and will keep a copy of the model file.':'');
- var nextCode=pending?pending.code:null;
- if(nextCode&&nextCode!==pendingCode&&!G('thumb').hidden)G('deny').focus({preventScroll:true});
+ var nextCode=pending?pending.code:null,active=document.activeElement;
+ if(nextCode&&nextCode!==pendingCode&&!G('thumb').hidden&&!(active&&/^(INPUT|TEXTAREA)$/.test(active.tagName)))
+  G('deny').focus({preventScroll:true});
  pendingCode=nextCode;
  var key=JSON.stringify(s.presets);if(key!==presetKey){presetKey=key;
   var presets=G('presets');presets.textContent='';
@@ -531,7 +535,7 @@ function draw(s){
 function interval(){return open?100:2000}
 function schedule(){
  clearTimeout(timer);timer=null;
- if(document.hidden||busy)return;
+ if(document.hidden||busy||stale)return;
  timer=setTimeout(request,Math.max(0,last+interval()-performance.now()));
 }
 function request(){
@@ -547,6 +551,9 @@ function request(){
  }).then(function(r){return r.json().then(function(s){return {status:r.status,snapshot:s}})});
  Promise.race([response,deadline]).then(function(result){
    var r=result,s=result.snapshot;
+   if(r.status===403&&s&&s.error==='forbidden'){
+    stale=true;text('err','This page is out of date. Reload it, then try again.');return}
+   if(r.status===403&&s&&s.error==='locked'){queue=[];draw({locked:true})}
    if(r.status!==200){text('err',s.error||'AI mode could not update.');return}
    text('err','');draw(s);
   }).catch(function(){text('err',timedOut?'The phone did not answer.':'AI mode could not update.');
