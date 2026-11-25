@@ -52,7 +52,6 @@ class AiPage(unittest.TestCase):
         self.service = SimpleNamespace(service=lambda: self.link)
         self.enterContext(mock.patch.object(ai_page, "gpu_link_server", self.service))
         apps.register(ai_page.APP)
-        self.addCleanup(apps.unregister, "ai")
         # Added last: join every worker while its storage and patches still exist.
         self.addCleanup(self.close_workers)
 
@@ -83,7 +82,7 @@ class AiPage(unittest.TestCase):
             app.card(),
             "Works offline: yes, with a local model. Sends data: questions to the enrolled PC when the GPU pane is used. Uses: phone model and optional PC GPU. Real or practice: real.",
         )
-        self.assertNotIn("ai", apps.MODULES)
+        self.assertEqual(apps.MODULES["ai"], "opos.ai_page")
         html = app.render("fixture-token", "fixture-nonce")
         self.assertIn('name="opos-token" content="fixture-token"', html)
         self.assertIn('nonce="fixture-nonce"', html)
