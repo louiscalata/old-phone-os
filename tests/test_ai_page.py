@@ -36,6 +36,20 @@ class Document(HTMLParser):
         self.tags.append((tag, dict(attrs)))
 
 
+class PhoneModelSelection(unittest.TestCase):
+    def test_phone_pane_names_nvidia_from_environment(self):
+        with (
+            tempfile.TemporaryDirectory(dir=ROOT) as tmp,
+            mock.patch.dict(os.environ, {"OPOS_LLAMA_ID": "nvidia-aceinstruct-1.5b"}, clear=True),
+            mock.patch.object(assist, "free_mb", return_value=2048),
+            mock.patch.object(ai_answers, "shared", return_value=ai_answers.AnswerStore(Store(tmp))),
+            mock.patch.object(ai_page, "gpu_link_server", None),
+            mock.patch.object(ai_page, "_STATE", ai_page.PageState()),
+        ):
+            self.assertEqual(ai_page._route().model, "nvidia-aceinstruct-1.5b")
+            self.assertEqual(ai_page.snapshot()["phone"]["model"], "NVIDIA AceInstruct 1.5B")
+
+
 class AiPage(unittest.TestCase):
     def setUp(self):
         # All state, including temporary HTTP-server state, stays in this checkout.

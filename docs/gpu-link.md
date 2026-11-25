@@ -367,6 +367,16 @@ The companion must verify the completed download against its own list. Its requi
 - It refuses to start a download that would not fit in free disk space.
 - A hash supplied by the phone does not establish that the companion accepts the file. The companion must compare it with its own built-in list and verify the downloaded bytes.
 
+### Phone-local model in Termux
+
+The phone-local model is separate from the GPU Link model served to the PC. For an optional external NVIDIA AceInstruct 1.5B file, pass `-LlamaId nvidia-aceinstruct-1.5b` with `-Model <file.gguf>` to `deploy/duo-termux.ps1`. It writes one line to the drop's `llama-id` file; `deploy/termux-setup.sh` validates it and saves that default in `~/bin/opos-start`, so plain restarts retain it. Omitting `-LlamaId` removes an earlier drop id. With no saved id or environment override, the server alias remains `llama-3.2-1b-instruct`.
+
+An environment override still wins, for example `OPOS_LLAMA_ID=nvidia-aceinstruct-1.5b ~/bin/opos-start`. The launcher uses the effective value for the server's `--alias` and passes it to OPOS. The setup id accepts 1 to 64 lowercase ASCII letters, digits, dots and hyphens, beginning with a letter or digit. OPOS selects only ids in `assist.LOCAL_MODELS`; an unset, empty or unknown value keeps the memory-based choice, and the memory guard still applies.
+
+With `OPOS_LLAMA_ID` unset in the OPOS process, the phone pane header names the Meta model recommended for the free memory until an answer starts. This header is not a server probe. The default local route checks `/v1/models` before sending a question: a server started under another known exact alias still verifies, and the answer names the verified alias. A filename or near match does not verify. The alias declares identity; this check does not inspect the weights. A configured `OPOS_LOCAL_URL` is used as set without this check.
+
+AceInstruct is an optional external file, never shipped with OPOS; see [third-party notices](../THIRD_PARTY.md#aceinstruct-15b) for NVIDIA's CC-BY-NC-4.0 terms (non-commercial, attribution). AceInstruct phone execution and performance remain **NOT_RUN**.
+
 ## 11. Engine rules on the PC
 
 These requirements are not enforced by the phone service. This repository does not supply the Windows companion, an engine build, archive hashes or a verified engine command line.
