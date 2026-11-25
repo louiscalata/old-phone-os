@@ -1,17 +1,26 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import errno
+import io
 import multiprocessing
 import os
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from opos import calllog, contacts_page, inbox, notes_page, store
+from opos import calllog, clock_page, contacts_page, inbox, lockpin, notes_page, store
 from opos.call_events import CallEvent
+
+try:
+    ZoneInfo("UTC")
+except ZoneInfoNotFoundError:  # e.g. Windows without the tzdata package, which the Windows job here runs on
+    ZONE_DATABASE = False
+else:
+    ZONE_DATABASE = True
 
 if os.name == "nt":
     import msvcrt
@@ -159,6 +168,55 @@ def note_read(connection, data, read_before_release):
 
 
 class StoreRecoveryCoordinationTests(unittest.TestCase):
+    def test_default_app_reads_recover_from_permission_errors_and_directories(self):
+        readers = (
+            ("contacts.json", contacts_page),
+            ("notes.json", notes_page),
+            ("calls.json", calllog),
+            ("inbox.json", inbox),
+            ("alarms.json", clock_page),
+            ("lock.json", lockpin),
+        )
+        for name, app in readers:
+            for fault in ("permission", "directory"):
+                with self.subTest(name=name, fault=fault), tempfile.TemporaryDirectory() as root:
+                    if app is clock_page and not ZONE_DATABASE:
+                        self.skipTest("needs the IANA time zone database (tzdata)")
+                    with patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_LOCK": "1", "OPOS_APPS": "calls"}):
+                        app.reset()
+                        try:
+                            path = Path(root) / name
+                            if fault == "directory":
+                                path.mkdir()
+                                (path / "kept").write_bytes(b"original")
+                            else:
+                                path.write_bytes(b'{"schema":1}')
+                            opened = Path.open
+
+                            def unreadable(target, *args, path=path, opened=opened, **kwargs):
+                                if target == path and args == ("rb",):
+                                    raise PermissionError(errno.EACCES, "denied")
+                                return opened(target, *args, **kwargs)
+
+                            with patch.object(Path, "open", unreadable) if fault == "permission" else nullcontext():
+                                if app is lockpin:
+                                    self.assertTrue(lockpin.is_locked())
+                                    self.assertFalse(lockpin.status()["has_pin"])
+                                    for action, api in (("hang_up", "phone"), ("stop", "clock"), ("unlock", "lock")):
+                                        self.assertFalse(lockpin.blocks(action, "/api/" + api))
+                                else:
+                                    self.assertIn("Started empty", app.snapshot()["recovered"])
+                            backups = list(Path(root).glob(name + ".bad-*"))
+                            self.assertEqual(len(backups), 1)
+                            if fault == "directory":
+                                # Call-log recovery makes its backup private, including a directory.
+                                backups[0].chmod(0o700)
+                                self.assertEqual((backups[0] / "kept").read_bytes(), b"original")
+                            else:
+                                self.assertEqual(backups[0].read_bytes(), b'{"schema":1}')
+                        finally:
+                            app.reset()
+
     @contextmanager
     def process(self, target, *args):
         context = multiprocessing.get_context("spawn")
@@ -480,6 +538,72 @@ class StoreRecoveryCoordinationTests(unittest.TestCase):
             path.write_bytes(b'{"schema":1,"value":42}')
             self.assertEqual(store.Store(folder).read_json(path.name, {}), ({"schema": 1, "value": 42}, ""))
             self.assertEqual(list(folder.iterdir()), [path])
+
+    def test_json_read_errors_propagate_without_quarantine_on_either_read(self):
+        for error in (PermissionError(errno.EACCES, "denied"), OSError(errno.EIO, "read failed")):
+            for corrupt_first in (False, True):
+                with self.subTest(error=type(error).__name__, corrupt_first=corrupt_first):
+                    with tempfile.TemporaryDirectory() as root:
+                        saved = store.Store(root)
+                        path = saved.write_json("state.json", {"value": "kept"})
+                        original = path.read_bytes()
+                        calls = 0
+                        opened = Path.open
+
+                        def fail_read(
+                            target, *args, path=path, corrupt_first=corrupt_first, error=error, opened=opened, **kwargs
+                        ):
+                            nonlocal calls
+                            if target == path and args == ("rb",):
+                                calls += 1
+                                if corrupt_first and calls == 1:
+                                    # Corrupt first read forces the locked reread.
+                                    return io.BytesIO(b"bad JSON")
+                                raise error
+                            return opened(target, *args, **kwargs)
+
+                        with patch.object(Path, "open", fail_read), self.assertRaises(type(error)):
+                            saved.read_json(path.name, {}, strict=True)
+                        self.assertEqual(calls, 2 if corrupt_first else 1)
+                        self.assertEqual(path.read_bytes(), original)
+                        self.assertFalse(list(path.parent.glob(path.name + ".bad-*")))
+
+    def test_record_validation_rechecks_under_lock_and_quarantines_in_both_modes(self):
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as root:
+                saved = store.Store(root)
+                path = saved.write_json("state.json", {"value": "kept"})
+                original = path.read_bytes()
+                opened = Path.open
+                calls = 0
+
+                def stale_read(target, *args, path=path, opened=opened, **kwargs):
+                    nonlocal calls
+                    if target == path and args == ("rb",):
+                        calls += 1
+                        if calls == 1:
+                            return io.BytesIO(b'{"schema":1,"value":"bad"}')
+                    return opened(target, *args, **kwargs)
+
+                def valid(record):
+                    return record.get("value") == "kept"
+
+                with patch.object(Path, "open", stale_read):
+                    self.assertEqual(
+                        saved.read_json(path.name, None, strict=strict, validate=valid),
+                        ({"schema": 1, "value": "kept"}, ""),
+                    )
+                self.assertEqual(calls, 2)
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(list(Path(root).glob(path.name + ".bad-*")))
+                path.write_bytes(b'{"schema":1,"value":"bad"}')
+                raw = path.read_bytes()
+                value, note = saved.read_json(path.name, None, strict=strict, validate=valid)
+                self.assertIsNone(value)
+                self.assertTrue(note)
+                self.assertFalse(path.exists())
+                self.assertEqual([p.read_bytes() for p in Path(root).glob(path.name + ".bad-*")], [raw])
+                self.assertEqual(saved.read_json(path.name, None, strict=strict, validate=valid), (None, ""))
 
     @unittest.skipIf(os.name == "nt", "Windows has different file mode semantics")
     def test_owner_can_reopen_the_lock_after_restrictive_creation(self):

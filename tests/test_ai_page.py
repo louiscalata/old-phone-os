@@ -74,6 +74,29 @@ class AiPage(unittest.TestCase):
     def ask(self, panes=("phone",), question="A public question"):
         return ai_page.post({"action": "ask", "question": question, "panes": list(panes)})
 
+    def test_startup_notice_refuses_gpu_and_combined_api_but_allows_phone(self):
+        path = Path(self.tmp.name) / "ai-answer-0123456789ab.json"
+        path.write_bytes(b"{bad")
+        self.answers = ai_answers.AnswerStore(Store(self.tmp.name))
+        self.enterContext(mock.patch.object(ai_answers, "shared", return_value=self.answers))
+        self.link.answers = self.answers
+        notice = self.answers.startup_notice
+        self.assertTrue(notice)
+        for panes in (("gpu",), ("phone", "gpu")):
+            with self.subTest(panes=panes):
+                before = self.answers.snapshot()
+                status, body = self.ask(panes)
+                self.assertEqual(status, 400)
+                self.assertEqual(body["error"], notice)
+                self.assertEqual(self.answers.snapshot(), before)
+        self.job(["Phone works"])
+        self.assertEqual(self.ask()[0], 200)
+        self.join_workers()
+        self.assertEqual(self.answers.snapshot()["answers"][0]["text"], "Phone works")
+        self.assertEqual(self.answers.startup_notice, notice)
+        with self.assertRaises(OSError):
+            self.answers.ask("gpu", "still refused")
+
     def test_registration_token_nonce_disclosure_and_home_unchanged(self):
         app = apps.by_id("ai")
         self.assertEqual((app.id, app.title, app.path), ("ai", "AI mode", "/ai"))
@@ -173,6 +196,23 @@ class AiPage(unittest.TestCase):
         down = ai_page.snapshot()
         self.assertFalse(down["gpu"]["ready"])
         self.assertGreater(down["rev"], live["rev"])
+
+    def test_gpu_ready_follows_the_startup_notice_not_a_request_fault(self):
+        self.link.value["pc"] = deepcopy(PC)
+        self.assertTrue(ai_page.snapshot()["gpu"]["ready"])
+        # A request or write fault is only a message. With no answer open it stays set for the whole service
+        # instance, so it must not keep the GPU pane unready (and Ask disabled) after the fault has passed.
+        self.link.value.update(storage="error", storage_notice="", storage_fault=True)
+        self.assertTrue(ai_page.snapshot()["gpu"]["ready"])
+        # A startup notice stands until the store is rebuilt, and then new GPU questions are refused.
+        notice = "A saved answer was damaged and moved aside. Restart AI mode to continue."
+        self.link.value.update(storage="error", storage_notice=notice, storage_fault=False)
+        self.assertFalse(ai_page.snapshot()["gpu"]["ready"])
+        # A write fault on top of the notice does not make the pane ready again.
+        self.link.value.update(storage="error", storage_notice=notice, storage_fault=True)
+        self.assertFalse(ai_page.snapshot()["gpu"]["ready"])
+        self.link.value.update(storage=None, storage_notice="", storage_fault=False)
+        self.assertTrue(ai_page.snapshot()["gpu"]["ready"])
 
     def test_snapshots_open_finished_and_hidden_store_changes_raise_revision(self):
         for pane in ai_answers.PANES:

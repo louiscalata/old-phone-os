@@ -66,6 +66,140 @@ function snapshot(rev=1){const s=clone(fixture.snapshot);s.rev=rev;s.phone.answe
 function answer(state='answering'){return {...clone(fixture.snapshot.gpu.answer),state,tokens:21,tps:42.125,error:null,where:'Demo PC'};}
 function pc(state='ready'){return {label:'Demo PC',live:true,state,gpu:{name:'Demo GPU'},copied:41,total:100,error:null};}
 
+test('startup read faults and recovery warnings stay visible and block GPU asks',async()=>{
+ for(const notice of ['The phone could not read a saved answer. Restore access and restart AI mode.',
+                      'A saved answer was damaged and moved aside. Restart AI mode to continue.']){
+  for(const search of ['', '?pane=gpu', '?pane=phone']){
+   const w=world(search),s=snapshot();s.gpu.link.pc=pc();s.gpu.link.storage='error';
+   s.gpu.link.storage_notice=notice;s.gpu.ready=false;
+   await w.show(s);
+   assert.equal(w.get('gpu-speed').textContent,notice);
+   // Waiting cannot clear a startup notice, so the cable line stays about the cable.
+   assert.equal(w.get('gpu-cable').textContent,'Connected. Safe to unplug.');
+   assert.equal(w.get('gpu-cable').dataset.cable,'ok');
+   const blocked=search!=='?pane=phone';
+   assert.equal(w.get('ask').disabled,blocked);
+   for(const button of w.get('presets').children)assert.equal(button.disabled,blocked);
+   if(!blocked){
+    w.get('question').value='Phone only';w.get('ask').onclick();await w.tick();
+    assert.deepEqual(JSON.parse(w.requests[0].options.body).panes,['phone']);
+   }
+  }
+ }
+});
+
+test('a startup notice never changes the cable line',async()=>{
+ const notice='A saved answer was damaged and moved aside. Restart AI mode to continue.';
+ const w=world();let rev=0;
+ for(const state of ['ready','busy','copying','stopping','error','idle','loading'])for(const live of [true,false])
+ for(const answerState of [null,'queued','waiting','loading','answering','paused','done','failed','cancelled']){
+  const where='pc '+state+', live '+live+', answer '+answerState;
+  const plain=snapshot(++rev);plain.gpu.link.pc={...pc(state),live};plain.gpu.answer=answerState?answer(answerState):null;
+  await w.show(plain);
+  const expected=[w.get('gpu-cable').textContent,w.get('gpu-cable').dataset.cable];
+  const noticed=snapshot(++rev);noticed.gpu.link.pc={...pc(state),live};noticed.gpu.answer=answerState?answer(answerState):null;
+  noticed.gpu.link.storage='error';noticed.gpu.link.storage_notice=notice;noticed.gpu.ready=false;
+  await w.show(noticed);
+  assert.deepEqual([w.get('gpu-cable').textContent,w.get('gpu-cable').dataset.cable],expected,where);
+  assert.doesNotMatch(w.get('gpu-cable').textContent,/damaged|Restart AI mode/,where);
+  if(!answerState)assert.equal(w.get('gpu-speed').textContent,notice,where);
+ }
+ // The cue that matters at the demo's key moment, spelled out.
+ for(const [live,expected] of [[true,'Connected. Safe to unplug: the answer is saved and continues when the PC is ready again.'],
+                               [false,'Not connected. The answer is saved and continues when the PC is ready again.']]){
+  const s=snapshot(++rev);s.gpu.link.pc={...pc(),live};s.gpu.answer=answer('paused');
+  s.gpu.link.storage='error';s.gpu.link.storage_notice=notice;s.gpu.ready=false;await w.show(s);
+  assert.equal(w.get('gpu-cable').textContent,expected);
+ }
+});
+
+test('a write fault is still reported while a startup notice stands',async()=>{
+ const notice='A saved answer was damaged and moved aside. Restart AI mode to continue.';
+ const w=world();let rev=0;
+ for(const live of [true,false]){
+  const s=snapshot(++rev);s.gpu.link.pc={...pc(),live};s.gpu.answer=answer('answering');
+  s.gpu.link.storage='error';s.gpu.link.storage_notice=notice;s.gpu.link.storage_fault=true;s.gpu.ready=false;
+  await w.show(s);
+  assert.equal(w.get('gpu-cable').textContent,notice+(live?' Wait before unplugging.':''));
+  assert.equal(w.get('gpu-cable').dataset.cable,live?'wait':'out');
+  assert.doesNotMatch(w.get('gpu-cable').textContent,/answer is saved|Safe to unplug/);
+ }
+});
+
+test('a request or write fault does not disable Ask; only a startup notice does',async()=>{
+ const notice='A saved answer was damaged and moved aside. Restart AI mode to continue.';
+ for(const search of ['', '?pane=gpu', '?pane=phone']){
+  const w=world(search);
+  const s=snapshot(1);s.gpu.link.pc=pc();s.gpu.link.storage='error';s.gpu.link.storage_notice='';s.gpu.link.storage_fault=true;await w.show(s);
+  assert.equal(w.get('ask').disabled,false,'a transient fault must not block asking ('+search+')');
+  for(const button of w.get('presets').children)assert.equal(button.disabled,false);
+  assert.equal(w.get('gpu-cable').textContent,'The phone could not save the answer. Wait before unplugging.');
+  const n=snapshot(2);n.gpu.link.pc=pc();n.gpu.link.storage='error';n.gpu.link.storage_notice=notice;n.gpu.link.storage_fault=false;
+  await w.show(n);
+  assert.equal(w.get('ask').disabled,search!=='?pane=phone');
+  const c=snapshot(3);c.gpu.link.pc=pc();c.gpu.link.storage=null;c.gpu.link.storage_notice='';c.gpu.link.storage_fault=false;await w.show(c);
+  assert.equal(w.get('ask').disabled,false);
+ }
+});
+
+test('Enter under a startup notice shows the notice and sends nothing, and under an open answer the wait message',async()=>{
+ const notice='The phone could not read a saved answer. Restore access and restart AI mode.';
+ const enter=(w)=>{w.get('question').value='Hello';w.get('question').onkeydown({key:'Enter',preventDefault(){}})};
+ // A question would be a POST that the next tick starts before the poll, so a GET proves that nothing was queued.
+ const sendsNothing=async(w,s,where)=>{await w.tick();assert.equal(w.requests[0].options.method,'GET','no question is sent: '+where);await w.reply(s)};
+ for(const search of ['', '?pane=gpu']){
+  const w=world(search);
+  const s=snapshot(1);s.gpu.link.pc=pc();s.gpu.link.storage='error';s.gpu.link.storage_notice=notice;s.gpu.ready=false;await w.show(s);
+  enter(w);
+  assert.equal(w.get('err').textContent,notice,search);
+  await sendsNothing(w,s,search);
+ }
+ const w=world('?pane=phone');
+ const s=snapshot(1);s.gpu.link.pc=pc();s.gpu.link.storage='error';s.gpu.link.storage_notice=notice;s.gpu.ready=false;s.phone.answer=answer('answering');
+ await w.show(s);
+ enter(w);
+ assert.equal(w.get('err').textContent,'Wait for this answer, or stop it.');
+ await sendsNothing(w,s,'phone view with an open phone answer');
+ const open=world();
+ const t=snapshot(1);t.gpu.link.pc=pc();t.gpu.link.storage='error';t.gpu.link.storage_notice=notice;t.gpu.ready=false;t.gpu.answer=answer('answering');
+ await open.show(t);
+ enter(open);
+ assert.equal(open.get('err').textContent,'Wait for this answer, or stop it.','an open answer keeps its own message');
+ await sendsNothing(open,t,'open GPU answer');
+});
+
+test('under a startup notice Ask, presets, Enter and the status line follow the targeted panes in every state',async()=>{
+ const notice='A saved answer was damaged and moved aside. Restart AI mode to continue.';
+ const enter=(w)=>{w.get('question').value='Hello';w.get('question').onkeydown({key:'Enter',preventDefault(){}})};
+ for(const search of ['', '?pane=gpu', '?pane=phone'])
+ for(const gpuAnswer of [null,'done','answering'])
+ for(const phoneAnswer of [null,'done','answering'])
+ for(const pcShape of ['none','unplugged','live'])
+ for(const fault of [false,true]){
+  const where=[search||'combined view','gpu answer '+gpuAnswer,'phone answer '+phoneAnswer,'pc '+pcShape,'write fault '+fault].join(', ');
+  const w=world(search),s=snapshot(1);
+  s.gpu.link.pc=pcShape==='none'?null:{...pc(),live:pcShape==='live'};
+  s.gpu.link.storage='error';s.gpu.link.storage_notice=notice;s.gpu.link.storage_fault=fault;s.gpu.ready=false;
+  s.gpu.answer=gpuAnswer?answer(gpuAnswer):null;s.phone.answer=phoneAnswer?answer(phoneAnswer):null;
+  await w.show(s);
+  const gpuTargeted=search!=='?pane=phone',phoneTargeted=search!=='?pane=gpu';
+  const open=(gpuTargeted&&gpuAnswer==='answering')||(phoneTargeted&&phoneAnswer==='answering');
+  // The notice blocks every view that asks the GPU. An open answer in a targeted pane blocks as before.
+  const blocked=gpuTargeted||open;
+  assert.equal(w.get('ask').disabled,blocked,where);
+  for(const button of w.get('presets').children)assert.equal(button.disabled,blocked,where);
+  // The notice is the GPU status line whatever else the pane shows (the words move to the state line next to a speed).
+  if(gpuAnswer)assert.ok(w.get('gpu-state').textContent.startsWith(notice),where+': '+w.get('gpu-state').textContent);
+  else assert.equal(w.get('gpu-speed').textContent,notice,where);
+  enter(w);
+  const expected=open?'Wait for this answer, or stop it.':gpuTargeted?notice:'';
+  assert.equal(w.get('err').textContent,expected,where);
+  await w.tick();
+  if(expected)assert.equal(w.requests[0].options.method,'GET','nothing is sent: '+where);
+  else{assert.equal(w.requests[0].options.method,'POST',where);assert.deepEqual(JSON.parse(w.requests[0].options.body).panes,['phone'],where)}
+ }
+});
+
 test('answer markup remains literal and every visible field comes from one snapshot',async()=>{
  const w=world(),s=snapshot();s.gpu.answer=clone(fixture.snapshot.gpu.answer);s.gpu.answer.tokens=21;s.gpu.answer.tps=42.125;s.gpu.answer.where='Demo PC';
  s.gpu.link.pc=pc();await w.show(s);
@@ -432,7 +566,7 @@ test('cable line says when a PC is connected and what unplugging does',async()=>
 test('a link storage fault replaces GPU answering and waiting words until it clears',async()=>{
  const w=world();let rev=0;
  for(const state of ['answering','waiting',null])for(const speed of [null,42]){
-  const s=snapshot(++rev);s.gpu.link.pc=pc();s.gpu.link.storage='error';
+  const s=snapshot(++rev);s.gpu.link.pc=pc();s.gpu.link.storage='error';s.gpu.link.storage_fault=true;
   s.gpu.answer=state?answer(state):null;
   if(state)s.gpu.answer.tps=speed;
   s.phone.answer=answer();s.phone.answer.tps=null;s.phone.link=s.gpu.link;
@@ -441,7 +575,7 @@ test('a link storage fault replaces GPU answering and waiting words until it cle
   assert.match(w.get(id).textContent,/^The phone could not save the answer\./);
   assert.equal(w.get('phone-speed').textContent,'Answering','the fault belongs to the GPU link');
   assert.equal(w.get('gpu-answer').textContent,state?s.gpu.answer.text:'');
-  s.rev=++rev;s.gpu.link.storage=null;await w.show(s);
+  s.rev=++rev;s.gpu.link.storage=null;s.gpu.link.storage_fault=false;await w.show(s);
   assert.doesNotMatch(w.get(id).textContent,/could not save/);
  }
 });
@@ -451,17 +585,17 @@ test('a link storage fault only asks to wait before unplugging a live PC',async(
  assert.equal(fixture.snapshot.gpu.link.storage,null,'the fake snapshot supplies storage');
  for(const state of ['ready','copying','stopping','error'])for(const live of [true,false])
  for(const answerState of [null,'answering','done']){
-  const s=snapshot(++rev);s.gpu.link.pc={...pc(state),live};s.gpu.link.storage='error';
+  const s=snapshot(++rev);s.gpu.link.pc={...pc(state),live};s.gpu.link.storage='error';s.gpu.link.storage_fault=true;
   s.gpu.answer=answerState?answer(answerState):null;await w.show(s);
   assert.equal(w.get('gpu-cable').dataset.cable,live?'wait':'out');
   assert.equal(w.get('gpu-cable').hidden,false);
   assert.equal(w.get('gpu-cable').textContent,'The phone could not save the answer.'+(live?' Wait before unplugging.':''));
   assert.doesNotMatch(w.get('gpu-cable').textContent,/answer is saved|Safe to unplug/);
-  s.rev=++rev;s.gpu.link.storage=null;await w.show(s);
+  s.rev=++rev;s.gpu.link.storage=null;s.gpu.link.storage_fault=false;await w.show(s);
   assert.doesNotMatch(w.get('gpu-cable').textContent,/could not save/);
  }
  for(const enrol of ['open','closed'])for(const answerState of [null,'answering','done']){
-  const s=snapshot(++rev);s.gpu.link.pc=null;s.gpu.link.enrol=enrol;s.gpu.link.storage='error';
+  const s=snapshot(++rev);s.gpu.link.pc=null;s.gpu.link.enrol=enrol;s.gpu.link.storage='error';s.gpu.link.storage_fault=true;
   s.gpu.answer=answerState?answer(answerState):null;await w.show(s);
   assert.equal(w.get('gpu-cable').dataset.cable,'');
   assert.equal(w.get('gpu-cable').hidden,false);

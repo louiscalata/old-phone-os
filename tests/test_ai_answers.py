@@ -53,16 +53,16 @@ class FailingStore(Store):
 
 
 class UnreadableStore(Store):
-    """Return Store's unreadable-file result for one selected name."""
+    """Raise a read error for one selected name, as Store does for I/O faults."""
 
     def __init__(self, root, unreadable):
         super().__init__(root)
         self.unreadable = unreadable
 
-    def read_json(self, name, default):
+    def read_json(self, name, default, **kwargs):
         if name == self.unreadable:
-            return default, self.note_once(name)
-        return super().read_json(name, default)
+            raise PermissionError("read denied")
+        return super().read_json(name, default, **kwargs)
 
 
 class AnswerTests(unittest.TestCase):
@@ -779,7 +779,7 @@ with patch('opos.store.os.replace', side_effect=lambda *args: os._exit(9)):
             matches = [value for key, value in after.items() if key == name or key.startswith(name + ".bad-")]
             self.assertEqual(matches, [raw], name)
 
-    def test_damaged_and_unreadable_files_are_skipped(self):
+    def test_damaged_and_unreadable_files_report_startup_notice(self):
         for damage in ("json", "schema", "record", "unreadable"):
             with self.subTest(damage=damage):
                 self.empty_store()
@@ -798,6 +798,24 @@ with patch('opos.store.os.replace', side_effect=lambda *args: os._exit(9)):
                 self.assertEqual([row["id"] for row in recovered.snapshot()["answers"]], [good])
                 self.assertEqual(recovered.rev, rev)
                 self.assert_files_preserved(before)
+                self.assertTrue(recovered.startup_notice)
+                notice = recovered.startup_notice
+                self.assertTrue(notice.endswith("restart AI mode.") or notice.endswith("Restart AI mode to continue."))
+                if damage == "unreadable":
+                    self.assertEqual(path.read_bytes(), before[path.name])
+                    self.assertFalse(list(self.root.glob(path.name + ".bad-*")))
+                else:
+                    self.assertFalse(path.exists())
+                    self.assertEqual(
+                        [p.read_bytes() for p in self.root.glob(path.name + ".bad-*")], [before[path.name]]
+                    )
+                    self.assertEqual(answers.AnswerStore(Store(self.root)).startup_notice, "")
+                recovered.ask("phone", "still usable")
+                self.assertEqual(recovered.startup_notice, notice)
+                recovered.snapshot()
+                self.assertEqual(recovered.startup_notice, notice)
+                with self.assertRaises(OSError):
+                    recovered.ask("gpu", "replacement")
 
     def test_revision_uses_surviving_records_when_highest_is_damaged(self):
         good = self.store.ask("phone", "kept")
@@ -810,13 +828,16 @@ with patch('opos.store.os.replace', side_effect=lambda *args: os._exit(9)):
         backups = list(self.root.glob(f"ai-answer-{damaged['id']}.json.bad-*"))
         self.assertEqual([path.read_bytes() for path in backups], [before[f"ai-answer-{damaged['id']}.json"]])
 
-    def test_every_answer_damaged_starts_empty_and_remains_usable(self):
+    def test_every_answer_damaged_warns_and_blocks_gpu_work(self):
         for pane in answers.PANES:
             ident = self.store.ask(pane, "lost")["id"]
             (self.root / f"ai-answer-{ident}.json").write_bytes(b"bad")
         before = self.files()
         recovered = answers.AnswerStore(Store(self.root))
         self.assertEqual(recovered.snapshot(), {"rev": 0, "answers": []})
+        self.assertTrue(recovered.startup_notice)
+        with self.assertRaises(OSError):
+            recovered.ask("gpu", "replacement")
         self.assert_files_preserved(before)
         row = recovered.ask("phone", "usable")
         self.assertEqual(row["rev"], 1)

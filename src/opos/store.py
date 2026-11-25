@@ -3,6 +3,7 @@
 
 The directory is $XDG_STATE_HOME/opos, or the default state directory when that variable is unset.
 A file that cannot be read is moved aside to <name>.bad-<time> and the caller starts empty.
+Strict JSON reads keep unreadable files and propagate I/O errors instead; corrupt content is still moved aside.
 """
 
 import errno
@@ -185,9 +186,20 @@ class Store:
             for temporary in self.root.glob(pattern):
                 temporary.unlink(missing_ok=True)
 
-    def read_json(self, name, default):
-        """(value, note). note is empty when the file was fine or absent."""
-        return self._read(self._path(name), default, self._read_json)
+    def read_json(self, name, default, *, strict=False, validate=None):
+        """(value, note). Missing files use default without a note.
+
+        strict preserves files on I/O errors. Invalid JSON, schema or optional
+        validate(value) results use locked recovery and quarantine in either mode.
+        """
+
+        def read(path):
+            value = self._read_json(path, strict=True) if strict else self._read_json(path)
+            if value is not None and validate is not None and not validate(value):
+                return None
+            return value
+
+        return self._read(self._path(name), default, read)
 
     def _read(self, path, default, read):
         try:
@@ -231,7 +243,7 @@ class Store:
         with _lock(path, create=False):
             yield self._recover(path, default, self._read_json)
 
-    def _read_json(self, path, limit=None):
+    def _read_json(self, path, limit=None, *, strict=False):
         try:
             with path.open("rb") as stream:
                 raw = stream.read(-1 if limit is None else limit + 1)
@@ -240,7 +252,11 @@ class Store:
             data = json.loads(raw.decode("utf-8"))
         except FileNotFoundError:
             raise
-        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+        except OSError:
+            if strict:
+                raise
+            return None
+        except (UnicodeError, json.JSONDecodeError, RecursionError):
             return None
         if not isinstance(data, dict) or data.get("schema") != SCHEMA:
             return None

@@ -64,6 +64,26 @@ class LocalCalls(unittest.TestCase):
         contacts_page.post({"action": "delete", "id": ident})
         self.assertEqual(calllog.snapshot()["calls"][0]["name"], "Ana")
 
+    def test_unreadable_contacts_do_not_drop_a_missed_call(self):
+        self.assertEqual(contacts_page.post({"action": "add", "name": "Ana", "number": NUMBER})[0], 200)
+        path = Path(self.tmp.name) / "contacts.json"
+        raw = path.read_bytes()
+        opened = Path.open
+
+        def unreadable(target, *args, **kwargs):
+            if target == path and args == ("rb",):
+                raise PermissionError("denied")
+            return opened(target, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", unreadable):
+            calllog.record(event(direction="incoming", practice=False))
+            calllog.record(event(state="ended", direction="incoming", practice=False, answered=False))
+        snap = calllog.snapshot()
+        self.assertEqual(snap["missed_count"], 1)
+        self.assertEqual(len(snap["calls"]), 1)
+        self.assertEqual(snap["calls"][0]["name"], "")
+        self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [raw])
+
     def test_unknown_name_and_real_adapter_event_are_not_inferred_as_practice(self):
         self.finish(practice=False)
         self.finish(2, number="+15550100", practice=False)
