@@ -19,7 +19,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from opos import gpu_link_proto as proto
 from opos import gpu_link_server
@@ -1004,7 +1004,7 @@ class StandInTests(unittest.TestCase):
         with self.assertRaises(standin.ToolError):
             standin.arguments([*base, "--label", "bad_label"])
 
-    def chat_stub(self, stalled=False, redirect=False):
+    def chat_stub(self, stalled=False, redirect=False, body=None):
         """Serve SSE fixtures only; never run a model or an external service."""
         requests, release, entered = [], threading.Event(), threading.Event()
 
@@ -1020,6 +1020,9 @@ class StandInTests(unittest.TestCase):
                     release.wait(5)
                     return
                 if redirect:
+                    return
+                if body is not None:
+                    self.wfile.write(body)
                     return
                 for text in ("Hello é", " 🌿\r\x00\x85\ud800\n", "world"):
                     data = json.dumps({"choices": [{"delta": {"content": text}, "finish_reason": None}]})
@@ -1090,6 +1093,49 @@ class StandInTests(unittest.TestCase):
         self.assertFalse(source.worker.is_alive())
         self.assertIsNone(self.runner.source)
 
+    def test_broken_stream_reports_failure_and_preserves_stored_prefix(self):
+        self.assert_failed_stream_keeps_tail(
+            b'data: {"error":{"message":"failed"}}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        )
+
+    def test_stop_without_marker_fails_after_flushing_tail(self):
+        self.assert_failed_stream_keeps_tail(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n')
+
+    def assert_failed_stream_keeps_tail(self, ending):
+        self.enrolled()
+        answer = self.answers.ask("gpu", "question")
+        self.answers.begin(answer["id"])
+        self.answers.append(answer["id"], 0, b"Saved prefix")
+        self.answers.pause(answer["id"])
+        tail = "more é🌿 " * 300
+        content = proto.dumps(dict(choices=[dict(delta=dict(content=tail))]))
+        url, _, _, _ = self.chat_stub(body=b"data: " + content + b"\n\n" + ending)
+
+        def source(job):
+            reader = standin.ServerSource(job, url, "fixture-model")
+            reader.worker.join(2)
+            self.assertFalse(reader.worker.is_alive())
+            return reader
+
+        self.runner.source_factory = source
+        send = self.pc.send
+        posts = []
+
+        def record(method, target, body=b"", **kwargs):
+            if target.endswith("/text"):
+                posts.append(json.loads(body))
+            return send(method, target, body, **kwargs)
+
+        with patch.object(self.pc, "send", side_effect=record):
+            result = self.drive()
+        self.assertEqual(result["state"], "failed")
+        self.assertEqual(result["text"], "Saved prefix" + tail)
+        self.assertFalse(any(post["done"] for post in posts))
+        self.assertIn("Answer stopped: chat-completions server error", self.lines)
+        self.assertEqual(result["error"], "server")
+        self.assertEqual(self.answers.get(answer["id"])["text"], result["text"])
+
     def test_server_redirect_fails_answer_without_following(self):
         self.enrolled()
         self.answers.ask("gpu", "question")
@@ -1097,6 +1143,760 @@ class StandInTests(unittest.TestCase):
         self.runner.source_factory = lambda job: standin.ServerSource(job, url, "fixture-model")
         self.assertEqual(self.drive()["state"], "failed")
         self.assertEqual(len(requests), 1)
+
+
+class ServerStreamTests(unittest.TestCase):
+    """Exercise stream completion and per-read deadlines without a real model."""
+
+    def source(self, body, trickle=None, limit=300, headers=None, from_main=False, read_delay=0):
+        clock = Clock()
+        started = clock()
+        self.socket_timeouts = []
+        self.requests = []
+        timeouts, requests = self.socket_timeouts, self.requests
+
+        class Trickle(io.RawIOBase):
+            reads = 0
+
+            def readable(self):
+                return True
+
+            def readinto(self, buffer):
+                clock.advance(read_delay)
+                chunk = raw.read(len(buffer))
+                if not chunk and trickle is not None and self.reads < 100:
+                    self.reads += 1
+                    clock.advance(0.1)
+                    chunk = trickle
+                buffer[: len(chunk)] = chunk
+                return len(chunk)
+
+        class Socket:
+            def makefile(self, mode, buffering=-1):
+                stream = Trickle()
+                return stream if buffering == 0 else io.BufferedReader(stream)
+
+            def settimeout(self, value):
+                timeouts.append((clock() - started, value))
+
+            def shutdown(self, how):
+                pass
+
+        class Connection:
+            sock = Socket()
+            response_class = http.client.HTTPResponse
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                pass
+
+            def request(self, *args):
+                requests.append(args)
+
+            def getresponse(self):
+                response = self.response_class(self.sock)
+                response.begin()
+                return response
+
+            def close(self):
+                pass
+
+        if headers is None:
+            headers = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+        raw = io.BytesIO(headers + body)
+        job = dict(question="question", partial="Saved ")
+        source = None
+
+        def build(runner, stop):
+            nonlocal source
+            source = runner.source_factory(job)
+            source.worker.join(2)
+
+        with (
+            patch.object(standin.http.client, "HTTPConnection", Connection),
+            patch.object(standin.time, "monotonic", clock),
+        ):
+            if from_main:
+                with (
+                    patch.object(standin, "key_file", return_value=b"K" * 32),
+                    patch.object(standin.StandIn, "run", build),
+                ):
+                    result = standin.main(
+                        [
+                            "--key-file",
+                            "unused",
+                            "--text",
+                            "server",
+                            "--server",
+                            "http://127.0.0.1:1/chat",
+                            "--model",
+                            "fixture",
+                            "--generation-timeout",
+                            str(limit),
+                        ]
+                    )
+                self.assertEqual(result, 0)
+            else:
+                source = standin.ServerSource(job, "http://127.0.0.1:1/chat", "fixture", limit)
+            self.addCleanup(source.close)
+            source.worker.join(2)
+            self.assertFalse(source.worker.is_alive())
+        return source, clock() - started
+
+    def test_main_generation_timeout_ends_trickle(self):
+        source, elapsed = self.source(b"", trickle=b": keep-alive\n\n", limit=0.25, from_main=True)
+        self.assertTrue(source.snapshot()[4])
+        self.assertAlmostEqual(elapsed, 0.3)
+        self.assertEqual(self.socket_timeouts[0], (0, 0.25))
+        method, target, payload, _ = self.requests[0]
+        self.assertEqual((method, target), ("POST", "/chat"))
+        self.assertEqual(json.loads(payload)["model"], "fixture")
+
+    def test_main_refuses_invalid_generation_timeout_before_key_access(self):
+        for value in ("0", "-1", "nan", "inf", "-inf"):
+            with (
+                self.subTest(value=value),
+                patch.object(standin, "key_file", return_value=b"K" * 32) as key,
+                patch.object(standin.StandIn, "run"),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(standin.main(["--key-file", "unused", "--generation-timeout=" + value]), 1)
+                key.assert_not_called()
+
+    def test_socket_timeouts_use_inactivity_and_remaining_deadline(self):
+        source, _ = self.source(b"", trickle=b": keep-alive\n\n", limit=35, read_delay=7)
+        self.assertTrue(source.snapshot()[4])
+        self.assertEqual(self.socket_timeouts[0], (0, 30))
+        self.assertGreater(len(self.socket_timeouts), 4)
+        self.assertTrue(any(elapsed > 5 for elapsed, _ in self.socket_timeouts))
+        for elapsed, timeout in self.socket_timeouts[1:]:
+            self.assertAlmostEqual(timeout, min(30, 35 - elapsed))
+
+    def test_recorded_llama_streams_complete(self):
+        for name in ("user", "assistant-continuation"):
+            with self.subTest(stream=name):
+                body = (ROOT / "tests/fixtures/gpu_link" / f"llama-{name}.sse").read_bytes()
+                values = [
+                    json.loads(line[5:])
+                    for line in body.splitlines()
+                    if line.startswith(b"data:") and line[5:].strip() != b"[DONE]"
+                ]
+                text = "".join(
+                    v.get("choices", [{}])[0].get("delta", {}).get("content") or "" for v in values if v.get("choices")
+                )
+                tokens = next(v["usage"]["completion_tokens"] for v in values if "usage" in v)
+                source, _ = self.source(body)
+                self.assertEqual(source.snapshot(), (b"Saved " + text.encode(), True, "stop", tokens, False))
+
+    def assert_failed(self, ending):
+        source, _ = self.source(b'data: {"choices":[{"delta":{"content":"received"}}]}\n\n' + ending)
+        data, done, _, _, error = source.snapshot()
+        self.assertEqual(data, b"Saved received")
+        self.assertTrue(done)
+        self.assertTrue(error, "broken stream must enter the server-error path")
+
+    def test_error_chunk_mid_stream(self):
+        self.assert_failed(
+            b'data: {"error":{"message":"failed"}}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        )
+
+    def test_stream_cut_after_stop_without_marker(self):
+        self.assert_failed(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n')
+
+    def test_non_normal_finish_reason(self):
+        for reason in ("error", "content_filter", "tool_calls"):
+            with self.subTest(reason=reason):
+                self.assert_failed(
+                    b'data: {"choices":[{"delta":{},"finish_reason":"' + reason.encode() + b'"}]}\n\ndata: [DONE]\n\n'
+                )
+
+    def test_invalid_json_chunk(self):
+        self.assert_failed(b"data: {invalid json}\n\ndata: [DONE]\n\n")
+
+    def test_marker_without_stop(self):
+        self.assert_failed(b"data: [DONE]\n\n")
+
+    def test_deep_json_worker_failure(self):
+        self.assert_failed(b"data: " + b"[" * 15000 + b"0" + b"]" * 15000 + b"\n\n")
+
+    def test_unexpected_parser_failure(self):
+        with patch.object(standin.ServerSource, "_read", side_effect=RuntimeError("parser failed")):
+            source, _ = self.source(b"data: [DONE]\n\n")
+        self.assertTrue(source.snapshot()[1])
+        self.assertTrue(source.snapshot()[4])
+
+    def test_explicit_error_event(self):
+        self.assert_failed(
+            b'event: error\ndata: {}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        )
+
+    def test_normal_stream_completes(self):
+        source, _ = self.source(
+            b'data: {"choices":[{"delta":{"content":"received"}}]}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+            b'data: {"usage":{"completion_tokens":7}}\n\ndata: [DONE]\n\n'
+        )
+        self.assertEqual(source.snapshot(), (b"Saved received", True, "stop", 7, False))
+
+    def test_length_finish_reason_completes_as_length(self):
+        source, _ = self.source(
+            b'data: {"choices":[{"delta":{"content":"received"}}]}\n\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n'
+        )
+        self.assertEqual(source.snapshot(), (b"Saved received", True, "length", 1, False))
+
+    def test_answer_at_the_phone_size_limit_ends_as_length(self):
+        piece = b"x" * (standin.proto.MAX_ANSWER_BYTES + 100)
+        source, _ = self.source(b'data: {"choices":[{"delta":{"content":"' + piece + b'"}}]}\n\n')
+        data, done, finish, _, error = source.snapshot()
+        self.assertEqual(len(data), standin.proto.MAX_ANSWER_BYTES)
+        self.assertEqual((done, finish, error), (True, "length", False))
+
+    def test_total_bound_interrupts_trickling_reads(self):
+        for trickle in (
+            b": keep-alive\n\n",
+            b'data: {"choices":[{"delta":{"reasoning":"x"}}]}\n\n',
+            b'data: {"choices":[{"delta":{"content":"x"}}]}\n\n',
+            b":",
+        ):
+            with self.subTest(trickle=trickle):
+                source, elapsed = self.source(b"", trickle=trickle, limit=0.25)
+                self.assertTrue(source.snapshot()[4])
+                self.assertLessEqual(elapsed, 0.31)
+                self.assertTrue(source.snapshot()[0].startswith(b"Saved "))
+
+    def test_total_bound_interrupts_trickling_headers(self):
+        source, elapsed = self.source(b"", trickle=b"x", limit=0.25, headers=b"HTTP/1.1 200 OK\r\nX: ")
+        self.assertTrue(source.snapshot()[4])
+        self.assertLessEqual(elapsed, 0.31)
+
+    def test_generation_timeout_option(self):
+        base = ["--key-file", "unused"]
+        self.assertEqual(standin.arguments(base).generation_timeout, 300)
+        self.assertEqual(standin.arguments([*base, "--generation-timeout", "0.25"]).generation_timeout, 0.25)
+        for value in ("0", "-1", "nan", "inf"):
+            with self.subTest(value=value), self.assertRaises(standin.ToolError):
+                standin.arguments([*base, "--generation-timeout", value])
+
+
+class ErrorFlushTests(unittest.TestCase):
+    """A finished reader can outrun phone posting; preserve its bounded backlog."""
+
+    def exercise(
+        self,
+        source,
+        refusal=None,
+        pending=False,
+        prefix=b"Saved ",
+        ahead=b"",
+        show_text=False,
+        runner=None,
+        step=0.05,
+        holds=None,
+        rate=None,
+    ):
+        """Drive one failed job. `ahead` is text the phone already stored whose acknowledgement the tool never saw;
+        `runner` reuses one StandIn for a second job; `holds` is what the phone actually stores when that differs from
+        the prefix (a phone that is behind); `step` is the clock step; `rate` is the posting rate of a new StandIn.
+        The StandIn is kept in self.runner."""
+        events = []
+        if runner is None:
+            runner = standin.StandIn(None, emit=print, clock=Clock(), **({} if rate is None else {"rate": rate}))
+            self.addCleanup(runner.close)
+            runner.pc = type("PC", (), {"epoch": b"fixture"})()
+        self.runner, clock = runner, runner.clock
+        runner.emit, runner.show_text = (lambda line: events.append(("line", line))), show_text
+        runner.job = dict(lease="fixture", partial=prefix.decode())
+        runner.source, runner.offset = source, len(prefix)
+        stored = bytearray(prefix + ahead if holds is None else holds)
+        self.assertEqual(source.snapshot()[0][len(prefix) : len(prefix) + len(ahead)], ahead)
+        posts, statuses = [], []
+
+        def status(lease=None, tokens=None, tps=None, error=None):
+            statuses.append((clock(), error))
+            events.append(("status", error))
+            return 200, {}
+
+        def exchange(method, target, raw):
+            post = json.loads(raw)
+            posts.append((clock(), post))
+            events.append(("post", post))
+            if refusal:
+                if isinstance(refusal, Exception):
+                    raise refusal
+                if callable(refusal):
+                    return refusal(post)
+                if refusal == 200:
+                    return 200, dict(acked=1)
+                return refusal, {"stored": len(stored)} if refusal in (409, 413) else {}
+            offset, text = post["offset"], post["text"].encode()
+            if offset == len(stored):
+                stored.extend(text)
+                return 200, dict(acked=len(stored))
+            if offset < len(stored) and stored[offset : offset + len(text)] == text:  # a repeat inside the stored text
+                return 200, dict(acked=len(stored))  # the real phone acknowledges everything it holds
+            return 409, dict(stored=len(stored))  # the phone's rule for a longer piece that starts inside its text
+
+        if pending:
+            piece = ahead or standin.cut(source.snapshot()[0][runner.offset :], 256)
+            runner.pending = (
+                proto.dumps(dict(offset=runner.offset, text=piece.decode(), done=False, finish=None)),
+                piece,
+                False,
+            )
+        with (
+            patch.object(runner, "_send_status", side_effect=status),
+            patch.object(runner.pc, "send", side_effect=exchange, create=True),
+            patch.object(runner, "_work"),
+        ):
+            for _ in range(20000):
+                runner.step()
+                if runner.job is None:
+                    break
+                clock.advance(step)
+            else:
+                self.fail("error flush did not terminate")
+        self.assertFalse(any(post["done"] for _, post in posts))
+        self.assertTrue(all(post["finish"] is None for _, post in posts))
+        self.assertTrue(all(0 < len(post["text"].encode()) <= 256 for _, post in posts))
+        self.assertTrue(all(b[0] - a[0] >= 0.25 - 1e-7 for a, b in zip(posts, posts[1:], strict=False)))
+        self.assertLessEqual(len(posts), 50)  # 49 posts of text and the one recovery that is not counted
+        return bytes(stored), posts, statuses, events
+
+    def failed_source(self, ending, tail="é🌿 " * 600):
+        streams = ServerStreamTests()
+        self.addCleanup(streams.doCleanups)
+        content = proto.dumps(dict(choices=[dict(delta=dict(content=tail))]))
+        source, _ = streams.source(b"data: " + content + b"\n\n" + ending)
+        self.assertTrue(source.snapshot()[4])
+        return source
+
+    def test_buffered_tail_precedes_failure_without_done(self):
+        for ending in (
+            b'data: {"error":{"message":"failed"}}\n\n',
+            b'data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}\n\ndata: [DONE]\n\n',
+        ):
+            for pending in (False, True):
+                with self.subTest(ending=ending, pending=pending):
+                    source = self.failed_source(ending)
+                    stored, posts, statuses, events = self.exercise(source, pending=pending)
+                    self.assertEqual(stored, source.snapshot()[0])
+                    self.assertEqual(statuses[-1][1], "server")
+                    self.assertGreater(sum(error is None for _, error in statuses), 1)
+                    self.assertEqual(
+                        events[-2:], [("status", "server"), ("line", "Answer stopped: chat-completions server error")]
+                    )
+                    self.assertLess(statuses[-1][0] - posts[-1][0], 0.5)  # the failure follows the flush at once
+                    acks = [line for kind, line in events if kind == "line" and line.startswith("Text acknowledged")]
+                    self.assertEqual(len(acks), len(posts))
+                    self.assertEqual(acks[-1], f"Text acknowledged; {len(stored)} bytes")
+
+    def test_stop_without_done_keeps_all_buffered_text_but_fails(self):
+        source = self.failed_source(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n')
+        stored, _, statuses, _ = self.exercise(source)
+        self.assertEqual(stored, source.snapshot()[0])
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_error_flush_stops_at_first_refusal_or_lease_loss(self):
+        for refusal in (
+            200,
+            400,
+            404,
+            409,
+            413,
+            500,
+            standin.RejectedError(),
+            OSError("connection lost"),
+            lambda post: (409, {}),
+            lambda post: (413, {"stored": 13}),
+        ):
+            with self.subTest(refusal=refusal):
+                source = self.failed_source(b"data: {}\n\n")
+                stored, posts, statuses, events = self.exercise(source, refusal=refusal)
+                self.assertEqual(len(posts), 1)
+                self.assertEqual(stored, b"Saved ")
+                if refusal != 404 and not isinstance(refusal, OSError):
+                    self.assertEqual(statuses[-1][1], "server")
+                if refusal == 404:
+                    # The lease is gone: the job is closed and no failure status follows.
+                    self.assertIsNone(self.runner.job)
+                    self.assertFalse(any(error for _, error in statuses))
+                    self.assertIn(("line", "Lease ended; polling again"), events)
+
+    def test_error_flush_recovers_after_a_lost_acknowledgement(self):
+        # The phone stored a piece whose acknowledgement never arrived. The tool sends one piece at a time, so the phone
+        # is at most one piece ahead, and the buffer has grown since: the first fresh piece is longer than the stored one,
+        # starts inside text the phone holds, and the real phone answers it with 409 and its stored length.
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        for length in (7, 100):  # whole characters are 7 bytes ("é🌿 "), so 100 is cut to 98
+            for pending in (False, True):
+                with self.subTest(ahead=length, pending=pending):
+                    source = self.failed_source(b"data: {}\n\n")
+                    ahead = standin.cut(data[6 : 6 + length], length)
+                    self.assertLess(len(ahead), len(standin.cut(data[6:], 256)))
+                    stored, posts, statuses, events = self.exercise(source, ahead=ahead, pending=pending)
+                    self.assertEqual(stored, data)
+                    self.assertEqual(statuses[-1][1], "server")
+                    self.assertEqual(posts[0][1]["offset"], 6)
+                    self.assertEqual(posts[1][1]["offset"], 6 + len(ahead))
+                    self.assertEqual(
+                        [line for kind, line in events if kind == "line" and line.startswith("Offset recovered")],
+                        [f"Offset recovered; stored {6 + len(ahead)} bytes"],
+                    )
+
+    def test_error_flush_accepts_a_repeat_of_the_phones_stored_piece(self):
+        # The phone holds exactly the piece that the flush sends first: a repeat, acknowledged normally, no recovery.
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        first = standin.cut(data[6:], 256)
+        for pending in (False, True):
+            with self.subTest(pending=pending):
+                stored, posts, statuses, events = self.exercise(
+                    self.failed_source(b"data: {}\n\n"), ahead=first, pending=pending
+                )
+                self.assertEqual(stored, data)
+                self.assertEqual(posts[0][1]["offset"], 6)
+                self.assertEqual(statuses[-1][1], "server")
+                self.assertFalse(any(line.startswith("Offset recovered") for kind, line in events if kind == "line"))
+
+    def test_error_flush_goes_straight_to_the_failure_when_the_phone_holds_everything(self):
+        # Not reachable with this tool, which sends one piece at a time. If it happened, the real phone acknowledges its
+        # whole stored length, the tool takes that for an invalid acknowledgement, stops the flush and reports the
+        # failure. Nothing is lost: the phone holds the whole buffer.
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        stored, posts, statuses, events = self.exercise(self.failed_source(b"data: {}\n\n"), ahead=data[6:])
+        self.assertEqual(stored, data)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(statuses[-1][1], "server")
+        self.assertFalse(any(line.startswith("Offset recovered") for kind, line in events if kind == "line"))
+
+    def test_error_flush_recovery_is_not_charged_to_the_post_limit(self):
+        # 4,096 three-byte characters fill the phone's 12,288-byte limit and need 49 posts of 255 bytes. A recovery after
+        # the lost acknowledgement of a single character must not use up one of them.
+        data = "€".encode() * 4096
+        source = self.failed_source(b"data: {}\n\n")
+        with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+            stored, posts, statuses, events = self.exercise(source, prefix=b"", ahead="€".encode())
+        self.assertEqual(stored, data)
+        self.assertEqual(len(posts), 50)
+        self.assertIn(("line", "Offset recovered; stored 3 bytes"), events)
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_error_flush_allows_one_recovery_only(self):
+        # A phone that keeps changing its stored length cannot keep the flush going.
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        calls = []
+
+        def phone(post):
+            calls.append(post)
+            return 409, {"stored": 13 if len(calls) % 2 else 20}  # whole-character offsets after "Saved "
+
+        self.assertEqual(standin.cut(data, 13), data[:13])
+        self.assertEqual(standin.cut(data, 20), data[:20])
+        stored, posts, statuses, events = self.exercise(self.failed_source(b"data: {}\n\n"), refusal=phone)
+        self.assertEqual(len(posts), 2)
+        self.assertEqual(statuses[-1][1], "server")
+        self.assertEqual(
+            [line for kind, line in events if kind == "line" and line.startswith("Offset recovered")],
+            ["Offset recovered; stored 13 bytes"],
+        )
+
+    def test_recovery_allowance_is_renewed_for_the_next_job(self):
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        ahead = standin.cut(data[6:106], 100)
+        runner = None
+        for job in (1, 2):
+            with self.subTest(job=job):
+                stored, _, _, events = self.exercise(self.failed_source(b"data: {}\n\n"), ahead=ahead, runner=runner)
+                runner = self.runner
+                self.assertEqual(stored, data)
+                self.assertIn(("line", f"Offset recovered; stored {6 + len(ahead)} bytes"), events)
+                self.assertEqual(
+                    (runner.error_posts, runner.error_flush_stopped, runner.error_recovered), (0, False, False)
+                )
+
+    def test_error_flush_ignores_a_stored_length_inside_a_character_or_past_the_buffer(self):
+        size = len(self.failed_source(b"data: {}\n\n").snapshot()[0])
+        for stored_length in (7, size + 1, 10**6):  # byte 7 is inside the two-byte first character after "Saved "
+            with self.subTest(stored=stored_length):
+                source = self.failed_source(b"data: {}\n\n")
+                runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+                self.addCleanup(runner.close)
+                runner.pc = Mock(epoch=b"fixture")
+                runner.pc.send.return_value = (409, dict(stored=stored_length))
+                runner.job, runner.source, runner.offset = dict(lease="fixture", partial="Saved "), source, 6
+                runner._post_error_tail(source.snapshot()[0])
+                self.assertEqual((runner.offset, runner.error_flush_stopped, runner.pc.send.call_count), (6, True, 1))
+
+    def test_flush_state_is_reset_for_the_next_job(self):
+        first = self.failed_source(b"data: {}\n\n")
+        _, posts, statuses, _ = self.exercise(first, refusal=500)  # the flush is refused, then the failure is sent
+        self.assertEqual((len(posts), statuses[-1][1]), (1, "server"))
+        runner = self.runner
+        self.assertIsNone(runner.job)
+        self.assertEqual((runner.error_posts, runner.error_flush_stopped, runner.error_recovered), (0, False, False))
+        second = self.failed_source(b"data: {}\n\n")
+        stored, posts, _, _ = self.exercise(second, runner=runner)
+        self.assertEqual(stored, second.snapshot()[0])
+        self.assertGreater(len(posts), 1)
+
+    def test_flush_keeps_answer_text_out_of_event_lines_unless_asked(self):
+        for show_text in (False, True):
+            with self.subTest(show_text=show_text):
+                source = self.failed_source(b"data: {}\n\n")
+                _, posts, _, events = self.exercise(source, show_text=show_text)
+                lines = [line for kind, line in events if kind == "line"]
+                shown = [line for line in lines if line.startswith("Text: ")]
+                if show_text:
+                    self.assertEqual(
+                        shown, ["Text: " + json.dumps(post["text"], ensure_ascii=True) for _, post in posts]
+                    )
+                else:
+                    self.assertEqual(shown, [])
+                    self.assertFalse(any("é" in line or "🌿" in line or "\\u" in line for line in lines))
+
+    def test_flush_acknowledgement_clears_the_post_failure_window(self):
+        source = self.failed_source(b"data: {}\n\n")
+        data = source.snapshot()[0]
+        piece = standin.cut(data[6:], 256)
+        runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+        self.addCleanup(runner.close)
+        runner.pc = Mock(epoch=b"fixture")
+        runner.pc.send.return_value = (200, dict(acked=6 + len(piece)))
+        runner.job, runner.source, runner.offset = dict(lease="fixture", partial="Saved "), source, 6
+        runner.post_failed_since, runner.last_failure_line = 5.0, 7.0
+        runner.next_status = 99
+        runner._post_error_tail(data)
+        self.assertEqual((runner.post_failed_since, runner.last_failure_line), (None, None))
+        self.assertEqual((runner.offset, runner.error_flush_stopped), (6 + len(piece), False))
+        self.assertEqual(runner.next_status, 0)  # the next step sends the status at once, not at the 1 s heartbeat
+
+    def test_nothing_left_to_flush_posts_nothing(self):
+        source = self.failed_source(b"data: {}\n\n")
+        data = source.snapshot()[0]
+        runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+        self.addCleanup(runner.close)
+        runner.pc = Mock(epoch=b"fixture")
+        runner.job, runner.source, runner.offset = dict(lease="fixture", partial="Saved "), source, len(data)
+        runner.next_status = 99
+        runner._post_error_tail(data)
+        self.assertEqual(runner.pc.send.call_count, 0)
+        self.assertEqual(runner.next_status, 0)
+
+    def test_error_flush_posts_every_byte_at_the_boundary_sizes(self):
+        for size in (1, 255, 256, 257, 511, 512, 513):
+            with self.subTest(size=size):
+                data = b"a" * size
+                source = self.failed_source(b"data: {}\n\n")
+                with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+                    stored, posts, statuses, _ = self.exercise(source, prefix=b"")
+                self.assertEqual(stored, data)
+                self.assertEqual(len(posts), -(-size // 256))
+                self.assertEqual(statuses[-1][1], "server")
+
+    def test_error_flush_stops_at_the_49_post_limit(self):
+        # The phone limits an answer to 12,288 bytes, so with a real phone the limit never binds. A larger buffer shows it does.
+        data = b"a" * 20000
+        source = self.failed_source(b"data: {}\n\n")
+        with (
+            patch.object(proto, "MAX_ANSWER_BYTES", 100000),
+            patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)),
+        ):
+            stored, posts, statuses, _ = self.exercise(source, prefix=b"")
+        self.assertEqual(len(posts), 49)
+        self.assertEqual(stored, data[: 49 * 256])
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_flush_pacing_is_four_posts_a_second(self):
+        data = "€".encode() * 1024
+        source = self.failed_source(b"data: {}\n\n")
+        with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+            stored, posts, _, _ = self.exercise(source, prefix=b"", step=0.01)
+        gaps = [round(b[0] - a[0], 3) for a, b in zip(posts, posts[1:], strict=False)]
+        self.assertEqual(stored, data)
+        self.assertTrue(gaps and all(0.25 - 1e-6 <= gap <= 0.26 + 1e-6 for gap in gaps), gaps)
+
+    def test_error_flush_resends_what_the_phone_lost(self):
+        # The tool thinks the phone holds 13 bytes; it holds only the first 6 and answers 409 with that length.
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        source = self.failed_source(b"data: {}\n\n")
+        stored, _, statuses, events = self.exercise(source, prefix=data[:13], holds=data[:6])
+        self.assertEqual(stored, data)
+        self.assertIn(("line", "Offset recovered; stored 6 bytes"), events)
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_recovery_late_in_a_full_buffer_still_keeps_the_post_limit(self):
+        # The phone acknowledges 30 pieces, then reports that it holds nothing. The recovery is free, so the flush goes
+        # on from 0 and stops at the 49th counted post: 50 text posts in all, never more.
+        data = "€".encode() * 4096
+        source = self.failed_source(b"data: {}\n\n")
+        stored, calls = bytearray(), []
+
+        def phone(post):
+            calls.append(post)
+            if len(calls) == 31:
+                stored.clear()
+                return 409, {"stored": 0}
+            if post["offset"] == len(stored):
+                stored.extend(post["text"].encode())
+                return 200, {"acked": len(stored)}
+            return 409, {"stored": len(stored)}
+
+        with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+            _, posts, statuses, events = self.exercise(source, prefix=b"", refusal=phone)
+        self.assertEqual(len(posts), 50)
+        self.assertEqual(posts[31][1]["offset"], 0)
+        self.assertEqual(bytes(stored), data[: len(stored)])
+        self.assertEqual(len(stored), 19 * 255)
+        self.assertEqual(
+            [line for kind, line in events if kind == "line" and line.startswith("Offset recovered")],
+            ["Offset recovered; stored 0 bytes"],
+        )
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_a_second_recovery_is_refused_even_after_progress(self):
+        # 409 (recover), 200 (progress), 409 again: the allowance is not renewed by an acknowledged piece.
+        calls = []
+
+        def phone(post):
+            calls.append(post)
+            if len(calls) == 1:
+                return 409, {"stored": 13}
+            if len(calls) == 2:
+                return 200, {"acked": post["offset"] + len(post["text"].encode())}
+            return 409, {"stored": 20}
+
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        self.assertEqual((standin.cut(data, 13), standin.cut(data, 20)), (data[:13], data[:20]))
+        _, posts, statuses, events = self.exercise(self.failed_source(b"data: {}\n\n"), refusal=phone)
+        self.assertEqual(len(posts), 3)
+        self.assertEqual(posts[1][1]["offset"], 13)
+        self.assertEqual(
+            [line for kind, line in events if kind == "line" and line.startswith("Offset recovered")],
+            ["Offset recovered; stored 13 bytes"],
+        )
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_recovery_of_a_phone_that_is_behind_still_flushes_a_full_buffer(self):
+        # The tool believes the phone holds one character; it holds nothing. The first post is refused with stored 0,
+        # the recovery is free, and the whole 12,288-byte buffer then fits in the 49 counted posts: 50 posts in all.
+        data = "€".encode() * 4096
+        source = self.failed_source(b"data: {}\n\n")
+        with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+            stored, posts, statuses, events = self.exercise(source, prefix="€".encode(), holds=b"")
+        self.assertEqual(stored, data)
+        self.assertEqual(len(posts), 50)
+        self.assertIn(("line", "Offset recovered; stored 0 bytes"), events)
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_recovery_to_the_end_of_the_buffer_goes_straight_to_the_failure(self):
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        _, posts, statuses, events = self.exercise(
+            self.failed_source(b"data: {}\n\n"), refusal=lambda post: (409, {"stored": len(data)})
+        )
+        self.assertEqual(len(posts), 1)
+        self.assertIn(("line", f"Offset recovered; stored {len(data)} bytes"), events)
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_error_flush_refuses_an_impossible_buffer(self):
+        data = self.failed_source(b"data: {}\n\n").snapshot()[0]
+        runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+        self.addCleanup(runner.close)
+        runner.pc = Mock(epoch=b"fixture")
+        runner.job, runner.source = dict(lease="fixture", partial="Saved "), self.failed_source(b"data: {}\n\n")
+        for offset, buffer in ((len(data) + 1, data), (0, b"a" * (proto.MAX_ANSWER_BYTES + 1))):
+            with self.subTest(offset=offset, size=len(buffer)):
+                runner.offset = offset
+                with self.assertRaises(standin.ToolError):
+                    runner._post_error_tail(buffer)
+                self.assertEqual(runner.pc.send.call_count, 0)
+
+    def test_a_backward_recovery_uses_the_allowance_too(self):
+        # The phone first reports less than the tool thinks, then a different stored length: only one recovery is allowed.
+        calls = []
+
+        def phone(post):
+            calls.append(post)
+            return 409, {"stored": 0 if len(calls) == 1 else 3}
+
+        _, posts, statuses, events = self.exercise(self.failed_source(b"data: {}\\n\\n"), refusal=phone)
+        self.assertEqual(len(posts), 2)
+        self.assertEqual(
+            [line for kind, line in events if kind == "line" and line.startswith("Offset recovered")],
+            ["Offset recovered; stored 0 bytes"],
+        )
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_error_flush_refusals_report_and_wait_as_normal_posting_does(self):
+        # (refusal, the line printed, seconds from the post to the failure status, or None when no status follows)
+        for refusal, line, wait in (
+            (200, "Invalid text acknowledgement; waiting to retry", 1.0),
+            (500, "Phone server error; waiting to retry", 1.0),
+            (429, "Phone service unavailable; waiting to retry", 1.0),
+            (standin.RejectedError(), None, 0.0),
+            (OSError("connection lost"), "Phone unreachable; waiting to retry", None),
+        ):
+            with self.subTest(refusal=refusal):
+                _, posts, statuses, events = self.exercise(self.failed_source(b"data: {}\\n\\n"), refusal=refusal)
+                lines = [text for kind, text in events if kind == "line"]
+                if line:
+                    self.assertIn(line, lines)
+                if wait is None:  # a lost connection ends the job and sends no failure status
+                    self.assertIsNone(self.runner.job)
+                    self.assertEqual(len(statuses), 1)
+                    continue
+                gap = statuses[-1][0] - posts[-1][0]
+                self.assertEqual(statuses[-1][1], "server")
+                self.assertGreaterEqual(gap, wait - 1e-6)
+                self.assertLess(gap, wait + 0.5)
+
+    def test_flush_state_is_reset_after_a_lost_lease(self):
+        first = self.failed_source(b"data: {}\n\n")
+        _, posts, statuses, _ = self.exercise(first, refusal=404)
+        self.assertEqual(len(posts), 1)
+        runner = self.runner
+        self.assertIsNone(runner.job)
+        self.assertIsNone(runner.source)
+        self.assertEqual((runner.error_posts, runner.error_flush_stopped, runner.error_recovered), (0, False, False))
+        second = self.failed_source(b"data: {}\n\n")
+        stored, posts, statuses, _ = self.exercise(second, runner=runner)
+        self.assertEqual(stored, second.snapshot()[0])
+        self.assertGreater(len(posts), 1)
+        self.assertEqual(statuses[-1][1], "server")
+
+    def test_flush_pacing_follows_the_posting_rate(self):
+        data = "€".encode() * 1024
+        source = self.failed_source(b"data: {}\n\n")
+        with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+            stored, posts, _, _ = self.exercise(source, prefix=b"", step=0.01, rate=1)
+        gaps = [round(b[0] - a[0], 3) for a, b in zip(posts, posts[1:], strict=False)]
+        self.assertEqual(stored, data)
+        self.assertTrue(gaps and all(1.0 - 1e-6 <= gap <= 1.01 + 1e-6 for gap in gaps), gaps)
+
+    def test_close_clears_everything_a_failed_job_leaves_behind(self):
+        runner = standin.StandIn(None, emit=lambda line: None, clock=Clock())
+        source = Mock()
+        runner.job, runner.source = dict(lease="x"), source
+        runner.pending, runner.post_failed_since = (b"raw", b"piece", False), 5.0
+        runner.error_posts, runner.error_flush_stopped, runner.error_recovered = 7, True, True
+        runner.close()
+        source.close.assert_called_once_with()
+        self.assertEqual(
+            (runner.job, runner.source, runner.pending, runner.post_failed_since), (None, None, None, None)
+        )
+        self.assertEqual((runner.error_posts, runner.error_flush_stopped, runner.error_recovered), (0, False, False))
+
+    def test_maximum_utf8_backlog_fits_49_posts(self):
+        source = self.failed_source(b"data: {}\n\n")
+        data = b"a" + "🌿".encode() * 3071 + b"xyz"
+        self.assertEqual(len(data), proto.MAX_ANSWER_BYTES)
+        with patch.object(source, "snapshot", return_value=(data, True, "stop", 0, True)):
+            stored, posts, statuses, _ = self.exercise(source, prefix=b"")
+        self.assertEqual(stored, data)
+        self.assertEqual(len(posts), 49)
+        self.assertEqual(statuses[-1][1], "server")
 
 
 class DiagnosticTests(unittest.TestCase):

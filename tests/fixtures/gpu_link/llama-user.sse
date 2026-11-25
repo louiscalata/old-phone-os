@@ -1,0 +1,76 @@
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"The"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" sky"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" is"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" blue"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" because"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" molecules"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" in"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" the"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" atmosphere"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" scatter"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" short"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"‑"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"w"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"avelength"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" sunlight"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" more"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" than"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" longer"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" wavelengths"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"."}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" This"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" scattering"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" redirects"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" the"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" blue"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" light"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" toward"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" our"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" eyes"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" when"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" we"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" look"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" up"}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"."}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":1795484957,"id":"chatcmpl-l6aG9vKdR06r7Rq6BaCQ8mnOCEkDUKFL","model":"NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf","system_fingerprint":"b12359-b1b770d90","object":"chat.completion.chunk","usage":{"completion_tokens":35,"prompt_tokens":29,"total_tokens":64,"prompt_tokens_details":{"cached_tokens":0}},"timings":{"cache_n":0,"prompt_n":29,"prompt_ms":106.108,"prompt_per_token_ms":3.658896551724138,"prompt_per_second":273.30644249255477,"predicted_n":35,"predicted_ms":539.353,"predicted_per_token_ms":15.863323529411764,"predicted_per_second":63.03849241591315}}
+
+data: [DONE]
+
