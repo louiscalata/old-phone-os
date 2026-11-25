@@ -37,8 +37,10 @@ leader is reaped; same-group descendants may then survive. Runtime ENOSYS/EINVAL
 disables waitid process-wide, including later Keeper objects; other observation
 errors retry once after up to 10 ms, clamped by any supplied cleanup deadline,
 then fall back for that call. On Windows the direct child is
-terminated; Windows descendants are not tracked (NOT_RUN). A SIGKILLed keeper
-cannot clean up: run --status before starting and stop a stale ssh by hand.
+terminated; Windows descendants are not tracked (NOT_RUN). On Windows, stop the
+keeper with Ctrl-C only. If ended by force, its ssh child can remain and hold the
+local port; find and stop that child by process id before starting again.
+A SIGKILLed keeper cannot clean up: run --status before starting and stop a stale ssh by hand.
 SSH stdout/stderr and adb stderr are discarded; adb stdout is parsed as records
 and never echoed. Create must exit successfully and produce no nonblank stdout
 records accepted by the parser; blank lines and ordinary spaces are permitted.
@@ -124,7 +126,7 @@ def arguments(argv=None):
         parser.add_argument(
             "--" + name,
             default=name,
-            help="trusted executable code: one path or command name; existing paths may have spaces",
+            help="trusted executable code: one path or command name; existing paths may have spaces; no .cmd/.bat",
         )
     parser.add_argument(
         "--serial", help="one device serial, letters/digits/dot/dash/underscore/colon, at most 64 characters"
@@ -178,6 +180,8 @@ def validate_resources(args, parser):
     if args.ssh_config is not None and args.ssh_identity is None:
         parser.error("config requires identity")
     for executable in (args.ssh, args.adb):
+        if executable.lower().endswith((".cmd", ".bat")):
+            parser.exit(2, ".cmd/.bat transport wrappers are refused; use a native executable (.exe on Windows).\n")
         try:
             valid = bool(executable) and clean(executable) == executable
             if valid:

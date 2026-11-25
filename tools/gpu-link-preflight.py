@@ -114,6 +114,8 @@ def check_log_alias(path, info, protected):
 
 def engine_offload(path, port, max_age=12, protected=()):
     """Inspect a regular start-up log, never more than its first 2 MiB."""
+    if os.path.islink(path):
+        raise OSError("engine log must be a regular, non-symlink file")
     info = os.stat(path)
     check_log_alias(path, info, protected)
     if not stat.S_ISREG(info.st_mode):
@@ -887,6 +889,8 @@ def run_main(argv):
             )
     colors = {"PASS": "32", "WARN": "33", "FAIL": "31", "SKIP": "36"}
     counts = dict.fromkeys(colors, 0)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
     for result in results:
         status = result["status"]
         counts[status] += 1
