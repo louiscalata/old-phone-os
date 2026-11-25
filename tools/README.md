@@ -1,7 +1,8 @@
 # Developer tools
 
 This folder holds helpers for people working on OPOS. None of them runs on the phone. `opos-release.py` is described in
-[docs/ota-release-howto.md](../docs/ota-release-howto.md). This page covers the real-GTK check.
+[docs/ota-release-howto.md](../docs/ota-release-howto.md). This page covers the GPU Link stand-in and the
+real-GTK check.
 
 ## The real-GTK check
 
@@ -50,3 +51,50 @@ The PC session that wrote the first version reported 515 checks passing under WS
 when a thumb pane is made too tall (peer-measured, on a shell that had its own local Converter page). This version was
 adapted to the merged shell and its server-backed Converter on a Mac that has no Weston, so the real run is
 **NOT_RUN** here. On the Mac the test is collected and skipped, and the plain rules and the script's checks pass.
+
+## GPU Link stand-in PC
+
+`gpu-link-standin-pc.py` plays the PC side through an existing loopback forward.
+It creates no forward and starts no engine. Enrol using the owner's developer command:
+
+```sh
+python3 -B tools/gpu-link-standin-pc.py --key-file ./pc.key --enrol-request | <phone enrolment command>
+```
+
+Replace the placeholder with `adb shell` running the phone's `nc` to the link service's
+loopback port, or an SSH command with strict host-key checking running the same.
+The request travels on that command's standard input. This mode opens no connection
+and accepts stdout only as a pipe or socket, refusing terminals and regular files.
+Where the platform cannot identify the descriptor type, it still refuses terminals.
+Compare the code printed on stderr with the phone and
+approve on the phone, then run:
+
+```sh
+python3 -B tools/gpu-link-standin-pc.py --key-file ./pc.key
+```
+
+The default `--phone` is `127.0.0.1:8767`. Where the Inference monitor runs on that computer,
+forward the phone's port to a different local port and pass it with `--phone`. Practice mode returns simulated text and
+publishes no token count or speed. `--text server --server URL --model NAME` uses
+an existing loopback chat-completions server; it never starts one. Server token counts
+fall back to an estimate of words generated under the current lease, excluding the
+stored partial. After a resume, the token count shown on the phone covers text produced
+since the resume. Keep the chat-completions server warm before starting: the tool waits
+30 seconds for its first bytes, and a longer silence fails that answer. The same socket
+timeout applies while reading the stream. `--rate` limits text posts to at most four per second. Questions and
+answers appear in event lines only with `--show-text`.
+
+`--give-up-after SECONDS` bounds consecutive failures (default 300; 0 retries without
+an expiry). Successful signed exchanges reset the connection failure window. A pending
+text post has its own failure window, cleared only when that post is accepted; successful
+status replies do not reset it or its message throttle. Connection failures,
+signed server errors, unavailable hello replies and repeated epoch changes wait at least one second before
+retrying. Failure messages appear at most once per 30 seconds during a continuous
+failure window; expiry exits with status 3. An unaccepted key stops with a diagnostic.
+A routine epoch change repeats the request with a fresh nonce and keeps the live source,
+lease and pending text. A signed lease refusal ends that generation and resumes from stored text.
+
+Keys are raw 32-byte files created with mode 0600 on POSIX. Existing POSIX keys must
+be regular files owned by the current user with mode 0600; symlinks are refused.
+On Windows the tool checks file type and size; it does not check inherited access rules.
+Physical phone execution and real Windows execution remain **NOT_RUN** here.
