@@ -31,10 +31,7 @@ class DrainSim:
             raise ValueError(real_s)
         dt_h = real_s * self.speed / 3600
         divisor = max(self.health, 0.1)
-        if per_hour is None:
-            units = DRAIN_PER_HOUR[mode_name] + sum(task_costs)
-        else:
-            units = per_hour * divisor
+        units = (DRAIN_PER_HOUR[mode_name] + sum(task_costs)) if per_hour is None else (per_hour * divisor)
         if self.r0 is None:
             drain = units * dt_h / divisor if per_hour is None else per_hour * dt_h
             self.level = max(0.0, self.level - drain)
