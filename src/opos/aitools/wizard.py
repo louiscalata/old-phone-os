@@ -186,8 +186,6 @@ def uninstall_all(*, env: Mapping[str, str], home: Path, dry_run: bool = False) 
     for prefix in uniq:
         try:
             lines = installer.uninstall(prefix, dry_run=dry_run)
-        except (installer.InstallError, OSError) as e:
-            lines = [f"could not remove {prefix}: {e}"]
         except Exception as e:
             lines = [f"could not remove {prefix}: {e}"]
         if lines == ["nothing to remove"]:

@@ -452,6 +452,18 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(note, "")
         self.assertEqual(stat.S_IMODE((folder / "calls.jsonl").stat().st_mode), 0o600)
 
+    def test_jsonl_preserves_utf8_bytes_and_the_line_limit(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        encoded = '{"value":"café 🟦"}'.encode()
+        path = saved.write_jsonl("state.jsonl", [{"value": "café 🟦"}], line_limit=len(encoded))
+        self.assertEqual(path.read_bytes(), encoded + b"\n")
+        with self.assertRaisesRegex(ValueError, "too big"):
+            saved.write_jsonl("state.jsonl", [{"value": "café 🟦"}], line_limit=len(encoded) - 1)
+        self.assertEqual(path.read_bytes(), encoded + b"\n")
+        saved.write_jsonl("state.jsonl", [])
+        self.assertEqual(path.read_bytes(), b"")
+
     def test_failed_quarantine_leaves_the_original_and_reports_the_error(self):
         folder = Path(self.enterContext(self._tmp()))
         saved = storemod.Store(folder)
