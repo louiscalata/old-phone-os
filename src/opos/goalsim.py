@@ -36,13 +36,13 @@ def _drain_loop(
         if pre_shutdown is not None and pre_shutdown(level, load_amps(drain_per_h * health)) is True:
             shutdown_level = level
             break
-        if profile == "eol":
-            if (
-                check_brownout
-                and brownout(level, load_amps(drain_per_h * health) + BURST_A["call"], temp_c, r0) is True
-            ):
-                shutdown_level = level
-                break
+        if (
+            profile == "eol"
+            and check_brownout
+            and brownout(level, load_amps(drain_per_h * health) + BURST_A["call"], temp_c, r0) is True
+        ):
+            shutdown_level = level
+            break
         remaining = max_h * 3600.0 - t_s
         if remaining <= 0:
             break

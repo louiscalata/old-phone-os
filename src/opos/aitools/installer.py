@@ -767,10 +767,9 @@ def _remove_tools_root(tr: Path, prefix: Path) -> list[str]:
 def _remove_empty_prefix(prefix: Path) -> list[str]:
     """remove prefix if it is an empty real directory; failures are reported"""
     try:
-        if prefix.is_dir() and not prefix.is_symlink():
-            if not any(prefix.iterdir()):
-                prefix.rmdir()
-                return [f"removed {prefix}"]
+        if prefix.is_dir() and not prefix.is_symlink() and not any(prefix.iterdir()):
+            prefix.rmdir()
+            return [f"removed {prefix}"]
     except Exception as e:
         return [f"could not remove {prefix}: {e}"]
     return []

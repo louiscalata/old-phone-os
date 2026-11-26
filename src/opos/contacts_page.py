@@ -207,9 +207,12 @@ def _clean_person(data, people, existing=None):
     note = data.get("note") if isinstance(data.get("note"), str) else ""
     favorite = data.get("favorite") is True
     ice = data.get("ice") is True
-    if favorite and not (existing and existing.get("favorite")):
-        if sum(1 for row in people if row.get("favorite")) >= 6:
-            raise ValueError("favorites")
+    if (
+        favorite
+        and not (existing and existing.get("favorite"))
+        and sum(1 for row in people if row.get("favorite")) >= 6
+    ):
+        raise ValueError("favorites")
     numbers = [{"number": number, "label": label}]
     stored_numbers = existing.get("numbers") if existing else None
     if isinstance(stored_numbers, list):

@@ -27,9 +27,10 @@ def model_policy(model_path=None, *args, **kwargs):
     if allowed_cfg is not None:
         if not isinstance(allowed_cfg, list) or any(not isinstance(x, str) for x in allowed_cfg):
             raise ValueError(f"model invalid: allowed must be list {path!r}")
-    elif deferred_cfg is not None:
-        if not isinstance(deferred_cfg, list) or any(not isinstance(x, str) for x in deferred_cfg):
-            raise ValueError(f"model invalid: deferred must be list {path!r}")
+    elif deferred_cfg is not None and (
+        not isinstance(deferred_cfg, list) or any(not isinstance(x, str) for x in deferred_cfg)
+    ):
+        raise ValueError(f"model invalid: deferred must be list {path!r}")
 
     def policy(state, tasks, t_s=0.0):
         if allowed_cfg is not None:
@@ -46,9 +47,8 @@ def model_policy(model_path=None, *args, **kwargs):
             raise ValueError(f"model invalid: cannot defer ESSENTIAL {sorted(protected & set(deferred))!r} {path!r}")
         if not protected.issubset(set(allowed)):
             raise ValueError(f"model invalid: allowed missing ESSENTIAL {sorted(protected - set(allowed))!r} {path!r}")
-        if allowed_cfg is not None and deferred_cfg is not None:
-            if set(deferred_cfg) != set(deferred):
-                raise ValueError(f"model invalid: allowed/deferred disagree {path!r}")
+        if allowed_cfg is not None and deferred_cfg is not None and set(deferred_cfg) != set(deferred):
+            raise ValueError(f"model invalid: allowed/deferred disagree {path!r}")
         return Decision(mode, allowed, deferred, "model")
 
     return policy
