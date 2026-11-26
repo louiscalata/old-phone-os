@@ -580,7 +580,7 @@ class World:
         tc.assertEqual(code, 200)
         if not self.real:
             tc.assertIn(('name="opos-build" content="%d"' % serial).encode(), body)
-        tc.assertEqual([n for n in os.listdir(self.inbox)], [])
+        tc.assertEqual(list(os.listdir(self.inbox)), [])
         tc.assertEqual(os.listdir(self.staging), [])
         stray = [n for d, _, fs in os.walk(self.root) for n in fs if n.endswith((".new", ".tmp"))]
         tc.assertEqual(stray, [])

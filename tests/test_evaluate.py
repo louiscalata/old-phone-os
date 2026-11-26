@@ -555,8 +555,8 @@ class TestEvaluateModel(unittest.TestCase):
     def test_model_bad_shape_rejected_at_load(self):
         bad_allowed = "".join(["ca", "lls"])
         bad_deferred = "".join(["back", "ground sync"])
-        unhashable_allowed = [[c for c in "calls"]]
-        unhashable_deferred = [[c for c in "background sync"]]
+        unhashable_allowed = [list("calls")]
+        unhashable_deferred = [list("background sync")]
         cases = [
             {"version": 1, "allowed": bad_allowed, "mode": "saver"},
             {"version": 1, "deferred": bad_deferred, "mode": "saver"},

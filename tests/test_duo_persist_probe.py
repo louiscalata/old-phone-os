@@ -1425,7 +1425,7 @@ class PersistProbeAgainstStandInTools(unittest.TestCase):
                 self.assertEqual(sums[name + ".img"], content_sha(idx, size // 4096))
         self.assertEqual(sums["sde-table-head.bin"], content_sha(100, 256))
         on_disk = {d["name"]: d["sha"] for d in as_list(folder["disk"])}
-        self.assertEqual({k: v for k, v in on_disk.items()}, sums)
+        self.assertEqual(dict(on_disk), sums)
         probe = json.loads(folder["probe"])
         self.assertEqual(
             (probe["schema"], probe["phase"], probe["status"], probe["serial"]), (1, "twrp", "complete", "SER1")

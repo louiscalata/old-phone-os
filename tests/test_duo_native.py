@@ -373,7 +373,7 @@ class NativeLauncherTest(unittest.TestCase):
     def test_two_quick_ends_then_a_long_run_start_over(self):
         self.run_native([(1, 2), (1, 2), (0, 300), (1, 2), (1, 2)], returncode=-signal.SIGTERM)
         self.assertEqual((len(self.runs()), self.kiosk_started()), (5, 0))
-        self.assertEqual([s for s in self.read("sleeps")], ["2"] * 5)
+        self.assertEqual(list(self.read("sleeps")), ["2"] * 5)
 
     def test_a_clean_end_is_started_again_not_handed_to_the_browser(self):
         self.run_native([(0, 400), (0, 400)], returncode=-signal.SIGTERM)

@@ -220,7 +220,7 @@ class InstallDigestTests(unittest.TestCase):
         self.assertIn("2026-11-03", msg)
         self.assertEqual(runner.scripts, [])
         self.assert_nothing_left()
-        self.assertEqual([p for p in self.base.rglob("tmp*")], [])
+        self.assertEqual(list(self.base.rglob("tmp*")), [])
 
     def test_mismatch_message_fits_setup_progress(self):
         # Setup shows at most 300 characters of a step's detail, prefixed by the tool id.
