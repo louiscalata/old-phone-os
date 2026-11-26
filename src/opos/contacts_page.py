@@ -140,8 +140,7 @@ def _store():
 
 def _folder():
     raw = os.environ.get("OPOS_CONTACTS_DIR")
-    path = Path(raw) if raw else Path(os.environ.get("OPOS_STATE_DIR") or default_root()) / "vcards"
-    return path
+    return Path(raw) if raw else Path(os.environ.get("OPOS_STATE_DIR") or default_root()) / "vcards"
 
 
 def _load():
@@ -227,7 +226,7 @@ def _clean_person(data, people, existing=None):
             digits = stored_number.removeprefix("+")
             if len(digits) >= MIN_NUMBER_DIGITS and digits.isascii() and digits.isdigit():
                 numbers.append({**item, "label": stored_label})
-    row = {
+    return {
         "id": existing["id"] if existing else uuid.uuid4().hex[:8],
         "name": " ".join(name.split()),
         "numbers": numbers,
@@ -235,7 +234,6 @@ def _clean_person(data, people, existing=None):
         "favorite": favorite,
         "ice": ice,
     }
-    return row
 
 
 def post(data):

@@ -246,8 +246,7 @@ def landing(token, nonce, demo=False):
     page = page.replace('<div id="demo"', '</div><div id="demo"', 1)
     # Install token rotation before the phone scripts start their initial fetch.
     marker = f'<script nonce="{nonce}">'
-    page = page.replace(marker, f"</main>{marker}{script}</script>{marker}", 1)
-    return page
+    return page.replace(marker, f"</main>{marker}{script}</script>{marker}", 1)
 
 
 class Handler(web.Handler):
