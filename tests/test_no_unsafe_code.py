@@ -178,9 +178,8 @@ def _check_log_tree(tree: ast.AST, rel: str) -> list[str]:
     """Collect log content leak findings from one AST."""
     found: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _is_log_call(node.func):
-            if _uses_sensitive_arg(node):
-                found.append(f"{rel}:{node.lineno} forbidden log of content")
+        if isinstance(node, ast.Call) and _is_log_call(node.func) and _uses_sensitive_arg(node):
+            found.append(f"{rel}:{node.lineno} forbidden log of content")
     return found
 
 

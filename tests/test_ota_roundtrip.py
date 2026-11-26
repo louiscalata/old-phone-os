@@ -1035,9 +1035,10 @@ class Contracts(unittest.TestCase):
                 and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "status"
                 and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
             ):
-                if isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-                    phases.add(node.args[0].value)
+                phases.add(node.args[0].value)
         self.assertEqual(phases, {"idle", "verifying", "applying", "checking", "done", "rolled-back", "failed"})
         self.assertEqual(phases, set(uc._PHASES))
         doc = rd(ROOT / "docs" / "ota-update.md")

@@ -55,8 +55,7 @@ def verdict(log, expect=GOOD, extra=(), judge=VERDICT):
         args += ["--log", str(log)]
     if expect is not None:
         args += ["--expect", expect]
-    p = subprocess.run(args + list(extra), capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
-    return p
+    return subprocess.run(args + list(extra), capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
 
 
 def evidence(p):
