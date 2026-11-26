@@ -100,8 +100,5 @@ class Router:
             mode = Mode.SAVER
         else:
             mode = Mode.NORMAL
-        if self.visible:
-            reason = f"router: allowed {len(allowed)}, deferred {len(deferred)}"
-        else:
-            reason = "router"
+        reason = f"router: allowed {len(allowed)}, deferred {len(deferred)}" if self.visible else "router"
         return Decision(mode, tuple(t.name for t in allowed), tuple(t.name for t in deferred), reason)

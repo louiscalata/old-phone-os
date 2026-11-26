@@ -64,10 +64,7 @@ def _li(item):
 def index_html(token, nonce, env=None):
     """The A to Z index. Each real app carries its disclosure card."""
     items = apps.rows(env)
-    if items:
-        lis = "".join(_li(item) for item in items)
-    else:
-        lis = "<li><p>No extra apps are on.</p></li>"
+    lis = "".join(_li(item) for item in items) if items else "<li><p>No extra apps are on.</p></li>"
     thumb = '<h2>About these apps</h2><p id="card">Each app works on this phone. Nothing here needs an account.</p>'
     script = """
 var list=document.getElementById('app-list');

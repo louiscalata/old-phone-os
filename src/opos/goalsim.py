@@ -85,10 +85,7 @@ def simulate(
     if profile == "eol":
         health = EOL_PROFILE["health"]
         r0 = EOL_PROFILE["r0"]
-    if tasks is None:
-        tasks = tuple(list(DEFAULT_TASKS) + [Task("alarms", Priority.ESSENTIAL, 0.1)])
-    else:
-        tasks = tuple(tasks)
+    tasks = tuple(list(DEFAULT_TASKS) + [Task("alarms", Priority.ESSENTIAL, 0.1)]) if tasks is None else tuple(tasks)
     protected = {t.name for t in tasks if t.priority == Priority.ESSENTIAL}
     steps = tuple(s for s in KNOWN_STEPS if s != "model")
     t_s = 0.0

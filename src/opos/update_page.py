@@ -136,10 +136,7 @@ def page(token="", nonce="", snap=None):
     else:
         source = _e(src.get("error") or "Not set. OPOS contacts no server for updates.")
         auto = ""
-    if chk:
-        result = _e(chk.get("message")) + (f" Checked {_e(chk.get('time'))}." if chk.get("time") else "")
-    else:
-        result = ""
+    result = _e(chk.get("message")) + (f" Checked {_e(chk.get('time'))}." if chk.get("time") else "") if chk else ""
     newer = bool(src.get("configured") and chk and chk.get("newer"))
     asking, asked = _LABELS["back" if rb.get("staged") is None else "cancel"]
     if rb.get("requested"):
