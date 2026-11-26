@@ -38,10 +38,7 @@ def prefs_path(env=None):
 
 
 def load(path=None):
-    if path is None:
-        path = prefs_path()
-    else:
-        path = Path(path)
+    path = prefs_path() if path is None else Path(path)
     empty = {"schema": 1, "answers": {}, "skipped": [], "applied": False}
     try:
         text = path.read_text(encoding="utf-8")
@@ -114,10 +111,7 @@ def validate_answer(step, value):
 
 
 def save(state, path=None):
-    if path is None:
-        path = prefs_path()
-    else:
-        path = Path(path)
+    path = prefs_path() if path is None else Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent)
     try:
@@ -194,10 +188,7 @@ def effective(state=None):
 
 
 def finish(path=None):
-    if path is None:
-        path = prefs_path()
-    else:
-        path = Path(path)
+    path = prefs_path() if path is None else Path(path)
     state = load(path)
     state["applied"] = True
     save(state, path)
