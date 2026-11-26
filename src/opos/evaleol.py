@@ -86,10 +86,7 @@ def run_eol(policy, scenario, aware=False, tick_s=60.0, max_min=1440):
         burst = max(spikes) if spikes else 0.0
         sim.advance(tick_s, d.mode.value, costs, burst_a=burst)
         i += 1
-    if i >= max_min:
-        end_h = max_min / 60.0
-    else:
-        end_h = i / 60.0
+    end_h = max_min / 60.0 if i >= max_min else i / 60.0
     hours = {}
     for name, _, _, _ in SERVICES:
         if active[name]:

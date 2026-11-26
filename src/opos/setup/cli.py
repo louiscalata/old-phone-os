@@ -191,10 +191,7 @@ def _handle_status(args: argparse.Namespace, env: dict[str, str], platform: str,
             dev = cfg["device_name"]
         elif "device" in cfg:
             d = cfg["device"]
-            if isinstance(d, dict):
-                dev = d.get("name") or d.get("device_name")
-            else:
-                dev = d
+            dev = (d.get("name") or d.get("device_name")) if isinstance(d, dict) else d
         elif "name" in cfg:
             dev = cfg["name"]
         stored = cfg.get("device")

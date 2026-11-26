@@ -324,10 +324,7 @@ def main():
         errs += blob_errors(fl, True, blobs)
     else:
         errs += blob_errors(fl)
-    if staged:
-        license_text = index_text(blobs, "LICENSE")
-    else:
-        license_text = read("LICENSE")
+    license_text = index_text(blobs, "LICENSE") if staged else read("LICENSE")
     if "GNU GENERAL PUBLIC LICENSE" not in license_text or "Version 3" not in license_text:
         errs.append("LICENSE: missing or not GPL-3.0")
     if staged:
@@ -336,10 +333,7 @@ def main():
     else:
         if not os.path.isfile("NEW-WORK.md"):
             errs.append("NEW-WORK.md: missing")
-    if staged:
-        prov = index_text(blobs, "docs/provenance.md")
-    else:
-        prov = read("docs/provenance.md")
+    prov = index_text(blobs, "docs/provenance.md") if staged else read("docs/provenance.md")
     for rec in git("log", "--format=%H %at %ct %(trailers:key=Provenance,valueonly,separator=%x20)%x1e").split("\x1e"):
         if not rec.strip():
             continue
@@ -370,9 +364,10 @@ def main():
             t = blobs[f][:2_000_000].decode("utf-8", "ignore")
         else:
             t = read(f)
-        if f.endswith((".py", ".sh", ".mjs", ".ps1")) or f.startswith(".githooks/"):
-            if not any(l.startswith("# SPDX-License-Identifier: GPL-3.0-or-later") for l in t.splitlines()[:3]):
-                errs.append(f"{f}: missing SPDX header")
+        if (f.endswith((".py", ".sh", ".mjs", ".ps1")) or f.startswith(".githooks/")) and not any(
+            l.startswith("# SPDX-License-Identifier: GPL-3.0-or-later") for l in t.splitlines()[:3]
+        ):
+            errs.append(f"{f}: missing SPDX header")
         for p in private_patterns:
             m = p.search(strip_allowed(t, allowed))
             if m:
