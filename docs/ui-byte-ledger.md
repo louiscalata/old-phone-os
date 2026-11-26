@@ -130,6 +130,25 @@ revision only. Later apps must not add to this page: naming one app or every app
 itself does not grow. `tests/test_apps_shell.py` checks the gate. `tests/test_apps_gate.py` checks that each app's
 routes answer 404 until `OPOS_APPS` names that app, and that the whole set adds one tag.
 
+AI mode follows the same gate: `OPOS_APPS=ai` adds no bytes beyond that shared tag. `OPOS_GPU_LINK=1`
+starts a separate loopback listener and adds no home-page markup. Its port, model path, model name and label switches
+are listed in [apps.md](apps.md#ai-mode); none changes `page()`.
+
+### GPU Link documentation check, November 22, 2026
+
+The targeted byte checks were run on the staged GPU Link tree. These are local test results. They do not measure phone rendering or GPU inference. The checks use loopback page servers and temporary directories.
+
+| Figure | UTF-8 bytes | Free under the 102,000-byte gate |
+|---|---:|---:|
+| `page()` | 100,391 | 1,609 |
+| `page()` spanned | 100,404 | 1,596 |
+| served, no switch | 100,692 | 1,308 |
+| served, every switch | 101,737 | 263 |
+| served, Duo image | 101,888 | 112 |
+| served, Duo image and the lock | 101,948 | 52 |
+
+`tests/test_uxp30_budget.py` (`WaveGate` and the two page-size checks in `Budget`) passed. `tests/test_apps_gate.py` (`AppRoutes`) and `tests/test_apps_shell.py` (`PageTests.test_page_bytes_do_not_change_when_an_app_is_named`) also passed. The app checks include `ai` and verify the shared home-page tag. AI mode's own inline document is separate from the home page. Physical-phone checks remain **NOT_RUN**.
+
 ## PIN pad
 
 `OPOS_LOCK` is not one of the six switches either. Unset, `page()` and the served home page are unchanged. With

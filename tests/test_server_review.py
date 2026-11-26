@@ -14,6 +14,7 @@ class TestSetupFailureCleanup(unittest.TestCase):
         home = Path.home()
         ctx = SetupContext(repo_root=repo_root, python="python3", home=home, platform="linux")
         server = make_server(0, ctx)
+        self.addCleanup(server.server_close)
         HandlerCls = server.RequestHandlerClass
         sem = HandlerCls._slots
         initial_value = sem._value

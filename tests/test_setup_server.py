@@ -96,18 +96,7 @@ class SetupServerTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _raw(self, method, path, headers=None, data=None):
-        url = f"http://127.0.0.1:{self.port}{path}"
-        hdrs = {}
-        if headers:
-            hdrs.update(headers)
-        if "Host" not in hdrs:
-            hdrs["Host"] = f"127.0.0.1:{self.port}"
-        req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                return resp.status, dict(resp.headers), resp.read()
-        except urllib.error.HTTPError as e:
-            return e.code, dict(e.headers), e.read()
+        return self._raw_for(self.port, method, path, headers=headers, data=data)
 
     def _raw_for(self, port, method, path, headers=None, data=None):
         url = f"http://127.0.0.1:{port}{path}"
@@ -121,7 +110,8 @@ class SetupServerTests(unittest.TestCase):
             with urllib.request.urlopen(req, timeout=2) as resp:
                 return resp.status, dict(resp.headers), resp.read()
         except urllib.error.HTTPError as e:
-            return e.code, dict(e.headers), e.read()
+            with e:
+                return e.code, dict(e.headers), e.read()
 
     def _get(self, path, token=True, host=None, origin=None, extra=None):
         h = {}

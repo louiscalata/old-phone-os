@@ -64,6 +64,26 @@ class LocalCalls(unittest.TestCase):
         contacts_page.post({"action": "delete", "id": ident})
         self.assertEqual(calllog.snapshot()["calls"][0]["name"], "Ana")
 
+    def test_unreadable_contacts_do_not_drop_a_missed_call(self):
+        self.assertEqual(contacts_page.post({"action": "add", "name": "Ana", "number": NUMBER})[0], 200)
+        path = Path(self.tmp.name) / "contacts.json"
+        raw = path.read_bytes()
+        opened = Path.open
+
+        def unreadable(target, *args, **kwargs):
+            if target == path and args == ("rb",):
+                raise PermissionError("denied")
+            return opened(target, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", unreadable):
+            calllog.record(event(direction="incoming", practice=False))
+            calllog.record(event(state="ended", direction="incoming", practice=False, answered=False))
+        snap = calllog.snapshot()
+        self.assertEqual(snap["missed_count"], 1)
+        self.assertEqual(len(snap["calls"]), 1)
+        self.assertEqual(snap["calls"][0]["name"], "")
+        self.assertEqual([p.read_bytes() for p in path.parent.glob(path.name + ".bad-*")], [raw])
+
     def test_unknown_name_and_real_adapter_event_are_not_inferred_as_practice(self):
         self.finish(practice=False)
         self.finish(2, number="+15550100", practice=False)
@@ -123,17 +143,22 @@ class LocalCalls(unittest.TestCase):
         original_replace = os.replace
         original_fsync = os.fsync
         order = []
+        staged = []
 
         def synced(fd):
             original_fsync(fd)
             order.append("fsync")
 
         def replaced(src, dest):
-            self.assertEqual(Path(src).name, ".calls.json.tmp")
-            self.assertEqual(stat.S_IMODE(Path(src).stat().st_mode), 0o600)
-            json.loads(Path(src).read_text())
+            source = Path(src)
+            self.assertEqual(Path(dest), self.path)
+            self.assertEqual(source.parent, self.path.parent)
+            self.assertNotEqual(source, self.path)
+            self.assertEqual(stat.S_IMODE(source.stat().st_mode), 0o600)
+            json.loads(source.read_bytes())
             self.assertEqual(order[-1], "fsync")
             order.append("replace")
+            staged.append(source)
             return original_replace(src, dest)
 
         with (
@@ -141,10 +166,10 @@ class LocalCalls(unittest.TestCase):
             mock.patch.object(store.os, "fsync", side_effect=synced),
         ):
             self.finish()
-        self.assertEqual(order, ["fsync", "replace"] * 3)
+        self.assertEqual(order, ["fsync", "replace", "fsync"] * 3)  # File flush, rename, directory flush.
         self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(self.path.parent.stat().st_mode), 0o700)
-        self.assertFalse((self.path.parent / ".calls.json.tmp").exists())
+        self.assertFalse(any(source.exists() for source in staged))
 
     def test_failed_atomic_write_preserves_previous_complete_file(self):
         self.finish()
@@ -201,7 +226,7 @@ class LocalCalls(unittest.TestCase):
     def test_unreadable_file_and_failed_quarantine_do_not_destroy_the_original(self):
         self.finish()
         raw = self.path.read_bytes()
-        with mock.patch.object(Path, "read_bytes", side_effect=PermissionError("denied")):
+        with mock.patch.object(Path, "open", side_effect=PermissionError("denied")):
             snap = calllog.snapshot()
         self.assertIn("Started empty", snap["recovered"])
         self.assertEqual(next(self.path.parent.glob("calls.json.bad-*")).read_bytes(), raw)

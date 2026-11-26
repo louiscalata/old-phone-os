@@ -33,7 +33,7 @@ the real battery from sysfs. The older Droidian notes in [duo-usb-install.md](du
  │ Termux:  python -m opos.web --live-battery   │◄──adb──────┤ adb reverse tcp:1234       │
  │            │  rules, governor, helper        │  reverse   └────────────────────────────┘
  │            ├─ termux-battery-status (Termux:API) ─ level, temperature, charging, charge counter
- │            ├─ 127.0.0.1:8080 llama-server  (Llama 3.2 1B, verified by model id)
+ │            ├─ 127.0.0.1:8080 llama-server  (local model, verified by model id)
  │            └─ 127.0.0.1:1234 → the computer (Glimmer), only while the cable and reverse are up
  └──────────────────────────────────────────────┘
 ```
@@ -70,8 +70,12 @@ the real battery from sysfs. The older Droidian notes in [duo-usb-install.md](du
   the Duo's sysfs exposes a usable counter is unverified.
 - **Calls and messages stay simulated.** `ScreenModem` still answers Phone and Messages; Android keeps the real
   modem. The page's simulation flag for the modem stays true.
-- **Models:** the routes are unchanged (`src/opos/assist.py`). The phone-local route sends nothing until
-  `/v1/models` on port 8080 lists `llama-3.2-1b-instruct`, which `termux-setup.sh` sets as llama-server's alias.
+- **Models:** the default phone-local route (`src/opos/assist.py`) sends nothing until `/v1/models` on port 8080
+  lists a known exact id: `llama-3.2-1b-instruct`, `llama-3.2-3b-instruct` or `nvidia-aceinstruct-1.5b`.
+  `termux-setup.sh` uses the saved setup id or `OPOS_LLAMA_ID` for the alias; `llama-3.2-1b-instruct` is the default.
+  A server started under another known exact alias still verifies, and its answer names that alias.
+  With `OPOS_LLAMA_ID` unset in the OPOS process, the pane header names the Meta model recommended for the free
+  memory until an answer starts. This is a configured or recommended label, not a probe of the loaded weights.
   Glimmer's default URL `127.0.0.1:1234` reaches a computer through `adb reverse`, with no tunnel or LAN exposure.
 - **Interface:** in Settings, Auto now picks the existing two-screen layout while the window spans the hinge
   (`(horizontal-viewport-segments:2)`), without saving that choice. An app on one screen keeps the phone layout.
@@ -111,6 +115,15 @@ It installs Termux 0.118.3 and Termux:API 0.53.0 (GitHub builds, one signing key
 model to `/sdcard/Download/opos`, types `deploy/termux-setup.sh` into Termux, waits for `ready`, opens OPOS in the
 browser and, with `-Bench`, times answers from the phone's llama-server into `duo-bench.json`.
 A PIN lock blocks the typed command, so unlock the phone first.
+
+For an optional external AceInstruct file, use `-Model <AceInstruct-1.5B.gguf> -LlamaId nvidia-aceinstruct-1.5b`.
+`-LlamaId` writes `/sdcard/Download/opos/llama-id`; setup validates it and saves the default in `~/bin/opos-start`
+for later plain restarts. An exported `OPOS_LLAMA_ID` overrides the saved default. A one-run override is
+`OPOS_LLAMA_ID=nvidia-aceinstruct-1.5b ~/bin/opos-start`. Omitting `-LlamaId` removes an earlier drop id;
+with no saved id or override the alias remains `llama-3.2-1b-instruct`. Use the alias that matches the file:
+OPOS verifies the advertised id, not the weights. AceInstruct is by NVIDIA, source `nvidia/AceInstruct-1.5B`,
+CC-BY-NC-4.0 (non-commercial, attribution); it is not shipped. See [third-party notices](../THIRD_PARTY.md#aceinstruct-15b).
+AceInstruct phone execution and performance remain **NOT_RUN**.
 
 Undo: uninstall `com.termux` and `com.termux.api` and delete `/sdcard/Download/opos`.
 

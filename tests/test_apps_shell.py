@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Everyday app shell: local store, /apps, disclosure, and a main page that stays the same until an app is named."""
 
+import errno
 import http.client
 import json
 import os
@@ -9,6 +10,7 @@ import stat
 import sys
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from html import unescape
 from pathlib import Path
@@ -106,6 +108,308 @@ def post(server, path, payload, token):
 
 
 class StoreTests(unittest.TestCase):
+    @unittest.skipIf(os.name != "posix", "requires POSIX directory permissions")
+    def test_state_directory_is_private_before_chmod(self):
+        folder = Path(self.enterContext(self._tmp())) / "state"
+        chmod = os.chmod
+        observed = []
+
+        def record_mode(path, mode, *args, **kwargs):
+            if Path(path) == folder:
+                observed.append(stat.S_IMODE(folder.stat().st_mode))
+            return chmod(path, mode, *args, **kwargs)
+
+        self.addCleanup(os.umask, os.umask(0o022))
+        with mock.patch.object(storemod.os, "chmod", side_effect=record_mode):
+            storemod.Store(folder).write_json("state.json", {"value": 1})
+        self.assertEqual(observed, [0o700])
+
+    def test_concurrent_writes_publish_complete_files_and_failures_preserve_them(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        writers = (
+            ("state.json", lambda value: saved.write_json("state.json", {"value": value})),
+            ("state.jsonl", lambda value: saved.write_jsonl("state.jsonl", [{"value": value}])),
+            ("state.txt", lambda value: saved.write_bytes("state.txt", value.encode("utf-8"), 65536)),
+        )
+        for name, write in writers:
+            with self.subTest(name=name):
+                self._check_atomic_write(folder / name, write)
+
+    def _check_atomic_write(self, path, write):
+        values = ("é" * 101, "🍐" * 201)
+        documents = []
+        for value in values:
+            self.assertEqual(write(value), path)
+            documents.append(path.read_bytes())
+        self.assertNotEqual(*documents)
+
+        chmod = Path.chmod
+        replace = os.replace
+        staged = threading.Barrier(2, timeout=5)
+        commit = threading.Lock()
+        lock = storemod._lock
+        ownership = threading.local()
+
+        @contextmanager
+        def observed_lock(destination):
+            with lock(destination):
+                ownership.held = True
+                try:
+                    yield
+                finally:
+                    ownership.held = False
+
+        def concurrent_write(value):
+            staged.wait()
+            return write(value)
+
+        def chmod_staged(source, mode):
+            chmod(source, mode)
+            self.assertEqual(source.parent, path.parent)
+            self.assertIn(source.read_bytes(), documents)
+            if path.suffix in (".json", ".jsonl"):
+                self.assertTrue(getattr(ownership, "held", False))
+
+        def replace_staged(source, destination):
+            self.assertEqual(destination, path)
+            self.assertEqual(source.parent, path.parent)
+            self.assertIn(source.read_bytes(), documents)
+            with commit:
+                replace(source, destination)
+
+        with (
+            mock.patch.object(storemod, "_lock", observed_lock),
+            mock.patch.object(Path, "chmod", autospec=True, side_effect=chmod_staged),
+            mock.patch.object(storemod.os, "replace", side_effect=replace_staged),
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = [executor.submit(concurrent_write, value) for value in values]
+                self.assertEqual([result.result(timeout=10) for result in results], [path, path])
+        original = path.read_bytes()
+        self.assertIn(original, documents)
+        if sys.platform != "win32":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+        for operation in ("fsync", "replace"):
+            with self.subTest(operation=operation):
+                error = OSError("write interrupted")
+                with mock.patch.object(storemod.os, operation, side_effect=error):
+                    with self.assertRaises(OSError) as raised:
+                        write("discard")
+                self.assertIs(raised.exception, error)
+                self.assertEqual(path.read_bytes(), original)
+        self.assertFalse(list(path.parent.glob(f".{path.name}.*.tmp")))
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_atomic_write_flushes_file_then_rename_then_directory_under_lock(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        events = []
+        locked = False
+        fsync, replace, lock = os.fsync, os.replace, storemod._lock
+        new_temp = storemod.tempfile.NamedTemporaryFile
+
+        @contextmanager
+        def observed_lock(path):
+            nonlocal locked
+            with lock(path):
+                locked = True
+                try:
+                    yield
+                finally:
+                    locked = False
+                    events.append("unlock")
+
+        def synced(fd):
+            directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+            events.append("directory fsync" if directory else "file fsync")
+            self.assertTrue(locked)
+            return fsync(fd)
+
+        def created(*args, **kwargs):
+            self.assertTrue(locked)
+            events.append("create temp")
+            return new_temp(*args, **kwargs)
+
+        def renamed(source, destination):
+            self.assertTrue(locked)
+            events.append("replace")
+            return replace(source, destination)
+
+        with (
+            mock.patch.object(storemod, "_lock", observed_lock),
+            mock.patch.object(storemod.tempfile, "NamedTemporaryFile", created),
+            mock.patch.object(storemod.os, "fsync", synced),
+            mock.patch.object(storemod.os, "replace", renamed),
+        ):
+            saved.write_json("state.json", {"value": 1})
+        self.assertEqual(events, ["create temp", "file fsync", "replace", "directory fsync", "unlock"])
+
+    def _directory_writes(self, saved, **kwargs):
+        def transaction():
+            with saved._transaction("transaction.json", {}, **kwargs) as (_, _, save):
+                save({"value": 1})
+
+        return (
+            ("state.json", lambda: saved.write_json("state.json", {"value": 1}, **kwargs), b'{"value":1,"schema":1}'),
+            ("state.jsonl", lambda: saved.write_jsonl("state.jsonl", [{"value": 1}], **kwargs), b'{"value":1}\n'),
+            ("state.txt", lambda: saved.write_bytes("state.txt", b"text", 100, **kwargs), b"text"),
+            ("transaction.json", transaction, b'{"value":1,"schema":1}'),
+        )
+
+    def test_default_writes_keep_three_argument_atomic_call(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        calls = []
+
+        def replacement(path, raw, lock):
+            with lock:
+                calls.append((path, raw))
+
+        for options in ({}, {"durable": False}):
+            for name, write, expected in self._directory_writes(saved, **options):
+                with self.subTest(name=name, options=options):
+                    calls.clear()
+                    with mock.patch.object(storemod, "_write_atomic", replacement):
+                        write()
+                    self.assertEqual(calls, [(folder / name, expected)])
+
+    def test_durable_writes_pass_true_to_atomic_call(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        calls = []
+
+        def replacement(path, raw, lock, *, durable):
+            with lock:
+                calls.append((path, raw, durable))
+
+        for name, write, expected in self._directory_writes(saved, durable=True):
+            with self.subTest(name=name):
+                calls.clear()
+                with mock.patch.object(storemod, "_write_atomic", replacement):
+                    write()
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(calls[0][:2], (folder / name, expected))
+                self.assertIs(calls[0][2], True)
+
+    @contextmanager
+    def _directory_failure(self, folder, operation, error):
+        opened, synced, closed = os.open, os.fsync, os.close
+        attempted = []
+        directories = []
+
+        def open_directory(path, *args, **kwargs):
+            if operation == "open" and Path(path) == folder:
+                attempted.append(operation)
+                raise error
+            fd = opened(path, *args, **kwargs)
+            if Path(path) == folder:
+                directories.append(fd)
+            return fd
+
+        def sync_directory(fd):
+            if operation == "sync" and stat.S_ISDIR(os.fstat(fd).st_mode):
+                attempted.append(operation)
+                raise error
+            return synced(fd)
+
+        def close_directory(fd):
+            directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+            result = closed(fd)
+            if operation == "close" and directory:
+                attempted.append(operation)
+                raise error
+            return result
+
+        with (
+            mock.patch.object(storemod.os, "open", open_directory),
+            mock.patch.object(storemod.os, "fsync", sync_directory),
+            mock.patch.object(storemod.os, "close", close_directory),
+        ):
+            yield attempted
+        for fd in directories:
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_default_directory_errors_are_best_effort(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        for name, write, expected in self._directory_writes(saved):
+            for operation in ("open", "sync", "close"):
+                with self.subTest(name=name, operation=operation):
+                    error = OSError(errno.EIO, "directory sync failed")
+                    with self._directory_failure(folder, operation, error) as attempted:
+                        write()
+                    self.assertEqual(attempted, [operation])
+                    self.assertEqual((folder / name).read_bytes(), expected)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_directory_fsync_failure_raises_and_closes_directory(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        for name, write, expected in self._directory_writes(saved, durable=True):
+            for operation in ("open", "sync", "close"):
+                with self.subTest(name=name, operation=operation):
+                    error = OSError(errno.EIO, "directory sync failed")
+                    with (
+                        self._directory_failure(folder, operation, error) as attempted,
+                        self.assertRaises(storemod.DurabilityError) as caught,
+                    ):
+                        write()
+                    self.assertIs(caught.exception.__cause__, error)
+                    self.assertEqual(caught.exception.errno, errno.EIO)
+                    self.assertEqual(attempted, [operation])
+                    self.assertEqual((folder / name).read_bytes(), expected)
+                    self.assertFalse(list(folder.glob(f".{name}.*.tmp")))
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_unsupported_directory_sync_allows_write(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        for name, write, expected in self._directory_writes(saved, durable=True):
+            for code in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS}:
+                for operation in ("open", "sync", "close"):
+                    with self.subTest(name=name, errno=code, operation=operation):
+                        error = OSError(code, "directory sync unsupported")
+                        with self._directory_failure(folder, operation, error) as attempted:
+                            write()
+                        self.assertEqual(attempted, [operation])
+                        self.assertEqual((folder / name).read_bytes(), expected)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory fsync")
+    def test_notes_style_index_then_text_survives_directory_error(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        for operation in ("open", "sync", "close"):
+            with self.subTest(operation=operation):
+                text_name = f"note-{operation}.txt"
+                error = OSError(errno.EIO, "directory sync failed")
+                with self._directory_failure(folder, operation, error) as attempted:
+                    saved.write_json("notes.json", {"notes": [{"id": operation, "title": "Empty note"}]})
+                    saved.write_bytes(text_name, b"", 100)
+                self.assertEqual(attempted, [operation, operation])
+                self.assertEqual(saved.read_json("notes.json", {})[0]["notes"][0]["id"], operation)
+                self.assertEqual((folder / text_name).read_bytes(), b"")
+
+    def test_write_and_cleanup_failures_both_remain_visible(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        path = saved.write_json("state.json", {"value": "before"})
+        original = path.read_bytes()
+        write_error = OSError("write interrupted")
+        cleanup_error = PermissionError("temporary file is in use")
+        with (
+            mock.patch.object(storemod.os, "fsync", side_effect=write_error),
+            mock.patch.object(Path, "unlink", side_effect=cleanup_error),
+            self.assertRaises(PermissionError) as raised,
+        ):
+            saved.write_json("state.json", {"value": "discard"})
+        self.assertIs(raised.exception, cleanup_error)
+        self.assertIs(raised.exception.__context__, write_error)
+        self.assertEqual(path.read_bytes(), original)
+
     @unittest.skipIf(sys.platform == "win32", "file modes and chmod are not honoured on Windows")
     def test_round_trip_mode_and_corrupt_recovery(self):
         folder = Path(self.enterContext(self._tmp()))
@@ -147,6 +451,31 @@ class StoreTests(unittest.TestCase):
         self.assertEqual([row["n"] for row in got], [2, 3, 4])
         self.assertEqual(note, "")
         self.assertEqual(stat.S_IMODE((folder / "calls.jsonl").stat().st_mode), 0o600)
+
+    def test_failed_quarantine_leaves_the_original_and_reports_the_error(self):
+        folder = Path(self.enterContext(self._tmp()))
+        saved = storemod.Store(folder)
+        readers = (
+            ("state.json", lambda: saved.read_json("state.json", {}), {}),
+            ("state.jsonl", lambda: saved.read_jsonl("state.jsonl"), []),
+        )
+        for name, read, default in readers:
+            with self.subTest(name=name):
+                path = folder / name
+                original = b"\xff"
+                path.write_bytes(original)
+                error = PermissionError("move unavailable")
+                with mock.patch.object(storemod.os, "replace", side_effect=error):
+                    with self.assertRaises(PermissionError) as raised:
+                        read()
+                self.assertIs(raised.exception, error)
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(list(folder.glob(f"{name}.bad-*")))
+                value, note = read()
+                self.assertEqual(value, default)
+                self.assertIn("Started empty", note)
+                self.assertFalse(path.exists())
+                self.assertEqual([backup.read_bytes() for backup in folder.glob(f"{name}.bad-*")], [original])
 
     def _tmp(self):
         import tempfile

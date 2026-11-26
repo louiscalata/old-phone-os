@@ -74,6 +74,10 @@ try:  # track monitor: the Inference page is optional; a runtime shipped without
     from opos import monitor, monitor_web
 except ImportError:
     monitor = monitor_web = None
+try:  # GPU Link and its answer store are optional in older runtimes.
+    from opos import ai_answers, gpu_link_server
+except ImportError:
+    ai_answers = gpu_link_server = None
 from opos.clock_health import clock_status
 from opos import statusbar  # track: status (the status bar's note, the call line on Home)
 from opos import fonts  # Newsreader and Inter Tight, served as files; not part of page()
@@ -1269,6 +1273,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             limit = 70000 if path == "/api/notes" else secure.MAX_BODY
+            if path == "/api/ai" and ai_answers is not None:
+                limit = 6 * ai_answers.MAX_QUESTION_BYTES + 256
             data = secure.read_json_body(self.rfile, self.headers, limit)
         except secure.BodyError as e:
             self._deny(e.status, e.message, "body")
@@ -1683,10 +1689,21 @@ def main(argv=None):
         )
     else:
         print(f"OPOS desktop demo: http://127.0.0.1:{port}/?demo=1 (Ctrl-C to stop)", flush=True)
+    link_enabled = os.environ.get("OPOS_GPU_LINK") == "1"
+    if link_enabled:
+        try:
+            if gpu_link_server is None or ai_answers is None:
+                raise ImportError("GPU Link modules unavailable")
+            gpu_link_server.start(ai_answers.shared())
+        except (ImportError, OSError, ValueError, OverflowError, RuntimeError) as e:
+            print("opos: GPU Link could not start:", type(e).__name__, file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        if link_enabled and gpu_link_server is not None:
+            gpu_link_server.stop()
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from opos.alarms import Book, Event, first_valid, next_fire
+from opos.alarms import Book, Event, first_valid, latest_fire, next_fire
 from opos.home import is_quiet
 
 try:
@@ -32,6 +32,17 @@ class Rules(unittest.TestCase):
         first = first_valid(datetime(2026, 11, 1).date(), 1, 30, NY)
         self.assertEqual(first, at(NY, 2026, 11, 1, 1, 30, 0))
         self.assertEqual(first.utcoffset(), timedelta(hours=-4))
+
+    def test_scheduled_occurrence_bounds_use_instants(self):
+        first = at(NY, 2026, 11, 1, 1, 30)
+        second = at(NY, 2026, 11, 1, 1, 15, 1)
+        end = at(NY, 2026, 11, 1, 1, 31, 1)
+        matched = latest_fire(1, 30, (6,), at(NY, 2026, 11, 1, 1, 29), first)
+        self.assertEqual(matched.astimezone(UTC), at(UTC, 2026, 11, 1, 5, 30))
+        self.assertEqual(next_fire(1, 30, (6,), first).astimezone(UTC), at(UTC, 2026, 11, 1, 5, 30))
+        self.assertIsNone(latest_fire(1, 30, (6,), first, end))
+        self.assertIsNone(latest_fire(1, 30, (6,), second, end))
+        self.assertEqual(next_fire(1, 30, (6,), second), at(NY, 2026, 11, 8, 1, 30))
 
     def test_labels_and_the_cap(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -71,6 +82,19 @@ class Engine(unittest.TestCase):
         self.assertTrue(book.alarms[0]["enabled"])
         self.assertEqual(book.tick(at(UTC, 2026, 11, 9, 7, 20)), [])
 
+    def test_snooze_deadline_uses_elapsed_minutes_during_the_repeated_hour(self):
+        for minute, fold, expected in ((55, 0, "2026-11-01T06:05:00+00:00"), (20, 1, "2026-11-01T06:30:00+00:00")):
+            with self.subTest(fold=fold):
+                book = self.book(NY)
+                fire = at(NY, 2026, 11, 1, 1, 0)
+                row = book.add(1, 0, days=(6,), now=fire - timedelta(minutes=1))
+                self.assertEqual(book.tick(fire), [Event("ring", "alarm", row["id"], fire, "Alarm 01:00")])
+                now = at(NY, 2026, 11, 1, 1, minute, fold)
+                self.assertEqual(book.snooze(now, row["id"]), dict(row, snooze_at=expected))
+                reloaded = Book(book.store.root, NY)
+                self.assertEqual(reloaded.alarms, [dict(row, snooze_at=expected)])
+                self.assertEqual(reloaded.last_seen, now.astimezone(UTC).isoformat())
+
     def test_a_late_restart_is_missed_and_an_unknown_clock_does_not_ring(self):
         book = self.book()
         fire = at(UTC, 2026, 11, 9, 7, 0)
@@ -97,13 +121,33 @@ class Engine(unittest.TestCase):
         second = book.tick(at(NY, 2026, 11, 1, 1, 31, 1))
         self.assertEqual(second, [])
 
+    def test_second_fold_does_not_replay_earlier_alarm(self):
+        book = self.book(NY)
+        start = at(NY, 2026, 11, 1, 1, 15, 1)
+        row = book.add(1, 30, days=(6,), now=start)
+        self.assertEqual(book.next_alarm(start)["at"], at(NY, 2026, 11, 8, 1, 30))
+        self.assertEqual(book.tick(at(NY, 2026, 11, 1, 1, 31, 1)), [])
+        self.assertEqual(Book(book.store.root, NY).alarms, [row])
+
+    def test_alarm_grace_uses_elapsed_time_across_fall_back(self):
+        for minute, kind, text in ((5, "ring", "Alarm 01:55"), (15, "missed", "Missed alarm 01:55")):
+            with self.subTest(kind=kind):
+                book = self.book(NY)
+                start = at(NY, 2026, 11, 1, 1, 50)
+                fire = at(NY, 2026, 11, 1, 1, 55)
+                row = book.add(1, 55, days=(6,), now=start)
+                events = book.tick(at(NY, 2026, 11, 1, 1, minute, 1))
+                self.assertEqual(events, [Event(kind, "alarm", row["id"], fire, text)])
+                self.assertEqual(events[0].at.astimezone(UTC), at(UTC, 2026, 11, 1, 5, 55))
+
     def test_timer_and_reload(self):
         book = self.book()
         start = at(UTC, 2026, 11, 9, 12, 0)
-        book.start_timer(60, start, label="Eggs")
-        self.assertEqual(book.tick(start + timedelta(seconds=30)), [])
-        rung = book.tick(start + timedelta(seconds=61))
-        self.assertEqual(rung[0].text, "Timer Eggs")
+        timer = book.start_timer(60, start, label="Eggs")
+        due = at(UTC, 2026, 11, 9, 12, 1)
+        self.assertEqual(timer["fires_at"], due.isoformat())
+        self.assertEqual(book.tick(start + timedelta(seconds=59)), [])
+        self.assertEqual(book.tick(due), [Event("ring", "timer", timer["id"], due, "Timer Eggs")])
         book.start_timer(60, start)
         path = book.store.root
         again = Book(path, UTC)
@@ -111,6 +155,52 @@ class Engine(unittest.TestCase):
         gone = Book(path, UTC)
         gone.cancel_timer()
         self.assertIsNone(Book(path, UTC).timer)
+
+    def test_timer_deadline_uses_elapsed_seconds_during_the_repeated_hour(self):
+        for minute, fold, expected in ((55, 0, "2026-11-01T06:05:00+00:00"), (20, 1, "2026-11-01T06:30:00+00:00")):
+            with self.subTest(fold=fold):
+                book = self.book(NY)
+                start = at(NY, 2026, 11, 1, 1, minute, fold)
+                timer = book.start_timer(600, start)
+                self.assertEqual(timer["fires_at"], expected)
+                self.assertEqual(Book(book.store.root, NY).timer, timer)
+
+    def test_saved_deadlines_use_instants_across_fall_back(self):
+        start = at(UTC, 2026, 11, 1, 5, 55)
+        due = at(UTC, 2026, 11, 1, 6, 5)
+        for previous, seconds, fires in ((start, -1, False), (start, 0, True), (start, 60, True), (due, 60, False)):
+            with self.subTest(previous=previous, seconds=seconds):
+                book = self.book(NY)
+                row = book.add(1, 55, days=(6,), now=start)
+                timer = {"id": "timer", "fires_at": due.isoformat(), "label": "Eggs"}
+                book.store.write_json(
+                    "alarms.json",
+                    {
+                        "alarms": [dict(row, snooze_at=due.isoformat())],
+                        "timer": timer,
+                        "last_seen": previous.isoformat(),
+                        "notices": [],
+                    },
+                )
+                book = Book(book.store.root, NY)
+                events = book.tick(due + timedelta(seconds=seconds))
+                if fires:
+                    local = due.astimezone(NY)
+                    self.assertEqual(
+                        events,
+                        [
+                            Event("ring", "timer", "timer", local, "Timer Eggs"),
+                            Event("ring", "alarm", row["id"], local, "Alarm 01:55"),
+                        ],
+                    )
+                    self.assertEqual([event.at.astimezone(UTC) for event in events], [due, due])
+                    self.assertTrue(all(event.at.tzinfo is NY and event.at.fold == 1 for event in events))
+                    self.assertIsNone(book.timer)
+                    self.assertNotIn("snooze_at", book.alarms[0])
+                else:
+                    self.assertEqual(events, [])
+                    self.assertEqual(book.timer, timer)
+                    self.assertEqual(book.alarms[0]["snooze_at"], due.isoformat())
 
     def test_one_shot_ring_next_tick_reload_and_stop(self):
         book = self.book()
@@ -212,6 +302,152 @@ class Engine(unittest.TestCase):
                     self.assertEqual(events[0].kind, "missed" if late else "ring")
                     self.assertEqual(events[0].what, "timer" if kind == "timer" else "alarm")
                     self.assertEqual(events[0].at, due)
+
+    def test_timer_grace_uses_elapsed_seconds_across_clock_changes(self):
+        spring = at(UTC, 2026, 3, 8, 6, 55)
+        fall = at(UTC, 2026, 11, 1, 5, 5)
+        cases = (
+            (spring, 600, "ring", "Timer Eggs"),
+            (spring, 601, "missed", "Missed timer"),
+            (fall, 3600, "missed", "Missed timer"),
+        )
+        for due, seconds, kind, text in cases:
+            with self.subTest(due=due, seconds=seconds):
+                book = self.book(NY)
+                book.store.write_json(
+                    "alarms.json",
+                    {
+                        "alarms": [],
+                        "timer": {"id": "timer", "fires_at": due.isoformat(), "label": "Eggs"},
+                        "last_seen": (due - timedelta(seconds=1)).isoformat(),
+                        "notices": [],
+                    },
+                )
+                book = Book(book.store.root, NY)
+                events = book.tick(due + timedelta(seconds=seconds))
+                self.assertEqual(events, [Event(kind, "timer", "timer", due.astimezone(NY), text)])
+                self.assertEqual(events[0].at.astimezone(UTC), due)
+                self.assertIs(events[0].at.tzinfo, NY)
+                self.assertIsNone(book.timer)
+                self.assertEqual(book.notices, [text] if kind == "missed" else [])
+
+    def test_alarm_actions_preserve_timer_deadline_across_reload(self):
+        ring = at(UTC, 2026, 11, 9, 7, 0)
+        due = ring + timedelta(seconds=15)
+        for action in (Book.stop, Book.snooze):
+            for offset in (-1, 0, 1):
+                with self.subTest(action=action.__name__, offset=offset):
+                    book = self.book()
+                    alarm = book.add(7, 0, now=ring - timedelta(hours=1))
+                    timer = book.start_timer(60, due - timedelta(seconds=60), "Eggs")
+                    self.assertEqual(book.tick(ring), [Event("ring", "alarm", alarm["id"], ring, "Alarm 07:00")])
+                    action_at = due + timedelta(microseconds=offset)
+                    action(book, action_at, alarm["id"])
+
+                    path = book.store.root / "alarms.json"
+                    written = path.read_bytes()
+                    data = json.loads(written)
+                    self.assertEqual(data["schema"], 1)
+                    self.assertEqual(data["last_seen"], action_at.isoformat())
+                    self.assertEqual(data["timer"], timer)
+                    self.assertEqual(set(timer), {"id", "fires_at", "label"})
+                    resumed = Book(book.store.root, UTC)
+                    self.assertEqual(resumed.tick(due + timedelta(seconds=2), clock_ok=False), [])
+                    self.assertEqual(path.read_bytes(), written)
+                    self.assertEqual(
+                        resumed.tick(due + timedelta(seconds=6)),
+                        [Event("ring", "timer", timer["id"], due, "Timer Eggs")],
+                    )
+                    resumed = Book(book.store.root, UTC)
+                    self.assertIsNone(resumed.timer)
+                    self.assertEqual(resumed.tick(due + timedelta(seconds=7)), [])
+
+    def test_alarm_action_preserves_the_interval_of_an_unmarked_saved_timer(self):
+        book = self.book()
+        ring = at(UTC, 2026, 11, 9, 7, 0)
+        due = ring + timedelta(seconds=15)
+        alarm = book.add(7, 0, now=ring - timedelta(hours=1))
+        book.tick(ring)
+        timer = {"id": "eggs", "fires_at": due.isoformat(), "label": "Eggs", "timer_seen": "legacy extra"}
+        book.store.write_json(
+            "alarms.json",
+            {"alarms": book.alarms, "timer": timer, "last_seen": ring.isoformat(sep=" "), "notices": ["Earlier"]},
+        )
+        resumed = Book(book.store.root, UTC)
+        resumed.stop(due, alarm["id"])
+        resumed = Book(book.store.root, UTC)
+        self.assertEqual(resumed.timer, timer)
+        self.assertEqual(resumed.last_seen, due.isoformat())
+        self.assertEqual(
+            resumed.tick(due + timedelta(minutes=10, seconds=1)),
+            [Event("missed", "timer", "eggs", due, "Missed timer")],
+        )
+        resumed = Book(book.store.root, UTC)
+        self.assertEqual(resumed.notices, ["Earlier", "Missed timer"])
+        self.assertEqual(resumed.tick(due + timedelta(minutes=11)), [])
+
+    def test_alarm_actions_replace_an_unusable_legacy_last_seen(self):
+        ring = at(UTC, 2026, 11, 9, 7, 0)
+        due = ring + timedelta(seconds=15)
+        timer = {"id": "tea", "fires_at": due.isoformat(), "label": "Tea"}
+        prior_values = ("2026-02-29T07:00:00+00:00", "0001-01-01T00:00:00+00:01", "9999-12-31T23:59:59-00:01")
+        for action in (Book.stop, Book.snooze):
+            for prior in prior_values:
+                with self.subTest(action=action.__name__, prior=prior):
+                    book = self.book()
+                    alarm = book.add(7, 0, now=ring - timedelta(hours=1))
+                    book.tick(ring)
+                    book.store.write_json(
+                        "alarms.json",
+                        {"alarms": book.alarms, "timer": timer, "last_seen": prior, "notices": ["Earlier"]},
+                    )
+                    book = Book(book.store.root, UTC)
+                    row = action(book, due, alarm["id"])
+                    self.assertNotIn("ringing", row)
+                    saved, _ = book.store.read_json("alarms.json", {})
+                    self.assertEqual(saved["last_seen"], due.isoformat())
+                    self.assertEqual(saved["timer"], timer)
+                    self.assertNotIn("timer_seen", saved)
+
+                    resumed = Book(book.store.root, UTC)
+                    self.assertEqual(resumed.alarms, [row])
+                    self.assertEqual(resumed.tick(due + timedelta(seconds=1)), [])
+                    self.assertEqual(resumed.timer, timer)
+                    self.assertEqual(resumed.notices, ["Earlier"])
+
+    def test_legacy_timer_ignores_unrecognized_cursor_metadata(self):
+        due = at(UTC, 2026, 11, 9, 7, 0)
+        timer = {"id": "old-timer", "fires_at": due.isoformat(), "label": "Tea"}
+        for metadata in (None, True, "earlier", {"cursor": 0}, 10**30):
+            with self.subTest(metadata=metadata):
+                book = self.book()
+                book.store.write_json(
+                    "alarms.json",
+                    {"timer": timer, "last_seen": due.isoformat(), "timer_seen": metadata},
+                )
+                resumed = Book(book.store.root, UTC)
+                self.assertEqual(resumed.tick(due + timedelta(seconds=1)), [])
+                self.assertEqual(resumed.timer, timer)
+
+    def test_replacement_timer_uses_its_start_after_backward_clock_correction(self):
+        book = self.book()
+        started = at(UTC, 2026, 11, 9, 6, 59)
+        before_correction = started + timedelta(hours=1)
+        book.tick(before_correction)
+        book.start_timer(15, started, "Cancelled")
+        book.cancel_timer()
+        saved, _ = book.store.read_json("alarms.json", {})
+        self.assertIsNone(saved["timer"])
+        self.assertNotIn("timer_seen", saved)
+        book.start_timer(30, started, "Replaced")
+        timer = book.start_timer(60, started, "Eggs")
+        resumed = Book(book.store.root, UTC)
+        self.assertEqual(resumed.last_seen, before_correction.isoformat())
+        due = started + timedelta(seconds=60)
+        self.assertEqual(resumed.tick(due), [Event("ring", "timer", timer["id"], due, "Timer Eggs")])
+        saved, _ = resumed.store.read_json("alarms.json", {})
+        self.assertIsNone(saved["timer"])
+        self.assertNotIn("timer_seen", saved)
 
     def test_edit_toggle_delete_and_saved_field_names(self):
         book = self.book()

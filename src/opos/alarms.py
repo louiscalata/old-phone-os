@@ -21,6 +21,10 @@ GRACE = timedelta(minutes=10)
 SNOOZE = timedelta(minutes=10)
 MAX_TIMER_S = 24 * 60 * 60
 _FILE = "alarms.json"
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_MICROSECOND = timedelta(microseconds=1)
+_MIN_TIMER_SEEN = (datetime.min.replace(tzinfo=timezone.utc) - _EPOCH) // _MICROSECOND
+_MAX_TIMER_SEEN = (datetime.max.replace(tzinfo=timezone.utc) - _EPOCH) // _MICROSECOND
 
 
 @dataclass(frozen=True)
@@ -118,14 +122,19 @@ def _matches(days, day):
 def latest_fire(hour, minute, days, start, end):
     """The latest valid fire in (start, end], or None."""
     best = None
+    best_at = None
     day = (start.astimezone(end.tzinfo)).date() - timedelta(days=1)
     last = end.astimezone(end.tzinfo).date()
     zone = end.tzinfo
+    start = start.astimezone(timezone.utc) if start.utcoffset() is not None else start
+    end = end.astimezone(timezone.utc) if end.utcoffset() is not None else end
     while day <= last:
         if _matches(days, day):
             made = first_valid(day, hour, minute, zone)
-            if made is not None and start < made <= end and (best is None or made > best):
-                best = made
+            if made is not None:
+                when = made.astimezone(timezone.utc) if made.utcoffset() is not None else made
+                if start < when <= end and (best_at is None or when > best_at):
+                    best, best_at = made, when
         day += timedelta(days=1)
     return best
 
@@ -135,12 +144,13 @@ def next_fire(hour, minute, days, now):
     now = _aware(now)
     zone = now.tzinfo
     day = now.date()
+    now = now.astimezone(timezone.utc)
     for offset in range(8):
         when = day + timedelta(days=offset)
         if not _matches(days, when):
             continue
         made = first_valid(when, hour, minute, zone)
-        if made is not None and made >= now:
+        if made is not None and made.astimezone(timezone.utc) >= now:
             return made
     return None
 
@@ -156,6 +166,10 @@ def _parse(text, zone):
     return made.astimezone(zone)
 
 
+def _utc_microseconds(when):
+    return (when.astimezone(timezone.utc) - _EPOCH) // _MICROSECOND
+
+
 class Book:
     """The saved alarms and the one timer. tick() is the only thing that rings or misses."""
 
@@ -165,6 +179,7 @@ class Book:
         self._lock = threading.Lock()
         self.alarms = []
         self.timer = None
+        self._timer_seen = None
         self.last_seen = None
         self.notices = []
         self._load()
@@ -175,21 +190,26 @@ class Book:
         self.alarms = [row for row in alarms if isinstance(row, dict) and isinstance(row.get("id"), str)]
         timer = data.get("timer")
         self.timer = timer if isinstance(timer, dict) and isinstance(timer.get("fires_at"), str) else None
+        timer_seen = data.get("timer_seen")
+        if self.timer is not None and type(timer_seen) is int and _MIN_TIMER_SEEN <= timer_seen <= _MAX_TIMER_SEEN:
+            self._timer_seen = _EPOCH + timedelta(microseconds=timer_seen)
+        else:
+            self._timer_seen = None
         seen = data.get("last_seen")
         self.last_seen = seen if isinstance(seen, str) else None
         notes = data.get("notices") if isinstance(data.get("notices"), list) else []
         self.notices = [note for note in notes if isinstance(note, str)][-20:]
 
     def _save(self):
-        self.store.write_json(
-            _FILE,
-            {
-                "alarms": self.alarms,
-                "timer": self.timer,
-                "last_seen": self.last_seen,
-                "notices": self.notices[-20:],
-            },
-        )
+        data = {
+            "alarms": self.alarms,
+            "timer": self.timer,
+            "last_seen": self.last_seen,
+            "notices": self.notices[-20:],
+        }
+        if self.timer is not None and self._timer_seen is not None:
+            data["timer_seen"] = _utc_microseconds(self._timer_seen)
+        self.store.write_json(_FILE, data)
 
     def add(self, hour, minute, days=(), label="", now=None):
         with self._lock:
@@ -253,11 +273,13 @@ class Book:
             now = _aware(now)
             if isinstance(seconds, bool) or not isinstance(seconds, int) or not 1 <= seconds <= MAX_TIMER_S:
                 raise ValueError("seconds")
+            now_at = now.astimezone(timezone.utc)
             self.timer = {
                 "id": uuid.uuid4().hex[:8],
-                "fires_at": _iso(now + timedelta(seconds=seconds)),
+                "fires_at": _iso(now_at + timedelta(seconds=seconds)),
                 "label": _label(label),
             }
+            self._timer_seen = now_at
             if self.last_seen is None:
                 self.last_seen = _iso(now)
             self._save()
@@ -266,7 +288,18 @@ class Book:
     def cancel_timer(self):
         with self._lock:
             self.timer = None
+            self._timer_seen = None
             self._save()
+
+    def _timer_seen_before_alarm_action(self):
+        if self.timer is None:
+            return None
+        if self._timer_seen is None and self.last_seen is not None:
+            try:
+                return _parse(self.last_seen, timezone.utc)
+            except (ValueError, OverflowError):
+                return None
+        return self._timer_seen
 
     def snooze(self, now, alarm_id=None):
         """Push the ringing alarm 10 minutes from now. Repeating alarms stay on."""
@@ -275,7 +308,9 @@ class Book:
             row = self._ringing(now, alarm_id)
             if row is None:
                 raise ValueError("id")
+            timer_seen = self._timer_seen_before_alarm_action()
             self._transition(row, "snooze", now=now)
+            self._timer_seen = timer_seen
             self.last_seen = _iso(now)
             self._save()
             return dict(row)
@@ -289,7 +324,9 @@ class Book:
                 row = self._row(alarm_id)
             if row is None:
                 raise ValueError("id")
+            timer_seen = self._timer_seen_before_alarm_action()
             self._transition(row, "stop")
+            self._timer_seen = timer_seen
             self.last_seen = _iso(now)
             self._save()
             return dict(row)
@@ -300,18 +337,16 @@ class Book:
             now = _aware(now).astimezone(self.zone)
             if not clock_ok:
                 return []
-            if self.last_seen is None:
-                self.last_seen = _iso(now)
-                self._save()
-                return []
-            start = _parse(self.last_seen, self.zone)
-            events = []
-            events.extend(self._timer_events(start, now))
-            for row in list(self.alarms):
-                event = self._transition(row, "tick", start=start, now=now)
-                if event is not None:
-                    events.append(event)
+            start = _parse(self.last_seen, self.zone) if self.last_seen is not None else None
+            timer_start = self._timer_seen if self._timer_seen is not None else start
+            events = self._timer_events(timer_start, now) if timer_start is not None else []
+            if start is not None:
+                for row in list(self.alarms):
+                    event = self._transition(row, "tick", start=start, now=now)
+                    if event is not None:
+                        events.append(event)
             self.last_seen = _iso(now)
+            self._timer_seen = now.astimezone(timezone.utc) if self.timer is not None else None
             if events:
                 for event in events:
                     if event.kind == "missed":
@@ -323,7 +358,9 @@ class Book:
     def next_alarm(self, now):
         """The next armed fire at or after now, or None. Snooze counts."""
         now = _aware(now).astimezone(self.zone)
+        now_at = now.astimezone(timezone.utc)
         best = None
+        best_at = None
         best_row = None
         for row in self.alarms:
             if not row.get("enabled"):
@@ -331,12 +368,14 @@ class Book:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
                 when = _parse(snooze, self.zone)
-                if when >= now and (best is None or when < best):
-                    best, best_row = when, row
-                    continue
+                when_at = when.astimezone(timezone.utc)
+                if when_at >= now_at and (best_at is None or when_at < best_at):
+                    best, best_at, best_row = when, when_at, row
             when = next_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), now)
-            if when is not None and (best is None or when < best):
-                best, best_row = when, row
+            if when is not None:
+                when_at = when.astimezone(timezone.utc)
+                if best_at is None or when_at < best_at:
+                    best, best_at, best_row = when, when_at, row
         if best is None:
             return None
         return {
@@ -359,16 +398,19 @@ class Book:
         for row in self.alarms:
             if occurrence(row) is Occurrence.RINGING:
                 return row
+        now_at = now.astimezone(timezone.utc)
+        grace_start = now_at - GRACE
         for row in self.alarms:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
-                when = _parse(snooze, self.zone)
-                if when <= now <= when + GRACE:
+                when = _parse(snooze, timezone.utc)
+                if grace_start <= when <= now_at:
                     return row
+        local_now = now.astimezone(self.zone)
         for row in self.alarms:
             if not row.get("enabled"):
                 continue
-            when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), now - GRACE, now)
+            when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), grace_start, local_now)
             if when is not None:
                 return row
         return None
@@ -383,6 +425,8 @@ class Book:
             self.alarms = [item for item in self.alarms if item["id"] != row["id"]]
             return
         if event == "toggle":
+            if enabled and state is Occurrence.IDLE:
+                row.pop("done", None)
             row["enabled"] = enabled
             if not enabled:
                 row.pop("snooze_at", None)
@@ -405,7 +449,7 @@ class Book:
             snooze = row.get("snooze_at")
             if isinstance(snooze, str):
                 due = _parse(snooze, self.zone)
-                if start < due <= now:
+                if start.astimezone(timezone.utc) < due.astimezone(timezone.utc) <= now.astimezone(timezone.utc):
                     when = due
                     row.pop("snooze_at", None)
             if when is None:
@@ -414,7 +458,8 @@ class Book:
                 when = latest_fire(row["hour"], row["minute"], tuple(row.get("days") or ()), start, now)
             if when is None:
                 return
-            state = Occurrence.MISSED if now - when > GRACE else Occurrence.RINGING
+            elapsed = now.astimezone(timezone.utc) - when.astimezone(timezone.utc)
+            state = Occurrence.MISSED if elapsed > GRACE else Occurrence.RINGING
         else:
             raise ValueError("event")
 
@@ -422,7 +467,7 @@ class Book:
             row.pop("done", None)
             row.pop("ringing", None)
             row["enabled"] = True
-            row["snooze_at"] = _iso(now + SNOOZE)
+            row["snooze_at"] = _iso(now.astimezone(timezone.utc) + SNOOZE)
         elif state is Occurrence.COMPLETED:
             row.pop("snooze_at", None)
             row.pop("ringing", None)
@@ -452,12 +497,13 @@ class Book:
         if not self.timer:
             return []
         when = _parse(self.timer["fires_at"], self.zone)
-        if not start < when <= now:
+        if not start.astimezone(timezone.utc) < when.astimezone(timezone.utc) <= now.astimezone(timezone.utc):
             return []
         label = self.timer.get("label") or ""
         ident = self.timer.get("id") or "timer"
         self.timer = None
-        if now - when <= GRACE:
+        elapsed = now.astimezone(timezone.utc) - when.astimezone(timezone.utc)
+        if elapsed <= GRACE:
             text = "Timer" + (" " + label if label else "")
             return [Event("ring", "timer", ident, when, text.strip())]
         return [Event("missed", "timer", ident, when, "Missed timer")]

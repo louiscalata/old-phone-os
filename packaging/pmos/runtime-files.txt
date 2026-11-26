@@ -3,6 +3,8 @@
 
 src/opos/__init__.py
 src/opos/advisor.py
+src/opos/ai_answers.py
+src/opos/ai_page.py
 src/opos/aitools/__init__.py
 src/opos/aitools/__main__.py
 src/opos/aitools/catalog.py
@@ -47,6 +49,9 @@ src/opos/firstrun_page.py
 src/opos/fonts.py
 src/opos/goalsim.py
 src/opos/governor.py
+src/opos/gpu_link.py
+src/opos/gpu_link_proto.py
+src/opos/gpu_link_server.py
 src/opos/home.py
 src/opos/hw/__init__.py
 src/opos/hw/battery.py

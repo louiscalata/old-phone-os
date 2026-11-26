@@ -8,7 +8,7 @@ SLACK = 0.5  # GTK's rectangles are floats; half a pixel is rounding, not an ove
 NO_GTK = 77  # the worker's exit status for "no GTK 4 or no display here"
 # Enable every server app so the check measures every available native page.
 # Notices is browser-only and does not add a native page.
-ALL_APPS = "clock,contacts,notes,calc,calls,convert,notices"
+ALL_APPS = "clock,contacts,notes,calc,calls,convert,notices,ai"
 SPAN = "675,42"  # OPOS_SPAN: the pane width and the hinge gap, as on the phone
 # OPOS_SERVER_URL when the run has none: a loopback address nothing listens on (port 1), in the one form the shell accepts
 # (opos.native.logic.server_url), so its poll thread gets "connection refused" and never reaches a real OPOS server.

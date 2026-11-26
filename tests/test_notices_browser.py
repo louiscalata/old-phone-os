@@ -15,19 +15,55 @@ from tests import test_uxr_acceptance as acceptance
 
 DRIVER = Path(__file__).resolve().parent / "apps_cdp.js"
 FLOW = r"""
-const out=[];
-const token=document.querySelector('meta[name=opos-token]').content;
-function api(b){return fetch('/api/notices',{method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':token},body:JSON.stringify(b)}).then(function(r){return r.json()})}
-return api({action:'add',kind:'message',text:'New message'}).then(function(){
-return api({action:'quiet',on:true,from:'22:00',to:'07:00'});
-}).then(function(){return window.oposNotices.refresh()}).then(function(){
-var dismiss=document.querySelector('#rows button');
-if(!dismiss||dismiss.getBoundingClientRect().height<48)out.push('Dismiss short');
-if((document.getElementById('qon').textContent||'').indexOf('On')<0)out.push('quiet');
-if((document.body.textContent||'').indexOf('Alarms always ring')<0)out.push('alarms');
-if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
-return out;
-});
+return (async function(){
+  const out=[];
+  const token=document.querySelector('meta[name=opos-token]').content;
+  function api(body){
+    return fetch('/api/notices',{
+      method:'POST',headers:{'Content-Type':'application/json','X-OPOS-Token':token},body:JSON.stringify(body)
+    }).then(response=>response.json());
+  }
+  const markup=await fetch(location.href).then(response=>response.text());
+  const initial=new DOMParser().parseFromString(markup,'text/html');
+  if(!initial.getElementById('qon').disabled)out.push('toggle enabled before saved state');
+
+  await api({action:'add',kind:'message',text:'New message'});
+  await api({action:'quiet',on:true,from:'19:35',to:'05:42'});
+  await window.oposNotices.refresh();
+  const dismiss=document.querySelector('#rows button');
+  const toggle=document.getElementById('qon');
+  const start=document.getElementById('qfrom');
+  const end=document.getElementById('qto');
+  if(!dismiss||dismiss.getBoundingClientRect().height<48)out.push('Dismiss short');
+  if(toggle.disabled||toggle.getAttribute('aria-pressed')!=='true')out.push('quiet');
+  if(start.value!=='19:35'||end.value!=='05:42')out.push('saved quiet times missing from the form');
+  if((document.body.textContent||'').indexOf('Alarms always ring')<0)out.push('alarms');
+  if(document.documentElement.scrollWidth>window.innerWidth+2)out.push('hscroll');
+
+  const fetchPage=window.fetch;
+  let posted;
+  window.fetch=function(...args){
+    const response=fetchPage(...args);
+    posted=response.then(result=>result.clone().json());
+    return response;
+  };
+  try {
+    toggle.click();
+  } finally {
+    window.fetch=fetchPage;
+  }
+  if(!posted)out.push('quiet toggle did not submit');
+  else {
+    const {quiet}=await posted;
+    if(!quiet||quiet.on!==false||quiet.from!=='19:35'||quiet.to!=='05:42')out.push('toggle overwrote saved times');
+  }
+
+  start.value='20:10';
+  await api({action:'quiet',on:false,from:'18:58',to:'06:20'});
+  await window.oposNotices.refresh();
+  if(start.value!=='20:10'||end.value!=='06:20')out.push('refresh did not preserve the edited field');
+  return out;
+})();
 """
 CASES = (
     (1392, 900, "light", 1),

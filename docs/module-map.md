@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Source module map
 
-A file-by-file map of `src/opos/` on `main` at `359f9e50b5ce`. Descriptions are taken from each module's docstring, or from the module's own classes and functions when it has no module docstring. This is an inventory, not a claim that the modules have been re-tested here. For request flow and page assembly, see [architecture.md](architecture.md).
+A file-by-file map of `src/opos/`, updated for AI mode and GPU Link. Descriptions are taken from each module's docstring, or from the module's own classes and functions when it has no module docstring. This is an inventory, not a claim that the modules have been re-tested here. For request flow and page assembly, see [architecture.md](architecture.md).
 
-Counted in this tree: **117 Python modules** and **50 other files** (**167** files that are not `__pycache__` or `.pyc`). The 117 figure is the Python-module count.
+Counted with `git ls-files src/opos`: **123 Python modules** and **50 other files**, **173 tracked files** in total. The count includes subpackages and package markers. It excludes untracked files, including local `__pycache__` and `.pyc` files. Of the Python modules, 78 are directly under `src/opos/`; 45 are in subpackages.
 
 ## Python modules
 
@@ -26,7 +26,11 @@ Counted in this tree: **117 Python modules** and **50 other files** (**167** fil
 
 - `advisor.py`: Asynchronous, cached Muse Glimmer advice (`GlimmerAdvisor`) that can only add pauses; advice is reused within a half-hour goal bucket, with at most one request in flight.
 - `assist.py`: Ask routing (local, LAN and other routes), the rest rule (`is_resting`), memory checks, optional search, rules-based answers for pause and time-left questions, and fallback messages.
-- `muse.py`: Model routes, HTTP chat completions (`ask`), Why/Plan helpers, endpoint checks, and a shared deadline across routes.
+- `muse.py`: Model routes, HTTP chat completions (`ask`), streamed completions (`stream`), Why/Plan helpers, endpoint checks, and a shared deadline across routes.
+- `ai_answers.py`: The shared local answer store, with bounded plain text and answer state transitions.
+- `gpu_link_proto.py`: GPU Link message validation, signatures and protocol limits.
+- `gpu_link.py`: Enrolment, model-file sharing and leased answer work for one PC.
+- `gpu_link_server.py`: The optional loopback GPU Link listener and its start/stop lifecycle.
 
 ### Phone services
 
@@ -57,6 +61,7 @@ Counted in this tree: **117 Python modules** and **50 other files** (**167** fil
 - `net_page.py`: The Network page (GET /network) and its POST actions net_status, net_scan, net_join, net_forget, net_wifi.
 - `notices.py`: Shared legal and about text: one source for the kiosk About screen, the install-time setup screens, the desktop installers and the case study.
 - `notices_page.py`: The notice list and quiet hours.
+- `ai_page.py`: AI mode's phone and GPU panes, question API and phone streaming worker; enabled only by `OPOS_APPS=ai`.
 - `firstrun.py`: First run on the Duo OS: the setup page, the time zone page, and the flag that says setup was shown.
 - `firstrun_page.py`: The two small pages of the Duo OS first run: /firstrun (a few choices, all skippable) and /timezone.
 - `timezone.py`: The owner's time zone, applied without root.
@@ -109,6 +114,7 @@ Counted in this tree: **117 Python modules** and **50 other files** (**167** fil
 - `native/posture.py`: How the phone is held, as far as Linux can tell.
 - `native/screens.py`: The screens of the native shell.
 - `native/shell.py`: The native OPOS shell: a GTK 4 window, drawn by the phone's GPU, in place of the browser kiosk.
+- `native/updatelogic.py`: The native Updates screen's view of the existing updater response: status, progress and available actions.
 - `native/ui.py`: The native shell's few widgets and its one stylesheet.
 
 ### Setup and install (setup/)

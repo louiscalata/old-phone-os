@@ -25,6 +25,20 @@ _RECOVERED = ""
 
 
 class _CallStore(Store):
+    def _read_json(self, path, limit=MAX_JSON):
+        data = super()._read_json(path, limit)
+        if data is None:
+            return None
+        rows = data.get("calls")
+        if not isinstance(rows, list):
+            return None
+        identifiers = set()
+        for row in rows:
+            if not _valid(row):
+                return None
+            identifiers.add(row["id"])
+        return data if len(identifiers) == len(rows) else None
+
     def _quarantine(self, path):
         dest = super()._quarantine(path)
         if dest is None:
@@ -86,29 +100,10 @@ def _valid(row):
     )
 
 
-def _load():
+def _rows(data, note):
     global _RECOVERED
-    saved = _store()
-    path = saved._path("calls.json")
-    try:
-        oversized = path.stat().st_size > MAX_JSON
-    except FileNotFoundError:
-        oversized = False
-    if oversized:
-        saved._quarantine(path)
-        data, note = {"calls": []}, saved.note_once("calls.json")
-    else:
-        data, note = saved.read_json("calls.json", {"calls": []})
-    rows = data.get("calls")
-    if (
-        not isinstance(rows, list)
-        or not all(_valid(row) for row in rows)
-        or len({row["id"] for row in rows}) != len(rows)
-    ):
-        saved._quarantine(path)
-        rows, note = [], saved.note_once("calls.json")
     _RECOVERED = note or _RECOVERED
-    return sorted(rows, key=lambda row: row["start_time"])[-MAX_CALLS:]
+    return sorted(data["calls"], key=lambda row: row["start_time"])[-MAX_CALLS:]
 
 
 def record(event):
@@ -132,8 +127,8 @@ def record(event):
     ):
         raise ValueError("bad call event")
     number = normalize_number(event.number)
-    with _LOCK:
-        rows = _load()
+    with _LOCK, _store()._transaction("calls.json", {"calls": []}) as (data, note, save):
+        rows = _rows(data, note)
         row = next((r for r in rows if r["id"] == event.call_id), None)
         if event.state == "started":
             if row is not None:
@@ -166,25 +161,29 @@ def record(event):
                     row["duration"] = event.duration
             row["state"] = event.state
         rows.sort(key=lambda r: r["start_time"])
-        _store().write_json("calls.json", {"calls": rows[-MAX_CALLS:]})
+        save({"calls": rows[-MAX_CALLS:]})
+
+
+def _snapshot(rows):
+    return {
+        "ok": True,
+        "calls": list(reversed(rows)),
+        "missed_count": sum(row["direction"] == "missed" for row in rows),
+        "recovered": _RECOVERED,
+    }
 
 
 def snapshot():
     """missed_count counts retained missed calls; reading does not acknowledge them."""
     with _LOCK:
-        rows = _load()
-        return {
-            "ok": True,
-            "calls": list(reversed(rows)),
-            "missed_count": sum(row["direction"] == "missed" for row in rows),
-            "recovered": _RECOVERED,
-        }
+        data, note = _store().read_json("calls.json", {"calls": []})
+        return _snapshot(_rows(data, note))
 
 
 def clear():
     global _RECOVERED
-    with _LOCK:
-        _load()  # Keep an unreadable file aside before replacing it.
-        _store().write_json("calls.json", {"calls": []})
+    with _LOCK, _store()._transaction("calls.json", {"calls": []}) as (_, note, save):
+        _RECOVERED = note or _RECOVERED
+        save({"calls": []})
         _RECOVERED = ""
-        return snapshot()
+        return _snapshot([])

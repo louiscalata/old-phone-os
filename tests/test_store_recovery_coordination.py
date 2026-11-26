@@ -1,0 +1,628 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+import errno
+import io
+import multiprocessing
+import os
+import tempfile
+import unittest
+from contextlib import contextmanager, nullcontext
+from dataclasses import replace
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from opos import calllog, clock_page, contacts_page, inbox, lockpin, notes_page, store
+from opos.call_events import CallEvent
+
+try:
+    ZoneInfo("UTC")
+except ZoneInfoNotFoundError:  # e.g. Windows without the tzdata package, which the Windows job here runs on
+    ZONE_DATABASE = False
+else:
+    ZONE_DATABASE = True
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
+TIMEOUT = 10
+CONTACT = {"action": "add", "name": "Synthetic Contact", "number": "2025550100"}
+CALL = CallEvent("1".zfill(32), "started", "+12025550100", "outgoing", 1794391200.0, True)
+ROWS = [{"value": "new"}]
+
+
+def receive(connection):
+    if not connection.poll(TIMEOUT):
+        raise TimeoutError("the other process did not respond")
+    return connection.recv()
+
+
+def snapshot(name):
+    if name == "contacts.json":
+        data = contacts_page.snapshot()
+        return data["people"], data["recovered"]
+    if name == "calls.json":
+        data = calllog.snapshot()
+        return data["calls"], data["recovered"]
+    return store.Store(os.environ["OPOS_STATE_DIR"]).read_jsonl(name)
+
+
+def read(connection, name):
+    lock = store._lock
+
+    @contextmanager
+    def wait_for_write(path):
+        connection.send("read")
+        if receive(connection) != "write":
+            raise AssertionError("expected the writer to finish")
+        with lock(path):
+            yield
+
+    with connection, patch.object(store, "_lock", wait_for_write):
+        connection.send(snapshot(name))
+
+
+def write(connection, root):
+    replace = os.replace
+
+    def replace_after_read(source, destination):
+        connection.send("replace")
+        if receive(connection) != "read":
+            raise AssertionError("expected the reader to finish")
+        replace(source, destination)
+
+    with connection, patch.object(os, "replace", replace_after_read):
+        store.Store(root).write_json("state.json", {"value": "new"})
+
+
+def post_after_release(connection, data):
+    clean_person = contacts_page._clean_person
+
+    def clean_after_release(data, people, existing=None):
+        connection.send("validate")
+        if receive(connection) != "save":
+            raise AssertionError("expected permission to save")
+        return clean_person(data, people, existing)
+
+    with connection, patch.object(contacts_page, "_clean_person", clean_after_release):
+        connection.send(contacts_page.post(data))
+
+
+def run_while_locked(connection, operation, *args):
+    lock = store._lock
+
+    @contextmanager
+    def acquire(path, **kwargs):
+        connection.send("acquire")
+        with lock(path, **kwargs):
+            yield
+
+    with connection, patch.object(store, "_lock", acquire):
+        connection.send(operation(*args))
+
+
+def calllog_after_read(connection, operation, *args):
+    read_json = calllog._CallStore._read_json
+
+    def read_after_release(saved, path):
+        state = read_json(saved, path)
+        connection.send("read")
+        if receive(connection) != "save":
+            raise AssertionError("expected the first operation to save")
+        return state
+
+    with connection, patch.object(calllog._CallStore, "_read_json", read_after_release):
+        connection.send(operation(*args))
+
+
+def after_json_read(connection, operation, *args):
+    read_json = store.Store._read_json
+
+    def read_after_release(saved, path):
+        index = read_json(saved, path)
+        connection.send("read")
+        if receive(connection) != "save":
+            raise AssertionError("expected the first operation to save")
+        return index
+
+    with connection, patch.object(store.Store, "_read_json", read_after_release):
+        connection.send(operation(*args))
+
+
+def notes_before_publish(connection, data):
+    write_atomic = store._write_atomic
+
+    def publish_after_read(path, raw, lock):
+        if path.name == "notes.json":
+            connection.send("publish")
+            if receive(connection) != "write":
+                raise AssertionError("expected permission to write the index")
+        write_atomic(path, raw, lock)
+
+    with connection, patch.object(store, "_write_atomic", publish_after_read):
+        connection.send(notes_page.post(data))
+
+
+def note_read(connection, data, read_before_release):
+    read_text = Path.read_text
+    first = True
+
+    def read_after_release(path, *args, **kwargs):
+        nonlocal first
+        if not first or path.name != f"note-{data['id']}.txt":
+            return read_text(path, *args, **kwargs)
+        first = False
+        if read_before_release:
+            text = read_text(path, *args, **kwargs)
+        connection.send("read")
+        if receive(connection) != "open":
+            raise AssertionError("expected the first writer to finish")
+        if read_before_release:
+            return text
+        return read_text(path, *args, **kwargs)
+
+    with connection, patch.object(Path, "read_text", read_after_release):
+        connection.send(notes_page.post(data))
+
+
+class StoreRecoveryCoordinationTests(unittest.TestCase):
+    def test_default_app_reads_recover_from_permission_errors_and_directories(self):
+        readers = (
+            ("contacts.json", contacts_page),
+            ("notes.json", notes_page),
+            ("calls.json", calllog),
+            ("inbox.json", inbox),
+            ("alarms.json", clock_page),
+            ("lock.json", lockpin),
+        )
+        for name, app in readers:
+            for fault in ("permission", "directory"):
+                with self.subTest(name=name, fault=fault), tempfile.TemporaryDirectory() as root:
+                    if app is clock_page and not ZONE_DATABASE:
+                        self.skipTest("needs the IANA time zone database (tzdata)")
+                    with patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_LOCK": "1", "OPOS_APPS": "calls"}):
+                        app.reset()
+                        try:
+                            path = Path(root) / name
+                            if fault == "directory":
+                                path.mkdir()
+                                (path / "kept").write_bytes(b"original")
+                            else:
+                                path.write_bytes(b'{"schema":1}')
+                            opened = Path.open
+
+                            def unreadable(target, *args, path=path, opened=opened, **kwargs):
+                                if target == path and args == ("rb",):
+                                    raise PermissionError(errno.EACCES, "denied")
+                                return opened(target, *args, **kwargs)
+
+                            with patch.object(Path, "open", unreadable) if fault == "permission" else nullcontext():
+                                if app is lockpin:
+                                    self.assertTrue(lockpin.is_locked())
+                                    self.assertFalse(lockpin.status()["has_pin"])
+                                    for action, api in (("hang_up", "phone"), ("stop", "clock"), ("unlock", "lock")):
+                                        self.assertFalse(lockpin.blocks(action, "/api/" + api))
+                                else:
+                                    self.assertIn("Started empty", app.snapshot()["recovered"])
+                            backups = list(Path(root).glob(name + ".bad-*"))
+                            self.assertEqual(len(backups), 1)
+                            if fault == "directory":
+                                # Call-log recovery makes its backup private, including a directory.
+                                backups[0].chmod(0o700)
+                                self.assertEqual((backups[0] / "kept").read_bytes(), b"original")
+                            else:
+                                self.assertEqual(backups[0].read_bytes(), b'{"schema":1}')
+                        finally:
+                            app.reset()
+
+    @contextmanager
+    def process(self, target, *args):
+        context = multiprocessing.get_context("spawn")
+        parent, child = context.Pipe()
+        with parent, child:
+            process = context.Process(target=target, args=(child, *args))
+            process.start()
+            child.close()
+            try:
+                yield parent
+                process.join(TIMEOUT)
+                self.assertEqual(process.exitcode, 0)
+            finally:
+                if process.is_alive():
+                    process.kill()
+                    process.join(TIMEOUT)
+                process.close()
+
+    def test_recovery_preserves_a_new_save(self):
+        for name, damaged in (
+            ("contacts.json", b"{invalid"),
+            ("calls.json", b'{"schema":1,"calls":[{"id":"invalid"}]}'),
+            ("rows.jsonl", b"\xff"),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                path = Path(root, name)
+                path.write_bytes(damaged)
+                with patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_CONFIG_DIR": root, "OPOS_APPS": "calls"}):
+                    contacts_page.reset()
+                    calllog.reset()
+                    try:
+                        with self.process(read, name) as connection:
+                            self.assertEqual(receive(connection), "read")
+                            if name == "contacts.json":
+                                status, body = contacts_page.post(CONTACT)
+                                self.assertEqual(status, 200)
+                                self.assertEqual(body["people"][0]["name"], CONTACT["name"])
+                            elif name == "calls.json":
+                                calllog.record(CALL)
+                                self.assertEqual(calllog.snapshot()["calls"][0]["id"], CALL.call_id)
+                            else:
+                                saved = store.Store(root)
+                                rows, note = saved.read_jsonl(name)
+                                self.assertEqual(rows, [])
+                                self.assertTrue(note)
+                                saved.write_jsonl(name, ROWS)
+                            latest, _ = snapshot(name)
+                            published = path.read_bytes()
+                            backups = list(path.parent.glob(f"{name}.bad-*"))
+                            self.assertEqual(len(backups), 1)
+                            self.assertEqual(backups[0].read_bytes(), damaged)
+                            connection.send("write")
+                            self.assertEqual(receive(connection), (latest, ""))
+                    finally:
+                        contacts_page.reset()
+                        calllog.reset()
+                self.assertEqual(path.read_bytes(), published)
+                self.assertEqual(list(path.parent.glob(f"{name}.bad-*")), backups)
+                self.assertEqual(backups[0].read_bytes(), damaged)
+
+    def assert_lock_held(self, path):
+        sidecar = path.with_name(f".{path.name}.lock")
+        fd = os.open(sidecar, os.O_RDONLY if os.name == "nt" else os.O_RDWR)
+        try:
+            with self.assertRaises(OSError) as blocked:
+                if os.name == "nt":
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertIn(blocked.exception.errno, (errno.EACCES, errno.EAGAIN))
+        finally:
+            os.close(fd)
+
+    def test_writer_holds_the_lock_at_replace(self):
+        with tempfile.TemporaryDirectory() as root:
+            saved = store.Store(root)
+            path = saved.write_json("state.json", {"value": "old"})
+            initial = path.read_bytes()
+            with self.process(write, root) as connection:
+                self.assertEqual(receive(connection), "replace")
+                self.assertEqual(path.read_bytes(), initial)
+                self.assert_lock_held(path)
+                connection.send("read")
+            self.assertEqual(saved.read_json(path.name, {}), ({"schema": 1, "value": "new"}, ""))
+            self.assertEqual(path.read_bytes(), b'{"value":"new","schema":1}')
+            self.assertFalse(list(path.parent.glob(f".{path.name}.*.tmp")))
+
+    def post_concurrently(self, favorite):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_CONFIG_DIR": root}))
+        contacts_page.reset()
+        self.addCleanup(contacts_page.reset)
+        names = set()
+        if favorite:
+            for index in range(5):
+                name = f"Favorite {index}"
+                seed = dict(CONTACT, name=name, number=f"202555011{index}", favorite=True)
+                self.assertEqual(contacts_page.post(seed)[0], 200)
+                names.add(name)
+        first = dict(CONTACT, favorite=favorite)
+        second = dict(first, name="Another Contact", number="2025550101")
+        with self.process(post_after_release, first) as first_connection:
+            self.assertEqual(receive(first_connection), "validate")
+            self.assert_lock_held(Path(root, "contacts.json"))
+            with self.process(run_while_locked, contacts_page.post, second) as second_connection:
+                self.assertEqual(receive(second_connection), "acquire")
+                first_connection.send("save")
+                status, body = receive(first_connection)
+                self.assertEqual(status, 200)
+                names.add(first["name"])
+                self.assertEqual({person["name"] for person in body["people"]}, names)
+                response = receive(second_connection)
+        return names, second, response
+
+    def test_concurrent_contacts_adds_preserve_both_saves(self):
+        names, second, (status, body) = self.post_concurrently(favorite=False)
+        self.assertEqual(status, 200)
+        names.add(second["name"])
+        self.assertEqual({person["name"] for person in body["people"]}, names)
+        people = contacts_page.snapshot()["people"]
+        self.assertEqual(len(people), 2)
+        self.assertEqual({person["name"] for person in people}, names)
+
+    def test_concurrent_favorite_adds_respect_the_limit(self):
+        names, _, response = self.post_concurrently(favorite=True)
+        self.assertEqual(response, (400, {"error": "favorites"}))
+        people = contacts_page.snapshot()["people"]
+        self.assertEqual(len(people), 6)
+        self.assertEqual({person["name"] for person in people}, names)
+        self.assertTrue(all(person["favorite"] for person in people))
+
+    def record_concurrently(self, operation, *args):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(
+            patch.dict(os.environ, {"OPOS_STATE_DIR": root, "OPOS_CONFIG_DIR": root, "OPOS_APPS": "calls"})
+        )
+        calllog.reset()
+        contacts_page.reset()
+        self.addCleanup(calllog.reset)
+        self.addCleanup(contacts_page.reset)
+        initial = replace(CALL, call_id="0" * 32, at=CALL.at - 1)
+        next_call = replace(CALL, call_id="2".zfill(32), at=CALL.at + 1)
+        calllog.record(initial)
+        with self.process(calllog_after_read, operation, *args) as first:
+            self.assertEqual(receive(first), "read")
+            self.assert_lock_held(Path(root, "calls.json"))
+            with self.process(run_while_locked, calllog.record, next_call) as second:
+                self.assertEqual(receive(second), "acquire")
+                first.send("save")
+                response = receive(first)
+                self.assertIsNone(receive(second))
+        return initial, next_call, response
+
+    def test_concurrent_call_records_preserve_both_starts(self):
+        initial, next_call, response = self.record_concurrently(calllog.record, CALL)
+        self.assertIsNone(response)
+        self.assertEqual(
+            [row["id"] for row in calllog.snapshot()["calls"]],
+            [next_call.call_id, CALL.call_id, initial.call_id],
+        )
+
+    def test_clear_then_concurrent_record_keeps_only_the_new_call(self):
+        _, next_call, response = self.record_concurrently(calllog.clear)
+        self.assertEqual(response, {"ok": True, "calls": [], "missed_count": 0, "recovered": ""})
+        self.assertEqual([row["id"] for row in calllog.snapshot()["calls"]], [next_call.call_id])
+
+    def post_notices_concurrently(self, operation, *args):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root}))
+        inbox.reset()
+        self.addCleanup(inbox.reset)
+        saved = store.Store(root)
+        rows = [{"id": str(i), "kind": "system", "text": str(i), "sound": True} for i in range(1, inbox.CAP)]
+        quiet = {"from": "22:00", "to": "07:00", "on": False}
+        path = saved.write_json("inbox.json", {"items": rows, "quiet": quiet, "next": inbox.CAP})
+        with self.process(after_json_read, operation, *args) as first:
+            self.assertEqual(receive(first), "read")
+            self.assert_lock_held(path)
+            with self.process(run_while_locked, inbox.add, "system", "Second", datetime(2026, 1, 1, 23)) as second:
+                self.assertEqual(receive(second), "acquire")
+                first.send("save")
+                outcome = receive(first), receive(second)
+        return rows, quiet, outcome, saved.read_json(path.name, {})[0]
+
+    def test_concurrent_notices_keep_the_cap_and_distinct_ids(self):
+        rows, quiet, (first, second), saved = self.post_notices_concurrently(inbox.add, "battery", "First")
+        self.assertEqual((first["id"], second["id"]), (str(inbox.CAP), str(inbox.CAP + 1)))
+        self.assertEqual(saved["items"], [*rows[1:], first, second])
+        self.assertEqual(len(saved["items"]), inbox.CAP)
+        self.assertEqual(saved["quiet"], quiet)
+        self.assertEqual(saved["next"], inbox.CAP + 2)
+
+    def test_notice_clear_dismiss_and_quiet_preserve_a_later_notice(self):
+        for operation, args in ((inbox.clear, ()), (inbox.dismiss, ("1",)), (inbox.set_quiet, (True,))):
+            with self.subTest(operation=operation.__name__):
+                rows, previous_quiet, (first, second), saved = self.post_notices_concurrently(operation, *args)
+                if operation is inbox.clear:
+                    rows = []
+                elif operation is inbox.dismiss:
+                    rows = rows[1:]
+                quiet = first if operation is inbox.set_quiet else previous_quiet
+                self.assertEqual(saved["quiet"], quiet)
+                self.assertEqual(saved["items"], [*rows, second])
+                self.assertEqual(saved["next"], inbox.CAP + 1)
+                self.assertEqual(second["id"], str(inbox.CAP))
+                self.assertEqual(second["sound"], operation is not inbox.set_quiet)
+
+    def notes_root(self):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.dict(os.environ, {"OPOS_STATE_DIR": root}))
+        notes_page.reset()
+        self.addCleanup(notes_page.reset)
+        return Path(root)
+
+    def post_notes_concurrently(self, root, first, second):
+        with self.process(after_json_read, notes_page.post, first) as first_connection:
+            self.assertEqual(receive(first_connection), "read")
+            self.assert_lock_held(root / "notes.json")
+            with self.process(run_while_locked, notes_page.post, second) as second_connection:
+                self.assertEqual(receive(second_connection), "acquire")
+                first_connection.send("save")
+                return receive(first_connection), receive(second_connection)
+
+    def test_concurrent_note_adds_respect_the_limit(self):
+        root = self.notes_root()
+        existing = [{"id": f"{i:08x}", "title": "Empty note"} for i in range(notes_page._MAX - 1)]
+        for row in existing:
+            (root / f"note-{row['id']}.txt").write_bytes(b"")
+        store.Store(root).write_json("notes.json", {"notes": existing})
+        add = {"action": "add"}
+        (status, first), second = self.post_notes_concurrently(root, add, add)
+        self.assertEqual(status, 200)
+        self.assertEqual(second, (400, {"error": "full"}))
+        rows = [{"id": first["id"], "title": "Empty note"}, *existing]
+        self.assertEqual(first["notes"], rows)
+        self.assertEqual(notes_page.snapshot()["notes"], rows)
+        self.assertEqual((root / f"note-{first['id']}.txt").read_bytes(), b"")
+
+    def test_concurrent_note_saves_preserve_both_titles(self):
+        root = self.notes_root()
+        first_id = notes_page.post({"action": "add"})[1]["id"]
+        second_id = notes_page.post({"action": "add"})[1]["id"]
+        first = {"action": "save", "id": first_id, "text": "First\nFirst body"}
+        second = {"action": "save", "id": second_id, "text": "Second\nSecond body"}
+        (first_status, first_body), (second_status, second_body) = self.post_notes_concurrently(root, first, second)
+        self.assertEqual((first_status, second_status), (200, 200))
+        self.assertEqual(
+            first_body["notes"], [{"id": second_id, "title": "Empty note"}, {"id": first_id, "title": "First"}]
+        )
+        rows = [{"id": second_id, "title": "Second"}, {"id": first_id, "title": "First"}]
+        self.assertEqual(second_body["notes"], rows)
+        self.assertEqual(notes_page.snapshot()["notes"], rows)
+        self.assertEqual((root / f"note-{first_id}.txt").read_bytes(), first["text"].encode("utf-8"))
+        self.assertEqual((root / f"note-{second_id}.txt").read_bytes(), second["text"].encode("utf-8"))
+
+    def test_delete_then_concurrent_save_keeps_the_note_deleted(self):
+        root = self.notes_root()
+        ident = notes_page.post({"action": "add"})[1]["id"]
+        delete = {"action": "delete", "id": ident}
+        save = {"action": "save", "id": ident, "text": "Later"}
+        first, second = self.post_notes_concurrently(root, delete, save)
+        self.assertEqual(first, (200, {"ok": True, "notes": [], "recovered": ""}))
+        self.assertEqual(second, (400, {"error": "id"}))
+        self.assertEqual(notes_page.snapshot()["notes"], [])
+        self.assertFalse((root / f"note-{ident}.txt").exists())
+
+    def test_note_open_waits_for_pending_index_publication(self):
+        for action in ("save", "delete"):
+            with self.subTest(action=action):
+                root = self.notes_root()
+                ident = notes_page.post({"action": "add"})[1]["id"]
+                update = {"action": action, "id": ident, "text": "Changed title\nChanged body"}
+                request = {"action": "open", "id": ident}
+                with self.process(notes_before_publish, update) as writer:
+                    self.assertEqual(receive(writer), "publish")
+                    self.assert_lock_held(root / "notes.json")
+                    with self.process(run_while_locked, notes_page.post, request) as reader:
+                        self.assertEqual(receive(reader), "acquire")
+                        writer.send("write")
+                        self.assertEqual(receive(writer)[0], 200)
+                        status, body = receive(reader)
+                if action == "delete":
+                    self.assertEqual((status, body), (400, {"error": "id"}))
+                else:
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["text"], update["text"])
+                    self.assertEqual(body["notes"], [{"id": ident, "title": "Changed title"}])
+
+    def test_note_open_reloads_when_the_first_writer_creates_the_lock(self):
+        for action in ("save", "delete"):
+            with self.subTest(action=action):
+                root = self.notes_root()
+                ident = "11223344"
+                (root / "notes.json").write_bytes(b'{"schema":1,"notes":[{"id":"11223344","title":"Legacy"}]}')
+                (root / f"note-{ident}.txt").write_bytes(b"Legacy")
+                request = {"action": "open", "id": ident}
+                update = {"action": action, "id": ident, "text": "Changed title\nChanged body"}
+                with self.process(note_read, request, action == "save") as reader:
+                    self.assertEqual(receive(reader), "read")
+                    self.assertFalse((root / ".notes.json.lock").exists())
+                    self.assertEqual(notes_page.post(update)[0], 200)
+                    self.assertTrue((root / ".notes.json.lock").is_file())
+                    reader.send("open")
+                    status, body = receive(reader)
+                if action == "delete":
+                    self.assertEqual((status, body), (400, {"error": "id"}))
+                else:
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["text"], update["text"])
+                    self.assertEqual(body["notes"], [{"id": ident, "title": "Changed title"}])
+
+    def test_valid_and_missing_reads_leave_the_directory_alone(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root)
+            saved = store.Store(folder / "missing")
+            self.assertEqual(saved.read_json("state.json", None), (None, ""))
+            self.assertFalse(saved.root.exists())
+            path = folder / "state.json"
+            path.write_bytes(b'{"schema":1,"value":42}')
+            self.assertEqual(store.Store(folder).read_json(path.name, {}), ({"schema": 1, "value": 42}, ""))
+            self.assertEqual(list(folder.iterdir()), [path])
+
+    def test_json_read_errors_propagate_without_quarantine_on_either_read(self):
+        for error in (PermissionError(errno.EACCES, "denied"), OSError(errno.EIO, "read failed")):
+            for corrupt_first in (False, True):
+                with self.subTest(error=type(error).__name__, corrupt_first=corrupt_first):
+                    with tempfile.TemporaryDirectory() as root:
+                        saved = store.Store(root)
+                        path = saved.write_json("state.json", {"value": "kept"})
+                        original = path.read_bytes()
+                        calls = 0
+                        opened = Path.open
+
+                        def fail_read(
+                            target, *args, path=path, corrupt_first=corrupt_first, error=error, opened=opened, **kwargs
+                        ):
+                            nonlocal calls
+                            if target == path and args == ("rb",):
+                                calls += 1
+                                if corrupt_first and calls == 1:
+                                    # Corrupt first read forces the locked reread.
+                                    return io.BytesIO(b"bad JSON")
+                                raise error
+                            return opened(target, *args, **kwargs)
+
+                        with patch.object(Path, "open", fail_read), self.assertRaises(type(error)):
+                            saved.read_json(path.name, {}, strict=True)
+                        self.assertEqual(calls, 2 if corrupt_first else 1)
+                        self.assertEqual(path.read_bytes(), original)
+                        self.assertFalse(list(path.parent.glob(path.name + ".bad-*")))
+
+    def test_record_validation_rechecks_under_lock_and_quarantines_in_both_modes(self):
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as root:
+                saved = store.Store(root)
+                path = saved.write_json("state.json", {"value": "kept"})
+                original = path.read_bytes()
+                opened = Path.open
+                calls = 0
+
+                def stale_read(target, *args, path=path, opened=opened, **kwargs):
+                    nonlocal calls
+                    if target == path and args == ("rb",):
+                        calls += 1
+                        if calls == 1:
+                            return io.BytesIO(b'{"schema":1,"value":"bad"}')
+                    return opened(target, *args, **kwargs)
+
+                def valid(record):
+                    return record.get("value") == "kept"
+
+                with patch.object(Path, "open", stale_read):
+                    self.assertEqual(
+                        saved.read_json(path.name, None, strict=strict, validate=valid),
+                        ({"schema": 1, "value": "kept"}, ""),
+                    )
+                self.assertEqual(calls, 2)
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(list(Path(root).glob(path.name + ".bad-*")))
+                path.write_bytes(b'{"schema":1,"value":"bad"}')
+                raw = path.read_bytes()
+                value, note = saved.read_json(path.name, None, strict=strict, validate=valid)
+                self.assertIsNone(value)
+                self.assertTrue(note)
+                self.assertFalse(path.exists())
+                self.assertEqual([p.read_bytes() for p in Path(root).glob(path.name + ".bad-*")], [raw])
+                self.assertEqual(saved.read_json(path.name, None, strict=strict, validate=valid), (None, ""))
+
+    @unittest.skipIf(os.name == "nt", "Windows has different file mode semantics")
+    def test_owner_can_reopen_the_lock_after_restrictive_creation(self):
+        with tempfile.TemporaryDirectory() as root:
+            saved = store.Store(root)
+            previous = os.umask(0o777)
+            try:
+                path = saved.write_json("state.json", {"value": "old"})
+                lock = path.with_name(f".{path.name}.lock")
+                self.assertEqual(lock.stat().st_mode & 0o777, 0o600)
+                inode = lock.stat().st_ino
+                lock.chmod(0)
+                saved.write_json(path.name, {"value": "new"})
+                self.assertEqual(lock.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(lock.stat().st_ino, inode)
+                self.assertEqual(saved.read_json(path.name, {}), ({"schema": 1, "value": "new"}, ""))
+            finally:
+                os.umask(previous)
+
+
+if __name__ == "__main__":
+    unittest.main()

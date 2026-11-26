@@ -807,10 +807,12 @@ class On(Http):
         self.assertEqual(200, s)
 
     def test_saving_a_zone(self):
-        with mock.patch.object(firstrun, "schedule_restart") as sched:
+        restart_called = threading.Event()
+        with mock.patch.object(firstrun, "schedule_restart", side_effect=restart_called.set) as sched:
             s, j = self.jpost("/api/timezone", {"zone": "Asia/Kolkata", "client_tz": "UTC"})
             self.assertEqual((200, {"ok": True, "zone": "Asia/Kolkata", "restart": True}), (s, j))
-            sched.assert_called_once()
+            self.assertTrue(restart_called.wait(10))
+            sched.assert_called_once_with()
             self.assertEqual("Asia/Kolkata", tzmod.load_setting())
             self.assertEqual(tzmod.tz_value("Asia/Kolkata"), os.environ["TZ"])
             sched.reset_mock()
@@ -889,10 +891,12 @@ class On(Http):
         self.assertEqual(200, self.req("GET", "/", headers=BROWSER)[0])
 
     def test_finishing_in_another_zone_than_the_screen_restarts_the_screen(self):
-        with mock.patch.object(firstrun, "schedule_restart") as sched:
+        restart_called = threading.Event()
+        with mock.patch.object(firstrun, "schedule_restart", side_effect=restart_called.set) as sched:
             s, j = self.jpost("/api/firstrun", {"action": "finish", "zone": "Europe/Berlin", "client_tz": "UTC"})
-        self.assertEqual((200, True, True), (s, j["ok"], j["restart"]))
-        sched.assert_called_once()
+            self.assertEqual((200, True, True), (s, j["ok"], j["restart"]))
+            self.assertTrue(restart_called.wait(10))
+            sched.assert_called_once_with()
 
     def test_finishing_without_a_zone_never_restarts_the_screen(self):
         with mock.patch.object(firstrun, "schedule_restart") as sched:
