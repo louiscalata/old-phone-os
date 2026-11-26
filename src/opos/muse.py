@@ -155,8 +155,6 @@ def label(route):
 class MuseError(Exception):
     """Raised when Muse request fails."""
 
-    pass
-
 
 def _require_http_url(url):
     try:
