@@ -77,6 +77,52 @@ class TestRecommend(unittest.TestCase):
 
 
 class TestLocalRoute(unittest.TestCase):
+    def test_nvidia_id_selects_named_verified_route(self):
+        for free in (assist.MIN_MB_1B, 2000, 5000):
+            with self.subTest(free=free):
+                route = assist.local_route({"OPOS_LLAMA_ID": "nvidia-aceinstruct-1.5b"}, free=free)
+                self.assertEqual(route.model, "nvidia-aceinstruct-1.5b")
+                self.assertEqual(route.name, "NVIDIA AceInstruct 1.5B")
+                self.assertEqual(route.base_url, assist.DEFAULT_LOCAL_URL)
+                self.assertTrue(route.verify_model)
+                self.assertEqual(
+                    route.alternates,
+                    (("llama-3.2-1b-instruct", "Meta Llama 3.2 1B"), ("llama-3.2-3b-instruct", "Meta Llama 3.2 3B")),
+                )
+
+    def test_unknown_or_empty_id_matches_unset(self):
+        for free in (1000, 2000, 5000, None):
+            for model in ("", "unknown", "NVIDIA-ACEINSTRUCT-1.5B", " nvidia-aceinstruct-1.5b"):
+                with self.subTest(free=free, model=model):
+                    self.assertEqual(
+                        assist.local_route({"OPOS_LLAMA_ID": model}, free=free), assist.local_route({}, free=free)
+                    )
+
+    def test_unset_keeps_memory_selection(self):
+        for free, model, name in (
+            (2000, "llama-3.2-1b-instruct", "Meta Llama 3.2 1B"),
+            (5000, "llama-3.2-3b-instruct", "Meta Llama 3.2 3B"),
+        ):
+            with self.subTest(free=free):
+                route = assist.local_route({}, free=free)
+                self.assertEqual((route.model, route.name), (model, name))
+                self.assertEqual(route.base_url, assist.DEFAULT_LOCAL_URL)
+                self.assertTrue(route.verify_model)
+
+    def test_selected_id_cannot_bypass_memory_guard(self):
+        for model in ("nvidia-aceinstruct-1.5b", "llama-3.2-1b-instruct", "llama-3.2-3b-instruct"):
+            for free in (assist.MIN_MB_1B - 1, None):
+                with self.subTest(model=model, free=free):
+                    self.assertIsNone(assist.local_route({"OPOS_LLAMA_ID": model}, free=free))
+
+    def test_nvidia_id_with_configured_url_stays_unverified(self):
+        url = "http://localhost:9000/v1"
+        route = assist.local_route({"OPOS_LLAMA_ID": "nvidia-aceinstruct-1.5b", "OPOS_LOCAL_URL": url}, free=2000)
+        self.assertEqual((route.model, route.name), ("nvidia-aceinstruct-1.5b", "NVIDIA AceInstruct 1.5B"))
+        self.assertEqual(route.base_url, url)
+        self.assertFalse(route.verify_model)
+        self.assertEqual(route.alternates, ())
+
     def test_ignores_non_loopback(self):
         env = {"OPOS_LOCAL_URL": "http://" + LAN_HOST + ":8080/v1"}
         r = assist.local_route(env, free=5000)

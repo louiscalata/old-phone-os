@@ -18,7 +18,9 @@ evidence about the current source.
 ## How it works
 
 - [Architecture](architecture.md): module map, how a request flows from the page to the governor and to Muse Glimmer, page assembly and tests.
-- [Source module map](module-map.md): file-by-file description of the 117 Python modules and 50 other files under `src/opos`, grouped by area.
+- [Everyday apps](apps.md): optional app pages, AI mode switches and private answer storage.
+- [GPU Link](gpu-link.md): phone listener, enrolment, signed protocol, leases and limits; requirements for the separate Windows companion. Physical-phone checks are **NOT_RUN**.
+- [Source module map](module-map.md): file-by-file description of the 123 Python modules and 50 other files under `src/opos`, grouped by area.
 - [OS architecture](os-architecture.md): what OPOS owns and what it inherits on the Duo image, the boot sequence and what each unit's failure does, checked against the unit files by `tests/test_boot_graph.py`; the order on the phone's systemd is NOT_RUN.
 - [Rules remain the safety floor](design-safety-floor.md): how the governor validates model advice so it can never override the rules, which limits are hard floors, what Undo can override and how the goal budget is shared.
 

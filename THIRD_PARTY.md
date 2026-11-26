@@ -16,6 +16,7 @@ OPOS ships no model weights. It talks over HTTP to model servers that you run or
 | Model | Used for | License |
 |---|---|---|
 | Meta Llama 3.2 1B / 3B | Tier 0 on-device answers through a llama.cpp server you start | Llama 3.2 Community License |
+| NVIDIA AceInstruct-1.5B | Optional phone-local answers through an external file you supply; not shipped | CC-BY-NC-4.0 (non-commercial, attribution) |
 | Muse Glimmer 30B (meta-models) | helper routing, Why, Plan and Ask on a computer you own | Apache-2.0 |
 | Muse Spark Open | optional hosted model, off unless you set OPOS_SPARK_OPEN=1 with your own key | the hosting provider's terms |
 
@@ -24,6 +25,10 @@ OPOS ships no model weights. It talks over HTTP to model servers that you run or
 Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
 
 OPOS does not bundle Llama weights or other Llama Materials. Llama 3.2 has its own Community License and incorporated Acceptable Use Policy. Section 1(b) covers distributing or making available Llama Materials or derivatives, and products or services containing them. Its requirements include providing the agreement with the Materials, prominently displaying “Built with Llama,” and retaining the required attribution notice in distributed copies. Consult the complete agreement for its other conditions: [Meta Llama 3.2 license](https://raw.githubusercontent.com/meta-llama/llama-models/main/models/llama3_2/LICENSE).
+
+### AceInstruct-1.5B
+
+AceInstruct-1.5B is by NVIDIA, source [nvidia/AceInstruct-1.5B](https://huggingface.co/nvidia/AceInstruct-1.5B), under CC-BY-NC-4.0 (non-commercial, attribution). It is an optional external model file supplied by the operator, not shipped or downloaded by OPOS. Its terms apply separately from OPOS's GPL-3.0-or-later code; consult the source model's licence and retain the required attribution when using or sharing it. Phone execution and performance for this model remain **NOT_RUN**.
 
 ### Muse Glimmer
 
