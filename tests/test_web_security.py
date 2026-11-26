@@ -451,8 +451,6 @@ class TestWebHardening(unittest.TestCase):
         class RealPhone(web.Phone):
             """Device-like phone."""
 
-            pass
-
         run = webclient.Running(phone=RealPhone())
         run.__enter__()
         try:
@@ -471,8 +469,6 @@ class TestWebHardening(unittest.TestCase):
 
         class RealPhone(web.Phone):
             """Device-like phone."""
-
-            pass
 
         run = webclient.Running(phone=RealPhone())
         run.__enter__()
