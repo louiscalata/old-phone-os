@@ -546,10 +546,7 @@ class TestWebHardening(unittest.TestCase):
                 orig = limiter.allow
 
                 def _allow(*a: object, **kw: object) -> bool:
-                    for v in list(a) + list(kw.values()):
-                        if target in str(v):
-                            return False
-                    return True
+                    return all(target not in str(v) for v in list(a) + list(kw.values()))
 
                 limiter.allow = _allow  # type: ignore[method-assign]
                 try:

@@ -280,10 +280,7 @@ class MMModemCoreTests(unittest.TestCase):
                 second = object()
                 err = OSError("bus failed")
                 with patch("opos.mm_modem.find_modem", side_effect=[old_path, new_path]) as finder:
-                    if discovered:
-                        modem = MMModem(bus)
-                    else:
-                        modem = MMModem(bus, modem_path=old_path)
+                    modem = MMModem(bus) if discovered else MMModem(bus, modem_path=old_path)
                     if helper == "call":
                         bus.call.side_effect = [first, err, second]
                         self.assertIs(modem._bus_call(VOICE, "Probe", "argument", 7), first)

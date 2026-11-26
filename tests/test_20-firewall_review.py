@@ -105,9 +105,13 @@ def _stop_is_inspection(line):
             return True
         return False
     if op in ("-C", "--check"):
-        if len(rest) == 3 and rest[0] in ("INPUT", "FORWARD") and rest[1] in ("-j", "--jump"):
-            if rest[2] == "OPOS_" + rest[0]:
-                return True
+        if (
+            len(rest) == 3
+            and rest[0] in ("INPUT", "FORWARD")
+            and rest[1] in ("-j", "--jump")
+            and rest[2] == "OPOS_" + rest[0]
+        ):
+            return True
         return False
     return False
 
@@ -315,11 +319,14 @@ def _surviving_snapshot(lines, owned):
                 elif len(tokens) >= 2 and tokens[0] == "-A":
                     if tokens[1] in owned_set:
                         owned_hit = True
-                    elif len(tokens) == 4 and tokens[1] in _OPOS_DELETE_HOOKS:
-                        if tokens[2] in ("-j", "--jump"):
-                            want = _OPOS_DELETE_HOOKS[tokens[1]]
-                            if tokens[3] == want and tokens[3] in owned_set:
-                                owned_hit = True
+                    elif (
+                        len(tokens) == 4
+                        and tokens[1] in _OPOS_DELETE_HOOKS
+                        and tokens[2] in ("-j", "--jump")
+                    ):
+                        want = _OPOS_DELETE_HOOKS[tokens[1]]
+                        if tokens[3] == want and tokens[3] in owned_set:
+                            owned_hit = True
         if owned_hit:
             continue
         parts = line.split()
@@ -559,7 +566,7 @@ class FirewallBackendReviewTest(unittest.TestCase):
             "fw_pick_backend\n"
             "printf " + chr(37) + "s \"$FW_BACKEND\"\n"
         )
-        proc = subprocess.run(
+        return subprocess.run(
             ["bash", "-c", probe],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -568,7 +575,6 @@ class FirewallBackendReviewTest(unittest.TestCase):
             cwd=os.path.dirname(os.path.abspath(bin_dir)),
             env=_probe_env(FWT_BIN=bin_dir, FWT_SCRIPT=script),
         )
-        return proc
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_start_capture_check_detects_missing_input_jump(self):

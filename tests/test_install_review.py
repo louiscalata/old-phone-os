@@ -567,10 +567,7 @@ def _mask_heredoc_bodies(text):
                     at_word_start = False
                     i += 1
                     continue
-            if not stack or stack[-1][0] != "arith":
-                in_arith_now = len(stack) > 0 and stack[-1][0] == "arith"
-            else:
-                in_arith_now = True
+            in_arith_now = len(stack) > 0 and stack[-1][0] == "arith"
             if c == "#" and at_word_start:
                 break
             if not in_arith_now and c == "<" and i + 1 < n and line[i + 1] == "<":
@@ -629,10 +626,7 @@ def _mask_heredoc_bodies(text):
                 i += 2
                 at_word_start = False
                 continue
-            if c in " \t;|&()<>\n":
-                at_word_start = True
-            else:
-                at_word_start = False
+            at_word_start = c in " \t;|&()<>\n"
             i += 1
     for _delim, _strip, _quoted, _buf in pending:
         if not _quoted:
@@ -1371,9 +1365,12 @@ def _scan_installer_paths(text):
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        if not re.search(r"(^|[;|&]\s*|\b)(%s)\s" % "|".join(ops), raw):
-            if not raw.strip().startswith(("for ", "for\t")) and not raw.strip().startswith(("case ", "case\t")):
-                continue
+        if (
+            not re.search(r"(^|[;|&]\s*|\b)(%s)\s" % "|".join(ops), raw)
+            and not raw.strip().startswith(("for ", "for\t"))
+            and not raw.strip().startswith(("case ", "case\t"))
+        ):
+            continue
         for bad in _line_path_violations(raw):
             entry = raw.strip()
             if entry not in unquoted:
@@ -2159,9 +2156,8 @@ class TestInstallReview(unittest.TestCase):
                 ):
                     if stack:
                         stack[-1] = False
-                elif stripped == "fi" or stripped.startswith("fi ") or stripped.startswith("fi;"):
-                    if stack:
-                        stack.pop()
+                elif stack and (stripped == "fi" or stripped.startswith("fi ") or stripped.startswith("fi;")):
+                    stack.pop()
             self.assertTrue(any(stack), "recovery python must stay inside verified recovery")
 
     def test_recovery_python_moved_outside_guard_is_rejected(self):
@@ -2463,10 +2459,7 @@ class TestInstallReview(unittest.TestCase):
                     home_dir = root / "home"
                     xdg = root / "xdg"
                     bindir = root / "bin"
-                    if name == "empty_opos_home":
-                        opos_home = xdg / "opos"
-                    else:
-                        opos_home = root / "opos"
+                    opos_home = xdg / "opos" if name == "empty_opos_home" else root / "opos"
                     home_dir.mkdir(parents=True)
                     xdg.mkdir(parents=True)
                     bindir.mkdir(parents=True)
@@ -2748,10 +2741,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     self.assertEqual(proc.stdout, "succeeded", state)
                     self.assertFalse(saved.exists(), state)
-                    if log.exists():
-                        calls = log.read_text(encoding="utf-8").splitlines()
-                    else:
-                        calls = []
+                    calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
                     if state in ("active", "on"):
                         self.assertEqual(calls, [], state)
                     else:
@@ -4816,9 +4806,12 @@ class TestInstallReview(unittest.TestCase):
                     if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
                         stored.add(sub.id)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                if node.id in ("key_name", "octet", "token_prefix", "private_ip", "home_path"):
-                    stored.add(node.id)
+            if (
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Store)
+                and node.id in ("key_name", "octet", "token_prefix", "private_ip", "home_path")
+            ):
+                stored.add(node.id)
         forbidden = set(["token_prefix", "private_ip", "home_path", "key_name", "octet"])
         self.assertTrue(stored.isdisjoint(forbidden), stored & forbidden)
 
@@ -4876,10 +4869,9 @@ class TestInstallReview(unittest.TestCase):
                 env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
                 if not env.get("USER"):
                     env["USER"] = "opos-test-user"
-                proc = subprocess.run(
+                return subprocess.run(
                     ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
                 )
-                return proc
 
         proc = run_once(False, False)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -5054,10 +5046,9 @@ class TestInstallReview(unittest.TestCase):
                 env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
                 if not env.get("USER"):
                     env["USER"] = "opos-test-user"
-                proc = subprocess.run(
+                return subprocess.run(
                     ["sh", str(install), "--uninstall"], capture_output=True, text=True, env=env, timeout=60
                 )
-                return proc
 
         good = run_once(False)
         good_line = next((x for x in good.stdout.splitlines() if "restore summary" in x), "")
@@ -8577,10 +8568,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                     self.assertIn(want_mark, proc.stdout, name)
                     self.assertFalse(state.exists(), name)
-                    if log.exists():
-                        calls = log.read_text(encoding="utf-8").splitlines()
-                    else:
-                        calls = []
+                    calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
                     self.assertEqual(calls, want_calls, name)
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")

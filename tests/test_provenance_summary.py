@@ -191,34 +191,33 @@ class TestProvenanceSummary(unittest.TestCase):
                                     display_pat = r"[\s\-_./]*".join(re.escape(p) for p in parts)
                                     if after.count("(") < after.count(")") or after.count("[") < after.count("]"):
                                         self.fail(f"Model {m} clause has excess closing delimiters: {clause!r}")
-                                    if not re.search(r"\b(?:for|of)\b", after):
-                                        if not re.search(display_pat, after):
-                                            if ")" in after or "]" in after:
-                                                stripped_models = after
-                                                for lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
-                                                    lparts = [q for q in re.split(r"[^a-z0-9]+", lm.lower()) if q]
-                                                    lpat = r"[\s\-_./]*".join(re.escape(q) for q in lparts)
-                                                    stripped_models = re.sub(lpat, "", stripped_models)
-                                                stripped_models = re.sub(
-                                                    r"\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b",
-                                                    "",
-                                                    stripped_models,
-                                                )
-                                                if re.fullmatch(r'[\s,;:()"\'.-]*', stripped_models):
-                                                    continue
-                                            if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(" ise", ""), after):
-                                                rest = after
-                                                for lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
-                                                    lparts = [q for q in re.split(r"[^a-z0-9]+", lm.lower()) if q]
-                                                    lpat = r"[\s\-_./]*".join(re.escape(q) for q in lparts)
-                                                    rest = re.sub(lpat, "", rest)
-                                                rest = re.sub(
-                                                    r"\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b",
-                                                    "",
-                                                    rest,
-                                                )
-                                                if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(" ise", ""), rest):
-                                                    continue
+                                    if not re.search(r"\b(?:for|of)\b", after) and not re.search(display_pat, after):
+                                        if ")" in after or "]" in after:
+                                            stripped_models = after
+                                            for lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
+                                                lparts = [q for q in re.split(r"[^a-z0-9]+", lm.lower()) if q]
+                                                lpat = r"[\s\-_./]*".join(re.escape(q) for q in lparts)
+                                                stripped_models = re.sub(lpat, "", stripped_models)
+                                            stripped_models = re.sub(
+                                                r"\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b",
+                                                "",
+                                                stripped_models,
+                                            )
+                                            if re.fullmatch(r'[\s,;:()"\'.-]*', stripped_models):
+                                                continue
+                                        if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(" ise", ""), after):
+                                            rest = after
+                                            for lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
+                                                lparts = [q for q in re.split(r"[^a-z0-9]+", lm.lower()) if q]
+                                                lpat = r"[\s\-_./]*".join(re.escape(q) for q in lparts)
+                                                rest = re.sub(lpat, "", rest)
+                                            rest = re.sub(
+                                                r"\b(?:and|or|the|a|an|meta|partner|inference|route|routes|pool|model|models)\b",
+                                                "",
+                                                rest,
+                                            )
+                                            if not re.fullmatch(r'[\s,;:()"\ ise\-]*'.replace(" ise", ""), rest):
+                                                continue
                                 bound_other = False
                                 for _lm in ("muse-glimmer-30b", "muse-spark-1.3", "muse-wonder-1.0"):
                                     if _lm.lower() == m.lower():

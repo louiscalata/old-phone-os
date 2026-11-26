@@ -596,9 +596,8 @@ class UninstallTests(BaseCase):
                 for path, data in seeded.items():
                     path.write_bytes(data)
                 link = self.root.resolve() / ("linkcfg-" + tag)
-                if os.path.lexists(link):
-                    if link.is_symlink() or link.is_file():
-                        link.unlink()
+                if os.path.lexists(link) and (link.is_symlink() or link.is_file()):
+                    link.unlink()
                 link.symlink_to(real, target_is_directory=True)
                 env = dict(self.env)
                 env["OPOS_CONFIG_DIR"] = str(link)

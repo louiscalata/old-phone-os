@@ -447,10 +447,7 @@ def _shell_code_lines(text):
         if current is not None:
             delim, dash = current
             if raw == delim or (dash and raw.startswith("\t") and raw.lstrip("\t") == delim):
-                if pending:
-                    current = pending.pop(0)
-                else:
-                    current = None
+                current = pending.pop(0) if pending else None
             continue
         starts_in_quote = sq or dq
         opens = []

@@ -16,10 +16,7 @@ class TestDuoDocs(unittest.TestCase):
         self.assertIn("historical Droidian development guide", text[:usb_idx])
         self.assertIn("Duo device work remains paused", text[:usb_idx])
         next_heading_pos = text.find("\n## ", usb_idx + len(usb_heading))
-        if next_heading_pos == -1:
-            subsection = text[usb_idx:]
-        else:
-            subsection = text[usb_idx:next_heading_pos]
+        subsection = text[usb_idx:] if next_heading_pos == -1 else text[usb_idx:next_heading_pos]
         markers = [
             "link-local",
             "<phone-usb-address>",

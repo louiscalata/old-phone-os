@@ -308,7 +308,7 @@ class TestProfileBlock(unittest.TestCase):
                 env = os.environ.copy()
                 env.pop("F012_USER", None)
                 env.pop("F012_SENTINEL", None)
-                cp = subprocess.run(
+                return subprocess.run(
                     [
                         "/bin/sh",
                         "-ec",
@@ -321,7 +321,6 @@ class TestProfileBlock(unittest.TestCase):
                     timeout=2,
                     env=env,
                 )
-                return cp
 
             cp = _run()
             self.assertEqual(cp.returncode, 0)

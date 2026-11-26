@@ -35,8 +35,7 @@ class PhoneDrainTests(unittest.TestCase):
 
     def phone(self, **kw):
         b = LiveBattery(reader=self.reader, clock=lambda: self.now[0], refresh_s=15)
-        p = Phone(live_battery=b, **kw)
-        return p
+        return Phone(live_battery=b, **kw)
 
     def poll(self, p, seconds):
         s = None
