@@ -860,10 +860,12 @@ class Soak:
         self.next_sample = time.monotonic() + min(self.args.sample_every, 2)
 
     def check_resources(self, row):
-        if all(row.get(field) is not None for field in ("rss_kib", "threads", "descriptors")):
-            if self.usable_generation != self.generation:
-                self.usable_generation_count += 1
-                self.usable_generation = self.generation
+        if (
+            all(row.get(field) is not None for field in ("rss_kib", "threads", "descriptors"))
+            and self.usable_generation != self.generation
+        ):
+            self.usable_generation_count += 1
+            self.usable_generation = self.generation
         warmup = min(5, (self.args.duration or 50) * 0.1)
         if row["age_seconds"] >= warmup:
             if self.sample_baseline is None:

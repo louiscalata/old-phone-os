@@ -424,10 +424,13 @@ class LinkService:
         answer = (
             self._answers.get(self._ending_answer) if self._ending_answer is not None else self._answers.current("gpu")
         )
-        if answer is not None and answer["state"] not in answers_api.FINAL:
-            if answer["state"] in ("paused", "loading", "answering") or answer["text"] or answer["where"]:
-                self._ending_answer = answer["id"]
-                self.cancel(answer["id"])
+        if (
+            answer is not None
+            and answer["state"] not in answers_api.FINAL
+            and (answer["state"] in ("paused", "loading", "answering") or answer["text"] or answer["where"])
+        ):
+            self._ending_answer = answer["id"]
+            self.cancel(answer["id"])
         self._lease = None
         self._ending_answer = None
 
