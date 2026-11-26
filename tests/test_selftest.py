@@ -636,7 +636,7 @@ class HealthyPhone(SelftestCase):
         self.assertTrue(lines[0].startswith("# opos-selftest 1  2026-11-06T"), lines[0])
         self.assertIn("opos=0123456789ab", lines[0])
         self.assertIn("read-only", lines[0])
-        body = [ln for ln in lines[1:-1]]
+        body = list(lines[1:-1])
         self.assertTrue(body and all(LINE.match(ln) for ln in body), [ln for ln in body if not LINE.match(ln)])
         self.assertRegex(lines[-1], r"^SELFTEST: \d+ PASS, \d+ WARN, \d+ SKIP, 0 FAIL$")
         self.assertEqual(len(body), len(r.rows), "check ids are unique")

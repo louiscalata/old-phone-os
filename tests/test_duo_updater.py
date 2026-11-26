@@ -1518,7 +1518,7 @@ class TestApply(EnvCase):
         self.assertEqual(e.state()["failed"], [])
         self.assertEqual(e.marker(), "build 0")
         self.assertEqual(e.overlay_state(), e.expect_overlay(0))
-        self.assertEqual([r for r in os.listdir(e.releases)], ["0-aaaaaaaaaaaa"])
+        self.assertEqual(list(os.listdir(e.releases)), ["0-aaaaaaaaaaaa"])
         self.assertEqual(e.live()["restarts"], [])
         e.consistent()
 
