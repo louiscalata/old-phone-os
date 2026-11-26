@@ -252,14 +252,17 @@ class Dashboard:
             calls_until = _format_time_12h(end_seconds % 86400)
         if reached and not charging and percent > 0:
             goal_note = f"Made it to {_format_goal_12h(self.goal)}. Calls and messages stay on"
-        elif not charging and self.goal and hours is not None and not meets_goal:
-            if (
-                clock_s is not None
-                and hours_left_corrected != float("inf")
-                and hours_left_corrected == hours_left_corrected
-            ):
-                goal_words = _format_goal_12h(self.goal)
-                goal_note = f"Won't last until {goal_words}, calls and messages until ~{calls_until}"
+        elif (
+            not charging
+            and self.goal
+            and hours is not None
+            and not meets_goal
+            and clock_s is not None
+            and hours_left_corrected != float("inf")
+            and hours_left_corrected == hours_left_corrected
+        ):
+            goal_words = _format_goal_12h(self.goal)
+            goal_note = f"Won't last until {goal_words}, calls and messages until ~{calls_until}"
         time_left = "Charging" if charging else time_left_words(hours_left_corrected)
         if time_left.startswith("About") and not measured:
             time_left = ROUGH + time_left
