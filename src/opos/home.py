@@ -38,7 +38,4 @@ def plain_reason(reason):
 def is_quiet(lines):
     """Check whether lines exclude banned words."""
     pattern = re.compile(r"\b(" + "|".join(BANNED) + r")\b", re.I)
-    for line in lines:
-        if pattern.search(line):
-            return False
-    return True
+    return not any(pattern.search(line) for line in lines)

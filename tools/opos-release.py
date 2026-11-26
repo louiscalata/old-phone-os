@@ -155,16 +155,15 @@ def classify(path):
     if where == "usr/libexec/opos":
         return "overlay"
     # opos-update* is the root updater's own: its units, its tools and its config are changed by a new image only.
-    if not name.startswith("opos-update"):
-        if (
-            where == "usr/sbin"
-            and name.startswith("opos-")
-            or where == "etc/systemd/system"
-            and UNIT.fullmatch(name)
-            or where == "etc/default"
-            and name.startswith("opos")
-        ):
-            return "overlay"
+    if not name.startswith("opos-update") and (
+        where == "usr/sbin"
+        and name.startswith("opos-")
+        or where == "etc/systemd/system"
+        and UNIT.fullmatch(name)
+        or where == "etc/default"
+        and name.startswith("opos")
+    ):
+        return "overlay"
     if where == "etc/opos" and name not in ("update", "update.json", "base-version"):
         return "overlay"
     raise Refused(
