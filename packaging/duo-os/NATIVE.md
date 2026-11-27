@@ -156,6 +156,8 @@ Viewing Battery does not send a request of its own or change the daily goal.
 ## Sound and Security
 
 Sound shows the practice volume when the enabled volume-key service reports it. The keys do not change audio output.
+**Play test alert** plays one short tone at 20% of its own stream. It leaves the system volume and the alarm player alone.
+The action reports playback completion or failure. Hearing the tone on a Surface Duo remains **NOT_RUN**.
 Security shows the last lid report and can open the native lock screen. PIN handling remains in the browser.
 
 ## Date & time

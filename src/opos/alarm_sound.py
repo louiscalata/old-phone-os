@@ -95,14 +95,13 @@ class Player:
             return self.proc
 
     def finish(self, proc):
-        """Wait for one beep, at most step_s seconds, then end it if it is still running."""
+        """Return the beep's exit code, or None if a normal exit could not be observed."""
         try:
-            proc.wait(timeout=self.step_s)
-        except subprocess.TimeoutExpired:
-            pass
-        except OSError:
-            pass
-        self._drop(proc)
+            return proc.wait(timeout=self.step_s)
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        finally:
+            self._drop(proc)
 
     def stop(self):
         """End the running beep and every later beep of the ring that is playing. Safe from any thread."""
@@ -138,6 +137,13 @@ def play(player, steps=6, since=None):
     finally:
         if proc is not None:
             player._drop(proc)
+
+
+def play_alert(player):
+    """Play one existing tone at 20% stream volume using a separate player."""
+    stream_volume = 65_536 * START // 100
+    proc = player.start(["paplay", "--volume", str(stream_volume), str(TONE)], player.generation)
+    return proc is not None and player.finish(proc) == 0
 
 
 def pulse(write, enabled):

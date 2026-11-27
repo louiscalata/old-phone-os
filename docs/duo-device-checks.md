@@ -658,6 +658,30 @@ within 24 seconds. With no `paplay` on the path the expected observation is no t
 
 **Record.** What was heard, and the revision. Vibration stays NOT_RUN: the haptic pulse is not enabled.
 
+### C35. A short test alert on the speaker
+
+Sources: `packaging/duo-os/NATIVE.md:160` "Hearing the tone on a Surface Duo remains **NOT_RUN**."; PR #57.
+
+**Preconditions.** The native Sound settings include **Play test alert**. The session has access to the phone speaker.
+If no `paplay` is available in the phone session, record the missing player and leave the audio result NOT_RUN.
+
+**Steps.**
+1. [READ-ONLY] In the phone session, check `command -v paplay` and, if available, run `pactl info`.
+2. On the glass, open **Settings → Sound → Play test alert** and tap once. Listen for the alert to end.
+3. Wait for the result, then repeat once. If `pactl` was available, run `pactl info` again.
+
+**Observe.** A single short tone on each tap and whether the audio server answers before and after playback.
+
+**Pass or fail.** Pass: each request plays one short tone and ends, the app reports completion, and the audio service
+continues answering when it can be queried. Fail: no audible tone with a working player, repeated or stuck playback,
+a playback error, or a previously answering audio service becoming unavailable.
+
+**Stop and undo.** Stop testing if the tone does not end or the audio server stops answering. The app's bounded player
+ends the process if it times out. No settings are saved by this action.
+
+**Record.** The revision, what was heard, the app result and the audio-server observations. Record the volume cap as
+a source check unless an actual mixer measurement was taken.
+
 ## Everyday apps
 
 ### C24. Notes are still on the phone after a restart
@@ -1044,6 +1068,7 @@ This copy stays NOT_RUN.
 | C21 | Clock: save, snooze, stop, bedside | | NOT_RUN | | | |
 | C22 | Alarm when due, silent while the clock is unknown | | NOT_RUN | | | |
 | C23 | The alarm tone on the speaker | | NOT_RUN | | | no player on this revision |
+| C35 | A short test alert on the speaker | | NOT_RUN | | | |
 | C24 | Notes after a restart | | NOT_RUN | | | |
 | C25 | Contacts and a vCard | | NOT_RUN | | | |
 | C26 | The calculator | | NOT_RUN | | | |
