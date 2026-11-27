@@ -24,6 +24,46 @@ sleep 90
     echo "radios: bluetooth: $(timeout 5 bluetoothctl show 2>&1 | grep -E 'Powered|No default' | tr -d '\t' | tr '\n' ' ')"
     echo "radios: droidian may: $(timeout 5 runuser -u droidian -- nmcli -t general permissions 2>&1 | grep -E 'enable-disable-wifi|network-control|settings.modify.system|wifi.scan|rror' | sed 's/org.freedesktop.NetworkManager.//' | tr '\n' ' ')"
     # --- end track: network ---
+    # --- track: radio watch ---
+    radio_watch() {
+        echo "== radio watch"
+        wlan=unavailable
+        if [ -d "$1/class/net" ]; then
+            wlan=missing
+            [ ! -d "$1/class/net/wlan0" ] || wlan=present
+        fi
+        echo "watch: wlan0 $wlan"
+
+        modem=unavailable
+        if busctl --system --auto-start=no --allow-interactive-authorization=no --timeout=5s --quiet \
+            call org.ofono /ril_0 org.ofono.Modem GetProperties >/dev/null 2>&1; then
+            modem=present
+        fi
+        echo "watch: ril_0 $modem"
+
+        adsp=
+        for processor in "$1"/class/remoteproc/remoteproc*; do
+            compatible="$processor/device/of_node/compatible"
+            if [ -r "$compatible" ] &&
+                tr '\000' '\n' 2>/dev/null <"$compatible" | grep -Fqx 'qcom,sm8150-adsp-pas' 2>/dev/null; then
+                if [ -n "$adsp" ]; then
+                    adsp=
+                    break
+                fi
+                adsp="$processor"
+            fi
+        done
+        state=unavailable
+        if [ -n "$adsp" ] && [ -r "$adsp/state" ] && { IFS= read -r reported <"$adsp/state"; } 2>/dev/null; then
+            case "$reported" in
+                running) state=running ;;
+                offline|suspended|crashed) state='not running' ;;
+            esac
+        fi
+        echo "watch: adsp $state"
+    }
+    radio_watch /sys
+    # --- end track: radio watch ---
     echo "== power supplies"
     for d in /sys/class/power_supply/*; do echo "$d: $(cat "$d/type" 2>/dev/null) $(cat "$d/capacity" 2>/dev/null) $(cat "$d/status" 2>/dev/null)"; done
     echo "== OPOS units, this boot"

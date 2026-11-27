@@ -584,6 +584,12 @@ OPOS, composer and phoc processes, `/dev/dri`, network addresses, power supplies
 DRM clients, backlight values and kernel warnings. Read it over ssh. From TWRP the same files can be read by
 mounting userdata and loop-mounting `/data/rootfs.img`; that has not been rehearsed. A format erases both.
 
+The radio watch reports whether `wlan0` appears in sysfs, whether oFono’s `/ril_0` responds to a read-only
+D-Bus query, and whether the SM8150 audio DSP is running. The oFono check waits at most five seconds
+for the reply and suppresses its payload and errors. The DSP check matches the device-tree compatible
+value before reading state. It reports unavailable when the match is missing or ambiguous, or its state
+is unrecognized. The watch emits status labels and leaves radios untouched. Duo verification is **NOT_RUN**.
+
 ## Boot smoke test (QEMU, PC only)
 
 A boot test that only a positive line can pass. On the PC (Linux, not the Mac), `qemu-boot-smoke.sh --kernel VMLINUZ
