@@ -8,16 +8,11 @@ import sys
 import tempfile
 import unittest
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-def _read_install_sh() -> str:
-    candidates = [
-        pathlib.Path(__file__).resolve().parents[1] / "install.sh",
-        pathlib.Path("install.sh"),
-    ]
-    for p in candidates:
-        if p.is_file():
-            return p.read_text(encoding="utf-8")
-    raise FileNotFoundError("install.sh not found in expected locations")
+from tests.install_review_support import read_install_sh
 
 
 class TestInstallReview(unittest.TestCase):
@@ -303,7 +298,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_missing_expected_treated_as_unverified_and_preserved(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index('_sshd="skipped"')
         end_candidates = []
         for marker_name in ['if [ -f "$OPOS_HOME/firewall.state" ]', "command -v ufw"]:

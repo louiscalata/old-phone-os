@@ -9,16 +9,11 @@ import sys
 import tempfile
 import unittest
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-def _read_install_sh() -> str:
-    candidates = [
-        pathlib.Path(__file__).resolve().parents[1] / "install.sh",
-        pathlib.Path("install.sh"),
-    ]
-    for p in candidates:
-        if p.is_file():
-            return p.read_text(encoding="utf-8")
-    raise FileNotFoundError("install.sh not found in expected locations")
+from tests.install_review_support import read_install_sh
 
 
 class TestInstallReview(unittest.TestCase):
@@ -233,7 +228,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_partial_write_preserves_sshd_config(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall() {")
         start = text.index("FOUND=0", anchor)
         stop = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
@@ -353,7 +348,7 @@ class TestInstallReview(unittest.TestCase):
                 ["sshd", "-t", "-f", str(bad)], capture_output=True, text=True, env=real_env, timeout=30
             )
             self.assertNotEqual(invalid.returncode, 0, "invalid config must fail sshd validation")
-        install = _read_install_sh()
+        install = read_install_sh()
         self.assertRegex(install, r"sshd_config|sshd-config|SSHD_CONFIG")
         active = "".join(["Port", " ", "22\n"])
         marker = "".join(["Match", " ", "all\n"])
@@ -372,7 +367,7 @@ class TestInstallReview(unittest.TestCase):
             )
 
     def test_sshd_staging_path_contract_rejects_mismatches(self):
-        original = _read_install_sh()
+        original = read_install_sh()
         self._assert_sshd_staging_path_contract(original)
         dest = "/etc/ssh/" + "sshd_config"
         unrelated_validate = "/tmp/" + "unrelated-validation"
@@ -411,7 +406,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_reload_requires_successful_validation(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall() {")
         start = text.index("FOUND=0", anchor)
         stop = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'

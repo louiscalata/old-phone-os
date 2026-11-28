@@ -85,7 +85,7 @@ def make_env(base):
     home = Path(base) / "home"
     # HOME alone does not isolate systemctl: it still contacts the host user bus.
     # These fixtures install no service. Service lifecycle/failure cases have
-    # their own explicit stubs in test_install_review.py.
+    # their own explicit stubs in test_install_review_part9.py.
     tools = Path(base) / "sandbox-tools"
     tools.mkdir(parents=True, exist_ok=True)
     systemctl = tools / "systemctl"
