@@ -422,19 +422,22 @@ max-complexity = 15
 "tests/test_install_fixes.py" = ["B905"]
 # B007: existing bugbear finding; diagnose and repair separately from layout.
 # C901: existing complexity; restructuring needs a behavior review.
-# E401: existing pycodestyle finding; non-format repair is outside this lane.
-# E741: existing pycodestyle finding; non-format repair is outside this lane.
-# S103: existing security finding; security repairs need separate review.
-# S105: existing security finding; security repairs need separate review.
+# UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
+"tests/install_review_support.py" = ["B007", "C901", "UP031"]
 # S108: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
-"tests/test_install_review.py" = ["B007", "C901", "E401", "E741", "S103", "S105", "S108", "UP031"]
+"tests/test_install_review.py" = ["S108", "UP031"]
 # S108: existing security finding; security repairs need separate review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_review_part2.py" = ["S108", "UP031"]
 # C901: existing complexity; restructuring needs a behavior review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_review_part6.py" = ["C901", "UP031"]
+"tests/test_install_review_part7.py" = ["C901", "UP031"]
+"tests/test_install_review_part8.py" = ["B007", "C901", "E741", "S105"]
+"tests/test_install_review_part9.py" = ["C901"]
+"tests/test_install_review_part10.py" = ["S103", "S108"]
+"tests/test_install_review_part11.py" = ["C901", "S108"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_sshd_sandbox.py" = ["UP031"]
 # B023: existing bugbear finding; diagnose and repair separately from layout.

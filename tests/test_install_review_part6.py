@@ -10,16 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-
-def _read_install_sh() -> str:
-    candidates = [
-        pathlib.Path(__file__).resolve().parents[1] / "install.sh",
-        pathlib.Path("install.sh"),
-    ]
-    for p in candidates:
-        if p.is_file():
-            return p.read_text(encoding="utf-8")
-    raise FileNotFoundError("install.sh not found in expected locations")
+from tests.install_review_support import _read_install_sh
 
 
 def _assert_isolated_shell_paths(text, tmp_path):
