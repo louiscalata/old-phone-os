@@ -9,22 +9,23 @@ import tempfile
 import unittest
 import unittest.mock
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from tests.install_review_support import (
-    _contained_candidate,
-    _install_review_modules,
-    _isolated_git_env,
-    _read_install_sh,
-    _run_contained,
+    contained_candidate,
+    install_review_modules,
+    isolated_git_env,
+    read_install_sh,
+    run_contained,
 )
 
 
 class TestInstallReview(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_remove_clone_preserves_clean_checkout_without_ownership_record(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -148,7 +149,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_remove_clone_preserves_owner_created_commit(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -163,7 +164,7 @@ class TestInstallReview(unittest.TestCase):
                     clone = tmp_path / "clone"
                     clone.mkdir()
                     (clone / "install.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-                    base_env = _isolated_git_env()
+                    base_env = isolated_git_env()
                     subprocess.run(
                         ["git", "-C", str(clone), "init"],
                         check=True,
@@ -275,7 +276,7 @@ class TestInstallReview(unittest.TestCase):
         }
         with unittest.mock.patch.dict(os.environ, seed, clear=True):
             before = dict(os.environ)
-            result = _isolated_git_env()
+            result = isolated_git_env()
             self.assertEqual(
                 result, {"PATH": "/usr/bin:/bin", "HOME": "/tmp/" + "opos-home", sentinel_key: sentinel_value}
             )
@@ -294,16 +295,16 @@ class TestInstallReview(unittest.TestCase):
                 good.write_text("ok\n", encoding="utf-8")
                 dotdot = str(base) + "/../" + base.name + "-sibling"
                 with self.assertRaises(AssertionError):
-                    _contained_candidate(base, dotdot)
+                    contained_candidate(base, dotdot)
                 link = base / "link"
                 link.symlink_to(str(target))
                 escaped = str(link) + "/payload"
                 with self.assertRaises(AssertionError):
-                    _contained_candidate(base, escaped)
-                self.assertEqual(_contained_candidate(base, good), os.path.realpath(str(good)))
+                    contained_candidate(base, escaped)
+                self.assertEqual(contained_candidate(base, good), os.path.realpath(str(good)))
                 back_inside = str(inner) + "/../inner/ok"
-                self.assertEqual(_contained_candidate(base, back_inside), os.path.realpath(str(good)))
-                proc = _run_contained(base, good, ["cat", str(good)])
+                self.assertEqual(contained_candidate(base, back_inside), os.path.realpath(str(good)))
+                proc = run_contained(base, good, ["cat", str(good)])
                 self.assertEqual(proc.returncode, 0)
                 self.assertIn("ok", proc.stdout)
 
@@ -326,12 +327,12 @@ class TestInstallReview(unittest.TestCase):
                 with self.subTest(hostile=hostile):
                     with unittest.mock.patch("tests.install_review_support.subprocess.run") as run_mock:
                         with self.assertRaises(AssertionError):
-                            _run_contained(base, hostile, ["sh", hostile])
+                            run_contained(base, hostile, ["sh", hostile])
                         self.assertEqual(run_mock.call_count, 0)
             good = inner / "ok.sh"
             done = inner / "done"
             good.write_text('#!/bin/sh\ntouch "' + str(done) + '"\n', encoding="utf-8")
-            proc = _run_contained(base, good, ["sh", str(good)])
+            proc = run_contained(base, good, ["sh", str(good)])
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(done.is_file())
 
@@ -344,7 +345,7 @@ class TestInstallReview(unittest.TestCase):
         )
         sites = {}
         replay_path = pathlib.Path(__file__).resolve()
-        for module in _install_review_modules():
+        for module in install_review_modules():
             path = pathlib.Path(module.__file__).resolve()
             src = path.read_text(encoding="utf-8")
             tree = ast.parse(src)
@@ -386,16 +387,16 @@ class TestInstallReview(unittest.TestCase):
                     for hostile in (traversal, via_link):
                         with self.subTest(hostile=hostile):
                             with self.assertRaises(AssertionError):
-                                _contained_candidate(base, hostile)
+                                contained_candidate(base, hostile)
                             with unittest.mock.patch.object(subprocess, "run") as run_mock:
                                 with self.assertRaises(AssertionError):
-                                    _run_contained(base, hostile, ["sh", hostile])
+                                    run_contained(base, hostile, ["sh", hostile])
                                 self.assertEqual(run_mock.call_count, 0)
                             self.assertFalse(bypass_marker.exists())
                             with unittest.mock.patch(
-                                "tests.install_review_support._contained_candidate", side_effect=lambda t, c: str(c)
+                                "tests.install_review_support.contained_candidate", side_effect=lambda t, c: str(c)
                             ):
-                                proc = _run_contained(base, hostile, ["sh", hostile])
+                                proc = run_contained(base, hostile, ["sh", hostile])
                             self.assertEqual(proc.returncode, 0, proc.stderr)
                             self.assertTrue(
                                 bypass_marker.is_file(),
@@ -405,7 +406,7 @@ class TestInstallReview(unittest.TestCase):
                     good = inner / "ok.sh"
                     done = inner / "done"
                     good.write_text('#!/bin/sh\ntouch "' + str(done) + '"\n', encoding="utf-8")
-                    proc = _run_contained(base, good, ["sh", str(good)])
+                    proc = run_contained(base, good, ["sh", str(good)])
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     self.assertTrue(done.is_file())
                     test.debug()

@@ -9,15 +9,16 @@ import tempfile
 import unittest
 import unittest.mock
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from tests.install_review_support import _read_install_sh
+from tests.install_review_support import read_install_sh
 
 
 class TestInstallReview(unittest.TestCase):
     def test_fallback_uses_only_trusted_manifest_paths(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         self.assertNotIn('"$OPOS_HOME"/*', text, "must not use prefix trust for launcher")
         self.assertNotIn('"$OPOS_BIN_DIR"/*', text, "must not use prefix trust for launcher")
         start = text.index("verified_recovery()")
@@ -85,7 +86,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertTrue(any(stack), "recovery python must stay inside verified recovery")
 
     def test_recovery_python_moved_outside_guard_is_rejected(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         self.test_fallback_uses_only_trusted_manifest_paths()
         marker = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
         split = text.splitlines()
@@ -104,12 +105,12 @@ class TestInstallReview(unittest.TestCase):
                 at = next(i for i, line in enumerate(remaining) if marker in line)
                 mutant = "\n".join(remaining[:at] + [moving] + remaining[at:]) + "\n"
                 self.assertNotEqual(mutant, text)
-                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
+                with unittest.mock.patch(__name__ + ".read_install_sh", return_value=mutant):
                     with self.assertRaises(AssertionError):
                         self.test_fallback_uses_only_trusted_manifest_paths()
 
     def test_recovery_python_in_unverified_branch_is_rejected(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         self.test_fallback_uses_only_trusted_manifest_paths()
         split = text.splitlines()
         hits = [
@@ -133,12 +134,12 @@ class TestInstallReview(unittest.TestCase):
                 lines.insert(idx + 2, preview)
                 mutant = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
                 self.assertNotEqual(mutant, text)
-                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
+                with unittest.mock.patch(__name__ + ".read_install_sh", return_value=mutant):
                     with self.assertRaisesRegex(AssertionError, "recovery python must stay inside verified recovery"):
                         self.test_fallback_uses_only_trusted_manifest_paths()
 
     def test_each_manifest_destructive_op_has_enclosing_guard(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         self.test_fallback_uses_only_trusted_manifest_paths()
         recovery = "if verified_recovery; then"
         parts = text.split(recovery)
@@ -150,7 +151,7 @@ class TestInstallReview(unittest.TestCase):
                     guard = "if true; then # " + recovery if j == idx else recovery
                     fixture += guard + parts[j + 1]
                 self.assertNotEqual(fixture, text)
-                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=fixture):
+                with unittest.mock.patch(__name__ + ".read_install_sh", return_value=fixture):
                     with self.assertRaises(AssertionError):
                         self.test_fallback_uses_only_trusted_manifest_paths()
         lg = 'if [ "$LAUNCHER" = "$DEF_LAUNCHER" ]; then'
@@ -162,37 +163,37 @@ class TestInstallReview(unittest.TestCase):
                 guard = "if true; then # " + lg if j == 1 else lg
                 fixture += guard + lparts[j + 1]
             self.assertNotEqual(fixture, text)
-            with unittest.mock.patch(__name__ + "._read_install_sh", return_value=fixture):
+            with unittest.mock.patch(__name__ + ".read_install_sh", return_value=fixture):
                 with self.assertRaises(AssertionError):
                     self.test_fallback_uses_only_trusted_manifest_paths()
 
     def test_fallback_rejects_reintroduced_uh(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall()")
         idx = text.index("FOUND=0", anchor)
         mutated = text[:idx] + 'UH="$OPOS_HOME"\n' + text[idx:]
         self.assertNotEqual(mutated, text, "mutation must reintroduce UH")
-        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutated):
+        with unittest.mock.patch(__name__ + ".read_install_sh", return_value=mutated):
             with self.assertRaises(AssertionError):
                 self.test_fallback_uses_only_trusted_manifest_paths()
 
     def test_fallback_trust_checks_accept_guarded_uvenv(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         plain = '"$UVENV" = "$OPOS_HOME/venv"'
         guarded_operand = '"${UVENV:-}" = "$OPOS_HOME/venv"'
         fixture = text.replace(plain, guarded_operand)
         self.assertNotIn(plain, fixture, "fixture must be fully guarded")
-        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=fixture):
+        with unittest.mock.patch(__name__ + ".read_install_sh", return_value=fixture):
             self.test_fallback_uses_only_trusted_manifest_paths()
         prefix = '[ "${UVENV:-}" = "$OPOS_HOME/venv" ]'
         broken = fixture.replace(prefix, "", 1)
         self.assertNotEqual(broken, fixture, "must remove one guard")
-        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=broken):
+        with unittest.mock.patch(__name__ + ".read_install_sh", return_value=broken):
             with self.assertRaises(AssertionError):
                 self.test_fallback_uses_only_trusted_manifest_paths()
 
     def test_uninstall_fallback_survives_unset_uvenv(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall()")
         head = text[anchor : anchor + 400]
         self.assertRegex(head, r'do_uninstall\(\) \{\n\s*UVENV=""')
@@ -674,7 +675,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertNotIn(marker, proc.stdout + proc.stderr)
 
     def test_recovery_python_ignores_caller_cwd(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         lines = [
             line
             for line in text.splitlines()
@@ -874,7 +875,7 @@ class TestInstallReview(unittest.TestCase):
                         self.assertEqual(pathlib.Path(key).read_bytes(), value, key)
 
     def test_recovery_verification_is_shared(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         self.assertEqual(
             len(re.findall(r"^verified_recovery\(\)", text, re.MULTILINE)), 1, "exactly one helper definition"
         )
@@ -902,7 +903,7 @@ class TestInstallReview(unittest.TestCase):
         )
 
     def test_uninstall_recovery_uses_one_helper(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         self.assertEqual(
             len(re.findall(r"^run_verified_recovery\(\)", text, re.MULTILINE)),
             1,
@@ -1664,7 +1665,7 @@ class TestInstallReview(unittest.TestCase):
     def test_verified_recovery_enforces_each_prerequisite(self):
         install = pathlib.Path(__file__).resolve().parents[1] / "install.sh"
         root = pathlib.Path(__file__).resolve().parents[1]
-        text = _read_install_sh()
+        text = read_install_sh()
         hstart = text.index("verified_recovery()")
         hend = text.index("do_uninstall()", hstart)
         helper = text[hstart:hend]

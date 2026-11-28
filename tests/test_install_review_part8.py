@@ -9,26 +9,27 @@ import tempfile
 import unittest
 import unittest.mock
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from tests import install_review_support as review
 from tests.install_review_support import (
-    _EXPECTED_BACKUP_PROBE,
-    _assert_snippet_confined,
-    _open_symlink_fd,
-    _prepare_fallback_restore_snippet,
-    _read_install_sh,
-    _run_sshd_dropin_restore,
-    _uninstall_restore_block,
-    _writes_backup,
+    EXPECTED_BACKUP_PROBE,
+    assert_snippet_confined,
+    open_symlink_fd,
+    prepare_fallback_restore_snippet,
+    read_install_sh,
+    run_sshd_dropin_restore,
+    uninstall_restore_block,
+    writes_backup,
 )
 
 
 class TestInstallReview(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_f992_sshd_leaves_unverified_customized_active_config(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         uninstall = text.index("do_uninstall() {")
         sshd_start = text.index('    _sshd="skipped"', uninstall)
         fw_leaf = "".join(["fire", "wall.state"])
@@ -80,7 +81,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_steps_report_failures_and_preserve_sshd_backup(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall() {")
         start = text.index("FOUND=0", anchor)
         stop = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
@@ -155,7 +156,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_preserves_prior_firewall_failure(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         leaf = "".join(["fire", "wall.state"])
         fail_mark = "".join(["fire", "wall=failed"])
         ok_mark = "".join(["fire", "wall=succeeded"])
@@ -254,7 +255,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_reports_skipped_sshd_and_retains_backup(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall() {")
         start = text.index("FOUND=0", anchor)
         stop = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
@@ -339,7 +340,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_skipped_sshd_preserves_existing_backup(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall() {")
         start = text.index("FOUND=0", anchor)
         stop = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
@@ -420,7 +421,7 @@ class TestInstallReview(unittest.TestCase):
         (do_uninstall returns 1 with "manual SSH restoration required"), so
         this snippet is kept as a unit check of the restore logic.
         """
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -487,7 +488,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(os.path.lexists(checked))
 
     def test_trusted_backup_snippet_test_is_labelled_snippet_only(self):
-        for module in review._install_review_modules():
+        for module in review.install_review_modules():
             self.assertFalse(
                 hasattr(module.TestInstallReview, "test_uninstall_trusted_sshd_backup_restores_successfully")
             )
@@ -542,7 +543,7 @@ class TestInstallReview(unittest.TestCase):
                     self.assertTrue(bak.is_symlink())
                     before_link = os.readlink(str(bak))
                     before_stat = os.lstat(str(bak))
-                    link_fd = _open_symlink_fd(str(bak))
+                    link_fd = open_symlink_fd(str(bak))
                     real_before = real.read_bytes() if kind == "symlink" else None
                     if kind == "dangling":
                         self.assertFalse(os.path.lexists(str(missing)))
@@ -609,7 +610,7 @@ class TestInstallReview(unittest.TestCase):
             target.write_bytes(b"".join([b"ta", b"rget-1"]))
             link = tmp_path / "link"
             os.symlink(str(target), str(link))
-            held_fd = _open_symlink_fd(str(link))
+            held_fd = open_symlink_fd(str(link))
             try:
                 orig = os.fstat(held_fd)
                 saved_ino = os.lstat(str(link)).st_ino
@@ -630,7 +631,7 @@ class TestInstallReview(unittest.TestCase):
 
     def test_symlink_handle_requires_supported_mechanism(self):
         needle = "getattr(os, " + '"O_SYMLINK", 0)'
-        for module in (review, *review._install_review_modules()):
+        for module in (review, *review.install_review_modules()):
             path = pathlib.Path(module.__file__)
             self.assertNotIn(
                 needle, path.read_text(encoding="utf-8"), f"{path.name} must not fall back to opening the link target"
@@ -651,18 +652,18 @@ class TestInstallReview(unittest.TestCase):
             return fake
 
         with unittest.mock.patch("tests.install_review_support.os", _make_fake(True, True)) as fake:
-            self.assertEqual(review._open_symlink_fd("dummy"), 99)
+            self.assertEqual(review.open_symlink_fd("dummy"), 99)
             fake.open.assert_called_once_with("dummy", 64 | 128)
         with unittest.mock.patch("tests.install_review_support.os", _make_fake(False, True)) as fake:
-            self.assertEqual(review._open_symlink_fd("dummy"), 99)
+            self.assertEqual(review.open_symlink_fd("dummy"), 99)
             fake.open.assert_called_once_with("dummy", 0 | 256)
         with unittest.mock.patch("tests.install_review_support.os", _make_fake(False, False)):
             with self.assertRaises(unittest.SkipTest):
-                review._open_symlink_fd("dummy")
+                review.open_symlink_fd("dummy")
 
     def test_restore_commands_preserve_stderr(self):
-        text = _read_install_sh()
-        restore_block = _uninstall_restore_block(text)
+        text = read_install_sh()
+        restore_block = uninstall_restore_block(text)
         self.assertNotIn("2>/dev/null", restore_block)
 
     def test_restore_block_ignores_unrelated_anchors(self):
@@ -673,12 +674,12 @@ class TestInstallReview(unittest.TestCase):
         suffix = '  cmd || true\n  rmdir "$OPOS_BIN_DIR"\n}\n'
         text = prefix + header + body + suffix
         want = header + body
-        self.assertEqual(_uninstall_restore_block(text), want)
+        self.assertEqual(uninstall_restore_block(text), want)
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_cmp_preserves_error_diagnostics(self):
-        text = _read_install_sh()
-        restore_block = _uninstall_restore_block(text)
+        text = read_install_sh()
+        restore_block = uninstall_restore_block(text)
         self.assertNotIn("cmp -s", restore_block)
         self.assertRegex(restore_block, r'cmp "[^"]+" "[^"]+" >/dev/null')
         self.assertNotIn("2>/dev/null", restore_block)
@@ -826,7 +827,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_backup_restore_requires_trusted_valid_backup(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -959,7 +960,7 @@ class TestInstallReview(unittest.TestCase):
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
                         stored.add(sub.id)
-        for module in (review, *review._install_review_modules()):
+        for module in (review, *review.install_review_modules()):
             source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
             for node in ast.walk(ast.parse(source)):
                 if (
@@ -1097,7 +1098,7 @@ class TestInstallReview(unittest.TestCase):
                 encoding="utf-8",
             )
             ctl_stub.chmod(ctl_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            replaced = _prepare_fallback_restore_snippet(dropin, dest)
+            replaced = prepare_fallback_restore_snippet(dropin, dest)
             self.assertIn('_sshd_dropin="' + str(dropin) + '"', replaced)
             self.assertNotIn(str(dest) + ".d/60-opos.conf", replaced)
             preamble = (
@@ -1134,7 +1135,7 @@ class TestInstallReview(unittest.TestCase):
             self.assertFalse(dropin.exists())
 
     def test_rewritten_restore_snippet_rejects_backup_write(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall() {")
         idx = text.index("FOUND=0", anchor)
         leaf = "sshd_config" + ".bak"
@@ -1145,10 +1146,10 @@ class TestInstallReview(unittest.TestCase):
             tmp_path = pathlib.Path(tmp)
             dropin = tmp_path / "dropin"
             dest = tmp_path / "dest"
-            with unittest.mock.patch.object(review, "_read_install_sh", return_value=mutant):
+            with unittest.mock.patch.object(review, "read_install_sh", return_value=mutant):
                 with self.assertRaisesRegex(AssertionError, "backup write"):
-                    _prepare_fallback_restore_snippet(dropin, dest)
-            result = _prepare_fallback_restore_snippet(dropin, dest)
+                    prepare_fallback_restore_snippet(dropin, dest)
+            result = prepare_fallback_restore_snippet(dropin, dest)
             self.assertTrue(result)
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
@@ -1219,7 +1220,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_restore_summary_reports_mixed_outcomes(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index('    _sshd="skipped"')
         end = text.index("\n  fi\n  opos_owned_path", start)
         body = text[start:end]
@@ -1342,7 +1343,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_stages_before_atomic_replace(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -1481,7 +1482,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_stages_before_replacing_active_config(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -1625,7 +1626,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_stages_validates_and_replaces_atomically(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -1781,7 +1782,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_preserves_live_copy_until_verified(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -1934,7 +1935,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_retry_preserves_original_live_copy(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -2017,7 +2018,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_restore_rejects_directory_and_verifies_install(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         marker = 'if [ -f "$OPOS_HOME/sshd_config.bak" ]; then'
         start = text.index(marker)
         tail = text[start:].splitlines(keepends=True)
@@ -2216,7 +2217,7 @@ class TestInstallReview(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            proc, bak, bak_bytes, dest, dropin = _run_sshd_dropin_restore(pathlib.Path(tmp), 1)
+            proc, bak, bak_bytes, dest, dropin = run_sshd_dropin_restore(pathlib.Path(tmp), 1)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             line = next((x for x in proc.stdout.splitlines() if "restore summary" in x), "")
             self.assertIn("sshd=failed", line)
@@ -2230,7 +2231,7 @@ class TestInstallReview(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            proc, bak, bak_bytes, dest, dropin = _run_sshd_dropin_restore(pathlib.Path(tmp), 0)
+            proc, bak, bak_bytes, dest, dropin = run_sshd_dropin_restore(pathlib.Path(tmp), 0)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             line = next((x for x in proc.stdout.splitlines() if "restore summary" in x), "")
             self.assertIn("sshd=succeeded", line)
@@ -2240,7 +2241,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_verifies_recorded_content_and_preserves_admin_edits(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index('    _sshd="skipped"')
         end = text.index("\n  fi\n  opos_owned_path", start)
         body = text[start:end]
@@ -2308,7 +2309,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_preserved_snapshot_does_not_overwrite_existing(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index('    _sshd="skipped"')
         end = text.index("\n  fi\n  opos_owned_path", start)
         body = text[start:end]
@@ -2360,28 +2361,28 @@ class TestInstallReview(unittest.TestCase):
             self.assertEqual(bak.read_bytes(), bak_bytes)
 
     def test_backup_probe_exception_is_exact(self):
-        _assert_snippet_confined(_EXPECTED_BACKUP_PROBE + "\n")
-        _assert_snippet_confined("  " + _EXPECTED_BACKUP_PROBE + "  \n")
+        assert_snippet_confined(EXPECTED_BACKUP_PROBE + "\n")
+        assert_snippet_confined("  " + EXPECTED_BACKUP_PROBE + "  \n")
         leaf = "".join(["sshd_config", ".bak"])
         home = "".join(["$OPOS_", "HOME"])
-        prefix = _EXPECTED_BACKUP_PROBE
+        prefix = EXPECTED_BACKUP_PROBE
         redir = prefix + " > " + '"$OPOS_HOME/"' + leaf
         with self.assertRaisesRegex(AssertionError, "backup write"):
-            _assert_snippet_confined(redir + "\n")
+            assert_snippet_confined(redir + "\n")
         q = '"' + home + "/" + leaf + '"'
         writes = [prefix + "; cp a " + q, prefix + " && printf x > " + q, prefix + " | tee " + q]
         for item in writes:
             with self.subTest(item=item):
                 with self.assertRaisesRegex(AssertionError, "backup write"):
-                    _assert_snippet_confined(item + "\n")
+                    assert_snippet_confined(item + "\n")
         reads = [prefix + " && cp -p " + q + ' "$T"', prefix.replace("test -f", "test -d")]
         for item in reads:
             with self.subTest(item=item):
-                _assert_snippet_confined(item + "\n")
+                assert_snippet_confined(item + "\n")
         star = chr(42)
         ordinary = "rm -rf " + '"$BASE"/' + star
         with self.assertRaises(AssertionError):
-            _assert_snippet_confined(ordinary + "\n")
+            assert_snippet_confined(ordinary + "\n")
 
     def test_writes_backup_detects_backup_writes(self):
         leaf = "sshd_config" + ".bak"
@@ -2400,14 +2401,14 @@ class TestInstallReview(unittest.TestCase):
             "cmp " + bak + ' "$_sshd_tmp" >/dev/null',
             "if [ -f " + bak + " ]; then",
             "echo ok # > " + bak,
-            _EXPECTED_BACKUP_PROBE,
+            EXPECTED_BACKUP_PROBE,
         ]
         for line in bad:
             with self.subTest(line=line):
-                self.assertTrue(_writes_backup(line))
+                self.assertTrue(writes_backup(line))
         for line in good:
             with self.subTest(line=line):
-                self.assertFalse(_writes_backup(line))
+                self.assertFalse(writes_backup(line))
 
     def test_writes_backup_detects_inline_control_bodies(self):
         leaf = "sshd_config" + ".bak"
@@ -2421,13 +2422,13 @@ class TestInstallReview(unittest.TestCase):
         for line in bad:
             with self.subTest(line=line):
                 snippet = line.replace("BAK", bak)
-                self.assertTrue(_writes_backup(snippet))
+                self.assertTrue(writes_backup(snippet))
                 with self.assertRaisesRegex(AssertionError, "backup write"):
-                    _assert_snippet_confined(snippet)
+                    assert_snippet_confined(snippet)
         good = ["if [ -f BAK ]; then :; fi", 'if true; then cp -p BAK "$_sshd_tmp"; fi']
         for line in good:
             with self.subTest(line=line):
-                self.assertFalse(_writes_backup(line.replace("BAK", bak)))
+                self.assertFalse(writes_backup(line.replace("BAK", bak)))
 
 
 if __name__ == "__main__":

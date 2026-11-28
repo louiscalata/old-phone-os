@@ -8,7 +8,7 @@ import sys
 import unittest
 
 
-def _read_install_sh() -> str:
+def read_install_sh() -> str:
     candidates = [
         pathlib.Path(__file__).resolve().parents[1] / "install.sh",
         pathlib.Path("install.sh"),
@@ -19,15 +19,15 @@ def _read_install_sh() -> str:
     raise FileNotFoundError("install.sh not found in expected locations")
 
 
-def _uninstall_restore_block(text):
+def uninstall_restore_block(text):
     start = text.index("do_uninstall() {")
     marker = text.index("printf '==> restore summary:", start)
     end = text.index("\n", marker) + 1
     return text[start:end]
 
 
-def _run_sshd_dropin_restore(tmp_path, sshd_exit):
-    text = _read_install_sh()
+def run_sshd_dropin_restore(tmp_path, sshd_exit):
+    text = read_install_sh()
     start = text.index('    _sshd="skipped"')
     end = text.index("\n  fi\n  opos_owned_path", start)
     body = text[start:end]
@@ -66,8 +66,8 @@ def _run_sshd_dropin_restore(tmp_path, sshd_exit):
     return (proc, bak, bak_bytes, dest, dropin)
 
 
-def _prepare_fallback_restore_snippet(dropin, dest):
-    text = _read_install_sh()
+def prepare_fallback_restore_snippet(dropin, dest):
+    text = read_install_sh()
     start = text.index("do_uninstall() {")
     found = text.index("FOUND=0", start)
     marker = 'opos_owned_path "$LAUNCHER" "$DEF_LAUNCHER" || return 1'
@@ -76,14 +76,14 @@ def _prepare_fallback_restore_snippet(dropin, dest):
     prod = "/etc/ssh/" + "sshd_config"
     prod_dropin = prod + ".d/60-opos.conf"
     rewritten = fragment.replace(prod_dropin, str(dropin)).replace(prod, str(dest))
-    joined = _join_continuations(rewritten)
+    joined = join_continuations(rewritten)
     pattern = r"\b(?:" + "|".join(map(re.escape, _PATH_OPS)) + r")\s"
-    kept = [line for line in joined.splitlines() if _writes_backup(line) or re.search(pattern, line)]
-    _assert_snippet_confined("\n".join(kept))
+    kept = [line for line in joined.splitlines() if writes_backup(line) or re.search(pattern, line)]
+    assert_snippet_confined("\n".join(kept))
     return rewritten
 
 
-def _open_symlink_fd(path: str) -> int:
+def open_symlink_fd(path: str) -> int:
     if hasattr(os, "O_PATH"):
         return os.open(path, os.O_PATH | os.O_NOFOLLOW)
     if hasattr(os, "O_SYMLINK"):
@@ -91,7 +91,7 @@ def _open_symlink_fd(path: str) -> int:
     raise unittest.SkipTest("no supported symlink-handle mechanism")
 
 
-def _artifact_data(path, kind):
+def artifact_data(path, kind):
     if kind == "file":
         return pathlib.Path(path).read_bytes()
     if kind == "link":
@@ -99,8 +99,8 @@ def _artifact_data(path, kind):
     return None
 
 
-def _run_retain_rollback(tmp_path, preamble):
-    text = _read_install_sh()
+def run_retain_rollback(tmp_path, preamble):
+    text = read_install_sh()
     names = ("opos_owned_path", "canon_file", "py_ok", "find_python", "retain_hardening_rollback")
     helpers = ""
     for name in names:
@@ -132,11 +132,11 @@ def _run_retain_rollback(tmp_path, preamble):
 _PATH_OPS = ("rm", "mv", "cp", "mkdir", "rmdir", "touch", "chmod", "chown", "ln")
 
 
-def _isolated_git_env():
+def isolated_git_env():
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
-def _contained_candidate(tmpdir, candidate):
+def contained_candidate(tmpdir, candidate):
     base = os.path.realpath(str(tmpdir))
     resolved = os.path.realpath(str(candidate))
     try:
@@ -148,8 +148,8 @@ def _contained_candidate(tmpdir, candidate):
     return resolved
 
 
-def _run_contained(tmpdir, candidate, argv):
-    validated = _contained_candidate(tmpdir, candidate)
+def run_contained(tmpdir, candidate, argv):
+    validated = contained_candidate(tmpdir, candidate)
     cmd = [validated if a == str(candidate) else a for a in argv]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
@@ -206,7 +206,7 @@ def _word_has_bare_glob_or_tilde(word):
     return False
 
 
-def _strip_shell_comment(line):
+def strip_shell_comment(line):
     stack = [[False, False, True, None, 0]]
     i = 0
     n = len(line)
@@ -439,7 +439,7 @@ def _heredoc_substitution_code(body):
     return "\n".join(parts)
 
 
-def _mask_heredoc_bodies(text):
+def mask_heredoc_bodies(text):
     lines = text.splitlines(keepends=True)
     out = []
     pending = []
@@ -632,8 +632,8 @@ def _mask_heredoc_bodies(text):
     return "".join(out)
 
 
-def _join_continuations(text):
-    text = _mask_heredoc_bodies(text)
+def join_continuations(text):
+    text = mask_heredoc_bodies(text)
     out = []
     stack = [[False, False, False, True, None, 0]]
     i = 0
@@ -755,7 +755,7 @@ def _join_continuations(text):
     return "".join(out)
 
 
-def _header_substitution_code(text, spans=None):
+def header_substitution_code(text, spans=None):
     parts = []
     i = 0
     n = len(text)
@@ -883,7 +883,7 @@ def _header_substitution_code(text, spans=None):
     return " ".join(parts)
 
 
-def _shell_delimiter_index(text, word):
+def shell_delimiter_index(text, word):
     n = len(text)
     m = len(word)
     stack = [[False, False, None, 0]]
@@ -1097,24 +1097,24 @@ def _shell_delimiter_index(text, word):
     return -1
 
 
-def _line_path_violations(line):
+def line_path_violations(line):
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return []
-    code = _strip_shell_comment(line)
+    code = strip_shell_comment(line)
     s = code.strip()
     header_extra = ""
     if s.startswith(("for ", "for\t")):
-        idx = _shell_delimiter_index(s, "do")
+        idx = shell_delimiter_index(s, "do")
         if idx < 0:
             return []
-        header_extra = _header_substitution_code(s[:idx])
+        header_extra = header_substitution_code(s[:idx])
         code = s[idx + 2 :]
     elif s.startswith(("case ", "case\t")):
-        idx = _shell_delimiter_index(s, "in")
+        idx = shell_delimiter_index(s, "in")
         if idx < 0:
             return []
-        header_extra = _header_substitution_code(s[:idx])
+        header_extra = header_substitution_code(s[:idx])
         rest = s[idx + 2 :]
         kept = []
         in_single = False
@@ -1217,7 +1217,7 @@ def _line_path_violations(line):
     return [w for w in words if _word_has_bare_glob_or_tilde(w)]
 
 
-def _group_for_case_headers(lines):
+def group_for_case_headers(lines):
     out = []
     i = 0
     n = len(lines)
@@ -1240,24 +1240,24 @@ def _group_for_case_headers(lines):
     return out
 
 
-_EXPECTED_BACKUP_PROBE = 'OPOS_HOME="$OPOS_HOME" test -f "$OPOS_HOME/sshd_config.bak"'
+EXPECTED_BACKUP_PROBE = 'OPOS_HOME="$OPOS_HOME" test -f "$OPOS_HOME/sshd_config.bak"'
 
 
-def _assert_snippet_confined(snippet):
-    joined = _join_continuations(snippet)
-    for raw in _group_for_case_headers(joined.splitlines()):
+def assert_snippet_confined(snippet):
+    joined = join_continuations(snippet)
+    for raw in group_for_case_headers(joined.splitlines()):
         s = raw.strip()
         if not s or s.startswith("#"):
             continue
-        if _writes_backup(raw):
+        if writes_backup(raw):
             raise AssertionError("backup write: %r" % raw)
-        if _line_path_violations(raw):
+        if line_path_violations(raw):
             raise AssertionError("unconfined path operation: %r" % raw)
 
 
-def _writes_backup(line):
+def writes_backup(line):
     leaf = "sshd_config" + ".bak"
-    code = _strip_shell_comment(line)
+    code = strip_shell_comment(line)
     if leaf not in code:
         return False
     if re.search(r">\s*>? ?\S*" + re.escape(leaf), code):
@@ -1279,7 +1279,7 @@ def _writes_backup(line):
 
 def _dynamic_hit_for_code(code):
     spans = []
-    _header_substitution_code(code, spans)
+    header_substitution_code(code, spans)
     marked = ""
     pos = 0
     for start, end, quoted in spans:
@@ -1323,15 +1323,15 @@ def _dynamic_hit_for_code(code):
     return ""
 
 
-def _scan_snippet_unquoted_dynamic(snippet):
+def scan_snippet_unquoted_dynamic(snippet):
     uq = []
     dyn = []
-    joined = _join_continuations(snippet)
+    joined = join_continuations(snippet)
     for raw in joined.splitlines():
         s = raw.strip()
         if not s or s.startswith("#"):
             continue
-        code = _strip_shell_comment(raw)
+        code = strip_shell_comment(raw)
         hit = _dynamic_hit_for_code(code)
         if hit == "unquoted":
             uq.append(raw)
@@ -1340,24 +1340,24 @@ def _scan_snippet_unquoted_dynamic(snippet):
     return uq, dyn
 
 
-def _scan_installer_paths(text):
+def scan_installer_paths(text):
     ops = ("rm", "mv", "cp", "mkdir", "rmdir", "touch", "chmod", "chown", "ln")
     unquoted = []
     dynamic = []
-    logical = _join_continuations(text)
+    logical = join_continuations(text)
     for raw in logical.splitlines():
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if not re.search(r"(^|[;|&]\s*|\b)(%s)\s" % "|".join(ops), raw):
             continue
-        code = _strip_shell_comment(raw)
+        code = strip_shell_comment(raw)
         hit = _dynamic_hit_for_code(code)
         if hit == "unquoted":
             unquoted.append(raw.strip())
         elif hit == "dynamic":
             dynamic.append(raw.strip())
-    for raw in _group_for_case_headers(logical.splitlines()):
+    for raw in group_for_case_headers(logical.splitlines()):
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -1367,7 +1367,7 @@ def _scan_installer_paths(text):
             and not raw.strip().startswith(("case ", "case\t"))
         ):
             continue
-        for bad in _line_path_violations(raw):
+        for bad in line_path_violations(raw):
             entry = raw.strip()
             if entry not in unquoted:
                 unquoted.append(entry)
@@ -1375,7 +1375,7 @@ def _scan_installer_paths(text):
     return unquoted, dynamic
 
 
-def _install_review_modules():
+def install_review_modules():
     directory = pathlib.Path(__file__).resolve().parent
     parts = {}
     for path in directory.glob("test_install_review_part*.py"):

@@ -9,19 +9,20 @@ import sys
 import tempfile
 import unittest
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from tests.install_review_support import (
-    _read_install_sh,
-    _run_retain_rollback,
+    read_install_sh,
+    run_retain_rollback,
 )
 
 
 class TestInstallReview(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_rollback_publication_rejects_concurrent_destination(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -122,7 +123,7 @@ class TestInstallReview(unittest.TestCase):
             victim = tmp_path / "victim"
             victim.write_bytes(b"".join([b"vic", b"tim-bytes-5"]))
             preamble = 'cp() { command cp "$@" || return 1; ln -s "$OPOS_VICTIM" "$OPOS_DEST"; }\n'
-            proc, home, dest, helper_bytes = _run_retain_rollback(tmp_path, preamble)
+            proc, home, dest, helper_bytes = run_retain_rollback(tmp_path, preamble)
             self.assertNotEqual(proc.returncode, 0)
             self.assertEqual(victim.read_bytes(), b"".join([b"vic", b"tim-bytes-5"]))
             self.assertTrue(dest.is_symlink())
@@ -132,7 +133,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "preexec_fn is POSIX-only")
     def test_cleanup_preserves_exit_and_signal_status(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index("cleanup() {")
         end = text.index('if [ "$UNINST"', start)
         fragment = text[start:end]
@@ -196,12 +197,12 @@ class TestInstallReview(unittest.TestCase):
         try:
             tmp_path = pathlib.Path(tmp.name)
             preamble = 'cp() { for a in "$@"; do last="$a"; done; printf \'%s\' partial-7 > "$last"; return 1; }\n'
-            proc, home, dest, helper_bytes = _run_retain_rollback(tmp_path, preamble)
+            proc, home, dest, helper_bytes = run_retain_rollback(tmp_path, preamble)
             self.assertNotEqual(proc.returncode, 0)
             self.assertFalse(os.path.lexists(str(dest)))
             self.assertFalse(any(".opos-harden-rollback." in p.name for p in home.iterdir()))
             self.assertNotIn("hardening rollback retained at ", proc.stdout)
-            proc2, home2, dest2, helper_bytes2 = _run_retain_rollback(tmp_path, "")
+            proc2, home2, dest2, helper_bytes2 = run_retain_rollback(tmp_path, "")
             self.assertEqual(proc2.returncode, 0, proc2.stdout + proc2.stderr)
             self.assertTrue(dest2.is_file())
             self.assertFalse(dest2.is_symlink())
@@ -210,7 +211,7 @@ class TestInstallReview(unittest.TestCase):
             tmp.cleanup()
 
     def test_venv_staging_rm_and_mv_are_checked(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         self.assertRegex(
             text,
@@ -275,7 +276,7 @@ class TestInstallReview(unittest.TestCase):
             os.chmod(victim, 0o640)
             mode = stat.S_IMODE(os.stat(victim).st_mode)
             preamble = 'cp() { command cp "$@" || return 1; for a in "$@"; do last="$a"; done; [ -f "$last" ] || return 1; rm -f "$last" || return 1; [ ! -e "$last" ] || return 1; ln -s "$OPOS_VICTIM" "$last" || return 1; [ -L "$last" ] || return 1; [ "$(readlink "$last")" = "$OPOS_VICTIM" ] || return 1; printf "F2160-replaced:%s\\n" "$last"; return 0; }\n'
-            proc, home, dest, helper_bytes = _run_retain_rollback(tmp_path, preamble)
+            proc, home, dest, helper_bytes = run_retain_rollback(tmp_path, preamble)
             self.assertEqual(proc.returncode, 1)
             markers = [line for line in proc.stdout.splitlines() if "F2160-replaced:" in line]
             self.assertEqual(len(markers), 1)
@@ -366,7 +367,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_refuses_unverified_destination(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -471,7 +472,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_cleans_partial_copy_for_retry(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -522,7 +523,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_rejects_directory_and_temp_replacement(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -653,7 +654,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_directory_contents_unchanged(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -721,7 +722,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retention_rejects_concurrent_destination_replacement(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -768,7 +769,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retained_rollback_restores_state_after_checkout_removal(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -840,7 +841,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retain_uses_stable_tmp_handles(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index("retain_hardening_rollback() {")
         end = text.index("\n}\n", start) + 3
         block = text[start:end]
@@ -896,7 +897,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_retained_rollback_instruction_quotes_path(self):
-        text = _read_install_sh()
+        text = read_install_sh()
 
         def _extract(name):
             start = text.index(name + "() {")
@@ -944,7 +945,7 @@ class TestInstallReview(unittest.TestCase):
     def test_retained_rollback_quoting_preserves_apostrophe_herein(self):
         import shlex
 
-        text = _read_install_sh()
+        text = read_install_sh()
         start = text.index('_retain_q="\'"')
         marker = "printf '==> hardening active: run sudo "
         end = text.index(marker, start)

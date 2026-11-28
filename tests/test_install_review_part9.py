@@ -7,20 +7,21 @@ import sys
 import tempfile
 import unittest
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from tests.install_review_support import (
-    _artifact_data,
-    _read_install_sh,
-    _uninstall_restore_block,
+    artifact_data,
+    read_install_sh,
+    uninstall_restore_block,
 )
 
 
 class TestInstallReview(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_dry_run_lists_exact_actions(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         anchor = text.index("do_uninstall()")
         start = text.index("FOUND=0", anchor)
         end = text.index('opos_owned_path "$LAUNCHER"', start)
@@ -146,7 +147,7 @@ class TestInstallReview(unittest.TestCase):
                 self.assertTrue(marker.is_file(), tool + " stub must create marker under restricted PATH")
                 with self.assertRaises(AssertionError):
                     self.assertFalse(marker.exists(), "dry-run must not execute stubs")
-        text = _read_install_sh()
+        text = read_install_sh()
         prod_dest = "/etc/ssh/" + "sshd_config"
         prod_dropin = "/etc/ssh/" + "sshd_config.d/60-opos.conf"
         self.assertIn(prod_dest, text)
@@ -345,7 +346,7 @@ class TestInstallReview(unittest.TestCase):
                             _kind = "file"
                         else:
                             _kind = "other"
-                        _data = _artifact_data(str(_p), _kind)
+                        _data = artifact_data(str(_p), _kind)
                         snaps[str(_p)] = (_kind, _mode, _data)
                     venv_inventory = sorted(
                         os.path.relpath(str(_p), str(venv_dir))
@@ -401,7 +402,7 @@ class TestInstallReview(unittest.TestCase):
                             stat.S_IMODE(_st.st_mode), _mode, "artifact permissions must be unchanged: " + _p_str
                         )
                         self.assertEqual(
-                            _artifact_data(_p_str, _now_kind), _data, "artifact bytes must be unchanged: " + _p_str
+                            artifact_data(_p_str, _now_kind), _data, "artifact bytes must be unchanged: " + _p_str
                         )
                     self.assertTrue(nft_log.is_file(), "nft probe must run")
                     self.assertTrue(loginctl_log.is_file(), "loginctl probe must run")
@@ -427,22 +428,22 @@ class TestInstallReview(unittest.TestCase):
             second.write_bytes(payload)
             link = tmp_path / "".join(["li", "nk"])
             os.symlink(first.name, str(link))
-            saved = _artifact_data(str(link), "link")
+            saved = artifact_data(str(link), "link")
             self.assertEqual(saved, first.name)
             os.unlink(str(link))
             os.symlink(second.name, str(link))
-            current = _artifact_data(str(link), "link")
+            current = artifact_data(str(link), "link")
             self.assertEqual(current, second.name)
             self.assertNotEqual(saved, current)
             missing_one = "".join(["miss", "ing-one"])
             missing_two = "".join(["miss", "ing-two"])
             os.unlink(str(link))
             os.symlink(missing_one, str(link))
-            saved = _artifact_data(str(link), "link")
+            saved = artifact_data(str(link), "link")
             self.assertEqual(saved, missing_one)
             os.unlink(str(link))
             os.symlink(missing_two, str(link))
-            current = _artifact_data(str(link), "link")
+            current = artifact_data(str(link), "link")
             self.assertEqual(current, missing_two)
             self.assertNotEqual(saved, current)
 
@@ -841,7 +842,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_fallback_routes_restore_privileges(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         begin_marker = "# BEGIN fallback service cleanup"
         end_marker = "# END fallback service cleanup"
         block_start = text.index(begin_marker) + len(begin_marker)
@@ -1003,7 +1004,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "needs the POSIX cut tool")
     def test_service_failure_diagnostics_hide_resolved_home(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         begin_marker = "# BEGIN fallback service cleanup"
         end_marker = "# END fallback service cleanup"
         block_start = text.index(begin_marker) + len(begin_marker)
@@ -1237,7 +1238,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_disabled_firewall_requires_exact_saved_state(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         leaf = "".join(["fire", "wall.state"])
         anchor = 'if [ -f "$OPOS_HOME/' + leaf + '" ]'
         start = text.index(anchor)
@@ -1549,8 +1550,8 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_force_uninstall_targets_real_service(self):
-        text = _read_install_sh()
-        block = _uninstall_restore_block(text)
+        text = read_install_sh()
+        block = uninstall_restore_block(text)
         begin_marker = "# BEGIN fallback service cleanup"
         service = block[block.index(begin_marker) :]
         self.assertIn("opos-server.service", service)

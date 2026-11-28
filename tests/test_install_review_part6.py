@@ -10,10 +10,11 @@ import tempfile
 import unittest
 from unittest import mock
 
+# Direct scripts under -P and -I need the checkout root before importing shared helpers.
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from tests.install_review_support import _read_install_sh
+from tests.install_review_support import read_install_sh
 
 
 def _assert_isolated_shell_paths(text, tmp_path):
@@ -109,7 +110,7 @@ def _assert_execution_confined(patched, tmp_path, stubdir, home, opos_home, bind
 
 
 def _extract_sshd_fragment():
-    text = _read_install_sh()
+    text = read_install_sh()
     start_tok = '_sshd="skipped"'
     end_tok = 'if [ -f "$OPOS_HOME/firewall.state" ]'
     if start_tok not in text:
@@ -285,7 +286,7 @@ def _run_sshd_isolated(tmp_path, dropin_bytes, expected_bytes, extra="", extra_e
 class TestInstallReview(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "scans POSIX shell paths; Windows temp paths do not match")
     def test_unresolved_sshd_preserves_firewall_and_recovery_files(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         m_dropin = re.search(r'_sshd_dropin="([^"]+)"', text)
         self.assertIsNotNone(m_dropin, "dropin path not found")
         dropin_template = m_dropin.group(1)
@@ -362,7 +363,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_snippet_confined_to_isolation_with_allowlist(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         m_marker = re.search(r'_sshd_marker="([^"]+)"', text)
         self.assertIsNotNone(m_marker, "marker not found")
         marker = m_marker.group(1)
@@ -390,7 +391,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_isolation_rejects_escape_operands_and_services(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         m_marker = re.search(r'_sshd_marker="([^"]+)"', text)
         self.assertIsNotNone(m_marker, "marker not found")
         marker = m_marker.group(1)
@@ -439,7 +440,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
     def test_sshd_copy_wrapper_rejects_destination_option(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         m_marker = re.search(r'_sshd_marker="([^"]+)"', text)
         self.assertIsNotNone(m_marker, "marker not found")
         marker = m_marker.group(1)
@@ -529,7 +530,7 @@ class TestInstallReview(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "scans POSIX shell paths; Windows temp paths do not match")
     def test_execution_requires_full_confinement(self):
-        text = _read_install_sh()
+        text = read_install_sh()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
             with self.assertRaises(AssertionError):
