@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# TODO(publish): publish the measured release-tarball and verify sha512 retrieval before remote builds.
+# TODO(#287): publish the measured release-tarball and verify sha512 retrieval before remote builds.
 maintainer="Old Phone OS <173626247+louiscalata@users.noreply.github.com>"
 pkgname=opos
 pkgver=0.1.0

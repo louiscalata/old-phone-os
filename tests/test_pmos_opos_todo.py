@@ -9,7 +9,7 @@ class TestOposPublishTodo(unittest.TestCase):
         content = apkbuild_path.read_text(encoding="utf-8")
         line = content.splitlines()[1]
         self.assertEqual(
-            (line.startswith("# TODO(publish):"), "release-tarball" in line, "sha512" in line), (True, True, True)
+            (line.startswith("# TODO(#287):"), "release-tarball" in line, "sha512" in line), (True, True, True)
         )
 
 

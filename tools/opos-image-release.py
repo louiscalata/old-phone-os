@@ -89,7 +89,9 @@ def signature_format(raw):
 def notes(m):
     return (
         "Old Phone OS {version}\nImage revision: {revision}\nBase: {base}\n"
-        "Build time (SOURCE_DATE_EPOCH): {epoch}\n\nChanges: TODO\nKnown limitations: TODO\n"
+        "Build time (SOURCE_DATE_EPOCH): {epoch}\n\n"
+        "Changes: NOT_WRITTEN (replace with --notes before publishing)\n"
+        "Known limitations: NOT_WRITTEN (replace with --notes before publishing)\n"
         "Real image build verification: NOT_RUN\nSurface Duo identity and manifest check: NOT_RUN\n"
         "Surface Duo interface and fallback checks: NOT_RUN\n"
         "Calls and messages remain simulated.\n"
