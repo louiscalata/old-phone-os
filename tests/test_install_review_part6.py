@@ -10,7 +10,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.install_review_support import _read_install_sh
+if __package__:
+    from .install_review_support import _read_install_sh
+else:
+    from install_review_support import _read_install_sh
 
 
 def _assert_isolated_shell_paths(text, tmp_path):
