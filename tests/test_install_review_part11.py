@@ -343,14 +343,16 @@ class TestInstallReview(unittest.TestCase):
             "test_tmp_execution_path_rejects_traversal_and_symlink",
         )
         sites = {}
+        replay_path = pathlib.Path(__file__).resolve()
         for module in _install_review_modules():
-            src = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+            path = pathlib.Path(module.__file__).resolve()
+            src = path.read_text(encoding="utf-8")
             tree = ast.parse(src)
             cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "TestInstallReview")
             for node in cls.body:
                 if not isinstance(node, ast.FunctionDef):
                     continue
-                if node.name in skip:
+                if path == replay_path and node.name in skip:
                     continue
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Call):
@@ -361,7 +363,7 @@ class TestInstallReview(unittest.TestCase):
                             and isinstance(func.value, ast.Name)
                             and func.value.id == "subprocess"
                         ):
-                            sites[f"{module.__name__}.{node.name}"] = getattr(module.TestInstallReview, node.name)
+                            sites[f"{module.__name__}.{node.name}"] = module.TestInstallReview(node.name)
                             break
         self.assertTrue(sites)
         for site, test in sites.items():
@@ -406,7 +408,7 @@ class TestInstallReview(unittest.TestCase):
                     proc = _run_contained(base, good, ["sh", str(good)])
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     self.assertTrue(done.is_file())
-                    test(self)
+                    test.debug()
                     self.assertFalse(bypass_marker.exists(), "site must not execute hostile payload for " + site)
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")

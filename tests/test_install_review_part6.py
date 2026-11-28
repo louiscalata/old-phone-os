@@ -10,10 +10,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-if __package__:
-    from .install_review_support import _read_install_sh
-else:
-    from install_review_support import _read_install_sh
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
+from tests.install_review_support import _read_install_sh
 
 
 def _assert_isolated_shell_paths(text, tmp_path):
