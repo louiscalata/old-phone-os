@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import importlib
 import os
 import pathlib
 import re
 import subprocess
+import sys
 import unittest
 
 
@@ -1374,20 +1376,13 @@ def _scan_installer_paths(text):
 
 
 def _install_review_modules():
-    from tests import (
-        test_install_review,
-        test_install_review_part7,
-        test_install_review_part8,
-        test_install_review_part9,
-        test_install_review_part10,
-        test_install_review_part11,
-    )
-
-    return (
-        test_install_review,
-        test_install_review_part7,
-        test_install_review_part8,
-        test_install_review_part9,
-        test_install_review_part10,
-        test_install_review_part11,
-    )
+    directory = pathlib.Path(__file__).resolve().parent
+    parts = {}
+    for path in directory.glob("test_install_review_part*.py"):
+        if (match := re.fullmatch(r"test_install_review_part([1-9][0-9]*)", path.stem)) and int(match[1]) >= 7:
+            parts[int(match[1])] = path
+    paths = (directory / "test_install_review.py", *(parts[number] for number in sorted(parts)))
+    main = sys.modules["__main__"]
+    main_file = getattr(main, "__file__", None)
+    main_path = pathlib.Path(main_file).resolve() if main_file else None
+    return tuple(main if path == main_path else importlib.import_module(f"tests.{path.stem}") for path in paths)

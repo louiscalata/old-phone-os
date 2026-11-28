@@ -9,7 +9,10 @@ import sys
 import tempfile
 import unittest
 
-from tests.install_review_support import _read_install_sh
+if __package__:
+    from .install_review_support import _read_install_sh
+else:
+    from install_review_support import _read_install_sh
 
 
 class TestInstallReview(unittest.TestCase):

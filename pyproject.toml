@@ -433,10 +433,21 @@ max-complexity = 15
 # C901: existing complexity; restructuring needs a behavior review.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_review_part6.py" = ["C901", "UP031"]
+# C901: existing complexity; restructuring needs a behavior review.
+# UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_review_part7.py" = ["C901", "UP031"]
+# B007: existing bugbear finding; diagnose and repair separately from layout.
+# C901: existing complexity; restructuring needs a behavior review.
+# E741: existing pycodestyle finding; non-format repair is outside this lane.
+# S105: existing security finding; security repairs need separate review.
 "tests/test_install_review_part8.py" = ["B007", "C901", "E741", "S105"]
+# C901: existing complexity; restructuring needs a behavior review.
 "tests/test_install_review_part9.py" = ["C901"]
+# S103: existing security finding; security repairs need separate review.
+# S108: existing security finding; security repairs need separate review.
 "tests/test_install_review_part10.py" = ["S103", "S108"]
+# C901: existing complexity; restructuring needs a behavior review.
+# S108: existing security finding; security repairs need separate review.
 "tests/test_install_review_part11.py" = ["C901", "S108"]
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tests/test_install_sshd_sandbox.py" = ["UP031"]
