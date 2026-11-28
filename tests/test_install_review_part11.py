@@ -361,7 +361,7 @@ class TestInstallReview(unittest.TestCase):
                             and isinstance(func.value, ast.Name)
                             and func.value.id == "subprocess"
                         ):
-                            sites[node.name] = getattr(module.TestInstallReview, node.name)
+                            sites[f"{module.__name__}.{node.name}"] = getattr(module.TestInstallReview, node.name)
                             break
         self.assertTrue(sites)
         for site, test in sites.items():
