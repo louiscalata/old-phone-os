@@ -123,7 +123,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.build()[0], 0)
         notes = (self.out / "RELEASE_NOTES.txt").read_text()
         self.assertIn("NOT_RUN", notes)
-        self.assertIn("Changes: TODO", notes)
+        self.assertIn("Changes: NOT_WRITTEN (replace with --notes before publishing)", notes)
+        self.assertIn("Known limitations: NOT_WRITTEN (replace with --notes before publishing)", notes)
         self.assertIn("Calls and messages remain simulated", notes)
         self.assertIn("not an OTA update bundle", notes)
 

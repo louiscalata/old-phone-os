@@ -38,7 +38,7 @@ force-exclude = true
 
 [tool.ruff.format]
 # Linted (LOU-84) but kept out of the formatter: each file below keeps exact source bytes or literals that a test or a
-# package pin asserts. TODO(LOU-84): reformat each one in its own reviewed pull request together with its test.
+# package pin asserts. TODO(#286): reformat each one in its own reviewed pull request together with its test.
 exclude = [
     # APKBUILD SHA-512 pin; regenerate only in a packaging review.
     "packaging/pmos/opos/opos-systemd-state.py",
@@ -736,7 +736,7 @@ max-complexity = 15
 # UP017: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 # UP031: existing compatibility spelling; pyupgrade changes AST and is outside formatting.
 "tools/opos-release.py" = ["B905", "C901", "E741", "N818", "UP017", "UP031"]
-# TODO(LOU-84): files that were ruff-excluded until LOU-84; exact file/code pairs, source bytes unchanged.
+# TODO(#286): reduce these exact file/code exclusions for files previously excluded from Ruff (LOU-84).
 # B023: existing bugbear finding; diagnose and repair separately from layout.
 # N818: existing names and framework overrides; renaming is outside formatting.
 # S310: existing security finding; left for a separate security review (LOU-84), not changed in a lint lane.
