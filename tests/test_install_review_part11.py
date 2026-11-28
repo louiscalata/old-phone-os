@@ -9,6 +9,9 @@ import tempfile
 import unittest
 import unittest.mock
 
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
 from tests.install_review_support import (
     _contained_candidate,
     _install_review_modules,

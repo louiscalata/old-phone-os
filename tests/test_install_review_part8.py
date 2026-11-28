@@ -9,6 +9,9 @@ import tempfile
 import unittest
 import unittest.mock
 
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
 from tests import install_review_support as review
 from tests.install_review_support import (
     _EXPECTED_BACKUP_PROBE,
@@ -626,9 +629,12 @@ class TestInstallReview(unittest.TestCase):
                 os.close(held_fd)
 
     def test_symlink_handle_requires_supported_mechanism(self):
-        src = pathlib.Path(review.__file__).read_text(encoding="utf-8")
         needle = "getattr(os, " + '"O_SYMLINK", 0)'
-        self.assertNotIn(needle, src, "must not fall back to opening the link target")
+        for module in (review, *review._install_review_modules()):
+            path = pathlib.Path(module.__file__)
+            self.assertNotIn(
+                needle, path.read_text(encoding="utf-8"), f"{path.name} must not fall back to opening the link target"
+            )
 
         class _FakeOs:
             pass

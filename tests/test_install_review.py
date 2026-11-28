@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import pathlib
 import subprocess
 import sys
 import unittest
 import unittest.mock
+
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from tests.install_review_support import (
     _assert_snippet_confined,
@@ -72,7 +76,7 @@ class TestInstallReview(unittest.TestCase):
                     want = ([], [line])
                     message = "must not use dynamically built paths"
                 self.assertEqual(_scan_snippet_unquoted_dynamic(snippet), want)
-                with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=snippet):
+                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=snippet):
                     with self.assertRaisesRegex(AssertionError, message):
                         self.test_production_paths_reject_unquoted_and_dynamic()
         controls = [
@@ -83,7 +87,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(control=name):
                 snippet = line + nl
                 self.assertEqual(_scan_snippet_unquoted_dynamic(snippet), ([], []))
-                with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=snippet):
+                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=snippet):
                     self.test_production_paths_reject_unquoted_and_dynamic()
 
     def test_unquoted_heredoc_substitution_rejects_unsafe_removal(self):
@@ -283,10 +287,10 @@ class TestInstallReview(unittest.TestCase):
         )
         for param, snippet in cases:
             with self.subTest(param=param):
-                with patch("tests.test_install_review._read_install_sh", return_value=snippet):
+                with patch(__name__ + "._read_install_sh", return_value=snippet):
                     with self.assertRaisesRegex(AssertionError, "filesystem ops must not use dynamically built paths"):
                         self.test_production_paths_reject_unquoted_and_dynamic()
-        with patch("tests.test_install_review._read_install_sh", return_value='rm -rf "$BASE"/static-leaf'):
+        with patch(__name__ + "._read_install_sh", return_value='rm -rf "$BASE"/static-leaf'):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
@@ -297,7 +301,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(sep=sep):
                 marker = "echo " + chr(34) + "# marker" + chr(34) + " " + chr(92)
                 payload = marker + chr(10) + sep + chr(10) + "rm -rf " + chr(36) + "TARGET/rest" + chr(10)
-                with patch("tests.test_install_review._read_install_sh", return_value=payload):
+                with patch(__name__ + "._read_install_sh", return_value=payload):
                     with self.assertRaisesRegex(AssertionError, "filesystem ops must quote every path operand"):
                         self.test_production_paths_reject_unquoted_and_dynamic()
 
@@ -310,19 +314,19 @@ class TestInstallReview(unittest.TestCase):
             "printf '%s' '#'; rm -rf $TARGET/rest",
         ]
         for snippet in snippets:
-            with patch("tests.test_install_review._read_install_sh", return_value=snippet):
+            with patch(__name__ + "._read_install_sh", return_value=snippet):
                 with self.assertRaisesRegex(AssertionError, "filesystem ops must quote every path operand"):
                     self.test_production_paths_reject_unquoted_and_dynamic()
 
         # dynamic operand after quoted hash must still be rejected
         dynamic_snippet = 'printf "%s" "#"; rm -rf "$BASE/$SUFFIX"'
-        with patch("tests.test_install_review._read_install_sh", return_value=dynamic_snippet):
+        with patch(__name__ + "._read_install_sh", return_value=dynamic_snippet):
             with self.assertRaisesRegex(AssertionError, "filesystem ops must not use dynamically built paths"):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
         # real trailing comment must be stripped and not hide unsafe command
         comment_snippet = 'rm -rf "$BASE/static-leaf" # rm -rf $TARGET/rest'
-        with patch("tests.test_install_review._read_install_sh", return_value=comment_snippet):
+        with patch(__name__ + "._read_install_sh", return_value=comment_snippet):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
@@ -331,7 +335,7 @@ class TestInstallReview(unittest.TestCase):
         bs = chr(92)
         probe = "rm -rf " + q + "$BASE" + q + "/some" + bs + " " + chr(126) + "/rel/" + q + "$SUFFIX" + q + "\n"
         self.assertEqual(_line_path_violations(probe.strip()), [])
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=probe):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=probe):
             with self.assertRaisesRegex(AssertionError, "must not use dynamically built paths"):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
@@ -343,11 +347,11 @@ class TestInstallReview(unittest.TestCase):
         tail = '"$BASE/$SUFFIX"'
         mutant = text + "\n" + head + "\n    " + tail + "\n"
         self.assertNotEqual(mutant, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
         safe = text + "\n" + head + "\n    " + '"$BASE/static-leaf"\n'
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=safe):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
@@ -358,11 +362,11 @@ class TestInstallReview(unittest.TestCase):
         head = 'rm -rf "$BASE/static-leaf" \\'
         mutant = text + "\n" + head + "\n    " + star_tail + "\n"
         self.assertNotEqual(mutant, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
         safe = text + "\n" + head + "\n    " + '"$BASE/static-leaf"\n'
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=safe):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
     def test_continuation_preserves_indented_unsafe_operand(self):
@@ -389,13 +393,13 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(sep=repr(sep)):
                 marker = "echo foo" + bs
                 payload = marker + nl + sep + nl + "rm -rf " + tgt + nl
-                with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=payload):
+                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=payload):
                     with self.assertRaisesRegex(AssertionError, "filesystem ops must quote every path operand"):
                         self.test_production_paths_reject_unquoted_and_dynamic()
                 safe_head = "rm -rf " + base + "/static-leaf " + bs
                 safe_tail = base + "/" + suffix
                 safe_payload = safe_head + nl + sep + nl + safe_tail + nl
-                with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe_payload):
+                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=safe_payload):
                     self.test_production_paths_reject_unquoted_and_dynamic()
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
@@ -404,7 +408,7 @@ class TestInstallReview(unittest.TestCase):
         self.test_production_paths_reject_unquoted_and_dynamic()
         mutant = text + "\n# note \\\nrm -rf $TARGET/rest\n"
         self.assertNotEqual(mutant, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
@@ -422,7 +426,7 @@ class TestInstallReview(unittest.TestCase):
         tgt = ds + "TARGET/rest"
         mutant = text + nl + "echo " + dq + ds + op + " " + h + " note " + bs + nl + "rm -rf " + tgt + nl + cp + dq + nl
         self.assertNotEqual(mutant, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
@@ -451,13 +455,13 @@ class TestInstallReview(unittest.TestCase):
             + nl
         )
         self.assertNotEqual(inline, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=inline):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=inline):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
         quoted = "echo " + q + "a " + bs + nl + "b" + q + nl
         self.assertIn(bs + nl, _join_continuations(quoted))
         safe = text + nl + "echo " + q + "a " + bs + nl + "b" + q + nl
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=safe):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
     @unittest.skipIf(sys.platform == "win32", "runs POSIX shell scripts and host tools")
@@ -486,11 +490,11 @@ class TestInstallReview(unittest.TestCase):
             + nl
         )
         self.assertNotEqual(mutant, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
         safe = text + nl + heredoc + "rm -rf " + dq + "$BASE/static-leaf" + dq + nl
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=safe):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=safe):
             self.test_production_paths_reject_unquoted_and_dynamic()
 
     def test_production_paths_heredoc_hash_delimiter_keeps_command(self):
@@ -536,7 +540,7 @@ class TestInstallReview(unittest.TestCase):
         self.assertTrue(anchor is not None)
         fixture = text + "\nrm -rf " + tilde_x + "\n"
         self.assertNotEqual(fixture, text)
-        with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=fixture):
+        with unittest.mock.patch(__name__ + "._read_install_sh", return_value=fixture):
             with self.assertRaises(AssertionError):
                 self.test_production_paths_reject_unquoted_and_dynamic()
 
@@ -841,7 +845,7 @@ class TestInstallReview(unittest.TestCase):
             with self.subTest(case=name):
                 mutant = text + nl + snippet
                 self.assertNotEqual(mutant, text)
-                with unittest.mock.patch("tests.test_install_review._read_install_sh", return_value=mutant):
+                with unittest.mock.patch(__name__ + "._read_install_sh", return_value=mutant):
                     with self.assertRaises(AssertionError):
                         self.test_production_paths_reject_unquoted_and_dynamic()
 

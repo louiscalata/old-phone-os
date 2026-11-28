@@ -7,6 +7,9 @@ import sys
 import tempfile
 import unittest
 
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
 from tests.install_review_support import (
     _artifact_data,
     _read_install_sh,
